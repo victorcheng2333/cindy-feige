@@ -40,6 +40,20 @@ function extractHandlerBlock(source: string, name: string): string {
 }
 
 describe('通用「新建」保留 newMakerDraft 选择', () => {
+  it('添加 SSH 项目成功后记住新目标，再清理单次草稿状态', () => {
+    const rememberTarget = draftRouteSource.indexOf(
+      'patchDraft({ workingDir: target.path, remoteHostId: target.hostId });',
+    );
+    expect(rememberTarget).toBeGreaterThan(-1);
+    const before = draftRouteSource.slice(0, rememberTarget);
+    expect(before.lastIndexOf('if (!newSession)')).toBeGreaterThan(
+      before.lastIndexOf('const newSession = await createSession('),
+    );
+    expect(draftRouteSource.slice(rememberTarget)).toMatch(
+      /^patchDraft\(\{ workingDir: target\.path, remoteHostId: target\.hostId \}\);\s*resetDraftWorkspaceAfterSend\(\);/,
+    );
+  });
+
   it('草稿保留与目标迁移共用包含 SSH 身份的同机判据', () => {
     expect(draftRouteSource).toContain(
       '!isSameNewMakerDevice(dialogueTargetRequest.deviceId, getDraft())',

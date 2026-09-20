@@ -45,6 +45,45 @@ async function loadModule() {
 }
 
 describe('newMakerDraft store', () => {
+  it('远端项目发送后重启，不把远端路径当成本机项目', async () => {
+    const { patchDraft, resetDraftWorkspaceAfterSend } = await loadModule();
+    patchDraft({
+      workingDir: '/remote/project',
+      deviceLinkDeviceId: 'remote-device',
+      deviceLinkDeviceName: 'Remote computer',
+    });
+    resetDraftWorkspaceAfterSend();
+
+    vi.resetModules();
+    const reloaded = await loadModule();
+    expect(reloaded.getDraft()).toMatchObject({
+      workingDir: null,
+      remoteHostId: null,
+      deviceLinkDeviceId: null,
+      deviceLinkDeviceName: null,
+    });
+  });
+
+  it.each([null, 'ssh-1'])('发送后重载仍记住项目（SSH host: %s）', async (remoteHostId) => {
+    const { patchDraft, resetDraftWorkspaceAfterSend } = await loadModule();
+    patchDraft({
+      workingDir: '/workspace/project',
+      remoteHostId,
+      extraDirs: ['/reference'],
+      writableDirs: ['/output'],
+    });
+    resetDraftWorkspaceAfterSend();
+
+    vi.resetModules();
+    const reloaded = await loadModule();
+    expect(reloaded.getDraft()).toMatchObject({
+      workingDir: '/workspace/project',
+      remoteHostId,
+      extraDirs: [],
+      writableDirs: [],
+    });
+  });
+
   it('默认状态:vendor=cc,workingDir=null,lastByVendor 各 vendor 的硬默认填齐', async () => {
     const { getDraft } = await loadModule();
     const d = getDraft();
@@ -1705,7 +1744,7 @@ describe('newMakerDraft store', () => {
       expect(getDraft().deviceLinkDeviceName).toBeNull();
     });
 
-    it('清空 workingDir 且不带设备字段(发送后重置)→ 设备一并清掉', async () => {
+    it('显式清空 workingDir 且不带设备字段 → 设备一并清掉', async () => {
       const { getDraft, patchDraft } = await loadModule();
       patchDraft({ deviceLinkDeviceId: 'dev-a', deviceLinkDeviceName: 'Studio Mac', workingDir: null });
       patchDraft({ workingDir: null, extraDirs: [] });

@@ -271,7 +271,8 @@ function sanitize(raw: unknown): NewMakerDraft {
   // F-COLLAB (2026-05): 'orca' 不在表内,历史 localStorage 残留会走同一条回退路径
   // 迁到 'cc'(它已被 ChatInput 底部的协同 toggle 取代),避免空白入口。
   const vendor: MakerVendor = isSelectableVendor(r.vendor) ? r.vendor : def.vendor;
-  const workingDir = normalizeDraftWorkingDir(r.workingDir);
+  // 被控设备不跨重启恢复；它的路径也不能被重新解释成本机路径。
+  const workingDir = r.deviceLinkDeviceId ? null : normalizeDraftWorkingDir(r.workingDir);
   const remoteHostId =
     typeof r.remoteHostId === 'string' && r.remoteHostId.trim().length > 0
       ? r.remoteHostId.trim()
@@ -838,7 +839,7 @@ export function patchDraft(patch: Partial<NewMakerDraft>): void {
   // 提成一级维度后它直接把新流程打死 —— 选设备时传的正是
   // `{ deviceLinkDeviceId, workingDir: null }`,设备刚设上就被清成 null,选设备完全不生效。
   // 现在只保留「未显式带设备字段」这一条:显式指定设备的 patch 一律尊重,
-  // 而 resetDraftWorkspaceAfterSend 之类不带设备字段的清空路径行为不变。
+  // 而 resetDraftWorkspaceTargets 之类不带设备字段的清空路径行为不变。
   if ('workingDir' in patch && !('deviceLinkDeviceId' in patch)) {
     next.deviceLinkDeviceId = null;
     next.deviceLinkDeviceName = null;
@@ -879,6 +880,15 @@ export function patchDraft(patch: Partial<NewMakerDraft>): void {
 export function resetDraftWorkspaceTargets(): void {
   patchDraft({
     workingDir: null,
+    extraDirs: [],
+    writableDirs: [],
+    collab: { ...currentDraft.collab, enabled: false },
+  });
+}
+
+/** 发送成功后保留项目及所属设备，供下次新建沿用；只清理单次草稿的目录授权和协同开关。 */
+export function resetDraftWorkspaceAfterSend(): void {
+  patchDraft({
     extraDirs: [],
     writableDirs: [],
     collab: { ...currentDraft.collab, enabled: false },

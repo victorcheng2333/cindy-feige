@@ -3,7 +3,8 @@
 /**
  * resetDraftWorkspaceTargets —— 「另起一段干净对话」的共享复位入口。
  *
- * 所有预填入口(/issue、通讯录引导、发送后复位)都走它。这里钉住它真的清干净:
+ * 显式预填入口(/issue、通讯录引导)走它；发送成功只清单次草稿状态，保留项目。
+ * 这里钉住它真的清干净:
  * 尤其 extraDirs —— 那是单次草稿的**目录读取授权**,漏掉会让新会话悄悄继承对无关
  * 本地目录的访问权(#1103 review:两个入口各自手写字段清单,都漏了它)。
  */
@@ -16,10 +17,54 @@ import {
   patchCollab,
   patchDraft,
   resetDraftWorkspaceTargets,
+  resetDraftWorkspaceAfterSend,
 } from '@/state/newMakerDraft';
 
 beforeEach(() => {
   __resetForTest();
+});
+
+describe('resetDraftWorkspaceAfterSend', () => {
+  it.each([
+    {
+      workingDir: '/Users/someone/project',
+      remoteHostId: null,
+      deviceLinkDeviceId: null,
+      deviceLinkDeviceName: null,
+    },
+    {
+      workingDir: '/home/user/project',
+      remoteHostId: 'ssh-1',
+      deviceLinkDeviceId: null,
+      deviceLinkDeviceName: null,
+    },
+    {
+      workingDir: '/home/user/project',
+      remoteHostId: null,
+      deviceLinkDeviceId: 'device-1',
+      deviceLinkDeviceName: 'Remote computer',
+    },
+    {
+      workingDir: null,
+      remoteHostId: null,
+      deviceLinkDeviceId: null,
+      deviceLinkDeviceName: null,
+    },
+  ])('保留项目及设备 $workingDir / $remoteHostId / $deviceLinkDeviceId', (target) => {
+    patchDraft({ ...target, extraDirs: ['/reference'], writableDirs: ['/output'] });
+    patchCollab({ enabled: true });
+    const preferences = getDraft().lastByVendor;
+
+    resetDraftWorkspaceAfterSend();
+
+    expect(getDraft()).toMatchObject({
+      ...target,
+      extraDirs: [],
+      writableDirs: [],
+      collab: { enabled: false },
+      lastByVendor: preferences,
+    });
+  });
 });
 
 describe('resetDraftWorkspaceTargets', () => {

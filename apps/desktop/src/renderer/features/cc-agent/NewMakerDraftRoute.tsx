@@ -91,7 +91,7 @@ import {
   fallbackUnavailableVendor,
   markDefaultTupleCustomized,
   clearDefaultTupleTuningCustomization,
-  resetDraftWorkspaceTargets,
+  resetDraftWorkspaceAfterSend,
   getFastModeForModel,
   setFastModeForModel,
   setEffortForModel,
@@ -600,15 +600,6 @@ function getCurrentRoutePath(): string {
 }
 
 /**
- * 发送 / 建目标成功后调用:把草稿 store 的工作区选择复位到默认(对话态、无额外目录)。
- * 具体清哪些字段、为什么只需两个,见 state/newMakerDraft 的 resetDraftWorkspaceTargets ——
- * 该语义已提到 store 侧共享,其它「另起一段干净对话」的入口也走同一个函数。
- */
-function resetDraftWorkspaceAfterSend(): void {
-  resetDraftWorkspaceTargets();
-}
-
-/**
  * 「这份草稿要跑在哪」的目标描述 —— 见组件内 applyDraftTarget。
  *
  * 刻意把 deviceId 与 workingDir 放在一起要求调用方**同时**给出:草稿的运行目标本来就是这个二元组,
@@ -842,7 +833,7 @@ export function NewMakerDraftRoute() {
   // F-COLLAB: 协同模式状态(enabled + worker 类型)直接读自 draft store,
   // 和 workingDir 走同一份 localStorage,重启 / 切走再回都能恢复。
   // 协同与项目/对话形态正交:两种草稿都向 ChatInput 提供入口;项目读项目级策略,
-  // 对话只读用户级/全局级策略。发送成功后 resetDraftWorkspaceTargets 显式消费本次选择。
+  // 对话只读用户级/全局级策略。发送成功后 resetDraftWorkspaceAfterSend 显式消费本次选择。
   const collab = draft.collab;
   // ChatInput 现在要求显式拥有 attachmentState。这条 transient 路由没有
   // sessionId(还没建会话),sessionId 仍传 undefined(图片本地缓存走 base64
@@ -2491,6 +2482,8 @@ export function NewMakerDraftRoute() {
           clearComposerDraftAndNotify(NEW_MAKER_DRAFT_KEY);
           attachmentState.clearFiles();
         }
+        // 此入口直接创建 SSH 任务，尚未经过草稿项目选择；成功后记住完整目标。
+        patchDraft({ workingDir: target.path, remoteHostId: target.hostId });
         resetDraftWorkspaceAfterSend();
         // F-COLLAB: draft 阶段开了协同模式 → 与 send/goal 路径同口径,
         // createSession 后立刻 enableOrca 拉起 Worker;失败 toast 但保留
