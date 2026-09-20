@@ -572,10 +572,10 @@ describe('checkForUpdate Linux installer flow', () => {
 
   it('does not auto-apply a staged Linux .deb at startup', async () => {
     await expect(runStartupUpdate({ platform: 'linux' })).resolves.toMatchObject({
-      hasUpdate: true,
+      hasUpdate: false,
       action: 'none',
-      version: '0.0.65',
     });
+    expect(download).not.toHaveBeenCalled();
   });
 
   it('allows the xd org beta default on Linux x64', async () => {
@@ -780,19 +780,17 @@ describe('app update forward-only policy', () => {
         await expect(handler?.()).resolves.toMatchObject({
           hasUpdate: false,
           action: 'none',
-          error: 'manifest_failed',
         });
         expect(service.getUpdateStatus()).toBe('idle');
-        expect(fs.existsSync(patchPath)).toBe(false);
-        expect(fs.existsSync(path.join(updatesDir, 'patch-info.json'))).toBe(false);
-        expect(fs.existsSync(flagPath)).toBe(false);
+        expect(download).not.toHaveBeenCalled();
+        expect(spawnProcess).not.toHaveBeenCalled();
       } finally {
         service.stopUpdateService();
       }
     },
   );
 
-  it('still restores a newer staged patch when startup is offline', async () => {
+  it('does not restore a newer staged patch when startup is offline', async () => {
     vi.useFakeTimers();
     fetchManifest.mockResolvedValue(null);
     const updatesDir = path.join(TEST_USER_DATA, 'updates');
@@ -814,11 +812,12 @@ describe('app update forward-only policy', () => {
     try {
       const handler = ipcHandlers.get('update-check-startup');
       await expect(handler?.()).resolves.toMatchObject({
-        hasUpdate: true,
-        action: 'relaunch',
-        version: '0.0.65',
+        hasUpdate: false,
+        action: 'none',
       });
-      expect(service.getUpdateStatus()).toBe('ready');
+      expect(service.getUpdateStatus()).toBe('idle');
+      expect(download).not.toHaveBeenCalled();
+      expect(spawnProcess).not.toHaveBeenCalled();
       expect(fs.existsSync(patchPath)).toBe(true);
     } finally {
       service.stopUpdateService();
@@ -851,7 +850,6 @@ describe('app update forward-only policy', () => {
       await expect(handler?.()).resolves.toMatchObject({
         hasUpdate: false,
         action: 'none',
-        error: 'manifest_failed',
       });
       expect(service.getUpdateStatus()).toBe('idle');
       expect(spawnProcess).not.toHaveBeenCalled();
@@ -882,9 +880,7 @@ describe('app update forward-only policy', () => {
     const digest = createHash('sha256').update(stagedBytes).digest('hex');
     const manifest = updateManifest('0.0.65', 'app/windows-x64/staged.zip');
     manifest.app.hotfix.sha256 = digest;
-    fetchManifest
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(manifest);
+    fetchManifest.mockResolvedValue(manifest);
     const updatesDir = path.join(TEST_USER_DATA, 'updates');
     fs.mkdirSync(updatesDir, { recursive: true });
     fs.writeFileSync(path.join(updatesDir, 'staged.zip'), stagedBytes);
@@ -905,12 +901,12 @@ describe('app update forward-only policy', () => {
       await expect(startupHandler?.()).resolves.toMatchObject({
         hasUpdate: false,
         action: 'none',
-        error: 'manifest_failed',
       });
+      expect(fetchManifest).not.toHaveBeenCalled();
 
       const checkNowHandler = ipcHandlers.get('update-check-now');
       await expect(checkNowHandler?.()).resolves.toEqual({ result: 'ready' });
-      expect(fetchManifest).toHaveBeenCalledTimes(2);
+      expect(fetchManifest).toHaveBeenCalledTimes(1);
       expect(download).not.toHaveBeenCalled();
     } finally {
       service.stopUpdateService();
@@ -1007,11 +1003,7 @@ describe('app update forward-only policy', () => {
     const service = await freshUpdateService('win32');
     service.initUpdateService();
     try {
-      const handler = ipcHandlers.get('update-check-startup');
-      await expect(handler?.()).resolves.toMatchObject({
-        hasUpdate: true,
-        version: '0.0.65',
-      });
+      await expect(service.checkForUpdate(manifest)).resolves.toBe('ready');
       expect(download).toHaveBeenCalledTimes(1);
       expect(download.mock.calls[0]?.[0]).toMatchObject({ sha256: digest });
       expect(fs.readFileSync(path.join(updatesDir, 'cindy-0.0.65.zip'), 'utf8')).toBe('new-bytes');
@@ -1048,11 +1040,7 @@ describe('app update forward-only policy', () => {
     const service = await freshUpdateService('win32');
     service.initUpdateService();
     try {
-      const handler = ipcHandlers.get('update-check-startup');
-      await expect(handler?.()).resolves.toMatchObject({
-        hasUpdate: true,
-        version: '0.0.65',
-      });
+      await expect(service.checkForUpdate(manifest)).resolves.toBe('ready');
       expect(download).toHaveBeenCalledTimes(1);
       expect(fs.readFileSync(path.join(updatesDir, 'staged.zip'), 'utf8')).toBe('fresh-bytes');
     } finally {
@@ -1089,17 +1077,12 @@ describe('app update forward-only policy', () => {
     const service = await freshUpdateService('win32');
     service.initUpdateService();
     try {
-      const handler = ipcHandlers.get('update-check-startup');
-      await expect(handler?.()).resolves.toMatchObject({
-        hasUpdate: true,
-        action: 'none',
-        version: '0.0.65',
-      });
+      await expect(service.checkForUpdate(manifest)).resolves.toBe('ready');
       expect(download).not.toHaveBeenCalled();
 
       ipcListeners.get('update-relaunch')?.({}, 'dark');
 
-      expect(checkWindowsUpdaterPrerequisites).toHaveBeenCalledTimes(2);
+      expect(checkWindowsUpdaterPrerequisites).toHaveBeenCalled();
       expect(logError).not.toHaveBeenCalledWith(
         'Windows update archive is missing its trusted manifest SHA-256',
       );
@@ -1134,14 +1117,14 @@ describe('app update forward-only policy', () => {
         action: 'none',
       });
       expect(download).not.toHaveBeenCalled();
-      expect(fs.existsSync(patchPath)).toBe(false);
-      expect(fs.existsSync(path.join(updatesDir, 'patch-info.json'))).toBe(false);
+      expect(service.getUpdateStatus()).toBe('idle');
+      expect(spawnProcess).not.toHaveBeenCalled();
     } finally {
       service.stopUpdateService();
     }
   });
 
-  it('discards a newer local patch that is no longer advertised by the online manifest', async () => {
+  it('does not apply a newer local patch at startup even if the online manifest no longer advertises it', async () => {
     vi.useFakeTimers();
     fetchManifest.mockResolvedValue(updateManifest('0.0.64'));
     const updatesDir = path.join(TEST_USER_DATA, 'updates');
@@ -1167,8 +1150,8 @@ describe('app update forward-only policy', () => {
         action: 'none',
       });
       expect(service.getUpdateStatus()).toBe('idle');
-      expect(fs.existsSync(patchPath)).toBe(false);
-      expect(fs.existsSync(path.join(updatesDir, 'patch-info.json'))).toBe(false);
+      expect(download).not.toHaveBeenCalled();
+      expect(spawnProcess).not.toHaveBeenCalled();
     } finally {
       service.stopUpdateService();
     }
@@ -1305,49 +1288,67 @@ describe('app update forward-only policy', () => {
 });
 
 describe('startup update relaunch safety', () => {
-  // Startup/splash auto-applies a staged patch as soon as it is ready — the
-  // historic behavior restored deliberately (owner-approved). A fresh launch has
-  // no in-flight agent turn / schedule to protect, so the startup gate skips the
-  // idle/busy/user-active checks that guard the *background* auto-relaunch and
-  // keeps only the essentials (disabled / dev / not-ready / relaunching).
-  it('auto-applies a staged startup update as soon as it is ready', async () => {
+  // Startup must not fetch, download, or apply an app update. Users enter the
+  // installed version even when a newer build exists; Settings and the 30-minute
+  // background poll remain the upgrade paths.
+  it('does not fetch, download, or apply an app update during startup', async () => {
     await expect(runStartupUpdate()).resolves.toMatchObject({
-      hasUpdate: true,
-      action: 'relaunch',
-      version: '0.0.65',
+      hasUpdate: false,
+      action: 'none',
     });
+    expect(fetchManifest).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('waits a full polling interval before the first automatic check and stops cleanly', async () => {
+    vi.useFakeTimers();
+    fetchManifest.mockResolvedValue(updateManifest('0.0.64'));
+    const service = await freshUpdateService('darwin');
+    service.initUpdateService();
+    try {
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000 - 1);
+      expect(fetchManifest).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchManifest).toHaveBeenCalledTimes(1);
+      service.stopUpdateService();
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+      expect(fetchManifest).toHaveBeenCalledTimes(1);
+    } finally {
+      service.stopUpdateService();
+    }
   });
 
   it.each(['idle', 'active', 'unknown', 'locked'] as const)(
-    'auto-applies at startup regardless of system idle state (%s)',
+    'does not auto-apply at startup regardless of system idle state (%s)',
     async (idleState) => {
       await expect(runStartupUpdate({ idleState })).resolves.toMatchObject({
-        hasUpdate: true,
-        action: 'relaunch',
-        version: '0.0.65',
+        hasUpdate: false,
+        action: 'none',
       });
+      expect(download).not.toHaveBeenCalled();
     },
   );
 
-  it('auto-applies at startup even when agent tasks are busy', async () => {
+  it('does not auto-apply at startup even when agent tasks are busy', async () => {
     await expect(runStartupUpdate({ busy: true })).resolves.toMatchObject({
-      action: 'relaunch',
+      hasUpdate: false,
+      action: 'none',
     });
+    expect(download).not.toHaveBeenCalled();
   });
 
-  it('auto-applies startup updates even when idle auto-install is disabled', async () => {
+  it('does not auto-apply startup updates even when idle auto-install is disabled', async () => {
     await expect(runStartupUpdate({ enabled: false })).resolves.toMatchObject({
-      hasUpdate: true,
-      action: 'relaunch',
-      version: '0.0.65',
+      hasUpdate: false,
+      action: 'none',
     });
+    expect(download).not.toHaveBeenCalled();
   });
 
   it('never runs the startup update flow (nor the native updater) on a dev build', async () => {
-    // The handler bails before any update work in dev (updater can't replace a
-    // forge/dev instance); the startup gate's `dev` branch is defense-in-depth.
     isDev.mockReturnValue(true);
     await expect(runStartupUpdate()).resolves.toMatchObject({ hasUpdate: false, action: 'none' });
+    expect(download).not.toHaveBeenCalled();
   });
 
   it('keeps startup and manual relaunch IPC paths separate', async () => {
@@ -1369,23 +1370,20 @@ describe('startup update relaunch safety', () => {
       // Manual "立即重启" path stays a separate, unguarded listener.
       expect(ipcListeners.get('update-relaunch')).toBeTypeOf('function');
 
-      await expect(startupHandler?.()).resolves.toMatchObject({ action: 'relaunch' });
-
-      // Startup/Splash relaunch is independent from the background idle setting.
-      readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
-      expect(service.getUpdateStatus()).toBe('ready');
+      await expect(startupHandler?.()).resolves.toMatchObject({ hasUpdate: false, action: 'none' });
+      expect(service.getUpdateStatus()).toBe('idle');
+      expect(download).not.toHaveBeenCalled();
     } finally {
       service.stopUpdateService();
     }
   });
 
-  /** Boots the startup flow (staging a patch) and hands back the live module. */
+  /** Stages a patch via the regular check/download path and hands back the live module. */
   async function bootWithStagedPatch(options: {
     enabled?: boolean;
     manifest?: ReturnType<typeof updateManifest>;
   } = {}) {
     vi.useFakeTimers();
-    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: options.enabled ?? true });
     fetchManifest.mockResolvedValue(options.manifest ?? updateManifest());
     download.mockImplementation(async ({ targetPath }: { targetPath: string }) => {
       fs.mkdirSync(path.join(TEST_USER_DATA, 'updates'), { recursive: true });
@@ -1395,9 +1393,12 @@ describe('startup update relaunch safety', () => {
 
     const service = await freshUpdateService('darwin');
     service.initUpdateService();
-    const handler = ipcHandlers.get('update-check-startup');
-    if (!handler) throw new Error('update-check-startup handler not registered');
-    await handler();
+    // Stage through checkForUpdate with auto-relaunch off so setStatus('ready')
+    // does not start an apply. Restore the requested switch afterwards — the
+    // old startup handler assigned currentStatus without broadcasting ready.
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: false });
+    await service.checkForUpdate(options.manifest ?? updateManifest());
+    readAutoUpdateSettings.mockReturnValue({ autoRelaunchOnIdle: options.enabled ?? true });
     return service;
   }
 
@@ -2100,7 +2101,7 @@ describe('startup update relaunch safety', () => {
     }
   });
 
-  it('does not apply a leftover patch after an offline channel change', async () => {
+  it('does not apply a leftover patch at startup after an offline channel change', async () => {
     const updatesDir = path.join(TEST_USER_DATA, 'updates');
     fs.mkdirSync(updatesDir, { recursive: true });
     fs.writeFileSync(path.join(updatesDir, 'xdt-maker-0.0.65.zip'), 'update');
@@ -2128,14 +2129,10 @@ describe('startup update relaunch safety', () => {
       await expect(handler?.()).resolves.toMatchObject({
         hasUpdate: false,
         action: 'none',
-        error: 'manifest_failed',
       });
       expect(service.getUpdateStatus()).toBe('idle');
-      await vi.waitFor(() => {
-        expect(fs.existsSync(path.join(updatesDir, 'patch-info.json'))).toBe(false);
-        expect(fs.existsSync(path.join(updatesDir, 'xdt-maker-0.0.65.zip'))).toBe(false);
-        expect(fs.existsSync(flagPath)).toBe(false);
-      });
+      expect(spawnProcess).not.toHaveBeenCalled();
+      expect(download).not.toHaveBeenCalled();
     } finally {
       service.stopUpdateService();
     }
@@ -2221,15 +2218,10 @@ describe('Windows updater prerequisites', () => {
     try {
       const startupHandler = ipcHandlers.get('update-check-startup');
       await expect(startupHandler?.()).resolves.toMatchObject({
-        hasUpdate: true,
+        hasUpdate: false,
         action: 'none',
-        version: '0.0.65',
       });
-      expect(ipcHandlers.get('update-get-status')?.()).toMatchObject({
-        status: 'ready',
-        version: '0.0.65',
-        errorCode: 'windows_vc_runtime_missing',
-      });
+      expect(download).not.toHaveBeenCalled();
       expect(spawnProcess).not.toHaveBeenCalled();
       expect(service.isUpdateRelaunchImminent()).toBe(false);
     } finally {

@@ -118,7 +118,6 @@ export function BotModelChainEditor({
         onFastModeChange={(fastMode) => replace(index, { fastMode })}
         onNavigateToProviders={remote ? undefined : onNavigateToProviders}
         configurationEnabled
-        unifiedPanel
         unifiedAgents={unifiedAgents}
         onUnifiedSelect={(selection) => {
           if (!visibleVendors.includes(selection.engine)) return;

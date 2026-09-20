@@ -13,6 +13,7 @@
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
+import type { ProviderView } from '@cindy/model-providers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', async (importOriginal) => ({
@@ -292,8 +293,6 @@ beforeEach(() => {
 function renderSelector(props: Partial<React.ComponentProps<typeof ModelSelector>> = {}) {
   return render(
     React.createElement(ModelSelector, {
-      // Compatibility renderer for capabilities-only remote hosts.
-      unifiedPanel: false,
       modelId: 'claude-opus-4-8',
       effort: 'high',
       onModelChange: vi.fn(),
@@ -562,6 +561,80 @@ async function waitForSearchInputFocus(): Promise<HTMLElement> {
 }
 
 describe('ModelSelector provider groups', () => {
+  it.each(['provider', 'configuration'] as const)('keeps the original picker open until the %s write succeeds', async (kind) => {
+    let finish!: (ok: boolean) => void;
+    const change = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    renderSelector(kind === 'provider'
+      ? { onProviderChange: change }
+      : { onProviderChange: undefined, onUnifiedSelect: change, unifiedAgents: ['claude-code'] });
+    await openDropdown();
+    expect(document.querySelector('[data-unified-model-panel]')).toBeNull();
+    for (const success of [false, true]) {
+      await act(async () => { fireEvent.click(screen.getByText('Sonnet 4.6')); });
+      expect(screen.getByRole('listbox', { name: '模型列表' })).toBeTruthy();
+      await act(async () => { finish(success); });
+      if (!success) expect(screen.getByRole('listbox', { name: '模型列表' })).toBeTruthy();
+    }
+    expect(screen.queryByRole('listbox', { name: '模型列表' })).toBeNull();
+    if (kind === 'configuration') {
+      expect(change).toHaveBeenLastCalledWith(expect.objectContaining({
+        engine: 'cc', providerId: 'anthropic', modelId: 'claude-sonnet-4-6', effort: 'medium', fast: false,
+      }));
+    }
+  });
+
+  it('retains the model list when saving throws and allows a retry', async () => {
+    const change = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(true);
+    renderSelector({ onProviderChange: change });
+    await openDropdown();
+    await act(async () => { fireEvent.click(screen.getByText('Sonnet 4.6')); });
+    expect(screen.getByRole('listbox', { name: '模型列表' })).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByText('Sonnet 4.6')); });
+    expect(screen.queryByRole('listbox', { name: '模型列表' })).toBeNull();
+  });
+
+  it('keeps the selected row open when a reselect write throws synchronously', async () => {
+    const change = vi.fn().mockImplementationOnce(() => { throw new Error('offline'); }).mockReturnValue(true);
+    renderSelector({ onProviderChange: change, reselectEmitsChange: true });
+    await openDropdown();
+    await act(async () => { fireEvent.click(screen.getByRole('option', { name: /Opus 4\.8/ })); });
+    expect(screen.getByRole('listbox', { name: '模型列表' })).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('option', { name: /Opus 4\.8/ })); });
+    expect(screen.queryByRole('listbox', { name: '模型列表' })).toBeNull();
+    expect(change).toHaveBeenCalledTimes(2);
+  });
+
+  it('limits legacy session engine tabs to the available runtimes', async () => {
+    renderSelector({
+      unifiedAgents: ['claude-code', 'codex'],
+      agentSwitch: { currentVendor: 'cc', onSwitch: vi.fn() },
+    });
+    await openDropdown();
+    expect(screen.getByRole('tab', { name: 'Claude' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Codex' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Pi' })).toBeNull();
+  });
+
+  it('keeps curated cross-agent provider routes available without a selected model', async () => {
+    const model = { id: 'vision-model', name: 'Vision Model', contextWindow: 200000, efforts: [], defaultEffort: null, defaultEnabled: false };
+    const providers = ['first', 'second'].map<ProviderView>((id) => ({
+      id, name: id, source: 'user', connected: true, agents: ['codex'],
+      auth: { method: 'apiKey' },
+      routing: { codex: { upstream: 'https://example.test', authStrategy: 'api-key-header' } },
+      models: { codex: [model] },
+    }));
+    const change = vi.fn();
+    renderSelector({
+      vendorKey: undefined, modelId: '', currentProviderId: null, configurationEnabled: false,
+      providersOverride: providers,
+      onProviderChange: change,
+    });
+    await openDropdown();
+    const group = screen.getByRole('group', { name: 'second' });
+    await act(async () => { fireEvent.click(within(group).getByRole('option', { name: /Vision Model/ })); });
+    expect(change).toHaveBeenCalledWith('second', 'vision-model', '');
+  });
+
   it('offers source navigation with only a connected media provider and no chat candidates', async () => {
     providersRef.providers = [{
       id: 'gemini', name: 'Gemini', source: 'builtin', connected: true,

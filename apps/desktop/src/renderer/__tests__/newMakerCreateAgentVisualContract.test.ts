@@ -68,15 +68,17 @@ describe('NewMakerDraftRoute CREATE AGENT visual contract', () => {
     expect(source).toContain('testId="create-agent-brand-lockup"');
     expect(source).toContain('<HomeSuggestionList');
     expect(source).toContain('<ChatInput');
-    // A 默认包含引擎选择；仅在老被控端缺供应商目录时恢复独立引擎下拉。
+    // 本机原始面板与老被控端兼容面板均使用独立引擎下拉。
     expect(source).not.toContain('<VendorSegmentedSwitcher');
     expect(source).toContain('unifiedModelPanelActive ? undefined : (');
     expect(source).toMatch(/middleToolbarSlot=\{\s*\n\s*unifiedModelPanelActive \? undefined : \(/);
     expect(source).toMatch(
       /compactMiddleToolbarSlot=\{\s*\n\s*unifiedModelPanelActive \? undefined : \(/,
     );
-    // 新旧用户只按能力启用，不读取历史样式偏好。
-    expect(source).toMatch(/const unifiedModelPanelActive = unifiedModelPanelEnabled;/);
+    // 新建任务始终显示原始面板与独立引擎下拉。
+    expect(source).toContain(
+      'const unifiedModelPanelActive = false;',
+    );
     expect(source).not.toContain('<HomeUsageDashboard');
     expect(source).not.toContain('newChat.createAgent.more');
     expect(source).not.toContain('data-testid="create-agent-sidebar"');

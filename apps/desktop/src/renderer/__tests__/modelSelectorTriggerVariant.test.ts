@@ -825,7 +825,9 @@ describe('ModelSelector trigger variants', () => {
       });
       expect(screen.getByText('newChat.modelSelector.discovering')).toBeTruthy();
 
-      fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('option', { name: /Sonnet 4\.6/ }));
+      });
       expect(screen.queryByText('newChat.modelSelector.discovering')).toBeNull();
 
       act(() => {
@@ -2616,7 +2618,7 @@ describe('ModelSelector trigger variants', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Fast Mode' }));
 
       expect(setFast).toHaveBeenCalledWith('claude-code', 'anthropic', 'claude-sonnet-4-6', true);
-      expect(onProviderChange).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6', 'medium');
+      expect(onProviderChange).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6', 'medium', true);
       expect(onDismiss).not.toHaveBeenCalled();
       expect(setFast.mock.invocationCallOrder[0]).toBeLessThan(
         onProviderChange.mock.invocationCallOrder[0],
@@ -2816,7 +2818,7 @@ describe('ModelSelector trigger variants', () => {
       fireEvent.click(within(options).getByRole('option', { name: 'low' }));
       expect(setEffort).toHaveBeenCalledWith('codex', 'zeta-codex', 'gpt-5.5', 'low');
       expect(confirmBrowseSwitch).toHaveBeenCalledTimes(1);
-      await waitFor(() => expect(onSwitch).toHaveBeenCalledWith('codex', 'gpt-5.5', 'zeta-codex'));
+      await waitFor(() => expect(onSwitch).toHaveBeenCalledWith('codex', 'gpt-5.5', 'zeta-codex', { effort: 'low', fastMode: undefined }));
       expect(onDismiss).not.toHaveBeenCalled();
       // 配置点击同时选中目标模型；确认门仍只在 Agent 分段切换。
       expect(confirmBrowseSwitch).toHaveBeenCalledTimes(1);

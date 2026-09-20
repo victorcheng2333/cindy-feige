@@ -216,6 +216,8 @@ function renderPanel(
 ): ReturnType<typeof render> {
   return render(
     React.createElement(ModelSelectorContent, {
+      // Retained historical panel tests opt in explicitly; product entries use the original picker.
+      unifiedPanel: true,
       modelId: 'claude-opus-5',
       effort: 'medium',
       onModelChange: vi.fn(),
@@ -645,7 +647,7 @@ describe('统一面板 · 会话内形态', () => {
     expect(within(screen.getByRole('listbox')).getByText('Opus 5')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^仅 / })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Cindy AI' }));
-    rerender(React.createElement(ModelSelectorContent, { ...props, sessionEngineFilter }));
+    rerender(React.createElement(ModelSelectorContent, { ...props, unifiedPanel: true, sessionEngineFilter }));
     expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-pressed')).toBe('true');
     expect(within(screen.getByRole('listbox')).getByText('Opus 5')).toBeTruthy();
   });
@@ -3938,7 +3940,7 @@ describe('统一面板 · 清收藏锚点也等待回执', () => {
   });
 });
 
-describe('global default A contract', () => {
+describe('historical A panel contract', () => {
   it.each([false, ['pi'] as const])('hides Fast when this entry cannot dispatch it (%s)', async (fastModeConfigurable) => {
     const select = vi.fn();
     renderPanel({ vendorKey: 'codex', modelId: 'gpt-5.5', currentProviderId: 'xd',
@@ -3949,7 +3951,7 @@ describe('global default A contract', () => {
     expect(select).toHaveBeenCalledWith(expect.objectContaining({ engine: 'codex', fast: false }));
   });
 
-  it('defaults to A and limits a model-only settings field to its writable Harness', async () => {
+  it('limits a model-only settings field to its writable Harness', async () => {
     const change = vi.fn();
     const { container } = renderPanel({ vendorKey: 'cc', onProviderChange: change,
       onFastModeChange: undefined });
@@ -4015,11 +4017,15 @@ describe('Teammate settings with the real model picker', () => {
     const view = render(<Editor />);
     fireEvent.click(view.container.querySelector('button[aria-haspopup="listbox"]')!);
     await screen.findByRole('listbox');
-    const flyout = await openRowFlyout('GPT-5.5');
-    const fast = await within(flyout).findByRole('button', { name: 'newChat.modelSelector.unified.fastTip' });
-    await act(async () => { fireEvent.click(fast); });
-    await act(async () => { fireEvent.keyDown(within(flyout).getByRole('slider'), { key: 'ArrowLeft' }); });
-    await act(async () => { fireEvent.click(within(rowFor('GPT-5.5')).getByText('GPT-5.5')); });
+    expect(document.querySelector('[data-unified-model-panel]')).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
+    await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-codex')); });
+    const row = within(screen.getByRole('listbox', { name: '模型列表' })).getByText('GPT-5.5').closest('[role="option"]')!;
+    await act(async () => { fireEvent.keyDown(row, { key: 'ArrowLeft' }); });
+    const flyout = await screen.findByRole('group', { name: 'GPT-5.5 newChat.modelSelector.options' });
+    await act(async () => { fireEvent.click(within(flyout).getByRole('button', { name: 'Fast Mode' })); });
+    await act(async () => { fireEvent.click(within(flyout).getByRole('option', { name: '低' })); });
+    await act(async () => { fireEvent.click(row); });
     await waitFor(() => expect(change).toHaveBeenCalled());
     expect(change).toHaveBeenLastCalledWith([expect.objectContaining({
       harness: 'codex', providerId: 'xd', model: 'gpt-5.5', effort: 'low', fastMode: true,
@@ -4040,11 +4046,11 @@ it('teammate fallback exposes supported Harness choices and preserves the primar
   fireEvent(details, new Event('toggle'));
   fireEvent.click(details.querySelector('button[aria-haspopup="listbox"]')!);
   await screen.findByRole('listbox');
-  const flyout = await openRowFlyout('GPT-5.6');
-  const cc = flyout.querySelector('[data-engine-capsule="cc"]') as HTMLElement;
-  const codex = flyout.querySelector('[data-engine-capsule="codex"]');
-  expect(cc).toBeTruthy(); expect(codex).toBeTruthy();
-  await act(async () => { fireEvent.click(cc); });
-  await act(async () => { fireEvent.click(within(rowFor('GPT-5.6')).getByText('GPT-5.6')); });
+  expect(document.querySelector('[data-unified-model-panel]')).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
+  expect(screen.getByTestId('agent-select-option-codex')).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-cc')); });
+  const row = within(screen.getByRole('listbox', { name: '模型列表' })).getByText('GPT-5.6').closest('[role="option"]')!;
+  await act(async () => { fireEvent.click(row); });
   expect(change).toHaveBeenLastCalledWith([primary, expect.objectContaining({ harness: 'claude', providerId: 'openai', model: 'chatgpt/gpt-5.6' })]);
 });

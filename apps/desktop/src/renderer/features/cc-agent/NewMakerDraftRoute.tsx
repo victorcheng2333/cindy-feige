@@ -1274,10 +1274,9 @@ export function NewMakerDraftRoute() {
     unsupported: deviceProvidersUnsupported,
   } = useDeviceProviders(effectiveDeviceLinkDeviceId);
   const providers = effectiveDeviceLinkDeviceId ? deviceProviders : localProviders;
-  // 新旧用户统一使用 A。老被控端只有 capabilities、没有供应商目录时，
-  // 保留兼容列表与引擎下拉；否则联合列表会为空，也无法切换引擎。
+  // 恢复原始选择器与独立引擎下拉；与 ChatInput 的面板选择保持一致。
   const unifiedModelPanelEnabled = !effectiveDeviceLinkDeviceId || !deviceProvidersUnsupported;
-  const unifiedModelPanelActive = unifiedModelPanelEnabled;
+  const unifiedModelPanelActive = false;
   const remoteModelListStatus = !isDeviceLinkDraft
     ? 'idle'
     : capabilitiesError || (deviceProvidersError && !deviceProvidersUnsupported)
