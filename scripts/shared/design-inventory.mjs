@@ -204,7 +204,7 @@ function matchingBracket(source, open) {
   return -1;
 }
 
-const ROUTE_KEY_RE = /(path|index|element|children)\s*:/y;
+const ROUTE_KEY_RE = /(path|index|element|children|lazy)\s*:/y;
 
 /** 抽出对象字面量体里 depth-0 的路由键，忽略嵌套对象与 JSX 属性里的同名键。 */
 function topLevelRouteKeys(body) {
@@ -255,6 +255,22 @@ function parseRouteObject(body) {
     const element = body.slice(elementAt);
     route.component = /^\s*<([A-Za-z][\w.]*)/.exec(element)?.[1];
     if (route.component === 'Navigate') route.to = /\bto="([^"]*)"/.exec(element)?.[1] ?? '';
+  }
+
+  const lazyAt = keys.get('lazy');
+  if (elementAt === undefined && lazyAt !== undefined) {
+    // Inline React Router lazy routes return their component after import().
+    // Bound the scan to this function so a child/sibling cannot supply it.
+    const lazy = body.slice(lazyAt);
+    const header = /^\s*(?:async\s+)?\(\s*\)\s*=>\s*\{/.exec(lazy);
+    if (header) {
+      const open = header[0].length - 1;
+      const close = matchingBracket(lazy, open);
+      if (close !== -1) {
+        route.component = /\breturn\s*\{\s*Component:\s*([A-Za-z][\w.]*)\s*,?\s*\};?\s*$/
+          .exec(lazy.slice(open + 1, close))?.[1];
+      }
+    }
   }
 
   const childrenAt = keys.get('children');

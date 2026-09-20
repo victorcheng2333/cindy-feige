@@ -11,6 +11,12 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+const viewerModuleLoaded = vi.hoisted(() => vi.fn());
+vi.mock('@google/model-viewer', () => {
+  viewerModuleLoaded();
+  return {};
+});
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: string) => fallback ?? key }),
 }));
@@ -72,6 +78,7 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
     );
     const trigger = screen.getByRole('button', { name: 'model-preview.png' });
     trigger.focus();
+    expect(viewerModuleLoaded).not.toHaveBeenCalled();
 
     fireEvent.keyDown(trigger, { key: 'Enter' });
     // 真实 ModelLightbox:portal 内出现 <model-viewer>(jsdom 不升级自定义
@@ -82,6 +89,8 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
     // 焦点进入 lightbox(FocusScope 挂载焦点落在 overlay 根)。
     expect(document.activeElement?.contains(modelViewer as Element)).toBe(true);
     expect(document.activeElement).not.toBe(trigger);
+
+    await waitFor(() => expect(viewerModuleLoaded).toHaveBeenCalledTimes(1));
 
     // Esc 延迟关闭后回到触发器。
     fireEvent.keyDown(document, { key: 'Escape' });

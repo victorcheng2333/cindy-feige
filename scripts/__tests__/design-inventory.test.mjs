@@ -189,6 +189,34 @@ test('extractRouterFacts: 注释插在 { 与 path 之间仍能抽出;Navigate �
   );
 });
 
+test('extractRouterFacts: lazy Component 保留页面身份且不跨函数绑定', () => {
+  const fixture = `
+    createHashRouter([
+      {
+        path: 'settings',
+        lazy: async () => {
+          const { SettingsView } = await import('./SettingsView');
+          return { Component: SettingsView };
+        },
+      },
+      {
+        path: 'loader-only',
+        lazy: async () => { return { loader: loadData }; },
+        children: [{ path: 'child', element: <ChildView /> }],
+      },
+      { path: 'other', element: <OtherView /> },
+      { path: 'billing', element: <Navigate to="/settings?tab=billing" replace /> },
+    ]);
+  `;
+  const { production, redirects } = extractRouterFacts(fixture);
+  assert.deepEqual(production.map((row) => `${row.path}:${row.component}`), [
+    '/loader-only/child:ChildView', '/other:OtherView', '/settings:SettingsView',
+  ]);
+  assert.deepEqual(redirects.map((row) => `${row.path}->${row.to}`), [
+    '/billing->/settings?tab=billing',
+  ]);
+});
+
 test('extractRouterFacts: 嵌套 children 的全路径由结构拼出,不靠前缀表', () => {
   const fixture = `
     export const router = createHashRouter([

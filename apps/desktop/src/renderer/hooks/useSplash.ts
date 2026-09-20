@@ -78,9 +78,9 @@ export function readSplashPhaseFixture(
     : null;
 }
 
-// 2026-07-19 用户拍板:1500 → 3000,splash 立绘一闪而过看不清,最短停留延长到 3s
-// (淡出仍需"加载完成 && 满足地板时长"双条件,慢加载时不叠加额外等待)。
-const MIN_DISPLAY_MS = 3000;
+// Ordinary startup exits as soon as the app is ready. Keep the existing display
+// floor only for update relaunches, so their completion message remains readable.
+const MIN_UPDATE_DISPLAY_MS = 3000;
 const FADE_FALLBACK_MS = 500;
 // splash_update_done 阶段先让 "更新完成，等待自动重启..." 这段提示文案显示 1.5s，
 // 再自动触发 relaunch，避免下载条刚到 100% 用户还没看清就直接整个窗口黑掉。
@@ -103,21 +103,7 @@ export function useSplash() {
   const { errorCode: updateErrorCode } = useUpdateStatus();
 
   const [phase, setPhase] = useState<SplashPhase>('init');
-  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
-
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const minTimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Effect 1: minimum display timer ──
-  useEffect(() => {
-    minTimeTimerRef.current = setTimeout(() => setMinTimeElapsed(true), MIN_DISPLAY_MS);
-    return () => {
-      if (minTimeTimerRef.current !== null) {
-        clearTimeout(minTimeTimerRef.current);
-        minTimeTimerRef.current = null;
-      }
-    };
-  }, []);
 
   // ── Effect 2: envStatus drives phase ──
   useEffect(() => {
@@ -161,12 +147,12 @@ export function useSplash() {
 
   // ── Effect 3: fade-out trigger ──
   // coverHeld:已登录但 LocalDbGate 还不能画主界面。splash 必须继续盖住
-  // (DESIGN.md §10),否则 3s 地板一过会露出默认白底。
+  // (DESIGN.md §10),避免准备完成前露出空白底。
   useEffect(() => {
-    if (phase === 'splash_passed' && minTimeElapsed && !authInitializing && !coverHeld) {
+    if (phase === 'splash_passed' && !authInitializing && !coverHeld) {
       setPhase('fading_out');
     }
-  }, [phase, minTimeElapsed, authInitializing, coverHeld]);
+  }, [phase, authInitializing, coverHeld]);
 
   // ── Effect 4: fading_out fallback ──
   useEffect(() => {
@@ -259,8 +245,8 @@ export function useSplash() {
   // 自动触发 relaunch。用 ref 保证同一会话只触发一次;若期间 spawn 失败,Effect 2b
   // 会把 phase 切到 splash_spawn_failed,这里依然只是已经发过一次 IPC,由 spawn 失败
   // dialog 接管。
-  // 重启时机同时守两条契约(2026-07-19 review 收口):挂载累计 ≥ MIN_DISPLAY_MS
-  // (3s 地板对所有启动路径生效,热更路径不许提前销毁 renderer) 且 更新完成提示
+  // 更新重启仍守两条契约:挂载累计 ≥ MIN_UPDATE_DISPLAY_MS
+  // (仅更新路径保留 3s 地板) 且 更新完成提示
   // 至少展示 AUTO_RELAUNCH_DELAY_MS——取两者剩余量的较大者作为延时。
   const mountedAtRef = useRef(Date.now());
   const autoRelaunchFiredRef = useRef(false);
@@ -271,7 +257,7 @@ export function useSplash() {
     }
     if (autoRelaunchFiredRef.current) return;
 
-    const minDisplayRemaining = Math.max(0, MIN_DISPLAY_MS - (Date.now() - mountedAtRef.current));
+    const minDisplayRemaining = Math.max(0, MIN_UPDATE_DISPLAY_MS - (Date.now() - mountedAtRef.current));
     const relaunchDelay = Math.max(AUTO_RELAUNCH_DELAY_MS, minDisplayRemaining);
     const timer = setTimeout(() => {
       autoRelaunchFiredRef.current = true;
@@ -322,10 +308,6 @@ export function useSplash() {
     if (fallbackTimerRef.current !== null) {
       clearTimeout(fallbackTimerRef.current);
       fallbackTimerRef.current = null;
-    }
-    if (minTimeTimerRef.current !== null) {
-      clearTimeout(minTimeTimerRef.current);
-      minTimeTimerRef.current = null;
     }
     setPhase('splash_skipped');
   }, []);

@@ -87,7 +87,7 @@ describe('useSplash startup auto relaunch', () => {
   });
 
   it('holds the update relaunch until the 3s splash display floor elapses', async () => {
-    // 热更路径不许绕过 MIN_DISPLAY_MS(3s)地板:update_done 在挂载即达时,
+    // 热更路径保留 MIN_UPDATE_DISPLAY_MS(3s)地板:update_done 在挂载即达时,
     // relaunch 延时 = max(提示最短 1.5s, 地板剩余 3s) = 3s。
     mocks.autoRelaunchToUpdate.mockResolvedValue({ accepted: true });
     renderHook(() => useSplash());

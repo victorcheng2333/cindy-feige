@@ -1320,6 +1320,8 @@ The brand block reads only `brand.icon/logo` — no compatibility with the legac
 
 The splash wordmark is a separate asset pair (`assets/splash/wordmark.png`, white text, for DARK / `wordmark-light.png`, dark text, for LIGHT): both 459×156 (@2x) with a 229.5×78 render frame (its exact 2x full frame), and **neither carries a drop shadow** — `SplashScreen.test.tsx` asserts the absence. (Asset-size and shadow history: decision log.)
 
+Ordinary Desktop startup has no minimum splash display duration (owner-approved startup optimization, 2026-09-20): fade out once environment checks, auth initialization and the app-shell cover are ready. Keep the existing fade and reduced-motion behavior in both modes. Update relaunches retain their 3-second display floor and 1.5-second completion-message minimum. See `useSplash.ts` and `useSplashPhases.test.tsx`.
+
 **Reserved artwork namespace — Bot avatar sentinels (Desktop registered 2026-08-17).**
 
 - **Where**: the Bot identity mark only — `features/bots/BotAvatar.tsx`. A Bot's `avatar` field holds either one grapheme or a reserved `cindy://avatar/…` sentinel (`botAvatarIdentity.ts`). The three user-selected Cindy, Dash and LiZi preset portraits share this component and its round crop. Custom graphemes and the initial-letter fallback render over the §10 `--bot-avatar-*-bg` hue.
