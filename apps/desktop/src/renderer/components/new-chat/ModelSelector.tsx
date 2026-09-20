@@ -61,6 +61,7 @@ import {
 import { ThinkingToggle } from './ThinkingToggle';
 import { useModelDiscoveryPending } from './useModelDiscoveryPending';
 import { VendorSegmentedSwitcher } from './VendorSegmentedSwitcher';
+import { AgentSelect } from './AgentSelect';
 import {
   evictDeviceCapabilities,
   prefetchDeviceCapabilities,
@@ -708,7 +709,7 @@ interface ModelSelectorProps {
   configurationEnabled?: boolean;
   /** Restrict Fast to the Harnesses this entry can persist and dispatch; false disables it. */
   fastModeConfigurable?: boolean | readonly AgentKind[];
-  /** 语义同 ModelSelectorContentProps.unifiedPanel（统一模型选择器面板，默认开启）。 */
+  /** 历史联合面板；产品入口默认使用原始供应商分组面板。 */
   unifiedPanel?: boolean;
   /** 语义同 ModelSelectorContentProps.sessionEngineFilter（统一面板的会话内形态）。 */
   sessionEngineFilter?: UnifiedModelPanelProps['sessionEngineFilter'];
@@ -785,6 +786,7 @@ interface ModelSelectorProps {
       targetAgentKind: 'claude-code' | 'codex' | 'pi',
       modelId: string,
       providerId: string | null,
+      overrides?: { effort?: Effort; fastMode?: boolean },
     ) => void | boolean | Promise<void | boolean>;
   };
 }
@@ -846,7 +848,7 @@ interface ModelSelectorContentProps {
   configurationEnabled?: boolean;
   /** Restrict Fast to the Harnesses this entry can persist and dispatch; false disables it. */
   fastModeConfigurable?: boolean | readonly AgentKind[];
-  /** A is the default for every entry. False is reserved for capabilities-only remote compatibility. */
+  /** Historical unified panel; product entries use the original provider-grouped picker. */
   unifiedPanel?: boolean;
   /**
    * 统一面板的**会话内形态**(model-selector-unified §1.6,M6 面板侧)。仅在
@@ -952,6 +954,7 @@ interface ModelSelectorContentProps {
       targetAgentKind: 'claude-code' | 'codex' | 'pi',
       modelId: string,
       providerId: string | null,
+      overrides?: { effort?: Effort; fastMode?: boolean },
     ) => void | boolean | Promise<void | boolean>;
   };
   /**
@@ -1061,7 +1064,7 @@ function ModelSelectorContentView({
   followSession,
   configurationEnabled = true,
   fastModeConfigurable = true,
-  unifiedPanel: useUnifiedPanel = true,
+  unifiedPanel: useUnifiedPanel = false,
   sessionEngineFilter,
   unifiedAgents: requestedUnifiedAgents,
   unifiedSelectionPolicy = 'personalized',
@@ -1134,27 +1137,29 @@ function ModelSelectorContentView({
   };
   // 会话引擎在外部变化(切换完成 / 换会话)时重置浏览态,跟随新的当前引擎。
   useEffect(() => {
-    if (agentSwitch) setBrowseVendor(agentSwitch.currentVendor);
-  }, [agentSwitch?.currentVendor]);
-  const browsing = !!agentSwitch && browseVendor !== agentSwitch.currentVendor;
-  const agentKind = agentSwitch
+    setBrowseVendor(agentSwitch?.currentVendor ?? vendorKey ?? 'cc');
+  }, [agentSwitch?.currentVendor, vendorKey]);
+  const hasEngineBrowser = !!agentSwitch || !!onUnifiedSelect;
+  const browsing = hasEngineBrowser && browseVendor !== (agentSwitch?.currentVendor ?? vendorKey ?? 'cc');
+  const agentKind = hasEngineBrowser
     ? vendorKeyToAgentKind(browseVendor)
     : vendorKeyToAgentKind(vendorKey);
   // A field that only persists a model must not offer another Harness.
   const unifiedAgents = requestedUnifiedAgents ??
-    (vendorKey && agentKind && !onUnifiedSelect && !sessionEngineFilter ? [agentKind] : undefined);
+    (vendorKey && agentKind && !onUnifiedSelect && !agentSwitch && !sessionEngineFilter ? [agentKind] : undefined);
   const browseTargetLabel =
     browseVendor === 'codex' ? 'Codex' : browseVendor === 'pi' ? 'Pi' : 'Claude Code';
   const enqueueAgentSwitch = (
     targetAgentKind: 'claude-code' | 'codex' | 'pi',
     targetModelId: string,
     targetProviderId: string | null,
+    overrides?: { effort?: Effort; fastMode?: boolean },
   ) => {
     if (!agentSwitch) return;
     // 立即交给调用方同步登记目标 session 的 pending token。真正的顺序由
     // agentSwitchCoordinator 按 session 串行；组件级 Promise 队列会把不同 session
     // 错误地串在一起，并在回调尚未启动时留下可发送窗口。
-    void agentSwitch.onSwitch(targetAgentKind, targetModelId, targetProviderId);
+    return agentSwitch.onSwitch(targetAgentKind, targetModelId, targetProviderId, overrides);
   };
   // 同时拉三个 agent —— vendorKey 不传时把三边模型一起展示。hooks 必须按固定顺序调用。
   const cc = useAgentCapabilities('claude-code', deviceId);
@@ -1459,16 +1464,15 @@ function ModelSelectorContentView({
   // 来源的模型),与正常模式同口径——flat 列表不过滤连接态,会把未连接来源的模型
   // 列出来,切过去后来源解析不到(trigger 无 icon、发送必失败)。行点击语义由
   // handleRowSelect 的 browsing 分支先行接管(连来源一起交给切换事务)。
-  const sourcesEnabled = !!onProviderChange;
+  const sourcesEnabled = !!onProviderChange || !!onUnifiedSelect;
   const connected = useMemo(() => {
-    if (!sourcesEnabled || !currentAgentKind) return [];
-    const candidates = connectedProvidersForAgent(providers, currentAgentKind);
-    return filterChatBridgedCodexProviders(
-      candidates,
-      currentAgentKind,
-      excludeChatBridgedCodex === true,
-    );
-  }, [sourcesEnabled, providers, currentAgentKind, excludeChatBridgedCodex]);
+    if (!sourcesEnabled) return [];
+    const agents = agentKind ? [agentKind] : (['claude-code', 'codex', 'pi'] as const);
+    const candidates = agents.flatMap((agent) => filterChatBridgedCodexProviders(
+      connectedProvidersForAgent(providers, agent), agent, excludeChatBridgedCodex === true,
+    ));
+    return [...new Map(candidates.map((provider) => [provider.id, provider])).values()];
+  }, [sourcesEnabled, providers, agentKind, excludeChatBridgedCodex]);
   // 生效来源必须按当前模型收窄。只按 agent 从 connected 里兜底，会在 XD key 缺失但
   // OpenAI 已连接时拼出「OpenAI 图标 + Opus」这种不存在的路由。
   // 用「实际路由口径」(actualSourceIdForModel,不剔除停用拷贝):这里描述的是**当前
@@ -1515,6 +1519,8 @@ function ModelSelectorContentView({
   // 可能指向 suspended 来源(实际路由口径),connected 里查不到会误判 Fast 不可用。
   const fastEditable = (providerId: string | null, m: RowModel): boolean => {
     if (!onFastModeChange || !hasFastModeCap || !currentAgentKind) return false;
+    if (fastModeConfigurable === false) return false;
+    if (Array.isArray(fastModeConfigurable) && !fastModeConfigurable.includes(currentAgentKind)) return false;
     const provider = providers.find((p) => p.id === (providerId ?? activeSourceId));
     return modelSupportsFastMode(provider, m.id, currentAgentKind);
   };
@@ -1624,7 +1630,7 @@ function ModelSelectorContentView({
   const suspendedActiveSourceId = sectionProviders === connected ? null : activeSourceId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: visibilityVersion 是外部可见性偏好的刷新信号,需要强制重算分段列表。
   const sections = useMemo(() => {
-    if (!sourcesEnabled || !currentAgentKind) return null;
+    if (!sourcesEnabled) return null;
     // 0 个可连来源 → 返回 null 退化到 flat 列表(而非空 sections 触发「无结果」)。覆盖:
     //  · device-link 老被控端不认 maker:provider:list(invoke reject)→ device providers 为空 → flat 兜底;
     //  · providers 拉取中的瞬态窗口;· 本机 0 来源已由上方 emptyState 引导卡先行接管。
@@ -1632,36 +1638,31 @@ function ModelSelectorContentView({
     // 被停用的当前来源只保留选中行(keepSelected 豁免语义)。
     const restrictSuspended = (pid: string, mid: string): boolean =>
       !(suspendedActiveSourceId && pid === suspendedActiveSourceId && mid !== modelId);
-    return buildProviderSections({
-      providers: orderedSectionProviders,
-      agent: currentAgentKind,
+    // Fields without a Harness (e.g. vision backends) still select an exact
+    // provider/model pair across all agents. Do not collapse them into flat IDs.
+    const agents = agentKind ? [agentKind] : (['claude-code', 'codex', 'pi'] as const);
+    const grouped = agents.flatMap((agent) => buildProviderSections({
+      providers: filterChatBridgedCodexProviders(orderedSectionProviders, agent, excludeChatBridgedCodex === true),
+      agent,
       selectedModelId: modelId,
       selectedProviderId: activeSourceId,
-      // device-link 远程会话使用被控端随 provider:list 返回的 override 快照，绝不套
-      // 控制端本机 modelVisibilityPrefs。旧被控端不回传快照时 fail-open，保持兼容。
-      isVisible: deviceId
-        ? (pid, mid) => {
-            if (!restrictSuspended(pid, mid)) return false;
-            const p = sectionProviders.find((x) => x.id === pid);
-            const cat = p ? getModel(p, mid, currentAgentKind) : undefined;
-            return isDeviceModelVisible(
-              remoteProviders.modelVisibilityOverrides,
-              currentAgentKind,
-              pid,
-              { id: mid, defaultEnabled: cat?.defaultEnabled },
-            );
-          }
-        : (pid, mid) => {
-            if (!restrictSuspended(pid, mid)) return false;
-            const p = sectionProviders.find((x) => x.id === pid);
-            const cat = p ? getModel(p, mid, currentAgentKind) : undefined;
-            return isModelEnabled(currentAgentKind, pid, {
-              id: mid,
-              defaultEnabled: cat?.defaultEnabled,
-            });
-          },
+      isVisible: (pid, mid) => {
+        if (!restrictSuspended(pid, mid)) return false;
+        const provider = sectionProviders.find((item) => item.id === pid);
+        const model = provider ? getModel(provider, mid, agent) : undefined;
+        return unifiedIsVisible(pid, { id: mid, defaultEnabled: model?.defaultEnabled }, agent);
+      },
       includePaymentRequired: true,
-    }).map((section) => ({
+    }));
+    const merged = new Map<string, (typeof grouped)[number]>();
+    for (const section of grouped) {
+      const previous = merged.get(section.provider.id);
+      if (!previous) merged.set(section.provider.id, { ...section, models: [...section.models] });
+      else for (const model of section.models) {
+        if (!previous.models.some((item) => item.id === model.id)) previous.models.push(model);
+      }
+    }
+    return [...merged.values()].map((section) => ({
       ...section,
       models: section.models.filter((model) => matchesModelName(model, query, t)),
     })).filter((section) => section.models.length > 0);
@@ -1671,7 +1672,9 @@ function ModelSelectorContentView({
     sectionProviders,
     orderedSectionProviders,
     suspendedActiveSourceId,
-    currentAgentKind,
+    agentKind,
+    excludeChatBridgedCodex,
+    unifiedIsVisible,
     modelId,
     activeSourceId,
     t,
@@ -1713,7 +1716,7 @@ function ModelSelectorContentView({
       : new Set(
           (agentKind ? [agentKind] : (['claude-code', 'codex', 'pi'] as const)).flatMap((agent) =>
             visibleModelUnion(providers, agent, (providerId, model) =>
-              isModelEnabled(agent, providerId, model),
+              unifiedIsVisible(providerId, model, agent),
             ).map((model) => model.id),
           ),
         );
@@ -1740,6 +1743,7 @@ function ModelSelectorContentView({
     isCurrentModelHidden,
     modelId,
     visibilityVersion,
+    unifiedIsVisible,
     remoteProviders.modelVisibilityOverrides,
   ]);
 
@@ -1817,13 +1821,13 @@ function ModelSelectorContentView({
    * 统一面板的会话路径靠它决定要不要记收藏锚点(2026-08-17 review 第五轮 M4);
    * 其余调用点照旧无视返回值,行为一个字没变。
    */
-  const handleRowSelect = (
+  const handleRowSelect = async (
     providerId: string | null,
     id: string,
     dismiss = true,
     effortOverride?: Effort,
     fastOverride?: boolean,
-  ): void | boolean | Promise<void | boolean> => {
+  ): Promise<void | boolean> => {
     if (interactionDisabled) return false;
     const dismissAfterSelection = () => {
       if (!dismiss) return;
@@ -1834,13 +1838,14 @@ function ModelSelectorContentView({
     // providerId 一起带上:切换后 sessions.provider_id 直接落用户选的来源,
     // trigger 来源 icon / 路由立即正确(null = flat 退化行,交给默认路由)。
     if (browsing && agentSwitch) {
-      enqueueAgentSwitch(
+      const applied = await runLiveWrite(() => enqueueAgentSwitch(
         browseVendor === 'codex' ? 'codex' : browseVendor === 'pi' ? 'pi' : 'claude-code',
         id,
         providerId,
-      );
-      dismissAfterSelection();
-      return;
+        { effort: effortOverride, fastMode: fastOverride },
+      ));
+      if (applied) dismissAfterSelection();
+      return applied;
     }
     const selectedModel = sections
       ? sections
@@ -1853,6 +1858,19 @@ function ModelSelectorContentView({
     const reconciledEffort =
       effortOverride ??
       (selectedModel ? (rowEffortOf(providerId, selectedModel) ?? '') : undefined);
+    // 设置、自动化与模型钉选仍提交完整配置，但先独立选引擎，再选来源模型。
+    if (onUnifiedSelect && providerId && selectedModel) {
+      const applied = await runLiveWrite(() => onUnifiedSelect({
+        providerId,
+        modelId: id,
+        engine: browseVendor,
+        effort: reconciledEffort,
+        fast: fastOverride ?? fastOnOf(providerId, selectedModel),
+        favoriteUid: null,
+      }));
+      if (applied) dismissAfterSelection();
+      return applied;
+    }
     if (isSelectedRow(providerId, id)) {
       const selectedModelHasConfiguration =
         !!selectedModel &&
@@ -1862,12 +1880,12 @@ function ModelSelectorContentView({
       // A selected row can be the effective fallback for a stale explicit
       // provider.  Repair that route before opening its configuration, but do
       // not persist the row's derived/default effort just by opening the card.
-      let reselectApplied: void | boolean | Promise<void | boolean> = undefined;
+      let reselect: (() => void | boolean | Promise<void | boolean>) | undefined;
       if (reselectEmitsChange) {
         if (sections && providerId) {
           const needsProviderRepair = !!currentProviderId && currentProviderId !== providerId;
           if (!opensConfiguration || needsProviderRepair) {
-            reselectApplied =
+            reselect = () =>
               !opensConfiguration && fastOverride !== undefined
                 ? onProviderChange?.(providerId, id, reconciledEffort, fastOverride)
                 : onProviderChange?.(
@@ -1877,9 +1895,11 @@ function ModelSelectorContentView({
                   );
           }
         } else if (!opensConfiguration) {
-          reselectApplied = onModelChange(id);
+          reselect = () => onModelChange(id);
         }
       }
+      const applied = reselect ? await runLiveWrite(reselect) : true;
+      if (!applied) return false;
       if (opensConfiguration) {
         setEditing({ providerId, modelId: id });
         return;
@@ -1888,20 +1908,21 @@ function ModelSelectorContentView({
       // reselectEmitsChange:调用方的「当前值」可能是**解析出来的继承值**而非已持久化的
       // 显式值(IM 工作目录偏好),这时点当前行的语义是「把继承值钉成显式值」,必须照常回调,
       // 否则用户点了没反应、之后上游默认一变这条偏好就被静默改掉。
-      dismissAfterSelection();
-      return reselectApplied;
+      if (applied) dismissAfterSelection();
+      return applied;
     }
     if (sections && providerId) {
       // 原子切 provider+model+effort; effort 由目标来源行的 catalog/记忆统一解析。
-      const applied =
+      const applied = await runLiveWrite(() =>
         fastOverride !== undefined
           ? onProviderChange?.(providerId, id, reconciledEffort, fastOverride)
-          : onProviderChange?.(providerId, id, reconciledEffort);
-      dismissAfterSelection();
+          : onProviderChange?.(providerId, id, reconciledEffort),
+      );
+      if (applied) dismissAfterSelection();
       return applied;
     }
-    const applied = onModelChange(id);
-    dismissAfterSelection();
+    const applied = await runLiveWrite(() => onModelChange(id));
+    if (applied) dismissAfterSelection();
     return applied;
   };
 
@@ -2052,7 +2073,7 @@ function ModelSelectorContentView({
   // provider/model 一次性交给调用方。若调用方另传 modelMemory,同时允许编辑该模型的
   // 全局 effort/Fast 预设。flat 非选中行没有来源 capability / 原子选择上下文,仍只展示信息。
   const inactiveProviderCanSelectEffort =
-    !editingIsActive && !!editingProviderId && !!onProviderChange;
+    !editingIsActive && !!editingProviderId && (!!onProviderChange || !!onUnifiedSelect);
   const inactiveProviderHasMemory =
     !editingIsActive && !!modelMemory && !!currentAgentKind && !!editingProviderId;
   const canConfigure =
@@ -2062,7 +2083,7 @@ function ModelSelectorContentView({
     (editingIsActive || inactiveProviderCanSelectEffort || inactiveProviderHasMemory);
   const editShowFast =
     canConfigure &&
-    (editingIsActive || inactiveProviderHasMemory) &&
+    (editingIsActive || inactiveProviderHasMemory || inactiveProviderCanSelectEffort) &&
     !!editingModel &&
     fastEditable(editingProviderId, editingModel);
   const editThinkingToggle =
@@ -2111,7 +2132,7 @@ function ModelSelectorContentView({
         modelMemory?.setFast(currentAgentKind, editing.providerId, editingModel.id, enabled);
       }
       // 配置点击同时选中模型，但保留模型选择窗口，方便继续比较和调整。
-      handleRowSelect(editing.providerId, editingModel.id, false);
+      void handleRowSelect(editing.providerId, editingModel.id, false, undefined, enabled);
     }
     bump();
   };
@@ -2734,7 +2755,7 @@ function ModelSelectorContentView({
     [cc.capabilities, codex.capabilities, pi.capabilities, onFastModeChange, onUnifiedSelect, fastModeConfigurable],
   );
 
-  if (emptyState) return emptyState;
+  if (emptyState && !hasEngineBrowser && !followSession) return emptyState;
 
   const hasAnyModel = sections ? sections.length > 0 : (flatModels?.length ?? 0) > 0;
   const trimmedQuery = query.trim();
@@ -3014,6 +3035,18 @@ function ModelSelectorContentView({
     >
       {/* session-agent-switch:显式两步引擎切换——先在分段里选 Agent,再选模型。
           复用新建会话的 VendorSegmentedSwitcher 视觉(dense),宽度撑满列表列。 */}
+      {!agentSwitch && onUnifiedSelect && (
+        <AgentSelect
+          value={browseVendor}
+          onChange={(next) => { if (next !== 'orca') void handleBrowseVendorChange(next); }}
+          hiddenVendors={(['cc', 'codex', 'pi'] as const).filter((vendor) =>
+            !!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!),
+          )}
+          disabled={interactionDisabled}
+          useMorphPopover={false}
+          side="bottom"
+        />
+      )}
       {agentSwitch && (
         <>
           <VendorSegmentedSwitcher
@@ -3021,6 +3054,10 @@ function ModelSelectorContentView({
             onChange={(next) => {
               if (next !== 'orca') void handleBrowseVendorChange(next);
             }}
+            hiddenVendors={(['cc', 'codex', 'pi'] as const).filter((vendor) =>
+              !!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!),
+            )}
+            disabled={interactionDisabled}
             dense
             width={304}
             className="mx-auto"
@@ -3039,9 +3076,8 @@ function ModelSelectorContentView({
           <button
             type="button"
             disabled={interactionDisabled}
-            onClick={() => {
-              followSession.onFollow();
-              onDismiss?.();
+            onClick={async () => {
+              if (await runLiveWrite(followSession.onFollow)) onDismiss?.();
             }}
             role="option"
             aria-selected={followSession.active}
@@ -3218,7 +3254,7 @@ export function ModelSelector({
   maxVisibleModelRows,
   configurationEnabled = true,
   fastModeConfigurable = true,
-  unifiedPanel: useUnifiedPanel = true,
+  unifiedPanel: useUnifiedPanel = false,
   sessionEngineFilter,
   unifiedAgents,
   unifiedSelectionPolicy = 'personalized',

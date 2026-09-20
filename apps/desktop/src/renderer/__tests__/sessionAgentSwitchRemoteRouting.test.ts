@@ -928,7 +928,7 @@ describe('ChatInput 的入口门控与调用路由', () => {
     );
     expect(selectorSource).not.toContain('agentSwitchQueueRef');
     expect(selectorSource).toContain(
-      'void agentSwitch.onSwitch(targetAgentKind, targetModelId, targetProviderId);',
+      'return agentSwitch.onSwitch(targetAgentKind, targetModelId, targetProviderId, overrides);',
     );
   });
 

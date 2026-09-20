@@ -6949,10 +6949,10 @@ export function ChatInput({
   const inSessionEngineLocked = Boolean(sessionId) && !sessionEngineFilter;
   const lockedSessionAgentKind =
     inSessionEngineLocked && sessionEngineConfirmed ? (runtimeAgentKind ?? agentKind) : null;
-  // 新旧用户统一使用 A；仅在远端能力或任务引擎尚未确认时回落兼容列表。
+  // 聊天统一恢复原始选择器：先选引擎，再按供应商浏览模型。
   const unifiedPanelCapable =
     unifiedModelPanelEnabled && (!inSessionEngineLocked || lockedSessionAgentKind !== null);
-  const unifiedPanelActive = unifiedPanelCapable;
+  const unifiedPanelActive = false;
   const effectiveUnifiedAgents = useMemo<readonly AgentKind[] | undefined>(
     () => (lockedSessionAgentKind ? [lockedSessionAgentKind] : unifiedAgents),
     [lockedSessionAgentKind, unifiedAgents],

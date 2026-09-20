@@ -161,11 +161,8 @@ function writeReloginFlag(targetVersion: string): void {
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const FIRST_CHECK_DELAY_MS = 10_000;         // first background check delay
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30min polling
 const AUTO_RELAUNCH_POLL_INTERVAL_MS = 30_000;
-// 启动态 manifest 短超时（#26）：probe 最坏 1.5s + external CDN P99 < 5s，8s 留足余量
-const STARTUP_MANIFEST_TIMEOUT_MS = 8_000;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -2347,196 +2344,11 @@ export function initUpdateService(): void {
   });
 
   ipcMain.handle('update-check-startup', async () => {
-    log.info('update-check-startup called');
-    startupUpdateCheckInProgress = true;
-    try {
-      if (isDev() || isCindyPersonalRuntime()) {
-        return { hasUpdate: false, action: 'none' as const };
-      }
-
-      // 版本无关包(占位 0.0.0)整条启动更新链都豁免——不只 doCheckForUpdate:
-      // 本 handler 在调 checkForUpdate() 之前还有"本地 patch 直接 relaunch"的
-      // 快路径(下方 Step 1/2)。版本无关包与正式版同 userData,一台跑过正式版
-      // 的机器 updates/ 里可能残留已下好的 patch,不在这里挡住会把 0.0.0 安装体
-      // 启动即替换成线上版本。
-      if (isVersionlessAppVersion(app.getVersion())) {
-        log.info('Versionless build (placeholder %s) — skipping startup update flow', app.getVersion());
-        return { hasUpdate: false, action: 'none' as const };
-      }
-
-      // Step 1: prefer manifest (so we don't relaunch into a stale intermediate version).
-      // 启动态用短超时，避免 external CDN 慢时阻塞启动关键路径（#26）。
-      // 后台 30-min 轮询仍走默认 30s 超时。
-      const manifest = await fetchManifest(STARTUP_MANIFEST_TIMEOUT_MS);
-
-      if (!manifest) {
-        // Network unavailable — fall back to local patch.
-        log.info('Manifest fetch failed, falling back to local patch');
-        const patchResult = checkExistingPatch();
-        if (patchResult.action === 'relaunch' && process.platform === 'darwin') {
-          currentStatus = 'ready';
-          return await buildStartupReadyReply(patchResult.version);
-        }
-        if (patchResult.action === 'relaunch' && process.platform === 'win32') {
-          // Windows 安装的信任锚是当前进程里的 manifest SHA-256。冷启动
-          // checkExistingPatch 不会信任用户可写的 patch-info.sha256，断网时
-          // 没有可信摘要就不能 relaunch；保留暂存包等下次在线对账。
-          log.info(
-            'Windows: manifest unavailable — keeping local patch without relaunch until a trusted digest is restored',
-          );
-          readyVersion = undefined;
-          readyFilePath = undefined;
-          readyZipSha256 = undefined;
-          readyChannelEpoch = undefined;
-        }
-        if (patchResult.action === 'relaunch' && process.platform === 'linux') {
-          // Linux 安装的信任锚是 manifest 里的 installer 摘要;断网拿不到
-          // manifest 时旧补丁没有可信摘要,宁可重下也不装。
-          log.info('Linux: manifest unavailable — refusing to stage local patch without a trusted digest');
-          discardStagedPatchFiles();
-        }
-        return { hasUpdate: false, action: 'none' as const, error: 'manifest_failed' as const };
-      }
-
-      const latestVersion = manifest.app.version;
-      const currentVersion = app.getVersion();
-      log.info('Startup: current=%s, latest=%s', currentVersion, latestVersion);
-
-      const startupVersionRelation = compareAppUpdateVersions(latestVersion, currentVersion);
-      if (startupVersionRelation !== 'newer') {
-        // The online manifest is authoritative. A local patch that is no longer
-        // advertised must not survive into a later offline startup.
-        const patchResult = checkExistingPatch();
-        if (patchResult.action === 'relaunch') {
-          log.info(
-            'Discarding unadvertised local patch v%s (manifest relation=%s)',
-            patchResult.version,
-            startupVersionRelation,
-          );
-          discardStagedPatchFiles();
-        }
-        if (startupVersionRelation === 'invalid') {
-          log.info('[diag] update-check-startup returning error=manifest_failed');
-          return { hasUpdate: false, action: 'none' as const, error: 'manifest_failed' as const };
-        }
-        return { hasUpdate: false, action: 'none' as const };
-      }
-
-      if (!resolveUpdateAsset(manifest)) {
-        const patchResult = checkExistingPatch();
-        if (patchResult.action === 'relaunch') {
-          log.info('Discarding local patch v%s because the manifest has no update asset', patchResult.version);
-          discardStagedPatchFiles();
-        }
-        return { hasUpdate: false, action: 'none' as const };
-      }
-
-      // Step 2: local patch may already match latest → skip download.
-      const patchResult = checkExistingPatch();
-      if (patchResult.action === 'relaunch' && patchResult.version === latestVersion) {
-        log.info('Local patch v%s matches latest, requesting relaunch', patchResult.version);
-        let reuseStagedPatch = true;
-        if (process.platform === 'win32') {
-          const hotfix = manifest.app.hotfix;
-          const sameFile = Boolean(
-            hotfix && path.basename(hotfix.file) === path.basename(readyFilePath ?? ''),
-          );
-          const trustedSha256 = hotfix ? normalizeWindowsZipSha256(hotfix.sha256) : undefined;
-          if (!trustedSha256) {
-            log.info('Windows: manifest has no trusted hotfix digest — discarding local patch');
-            discardStagedPatchFiles();
-            return { hasUpdate: false, action: 'none' as const };
-          }
-          if (!sameFile) {
-            log.info('Windows: local patch filename changed — will download newly advertised artifact');
-            readyVersion = undefined;
-            readyFilePath = undefined;
-            readyZipSha256 = undefined;
-            readyChannelEpoch = undefined;
-            reuseStagedPatch = false;
-          } else if (!(await windowsZipFileMatchesDigest(readyFilePath, trustedSha256))) {
-            log.info('Windows: local patch bytes do not match current digest — will re-download');
-            readyVersion = undefined;
-            readyFilePath = undefined;
-            readyZipSha256 = undefined;
-            readyChannelEpoch = undefined;
-            reuseStagedPatch = false;
-          } else {
-            readyZipSha256 = trustedSha256;
-          }
-        }
-        if (reuseStagedPatch && process.platform === 'linux') {
-          // 冷启动匹配旧补丁:把这份 CDN manifest 的 installer 摘要与大小
-          // 重新锚进进程内存,让后续 apply 有可信锚可用。
-          const installer = manifest.app.installer;
-          linuxStagedDebSha256 = installer?.sha256
-            ? normalizeLinuxDebSha256(installer.sha256)
-            : null;
-          linuxStagedDebSize = typeof installer?.size === 'number' && installer.size > 0
-            ? installer.size
-            : null;
-          if (!linuxStagedDebSha256 || linuxStagedDebSize === null) {
-            log.info('Linux: manifest has no installer digest/size — discarding local patch');
-            discardStagedPatchFiles();
-            return { hasUpdate: false, action: 'none' as const };
-          }
-        }
-        if (reuseStagedPatch) {
-          currentStatus = 'ready';
-          return await buildStartupReadyReply(patchResult.version);
-        }
-      }
-
-      // Stale local patch — drop refs, fresh download will overwrite.
-      if (patchResult.action === 'relaunch') {
-        log.info(
-          'Stale patch v%s (latest is v%s), will re-download',
-          patchResult.version, latestVersion,
-        );
-        readyVersion = undefined;
-        readyFilePath = undefined;
-        readyZipSha256 = undefined;
-        readyChannelEpoch = undefined;
-        linuxStagedDebSha256 = null;
-        linuxStagedDebSize = null;
-      }
-
-      // Step 3: download (re-using the manifest we already have). Route through
-      // checkForUpdate() so the inFlightCheck guard catches a concurrent
-      // background poll that would otherwise start a duplicate download against
-      // the same destPath.
-      const result = await checkForUpdate(manifest);
-      log.info('Startup download result: %s', result);
-
-      if (result === 'manifest_failed') {
-        log.info('[diag] update-check-startup returning error=manifest_failed');
-        return { hasUpdate: false, action: 'none' as const, error: 'manifest_failed' as const };
-      }
-      if (result === 'download_failed') {
-        // We KNOW there is a newer version (manifest already confirmed); we just
-        // couldn't pull the file. hasUpdate=true keeps the renderer in splash so
-        // a "download failed, retry" dialog shows instead of falling through to
-        // phase 2 with the stale binary.
-        log.info('[diag] update-check-startup returning error=download_failed');
-        return { hasUpdate: true, action: 'none' as const, error: 'download_failed' as const };
-      }
-      const reply =
-        currentStatus === 'ready'
-          ? await buildStartupReadyReply(readyVersion)
-          : { hasUpdate: false, action: 'none' as const, version: readyVersion };
-      // Diagnostic: 时间戳就是 reply 在主进程被推上 IPC 的瞬间，配合 broadcastUpdateProgress
-      // 的 [diag] 日志可以还原"reply 与 progress 事件谁先到渲染端"的顺序——这是 splash 100%
-      // 卡死的关键证据。
-      log.info(
-        '[diag] update-check-startup returning hasUpdate=%s action=%s version=%s',
-        reply.hasUpdate,
-        reply.action,
-        reply.version ?? '<none>',
-      );
-      return reply;
-    } finally {
-      startupUpdateCheckInProgress = false;
-    }
+    // Startup must not fetch, download, or apply an app update. Users enter
+    // on the installed version even when a newer build exists; Settings and
+    // the 30-minute background poll remain the upgrade paths.
+    log.info('update-check-startup called — skipping; startup does not load a new app version');
+    return { hasUpdate: false, action: 'none' as const };
   });
 
   if (isDev() || isCindyPersonalRuntime()) {
@@ -2549,23 +2361,19 @@ export function initUpdateService(): void {
   powerMonitor.on('unlock-screen', handlePowerMonitorActivity);
   powerMonitor.on('user-did-become-active', handlePowerMonitorActivity);
 
-  firstCheckTimer = setTimeout(() => {
-    firstCheckTimer = null;
-    log.info('First background check fires');
+  // Do not fetch or download a new app version as part of launching Cindy.
+  // Startup must remain on the installed version; the first automatic
+  // background check happens only after the normal polling interval. Manual
+  // checks still use `update-check-now` immediately.
+  pollTimer = setInterval(() => {
+    log.info('Poll timer fires');
     checkForUpdate().catch((err) => {
-      log.error('Background check threw:', err);
+      log.error('Poll check threw:', err);
     });
-
-    pollTimer = setInterval(() => {
-      log.info('Poll timer fires');
-      checkForUpdate().catch((err) => {
-        log.error('Poll check threw:', err);
-      });
-    }, POLL_INTERVAL_MS);
-  }, FIRST_CHECK_DELAY_MS);
+  }, POLL_INTERVAL_MS);
 
   observedEnableBeta = readObservedEnableBetaFromDisk();
-  log.info('Initialized — first check in 10s, polling every 30min');
+  log.info('Initialized — no startup update check, polling every 30min');
 }
 
 /**

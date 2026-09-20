@@ -946,26 +946,31 @@ describe('Ghost plugin detail sections', () => {
       screen.getByRole('button', { name: /settings.ghosts.detail.cindyPrefs.cap.text.oneshot/ }),
     );
 
-    const listbox = await screen.findByRole('listbox');
-    expect(document.querySelector('[data-unified-model-panel]')).toBeTruthy();
+    await screen.findByRole('listbox');
+    fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' }));
+    fireEvent.click(await screen.findByTestId('agent-select-option-codex'));
+    const listbox = screen.getByRole('listbox');
+    expect(document.querySelector('[data-unified-model-panel]')).toBeNull();
     expect(within(listbox).getByRole('group', { name: 'Cindy AI' })).toBeTruthy();
     expect(within(listbox).getByRole('group', { name: 'OpenAI' })).toBeTruthy();
-    expect(listbox.querySelector('[data-row-customize]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })).toBeTruthy();
     expect(listbox.querySelector('[data-agent-kind]')).toBeNull();
-    const plainRow = within(listbox).getByText('GPT 5.5', { exact: true }).closest<HTMLElement>('[role="option"]')!;
-    expect(within(plainRow).queryByText('settings.providers.models.subscription')).toBeNull();
+    // Legacy rows preserve both wire aliases; the native Codex route is first.
+    const openaiRows = within(within(listbox).getByRole('group', { name: 'OpenAI' })).getAllByRole('option');
+    expect(openaiRows).toHaveLength(2);
+    const plainRow = openaiRows[0]!;
+    expect(within(plainRow).getByText('newChat.modelSelector.meta.subscriptionBadgeCompact')).toBeTruthy();
     fireEvent.click(plainRow);
     await waitFor(() => expect(setCindyPref).toHaveBeenCalledWith(
       'xdt-knowledge', 'text.oneshot', 'cat:openai:codex:gpt-5.5',
     ));
-    // A different supported Harness must remain reachable after replacing the old Agent step.
+    // The original picker keeps exact routes reachable through its Agent step.
     fireEvent.click(screen.getByRole('button', { name: /settings.ghosts.detail.cindyPrefs.cap.text.oneshot/ }));
-    const reopened = await screen.findByRole('listbox');
-    const routeRow = within(reopened).getByText('GPT 5.5', { exact: true }).closest<HTMLElement>('[role="option"]')!;
-    fireEvent.click(routeRow.querySelector('[data-row-customize]')!);
-    const flyout = await screen.findByTestId('unified-model-config-flyout');
-    expect(flyout.querySelector('[role="slider"], [data-fast-toggle]')).toBeNull();
-    fireEvent.click(flyout.querySelector('[data-engine-capsule="cc"]')!);
+    await screen.findByRole('listbox');
+    fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' }));
+    fireEvent.click(await screen.findByTestId('agent-select-option-cc'));
+    const routeRow = within(within(screen.getByRole('listbox')).getByRole('group', { name: 'OpenAI' })).getByText('GPT 5.5', { exact: true }).closest<HTMLElement>('[role="option"]')!;
+    expect(routeRow.querySelector('[role="slider"], [data-fast-toggle]')).toBeNull();
     fireEvent.click(routeRow);
     await waitFor(() => expect(setCindyPref).toHaveBeenLastCalledWith(
       'xdt-knowledge', 'text.oneshot', 'cat:openai:claude-code:chatgpt/gpt-5.5',
@@ -1093,7 +1098,7 @@ describe('Ghost plugin detail sections', () => {
     expect(screen.getByRole('button', { name: /settings.ghosts.detail.cindyPrefs.cap.text.oneshot/ }).textContent).toContain('retired-model');
     expect(within(listbox).queryByText('cat:gone:codex:retired-model')).toBeNull();
     expect(setCindyPref).not.toHaveBeenCalled();
-    fireEvent.click(within(listbox).getAllByRole('option')[0]!);
+    fireEvent.click(screen.getByRole('option', { name: /settings.ghosts.detail.cindyPrefs.defaultOption/ }));
     await waitFor(() => expect(setCindyPref).toHaveBeenCalledWith('xdt-knowledge', 'text.oneshot', null));
     vi.unstubAllEnvs();
   });

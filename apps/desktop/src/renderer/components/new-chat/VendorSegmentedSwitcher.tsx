@@ -8,6 +8,7 @@ export function VendorSegmentedSwitcher({
   value,
   onChange,
   disabled,
+  hiddenVendors = [],
   className,
   width = 300,
   dense = false,
@@ -16,6 +17,7 @@ export function VendorSegmentedSwitcher({
   value: MakerVendor;
   onChange: (next: MakerVendor) => void;
   disabled?: boolean;
+  hiddenVendors?: readonly MakerVendor[];
   className?: string;
   width?: number;
   dense?: boolean;
@@ -37,7 +39,9 @@ export function VendorSegmentedSwitcher({
       optionHeight={dense ? 24 : 30}
       optionClassName={dense ? 'text-12 px-0' : 'text-14 px-0'}
       preserveMouseFocus
-      options={AGENT_OPTIONS.map((option) => ({
+      options={AGENT_OPTIONS.filter((option) =>
+        option.vendor === value || !hiddenVendors.includes(option.vendor),
+      ).map((option) => ({
         value: option.vendor,
         title: option.label,
         'aria-label': option.label,

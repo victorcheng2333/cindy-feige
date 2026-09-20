@@ -174,12 +174,12 @@ describe('BotModelChainEditor', () => {
     );
 
     expect(modelSelectorProps).toHaveBeenCalledTimes(1);
+    expect(modelSelectorProps.mock.calls[0]?.[0].unifiedPanel).toBeUndefined();
     expect(modelSelectorProps.mock.calls[0]?.[0].unifiedLayout).toBeUndefined();
     expect(modelSelectorProps.mock.calls[0]?.[0].unifiedLayoutControls).toBeUndefined();
     expect(modelSelectorProps.mock.calls[0]?.[0]).toMatchObject({
       configurationEnabled: true,
       vendorKey: 'pi',
-      unifiedPanel: true,
       unifiedAgents: ['pi', 'claude-code'],
       triggerVariant: 'toolbar',
     });

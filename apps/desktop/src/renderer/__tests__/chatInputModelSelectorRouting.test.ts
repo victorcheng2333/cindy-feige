@@ -360,7 +360,10 @@ describe('ChatInput model source switching wiring', () => {
     expect(chatInputSource).toContain(': (vendorKey ?? null);');
   });
 
-  it('falls back to the legacy panel only when the controlled device has no provider catalog', () => {
+  it('restores the original picker for local and remote tasks', () => {
+    expect(chatInputSource).toContain(
+      'const unifiedPanelActive = false;',
+    );
     // device-link 老被控端 capabilities-only:联合列表的数据源是供应商目录,没有目录
     // 就是一张空列表。判据必须是结构化的 unsupported,不是 providers.length===0
     // (后者在加载中恒成立,会让面板每次打开先闪一下旧布局)。
