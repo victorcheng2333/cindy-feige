@@ -80,6 +80,7 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
     source.kind === 'local' ? toLocalFileUrl(source.absPath) : source.url,
   );
   const modelViewerRef = useRef<HTMLElement | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(() => !customElements.get('model-viewer'));
   // FocusScope 挂载焦点的落点:overlay 根(tabIndex=-1 由 FocusScope 合入)。
   const overlayRef = useRef<HTMLDivElement | null>(null);
   // "open" / "reveal" 正在执行时禁用菜单, 避免重复点击。Mirror ChatImageView。
@@ -139,11 +140,25 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
   useEffect(() => {
     const el = modelViewerRef.current;
     if (!el) return;
+    let disposed = false;
     const onError = () => {
       toast.error(t('chat.media.modelLoadFailed', 'Failed to load 3D model'));
     };
     el.addEventListener('error', onError);
-    return () => el.removeEventListener('error', onError);
+    // Register on demand, after the error listener is attached. Existing custom
+    // elements upgrade automatically; opening the app never loads the 3D engine.
+    void import('@google/model-viewer').then(
+      () => { if (!disposed) setViewerLoading(false); },
+      () => {
+        if (disposed) return;
+        setViewerLoading(false);
+        onError();
+      },
+    );
+    return () => {
+      disposed = true;
+      el.removeEventListener('error', onError);
+    };
   }, [t]);
 
   async function handleModelAction(action: 'open' | 'reveal'): Promise<void> {
@@ -255,10 +270,8 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
       >
         <model-viewer
           ref={modelViewerRef}
-          // src is omitted until the lazy download resolves — model-viewer
-          // shows the poster (chat thumbnail) until then. Once src lands,
-          // it fetches via xdt-model:// (mivo) or xdt-file:// (local) and
-          // renders.
+          // The element upgrades when its module loads, then fetches the model
+          // through the existing media/local-file protocol.
           {...(modelUrl ? { src: modelUrl } : {})}
           {...(poster ? { poster } : {})}
           alt={t('chat.media.modelPreviewAlt')}
@@ -277,17 +290,15 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
             backgroundColor: 'transparent',
           }}
         />
-        {/* Small loading hint while we wait for the IPC + initial parse.
-            model-viewer's built-in progress bar appears on top of this once
-            src is set, so the spinner only shows during the IPC roundtrip. */}
-        {modelUrl === null ? (
+        {/* Once registered, model-viewer provides its own model-load progress. */}
+        {viewerLoading ? (
           <div
             style={{
               position: 'absolute',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              color: 'rgba(255,255,255,0.85)',
+              color: 'var(--lightbox-toolbar-fg)',
               pointerEvents: 'none',
               display: 'flex',
               alignItems: 'center',

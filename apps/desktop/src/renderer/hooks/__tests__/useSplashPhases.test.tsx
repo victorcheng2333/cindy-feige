@@ -89,7 +89,7 @@ describe('useSplash phase 表', () => {
     ['download_failed', 'splash_download_failed'],
     ['checking', 'splash_checking'],
     ['downloading', 'splash_downloading'],
-    ['passed', 'splash_passed'],
+    ['passed', 'fading_out'],
     ['failed', 'splash_failed'],
   ])('envStatus=%s → phase=%s', (envStatus, expected) => {
     mocks.envStatus = envStatus;
@@ -111,19 +111,13 @@ describe('useSplash phase 表', () => {
     expect(result.current.showSpawnFailedDialog).toBe(true);
   });
 
-  it('fade-out 触发:passed ∧ 3s 地板 ∧ auth 初始化完成 → fading_out → 500ms fallback → splash_done', () => {
-    mocks.envStatus = 'passed';
-    const { result } = renderHook(() => useSplash());
-    expect(result.current.phase).toBe('splash_passed');
+  it('环境检查通过且主界面就绪后立即淡出，不再等待 3 秒', () => {
+    mocks.envStatus = 'checking';
+    const { result, rerender } = renderHook(() => useSplash());
+    expect(result.current.phase).toBe('splash_checking');
 
-    // 3s 地板前不淡出
-    act(() => {
-      vi.advanceTimersByTime(2_999);
-    });
-    expect(result.current.phase).toBe('splash_passed');
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
+    mocks.envStatus = 'passed';
+    rerender();
     expect(result.current.phase).toBe('fading_out');
 
     // FADE_FALLBACK 500ms → splash_done(onTransitionEnd 兜底)
@@ -136,21 +130,40 @@ describe('useSplash phase 表', () => {
   it('auth 初始化未完成时 passed 不淡出(推进锚含 authInitializing)', () => {
     mocks.envStatus = 'passed';
     mocks.authInitializing = true;
-    const { result } = renderHook(() => useSplash());
+    const { result, rerender } = renderHook(() => useSplash());
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
     expect(result.current.phase).toBe('splash_passed');
+    mocks.authInitializing = false;
+    rerender();
+    expect(result.current.phase).toBe('fading_out');
   });
 
   it('LocalDbGate 仍在 checking 时 passed 不淡出(启动盖必须留到主界面可画)', () => {
     mocks.envStatus = 'passed';
     mocks.coverHeld = true;
-    const { result } = renderHook(() => useSplash());
+    const { result, rerender } = renderHook(() => useSplash());
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
     expect(result.current.phase).toBe('splash_passed');
+    mocks.coverHeld = false;
+    rerender();
+    expect(result.current.phase).toBe('fading_out');
+  });
+
+  it('减少动态效果时就绪后快速退出，但仍等待环境检查', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    mocks.envStatus = 'checking';
+    const { result, rerender } = renderHook(() => useSplash());
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(result.current.phase).toBe('splash_checking');
+    mocks.envStatus = 'passed';
+    rerender();
+    expect(result.current.phase).toBe('fading_out');
+    act(() => vi.advanceTimersByTime(10));
+    expect(result.current.phase).toBe('splash_done');
   });
 
   it('三失败弹窗 booleans 与 phase 一一对应且互斥', () => {

@@ -51,9 +51,8 @@ import {
  *   manifest_failed/download_failed = 各自重试动作(checkEnvironment);
  *   spawn_failed 的 CTA =「前往下载」打开现网下载页(onSpawnFailedDownload),禁 retry。
  *
- * 不透明白底全盖 + 最短停留 3s 地板(+热更重启守地板)机制不变:前者由
- * LoginBrandStage 背景子层承载(var(--surface) token),后者仍在 useSplash
- * (MIN_DISPLAY_MS,fake-timer 用例保留)。
+ * 启动盖由 LoginBrandStage 背景子层承载(var(--surface) token)，普通启动
+ * 在环境、登录与主界面准备完成后退场；仅更新重启保留 3s 展示地板。
  *
  * dev-only 状态遍历:VITE_SPLASH_PHASE_FIXTURE(readSplashPhaseFixture,DEV 短路)
  * 只覆盖**显示** phase,生命周期(fade/卸载/data-splash-active)仍跟真实 phase。

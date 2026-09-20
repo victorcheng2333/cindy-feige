@@ -501,11 +501,9 @@ describe('冷启动集成(resolved snapshot,禁 mock-reject)', () => {
     // overlay 不拦截 hit-test
     expect(screen.getByTestId('login-stage-root').className).toContain('pointer-events-none');
 
-    // ── 品牌资产 onload(推进锚) + 3s 地板后 Splash 退场 → 起播 ──
+    // ── 品牌资产 onload(推进锚)，就绪后立即起播，无固定停留 ──
     loadBrandAssets();
-    await act(async () => {
-      vi.advanceTimersByTime(3_000);
-    });
+    await flush();
     expect(probe.current!.phase).toBe('settle');
     expect(probe.current!.branch).toBe('unauthenticated');
     expect(probe.current!.brandLayout).toBe('splash');
@@ -582,9 +580,7 @@ describe('冷启动集成(resolved snapshot,禁 mock-reject)', () => {
     expect(screen.queryByTestId(/^login-panel-/)).toBeNull();
 
     loadBrandAssets();
-    await act(async () => {
-      vi.advanceTimersByTime(3_000);
-    });
+    await flush();
     expect(probe.current!.branch).toBe('authenticated');
     expect(probe.current!.phase).toBe('brand-exit');
     // 淡出中:保持 Splash 品牌布局,只淡出内容层;背景仍不透明,避免透出
@@ -634,9 +630,7 @@ describe('冷启动集成(resolved snapshot,禁 mock-reject)', () => {
 
     // 走完 authenticated 冷启动:brand-exit 淡出 → done,overlay 卸载
     loadBrandAssets();
-    await act(async () => {
-      vi.advanceTimersByTime(3_000);
-    });
+    await flush();
     await act(async () => {
       vi.advanceTimersByTime(500);
     });
@@ -695,9 +689,7 @@ describe('冷启动集成(resolved snapshot,禁 mock-reject)', () => {
     await flush();
 
     loadBrandAssets();
-    await act(async () => {
-      vi.advanceTimersByTime(3_000);
-    });
+    await flush();
     expect(probe.current!.branch).toBe('authenticated');
     expect(probe.current!.phase).toBe('brand-exit');
   });

@@ -6,7 +6,6 @@ import { MainEntryRedirect } from '@/components/layout/MainEntryRedirect';
 import { RouteErrorFallback } from '@/components/error/RouteErrorFallback';
 import { SidebarWindowLayout } from '@/components/layout/SidebarWindowLayout';
 import { GhostPanelWindowLayout } from '@/components/layout/GhostPanelWindowLayout';
-import { SettingsView } from '@/components/settings/SettingsView';
 import { LoginPage } from '@/components/login/LoginPage';
 import { AddAccountLoginPage } from '@/components/login/AddAccountLoginPage';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -187,7 +186,13 @@ export const router = createHashRouter([
                       },
                     ],
                   },
-                  { path: 'settings', element: <SettingsView /> },
+                  {
+                    path: 'settings',
+                    lazy: async () => {
+                      const { SettingsView } = await import('@/components/settings/SettingsView');
+                      return { Component: SettingsView };
+                    },
+                  },
                   { path: 'plugins', element: <GhostPluginPage /> },
                   { path: 'apps/:ghostId', element: <GhostMainViewFeatureLayout /> },
                   {
