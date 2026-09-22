@@ -10,7 +10,7 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('ApplicationMenuItems');
 
 /** Application actions live in the sidebar account menu, leaving the title bar for navigation. */
-export function ApplicationMenuItems() {
+export function ApplicationMenuItems({ onJoinSharedTask }: { onJoinSharedTask: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -20,6 +20,9 @@ export function ApplicationMenuItems() {
 
   return (
     <>
+      <DropdownMenuItem onSelect={onJoinSharedTask}>
+        {t('sharedTask.join')}
+      </DropdownMenuItem>
       {onExitFullscreen && (
         <DropdownMenuItem onSelect={onExitFullscreen}>
           {t('contentHeader.exitFullscreen')}

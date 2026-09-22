@@ -17,6 +17,7 @@ import { useOptionalConfirmDialog } from '@/components/ui/confirm-dialog-provide
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { useUpdateBannerDismiss } from '@/hooks/useUpdateBannerDismiss';
 import { useBetaChannelSettings } from '@/hooks/useBetaChannelSettings';
+import { useCindyVersions } from '@/lib/useCindyVersions';
 import { Tip } from '@/components/ui/tooltip';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -30,6 +31,9 @@ import { toast } from '@/lib/toast';
 import type { DesktopSavedAccount } from '@/lib/authService';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { shouldLabelRegion } from '../../../shared/regionCode';
+import { JoinSharedTaskDialog } from '@/features/device-link/JoinSharedTaskDialog';
+import { SharedTaskEndedNotice } from '@/features/device-link/SharedTaskEndedNotice';
+import { useSharedTaskTasks } from '@/features/device-link/useSharedTaskTasks';
 import { ApplicationMenuItems } from './ApplicationMenuItems';
 import { MobileDownloadDialog } from './MobileDownloadDialog';
 
@@ -73,6 +77,8 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   const navigate = useNavigate();
   const location = useLocation();
   const [avatarError, setAvatarError] = useState(false);
+  const [joinSharedTaskOpen, setJoinSharedTaskOpen] = useState(false);
+  useSharedTaskTasks();
   const [mobileDownloadOpen, setMobileDownloadOpen] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<DesktopSavedAccount[]>([]);
   const [savedAccountsOwnerKey, setSavedAccountsOwnerKey] = useState<string | null>(null);
@@ -93,6 +99,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   const { status } = useUpdateStatus();
   const { dismissed, restore } = useUpdateBannerDismiss();
   const { state: betaChannelState } = useBetaChannelSettings();
+  const versions = useCindyVersions();
   const hasPendingUpdate = status === 'ready' || status === 'superseding';
   const isFlameReopen = hasPendingUpdate && dismissed;
   const showBetaLabel = !betaChannelState.loading && betaChannelState.enableBeta;
@@ -145,6 +152,14 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   const appVersionLabelDetail = appRegionLabel
     ? `${appRegionLabel} · ${appDisplayVersionDetail}`
     : appDisplayVersionDetail;
+  const isPersonalVersion =
+    versions.state?.currentId !== undefined && versions.state.currentId !== 'original';
+  const visibleVersionLabel = isPersonalVersion
+    ? t('cindyMake.versions.personal')
+    : appVersionLabel;
+  const visibleVersionLabelDetail = isPersonalVersion
+    ? t('cindyMake.versions.personal') + ' · ' + appDisplayVersionDetail
+    : appVersionLabelDetail;
   const remoteAvailable = mode === 'cloud';
 
   const openAddAccount = async () => {
@@ -316,7 +331,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
             {addingAccount ? t('sidebar.accountSwitcher.adding') : t('login.signIn')}
           </DropdownMenuItem>
         ) : null}
-        <ApplicationMenuItems />
+        <ApplicationMenuItems onJoinSharedTask={() => setJoinSharedTaskOpen(true)} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -350,6 +365,16 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
         <Smartphone className="h-3 w-3" aria-hidden="true" />
       </button>
     </Tip>
+  );
+
+  // Keep sharing dialogs outside the dropdown: selecting an item unmounts its content.
+  const sharedTaskDialogs = (
+    <>
+      <SharedTaskEndedNotice onJoin={() => setJoinSharedTaskOpen(true)} />
+      {joinSharedTaskOpen && (
+        <JoinSharedTaskDialog open={joinSharedTaskOpen} onOpenChange={setJoinSharedTaskOpen} />
+      )}
+    </>
   );
 
   if (isCollapsed) {
@@ -402,6 +427,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
           </Tip>
           {mobileDownloadEntry}
         </div>
+        {sharedTaskDialogs}
         <MobileDownloadDialog
           open={mobileDownloadOpen}
           onOpenChange={setMobileDownloadOpen}
@@ -488,9 +514,9 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
               {/* 2px gap 与同栏 userNameContainer 保持一致。 */}
               <p
                 className="flex min-w-0 items-center gap-1 text-10 leading-[1.3] text-[var(--sidebar-user-card-text)]"
-                title={appVersionLabelDetail}
+                title={visibleVersionLabelDetail}
               >
-                <span className="truncate opacity-80">{appVersionLabel}</span>
+                <span className="truncate opacity-80">{visibleVersionLabel}</span>
                 {showBetaLabel ? (
                   <span
                     className="shrink-0 select-none opacity-80"
@@ -555,6 +581,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
         )}
       </div>
 
+      {sharedTaskDialogs}
       <MobileDownloadDialog
         open={mobileDownloadOpen}
         onOpenChange={setMobileDownloadOpen}

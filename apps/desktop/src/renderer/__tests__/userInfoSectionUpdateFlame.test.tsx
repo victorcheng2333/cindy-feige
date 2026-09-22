@@ -8,6 +8,10 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { useCindyVersionsMock } = vi.hoisted(() => ({
+  useCindyVersionsMock: vi.fn(),
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -41,6 +45,10 @@ vi.mock('@/hooks/useBetaChannelSettings', () => ({
   }),
 }));
 
+vi.mock('@/lib/useCindyVersions', () => ({
+  useCindyVersions: useCindyVersionsMock,
+}));
+
 vi.mock('@/hooks/useLogout', () => ({
   useLogout: () => ({ handleLogout: vi.fn() }),
 }));
@@ -53,9 +61,14 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+vi.mock('@/features/device-link/useSharedTaskTasks', () => ({ useSharedTaskTasks: vi.fn() }));
+vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({ JoinSharedTaskDialog: () => null }));
+vi.mock('@/features/device-link/SharedTaskEndedNotice', () => ({ SharedTaskEndedNotice: () => null }));
+
 import { UserInfoSection } from '@/components/sidebar/UserInfoSection';
 
 beforeEach(() => {
+  useCindyVersionsMock.mockReturnValue({ state: undefined });
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
@@ -79,5 +92,18 @@ describe('UserInfoSection update flame vs rail', () => {
     render(<UserInfoSection isCollapsed={false} onOpenUpdateNotice={() => {}} />);
 
     expect(screen.getByRole('button', { name: 'sidebar.user.reopenUpdateBanner' })).toBeTruthy();
+  });
+
+  it('shows the personal version label when the running app is personal', () => {
+    useCindyVersionsMock.mockReturnValue({
+      state: {
+        currentId: 'personal',
+      },
+    });
+
+    render(<UserInfoSection isCollapsed={false} />);
+
+    expect(screen.getByText('cindyMake.versions.personal')).toBeTruthy();
+    expect(screen.queryByText('1.0.0')).toBeNull();
   });
 });

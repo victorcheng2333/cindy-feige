@@ -1,7 +1,10 @@
 import { listWorktreeRecycleStatus, controlWorktreeRecycle } from './worktree/recycleControls';
 import { registerFilePeerIpc } from './device-link/filePeer';
 import { registerLoginItemIpc } from './login-item-ipc.js';
-import { createLatestSourceVersionReader } from './cindy-make/latestSourceVersion.js';
+import {
+  createLatestSourceVersionReader,
+  sourceChannel,
+} from './cindy-make/latestSourceVersion.js';
 import { refreshCindySourceStatus } from './cindy-make/sourceStatusRefresh.js';
 import {
   configureUpstreamMerge,
@@ -17,6 +20,10 @@ import {
   openHistoryPersonalBuild,
   stopMakeHistoryBuild,
 } from './cindy-make/historyRuntime.js';
+import {
+  readCindyMakeSettings,
+  writeCindyMakeSyncLatestBeforeBuild,
+} from './cindy-make/settingsStore.js';
 import { retainProviderPresentationAfterAuthChange } from './maker-host/provider-presentation-store.js';
 import { codexAccountState } from './maker-host/codex-account-auth.js';
 import { syncSubscriptionAccountUsage } from './usage/subscriptionAccountUsage.js';
@@ -241,10 +248,6 @@ import {
   setUpdateAutoRelaunchBusyProbe,
 } from './updateService';
 import {
-  isWindowsUpdateLockSharingViolation,
-  shouldKeepWaitingForWindowsUpdateLock,
-} from './updateLockWait';
-import {
   createUpdatePresentationRecoveryController,
   decideUpdateRelaunchBusyTransition,
   hasUpdateRelaunchBusyActivity,
@@ -353,6 +356,7 @@ import {
   subscribeCindySourceStatus,
 } from './cindy-make/sourcePreparation.js';
 import { broadcastCindyMakeSourceStatus } from './cindy-make/sourceStatusBroadcast.js';
+import { broadcastCindyMakeHistoryChanged } from './cindy-make/historyBroadcast.js';
 import { cindyMakeManager } from './cindy-make/manager.js';
 import { broadcastCindyMakeState } from './cindy-make/stateBroadcast.js';
 import {
@@ -383,8 +387,8 @@ import {
 } from './cindy-make/versionService.js';
 import {
   deliverCindyVersionOpenEvents,
+  finishCindyVersionStartup,
   isCindyVersionLaunchPending,
-  recordCindyVersionActive,
   watchCindyVersionStartupResult,
 } from './cindy-make/versionStartup.js';
 import {
@@ -586,9 +590,14 @@ import { issueWritableDirectoryPickerGrant } from './maker-ipc/writableDirectory
 // 设备互联(跨设备远程控制): relay 连接 host + 开关/设备列表 IPC
 import {
   initDeviceLinkService,
+  getDeviceLinkStatus,
+  isSharedTaskAvailable,
   releaseDeviceLinkOwnershipBeforeLogout,
   handleDeviceLinkSystemResume,
 } from './device-link';
+import { closeSharedTasksBeforeLogout } from './device-link/sharedTaskRuntime.js';
+import { closeSharedTasksBeforeAccountHandover } from './device-link/sharedTaskAccountBoundary.js';
+import { registerSharedTaskIpc } from './device-link/sharedTaskIpc.js';
 import {
   getUpdateRelaunchControllers,
   hasInFlightRemoteInvokes,
@@ -884,7 +893,8 @@ import { createChatEmbeddingSettingsWatcher } from './maker-host/chat-embedding-
 import {
   readGitSafetySettingsState,
   resetGitSafetySettings,
-  writeGitSafetyAutoSnapshotEnabled,
+  writeGitSafetyMode,
+  type GitSafetyMode,
 } from './maker-host/git-safety-settings-store.js';
 import {
   CHAT_EMBED_MODEL_ID,
@@ -953,8 +963,10 @@ import {
   findOpenFolderInArgv,
   findOpenShareFileInArgv,
   setDeepLinkMainWindow,
+  focusMainWindow as activateMainWindow,
   takePendingDeepLink,
 } from './deepLink.js';
+import { createMakeTestWindowBehavior } from './cindy-make/testWindowBehavior.js';
 import { registerFolderContextMenu } from './folderContextMenu.js';
 import { healWindowsShortcuts } from './windowsShortcutSelfHeal.js';
 import { CURRENT_APP_ID, CURRENT_CINDY_REGION } from '../shared/brandRegion.js';
@@ -2046,14 +2058,14 @@ async function teardownAuthAccountBoundary(reason: string): Promise<void> {
       // device-link 单持有者仲裁:必须在 dispose DbClient **之前**释放持有权行
       // (dispose 同步 clearCurrentDbClient,之后 store 不可用,只能等 15s+ 心跳
       // 过期,同机幸存实例接管变慢)。内部带 1.5s 超时,不会卡住登出。
-      try {
-        await releaseDeviceLinkOwnershipBeforeLogout();
-      } catch (err) {
-        authBoundaryLog.error(
-          `[bootstrap-electron] release device-link ownership on ${reason} failed (non-fatal):`,
-          err,
-        );
-      }
+      await closeSharedTasksBeforeAccountHandover({
+        closeSharedTasks: closeSharedTasksBeforeLogout,
+        releaseOwnership: releaseDeviceLinkOwnershipBeforeLogout,
+        onClosureFailure: () => markAccountBoundaryAbortedMidTeardown(reason),
+        onReleaseFailure: (err) => authBoundaryLog.error(
+          `[bootstrap-electron] release device-link ownership on ${reason} failed (non-fatal):`, err,
+        ),
+      });
       await lifecycleDbClientManager.dispose(reason);
     } finally {
       releaseEndedSuppression();
@@ -2070,14 +2082,14 @@ async function teardownAuthAccountBoundary(reason: string): Promise<void> {
   // device-link 单持有者仲裁:必须在 dispose DbClient **之前**释放持有权行
   // (dispose 同步 clearCurrentDbClient,之后 store 不可用,只能等 15s+ 心跳
   // 过期,同机幸存实例接管变慢)。内部带 1.5s 超时,不会卡住登出。
-  try {
-    await releaseDeviceLinkOwnershipBeforeLogout();
-  } catch (err) {
-    authBoundaryLog.error(
-      `[bootstrap-electron] release device-link ownership on ${reason} failed (non-fatal):`,
-      err,
-    );
-  }
+  await closeSharedTasksBeforeAccountHandover({
+    closeSharedTasks: closeSharedTasksBeforeLogout,
+    releaseOwnership: releaseDeviceLinkOwnershipBeforeLogout,
+    onClosureFailure: () => markAccountBoundaryAbortedMidTeardown(reason),
+    onReleaseFailure: (err) => authBoundaryLog.error(
+      `[bootstrap-electron] release device-link ownership on ${reason} failed (non-fatal):`, err,
+    ),
+  });
   try {
     await lifecycleDbClientManager.dispose(reason);
   } finally {
@@ -2729,46 +2741,8 @@ if (started) {
       Atomics.wait(lockWait, 0, 0, pollMs);
       continue;
     }
-    const holderPid = readLockPid();
-    const holderAlive = holderPid !== null && pidAlive(holderPid);
-    const elapsedMs = Date.now() - start;
-    if (
-      shouldKeepWaitingForWindowsUpdateLock({
-        lockExists: true,
-        elapsedMs,
-        maxWaitMs,
-        holderPid,
-        holderAlive,
-        unlinkFailed: false,
-        sharingViolation: false,
-      })
-    ) {
-      Atomics.wait(lockWait, 0, 0, pollMs);
-      continue;
-    }
-    let unlinkFailed = false;
-    let sharingViolation = false;
-    try {
-      fs.unlinkSync(lockPath);
-    } catch (error) {
-      unlinkFailed = fs.existsSync(lockPath);
-      sharingViolation = unlinkFailed && isWindowsUpdateLockSharingViolation(error);
-    }
-    if (
-      shouldKeepWaitingForWindowsUpdateLock({
-        lockExists: fs.existsSync(lockPath),
-        elapsedMs,
-        maxWaitMs,
-        holderPid,
-        holderAlive,
-        unlinkFailed,
-        sharingViolation,
-      })
-    ) {
-      Atomics.wait(lockWait, 0, 0, pollMs);
-      continue;
-    }
-    break;
+    if (Date.now() - start >= maxWaitMs) break;
+    Atomics.wait(lockWait, 0, 0, pollMs);
   }
   // If still locked after the wait, proceed anyway (stale lock).
   // 锁已不存在(更新脚本正常清掉)同样算已清——等锁实例必须走
@@ -3790,7 +3764,7 @@ if (
     );
     app.quit();
   } else {
-    recordCindyVersionActive();
+    finishCindyVersionStartup();
     app.on('second-instance', (_event, argv) => {
       // Windows: 用户点 cindy://(或历史 xdt-maker://)链接 / 右键 "通过 Cindy 打开" 时,
       // OS 会再起一个本 app 实例; 单例锁把它 redirect 成 second-instance 事件,
@@ -4017,8 +3991,15 @@ const createWindow = () => {
   });
   // Main-window close policy is explicit because hidden utility windows (for
   // example the prewarmed global voice overlay) can keep the process alive.
+  const makeTestWindow = createMakeTestWindowBehavior({
+    isPackaged: app.isPackaged,
+    environment: process.env,
+    focus: () => activateMainWindow(),
+    quit: () => app.quit(),
+  });
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
+    if (makeTestWindow.close(event)) return;
     // macOS: keep the window + renderer alive and hide only, so Dock activation
     // can restore it without remounting the renderer.
     if (process.platform === 'darwin') {
@@ -4117,6 +4098,7 @@ const createWindow = () => {
     showMainWindowAndRestoreFullscreen(mainWindow, {
       restoreFullscreen: shouldRestoreMacFullscreen,
     });
+    makeTestWindow.ready();
     refreshWindowsAppBadge();
     if (!app.isPackaged || isCindyVersionLaunchPending())
       markDesktopDevWindowReady(mainWindow.webContents.getOSProcessId());
@@ -5043,11 +5025,12 @@ const registerIpcHandlers = () => {
   ipcMain.handle(MAKER_IPC_INVOKE.GIT_SAFETY_GET, async () => {
     return gitSafetyWire();
   });
-  ipcMain.handle(MAKER_IPC_INVOKE.GIT_SAFETY_SET, async (_e, enabled: unknown) => {
-    if (typeof enabled !== 'boolean') {
-      throwIpcError('INVALID_PARAMS', 'git safety enabled required (boolean)');
+  ipcMain.handle(MAKER_IPC_INVOKE.GIT_SAFETY_SET, async (_e, mode: unknown) => {
+    if (typeof mode === 'boolean') mode = mode ? 'all-projects' : 'off';
+    if (mode !== 'off' && mode !== 'existing-git' && mode !== 'all-projects') {
+      throwIpcError('INVALID_PARAMS', 'git safety mode required');
     }
-    writeGitSafetyAutoSnapshotEnabled(enabled);
+    writeGitSafetyMode(mode as GitSafetyMode);
     return gitSafetyWire();
   });
   ipcMain.handle(MAKER_IPC_INVOKE.GIT_SAFETY_RESET, async () => {
@@ -7560,7 +7543,7 @@ const registerIpcHandlers = () => {
         }
         return readCurrentCindySourceStatus(root, env);
       },
-      readLatest: (source) => readLatestSourceVersion(source, channel),
+      readLatest: (source) => readLatestSourceVersion(source, sourceChannel(source, channel)),
     });
   });
   // 源码准备是全局单例:进度广播给所有窗口,任意窗口都能停止它。
@@ -7575,10 +7558,27 @@ const registerIpcHandlers = () => {
   });
   configureCindyMakeTestRuntime(
     (id) => getMakerIfReady()?.getSession(id)?.isTurnRunning() ?? false,
+    broadcastCindyMakeHistoryChanged,
   );
   configureCindyMakeEditingGuard((id) => cindyMakeTestController.isUsingSession(id));
   registerMakeRemoteResources((id) => getMakerIfReady()?.getSession(id)?.isTurnRunning() ?? false);
-  configureMakeHistory((id) => getMakerIfReady()?.getSession(id)?.isTurnRunning() ?? false);
+  configureMakeHistory(
+    (id) => getMakerIfReady()?.getSession(id)?.isTurnRunning() ?? false,
+    broadcastCindyMakeHistoryChanged,
+  );
+  ipcMain.handle('app:get-cindy-make-settings', (event) => {
+    assertTrustedAppRendererEvent(event);
+    return readCindyMakeSettings();
+  });
+  ipcMain.handle(
+    'app:set-cindy-make-sync-latest-before-build',
+    (event, enabled: unknown) => {
+      assertTrustedAppRendererEvent(event);
+      if (typeof enabled !== 'boolean')
+        throwIpcError('INVALID_PARAMS', 'Invalid Cindy Make setting');
+      return writeCindyMakeSyncLatestBeforeBuild(enabled);
+    },
+  );
   ipcMain.handle('app:cindy-make-history', async (event, selected?: unknown) => {
     assertTrustedAppRendererEvent(event);
     if (
@@ -7614,7 +7614,7 @@ const registerIpcHandlers = () => {
         const message = (error as { message?: unknown }).message;
         const reason =
           typeof message === 'string'
-            ? /^\[PRECONDITION_FAILED\]\s*(busy|dirty|conflict|cleanupFailed|directoryBusy|unavailable)$/.exec(
+            ? /^\[PRECONDITION_FAILED\]\s*(busy|dirty|conflict|cleanupFailed|directoryBusy|unavailable|stopFailed)$/.exec(
                 message,
               )?.[1]
             : undefined;
@@ -7622,10 +7622,10 @@ const registerIpcHandlers = () => {
       }
     },
   );
-  ipcMain.handle('app:cindy-make-history-build', async (event) => {
+  ipcMain.handle('app:cindy-make-history-build', async (event, selection: unknown) => {
     assertTrustedAppRendererEvent(event);
     try {
-      return await generateHistoryPersonalVersion();
+      return await generateHistoryPersonalVersion(selection);
     } catch {
       throwIpcError('PRECONDITION_FAILED', 'unavailable');
     }
@@ -7662,6 +7662,7 @@ const registerIpcHandlers = () => {
     assertTrustedAppRendererEvent(event);
     return actCindyVersion(action, id);
   });
+  onQuit('cindy-make-tests', () => cindyMakeTestController.stopAllAndWait(), 'async');
   app.once('will-quit', () => cindyMakeTestController.stopAll());
   ipcMain.handle(
     'app:cindy-make-test',
@@ -9552,6 +9553,7 @@ app.on('ready', async () => {
   // owning modules above; future collections/actions do not add tunnel channels.
   registerRemoteResourcesIpc();
   registerDeviceLinkIpc();
+  registerSharedTaskIpc(isSharedTaskAvailable, () => getDeviceLinkStatus() === 'online');
   registerFilePeerIpc();
   registerRemoteDesktopIpc(isGlobalVoiceInputOverlaySender);
   void startupPurgeDrain
@@ -10233,8 +10235,11 @@ function chatEmbeddingWire() {
 function gitSafetyWire() {
   const state = readGitSafetySettingsState();
   return {
+    mode: state.value.mode,
     autoSnapshotEnabled: state.value.autoSnapshotEnabled,
+    autoInitProjectGit: state.value.autoInitProjectGit,
     isCustomized: state.isCustomized,
+    defaultMode: state.defaults.mode,
     defaultAutoSnapshotEnabled: state.defaults.autoSnapshotEnabled,
   };
 }

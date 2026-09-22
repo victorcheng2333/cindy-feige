@@ -83,8 +83,11 @@ describe('UserInfoSection — version label', () => {
       /const appVersionLabel = appRegionLabel\s*\n\s*\? `\$\{appRegionLabel\} · \$\{appDisplayVersion\}`\s*\n\s*: appDisplayVersion;/,
     );
     expect(source).not.toContain('XD.Inc');
-    expect(source).toContain('{appVersionLabel}');
-    expect(source).toContain('title={appVersionLabelDetail}');
+    expect(source).toContain("import { useCindyVersions } from '@/lib/useCindyVersions';");
+    expect(source).toContain('const versions = useCindyVersions();');
+    expect(source).toContain("t('cindyMake.versions.personal')");
+    expect(source).toContain('{visibleVersionLabel}');
+    expect(source).toContain('title={visibleVersionLabelDetail}');
   });
 
   it('shows the Beta label only after the persisted channel state has loaded', () => {
@@ -217,19 +220,19 @@ describe('UserInfoSection — inner main button no longer owns hover background'
   });
 
   it('keeps application actions below accounts in the More menu and leaves logout in Settings', () => {
-    expect(source).toContain('<ApplicationMenuItems />');
+    expect(source).toContain('<ApplicationMenuItems onJoinSharedTask=');
     expect(source).toContain('{renderSavedAccountItems()}');
     expect(source).toContain('accountsReadyForOwner &&');
     expect(source).toContain('savedAccounts.some((account) => !account.isCurrent)');
     expect(source.indexOf('{renderSavedAccountItems()}')).toBeLessThan(
-      source.indexOf('<ApplicationMenuItems />'),
+      source.indexOf('<ApplicationMenuItems onJoinSharedTask='),
     );
     expect(source).not.toContain("t('sidebar.user.menuLogout')");
     expect(source).not.toContain('useLogout');
     expect(source).not.toContain('<LogOut');
     expect(source).toContain("mode === 'local'");
     expect(source.indexOf("t('login.signIn')")).toBeLessThan(
-      source.indexOf('<ApplicationMenuItems />'),
+      source.indexOf('<ApplicationMenuItems onJoinSharedTask='),
     );
     expect(source).not.toContain('AccountSwitcherDialog');
   });

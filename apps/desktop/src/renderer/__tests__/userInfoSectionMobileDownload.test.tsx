@@ -98,6 +98,15 @@ vi.mock('@/components/sidebar/MobileDownloadDialog', () => ({
     ) : null,
 }));
 
+vi.mock('@/features/device-link/useSharedTaskTasks', () => ({ useSharedTaskTasks: vi.fn() }));
+vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({
+  JoinSharedTaskDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) =>
+    open ? <div role="dialog" aria-label="Join shared task"><button onClick={() => onOpenChange(false)}>Close sharing</button></div> : null,
+}));
+vi.mock('@/features/device-link/SharedTaskEndedNotice', () => ({
+  SharedTaskEndedNotice: ({ onJoin }: { onJoin: () => void }) => <button onClick={onJoin}>Rejoin shared task</button>,
+}));
+
 import { UserInfoSection } from '@/components/sidebar/UserInfoSection';
 import { toast } from '@/lib/toast';
 
@@ -498,5 +507,20 @@ describe('UserInfoSection mobile download entry', () => {
     expect(
       (await screen.findByRole('menuitem', { name: 'login.signIn' })).getAttribute('aria-disabled'),
     ).not.toBe('true');
+  });
+});
+
+describe('Shared task actions in the sidebar account menu', () => {
+  it.each([false, true])('keeps the join dialog open after the menu closes (collapsed=%s)', async (isCollapsed) => {
+    const user = userEvent.setup();
+    render(<UserInfoSection isCollapsed={isCollapsed} />);
+    await user.click(screen.getByRole('button', { name: 'sidebar.user.moreLabel' }));
+    await user.click(screen.getByRole('menuitem', { name: 'sharedTask.join' }));
+    expect(screen.getByRole('dialog', { name: 'Join shared task' })).toBeTruthy();
+    expect(screen.queryByRole('menu')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Close sharing' }));
+    expect(screen.queryByRole('dialog', { name: 'Join shared task' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Rejoin shared task' }));
+    expect(screen.getByRole('dialog', { name: 'Join shared task' })).toBeTruthy();
   });
 });
