@@ -21,7 +21,9 @@
   `safeStorage` 边界。不要新增自定义明文凭证文件，也不要把秘密下放给 Renderer、插件
   或不受信任页面。
 - 可信 Node Worker 的显式例外：`node.secretBindings[].oauthSecret` 只能引用本插件
-  已声明的 OAuth key。Host 根据本次 `authAccount`（省略时为默认账号）刷新并注入
+  已声明的 OAuth key；这是调用时的凭证解析边界，不是发布或安装的能力支持门禁。
+  引用尚不可用时保留声明，在调用时返回不支持／配置错误，不读取其他插件凭证。
+  Host 根据本次 `authAccount` 刷新并注入
   短期 access token；不得注入 refresh token、返回 Renderer/Agent、写日志或落盘。
   Worker 启动第三方 CLI 时仅用该次子进程环境传递，不修改全局环境或复用他账号配置。
   这是高权限 Node 的受审查信任边界，不是系统沙箱或对恶意 Worker 的隔离保证。
@@ -30,6 +32,11 @@
 - 插件自定义的账号昵称、展示偏好和业务配置属于插件数据，使用现有隔离 `/kv`，
   不扩充 Host OAuth 账号模型、凭证库或专用接口。插件按账号 ID 合并这些数据用于展示
   和选择账号；传给 Host 的授权身份仍是账号 ID，不能用昵称替代。
+- 远程声明式 API Key/PAT 可通过 [签名输入桥](../remote-plugin-oauth.md) 的密码卡一次性
+  提交；专用本机 IPC 验证设备、插件、卡片、完整字段展示后加密交给目标 Host 原 executor。
+  只写已声明的单个 user Secret，不读回、不批量同步、不开放账号 vault。值只短暂存在于
+  输入组件/Main 调用中，不进入 Renderer store、Agent、普通远控、日志或历史。CLI PKCE
+  的私有回调也只交给发起的可信 Node RPC，不能返回沙箱 main.js 或业务 stdout。
 - access token 等只需短期使用的秘密优先保留在内存中。日志、错误、遥测和调试输出不得
   包含凭证明文、完整鉴权头或可直接复用的授权材料。
 - 测试只使用明显无效的假凭证，不读取或复制开发者真实的 `HOME`、Agent home、

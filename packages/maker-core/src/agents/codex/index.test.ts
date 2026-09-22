@@ -6,6 +6,7 @@ import { applyPatch, formatPatch, parsePatch, reversePatch } from 'diff';
 
 import { CodexAgent, isExactNoRolloutThreadResumeError } from './index.js';
 import { CodexForkError } from './fork-error.js';
+import { Session } from '../../session.js';
 import { Method } from './app-server/protocol.js';
 import type { ThreadEventHandlers } from './app-server/host.js';
 import {
@@ -7051,6 +7052,65 @@ describe('CodexAgent MCP thread context hooks', () => {
     await Promise.all([first, second]);
     expect(close).toHaveBeenCalledOnce();
     await handle.close();
+  });
+
+  it('closes an in-flight turn when external dispose retires its host', async () => {
+    const agent = new CodexAgent(createDeps());
+    const handle = await agent.startSession({
+      sessionId: 'session-dispose-active-turn',
+      model: 'gpt-5.4',
+      workingDir: '/repo-local',
+    });
+    const iterator = handle.events()[Symbol.asyncIterator]();
+    const transport = createdTransports[0];
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+    transport.emitMockLine({
+      method: 'turn/started',
+      params: { threadId: 'thread-1', turn: { id: 'turn-dispose-active' } },
+    });
+    await waitForExpectation(() => {
+      expect(handle.isTurnRunning?.()).toBe(true);
+    });
+
+    await agent.dispose();
+
+    expect(clearIntervalSpy).toHaveBeenCalledOnce();
+    expect(handle.isTurnRunning?.()).toBe(false);
+    await expect(nextEvent(iterator)).resolves.toMatchObject({
+      type: 'error',
+      data: expect.objectContaining({
+        isTerminal: true,
+        willRetry: false,
+        message: expect.stringContaining('app-server force-retired'),
+      }),
+    });
+    await expect(nextEvent(iterator)).resolves.toMatchObject({
+      type: 'status',
+      data: expect.objectContaining({ status: 'Done', isRunning: false }),
+    });
+
+    await handle.close();
+  });
+
+  it('propagates global disposal through Session closure without replaying the input', async () => {
+    const deps = createDeps();
+    const agent = new CodexAgent(deps);
+    const handle = await agent.startSession({ sessionId: 'dispose-session', model: 'gpt-5.4', workingDir: '/repo' });
+    const send = vi.spyOn(handle, 'send');
+    const session = new Session({ id: 'dispose-session', agentKind: 'codex', workDir: '/repo',
+      handle, capabilities: {} as never, logger: deps.logger, turnStallMs: 0 });
+    const statuses: string[] = [];
+    const events: CoreAgentEvent[] = [];
+    session.onStatusChange((status) => statuses.push(status));
+    session.onEvent((event) => events.push(event));
+    await session.send('perform one input');
+    await Promise.all([agent.dispose(), agent.dispose()]);
+    await waitForExpectation(() => expect(session.getStatus()).toBe('closed'));
+    expect(statuses.filter((status) => status === 'closed')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(send).toHaveBeenCalledOnce();
+    expect(handle.isTurnRunning?.()).toBe(false);
   });
 
   it('force-retires one shared local Host under the credential guard and blocks its lazy replacement', async () => {
@@ -14825,6 +14885,30 @@ describe('CodexAgent MCP thread context hooks', () => {
     pendingDecision.resolve({ kind: 'permission', behavior: 'allow' });
     await handle.close();
   });
+
+  it.each(['gpt-5.4', 'future-native-catalog-model'])(
+    'sends native SSH model %s unchanged through the remote default provider', async (model) => {
+      const agent = new CodexAgent(createDeps());
+      const host = installFakeHost(agent, (method) => method === Method.TurnStart
+        ? { turn: { id: 'remote-native-turn' } } : undefined);
+      const handle = await agent.startSession({
+        sessionId: 'session-remote-native-route', model, providerId: 'openai',
+        workingDir: '/repo', permissionMode: 'auto', remoteHostId: 'gpu-box',
+      });
+      try {
+        const startParams = host.request.mock.calls.find(([method]) => method === Method.ThreadStart)?.[1];
+        expect(startParams).toMatchObject({ model });
+        // SSH does not install controller provider configs. Creation must admit
+        // only native catalog IDs, not gateway aliases or custom connections.
+        expect(startParams).not.toHaveProperty('modelProvider');
+        await handle.send({ type: 'user', content: 'hello' });
+        const turnParams = host.request.mock.calls.find(([method]) => method === Method.TurnStart)?.[1];
+        expect(turnParams).toMatchObject({ model });
+      } finally {
+        await handle.close();
+      }
+    },
+  );
 
   it('enables the built-in reviewer for remote OAuth-subscription sessions (Auto)', async () => {
     // 远程 daemon 用的是 auth sync 推过去的同一份订阅凭证, reviewer 调用
@@ -23600,7 +23684,7 @@ describe('CodexAgent resume preparation', () => {
     }));
     const host = installFakeHost(agent);
     try {
-      await expect(agent.forkSdkSession({ sourceSdkSessionId: resumeSessionId, workingDir: root })).rejects.toThrow();
+      await expect(agent.forkSdkSession({ sourceSdkSessionId: resumeSessionId, workingDir: root, upToMessageId: undefined })).rejects.toThrow();
       expect(host.getHost).not.toHaveBeenCalled();
       expect(host.request).not.toHaveBeenCalled();
     } finally {
