@@ -5886,8 +5886,6 @@
     "controlledTooltip": "这些设备连接了 Cindy 的任务，不代表正在控制桌面鼠标和键盘。你可以撤销其访问权限。",
     "revokeAccess": "撤销权限",
     "viewControllers": "查看",
-    "collapseControlledNotice": "收起远程控制提示",
-    "expandControlledNotice": "展开远程控制提示：{{label}}",
     "versionMismatch": "对方版本不一致，部分功能可能受限"
   },
   "accountDeletion": {
