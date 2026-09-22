@@ -1,6 +1,23 @@
+import path from "node:path";
+
 export const IOS_SIMULATOR_HELPER_BUILD_RESULT_FILENAME = "build-result.json";
 export const IOS_SIMULATOR_HELPER_UNSUPPORTED_REASON =
   "simulator-kit-architecture-unavailable";
+
+/** Xcode 27 moved SimulatorKit into Contents/SharedFrameworks. */
+export function resolveSimulatorKitFrameworks(developerDir, exists) {
+  const candidates = [
+    path.join(developerDir, "Library", "PrivateFrameworks"),
+    path.resolve(developerDir, "..", "SharedFrameworks"),
+  ];
+  const frameworks = candidates.find((candidate) =>
+    exists(path.join(candidate, "SimulatorKit.framework", "SimulatorKit")),
+  );
+  if (!frameworks) {
+    throw new Error(`SimulatorKit not found in selected Xcode: ${developerDir}`);
+  }
+  return frameworks;
+}
 
 export function parseMachOArchitectures(value) {
   return [

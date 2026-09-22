@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -16,6 +17,7 @@ import {
   IOS_SIMULATOR_HELPER_BUILD_RESULT_FILENAME,
   decideNativeSidecarBuild,
   parseMachOArchitectures,
+  resolveSimulatorKitFrameworks,
 } from "./native-sidecar-build-policy.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -83,11 +85,7 @@ if (!path.isAbsolute(developerDir)) {
     "[ios-simulator-sidecar] build failed: developer directory must be absolute",
   );
 }
-const simulatorKitFrameworks = path.join(
-  developerDir,
-  "Library",
-  "PrivateFrameworks",
-);
+const simulatorKitFrameworks = resolveSimulatorKitFrameworks(developerDir, existsSync);
 const simulatorKitBinary = path.join(
   simulatorKitFrameworks,
   "SimulatorKit.framework",
