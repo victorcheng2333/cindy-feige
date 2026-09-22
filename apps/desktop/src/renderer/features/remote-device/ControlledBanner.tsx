@@ -1,11 +1,10 @@
 /**
  * ControlledBanner —— 被控端可见性指示。
  *
- * 同账号设备持有任务订阅时，在输入框上方或全局兜底位置显示连接提示；
+ * 同账号设备持有任务订阅时，仅在新任务页右下角显示连接提示；
  * 订阅数量不是桌面键鼠控制者数量，实际桌面控制由 RemoteDesktopHost 显示。
- * 「动态状态点 + <设备名> 已连接到 Cindy + 撤销访问权限」。主聊天页展开时与计划胶囊
- * 组成一组共同居中;点胶囊内的叉后,只把呼吸灯放到 RunningStatusBar 右侧 token 统计
- * 之前。其它页面全局挂载(MainLayout),与 FeishuConflictDialogHost 同级。状态订阅来自
+ * 「动态状态点 + <设备名> 已连接到 Cindy + 撤销访问权限」。MainLayout 常驻挂载，
+ * 组件按当前路由限制展示，存量任务及其它页面均不显示。状态订阅来自
  * device-link:controlled-state push,初值经 getState().controlledBy。
  *
  * 单设备时按钮调 revoke(deviceId)(逐设备黑名单,持久化);多设备时跳转到设置页,
@@ -15,23 +14,15 @@
  * 完整设备名 + 远程控制逻辑说明。
  */
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useState,
-  useSyncExternalStore,
-  type CSSProperties,
-} from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
-import { Eye, MonitorOff, X } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Eye, MonitorOff } from 'lucide-react';
 
 import { toast } from '@/lib/toast';
 import { createLogger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { Tip } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 
 const log = createLogger('ControlledBanner');
 
@@ -43,81 +34,18 @@ interface Controller {
 /**
  * 共享的「谁在控制本机」状态 —— 提到组件之上、模块级单例缓存 + 单一订阅。
  *
- * 为什么:ControlledBanner 会在 composer / floating placement 间切换挂载。若每个实例各自
- * 持 useState([]) + 异步 getState() 回填,新挂载的实例首帧 controllers 必为空 → 返回 null →
- * 被控 chip 闪空 1 帧。把状态缓存到模块级,任何实例挂载时同步读到上次最新值,首帧即有内容。
+ * 状态订阅独立于页面显隐，回到新任务页时使用最新快照，避免重新查询造成闪空。
  */
 let cachedControllers: Controller[] = [];
 let pushSubscribed = false;
 let controllerRevision = 0;
 const controllerListeners = new Set<(c: Controller[]) => void>();
 
-// 按实际挂载的内联提示让全局浮条退让，不猜路由（伙伴也复用聊天视图）。
-// 多个 pane / 路由过渡可短暂共存，必须等最后一个内联提示卸载才恢复兜底。
-const inlineBannerOwners = new Set<symbol>();
-const inlineBannerListeners = new Set<() => void>();
-const getInlineBannerSnapshot = () => inlineBannerOwners.size > 0;
-function subscribeInlineBanners(listener: () => void) {
-  inlineBannerListeners.add(listener);
-  return () => {
-    inlineBannerListeners.delete(listener);
-  };
-}
-
-function useInlineBannerPresence(inline: boolean): boolean {
-  const hasInlineBanner = useSyncExternalStore(
-    subscribeInlineBanners,
-    getInlineBannerSnapshot,
-    getInlineBannerSnapshot,
-  );
-  useLayoutEffect(() => {
-    if (!inline) return;
-    const owner = Symbol();
-    inlineBannerOwners.add(owner);
-    for (const listener of inlineBannerListeners) listener();
-    return () => {
-      inlineBannerOwners.delete(owner);
-      for (const listener of inlineBannerListeners) listener();
-    };
-  }, [inline]);
-  return hasInlineBanner;
-}
-
-// composer 被控提示的折叠状态只在当前 renderer 生命周期内保存,并严格按 sessionId
-// 分桶。它不是全局偏好,不写 localStorage / DB / 服务端;切换任务时直接读取对应桶,
-// 因此不会把 A 任务的折叠态闪到 B 任务首帧。
-const collapsedComposerSessionIds = new Set<string>();
-const collapsedComposerListeners = new Set<() => void>();
-
-function subscribeCollapsedComposer(listener: () => void) {
-  collapsedComposerListeners.add(listener);
-  return () => collapsedComposerListeners.delete(listener);
-}
-
-function setComposerCollapsed(sessionId: string, collapsed: boolean) {
-  if (collapsedComposerSessionIds.has(sessionId) === collapsed) return;
-  if (collapsed) collapsedComposerSessionIds.add(sessionId);
-  else collapsedComposerSessionIds.delete(sessionId);
-  for (const listener of collapsedComposerListeners) listener();
-}
-
-export function useComposerCollapsed(sessionId: string | null): boolean {
-  const getSnapshot = useCallback(
-    () => sessionId !== null && collapsedComposerSessionIds.has(sessionId),
-    [sessionId],
-  );
-  return useSyncExternalStore(subscribeCollapsedComposer, getSnapshot, getSnapshot);
-}
-
 export function __resetControlledBannerForTests(): void {
   cachedControllers = [];
   pushSubscribed = false;
   controllerRevision++;
   controllerListeners.clear();
-  collapsedComposerSessionIds.clear();
-  collapsedComposerListeners.clear();
-  inlineBannerOwners.clear();
-  inlineBannerListeners.clear();
 }
 
 function emitControllers(next: Controller[]) {
@@ -145,10 +73,9 @@ function ensureControllerSubscription() {
 
 // 读共享的被控状态:首帧同步返回模块级缓存(remount 不再闪空),后续随 push 更新。
 /**
- * 读取当前被控端控制者列表,供聊天布局在挂载 composer 被控行前判断是否需要占位。
- * 状态仍由本模块的单例订阅维护,调用方不会建立额外 IPC 监听。
+ * 状态由本模块的单例订阅维护，显隐变化不会建立额外 IPC 监听。
  */
-export function useControlledBy(): Controller[] {
+function useControlledBy(): Controller[] {
   const [controllers, setControllers] = useState<Controller[]>(cachedControllers);
   useEffect(() => {
     ensureControllerSubscription();
@@ -162,35 +89,14 @@ export function useControlledBy(): Controller[] {
   return controllers;
 }
 
-/**
- * 控制被控提示的呈现方式:
- *   - 'floating'  : 全局悬浮兜底(右下角,带 shadow),非主聊天路由用。
- *   - 'inline'    : 独占一行、水平居中(带 w-full 包裹),plan-review 等场景用。
- *   - 'composer'  : 主聊天输入区的完整 chip / 折叠呼吸灯,具体挂载位置由会话布局决定。
- */
-interface ControlledBannerProps {
-  placement?: 'floating' | 'inline' | 'composer';
-  maxWidth?: CSSProperties['maxWidth'];
-  /** composer placement 的任务 ID,用于隔离完整 / 呼吸灯折叠态。 */
-  sessionId?: string | null;
-}
-
-export function ControlledBanner({
-  placement = 'floating',
-  maxWidth,
-  sessionId = null,
-}: ControlledBannerProps = {}) {
+export function ControlledBanner() {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const controllers = useControlledBy();
-  const composerSessionId = placement === 'composer' ? sessionId : null;
-  const composerCollapsed = useComposerCollapsed(composerSessionId);
-  const hasInlineBanner = useInlineBannerPresence(
-    placement !== 'floating' && controllers.length > 0,
-  );
 
-  if (controllers.length === 0 || (placement === 'floating' && hasInlineBanner)) return null;
+  if (pathname !== '/cc-agent/new' || controllers.length === 0) return null;
 
   const label =
     controllers.length === 1
@@ -238,42 +144,11 @@ export function ControlledBanner({
     </div>
   );
 
-  const collapsedIndicator = composerSessionId ? (
-    <Tip text={tooltipContent}>
-      <button
-        type="button"
-        data-controlled-banner="collapsed"
-        aria-label={t('remoteDevice.expandControlledNotice', { label })}
-        onClick={() => setComposerCollapsed(composerSessionId, false)}
-        className={cn(
-          // 20px 布局盒与右侧元信息行同高,避免把整行从 32px 撑到 40px；
-          // ::before 把鼠标热区无布局地扩回 28px。
-          "pointer-events-auto relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full before:absolute before:-inset-1 before:content-['']",
-          'text-[var(--text-tertiary)] transition-colors hover:bg-[var(--surface-hover)]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
-        )}
-      >
-        <span
-          // 圆点的几何中心与文字盒中心相同，但字形/箭头的可见像素重心更低；
-          // 单独下移 1px 做光学对齐，不改变按钮盒、状态行或计划位置。
-          className="session-status-breathing h-2 w-2 translate-y-[2px] rounded-full"
-          style={{ backgroundColor: 'var(--status-bar-accent)' }}
-          aria-hidden
-        />
-      </button>
-    </Tip>
-  ) : null;
-
   const chip = (
     <Tip text={tooltipContent}>
       <div
         data-controlled-banner-chip="true"
-        className={cn(
-          // select-none:被控提示是状态指示,不应像正文一样可被鼠标框选复制。
-          // h-7 与计划胶囊同为 28px；显式去掉纵向 padding，避免撤销按钮把主体撑到 32px。
-          'pointer-events-auto flex h-7 min-w-0 max-w-full select-none items-center gap-2 overflow-hidden rounded-full border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3 py-0',
-          placement === 'floating' && 'shadow-[var(--shadow-menu)]',
-        )}
+        className="pointer-events-auto flex h-7 min-w-0 max-w-full select-none items-center gap-2 overflow-hidden rounded-full border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3 py-0 shadow-[var(--shadow-menu)]"
       >
         <span
           className="session-status-breathing h-1.5 w-1.5 rounded-full"
@@ -297,50 +172,9 @@ export function ControlledBanner({
               : t('remoteDevice.revokeAccess')}
           </span>
         </button>
-        {composerSessionId && (
-          <button
-            type="button"
-            data-controlled-banner-collapse="true"
-            aria-label={t('remoteDevice.collapseControlledNotice')}
-            onClick={() => setComposerCollapsed(composerSessionId, true)}
-            className={cn(
-              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
-              'text-[var(--text-tertiary)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
-            )}
-          >
-            <X size={13} aria-hidden />
-          </button>
-        )}
       </div>
     </Tip>
   );
-
-  if (placement === 'inline') {
-    return (
-      <div className="flex w-full justify-center px-2">
-        <div
-          className="flex min-w-0 max-w-full justify-center"
-          style={maxWidth == null ? undefined : { maxWidth }}
-        >
-          {chip}
-        </div>
-      </div>
-    );
-  }
-
-  if (placement === 'composer') {
-    return (
-      <div className="pointer-events-auto flex min-w-0 max-w-full shrink justify-end">
-        <div
-          className="flex min-w-0 max-w-full justify-end"
-          style={maxWidth == null ? undefined : { maxWidth }}
-        >
-          {composerCollapsed && collapsedIndicator ? collapsedIndicator : chip}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex max-w-[calc(100vw-2rem)]">

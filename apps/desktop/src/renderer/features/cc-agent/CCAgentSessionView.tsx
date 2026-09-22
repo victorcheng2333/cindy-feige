@@ -25,7 +25,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
 import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { dbToMakerAgentKind, normalizeDbAgentKind } from '../../../shared/agentKindConversion';
 import { useTranslation } from 'react-i18next';
@@ -178,11 +178,6 @@ import { useRemoteSessionLoading } from '@/features/cc-agent/hooks/useRemoteSess
 import { RemoteSessionBanner } from './RemoteSessionBanner';
 import { decideRemoteSessionExit } from './remoteSessionExit';
 import { RemoteSessionLoading } from './RemoteSessionLoading';
-import {
-  ControlledBanner,
-  useComposerCollapsed,
-  useControlledBy,
-} from '@/features/remote-device/ControlledBanner';
 import {
   commandsForHelpCard,
   loadAllCommands,
@@ -451,8 +446,6 @@ interface CCAgentSessionViewProps {
   routeOwner?: boolean;
   compact?: boolean;
   orcaMode?: boolean;
-  /** 在输入区显示被控端提示。普通路由自动显示；完整态居中，折叠态位于 token 左侧。 */
-  showControlledBanner?: boolean;
   /**
    * 工具行采用紧凑布局 (flex-wrap 兜底)。
    * 之前从 orcaMode 派生 — 但 OrcaSplitView 的 toggle layout 下 pane 是满宽的,
@@ -739,7 +732,6 @@ export function CCAgentSessionView({
   routeOwner,
   compact,
   orcaMode,
-  showControlledBanner = false,
   compactToolbar = false,
   showRsbToggle = false,
   viewVisible = true,
@@ -878,10 +870,6 @@ export function CCAgentSessionView({
       viewVisible &&
       navigationMode !== 'sidebar-embedded' &&
       navigationMode !== 'split-pane');
-  const showComposerControlledBanner = viewVisible && (ownsRoute || showControlledBanner);
-  const controlledBy = useControlledBy();
-  const hasControlledBanner = showComposerControlledBanner && controlledBy.length > 0;
-  const controlledBannerCollapsed = useComposerCollapsed(sessionId ?? null);
   const isMac = window.electronAPI?.platform === 'darwin';
   // messageWidth：消息流容器宽度（视觉边距 50px / compact 20px）
   // inputWidth：ChatInput / 状态栏 / workingDir 行的宽度（视觉边距 40px / compact 10px）
@@ -899,11 +887,9 @@ export function CCAgentSessionView({
     messageWidth,
     inputWidth,
     inputPad,
-    inputHalfWidth,
     isCompact,
     getMessageWidth,
   } = useProportionalWidth(914, { compact: isCompactRail });
-  const controlledBannerMaxWidth = `min(${inputHalfWidth}, ${CONTROLLED_BANNER_MAX_WIDTH}px)`;
   const { sessions: allSessions, refreshSessions, patchLocal: patchLocalSession } = useCCSessions();
   // /ctr 接管态: attached=true 时把 ChatInput 替换为 TakeoverMask, 防止 desktop
   // 用户跟 IM 端 race; permission/ask/plan 三个 prompt 不替换 — 它们是 SDK 反向触
@@ -956,9 +942,6 @@ export function CCAgentSessionView({
   // Bot route gates have already checked durable ownership. The async runtime
   // snapshot may be absent during load/reconnect; it must never change the skin.
   const botChatIdentity = resolveBotChatIdentity(botIdentity, sessionId);
-  // 伙伴没有 RunningStatusBar，折叠呼吸灯继续留在输入框上方，不能随状态行一起消失。
-  const showCenteredControlledBanner =
-    hasControlledBanner && (!controlledBannerCollapsed || Boolean(botChatIdentity));
   // assistant 气泡左侧的伙伴头像。节点在整场对话里是同一个,memo 住让 MessageItem
   // 的 memo 比较仍然成立(否则每帧新节点 = 全流重渲染)。
   const botAssistantAvatar = useMemo(
@@ -4828,9 +4811,7 @@ export function CCAgentSessionView({
 
           {/* Solid background zone */}
           <div className="pointer-events-auto flex w-full flex-col items-center bg-[hsl(var(--content-area))] pb-5">
-            {/* 单行 composer 状态层：RunningStatusBar 与中央胶囊组合叠在同一个 grid row。
-              展开态由「计划 + 完整被控提示」组成真实 flex 组合共同居中,被控提示会把计划
-              向左挤且不会互相覆盖；折叠态计划恢复单独居中,呼吸灯移到 token 统计左侧。 */}
+            {/* 单行 composer 状态层：RunningStatusBar 与居中的计划胶囊叠在同一个 grid row。 */}
             <div
               className="mx-auto grid grid-cols-1 grid-rows-1 items-center"
               style={{ width: inputWidth }}
@@ -4854,7 +4835,7 @@ export function CCAgentSessionView({
                   avatar={botAssistantAvatar}
                   inputWidth={inputWidth}
                 />
-              ) : !pendingPlanReview || (hasControlledBanner && controlledBannerCollapsed) ? (
+              ) : !pendingPlanReview ? (
                 <RunningStatusBar
                   key={sessionId}
                   sessionKey={sessionId ?? null}
@@ -4882,15 +4863,6 @@ export function CCAgentSessionView({
                     if (backgroundActivity.active) void backgroundActivity.stopAll();
                     else void backgroundBash.stopAll();
                   }}
-                  rightLeadingSlot={
-                    hasControlledBanner && controlledBannerCollapsed ? (
-                      <ControlledBanner
-                        placement="composer"
-                        maxWidth={controlledBannerMaxWidth}
-                        sessionId={sessionId ?? null}
-                      />
-                    ) : null
-                  }
                   className="col-start-1 row-start-1"
                 />
               ) : null}
@@ -4922,13 +4894,6 @@ export function CCAgentSessionView({
                   }
                   className="mb-0"
                 />
-                {showCenteredControlledBanner && (
-                  <ControlledBanner
-                    placement="composer"
-                    maxWidth={controlledBannerMaxWidth}
-                    sessionId={sessionId ?? null}
-                  />
-                )}
               </div>
             </div>
 
@@ -5717,7 +5682,6 @@ function HandoffSourcePill({
 // ---------------------------------------------------------------------------
 
 const STATUS_BAR_FADE_MS = 400;
-const CONTROLLED_BANNER_MAX_WIDTH = 420;
 
 function RunningStatusBar({
   status,
@@ -5735,7 +5699,6 @@ function RunningStatusBar({
   backgroundBashOnlyCount = 0,
   backgroundStopping = false,
   onStopBackgroundTasks,
-  rightLeadingSlot = null,
   suppressContent = false,
   sessionKey = null,
   className,
@@ -5776,9 +5739,7 @@ function RunningStatusBar({
   backgroundStopping?: boolean;
   /** 「全部停止」入口(关闭常驻 CC 子进程,会话可续)。 */
   onStopBackgroundTasks?: () => void;
-  /** 独立于运行态淡出的右侧前置槽位；折叠后的被控呼吸灯固定在 token 统计左侧。 */
-  rightLeadingSlot?: ReactNode;
-  /** 交互卡接管 composer 时立即隐藏旧运行文案/token，只保留折叠呼吸灯。 */
+  /** 交互卡接管 composer 时立即隐藏旧运行文案/token。 */
   suppressContent?: boolean;
   /** 会话身份：速度历史按它做进程内缓存，切任务再切回图表不清零。 */
   sessionKey?: string | null;
@@ -5956,7 +5917,7 @@ function RunningStatusBar({
   // A pinned panel keeps its anchor mounted through idle and subsequent turns.
   // 空闲后真正收起,不再给输入框上方留下固定空行。overlay 的 ResizeObserver 会在
   // DOM 尺寸变化后补齐 MessageStream 的 bottomPadding,因此不靠硬编码高度制造跳变。
-  if (!rightLeadingSlot && (suppressContent || (isHidden && !ratePanelPinned))) return null;
+  if (suppressContent || (isHidden && !ratePanelPinned)) return null;
 
   // 两段式布局:左(运行状态) / 右(elapsed·tokens)。
   // - 左段 min-w-0(可收缩):status 并非短枚举 —— turn-start 文案带用户名(可含中文长句)、
@@ -6013,11 +5974,10 @@ function RunningStatusBar({
         )}
         <span className="truncate text-13 font-medium">{displayStatus}</span>
       </div>
-      {/* 右侧先放不随运行态淡出的被控呼吸灯,再放 elapsed / · / arrow-down / tokens。
+      {/* 右侧放 elapsed / · / arrow-down / tokens。
           side-task (mivo 等) 运行时只显示 elapsed, 不带 token 行 —— 这类任务不
           走 LLM, 显示残留 token 计数会误导用户以为也耗了 token。 */}
       <div className="flex min-w-0 items-center justify-self-end gap-2">
-        {rightLeadingSlot}
         {(!suppressContent && (!isHidden || ratePanelPinned)) && (
           <div
             data-running-status-meta="true"

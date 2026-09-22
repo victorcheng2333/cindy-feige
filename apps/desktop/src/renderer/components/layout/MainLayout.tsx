@@ -377,7 +377,7 @@ export function MainLayout() {
     return undefined;
   }, [isDragging]);
   const isMac = window.electronAPI?.platform === 'darwin';
-  const { isFullscreen } = useMacFullscreen();
+  useMacFullscreen();
   const {
     open: noticeOpen,
     mode: noticeMode,
@@ -1655,7 +1655,7 @@ export function MainLayout() {
           单例 + vanilla DOM,这里只挂一个空 React 节点,Phase 6 maximize 时
           会在这里加 layout 控制。 */}
       <BrowserWebviewPool />
-      {/* 实际存在内联提示（含伙伴 / 折叠态）时组件自行退让，其余页面保留兜底。 */}
+      {/* 连接状态持续订阅，提示仅在新任务页显示。设备管理统一在远程连接设置中。 */}
       <ControlledBanner />
     </FeatureSidebarSlotProvider>
   );
