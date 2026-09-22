@@ -6416,7 +6416,10 @@
     "unclassified": "Unclassified"
   },
   "titleBar": {
-    "menu": "Menu",
+    "goBack": "Go Back",
+    "goForward": "Go Forward",
+    "noBackHistory": "No Previous Page",
+    "noForwardHistory": "No Next Page",
     "minimize": "Minimize",
     "maximizeOrRestore": "Maximize or Restore Window",
     "close": "Close",
@@ -7378,7 +7381,6 @@
       "settingsLink": "Settings, current user: {{name}}",
       "settingsLinkBeta": "Settings, current user: {{name}}, Beta channel enabled",
       "moreLabel": "More, current user: {{name}}",
-      "menuSettings": "Settings",
       "menuAddAccount": "Sign in to another account",
       "canaryBadge": "Canary user",
       "regionCodeCn": "CN",

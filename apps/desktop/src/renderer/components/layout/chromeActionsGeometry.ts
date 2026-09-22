@@ -10,6 +10,19 @@ export const CHROME_ACTIONS_GEOMETRY = {
   defaultLeft: 8,
   /** macOS 非全屏时，按钮簇为红绿灯预留空间后的左偏移。 */
   macTrafficLightLeft: 78,
-  /** 两个 28px 按钮加 4px 间距的总宽度。 */
-  clusterWidth: 60,
+  /** 窄侧栏的实际宽度；按钮簇超过这条边界的部分由相邻面板承接。 */
+  sidebarRailWidth: 78,
+  /** 三个 28px 按钮加两个 4px 间距的总宽度。 */
+  clusterWidth: 92,
 } as const;
+
+export function railChromeActionsWidth(isMac: boolean, isFullscreen: boolean): number {
+  const left =
+    isMac && !isFullscreen
+      ? CHROME_ACTIONS_GEOMETRY.macTrafficLightLeft
+      : CHROME_ACTIONS_GEOMETRY.defaultLeft;
+  return Math.max(
+    0,
+    left + CHROME_ACTIONS_GEOMETRY.clusterWidth - CHROME_ACTIONS_GEOMETRY.sidebarRailWidth,
+  );
+}

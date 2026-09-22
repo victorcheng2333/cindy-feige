@@ -4,7 +4,7 @@
  * 职责：
  *   - 宽度 / 背景 / 右侧分割线 / 折叠-展开过渡动画（跨所有主功能共享）
  *   - 顶行（Codex 风格布局重构后通顶到窗口顶部）：mac 红绿灯所在的空白
- *     拖拽行；其下是 HorizontalTabbar 行。折叠/菜单按钮在 MainLayout 的
+ *     拖拽行；其下是 HorizontalTabbar 行。折叠/导航按钮在 MainLayout 的
  *     ChromeActions 浮层（钉死左上角红绿灯旁,不随侧栏状态移动）
  *   - 上半"功能内容槽"——内容由当前激活的 Feature Layout 注入，Shell 不知道
  *     里面是什么（这里通过 useFeatureSidebarUpper 读取槽位内容）
@@ -35,7 +35,7 @@ import { UserInfoSection } from './UserInfoSection';
  *  macOS 三个窗口控制点(traffic lights)整簇约 70px,rail 必须 ≥ 它才能完整容纳,
  *  否则红绿灯会越过 rail 右缘溢出到主区(64px 时的问题)。78px 也容得下 36px 瓷砖
  *  / 头像居中 + 两侧呼吸。 */
-const RAIL_WIDTH = 78;
+const RAIL_WIDTH = CHROME_ACTIONS_GEOMETRY.sidebarRailWidth;
 
 interface SidebarProps {
   /** 完全隐藏（左上角 toggle / ⌘B）——w-0，与旧版语义一致。 */
@@ -192,7 +192,7 @@ export function Sidebar({
       >
         {/* Top chrome 行: Sidebar 通顶后窗口左上角的空白 chrome 行（Codex 风格）。
           - mac 非全屏：红绿灯悬浮在本行左侧。
-          - 折叠 + 菜单按钮**不在本行** —— 它们是 MainLayout 的 ChromeActions
+          - 折叠 + 后退/前进按钮**不在本行** —— 它们是 MainLayout 的 ChromeActions
             浮层（浮在本行之上），钉死左上角红绿灯旁,不随侧栏状态移动。
           - 整行 drag region（拖拽移动窗口）；放一个 no-drag 占位后代为浮层
             按钮挖出可点击的洞（Electron 拖拽区域挖洞只在 drag 元素自己的后代
@@ -206,7 +206,7 @@ export function Sidebar({
         >
           <div
             aria-hidden
-            // 60px = 折叠按钮 28 + gap 4 + 菜单 28(ChromeActions 簇宽)。
+            // 按钮簇宽度统一取 CHROME_ACTIONS_GEOMETRY。
             className="h-full shrink-0"
             style={
               {

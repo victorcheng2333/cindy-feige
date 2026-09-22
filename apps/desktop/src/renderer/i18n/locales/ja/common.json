@@ -6414,7 +6414,10 @@
     "unclassified": "未分類"
   },
   "titleBar": {
-    "menu": "メニュー",
+    "goBack": "戻る",
+    "goForward": "進む",
+    "noBackHistory": "戻れるページはありません",
+    "noForwardHistory": "進めるページはありません",
     "minimize": "最小化",
     "maximizeOrRestore": "ウィンドウを最大化または元のサイズに戻す",
     "close": "閉じる",
@@ -7376,7 +7379,6 @@
       "settingsLink": "設定, 現在のユーザー: {{name}}",
       "settingsLinkBeta": "設定, 現在のユーザー: {{name}}, Beta チャンネル有効",
       "moreLabel": "その他、現在のユーザー：{{name}}",
-      "menuSettings": "設定",
       "menuAddAccount": "別のアカウントでログイン",
       "canaryBadge": "Canary ユーザー",
       "regionCodeCn": "CN",

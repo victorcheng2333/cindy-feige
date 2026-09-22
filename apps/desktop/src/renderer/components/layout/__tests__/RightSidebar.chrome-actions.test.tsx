@@ -17,7 +17,11 @@ import { CHROME_ACTIONS_GEOMETRY } from '../chromeActionsGeometry';
 import { RightSidebar } from '../RightSidebar';
 
 /** 渲染只覆盖 titlebar app-region 结构与面板位置分流所需的最小 props。 */
-function renderSidebar(isMac: boolean, panelSide: 'left' | 'right'): void {
+function renderSidebar(
+  isMac: boolean,
+  panelSide: 'left' | 'right',
+  railChromeActionsHitHole = false,
+): void {
   render(
     <RightSidebar
       isCollapsed={false}
@@ -27,6 +31,7 @@ function renderSidebar(isMac: boolean, panelSide: 'left' | 'right'): void {
       workdir="/repo"
       remoteHostId={null}
       panelSide={panelSide}
+      railChromeActionsHitHole={railChromeActionsHitHole}
     />,
   );
 }
@@ -57,6 +62,13 @@ describe('RightSidebar Windows chrome actions hit hole', () => {
       (spacer.style as CSSStyleDeclaration & { WebkitAppRegion: string }).WebkitAppRegion,
     ).toBe('drag');
     expect(screen.queryByTestId('right-sidebar-chrome-actions-hit-hole')).toBeNull();
+  });
+
+  it.each(['left', 'right'] as const)('covers the overflow with a %s-docked rail owner', (side) => {
+    renderSidebar(false, side, true);
+    const hole = screen.getByTestId('right-sidebar-chrome-actions-hit-hole');
+    expect(hole.style.marginLeft).toBe('0px');
+    expect(hole.style.width).toBe('22px');
   });
 
   it('does not add the Windows-only hit hole on macOS', () => {

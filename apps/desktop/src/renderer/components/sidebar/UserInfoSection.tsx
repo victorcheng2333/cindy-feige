@@ -5,7 +5,6 @@ import {
   Building2,
   Check,
   Flame,
-  Settings,
   Shield,
   Smartphone,
   UserPlus,
@@ -31,6 +30,7 @@ import { toast } from '@/lib/toast';
 import type { DesktopSavedAccount } from '@/lib/authService';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { shouldLabelRegion } from '../../../shared/regionCode';
+import { ApplicationMenuItems } from './ApplicationMenuItems';
 import { MobileDownloadDialog } from './MobileDownloadDialog';
 
 interface UserInfoSectionProps {
@@ -146,10 +146,6 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
     ? `${appRegionLabel} · ${appDisplayVersionDetail}`
     : appDisplayVersionDetail;
   const remoteAvailable = mode === 'cloud';
-
-  const openSettings = () => {
-    if (location.pathname !== '/settings') navigate('/settings');
-  };
 
   const openAddAccount = async () => {
     if (addingAccount) return;
@@ -320,10 +316,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
             {addingAccount ? t('sidebar.accountSwitcher.adding') : t('login.signIn')}
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem onSelect={openSettings} className="gap-2.5">
-          <Settings className="h-4 w-4" aria-hidden="true" />
-          {t('sidebar.user.menuSettings')}
-        </DropdownMenuItem>
+        <ApplicationMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>
   );

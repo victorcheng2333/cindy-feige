@@ -3,7 +3,7 @@
  * ---------------------------------------------------------------------------
  * Codex 风格布局重构后，原 TitleBar 拆为三部分：
  *   - Sidebar 顶行（红绿灯让位 + 空白拖拽区，见 Sidebar.tsx）
- *   - ChromeActions 浮动按钮簇（菜单 + 折叠按钮，见 MainLayout —— 浮在
+ *   - ChromeActions 浮动按钮簇（折叠 + 后退/前进，见 MainLayout —— 浮在
  *     Sidebar / Header 之上，折叠/展开时整体平移，而不是两份实例消失重现）
  *   - 本组件：右侧内容区自己的顶栏
  *
@@ -27,7 +27,7 @@ import type { ReactNode } from 'react';
 import { useFeatureContentHeader } from '@/features/feature-context';
 import { useMacFullscreen } from '@/hooks/useMacFullscreen';
 import { cn } from '@/lib/utils';
-import { CHROME_ACTIONS_GEOMETRY } from './chromeActionsGeometry';
+import { CHROME_ACTIONS_GEOMETRY, railChromeActionsWidth } from './chromeActionsGeometry';
 
 /**
  * Windows 窗口控制按钮宽度（3 × 46px）。固定侧栏入口位于下一行的内容区，
@@ -85,13 +85,13 @@ export function ContentHeader({
 
   // Sidebar 不可见时红绿灯落在 header 上方 → 非全屏让位。78px = 70px 红绿灯
   // 占位 + 8px 呼吸间隙（与原 TitleBar 的 pl-[70px] + px-2 等效）。
-  const needsTrafficLightInset = isMac && !isFullscreen && !sidebarVisible;
-  // rail 态时，Sidebar 仍占 78px；mac 非全屏的 ChromeActions 却紧贴其右缘
-  // (x=78)。Sidebar 顶栏里的 no-drag 洞会被自身 overflow-hidden 裁掉，必须在
-  // main 的 drag header 左缘再挖一个洞，否则点击浮动的收放/菜单按钮会被 Electron
-  // 当成窗口拖拽吞掉。完全收起态 main 从 x=0 开始，既有 spacer 已覆盖该位置；
-  // 全屏态按钮回到 rail 内，也由 Sidebar 的既有洞覆盖。
-  const needsRailChromeActionsHitHole = isMac && !isFullscreen && isSidebarRail;
+  const needsTrafficLightInset = isMac && !isFullscreen && !sidebarVisible && !isSidebarRail;
+  // 三个按钮在各平台均可能越过窄侧栏；相邻面板只承接溢出的部分。
+  const railOverflowWidth = railChromeActionsWidth(isMac, isFullscreen);
+  const needsRailChromeActionsHitHole = isSidebarRail;
+  const chromeActionsSpacerWidth = isSidebarRail
+    ? railOverflowWidth
+    : CHROME_ACTIONS_GEOMETRY.clusterWidth + 8;
 
   // 设置页：Sidebar 隐藏且无折叠按钮占位 → header 退化为"隐形 chrome"
   // （仅拖拽区 + Windows 窗口控制），不画下边框。
@@ -142,7 +142,7 @@ export function ContentHeader({
           className="absolute left-0 top-0 h-full"
           style={
             {
-              width: CHROME_ACTIONS_GEOMETRY.clusterWidth,
+              width: railOverflowWidth,
               WebkitAppRegion: 'no-drag',
             } as React.CSSProperties
           }
@@ -151,7 +151,7 @@ export function ContentHeader({
       {/* 折叠态占位 spacer：真实按钮在 MainLayout 的 ChromeActions 浮层里
           （钉死左上角、不随折叠重建的常驻实例）。本 spacer 以与侧栏宽度动画
           相同的时长/缓动伸缩，把标题平滑推到浮动按钮右侧（项目规则 8）。
-          68px = 折叠按钮 28 + gap 4 + 菜单 28 + 与标题间隙 8。
+          宽度跟随按钮簇的共享几何，再给标题留出 8px 间隙。
           ⚠️ spacer 自身必须 no-drag：Electron 的拖拽区域挖洞只在"drag 元素
           自己的后代"上可靠生效，浮层（非后代）的 no-drag 不被计入 ——
           否则浮层按钮点击会被窗口拖拽吞掉。 */}
@@ -160,9 +160,12 @@ export function ContentHeader({
         className={cn(
           'h-full shrink-0 overflow-hidden',
           'transition-[max-width] duration-[250ms] ease-[cubic-bezier(0.4,0,0.2,1)]',
-          showCollapsedActions ? 'max-w-[68px] w-[68px]' : 'max-w-0 w-[68px]',
         )}
-        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        style={{
+          width: chromeActionsSpacerWidth,
+          maxWidth: showCollapsedActions ? chromeActionsSpacerWidth : 0,
+          WebkitAppRegion: 'no-drag',
+        } as React.CSSProperties}
       />
 
       {/* 中部：feature 注入的 slot 内容。容器保持 drag，注入内容里的交互

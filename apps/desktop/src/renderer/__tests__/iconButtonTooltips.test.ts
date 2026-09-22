@@ -275,22 +275,15 @@ describe('icon-only button tooltip coverage', () => {
     expect(sidebarButton).not.toContain('title={label}');
   });
 
-  it('gives the left title-bar sidebar toggle and app menu visible tips', () => {
-    const chromeActions = rendererSource('components/layout/ChromeActions.tsx');
-    const menuButton = rendererSource('components/title-bar/MenuButton.tsx');
-
-    expect(chromeActions).toContain("import { Tip } from '@/components/ui/tooltip';");
-    expect(chromeActions).toContain("'contentHeader.expandSidebar'");
-    expect(chromeActions).toContain("'contentHeader.collapseSidebar'");
-    expect(chromeActions).toContain('<Tip text={sidebarToggleLabel} side="bottom">');
-    expect(chromeActions).toContain('aria-label={sidebarToggleLabel}');
-    expect(menuButton).toContain("import { Tip } from '@/components/ui/tooltip';");
-    expect(menuButton).toContain("text={t('titleBar.menu')}");
-    expect(menuButton).toContain('const [menuOpen, setMenuOpen] = useState(false)');
-    expect(menuButton).toContain('<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>');
-    expect(menuButton).toContain(
-      '<Tip text={t(\'titleBar.menu\')} side="bottom" controlledOpen={menuOpen ? false : undefined}>',
-    );
+  it('gives the title-bar sidebar toggle and navigation controls visible tips', () => {
+    const source = rendererSource('components/layout/ChromeActions.tsx');
+    expect(source).toContain('<Tip text={sidebarToggleLabel} side="bottom">');
+    expect(source).toContain('aria-label={sidebarToggleLabel}');
+    expect(source).toContain('<ChromeIconButton');
+    expect(source).toContain("aria-label={t('titleBar.goBack')}");
+    expect(source).toContain("aria-label={t('titleBar.goForward')}");
+    expect(source).toContain("'titleBar.noBackHistory'");
+    expect(source).toContain("'titleBar.noForwardHistory'");
   });
 
   it('keeps Windows system window controls accessible without visible tips', () => {

@@ -1,5 +1,5 @@
 /**
- * ChromeActions — 浮动 chrome 按钮簇（折叠/展开 Sidebar + 菜单）
+ * ChromeActions — 浮动 chrome 按钮簇（折叠/展开 Sidebar + 后退/前进）
  * ---------------------------------------------------------------------------
  * 为什么是浮层：按钮簇浮在 Sidebar 顶行 / ContentHeader 之上,不随侧栏
  * 折叠/展开/peek 重建或被裁切,是唯一一份常驻实例。
@@ -12,9 +12,9 @@
  *   触发钮(折叠按钮)因此有稳定的触发区域。唯一的位移是 mac 进出全屏
  *   （78 ↔ 8）,保留 250ms 过渡与红绿灯出现/消失同步。
  *
- * 顺序：折叠按钮在左（紧贴红绿灯,对齐 Codex）,菜单（三横杠）在其右。
+ * 顺序：折叠按钮在左（紧贴红绿灯）,后退、前进在其右。
  *
- * 尺寸：按钮 h-7 w-7(28px)+ 图标 15 + rounded-md —— 与折叠态标题行的
+ * 尺寸：按钮 h-7 w-7(28px)+ 图标 15 + rounded-full —— 与折叠态标题行的
  * 「…」按钮(SessionContentHeader,h-7 w-7 / Ellipsis 15 / rounded-md)同一
  * 规格族,收起侧栏后整行 chrome(红绿灯 → 本簇 → 标题 → 标题后图标)
  * 视觉重量一致(对齐 Codex 的小图标密度)。
@@ -32,12 +32,13 @@
  * 用 transform 平移后按钮视觉位置和 no-drag 挖洞错位，点击会变成拖拽窗口。
  */
 
-import { PanelLeft } from 'lucide-react';
+import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { MenuButton } from '@/components/title-bar/MenuButton';
+import { ChromeIconButton } from '@/components/title-bar/ChromeIconButton';
 import { Tip } from '@/components/ui/tooltip';
 import { useMacFullscreen } from '@/hooks/useMacFullscreen';
+import type { AppNavigationHistory } from '@/hooks/useAppNavigationHistory';
 import { cn } from '@/lib/utils';
 
 import type { SidebarPeekTriggerProps } from '@/hooks/useSidebarPeek';
@@ -46,9 +47,10 @@ import { CHROME_ACTIONS_GEOMETRY } from './chromeActionsGeometry';
 interface ChromeActionsProps {
   isSidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  navigation: AppNavigationHistory;
   /**
    * 完全隐藏态 hover peek 的触发钮 props(useSidebarPeek)——只挂在折叠按钮上,
-   * MenuButton 的 hover 有自己的语义(打开菜单),不参与 peek。
+   * 导航按钮不参与 peek。
    */
   peekTriggerProps?: SidebarPeekTriggerProps;
 }
@@ -56,6 +58,7 @@ interface ChromeActionsProps {
 export function ChromeActions({
   isSidebarCollapsed,
   onToggleSidebar,
+  navigation,
   peekTriggerProps,
 }: ChromeActionsProps) {
   const { t } = useTranslation();
@@ -87,23 +90,39 @@ export function ChromeActions({
           {...peekTriggerProps}
           className={cn(
             'flex items-center justify-center',
-            'h-7 w-7 rounded-md',
+            'h-7 w-7 rounded-full',
             'text-titlebar-icon',
             'transition-colors',
             'hover:bg-titlebar-button-hover',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
           )}
           onClick={onToggleSidebar}
           aria-label={sidebarToggleLabel}
           aria-expanded={!isSidebarCollapsed}
         >
-          <PanelLeft size={15} />
+          <PanelLeft size={15} aria-hidden="true" />
         </button>
       </Tip>
-      <MenuButton
-        onExitFullscreen={
-          isMac && isFullscreen ? () => window.electronAPI?.windowExitFullscreen() : undefined
-        }
-      />
+      <ChromeIconButton
+        aria-label={t('titleBar.goBack')}
+        tooltip={t(navigation.canGoBack ? 'titleBar.goBack' : 'titleBar.noBackHistory')}
+        tooltipSide="bottom"
+        disabled={!navigation.canGoBack}
+        onClick={navigation.goBack}
+        className="enabled:hover:bg-titlebar-button-hover disabled:pointer-events-none disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+      >
+        <ArrowLeft size={15} aria-hidden="true" />
+      </ChromeIconButton>
+      <ChromeIconButton
+        aria-label={t('titleBar.goForward')}
+        tooltip={t(navigation.canGoForward ? 'titleBar.goForward' : 'titleBar.noForwardHistory')}
+        tooltipSide="bottom"
+        disabled={!navigation.canGoForward}
+        onClick={navigation.goForward}
+        className="enabled:hover:bg-titlebar-button-hover disabled:pointer-events-none disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+      >
+        <ArrowRight size={15} aria-hidden="true" />
+      </ChromeIconButton>
     </div>
   );
 }

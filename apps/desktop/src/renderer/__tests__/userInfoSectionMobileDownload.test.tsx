@@ -466,7 +466,7 @@ describe('UserInfoSection mobile download entry', () => {
     const signIn = await screen.findByRole('menuitem', {
       name: 'login.signIn',
     });
-    const settings = screen.getByRole('menuitem', { name: 'sidebar.user.menuSettings' });
+    const settings = screen.getByRole('menuitem', { name: 'titleBar.menuItems.settings' });
     expect(signIn.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
