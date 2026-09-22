@@ -1,12 +1,33 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   IOS_SIMULATOR_HELPER_UNSUPPORTED_REASON,
   decideNativeSidecarBuild,
   parseMachOArchitectures,
+  resolveSimulatorKitFrameworks,
 } from "./native-sidecar-build-policy.mjs";
 
 describe("native sidecar build policy", () => {
+  const developerDir = path.resolve("Xcode.app", "Contents", "Developer");
+  const legacyFrameworks = path.join(developerDir, "Library", "PrivateFrameworks");
+  const sharedFrameworks = path.resolve(developerDir, "..", "SharedFrameworks");
+
+  it.each([legacyFrameworks, sharedFrameworks])("links SimulatorKit from %s", (frameworks) => {
+    const binary = path.join(frameworks, "SimulatorKit.framework", "SimulatorKit");
+    expect(resolveSimulatorKitFrameworks(developerDir, (candidate) => candidate === binary))
+      .toBe(frameworks);
+  });
+
+  it("preserves the legacy framework preference when both layouts exist", () => {
+    expect(resolveSimulatorKitFrameworks(developerDir, () => true)).toBe(legacyFrameworks);
+  });
+
+  it("fails when the selected Xcode does not contain SimulatorKit", () => {
+    expect(() => resolveSimulatorKitFrameworks(developerDir, () => false))
+      .toThrow("SimulatorKit not found in selected Xcode");
+  });
+
   it("parses unique architectures from lipo output", () => {
     expect(parseMachOArchitectures("x86_64 arm64e x86_64\n")).toEqual([
       "x86_64",

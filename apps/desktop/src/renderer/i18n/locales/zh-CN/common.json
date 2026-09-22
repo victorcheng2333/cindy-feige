@@ -6414,7 +6414,10 @@
     "unclassified": "未分类"
   },
   "titleBar": {
-    "menu": "菜单",
+    "goBack": "后退",
+    "goForward": "前进",
+    "noBackHistory": "没有可后退的页面",
+    "noForwardHistory": "没有可前进的页面",
     "minimize": "最小化",
     "maximizeOrRestore": "最大化或还原窗口",
     "close": "关闭",
@@ -7376,7 +7379,6 @@
       "settingsLink": "设置，当前用户：{{name}}",
       "settingsLinkBeta": "设置，当前用户：{{name}}，Beta 测试渠道已开启",
       "moreLabel": "更多，当前用户：{{name}}",
-      "menuSettings": "设置",
       "menuAddAccount": "登录更多账号",
       "canaryBadge": "灰度用户",
       "regionCodeCn": "CN",

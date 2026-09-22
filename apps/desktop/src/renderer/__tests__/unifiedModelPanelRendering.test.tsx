@@ -4021,6 +4021,9 @@ describe('Teammate settings with the real model picker', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
     await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-codex')); });
     const row = within(screen.getByRole('listbox', { name: '模型列表' })).getByText('GPT-5.5').closest('[role="option"]')!;
+    // Keyboard input must target the focused row, after the harness menu closes.
+    // Dispatching a key to an unfocused row races Radix's focus restoration.
+    await act(async () => { (row as HTMLElement).focus(); });
     await act(async () => { fireEvent.keyDown(row, { key: 'ArrowLeft' }); });
     const flyout = await screen.findByRole('group', { name: 'GPT-5.5 newChat.modelSelector.options' });
     await act(async () => { fireEvent.click(within(flyout).getByRole('button', { name: 'Fast Mode' })); });

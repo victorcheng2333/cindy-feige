@@ -39,7 +39,7 @@ import { useMacFullscreen } from '@/hooks/useMacFullscreen';
 import { RightSidebarDetach } from '@/components/layout/RightSidebarDetach';
 import { RightSidebarMaximize } from '@/components/layout/RightSidebarMaximize';
 import { RightSidebarToggle } from '@/components/layout/RightSidebarToggle';
-import { CHROME_ACTIONS_GEOMETRY } from '@/components/layout/chromeActionsGeometry';
+import { CHROME_ACTIONS_GEOMETRY, railChromeActionsWidth } from '@/components/layout/chromeActionsGeometry';
 import { TabBar, TabStrip } from './TabBar';
 import { EmptyState } from './EmptyState';
 import { getTabKind, hydrateTabState } from './registry';
@@ -173,8 +173,8 @@ export function RightSidebarShell({
   // rail 邻位时浮动 ChromeActions 从工具面板左缘开始。命中洞保持 absolute
   // 对齐窗口坐标；另加正常流中的 spacer，把 TabStrip 推到按钮簇之后。
   const railChromeActionsSpacerWidth =
-    unifiedTopbar && !isFullscreen && railChromeActionsHitHole
-      ? CHROME_ACTIONS_GEOMETRY.clusterWidth
+    unifiedTopbar && railChromeActionsHitHole
+      ? railChromeActionsWidth(isMac, isFullscreen)
       : 0;
   const { t } = useTranslation();
   const installedGhosts = useInstalledGhosts();
@@ -593,14 +593,14 @@ export function RightSidebarShell({
           className="relative flex h-[46px] shrink-0 flex-none items-center border-b border-[var(--border-default)] bg-[var(--panel-bg)] px-2"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {!isFullscreen && railChromeActionsHitHole && (
+          {railChromeActionsHitHole && (
             <div
               aria-hidden
               data-testid="right-sidebar-rail-chrome-actions-hit-hole"
               className="absolute left-0 top-0 h-full"
               style={
                 {
-                  width: CHROME_ACTIONS_GEOMETRY.clusterWidth,
+                  width: railChromeActionsSpacerWidth,
                   WebkitAppRegion: 'no-drag',
                 } as React.CSSProperties
               }

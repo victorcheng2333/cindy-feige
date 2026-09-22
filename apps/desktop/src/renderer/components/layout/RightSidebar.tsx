@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { RightSidebarShell } from '@/features/right-sidebar/RightSidebarShell';
 import { usePanelWidth } from '@/layout/paneWidths';
 import { CHAT_AREA_MIN_WIDTH } from '@/hooks/useRightSidebarResize';
-import { CHROME_ACTIONS_GEOMETRY } from './chromeActionsGeometry';
+import { CHROME_ACTIONS_GEOMETRY, railChromeActionsWidth } from './chromeActionsGeometry';
 
 /**
  * RightSidebar 暴露给父层(MainLayout)的命令式句柄。
@@ -242,17 +242,19 @@ export const RightSidebar = forwardRef<RightSidebarHandle, RightSidebarProps>(fu
             style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
           >
             {/* 仅当工具面板位于布局树首位时，本顶带才会落在 ChromeActions
-                浮层下方。no-drag 必须是 drag 元素的后代，才能为两个左上按钮
+                浮层下方。no-drag 必须是 drag 元素的后代，才能为左上按钮
                 可靠挖洞；常规右侧布局不渲染，保留整条顶栏的窗口拖拽能力。 */}
-            {panelSide === 'left' && (
+            {(panelSide === 'left' || railChromeActionsHitHole) && (
               <div
                 aria-hidden
                 data-testid="right-sidebar-chrome-actions-hit-hole"
                 className="h-full shrink-0"
                 style={
                   {
-                    width: CHROME_ACTIONS_GEOMETRY.clusterWidth,
-                    marginLeft: CHROME_ACTIONS_GEOMETRY.defaultLeft,
+                    width: railChromeActionsHitHole
+                      ? railChromeActionsWidth(false, false)
+                      : CHROME_ACTIONS_GEOMETRY.clusterWidth,
+                    marginLeft: railChromeActionsHitHole ? 0 : CHROME_ACTIONS_GEOMETRY.defaultLeft,
                     WebkitAppRegion: 'no-drag',
                   } as React.CSSProperties
                 }

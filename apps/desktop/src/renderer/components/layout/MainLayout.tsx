@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { BrowserWebviewPool } from '@/components/layout/BrowserWebviewPool';
 import { ChromeActions } from '@/components/layout/ChromeActions';
+import { useAppNavigationHistory } from '@/hooks/useAppNavigationHistory';
 import { shouldReserveLeftChromeActions } from '@/components/layout/chromeActionsLayout';
 import { ContentHeaderSlot } from '@/components/layout/ContentHeader';
 import { rightSidebarOwnsRailChromeActions as resolveRightSidebarRailChromeActionsOwner } from '@/components/layout/railChromeActions';
@@ -389,6 +390,7 @@ export function MainLayout() {
   } = useUpdateNotice();
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationHistory = useAppNavigationHistory();
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -408,8 +410,6 @@ export function MainLayout() {
   // RightSidebar 的 unified topbar。peek 抽屉会强制退出 rail，不能沿用 rail 命中区。
   const hasRailChromeActions =
     !isSettingsRoute &&
-    isMac &&
-    !isFullscreen &&
     isRailMode &&
     !isSidebarCollapsed &&
     !sidebarPeek.isPeekVisible;
@@ -1368,7 +1368,7 @@ export function MainLayout() {
     // useFeatureSidebarUpper. See apps/desktop/src/renderer/features/feature-context.tsx.
     //
     // Codex 风格布局（原"顶栏 + 下方左右分栏"翻转为"左右分栏 + 右栏自带顶栏"）：
-    //   - Sidebar 通顶到窗口顶部，顶行承载 mac 红绿灯让位 / Tabbar / MenuButton /
+    //   - Sidebar 通顶到窗口顶部，顶行承载 mac 红绿灯让位 / Tabbar / 导航按钮 /
     //     折叠按钮（见 Sidebar.tsx）。
     //   - 右侧 <main> 第一行是 ContentHeader Shell：窗口拖拽区 + Windows 窗口
     //     控制按钮 + 折叠态快捷按钮回流；中部由路由视图注入（会话标题等）。
@@ -1421,6 +1421,7 @@ export function MainLayout() {
             （见 ChromeActions.tsx）。设置页隐藏（侧栏本身不显示，无折叠语义）。 */}
         {!isSettingsRoute && (
           <ChromeActions
+            navigation={navigationHistory}
             isSidebarCollapsed={isSidebarCollapsed}
             onToggleSidebar={handleToggleSidebar}
             peekTriggerProps={sidebarPeek.triggerProps}

@@ -6414,7 +6414,10 @@
     "unclassified": "미분류"
   },
   "titleBar": {
-    "menu": "메뉴",
+    "goBack": "뒤로",
+    "goForward": "앞으로",
+    "noBackHistory": "이전 페이지가 없습니다",
+    "noForwardHistory": "다음 페이지가 없습니다",
     "minimize": "최소화",
     "maximizeOrRestore": "창 최대화 또는 복원",
     "close": "닫기",
@@ -7376,7 +7379,6 @@
       "settingsLink": "설정, 현재 사용자: {{name}}",
       "settingsLinkBeta": "설정, 현재 사용자: {{name}}, 베타 채널 활성화됨",
       "moreLabel": "더 보기, 현재 사용자: {{name}}",
-      "menuSettings": "설정",
       "menuAddAccount": "다른 계정으로 로그인",
       "canaryBadge": "Canary 사용자",
       "regionCodeCn": "CN",

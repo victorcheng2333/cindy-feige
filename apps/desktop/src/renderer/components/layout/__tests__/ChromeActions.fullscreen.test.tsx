@@ -22,7 +22,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-import { ChromeActions } from '../ChromeActions';
+import { ApplicationMenuItems } from '@/components/sidebar/ApplicationMenuItems';
 
 afterEach(() => {
   cleanup();
@@ -31,7 +31,7 @@ afterEach(() => {
   delete (window as Partial<Window>).electronAPI;
 });
 
-describe('ChromeActions fullscreen fallback', () => {
+describe('Application menu fullscreen fallback', () => {
   it('lets a macOS user exit fullscreen when native traffic lights are unavailable', () => {
     const windowExitFullscreen = vi.fn();
     Object.defineProperty(window, 'electronAPI', {
@@ -41,7 +41,7 @@ describe('ChromeActions fullscreen fallback', () => {
 
     render(
       <MemoryRouter>
-        <ChromeActions isSidebarCollapsed={false} onToggleSidebar={vi.fn()} />
+        <ApplicationMenuItems />
       </MemoryRouter>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'contentHeader.exitFullscreen' }));
@@ -54,7 +54,7 @@ describe('ChromeActions fullscreen fallback', () => {
 
     render(
       <MemoryRouter>
-        <ChromeActions isSidebarCollapsed={false} onToggleSidebar={vi.fn()} />
+        <ApplicationMenuItems />
       </MemoryRouter>,
     );
 

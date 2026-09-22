@@ -6414,7 +6414,10 @@
     "unclassified": "未分類"
   },
   "titleBar": {
-    "menu": "選單",
+    "goBack": "返回上一頁",
+    "goForward": "前往下一頁",
+    "noBackHistory": "沒有可返回的頁面",
+    "noForwardHistory": "沒有可前往的頁面",
     "minimize": "最小化",
     "maximizeOrRestore": "最大化或還原視窗",
     "close": "關閉",
@@ -7376,7 +7379,6 @@
       "settingsLink": "設定，當前使用者：{{name}}",
       "settingsLinkBeta": "設定，當前使用者：{{name}}，Beta 測試管道已開啟",
       "moreLabel": "更多，當前使用者：{{name}}",
-      "menuSettings": "設定",
       "menuAddAccount": "登入更多帳號",
       "canaryBadge": "灰度使用者",
       "regionCodeCn": "CN",

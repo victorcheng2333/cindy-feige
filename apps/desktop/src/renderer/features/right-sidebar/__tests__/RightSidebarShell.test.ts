@@ -825,7 +825,7 @@ describe('RightSidebarShell empty state', () => {
     ).toBe('no-drag');
   });
 
-  it('does not reserve rail ChromeActions space in fullscreen', async () => {
+  it('reserves the forward-button overflow beside the rail in fullscreen', async () => {
     installElectronApi(tabsIpc, true);
     render(
       createElement(RightSidebarShell, {
@@ -840,8 +840,8 @@ describe('RightSidebarShell empty state', () => {
 
     await waitFor(() => expect(screen.getByTestId('right-sidebar-unified-topbar')).toBeTruthy());
     await waitFor(() => {
-      expect(screen.queryByTestId('right-sidebar-rail-chrome-actions-hit-hole')).toBeNull();
-      expect(screen.queryByTestId('right-sidebar-rail-chrome-actions-spacer')).toBeNull();
+      expect(screen.getByTestId('right-sidebar-rail-chrome-actions-hit-hole').style.width).toBe('22px');
+      expect(screen.getByTestId('right-sidebar-rail-chrome-actions-spacer').style.width).toBe('22px');
     });
   });
 

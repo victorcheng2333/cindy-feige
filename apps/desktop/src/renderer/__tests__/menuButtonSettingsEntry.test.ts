@@ -3,9 +3,7 @@
  * ---------------------------------------------------------------------------
  * Regression test for Issue #1881: Windows / Linux 缺少清晰可发现的「设置」入口。
  *
- * 契约:标题栏左上角应用内菜单(MenuButton)必须常驻「设置」菜单项——
- * 非 darwin 平台没有原生应用菜单(installApplicationMenu 置 null),macOS
- * 的「设置…」菜单项在这些平台不可见,此处是唯一的菜单型设置入口。
+ * 契约:侧栏底部用户菜单常驻「设置」等应用操作,各桌面平台均可访问。
  *
  * 这份测试做静态源码扫描,确保以下契约不被未来的提交悄悄回退:
  * 1. 菜单包含 settings 菜单项,文案走 i18n key `titleBar.menuItems.settings`。
@@ -18,10 +16,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const sourcePath = resolve(__dirname, '..', 'components', 'title-bar', 'MenuButton.tsx');
+const sourcePath = resolve(__dirname, '..', 'components', 'sidebar', 'ApplicationMenuItems.tsx');
 const source = readFileSync(sourcePath, 'utf8');
 
-describe('MenuButton — settings menu item (#1881)', () => {
+describe('ApplicationMenuItems — settings menu item (#1881)', () => {
   it('renders a settings item backed by the i18n key', () => {
     expect(source).toContain("t('titleBar.menuItems.settings')");
   });
@@ -42,7 +40,7 @@ describe('MenuButton — settings menu item (#1881)', () => {
   });
 });
 
-describe('MenuButton — locale coverage for the settings item', () => {
+describe('ApplicationMenuItems — locale coverage for the settings item', () => {
   const locales = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko'] as const;
 
   for (const lng of locales) {

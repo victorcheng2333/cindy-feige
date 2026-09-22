@@ -216,20 +216,20 @@ describe('UserInfoSection — inner main button no longer owns hover background'
     expect(locale.sidebar.user.moreLabel).toBe('更多，当前用户：{{name}}');
   });
 
-  it('keeps Settings at the bottom of the More menu and leaves logout in Settings', () => {
-    expect(source).toContain("t('sidebar.user.menuSettings')");
+  it('keeps application actions below accounts in the More menu and leaves logout in Settings', () => {
+    expect(source).toContain('<ApplicationMenuItems />');
     expect(source).toContain('{renderSavedAccountItems()}');
     expect(source).toContain('accountsReadyForOwner &&');
     expect(source).toContain('savedAccounts.some((account) => !account.isCurrent)');
     expect(source.indexOf('{renderSavedAccountItems()}')).toBeLessThan(
-      source.indexOf("t('sidebar.user.menuSettings')"),
+      source.indexOf('<ApplicationMenuItems />'),
     );
     expect(source).not.toContain("t('sidebar.user.menuLogout')");
     expect(source).not.toContain('useLogout');
     expect(source).not.toContain('<LogOut');
     expect(source).toContain("mode === 'local'");
     expect(source.indexOf("t('login.signIn')")).toBeLessThan(
-      source.indexOf("t('sidebar.user.menuSettings')"),
+      source.indexOf('<ApplicationMenuItems />'),
     );
     expect(source).not.toContain('AccountSwitcherDialog');
   });

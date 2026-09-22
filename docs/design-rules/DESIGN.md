@@ -1468,6 +1468,7 @@ The execution rulebook for subsequent desktop / mobile UI updates. Sources: the 
 
 ### 15.15 Create-Page Content Position + Titlebar Hover Discipline (finalized 2026-07-21)
 
+- **Titlebar navigation (owner decision, 2026-09-22)**: the top-left controls are Sidebar, Go Back, and Go Forward, in that order. Back/Forward traverse the current window's visited main pages and retain route state; unavailable directions stay visible and disabled with explanatory tooltips. Account changes reset the navigation boundary. The former titlebar menu actions live in the sidebar account menu, including the macOS fullscreen-exit fallback. Controls use 28px circular targets and semantic colors in both modes; drag exclusions and collapsed-header spacing follow the shared cluster geometry. Implementation: `components/layout/ChromeActions.tsx`, `hooks/useAppNavigationHistory.ts`, and `components/sidebar/ApplicationMenuItems.tsx` under the Desktop renderer.
 - **CREATE AGENT content-group vertical position**: constant `max(96px, 28vh) + 46px` from the window top.
   Implementation = route container `pt-[calc(max(96px,28vh)+46px-var(--content-header-h,46px))]`:
   - the 268px cap is dead (a leftover of the Figma frame height — the root cause of content sitting high on large windows); 28% is device-tuned (from 25.5%);
