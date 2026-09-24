@@ -10,6 +10,8 @@
 // 用法:
 //   node scripts/package-desktop.mjs [options]
 //
+//   --local                         个人打包：默认当前架构、版本无关、无发布签名，
+//                                   跳过 packaged smoke 与 iOS 模拟器发布验收
 //   --platform win32|darwin|linux   默认当前平台(不支持交叉打包)
 //   --arch     x64|arm64            显式传 = 只打该单架构;缺省时 darwin
 //                                   双架构连打(arm64 + x64,同一版本号,
@@ -397,6 +399,7 @@ async function finishDarwin({
   noSign,
   macSigningIdentity,
   webAuthnProvisioningProfile,
+  local = false,
 }) {
   const packagedDir = path.join(DESKTOP_ROOT, 'out', `${appName}-darwin-${arch}`);
   const appPath = path.join(packagedDir, `${appName}.app`);
@@ -507,7 +510,9 @@ async function finishDarwin({
         'CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1 requires a Developer ID signed and notarized package',
       );
     }
-    if (hostCanExecArch(arch)) {
+    if (local) {
+      console.log('==> Skipping iOS Simulator release gate (--local)');
+    } else if (hostCanExecArch(arch)) {
       runIOSSimulatorReleaseGate(appPath, arch, 'untrusted');
     } else {
       // cross-architecture 例外:跳过 launch-based gate,仍做 Mach-O arch 门禁。
@@ -556,7 +561,10 @@ async function main() {
     console.error(`ERROR: ${err.message}`);
     process.exit(1);
   }
-  const { platform, archs, region, versionSpec, skipSmoke, allowUnsigned, noSign } = args;
+  const { platform, archs, region, versionSpec, skipSmoke, allowUnsigned, noSign, local } = args;
+  if (local && process.env.CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE === '1') {
+    throw new Error('--local 与 CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1 冲突；请取消发布验收环境变量或使用 release:package');
+  }
   // ensureBinary 的 CDN fallback 按此 region 选择清单基址；必须早于二进制准备。
   process.env.CINDY_AUTH_REGION = region;
   // mac 签名身份按区域从 release-regions.json 注入(文件缺失时静默跳过,
@@ -706,6 +714,7 @@ async function main() {
         noSign,
         macSigningIdentity,
         webAuthnProvisioningProfile,
+        local,
       }));
 
       const buildInfo = buildBuildInfo({

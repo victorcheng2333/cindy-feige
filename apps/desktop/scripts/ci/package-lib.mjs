@@ -83,6 +83,7 @@ export function parsePackageArgs(argv, defaults = {}) {
     noSign: false,
   };
   let archFlag = null;
+  let local = false;
   let regionSpecified = false;
   const takeValue = (flag, i) => {
     const v = argv[i + 1];
@@ -95,6 +96,7 @@ export function parsePackageArgs(argv, defaults = {}) {
       // pnpm 会把 `pnpm release:package -- --region cn` 里的 `--` 原样透传给脚本
       // (pnpm 10 对 run-script 参数不做剥离),裸 `--` 按分隔符跳过。
       case '--': break;
+      case '--local': local = true; break;
       case '--platform': out.platform = takeValue(a, i); i++; break;
       case '--arch': archFlag = takeValue(a, i); i++; break;
       case '--region':
@@ -111,7 +113,7 @@ export function parsePackageArgs(argv, defaults = {}) {
       // (放行"缺配置")语义互补。
       case '--no-sign': out.noSign = true; out.allowUnsigned = true; break;
       default:
-        throw new Error(`未知参数: ${a}(支持 --platform/--arch/--region/--version/--skip-smoke/--allow-unsigned/--no-sign)`);
+        throw new Error(`未知参数: ${a}(支持 --local/--platform/--arch/--region/--version/--skip-smoke/--allow-unsigned/--no-sign)`);
     }
   }
 
@@ -120,6 +122,16 @@ export function parsePackageArgs(argv, defaults = {}) {
   }
   const supportedArchs = PLATFORM_ARCHS[out.platform];
   const hostArch = defaults.arch ?? process.arch;
+  if (local) {
+    if (out.versionSpec !== null) {
+      throw new Error('--local 只用于个人版本无关打包；指定版本请使用 release:package');
+    }
+    out.local = true;
+    out.skipSmoke = true;
+    out.noSign = true;
+    out.allowUnsigned = true;
+    archFlag ??= hostArch;
+  }
   if (archFlag !== null) {
     if (!supportedArchs.includes(archFlag)) {
       throw new Error(`platform ${out.platform} 不支持 arch: ${archFlag}(可选 ${supportedArchs.join('/')})`);

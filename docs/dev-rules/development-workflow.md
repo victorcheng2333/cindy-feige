@@ -8,6 +8,10 @@
 worktree 会话契约、直推 `main` 的额外门禁与 review 严重度口径，不重复根文件已有的通用
 流程。
 
+本 fork 的个人打包以根 `AGENTS.md`「本 fork 的个人打包约定」为准：用户只要求打包时
+直接运行 `pnpm package`，不触发本页的提交、测试或 review 门禁，也不自动提交／提 PR。
+本页门禁适用于明确要求提交、PR 或正式发布的工作。
+
 ## 1. Dogfooding：在本仓 worktree 会话里工作
 
 如果你是 Cindy 内嵌的 agent，且 cwd 位于 `<baseRepo>/.cindy-worktrees/<name>`（或迁移前的

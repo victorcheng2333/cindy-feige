@@ -5,6 +5,30 @@
 本文是 Desktop 开发命令及其使用条件的权威说明；可执行脚本以当前 checkout 的根
 `package.json` 与 `apps/desktop/package.json` 为代码事实源。
 
+## 个人打包
+
+本 fork 默认供个人使用。用户说「打包」时直接运行：
+
+```bash
+pnpm package
+```
+
+根入口调用 `package-desktop.mjs --local`，默认只打当前 Node 架构（macOS 不再连打
+ARM 和 Intel），区域默认 Global；中国大陆版用 `pnpm package -- --region cn`。
+无需先提交代码或创建 PR，也不前置单测、覆盖率、typecheck、lint、独立 review。
+
+个人模式跳过 packaged smoke 和 iOS 模拟器发布验收，不使用发布证书或 Apple 公证；
+macOS 保留 ad-hoc 签名。依赖准备、编译、资源和迁移文件完整性检查照常执行。
+显式设置了 `CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1` 时会提示配置冲突，需先取消。
+版本固定为既有的 `0.0.0` 本地包，不参与自动更新；要更新自己的安装请重新打包。
+
+产物位于 `apps/desktop/release/artifacts/<region>/unversioned/<platform>-<arch>/`：
+macOS 为 ZIP（包含 `.app`），Windows 为 Setup.exe，Linux 为 deb。
+只在用户要求安装时替换已安装应用；单纯打包结束后给出产物路径即可。
+
+需要正式发布产物或完整打包验收时使用原有 `pnpm release:package`，其默认行为保持不变。
+`--local` 不接受 `--version`，避免把未验收的个人包混入版本化发布流程。
+
 ## Agent 启动入口
 
 Agent 启动 Desktop 只使用仓库根的安全包装命令，并显式选择目标区域。restart

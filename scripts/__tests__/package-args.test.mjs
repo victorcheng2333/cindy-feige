@@ -112,6 +112,35 @@ test('parsePackageArgs: 版本无关本地包默认 global', () => {
   assert.equal(out.versionSpec, null);
 });
 
+test('个人打包只打宿主架构并跳过发布验收，普通发布默认值保持不变', () => {
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    for (const arch of PLATFORM_ARCHS[platform]) {
+      const out = parsePackageArgs(['--local'], { platform, arch });
+      assert.deepEqual(out.archs, [arch]);
+      assert.equal(out.local, true);
+      assert.equal(out.skipSmoke, true);
+      assert.equal(out.noSign, true);
+      assert.equal(out.allowUnsigned, true);
+      assert.equal(out.versionSpec, null);
+      assert.equal(out.region, 'global');
+    }
+  }
+  const release = parsePackageArgs([], { platform: 'darwin', arch: 'arm64' });
+  assert.deepEqual(release.archs, ['arm64', 'x64']);
+  assert.equal(release.skipSmoke, false);
+  assert.equal(release.noSign, false);
+  assert.ok(!release.local);
+});
+
+test('个人打包允许显式选区域和架构，但不能混入版本化发布', () => {
+  const defaults = { platform: 'darwin', arch: 'arm64' };
+  const out = parsePackageArgs(['--local', '--', '--region', 'cn', '--arch', 'x64'], defaults);
+  assert.equal(out.region, 'cn');
+  assert.deepEqual(out.archs, ['x64']);
+  assert.throws(() => parsePackageArgs(['--local', '--version', '1.2.3'], defaults), /只用于个人/);
+  assert.throws(() => parsePackageArgs(['--version', 'patch', '--local'], defaults), /只用于个人/);
+});
+
 test('parsePackageArgs: 版本化打包必须显式指定 region', () => {
   assert.throws(
     () => parsePackageArgs(['--version', '1.2.3'], {

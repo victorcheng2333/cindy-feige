@@ -3,6 +3,19 @@
 > 本文件是 Codex 与 Claude Code 共用的项目指令正本。`CLAUDE.md` 只保留
 > `@AGENTS.md`，不要在两处重复维护规则。
 
+## 本 fork 的个人打包约定（优先于下文通用交付流程）
+
+- 本 fork 主要供维护者自己使用，默认不向 upstream 提 PR。
+- 用户说「打包」时，直接在当前 checkout 执行 `pnpm package`；默认当前机器架构、
+  Global、版本无关包。明确要求中国大陆版时用 `pnpm package -- --region cn`。
+- 单纯打包不先跑单测、覆盖率、typecheck、lint、全仓检查或独立 review，不为了打包
+  创建分支、commit、push 或 PR，也不反复请求确认。允许打包当前未提交的改动。
+- 该入口跳过启动冒烟和 iOS 模拟器发布验收；保留构建必需的依赖、资源、数据库迁移文件
+  完整性校验及 macOS ad-hoc 签名。失败时针对实际构建错误修复，不扩展成全仓治理。
+- 只有明确要求正式发布、提交／PR 或全面验证时，才进入对应交付门禁。
+  打包成功只表示产物生成成功，不得声称测试已通过；返回实际产物路径。
+- 具体入口及产物见 `docs/dev-rules/desktop-development.md`「个人打包」。
+
 ## 仓库边界
 
 - 本仓库只负责 desktop、mobile 及其共享 packages。
