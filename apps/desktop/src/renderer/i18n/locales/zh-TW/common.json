@@ -6073,8 +6073,6 @@
     "controlledTooltip": "這些裝置連接了 Cindy 的任務，不代表正在控制桌面滑鼠和鍵盤。你可以撤銷其存取權限。",
     "revokeAccess": "撤銷權限",
     "viewControllers": "檢視",
-    "collapseControlledNotice": "收起遠端控制提示",
-    "expandControlledNotice": "展開遠端控制提示：{{label}}",
     "versionMismatch": "對方版本不一致，部分功能可能受限"
   },
   "accountDeletion": {

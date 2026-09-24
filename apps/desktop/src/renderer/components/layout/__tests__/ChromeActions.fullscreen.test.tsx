@@ -41,7 +41,7 @@ describe('Application menu fullscreen fallback', () => {
 
     render(
       <MemoryRouter>
-        <ApplicationMenuItems />
+        <ApplicationMenuItems onJoinSharedTask={vi.fn()} />
       </MemoryRouter>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'contentHeader.exitFullscreen' }));
@@ -54,7 +54,7 @@ describe('Application menu fullscreen fallback', () => {
 
     render(
       <MemoryRouter>
-        <ApplicationMenuItems />
+        <ApplicationMenuItems onJoinSharedTask={vi.fn()} />
       </MemoryRouter>,
     );
 

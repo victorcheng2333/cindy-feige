@@ -73,11 +73,6 @@ vi.mock('@/hooks/useLogout', () => ({
   useLogout: () => ({ handleLogout: vi.fn() }),
 }));
 
-vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({
-  JoinSharedTaskDialog: ({ open }: { open: boolean }) =>
-    open ? <div role="dialog" aria-label="join shared task" /> : null,
-}));
-
 vi.mock('@/components/sidebar/MobileDownloadDialog', () => ({
   MobileDownloadDialog: ({
     open,
@@ -101,6 +96,15 @@ vi.mock('@/components/sidebar/MobileDownloadDialog', () => ({
         </button>
       </div>
     ) : null,
+}));
+
+vi.mock('@/features/device-link/useSharedTaskTasks', () => ({ useSharedTaskTasks: vi.fn() }));
+vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({
+  JoinSharedTaskDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) =>
+    open ? <div role="dialog" aria-label="Join shared task"><button onClick={() => onOpenChange(false)}>Close sharing</button></div> : null,
+}));
+vi.mock('@/features/device-link/SharedTaskEndedNotice', () => ({
+  SharedTaskEndedNotice: ({ onJoin }: { onJoin: () => void }) => <button onClick={onJoin}>Rejoin shared task</button>,
 }));
 
 import { UserInfoSection } from '@/components/sidebar/UserInfoSection';
@@ -192,7 +196,7 @@ describe('UserInfoSection mobile download entry', () => {
     });
     await userEvent.click(await screen.findByRole('menuitem', { name: 'sharedTask.join' }));
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'join shared task' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Join shared task' })).toBeTruthy();
   });
 
   it('shows the Beta label beside the expanded app version when the channel is enabled', () => {
@@ -513,5 +517,20 @@ describe('UserInfoSection mobile download entry', () => {
     expect(
       (await screen.findByRole('menuitem', { name: 'login.signIn' })).getAttribute('aria-disabled'),
     ).not.toBe('true');
+  });
+});
+
+describe('Shared task actions in the sidebar account menu', () => {
+  it.each([false, true])('keeps the join dialog open after the menu closes (collapsed=%s)', async (isCollapsed) => {
+    const user = userEvent.setup();
+    render(<UserInfoSection isCollapsed={isCollapsed} />);
+    await user.click(screen.getByRole('button', { name: 'sidebar.user.moreLabel' }));
+    await user.click(screen.getByRole('menuitem', { name: 'sharedTask.join' }));
+    expect(screen.getByRole('dialog', { name: 'Join shared task' })).toBeTruthy();
+    expect(screen.queryByRole('menu')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Close sharing' }));
+    expect(screen.queryByRole('dialog', { name: 'Join shared task' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Rejoin shared task' }));
+    expect(screen.getByRole('dialog', { name: 'Join shared task' })).toBeTruthy();
   });
 });

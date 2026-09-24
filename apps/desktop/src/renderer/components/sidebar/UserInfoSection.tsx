@@ -31,10 +31,10 @@ import { toast } from '@/lib/toast';
 import type { DesktopSavedAccount } from '@/lib/authService';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { shouldLabelRegion } from '../../../shared/regionCode';
-import { ApplicationMenuItems } from './ApplicationMenuItems';
 import { JoinSharedTaskDialog } from '@/features/device-link/JoinSharedTaskDialog';
 import { SharedTaskEndedNotice } from '@/features/device-link/SharedTaskEndedNotice';
 import { useSharedTaskTasks } from '@/features/device-link/useSharedTaskTasks';
+import { ApplicationMenuItems } from './ApplicationMenuItems';
 import { MobileDownloadDialog } from './MobileDownloadDialog';
 
 interface UserInfoSectionProps {
@@ -77,6 +77,8 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   const navigate = useNavigate();
   const location = useLocation();
   const [avatarError, setAvatarError] = useState(false);
+  const [joinSharedTaskOpen, setJoinSharedTaskOpen] = useState(false);
+  useSharedTaskTasks();
   const [mobileDownloadOpen, setMobileDownloadOpen] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<DesktopSavedAccount[]>([]);
   const [savedAccountsOwnerKey, setSavedAccountsOwnerKey] = useState<string | null>(null);
@@ -84,8 +86,6 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   const [accountsSyncing, setAccountsSyncing] = useState(false);
   const [switchingAccountKey, setSwitchingAccountKey] = useState<string | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
-  const [joinSharedTaskOpen, setJoinSharedTaskOpen] = useState(false);
-  useSharedTaskTasks();
   const mobileDownloadButtonRef = useRef<HTMLButtonElement>(null);
   const accountsLoadGenerationRef = useRef(0);
   const { t } = useTranslation();
@@ -336,15 +336,6 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
     </DropdownMenu>
   );
 
-  const sharedTaskDialogs = (
-    <>
-      <SharedTaskEndedNotice onJoin={() => setJoinSharedTaskOpen(true)} />
-      {joinSharedTaskOpen && (
-        <JoinSharedTaskDialog open={joinSharedTaskOpen} onOpenChange={setJoinSharedTaskOpen} />
-      )}
-    </>
-  );
-
   const openRemoteSettings = () => {
     setMobileDownloadOpen(false);
     navigate('/settings?tab=remote-control');
@@ -376,10 +367,19 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
     </Tip>
   );
 
+  // Keep sharing dialogs outside the dropdown: selecting an item unmounts its content.
+  const sharedTaskDialogs = (
+    <>
+      <SharedTaskEndedNotice onJoin={() => setJoinSharedTaskOpen(true)} />
+      {joinSharedTaskOpen && (
+        <JoinSharedTaskDialog open={joinSharedTaskOpen} onOpenChange={setJoinSharedTaskOpen} />
+      )}
+    </>
+  );
+
   if (isCollapsed) {
     return (
       <>
-        {sharedTaskDialogs}
         <div className="mt-auto flex h-[66px] flex-col items-center justify-center gap-1 px-3">
           <Tip text={moreLabel} side="right">
             {renderMoreMenu(
@@ -427,6 +427,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
           </Tip>
           {mobileDownloadEntry}
         </div>
+        {sharedTaskDialogs}
         <MobileDownloadDialog
           open={mobileDownloadOpen}
           onOpenChange={setMobileDownloadOpen}
@@ -441,7 +442,6 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
 
   return (
     <div className="mt-auto px-3 pb-3 pt-2">
-      {sharedTaskDialogs}
       {/* 胶囊整体承载 hover(方案 D):玻璃底色加深一档;悬停右侧操作按钮时用
         :has() 把胶囊底色还原,只让当前按钮高亮,避免双层叠色。 */}
       <div
@@ -581,6 +581,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
         )}
       </div>
 
+      {sharedTaskDialogs}
       <MobileDownloadDialog
         open={mobileDownloadOpen}
         onOpenChange={setMobileDownloadOpen}

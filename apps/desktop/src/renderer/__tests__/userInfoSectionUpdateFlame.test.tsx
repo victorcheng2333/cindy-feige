@@ -61,6 +61,10 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+vi.mock('@/features/device-link/useSharedTaskTasks', () => ({ useSharedTaskTasks: vi.fn() }));
+vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({ JoinSharedTaskDialog: () => null }));
+vi.mock('@/features/device-link/SharedTaskEndedNotice', () => ({ SharedTaskEndedNotice: () => null }));
+
 import { UserInfoSection } from '@/components/sidebar/UserInfoSection';
 
 beforeEach(() => {

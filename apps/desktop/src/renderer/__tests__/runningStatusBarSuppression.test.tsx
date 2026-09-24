@@ -68,7 +68,6 @@ const RunningStatusBar = new Function(
 )(deps) as React.ComponentType<{
   visible: boolean;
   suppressContent?: boolean;
-  rightLeadingSlot?: React.ReactNode;
   status: string;
   reconnectStatus?: string | null;
   startedAt: number;
@@ -155,7 +154,7 @@ it('opens measured zero history and restores fallback across reliability and tur
 });
 
 it.each([true, false])(
-  'plan review preserves the collapsed indicator and suppresses a pinned panel (running=%s)',
+  'plan review hides a pinned panel without leaving an empty status row (running=%s)',
   (visible) => {
     const props = {
       visible: true,
@@ -165,9 +164,8 @@ it.each([true, false])(
       outputTokens: 100,
       generationDurationMs: 1000,
     };
-    const indicator = <button aria-label="Controlled session">Device</button>;
     const { container, rerender } = render(
-      <RunningStatusBar {...props} rightLeadingSlot={indicator} />,
+      <RunningStatusBar {...props} />,
     );
     fireEvent.click(container.querySelector('[data-running-status-meta] button')!);
     expect(screen.getByRole('button', { name: 'titleBar.close' })).toBeTruthy();
@@ -177,15 +175,11 @@ it.each([true, false])(
         {...props}
         visible={visible}
         suppressContent
-        rightLeadingSlot={indicator}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Controlled session' })).toBeTruthy();
     expect(container.querySelector('[data-running-status-meta]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'titleBar.close' })).toBeNull();
 
-    // Explicit suppression without an independent indicator leaves no row behind.
-    rerender(<RunningStatusBar {...props} visible={visible} suppressContent />);
     expect(container.childElementCount).toBe(0);
   },
 );

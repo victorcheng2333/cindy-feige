@@ -34,12 +34,12 @@ afterEach(() => {
 describe('Application actions in the account menu', () => {
   it('exposes all former title-bar actions from the account dropdown', async () => {
     const user = userEvent.setup();
-    const joinSharedTask = vi.fn();
+    const onJoinSharedTask = vi.fn();
     render(
       <DropdownMenu>
         <DropdownMenuTrigger>Account</DropdownMenuTrigger>
         <DropdownMenuContent>
-          <ApplicationMenuItems onJoinSharedTask={joinSharedTask} />
+          <ApplicationMenuItems onJoinSharedTask={onJoinSharedTask} />
         </DropdownMenuContent>
       </DropdownMenu>,
     );
@@ -48,6 +48,6 @@ describe('Application actions in the account menu', () => {
       expect(screen.getByRole('menuitem', { name: `titleBar.menuItems.${item}` })).toBeTruthy();
     }
     await user.click(screen.getByRole('menuitem', { name: 'sharedTask.join' }));
-    expect(joinSharedTask).toHaveBeenCalledOnce();
+    expect(onJoinSharedTask).toHaveBeenCalledOnce();
   });
 });

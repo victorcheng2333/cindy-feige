@@ -16,83 +16,15 @@ const pinnedPlanSource = read('components/new-chat/PinnedPlanPanel.tsx');
 const todoListSource = read('components/chat/TodoListCard.tsx');
 
 describe('controlled banner placement', () => {
-  it('switches the controlled banner between the centered group and token metadata', () => {
-    expect(sessionViewSource).toContain('showControlledBanner?: boolean;');
-    expect(sessionViewSource).toContain('showControlledBanner = false');
-    expect(sessionViewSource).toContain(
-      'const showComposerControlledBanner = viewVisible && (ownsRoute || showControlledBanner);',
-    );
-    expect(sessionViewSource).toContain(
-      'const hasControlledBanner = showComposerControlledBanner && controlledBy.length > 0;',
-    );
-    expect(sessionViewSource).toContain(
-      'const controlledBannerCollapsed = useComposerCollapsed(sessionId ?? null);',
-    );
-    expect(sessionViewSource).toContain(
-      'hasControlledBanner && (!controlledBannerCollapsed || Boolean(botChatIdentity));',
-    );
-    expect(sessionViewSource).toContain('placement="composer"');
-    expect(sessionViewSource).toContain('sessionId={sessionId ?? null}');
-    expect(sessionViewSource).toContain('rightLeadingSlot={');
-    expect(sessionViewSource).toContain('hasControlledBanner && controlledBannerCollapsed ? (');
-    expect(sessionViewSource).toMatch(
-      /botChatIdentity \? \([\s\S]*?\) : !pendingPlanReview \|\|\s+\(hasControlledBanner && controlledBannerCollapsed\) \? \(/,
-    );
-    expect(sessionViewSource).toContain('suppressContent={Boolean(pendingPlanReview)}');
-    expect(sessionViewSource).toContain(
-      'const isHidden = suppressContent || (!showContent && !visible);',
-    );
-    expect(sessionViewSource).toContain('{showCenteredControlledBanner && (');
-    expect(sessionViewSource).toContain('rightLeadingSlot?: ReactNode;');
-    expect(sessionViewSource).toContain('{rightLeadingSlot}');
+  it('keeps connection notices out of every existing task view', () => {
+    expect(sessionViewSource).not.toContain('ControlledBanner');
+    expect(sessionViewSource).not.toContain('useControlledBy');
+    expect(sessionViewSource).not.toContain('useComposerCollapsed');
+    expect(sessionViewSource).not.toContain('rightLeadingSlot');
     expect(sessionViewSource).toContain('data-running-status-meta="true"');
-    expect(sessionViewSource).not.toContain('className="mx-auto flex h-9 shrink-0 items-center"');
   });
 
-  it('keeps only the collapsed breathing light anchored before token metadata', () => {
-    expect(sessionViewSource).toContain('const CONTROLLED_BANNER_MAX_WIDTH = 420;');
-    expect(sessionViewSource).toContain(
-      'const controlledBannerMaxWidth = `min(${inputHalfWidth}, ${CONTROLLED_BANNER_MAX_WIDTH}px)`;',
-    );
-    expect(sessionViewSource).toContain(
-      'if (!rightLeadingSlot && (suppressContent || (isHidden && !ratePanelPinned))) return null;',
-    );
-    expect(controlledBannerSource).toContain("placement?: 'floating' | 'inline' | 'composer';");
-    expect(controlledBannerSource).toContain(
-      'className="pointer-events-auto flex min-w-0 max-w-full shrink justify-end"',
-    );
-    expect(controlledBannerSource).not.toContain(
-      'className="pointer-events-auto flex max-w-full shrink-0 -translate-y-0.5 justify-end"',
-    );
-    expect(controlledBannerSource).toContain(
-      'className="session-status-breathing h-1.5 w-1.5 rounded-full"',
-    );
-    expect(controlledBannerSource).toContain(
-      'const collapsedComposerSessionIds = new Set<string>();',
-    );
-    expect(controlledBannerSource).toContain(
-      'export function useComposerCollapsed(sessionId: string | null): boolean',
-    );
-    expect(controlledBannerSource).toContain('data-controlled-banner-collapse="true"');
-    expect(controlledBannerSource).toContain('data-controlled-banner="collapsed"');
-    expect(controlledBannerSource).toContain('data-controlled-banner-chip="true"');
-    expect(controlledBannerSource).toContain(
-      "'pointer-events-auto flex h-7 min-w-0 max-w-full select-none items-center gap-2 overflow-hidden rounded-full border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3 py-0',",
-    );
-    expect(sessionViewSource).toContain(
-      'className="flex min-w-0 items-center justify-self-end gap-2"',
-    );
-    expect(sessionViewSource).not.toContain('<div className="-translate-y-0.5">');
-    expect(controlledBannerSource).toContain(
-      'onClick={() => setComposerCollapsed(composerSessionId, false)}',
-    );
-    expect(controlledBannerSource).toContain("t('remoteDevice.revokeAccess')");
-    expect(sessionViewSource).not.toContain('rightSlot=');
-    expect(controlledBannerSource).not.toContain("placement === 'statusbar'");
-    expect(sessionViewSource).not.toContain('centerSlot=');
-  });
-
-  it('centers the plan and expanded controlled chip as one non-overlapping flex group', () => {
+  it('keeps the plan centered and measures its overlay without a connection notice', () => {
     expect(sessionViewSource.match(/<PinnedPlanPanel/g)).toHaveLength(1);
     expect(sessionViewSource).toContain(
       'className="mx-auto grid grid-cols-1 grid-rows-1 items-center"',
@@ -122,27 +54,16 @@ describe('controlled banner placement', () => {
     expect(todoListSource).not.toContain('fitContent');
   });
 
-  it('caps the right-aligned composer chip without changing the input width', () => {
-    expect(controlledBannerSource).toContain("maxWidth?: CSSProperties['maxWidth'];");
-    expect(controlledBannerSource).toContain('style={maxWidth == null ? undefined : { maxWidth }}');
-    expect(sessionViewSource).toContain('maxWidth={controlledBannerMaxWidth}');
-  });
-
-  it('opts in only route-owned chat views, not Worker panes or embedded doc rails', () => {
-    expect(sessionViewSource).toContain(
-      'const showComposerControlledBanner = viewVisible && (ownsRoute || showControlledBanner);',
-    );
-    expect(routeSource).not.toContain('<CCAgentSessionView');
+  it('shares the notice-free task view with embedded and worker panes', () => {
     expect(routeSource).not.toContain('showControlledBanner');
-    expect(splitViewSource).not.toContain('showLeadControlledBanner');
-    expect(splitViewSource).not.toContain('showControlledBanner=');
-
+    expect(splitViewSource).not.toContain('showControlledBanner');
     expect(workerPanelSource).toContain('<CCAgentSessionView');
     expect(workerPanelSource).not.toContain('showControlledBanner');
   });
 
-  it('always mounts the global fallback so loading and unavailable routes retain a control notice', () => {
-    expect(mainLayoutSource).toContain('<ControlledBanner />');
-    expect(mainLayoutSource).not.toContain('hasInlineControlledBannerPath');
+  it('has one app-level notice owner with no inline or collapse fallback', () => {
+    expect(mainLayoutSource.match(/<ControlledBanner \/>/g)).toHaveLength(1);
+    expect(controlledBannerSource).not.toContain('inlineBannerOwners');
+    expect(controlledBannerSource).not.toContain('collapsedComposerSessionIds');
   });
 });

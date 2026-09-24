@@ -489,7 +489,13 @@ describe('startup dispatch stays ahead of Electron ready', () => {
     expect(h.spawn).not.toHaveBeenCalled();
     expect(store.selectedVersion(h.profile)).toBe(personal.id);
     startup.finishCindyVersionStartup();
-    await vi.waitFor(() => expect(store.selectedVersion(h.profile)).toBe('original'));
+    // Selection is persisted before the original-version refresh finishes. Wait for
+    // both writes and lock release before afterEach removes this fixture.
+    await vi.waitFor(() => {
+      expect(store.selectedVersion(h.profile)).toBe('original');
+      expect(store.readOriginalVersion(h.profile)?.version).toBe('0.1.99');
+      expect(fs.existsSync(path.join(store.versionsRoot(h.profile), 'registry.lock'))).toBe(false);
+    });
   });
   it('opens the original in-process when the selected version fails before any real I/O', async () => {
     saveOriginal();
@@ -500,7 +506,13 @@ describe('startup dispatch stays ahead of Electron ready', () => {
     expect(h.exit).not.toHaveBeenCalled();
     expect(h.relaunch).not.toHaveBeenCalled();
     startup.finishCindyVersionStartup();
-    await vi.waitFor(() => expect(store.selectedVersion(h.profile)).toBe('original'));
+    // Selection is persisted before the original-version refresh finishes. Wait for
+    // both writes and lock release before afterEach removes this fixture.
+    await vi.waitFor(() => {
+      expect(store.selectedVersion(h.profile)).toBe('original');
+      expect(store.readOriginalVersion(h.profile)?.version).toBe('0.1.99');
+      expect(fs.existsSync(path.join(store.versionsRoot(h.profile), 'registry.lock'))).toBe(false);
+    });
   });
   it.each([
     ['packaged', true],
