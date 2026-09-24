@@ -611,59 +611,64 @@ export function catalogSurfaces() {
       platform: 'desktop',
       title: 'SkillHub 本地技能',
       productionEntry:
-        'hash `/skillhub/local`（SkillhubLocalLayout 保留列表）及详情 `/skillhub/local/:kind/global/:name`、`/skillhub/local/:kind/project/:projectHash/:name`、`/skillhub/local/by-path`',
-      // SkillhubLocalLayout 保留 SkillhubHomeView；首页直接渲染
-      // PluginManagementLayout（features/plugin 共享布局）、
-      // SkillhubMarketPreviewPanel 与 InstallTargetPicker——只扫路由入口文件
+        'hash `/skillhub/local` 及统一详情 `/skillhub/detail`（旧详情链接重定向）',
+      // SkillhubHomeView 直接渲染 PluginManagementLayout（features/plugin 共享布局）、
+      // 统一详情布局与 InstallTargetPicker——只扫列表组件文件
       // 会漏掉这些子组件的样式事实。
       reachableComponents: [
         'SkillhubLocalLayout',
         'SkillhubHomeView',
         'SkillhubDetailView',
+        'SkillhubDetailRoute',
+        'SkillDetailLayout',
         'SkillhubFeatureLayout',
         'PluginManagementLayout',
-        'SkillhubMarketPreviewPanel',
+        'SkillhubMarketDetailView',
         'InstallTargetPicker',
       ],
       styleRoots: [
         'apps/desktop/src/renderer/features/skillhub/SkillhubLocalLayout.tsx',
         'apps/desktop/src/renderer/features/skillhub/SkillhubHomeView.tsx',
         'apps/desktop/src/renderer/features/skillhub/SkillhubDetailView.tsx',
+        'apps/desktop/src/renderer/features/skillhub/SkillhubDetailRoute.tsx',
+        'apps/desktop/src/renderer/features/skillhub/components/SkillDetailLayout.tsx',
         'apps/desktop/src/renderer/features/skillhub/SkillhubFeatureLayout.tsx',
-        'apps/desktop/src/renderer/features/skillhub/SkillhubMarketPreviewPanel.tsx',
+        'apps/desktop/src/renderer/features/skillhub/SkillhubMarketDetailView.tsx',
         'apps/desktop/src/renderer/features/skillhub/components/InstallTargetPicker.tsx',
         'apps/desktop/src/renderer/features/plugin/PluginManagementLayout.tsx',
       ],
       routerPaths: [
-        '/skillhub/local',
+        // The pathless parent renders the retained catalog itself at /skillhub/local.
+        '/skillhub',
+        '/skillhub/detail',
         '/skillhub/local/:kind/global/:name',
         '/skillhub/local/:kind/project/:projectHash/:name',
         '/skillhub/local/by-path',
       ],
-      routeEntryComponents: { '/skillhub/local': 'SkillhubLocalLayout', '/skillhub/local/:kind/global/:name': 'SkillhubDetailView', '/skillhub/local/:kind/project/:projectHash/:name': 'SkillhubDetailView', '/skillhub/local/by-path': 'SkillhubDetailView' },
+      routeEntryComponents: { '/skillhub': 'SkillhubLocalLayout', '/skillhub/detail': 'SkillhubDetailRoute', '/skillhub/local/:kind/global/:name': 'LegacySkillDetailRedirect', '/skillhub/local/:kind/project/:projectHash/:name': 'LegacySkillDetailRedirect', '/skillhub/local/by-path': 'LegacySkillDetailRedirect' },
     },
     {
       id: 'desktop.skillhub.market',
       platform: 'desktop',
       title: 'SkillHub 市场',
       productionEntry: 'hash `/skillhub/market`（SkillhubMarketListView）',
-      // 市场页直接渲染的子组件（MarketCard / InstallTargetPicker / 预览面板 / 两个编辑
+      // 市场页直接渲染的子组件（MarketCard / InstallTargetPicker / 详情页 / 两个编辑
       // 弹窗）在 components/ 与同目录下，只扫入口文件会漏掉它们的全部样式事实。
       reachableComponents: [
         'SkillhubMarketListView',
         'MarketCard',
         'InstallTargetPicker',
-        'SkillhubMarketPreviewPanel',
+        'SkillhubMarketDetailView',
         'MarketInfoEditDialog',
         'VisibilityEditorDialog',
       ],
       styleRoots: [
         'apps/desktop/src/renderer/features/skillhub/SkillhubMarketListView.tsx',
-        'apps/desktop/src/renderer/features/skillhub/SkillhubMarketPreviewPanel.tsx',
+        'apps/desktop/src/renderer/features/skillhub/SkillhubMarketDetailView.tsx',
         'apps/desktop/src/renderer/features/skillhub/components',
       ],
-      routerPaths: ['/skillhub/market'],
-      routeEntryComponents: { '/skillhub/market': 'SkillhubMarketListView' },
+      routerPaths: ['/skillhub/market', '/skillhub/market/:name', '/skillhub/market/:kind/:name', '/skillhub/market/manage/:name'],
+      routeEntryComponents: { '/skillhub/market': 'SkillhubMarketListView', '/skillhub/market/:name': 'LegacySkillDetailRedirect', '/skillhub/market/:kind/:name': 'LegacySkillDetailRedirect', '/skillhub/market/manage/:name': 'LegacySkillDetailRedirect' },
     },
     {
       id: 'desktop.settings',
@@ -1410,6 +1415,7 @@ export function mobileCatalogSurfaces() {
     ['resources', '远程资源列表与详情', ['resources/[collectionId].tsx', 'resources/[collectionId]/[resourceId].tsx']],
     ['companions.direct', '伙伴私聊回看', ['companions/direct/[threadId].tsx']],
     ['chat.session', '任务内容与输入', ['sessions/[sessionId].tsx']],
+    ['chat.sharing', '共享任务邀请与成员', ['shared-session.tsx']],
     ['chat.new', '新建任务', ['sessions/new.tsx']],
     ['files', '任务文件与预览', ['files/[sessionId].tsx', 'files/preview/[sessionId].tsx']],
     ['automations', '自动化', ['automations/[deviceId].tsx']],

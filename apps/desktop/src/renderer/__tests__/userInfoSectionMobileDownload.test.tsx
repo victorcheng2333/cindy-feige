@@ -73,6 +73,11 @@ vi.mock('@/hooks/useLogout', () => ({
   useLogout: () => ({ handleLogout: vi.fn() }),
 }));
 
+vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({
+  JoinSharedTaskDialog: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog" aria-label="join shared task" /> : null,
+}));
+
 vi.mock('@/components/sidebar/MobileDownloadDialog', () => ({
   MobileDownloadDialog: ({
     open,
@@ -180,6 +185,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('UserInfoSection mobile download entry', () => {
+  it.each([false, true])('keeps the shared-task dialog open after the account menu closes (collapsed=%s)', async (isCollapsed) => {
+    render(<UserInfoSection isCollapsed={isCollapsed} />);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'sidebar.user.moreLabel' }), {
+      key: 'Enter',
+    });
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'sharedTask.join' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'join shared task' })).toBeTruthy();
+  });
+
   it('shows the Beta label beside the expanded app version when the channel is enabled', () => {
     betaChannelState.enableBeta = true;
     render(<UserInfoSection isCollapsed={false} />);

@@ -131,6 +131,8 @@ const noopLogger: Logger = {
   child: () => noopLogger,
 };
 
+// Durable approval assertions allow 3s for the 500ms poll and asynchronous delivery.
+// The default 1s wait races the second poll on loaded CI runners; permission assertions stay exact.
 // The same durable store feeds streaming foreground discovery and detached lease inspection.
 function mockRunDiscovery() {
   const list = vi.spyOn(piSubagentRuns, 'listPiSubagentRuns');
@@ -337,6 +339,25 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
         },
       }],
       ...overrides,
+    };
+  }
+
+  /** Offer the first status only after the test attaches its approval surface. */
+  function deferSubagentDiscovery(run: PiSubagentRunStatus) {
+    const ownRunRoot = path.join(agentHome, 'runtime', 'pi-subagent-runs', 's1');
+    let publish!: () => void;
+    const ready = new Promise<void>((resolve) => { publish = resolve; });
+    const list = mockRunDiscovery().mockImplementation(async (root) => {
+      if (root !== ownRunRoot) return [];
+      await ready;
+      return [run];
+    });
+    return {
+      publish,
+      clear() {
+        list.mockResolvedValue([]);
+        publish();
+      },
     };
   }
 
@@ -1274,7 +1295,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
         confirmed: true,
         runtimeOwnerId: ownerId(),
       }),
-    ));
+    ), { timeout: 3_000 });
     expect(noteOpaqueWrite).toHaveBeenCalledWith({
       sessionId: 's1',
       provider: 'pi',
@@ -1568,33 +1589,40 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
       toolName: 'bash',
       input: { command: 'printf fixture' },
     });
-    mockRunDiscovery().mockResolvedValue([run]);
+    // Startup can discover this before the surface attaches. Depending on the
+    // real 500ms poll to re-offer it races vi.waitFor's 1s deadline under CI load.
+    const discovery = deferSubagentDiscovery(run);
     const control = vi.spyOn(piSubagentRuns, 'controlPiSubagentRuns').mockResolvedValue(1);
     const resolver = vi.fn(async () => ({ kind: 'permission', behavior }) as const);
     const handle = await new PiAgent(buildDeps()).startSession(opts());
     handle.setInteractionResolver(resolver);
+    discovery.publish();
 
-    await vi.waitFor(() => expect(control).toHaveBeenCalledWith(
-      expect.any(String),
-      run.taskId,
-      'approval',
-      expect.objectContaining({
-        childId: run.tasks[0]!.childId,
-        approvalId: 'approval-1',
-        confirmed,
-        runtimeOwnerId: ownerId(),
-      }),
-    ));
-    expect(resolver).toHaveBeenCalledOnce();
-    expect(resolver).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'permission',
-      toolName: 'bash',
-      input: { command: 'printf fixture' },
-      title: 'Subagent: bash',
-      description: 'Requested by approval-fixture',
-      metadata: expect.objectContaining({ provider: 'pi', subagent: true }),
-    }));
-    await handle.close();
+    try {
+      await vi.waitFor(() => expect(control).toHaveBeenCalledWith(
+        expect.any(String),
+        run.taskId,
+        'approval',
+        expect.objectContaining({
+          childId: run.tasks[0]!.childId,
+          approvalId: 'approval-1',
+          confirmed,
+          runtimeOwnerId: ownerId(),
+        }),
+      ), { timeout: 3_000 });
+      expect(resolver).toHaveBeenCalledOnce();
+      expect(resolver).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'permission',
+        toolName: 'bash',
+        input: { command: 'printf fixture' },
+        title: 'Subagent: bash',
+        description: 'Requested by approval-fixture',
+        metadata: expect.objectContaining({ provider: 'pi', subagent: true }),
+      }));
+    } finally {
+      discovery.clear();
+      await handle.close();
+    }
   });
 
   it.each([
@@ -1607,18 +1635,23 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
         toolName: 'bash',
         input: { command: 'printf fixture' },
       }, {}, 'input');
-      mockRunDiscovery().mockResolvedValue([run]);
+      const discovery = deferSubagentDiscovery(run);
       const control = vi.spyOn(piSubagentRuns, 'controlPiSubagentRuns').mockResolvedValue(1);
       const handle = await new PiAgent(buildDeps()).startSession(opts());
       handle.setInteractionResolver(vi.fn(async () => ({ kind: 'permission', behavior }) as const));
+      discovery.publish();
 
-      await vi.waitFor(() => expect(control).toHaveBeenCalledWith(
-        expect.any(String),
-        run.taskId,
-        'approval',
-        expect.objectContaining({ value }),
-      ));
-      await handle.close();
+      try {
+        await vi.waitFor(() => expect(control).toHaveBeenCalledWith(
+          expect.any(String),
+          run.taskId,
+          'approval',
+          expect.objectContaining({ value }),
+        ), { timeout: 3_000 });
+      } finally {
+        discovery.clear();
+        await handle.close();
+      }
     },
   );
 
@@ -1667,7 +1700,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
       run.taskId,
       'approval',
       expect.objectContaining({ value: 'auto-review-deny:This task is read-only.' }),
-    ));
+    ), { timeout: 3_000 });
     expect(review).toHaveBeenCalledOnce();
     expect(resolver).not.toHaveBeenCalled();
     await handle.close();
@@ -1688,7 +1721,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
       run.taskId,
       'approval',
       expect.objectContaining({ value: 'system-deny' }),
-    ));
+    ), { timeout: 3_000 });
     await handle.close();
   });
 
@@ -1849,7 +1882,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
       run.taskId,
       'approval',
       expect.objectContaining({ confirmed: true }),
-    ));
+    ), { timeout: 3_000 });
     expect(resolver).not.toHaveBeenCalled();
     await handle.close();
   });
@@ -1875,7 +1908,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
       run.taskId,
       'approval',
       expect.objectContaining({ confirmed: true }),
-    ));
+    ), { timeout: 3_000 });
     expect(review).toHaveBeenCalledWith(expect.objectContaining({
       action: { kind: 'file-write', path: 'tmp/legacy-safe.txt',
         resolvedPath: path.join(cwd, 'tmp', 'legacy-safe.txt'), resolvedWritableRoots: null },
@@ -1910,7 +1943,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
         run.taskId,
         'approval',
         expect.objectContaining({ confirmed: false }),
-      ));
+      ), { timeout: 3_000 });
       expect(review).toHaveBeenCalledWith(expect.objectContaining({
         action: { kind: 'file-write', path: path.join(writableDir, 'linked', 'result.txt'),
           resolvedPath: path.join(outsideDir, 'result.txt'), resolvedWritableRoots: [cwd, writableDir] },
@@ -1954,7 +1987,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
         run.taskId,
         'approval',
         expect.objectContaining({ confirmed: true }),
-      ));
+      ), { timeout: 3_000 });
       expect(resolver).not.toHaveBeenCalled();
     } finally {
       await handle.close();
@@ -1983,7 +2016,7 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
       run.taskId,
       'approval',
       expect.objectContaining({ confirmed: false }),
-    ));
+    ), { timeout: 3_000 });
     expect(review).toHaveBeenCalledOnce();
     expect(resolver).toHaveBeenCalledWith(expect.objectContaining({
       toolName: 'bash',
@@ -1995,18 +2028,23 @@ describe('PiAgent.startSession failure cleanup (mocked pi process)', () => {
 
   it('fails closed when the durable Subagent approval resolver throws', async () => {
     const run = pendingSubagentRun({ toolName: 'write', input: { path: 'a.txt' } });
-    mockRunDiscovery().mockResolvedValue([run]);
+    const discovery = deferSubagentDiscovery(run);
     const control = vi.spyOn(piSubagentRuns, 'controlPiSubagentRuns').mockResolvedValue(1);
     const handle = await new PiAgent(buildDeps()).startSession(opts());
     handle.setInteractionResolver(vi.fn(async () => { throw new Error('resolver failed'); }));
+    discovery.publish();
 
-    await vi.waitFor(() => expect(control).toHaveBeenCalledWith(
-      expect.any(String),
-      run.taskId,
-      'approval',
-      expect.objectContaining({ confirmed: false }),
-    ));
-    await handle.close();
+    try {
+      await vi.waitFor(() => expect(control).toHaveBeenCalledWith(
+        expect.any(String),
+        run.taskId,
+        'approval',
+        expect.objectContaining({ confirmed: false }),
+      ), { timeout: 3_000 });
+    } finally {
+      discovery.clear();
+      await handle.close();
+    }
   });
 
   it('retries durable Subagent approval delivery without asking the user twice', async () => {
