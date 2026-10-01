@@ -220,19 +220,19 @@ describe('UserInfoSection — inner main button no longer owns hover background'
   });
 
   it('keeps application actions below accounts in the More menu and leaves logout in Settings', () => {
-    expect(source).toContain('<ApplicationMenuItems onJoinSharedTask=');
+    expect(source).toContain('<ApplicationMenuItems />');
     expect(source).toContain('{renderSavedAccountItems()}');
     expect(source).toContain('accountsReadyForOwner &&');
     expect(source).toContain('savedAccounts.some((account) => !account.isCurrent)');
     expect(source.indexOf('{renderSavedAccountItems()}')).toBeLessThan(
-      source.indexOf('<ApplicationMenuItems onJoinSharedTask='),
+      source.indexOf('<ApplicationMenuItems />'),
     );
     expect(source).not.toContain("t('sidebar.user.menuLogout')");
     expect(source).not.toContain('useLogout');
     expect(source).not.toContain('<LogOut');
     expect(source).toContain("mode === 'local'");
     expect(source.indexOf("t('login.signIn')")).toBeLessThan(
-      source.indexOf('<ApplicationMenuItems onJoinSharedTask='),
+      source.indexOf('<ApplicationMenuItems />'),
     );
     expect(source).not.toContain('AccountSwitcherDialog');
   });

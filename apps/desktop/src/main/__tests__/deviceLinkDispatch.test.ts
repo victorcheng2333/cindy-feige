@@ -9,14 +9,14 @@ let revokedControllers: string[] = [];
 vi.mock('../device-link/settings-store', () => ({
   readDeviceLinkSettings: () => ({ remoteControlEnabled, revokedControllers }),
 }));
-vi.mock('../logger', () => ({
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-}));
+const diagnosticLog = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+vi.mock('../logger', () => ({ createLogger: () => diagnosticLog }));
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), removeHandler: vi.fn() },
   app: { getVersion: () => '1.0.0' },
 }));
 // This suite exercises dispatch authorization, not authenticated ICE HTTP setup.
+vi.mock('../task-migration/service', () => ({ requestTaskMigration: vi.fn() }));
 vi.mock('../remote-desktop/iceConfig', () => ({ loadDesktopIceServers: vi.fn(async () => []) }));
 // media:fetch 拦截走 mediaFetch.fetchLocalMediaToOss;mock 掉避免拉起 OSS/cache-store 真实依赖。
 const fetchLocalMediaToOssMock = vi.hoisted(() => vi.fn());
@@ -1232,6 +1232,10 @@ describe('被控端控制链路生命周期', () => {
           message: 'remote invoke execution queue is full',
         },
       },
+    }));
+    expect(diagnosticLog.debug).toHaveBeenCalledWith('remote invoke admission busy', expect.objectContaining({
+      executing: limit, pendingResults: 0, controllerAtLimit: true, globalAtLimit: false,
+      channels: { 'local-db:sessions:list': limit },
     }));
     resolveList?.([{ id: 's1' }]);
     await vi.waitFor(() => {

@@ -31,7 +31,6 @@ import { toast } from '@/lib/toast';
 import type { DesktopSavedAccount } from '@/lib/authService';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { shouldLabelRegion } from '../../../shared/regionCode';
-import { JoinSharedTaskDialog } from '@/features/device-link/JoinSharedTaskDialog';
 import { SharedTaskEndedNotice } from '@/features/device-link/SharedTaskEndedNotice';
 import { useSharedTaskTasks } from '@/features/device-link/useSharedTaskTasks';
 import { ApplicationMenuItems } from './ApplicationMenuItems';
@@ -77,7 +76,6 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   const navigate = useNavigate();
   const location = useLocation();
   const [avatarError, setAvatarError] = useState(false);
-  const [joinSharedTaskOpen, setJoinSharedTaskOpen] = useState(false);
   useSharedTaskTasks();
   const [mobileDownloadOpen, setMobileDownloadOpen] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<DesktopSavedAccount[]>([]);
@@ -331,7 +329,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
             {addingAccount ? t('sidebar.accountSwitcher.adding') : t('login.signIn')}
           </DropdownMenuItem>
         ) : null}
-        <ApplicationMenuItems onJoinSharedTask={() => setJoinSharedTaskOpen(true)} />
+        <ApplicationMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -367,13 +365,10 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
     </Tip>
   );
 
-  // Keep sharing dialogs outside the dropdown: selecting an item unmounts its content.
+  // Keep the access-ended notice mounted independently of the account dropdown.
   const sharedTaskDialogs = (
     <>
-      <SharedTaskEndedNotice onJoin={() => setJoinSharedTaskOpen(true)} />
-      {joinSharedTaskOpen && (
-        <JoinSharedTaskDialog open={joinSharedTaskOpen} onOpenChange={setJoinSharedTaskOpen} />
-      )}
+      <SharedTaskEndedNotice onReturnToTasks={() => navigate('/')} />
     </>
   );
 

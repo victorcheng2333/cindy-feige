@@ -45,6 +45,7 @@ import { useProviderOAuthDeviceCode } from '@/hooks/useProviderOAuthDeviceCode';
 import { acquireCodexLogin, type CodexLoginLease } from '@/hooks/codexAuthLogin';
 import { hasProviderLogo, ProviderLogoMark } from '@/components/icons/ProviderLogoMark';
 import { LocalOllamaInstall, offersManagedOllamaInstall } from './LocalOllamaInstall';
+import { MANAGED_LLAMACPP_PROVIDER_ID } from '../../../shared/llamaCpp';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from './OAuthDeviceCodeCard';
 import { SettingsTextInput } from './SettingsTextInput';
 
@@ -276,12 +277,14 @@ function ProviderRow({
   name,
   meta,
   beta,
+  busy,
   onClick,
 }: {
   icon: React.ReactNode;
   name: string;
   meta: string;
   beta?: boolean;
+  busy?: boolean;
   onClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -290,6 +293,8 @@ function ProviderRow({
       type="button"
       onClick={onClick}
       title={name}
+      disabled={busy}
+      aria-busy={busy}
       className="flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left transition-colors hover:bg-[var(--settings-menu-bg-hover)]"
     >
       <span
@@ -300,7 +305,7 @@ function ProviderRow({
           color: 'var(--settings-integration-avatar-icon)',
         }}
       >
-        {icon}
+        {busy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : icon}
       </span>
       <span
         className="min-w-0 flex-1 truncate text-13 font-medium"
@@ -558,7 +563,7 @@ export function AddProviderWizard({
   const filteredLocalAdvanced = q
     ? localAdvancedPresets.filter((p) => p.name.toLowerCase().includes(q))
     : localAdvancedPresets;
-  const filteredLocalPresets = [...filteredLocalConnect, ...filteredLocalAdvanced];
+  const filteredLocalPresets = [...filteredLocalConnect, ...filteredLocalAdvanced].filter(p => p.id !== 'llamacpp');
 
   const ollamaAlreadyAdded = providers.some((p) => p.id === MANAGED_OLLAMA_PROVIDER_ID);
   const oauthChoiceIds = new Set(oauthChoices.map((p) => p.id));
@@ -593,6 +598,7 @@ export function AddProviderWizard({
     !ollamaAlreadyAdded &&
     ollamaMatchesQuery &&
     (Boolean(q) || (localProbe.ready && !recommendsOllama));
+  const showLlamaCppInList = (!q || 'llama.cpp'.includes(q)) && !providers.some(p => p.id === MANAGED_LLAMACPP_PROVIDER_ID);
   const listedOauth = q
     ? filteredOauth
     : filteredOauth.filter((p) => !recommendedOauthIds.has(p.id));
@@ -642,8 +648,31 @@ export function AddProviderWizard({
     setApiKey('');
     setStep(2);
   }, []);
+  const connectLlamaCpp = useCallback(async () => {
+    if (savingRef.current) return;
+    if (providers.some(p => p.id === MANAGED_LLAMACPP_PROVIDER_ID)) {
+      onDone(MANAGED_LLAMACPP_PROVIDER_ID);
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await window.electronAPI.maker.llamaCppEnsure();
+      await onDone(MANAGED_LLAMACPP_PROVIDER_ID);
+    } catch {
+      toast.error(t('settings.providers.llamacpp.failed'));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }, [onDone, providers, t]);
+
   const pickPreset = useCallback(
     (preset: ProviderPreset, useApiKey = false) => {
+      if (preset.id === 'llamacpp') {
+        void connectLlamaCpp();
+        return;
+      }
       const oauth = providerPresetOAuth(preset.id);
       if (oauth && !useApiKey) {
         pickOauth({ ...buildUserProvider({
@@ -671,7 +700,7 @@ export function AddProviderWizard({
       setPresetBaseUrls({});
       setStep(2);
     },
-    [i18n.language, onDone, providers, pickOauth],
+    [i18n.language, onDone, providers, pickOauth, connectLlamaCpp],
   );
 
   const connectOllama = useCallback(async () => {
@@ -767,8 +796,10 @@ export function AddProviderWizard({
       const result = await window.electronAPI.maker.claudeOAuthLogin(loginKey);
       if (localLoginRef.current !== login) return;
       if (result.ok) onDone('anthropic');
-      else if (result.reason !== 'login_cancelled') toast.error(t('settings.providers.localAccount.unavailable'));
-    } catch { if (localLoginRef.current === login) toast.error(t('settings.providers.localAccount.unavailable')); }
+      else if (result.reason === 'local_unavailable') toast.error(t('settings.providers.localAccount.unavailable'));
+      else if (result.reason === 'not_a_subscription') toast.error(t('settings.connections.claude.toast.notSubscription'));
+      else if (result.reason !== 'login_cancelled') toast.error(t('settings.connections.claude.toast.loginFailed'));
+    } catch { if (localLoginRef.current === login) toast.error(t('settings.connections.claude.toast.loginFailed')); }
     finally {
       if (localLoginRef.current === login) {
         localLoginRef.current = null;
@@ -912,13 +943,7 @@ export function AddProviderWizard({
     onClose();
   }, [loggingIn, cancelAuthorize, onClose]);
 
-  // 遮罩关闭的防误触:从输入框按下、拖到弹窗外松开时,浏览器把合成 click 派发到
-  // 按下点与松开点的最近公共祖先(= 遮罩),target === currentTarget 成立但用户
-  // 并无关闭意图。记录按下是否始于遮罩,按下与松开都在遮罩上才关闭
-  // (PR #1102 review 第七轮)。
-  const overlayMouseDownOnSelfRef = useRef(false);
-
-  // Esc 关闭(DESIGN.md §4:弹窗关闭 = 取消按钮 / Esc / 点遮罩;本弹窗未用 Radix,需自行监听)。
+  // Esc 关闭(本弹窗未用 Radix,需自行监听)。
   // CJK 输入法组合期间的 Esc 是「取消候选词」,不是关闭命令(isComposing / 遗留
   // keyCode 229),与仓库其他 CJK 输入场景同口径(PR #1102 review 第六轮)。
   useEffect(() => {
@@ -1321,7 +1346,9 @@ export function AddProviderWizard({
             return {
               id: m.id,
               name: m.name,
-              defaultEnabled: m.checked,
+              // Selecting a model follows native-engine defaults; it is not an
+              // explicit opt-in to every compatibility engine carrying the model.
+              ...(!m.checked ? { defaultEnabled: false } : {}),
               discoveredMetadata,
               ...(m.discoveredCosts?.[agent] ? { discoveredCost: m.discoveredCosts[agent] } : {}),
               ...(presetModel?.mode ? { mode: presetModel.mode } : {}),
@@ -1428,16 +1455,8 @@ export function AddProviderWizard({
     (!presetNeedsApiKey || apiKey.trim().length > 0);
 
   return (
-    // DESIGN.md §4 Dialog:关闭 = 底部「取消」/ Esc / 点遮罩,不设右上角 ×(与 ConfirmDialog 同构)。
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center bg-[var(--overlay-modal)]"
-      onMouseDown={(e) => {
-        overlayMouseDownOnSelfRef.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && overlayMouseDownOnSelfRef.current) handleClose();
-        overlayMouseDownOnSelfRef.current = false;
-      }}
     >
       <div
         className="flex max-h-[min(640px,85vh)] w-[min(600px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl border"
@@ -1627,7 +1646,7 @@ export function AddProviderWizard({
 
                 {(filteredPresets.length > 0 ||
                   builtinApiKeyChoices.length > 0 ||
-                  showOllamaInList) && (
+                  showOllamaInList || showLlamaCppInList) && (
                   <>
                     <GroupLabel>{t('settings.providers.wizard.groupApiKey')}</GroupLabel>
                     {showOllamaInList && (
@@ -1639,6 +1658,16 @@ export function AddProviderWizard({
                         onClick={() => void connectOllama()}
                       />
                     )}
+                {showLlamaCppInList && (
+                  <ProviderRow
+                    icon={cardIcon({ providerId: 'llamacpp', name: 'llama.cpp' })}
+                    name={t('settings.providers.llamacpp.title')}
+                    meta={t('settings.providers.llamacpp.subtitle')}
+                    beta
+                    busy={saving}
+                    onClick={() => void connectLlamaCpp()}
+                  />
+                )}
                     {builtinApiKeyChoices
                       .filter((p) => !q || p.name.toLowerCase().includes(q))
                       .map((p) => (
@@ -1801,7 +1830,8 @@ export function AddProviderWizard({
                         {t('settings.providers.openai.useLocalAccount')}
                       </Button>
                     )}
-                    {sel.provider.id === 'anthropic' && !providers.some(p => p.id === 'anthropic' && !p.removed && (p.connected || p.removed === false)) && (
+                    {/* Claude 订阅唯一入口:已添加时点它等同重新连接本机 Claude Code 登录。 */}
+                    {sel.provider.id === 'anthropic' && (
                       <Button
                         variant="secondary"
                         size="lg"
@@ -1811,15 +1841,18 @@ export function AddProviderWizard({
                         {t('settings.providers.localAccount.useClaude')}
                       </Button>
                     )}
-                    <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize()}>
-                      {t(
-                        ['openai', 'anthropic', 'xai'].includes(sel.provider.id)
-                            ? 'settings.providers.openai.addIndependentAccount'
-                            : sel.provider.auth.oauth?.flow === 'device-code'
-                              ? 'settings.providers.wizard.authorizeWithDeviceCode'
-                              : 'settings.providers.button.authorize',
-                      )}
-                    </Button>
+                    {/* Claude 订阅只能经内置 Claude Code 自己的登录使用,不提供独立账号。 */}
+                    {sel.provider.id !== 'anthropic' && (
+                      <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize()}>
+                        {t(
+                          ['openai', 'xai'].includes(sel.provider.id)
+                              ? 'settings.providers.openai.addIndependentAccount'
+                              : sel.provider.auth.oauth?.flow === 'device-code'
+                                ? 'settings.providers.wizard.authorizeWithDeviceCode'
+                                : 'settings.providers.button.authorize',
+                        )}
+                      </Button>
+                    )}
                     {sel.provider.id === 'xai' && (
                       <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize('device')}>
                         {t('settings.connections.xai.deviceLogin')}

@@ -115,6 +115,7 @@ describe("resolveCatalogUrl", () => {
     expect(Object.fromEntries(resolved.searchParams)).toEqual({
       region: "cn",
       registryMedia: "1",
+      registryLocalRuntimes: "1",
       registrySchemaVersion: "5",
     });
   });
@@ -146,7 +147,7 @@ describe("resolveCatalogUrl", () => {
     expect(
       resolveCatalogUrl({ baseUrl: "https://model-access.example.com/" }),
     ).toBe(
-      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1",
+      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1&registryLocalRuntimes=1",
     );
   });
   it("builds the migration OSS fallback URL", () => {
@@ -1073,7 +1074,7 @@ describe("loadCatalog", () => {
     );
     expect(fetchText).toHaveBeenNthCalledWith(
       1,
-      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1",
+      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1&registryLocalRuntimes=1",
       15_000,
     );
     expect(fetchText).toHaveBeenNthCalledWith(
@@ -1133,7 +1134,7 @@ describe("loadCatalog", () => {
     );
     expect(fetchText).toHaveBeenNthCalledWith(
       1,
-      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1",
+      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1&registryLocalRuntimes=1",
       15_000,
     );
     expect(fetchText).toHaveBeenNthCalledWith(
@@ -1191,7 +1192,7 @@ describe("loadCatalog", () => {
     );
     expect(fetchText).toHaveBeenNthCalledWith(
       1,
-      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1",
+      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1&registryLocalRuntimes=1",
       15_000,
     );
     expect(fetchText).toHaveBeenNthCalledWith(
@@ -1220,7 +1221,7 @@ describe("loadCatalog", () => {
     );
     expect(fetchText).toHaveBeenCalledTimes(1);
     expect(fetchText).toHaveBeenCalledWith(
-      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1",
+      "https://model-access.example.com/api/model-catalog/catalog?registrySchemaVersion=5&registryMedia=1&registryLocalRuntimes=1",
       15_000,
     );
     expect(cat.version).toBe(BUNDLED_CATALOG.version);
@@ -1344,7 +1345,7 @@ describe("registry visibility & sources(运行时注入 fixture)", () => {
       providersForAgent(views, "codex")
         .map((p) => p.id)
         .sort(),
-    ).toEqual(["anthropic", "openai", "xai", "xd"]);
+    ).toEqual(["openai", "xai", "xd"]);
   });
 
   it("connectedProvidersForAgent honors connection", () => {
@@ -1608,17 +1609,12 @@ describe("resolveRoute(运行时注入 fixture)", () => {
     expect(r?.routing.authStrategy).toBe("oauth-passthrough");
   });
 
-  it("anthropic claude (codex) → Anthropic Messages bridge + host-owned OAuth", () => {
-    const r = resolveRoute(views, "anthropic", "claude-opus-4-8", "codex");
-    expect(r?.routing).toMatchObject({
-      upstream: "https://api.anthropic.com",
-      wireProtocol: "anthropic-messages",
-      authStrategy: "provider-oauth-header",
-      headerOverride: {
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-      },
-    });
+  it("anthropic claude has no Codex / Pi route (subscription stays inside the Claude Code CLI)", () => {
+    expect(resolveRoute(views, "anthropic", "claude-opus-4-8", "codex")).toBeNull();
+    expect(resolveRoute(views, "anthropic", "claude-opus-4-8", "pi")).toBeNull();
+    expect(resolveRoute(views, "anthropic", "claude-opus-4-8", "claude-code")?.routing.upstream).toBe(
+      "https://api.anthropic.com",
+    );
   });
 
   it("xd claude (claude-code) → gateway, gateway-key, 不删 anthropic-beta(fast 经网关透传)", () => {
