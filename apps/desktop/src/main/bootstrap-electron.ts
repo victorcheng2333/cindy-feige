@@ -1,5 +1,9 @@
+import { registerAccessibilitySupportIpc } from './accessibility-support-ipc.js';
+import { prepareImportedAutomation, finishImportedAutomation } from './bot-import/automationRuntime.js';
+import { ensureImportedAutomationReady, recoverCompanionImports } from './bot-import/host.js';
 import { listWorktreeRecycleStatus, controlWorktreeRecycle } from './worktree/recycleControls';
 import { registerFilePeerIpc } from './device-link/filePeer';
+import { registerTaskMigrationIpc } from './task-migration/service';
 import { registerLoginItemIpc } from './login-item-ipc.js';
 import {
   createLatestSourceVersionReader,
@@ -59,10 +63,9 @@ import {
   session,
   shell,
   Tray,
-  type WebContents,
 } from 'electron';
 import { resolveVibrancyConfig } from './vibrancyConfig';
-import { getSessionThinkingSnapshots, getHistoryToolName } from './messagePersistBroadcaster';
+import { getSessionThinkingSnapshots, getHistoryToolName, drainPersistQueue } from './messagePersistBroadcaster';
 import { applyVibrancyToSecondaryWindows } from './secondary-windows';
 import { rememberResolvedAppTheme, resolveAppThemeIsDark } from './resolved-app-theme';
 import {
@@ -269,6 +272,7 @@ import {
   im,
   feishuIm,
   telegramIm,
+  prepareImDefaultSettingsChange,
   registerTelegramBotConfigIpc,
   startImOrchestrators,
   startImConnection,
@@ -428,7 +432,7 @@ import { resolveWorkspacePathCached, resolveWorkspacePathBatchCached } from './p
 import { registerLocalDbIpc } from './localDb/ipc/registerAll';
 import { getActiveCatalog } from './maker-host/active-catalog';
 import { resolveSessionContextWindow } from '../shared/sessionContextWindow';
-import { getSessionRowSnapshot, resumeDeletedPiSubagentCleanup } from './localDb/ipc/sessions';
+import { resumeDeletedPiSubagentCleanup } from './localDb/ipc/sessions';
 import {
   registerLegacyMigrationIpc,
   runLegacyUserDataMigrationForUser,
@@ -513,28 +517,6 @@ import {
 } from '@cindy/maker-core/pi-subagent-runs';
 
 import { onQuit, installQuitHandler } from './lifecycle';
-import {
-  cancelIOSSimulatorSessionOperations,
-  cleanupIOSSimulatorRemovedSession,
-  disposeIOSSimulatorHost,
-  flushIOSSimulatorOwnershipRegistry,
-  getIOSSimulatorSessionStatus,
-  reconcilePersistedIOSSimulatorOwnership,
-} from './mcp-integrations/ios-simulator';
-import { abortIOSSimulatorOperationsForExit } from './mcp-integrations/ios-simulator-exit';
-import {
-  clearIOSSimulatorRendererAccess,
-  configureIOSSimulatorAgentControlConfirmation,
-  configureIOSSimulatorRendererAccessConfirmation,
-  configureIOSSimulatorRendererTargets,
-  inheritIOSSimulatorRendererSessionAccess,
-  syncIOSSimulatorRendererAccessForSessionChange,
-} from './mcp-integrations/ios-simulator-renderer-access';
-import {
-  parseIOSSimulatorReleaseGateArgs,
-  runIOSSimulatorReleaseGate,
-  type IOSSimulatorReleaseGateMode,
-} from './mcp-integrations/ios-simulator-release-gate';
 import { initStartupDiagnostics } from './startup-diagnostics';
 import {
   installPowerEventDiagnostics,
@@ -553,7 +535,7 @@ import {
   clearAllSessionAttention,
   refreshWindowsAppBadge,
 } from './appBadgeService';
-import { initNotificationService } from './notificationService';
+import { initNotificationService, showDeviceSessionDesktopEvent } from './notificationService';
 import { initWecomGroupNotificationIpc } from './wecomGroupNotification';
 import { getAgentIslandService, initAgentIslandService } from './agent-island/service.js';
 import { attachWorkLouderCodexWindowReveal } from './worklouder-codex/index.js';
@@ -574,10 +556,8 @@ import {
   assertTrustedAppRendererEvent,
   isTrustedAppRendererEvent,
   isTrustedCindyRendererWindow,
-  isTrustedAppRendererWindow,
 } from './security/trustedAppRenderer.js';
-import { isMainShellWindowUrl } from './cindy-brain/scheduleSlot.js';
-import { sanitizeGhostNoticeText } from './cindy-brain/notifySlot.js';
+
 import { isIpcError } from '../shared/ipc-errors';
 import { readFileBytesForPreview } from './fileReadBytes.js';
 import { copyPngToClipboard } from './pngClipboard.js';
@@ -595,6 +575,8 @@ import {
   isSharedTaskAvailable,
   releaseDeviceLinkOwnershipBeforeLogout,
   handleDeviceLinkSystemResume,
+  getControllerName,
+  revokeController,
 } from './device-link';
 import { closeSharedTasksBeforeLogout } from './device-link/sharedTaskRuntime.js';
 import { closeSharedTasksBeforeAccountHandover } from './device-link/sharedTaskAccountBoundary.js';
@@ -692,8 +674,9 @@ import { clearModelVisibilityMirror } from './maker-host/model-visibility-mirror
 import { setClaudeSupportedModelsListener } from '@cindy/maker-core';
 import {
   noteAnthropicSdkSupportedModels,
-  refreshAnthropicModelsFromHttp,
   clearAnthropicDiscoveredModels,
+  requestAnthropicModelProbe,
+  syncAnthropicModelsWithClaudeLogin,
 } from './maker-host/model-discovery/anthropic.js';
 import {
   clearXaiDiscoveredModels,
@@ -757,11 +740,13 @@ import {
   scheduleDeferredCodexRestart,
   clearWorkingDirectoryRecoveryForOwnerBoundary,
   collectAgentInputQueueScanTexts,
+  flushPluginTaskLifecycle,
   createAutomationUserTurnGitBaselineHooks,
   registerModelVisibilitySyncIpc,
   registerMakerIpc as registerMakerCoreIpc,
   restoreBotRuntimeForCurrentOwner,
   isSessionTurnPendingCompletion,
+  isSessionInTurn,
   stopOrcaIdleWatcher,
   setGoalClearObserver,
   setGoalDeferredResumeCancelObserver,
@@ -770,6 +755,7 @@ import {
   setGoalAskAnswerObserver,
   withSendToSessionLock,
 } from './maker-ipc/register.js';
+import { moveSessionProjectFromHost } from './mcp-integrations/moveSession.js';
 import { cleanupActiveReviewArtifactSnapshots } from './reviewer/reviewArtifactSnapshot.js';
 import { MAKER_INVOKE as MAKER_IPC_INVOKE, MAKER_PUSH, MAKER_SEND } from './maker-ipc/channels.js';
 import {
@@ -802,18 +788,32 @@ import {
   shouldStartReadinessConsumers,
 } from './maker-host/account-provider-readiness-ensure.js';
 import {
+  previewImDefaultSettingsPatch,
   readImDefaultSettingsState,
   resetImDefaultSettings,
   resetImDefaultSettingsGlobal,
   resetImDefaultSettingsChannel,
   writeImDefaultSettingsPatch,
 } from './im/defaultSettingsStore.js';
-import { hasClaudeAiOAuth } from './maker-host/claude-credentials-store.js';
+import { readImDefaultSettingsFingerprint } from './im/defaultSessionSettings.js';
+import { fingerprintImDefaultSettings } from './im/shared/channelDefaultRoute.js';
+import { IM_DEFAULT_SETTINGS } from '../shared/imDefaultSettings.js';
+import { assertOwnerScopeSettledForWrite } from './im/ownerScopedStorage.js';
+import { hasClaudeNativeLogin } from './maker-host/claude-native-auth.js';
 import {
-  disconnectClaudeAiOAuth,
-  reconnectClaudeAiOAuth,
-} from './maker-host/claude-oauth-refresh.js';
-import { beginClaudeLocalLogin, cancelClaudeOAuthLogin } from './maker-host/claude-oauth-login.js';
+  connectClaudeNativeLogin,
+  disconnectClaudeNativeLogin,
+} from './maker-host/claude-native-connection.js';
+import {
+  beginClaudeCliLogin,
+  cancelClaudeCliLogin,
+  onClaudeCliLoginStatusChange,
+  readClaudeCliLoginStatus,
+  runClaudeCliLogin,
+} from './maker-host/claude-native-cli.js';
+import { closeClaudeCliProxyBridge } from './maker-host/claude-cli-proxy-bridge.js';
+import { startLegacyClaudeConfigMigration } from './maker-host/claude-legacy-config-migration.js';
+import { isNativeProviderAuthBound, isNativeProviderAuthRevoked } from './maker-host/nativeProviderAuthBinding.js';
 import {
   runGrokOAuthLogin,
   cancelGrokOAuthLogin,
@@ -1168,6 +1168,7 @@ async function waitForCurrentAccountProviderModelsReady(): Promise<void> {
 
 // Live getters preserve account/scheduler replacement without loading Main modules at dispatch time.
 configureRoutineHost({
+  assertImportedAutomationReady: ensureImportedAutomationReady, prepareImportedAutomation, finishImportedAutomation, recoverImports: recoverCompanionImports,
   getBot: getBotRemoteResourceSource,
   getScheduler: getSchedulerIfInitialized,
   getScheduleStorage,
@@ -2068,6 +2069,7 @@ async function teardownAuthAccountBoundary(reason: string): Promise<void> {
           `[bootstrap-electron] release device-link ownership on ${reason} failed (non-fatal):`, err,
         ),
       });
+      await flushPluginTaskLifecycle();
       await lifecycleDbClientManager.dispose(reason);
     } finally {
       releaseEndedSuppression();
@@ -2093,6 +2095,7 @@ async function teardownAuthAccountBoundary(reason: string): Promise<void> {
     ),
   });
   try {
+    await flushPluginTaskLifecycle();
     await lifecycleDbClientManager.dispose(reason);
   } finally {
     try {
@@ -2211,20 +2214,7 @@ setLoginCaptchaOriginResolver(() => {
 resetRsbWindowSettingsForStartup();
 const rsbWindowController = new RsbWindowController({
   settings: { read: readRsbWindowSettings, writePatch: writeRsbWindowSettingsPatch },
-  createWindow: () => {
-    const window = createRightSidebarWindow();
-    const mainTarget =
-      mainWindowRef && !mainWindowRef.isDestroyed() && !mainWindowRef.webContents.isDestroyed()
-        ? mainWindowRef.webContents
-        : null;
-    if (mainTarget) {
-      inheritIOSSimulatorRendererSessionAccess(mainTarget, window.webContents);
-      // This renderer is still hidden for prewarm. Keep its Viewer buckets,
-      // but pause the inherited active mutation grant until it is shown.
-      syncIOSSimulatorRendererAccessForSessionChange(window.webContents, null);
-    }
-    return window;
-  },
+  createWindow: () => createRightSidebarWindow(),
   getMainWindow: () => mainWindowRef,
   broadcastState: (state) => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -2243,23 +2233,6 @@ const rsbWindowController = new RsbWindowController({
       // window torn down mid-send — ignore
     }
   },
-  onWindowWillShow: (window) => {
-    const mainTarget =
-      mainWindowRef && !mainWindowRef.isDestroyed() && !mainWindowRef.webContents.isDestroyed()
-        ? mainWindowRef.webContents
-        : null;
-    const inherited = mainTarget
-      ? inheritIOSSimulatorRendererSessionAccess(mainTarget, window.webContents)
-      : false;
-    if (!inherited) {
-      // No authoritative Main snapshot is available. Never leave a cached
-      // sidebar's previous active mutation grant usable when it becomes visible.
-      syncIOSSimulatorRendererAccessForSessionChange(window.webContents, null);
-    }
-  },
-  onWindowHidden: (window) => {
-    syncIOSSimulatorRendererAccessForSessionChange(window.webContents, null);
-  },
   contextChannel: MAKER_PUSH.RSB_WINDOW_CONTEXT_CHANGED,
   commandChannel: MAKER_PUSH.RSB_WINDOW_COMMAND,
   tabHandoffChannel: MAKER_PUSH.RSB_WINDOW_TAB_HANDOFF,
@@ -2267,128 +2240,6 @@ const rsbWindowController = new RsbWindowController({
   canCloseWindow: () => !hasActiveRsbNativePopupSurfaces(),
   resolveHostContext: resolveRsbHostContextFromSession,
   log: createLogger('right-sidebar-window-controller'),
-});
-
-function isIOSSimulatorPluginActive(ghosts = getGhostManager().list()): boolean {
-  return ghosts.some(
-    (ghost) =>
-      ghost.enabled === true &&
-      ghost.manifest.iosSimulator === true &&
-      isGhostAvailableForActiveSession(ghost.manifest.id),
-  );
-}
-
-function resolveIOSSimulatorRendererWindow(
-  target: Parameters<typeof BrowserWindow.fromWebContents>[0],
-): BrowserWindow | null {
-  const owner = BrowserWindow.fromWebContents(target);
-  if (!owner || !isTrustedAppRendererWindow(owner)) return null;
-  const sidebarTarget = rsbWindowController.getVisibleSidebarWebContents();
-  const isSidebar = sidebarTarget === target;
-  if (!isSidebar && !isMainShellWindowUrl(owner.webContents.getURL())) return null;
-  return owner;
-}
-
-configureIOSSimulatorRendererTargets((preferredTarget) => {
-  if (!isIOSSimulatorPluginActive()) return null;
-  const mainTarget =
-    mainWindowRef && !mainWindowRef.isDestroyed() && !mainWindowRef.webContents.isDestroyed()
-      ? mainWindowRef.webContents
-      : null;
-  const sidebarTarget = rsbWindowController.getVisibleSidebarWebContents();
-  const belongsToMainFamily =
-    !preferredTarget || preferredTarget === mainTarget || preferredTarget === sidebarTarget;
-  if (!belongsToMainFamily) {
-    if (!preferredTarget || !resolveIOSSimulatorRendererWindow(preferredTarget as WebContents)) {
-      return null;
-    }
-    return {
-      grantTargets: [preferredTarget],
-      focusTarget: preferredTarget,
-    };
-  }
-  const grantTargets = [mainTarget, sidebarTarget].filter(
-    (target): target is NonNullable<typeof target> => Boolean(target),
-  );
-  const focusTarget = rsbWindowController.getHostWebContents() ?? preferredTarget ?? mainTarget;
-  return focusTarget ? { grantTargets, focusTarget } : null;
-});
-configureIOSSimulatorRendererAccessConfirmation(async (target, sessionId) => {
-  if (!isIOSSimulatorPluginActive()) return false;
-  const owner = resolveIOSSimulatorRendererWindow(target as WebContents);
-  if (!owner) return false;
-  const row = await getSessionRowSnapshot(sessionId);
-  if (!row || row.status !== 'active' || row.remoteHostId) return false;
-
-  const taskLabel =
-    sanitizeGhostNoticeText(row.title ?? '')
-      .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
-      .replace(/\s+/g, ' ')
-      .slice(0, 120) || t('rightSidebar.iosSimulator.accessDialogUntitledTask');
-  const result = await dialog.showMessageBox(owner, {
-    type: 'question',
-    title: t('rightSidebar.iosSimulator.accessDialogTitle'),
-    message: t('rightSidebar.iosSimulator.accessDialogMessage').replaceAll('{{task}}', taskLabel),
-    detail: t('rightSidebar.iosSimulator.accessDialogDetail'),
-    buttons: [
-      t('rightSidebar.iosSimulator.accessDialogAllow'),
-      t('rightSidebar.iosSimulator.accessDialogCancel'),
-    ],
-    defaultId: 1,
-    cancelId: 1,
-    noLink: true,
-  });
-  if (result.response !== 0 || owner.isDestroyed() || target.isDestroyed()) return false;
-  const current = await getSessionRowSnapshot(sessionId);
-  return Boolean(
-    current && current.status === 'active' && !current.remoteHostId && isIOSSimulatorPluginActive(),
-  );
-});
-configureIOSSimulatorAgentControlConfirmation(async (target, sessionId, instanceId) => {
-  if (!isIOSSimulatorPluginActive()) return false;
-  const owner = resolveIOSSimulatorRendererWindow(target as WebContents);
-  if (!owner) return false;
-  const row = await getSessionRowSnapshot(sessionId);
-  if (!row || row.status !== 'active' || row.remoteHostId) return false;
-  const status = await getIOSSimulatorSessionStatus(sessionId);
-  const instance = status.ok
-    ? status.instances.find((candidate) => candidate.instanceId === instanceId)
-    : undefined;
-  if (!instance) return false;
-
-  const taskLabel =
-    sanitizeGhostNoticeText(row.title ?? '')
-      .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
-      .replace(/\s+/g, ' ')
-      .slice(0, 120) || t('rightSidebar.iosSimulator.accessDialogUntitledTask');
-  const simulatorLabel = sanitizeGhostNoticeText(instance.simulatorName)
-    .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
-    .replace(/\s+/g, ' ')
-    .slice(0, 120);
-  const result = await dialog.showMessageBox(owner, {
-    type: 'warning',
-    title: t('rightSidebar.iosSimulator.agentControlDialogTitle'),
-    message: t('rightSidebar.iosSimulator.agentControlDialogMessage').replaceAll(
-      '{{simulator}}',
-      simulatorLabel,
-    ),
-    detail: t('rightSidebar.iosSimulator.agentControlDialogDetail').replaceAll(
-      '{{task}}',
-      taskLabel,
-    ),
-    buttons: [
-      t('rightSidebar.iosSimulator.agentControlDialogAllow'),
-      t('rightSidebar.iosSimulator.agentControlDialogCancel'),
-    ],
-    defaultId: 1,
-    cancelId: 1,
-    noLink: true,
-  });
-  if (result.response !== 0 || owner.isDestroyed() || target.isDestroyed()) return false;
-  const current = await getSessionRowSnapshot(sessionId);
-  return Boolean(
-    current && current.status === 'active' && !current.remoteHostId && isIOSSimulatorPluginActive(),
-  );
 });
 registerRsbWindowIpc({
   controller: rsbWindowController,
@@ -2486,7 +2337,6 @@ remoteDesktopViewerWindows.register();
 
 setGhostsChangedObserver((ghosts) => {
   ghostPanelWindowsController.reconcile(ghosts);
-  if (!isIOSSimulatorPluginActive(ghosts)) clearIOSSimulatorRendererAccess();
 });
 
 const rsbBrowserRegistry = getRsbBrowserBridge();
@@ -2547,6 +2397,7 @@ registerBrowserBackendIpc();
 // ipcMain.handle 在 app ready 前注册也有效。
 registerAppShortcutIpc();
 registerAppearanceSettingsIpc();
+registerAccessibilitySupportIpc();
 registerLoginItemIpc();
 
 // ── 资源用量面板 IPC ─────────────────────────────────────────────────
@@ -2575,6 +2426,8 @@ registerGhostIpc();
 registerPluginMarketIpc();
 registerPluginPublisherIpc();
 setAppSessionCommitBoundaryHook(() => {
+  // 进行中的 Claude Code 登录属于旧 owner:结束 CLI 子进程,不让它在新 owner 下完成。
+  cancelClaudeCliLogin();
   clearAllSessionAttention();
   remoteDesktopViewerWindows.reset();
   ghostPanelWindowsController.closeForOwnerChange();
@@ -4469,6 +4322,11 @@ const registerIpcHandlers = () => {
     onSessionActivityChange: (activity) => {
       updateInputDeviceSessionActivity(activity);
     },
+    onDeviceSessionEvent: (event) => {
+      // 与本机任务同口径:Cindy 在前台时不弹系统通知。
+      if (hasFocusedAppWindow()) return;
+      showDeviceSessionDesktopEvent(() => getWindow() ?? null, event);
+    },
   })?.setAppFocused(hasFocusedAppWindow());
   // 定向 replay:快照只补发给刚完成 sessions 订阅的那一台控制端。若沿默认广播
   // 通道扇出,每次 subscribe 都会把 O(会话数) 的帧重复灌给其它所有控制端,
@@ -4682,15 +4540,76 @@ const registerIpcHandlers = () => {
   });
   ipcMain.handle(
     MAKER_IPC_INVOKE.IM_DEFAULT_SETTINGS_SET,
-    async (_e, patch: unknown, rawChannel: unknown) => {
+    async (event, patch: unknown, rawChannel: unknown) => {
+      // 本 handler 已升级为可批量改任务记录、并在下一条 IM 消息时切任务路由的操作,
+      // 必须先验证调用方是可信主渲染器 —— 不能让被导航到外部页面的 preload 窗口
+      // 改写渠道默认(PR #5155 review P1, 同 SUBAGENT_MODEL_SETTINGS_SET)。
+      assertTrustedAppRendererEvent(event);
+      // owner 边界(PR #5155 review P1): 回填跨多个 await, 期间登出/切号会让落库与
+      // 设置写入漂到别的 owner —— 进入时快照 owner scope; 回填自身已在
+      // prepareImDefaultSettingsChange 内固定 DbClient 并复核 epoch, 这里在写设置
+      // 前的同一同步块内再校验 scope 未变且无 boundary 在途, 不满足失败重试。
+      const ownerScopeKey = activeOwnerScopeKey();
       const channel = parseImDefaultSettingsChannel(rawChannel);
       const parsedPatch = parseImDefaultSettingsPatch(patch);
+      // 仅路由默认实际变化时才要求阻塞式回填(PR #5155 review P2): 只改权限档等
+      // 不动路由指纹的保存不该被无关的供应商目录故障挡下 —— 路由默认没变就不存在
+      // 「提交后丢失回填机会」。
+      const routeDefaultChanged =
+        fingerprintImDefaultSettings(previewImDefaultSettingsPatch(parsedPatch, channel)) !==
+        readImDefaultSettingsFingerprint(channel);
+      // 写新设置之前按旧默认给老任务补跟随记录(见 prepareImDefaultSettingsChange)。
+      // 回填失败必须挡住本次保存: 记录补不上就提交新默认的话, 还停在旧默认上的
+      // 老任务之后只能按新默认匹配, 永久失去跟随资格(PR #5155 review P2)。
+      if (routeDefaultChanged) {
+        try {
+          await prepareImDefaultSettingsChange(channel);
+        } catch (err) {
+          throwIpcError(
+            'INTERNAL',
+            `渠道默认未保存：旧任务的跟随记录补全失败，请重试（${err instanceof Error ? err.message : String(err)}）`,
+          );
+        }
+      }
+      try {
+        assertOwnerScopeSettledForWrite(ownerScopeKey);
+      } catch (err) {
+        throwIpcError(
+          'INTERNAL',
+          `渠道默认未保存：账号切换中，请重试（${err instanceof Error ? err.message : String(err)}）`,
+        );
+      }
       writeImDefaultSettingsPatch(parsedPatch, channel);
       return imDefaultSettingsWire(channel);
     },
   );
-  ipcMain.handle(MAKER_IPC_INVOKE.IM_DEFAULT_SETTINGS_RESET, async (_e, rawChannel: unknown) => {
+  ipcMain.handle(MAKER_IPC_INVOKE.IM_DEFAULT_SETTINGS_RESET, async (event, rawChannel: unknown) => {
+    // 同 SET: 回填会批量改任务记录, 必须先验证调用方(PR #5155 review P1)。
+    assertTrustedAppRendererEvent(event);
+    // 同 SET: 进入时快照 owner scope, 写设置前校验 scope 未变且无 boundary 在途。
+    const ownerScopeKey = activeOwnerScopeKey();
     const channel = parseImDefaultSettingsChannel(rawChannel);
+    // 同 SET: 仅路由默认实际变化时才要求阻塞式回填(PR #5155 review P2)。
+    const routeDefaultChanged =
+      readImDefaultSettingsFingerprint(channel) !== fingerprintImDefaultSettings(IM_DEFAULT_SETTINGS);
+    if (routeDefaultChanged) {
+      try {
+        await prepareImDefaultSettingsChange(channel);
+      } catch (err) {
+        throwIpcError(
+          'INTERNAL',
+          `渠道默认未重置：旧任务的跟随记录补全失败，请重试（${err instanceof Error ? err.message : String(err)}）`,
+        );
+      }
+    }
+    try {
+      assertOwnerScopeSettledForWrite(ownerScopeKey);
+    } catch (err) {
+      throwIpcError(
+        'INTERNAL',
+        `渠道默认未重置：账号切换中，请重试（${err instanceof Error ? err.message : String(err)}）`,
+      );
+    }
     if (channel) {
       resetImDefaultSettingsChannel(channel);
     } else {
@@ -5068,35 +4987,55 @@ const registerIpcHandlers = () => {
     tapWindowBroadcast(MAKER_PUSH.CLAUDE_SESSION_ROUTE_CHANGED, { sessionId, route });
   });
 
-  // ── 本机 Claude Code 订阅：只管理 Cindy 的使用许可 ─────────────────────────
-  // 与鉴权模式开关正交:管理订阅凭证本身(像 Codex 的 OAuth 登录独立于 API 模式)。
+  // ── 本机 Claude Code 订阅:登录交给内置 CLI,Cindy 只管使用许可 ─────────────────
+  // 登录 = 拉起 CLI 的 `claude auth login`(凭证由 CLI 自己保存,与终端 claude 共用);
+  // 断开 = 撤销 Cindy 的使用许可,不登出 CLI。Cindy 不读取、不保存订阅凭证(claude-native-cli)。
   // Anthropic 模型清单动态发现接线(2026-07-19 统一重构):
   //   - active-catalog 统一收口 capabilities 刷新 + revision 广播;
   //   - SDK supportedModels 捕获(maker-core 会话 init 后上报)是能力字段权威。
   setClaudeSupportedModelsListener(noteAnthropicSdkSupportedModels);
+  // CLI 登录态在 Cindy 之外变化(终端里登录 / 登出)时同步连接态;登出与手动断开同款收尾。
+  onClaudeCliLoginStatusChange((status) => {
+    void broadcastClaudeAuthStateChanged();
+    syncClaudeSubscriptionUsageForAuthChange();
+    if (!status.loggedIn) resetProviderModelAutoRefreshCooldowns('anthropic');
+    // 登出清空清单;登录(含在终端里登录)后主动读一次;直接换号先清旧账号再读。
+    syncAnthropicModelsWithClaudeLogin(status);
+  });
+  // 启动时后台读一次(不阻塞):已连接的用户由 provider 目录加载等这次结果;
+  // 从未连接的用户据此自动沿用本机登录。明确断开过的用户不再读。
+  if (!isNativeProviderAuthRevoked('anthropic')) void readClaudeCliLoginStatus();
+  // 旧版 dev 隔离目录 claude-home 的转录补拷到默认 ~/.claude(仅 dev 多实例;后台跑,
+  // 拉起 CLI 前 getAuthEnv 再等它一次)。正式版为 no-op。
+  startLegacyClaudeConfigMigration();
+  // 退出时结束进行中的登录子进程(CLI 的本机回调监听没有超时),并关闭 CLI 的代理桥。
+  app.once('will-quit', () => {
+    cancelClaudeCliLogin();
+    void closeClaudeCliProxyBridge();
+  });
   ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_STATUS, async () => {
-    return { authorized: hasClaudeAiOAuth() };
+    // 没有使用许可时结论恒为 false,不必拉起 CLI(状态栏等常驻读取对所有用户都会调用)。
+    if (isNativeProviderAuthBound('anthropic')) await readClaudeCliLoginStatus({ maxAgeMs: 30_000 });
+    return { authorized: hasClaudeNativeLogin() };
   });
   ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGIN, async (event, loginKey?: string) => {
     assertTrustedAppRendererEvent(event);
     const owner = activeOwnerScopeKey();
     if (isAppSessionBoundaryPending() || !getActiveAppSession().dataOwnerId)
       return { ok: false, reason: 'login_cancelled', authorized: false };
-    const signal = beginClaudeLocalLogin(loginKey);
+    const signal = beginClaudeCliLogin(loginKey);
+    const result = await runClaudeCliLogin(signal);
+    if (signal.aborted || owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
+      return { ok: false, reason: 'login_cancelled', authorized: false };
+    if (!result.ok) return { ok: false, reason: result.reason, authorized: false };
     resetProviderModelAutoRefreshCooldowns('anthropic');
-    await clearAnthropicDiscoveredModels();
-    if (signal.aborted || owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
-      return { ok: false, reason: 'login_cancelled', authorized: false };
-    await ensureAnthropicCompatProxyReady();
-    if (signal.aborted || owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
-      return { ok: false, reason: 'login_cancelled', authorized: false };
-    if (!reconnectClaudeAiOAuth())
-      return { ok: false, reason: 'local_unavailable', authorized: false };
     // Binding is the commit point; auxiliary refresh must not prolong the cancellable login.
+    connectClaudeNativeLogin();
+    // CLI 登录态变化的监听先于绑定触发,那次探测会因尚未绑定而跳过;绑定后再请求一次。
+    requestAnthropicModelProbe();
     void broadcastClaudeAuthStateChanged();
     syncClaudeSubscriptionUsageForAuthChange();
-    void refreshAnthropicModelsFromHttp();
-    return { ok: true, authorized: hasClaudeAiOAuth() };
+    return { ok: true, authorized: hasClaudeNativeLogin() };
   });
   ipcMain.handle(
     MAKER_IPC_INVOKE.CLAUDE_OAUTH_LOGOUT,
@@ -5112,10 +5051,10 @@ const registerIpcHandlers = () => {
       ) {
         throwIpcError('INVALID_PARAMS', 'Provider owner changed');
       }
-      // Cancel pending Cindy login/refresh before revoking the binding; keep native credentials.
+      // Cancel a pending CLI login before revoking the binding; keep the CLI's own login.
       try {
-        cancelClaudeOAuthLogin();
-        await disconnectClaudeAiOAuth();
+        cancelClaudeCliLogin();
+        await disconnectClaudeNativeLogin();
         if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
           return { authorized: false };
         resetProviderModelAutoRefreshCooldowns('anthropic');
@@ -5132,13 +5071,13 @@ const registerIpcHandlers = () => {
       syncClaudeSubscriptionUsageForAuthChange();
       // 模型清单动态发现:登出完成前清空清单 + 删磁盘缓存,并等待旧 SDK 写盘收尾。
       await clearAnthropicDiscoveredModels();
-      return { authorized: hasClaudeAiOAuth() };
+      return { authorized: hasClaudeNativeLogin() };
     },
   );
   ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_CANCEL, async (event, loginKey?: string) => {
     assertTrustedAppRendererEvent(event);
-    cancelClaudeOAuthLogin(loginKey);
-    return { authorized: hasClaudeAiOAuth() };
+    cancelClaudeCliLogin(loginKey);
+    return { authorized: hasClaudeNativeLogin() };
   });
 
   // 上游作废 xAI 凭证、收口自动登出后,走和手动登出完全一致的 UI 收尾(广播 + 清账号级
@@ -6339,6 +6278,10 @@ const registerIpcHandlers = () => {
 
     // setClaudeCodePath 已退役 —— agent-binaries.prepare() 成功时已写 lastReadyPath cache;
     // 任何需要 claude binary 路径的地方一律走 getReadyBinaryPath('claude-code')。
+
+    // 启动时那次 CLI 登录态读取往往早于二进制就绪(读不到);就绪后补读一次,结果变化经
+    // onClaudeCliLoginStatusChange 广播,供应商页随之更新连接态。已有结果时是 no-op。
+    if (!isNativeProviderAuthRevoked('anthropic')) void readClaudeCliLoginStatus();
 
     // ── Phase 2: codex 段 ────────────────────────────────────────────────────
     resetBeforeSegment('codex', claudeRes.downloaded === true);
@@ -8576,7 +8519,7 @@ const registerIpcHandlers = () => {
       await imageCacheStore.removeSession(sessionId);
       // cindy-media refs are removed only by the Main-owned, quiesced session
       // deletion chain. This legacy IPC intentionally cleans xdt-image files
-      // only; deleting ledger refs here could race a late Simulator ingest.
+      // only; deleting ledger refs here could race a late media ingest.
     },
   );
 
@@ -8686,33 +8629,6 @@ async function runSmokeTest(
   }
 }
 
-async function runPackagedIOSSimulatorReleaseGate(
-  mode: IOSSimulatorReleaseGateMode,
-): Promise<void> {
-  try {
-    const report = await runIOSSimulatorReleaseGate({
-      mode,
-      packaged: app.isPackaged,
-      platform: process.platform,
-      architecture: process.arch,
-      hostOsRelease: os.release(),
-      resourcesPath: process.resourcesPath,
-      version: app.getVersion(),
-    });
-    process.stdout.write(`${JSON.stringify(report)}\n`);
-    app.quit();
-  } catch {
-    process.stderr.write(
-      `${JSON.stringify({
-        schemaVersion: 1,
-        ok: false,
-        errorCode: 'IOS_SIMULATOR_RELEASE_GATE_FAILED',
-      })}\n`,
-    );
-    app.exit(1);
-  }
-}
-
 // AUMID 三位一体:必须与 NSIS appId(forge.config 按构建区域从 brandAppId() 取)
 // 与快捷方式 AUMID 逐字符一致。值经 shared/brandRegion 按构建期区域烘焙
 // (cn=com.xd.cindycn / global=com.xd.cindy；未注入 region 时默认 global)。
@@ -8793,23 +8709,6 @@ function cleanupLegacyDevShortcut(): Promise<void> {
 }
 
 app.on('ready', async () => {
-  try {
-    const releaseGate = parseIOSSimulatorReleaseGateArgs(process.argv);
-    if (releaseGate.enabled) {
-      await runPackagedIOSSimulatorReleaseGate(releaseGate.mode);
-      return;
-    }
-  } catch {
-    process.stderr.write(
-      `${JSON.stringify({
-        schemaVersion: 1,
-        ok: false,
-        errorCode: 'IOS_SIMULATOR_RELEASE_GATE_ARGUMENT_INVALID',
-      })}\n`,
-    );
-    app.exit(1);
-    return;
-  }
 
   // Smoke-test flag short-circuit: skip all normal init paths.
   const smoke = parseSmokeArgs();
@@ -8973,8 +8872,6 @@ app.on('ready', async () => {
     readHistoryLiveMessages: getSessionThinkingSnapshots,
     resolveContextWindow: (session) => resolveSessionContextWindow(getActiveCatalog(), session),
     requestWorktreeRecycle,
-    cancelSessionOperations: cancelIOSSimulatorSessionOperations,
-    cleanupRemovedSession: cleanupIOSSimulatorRemovedSession,
     closeIdleSessionForMove: async (sessionId) => {
       const maker = getMakerIfReady();
       if (maker?.getSession(sessionId)?.isTurnRunning()) return false;
@@ -8985,7 +8882,6 @@ app.on('ready', async () => {
       }
       return true;
     },
-    reconcilePersistedSessionRuntimes: reconcilePersistedIOSSimulatorOwnership,
     withSessionLock: withSendToSessionLock,
     // Mirrors exactly what the resume handler requires (`maker-ipc/register.ts`):
     // a loaded session for this task whose agent is PI. Without it a finished
@@ -9578,9 +9474,19 @@ app.on('ready', async () => {
   // owning modules above; future collections/actions do not add tunnel channels.
   registerRemoteResourcesIpc();
   registerDeviceLinkIpc();
+  registerTaskMigrationIpc((sessionId, workingDir, assertAuthority) =>
+    moveSessionProjectFromHost(isSessionInTurn, sessionId, workingDir, assertAuthority),
+    {
+      isBusy: (id) => isSessionInTurn(id) || isSessionTurnPendingCompletion(id),
+      drain: drainPersistQueue,
+    },
+  );
   registerSharedTaskIpc(isSharedTaskAvailable, () => getDeviceLinkStatus() === 'online');
   registerFilePeerIpc();
-  registerRemoteDesktopIpc(isGlobalVoiceInputOverlaySender);
+  registerRemoteDesktopIpc(isGlobalVoiceInputOverlaySender, {
+    name: getControllerName,
+    revoke: revokeController,
+  });
   void startupPurgeDrain
     .then(({ purged, pending }) => {
       if (purged > 0 || pending > 0) {
@@ -10035,19 +9941,16 @@ onQuit('html-previews', disposeHtmlPreviews, 'async');
 // 断开 SSH, kill 失败, daemon + env-file(含凭证)残留 30 分钟(R6 审计 M-8/M-11)。
 // 挪到 post-async 串行, 保证 session 级 kill 先完成, pool 最后收尾。
 onQuit('remote-ssh-pool', () => disposeRemoteSshPool(), 'post-async');
-// WDA deleteSession may consume longer than the shared async quit budget. Kill
-// detached WDA/Sidecar process groups synchronously before that budget starts;
-// the lightweight seam is a no-op when Simulator was never initialized.
-onQuit('ios-simulator-exit-abort', abortIOSSimulatorOperationsForExit, 'sync');
 // Hook 连接: 停掉全部 WS transport(含重连 timer), 防句柄阻塞退出。
 onQuit('hook-control', () => disposeHookControl(), 'sync');
 // session-git-pr-context: 取消 .git HEAD 的 parcel watcher 订阅, 防原生句柄阻塞退出。
 onQuit('git-context', () => disposeGitContext(), 'async');
-onQuit('ios-simulator-host', disposeIOSSimulatorHost, 'async');
-onQuit('ios-simulator-ownership-registry', flushIOSSimulatorOwnershipRegistry, 'async');
 
 // Post-async 阶段: 串行跑, 确保依赖 async 阶段产物的清理 (WAL checkpoint by close)。
-onQuit('db-client', () => lifecycleDbClientManager.dispose('quit'), 'post-async');
+onQuit('db-client', async () => {
+  await flushPluginTaskLifecycle();
+  await lifecycleDbClientManager.dispose('quit');
+}, 'post-async');
 onQuit('local-db-close', () => localDbCloseDb(), 'post-async');
 
 // A display restore may join an in-flight native mode write (5s), restore the

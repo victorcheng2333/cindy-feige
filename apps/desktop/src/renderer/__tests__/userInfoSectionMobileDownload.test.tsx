@@ -104,7 +104,7 @@ vi.mock('@/features/device-link/JoinSharedTaskDialog', () => ({
     open ? <div role="dialog" aria-label="Join shared task"><button onClick={() => onOpenChange(false)}>Close sharing</button></div> : null,
 }));
 vi.mock('@/features/device-link/SharedTaskEndedNotice', () => ({
-  SharedTaskEndedNotice: ({ onJoin }: { onJoin: () => void }) => <button onClick={onJoin}>Rejoin shared task</button>,
+  SharedTaskEndedNotice: ({ onReturnToTasks }: { onReturnToTasks: () => void }) => <button onClick={onReturnToTasks}>Return to tasks</button>,
 }));
 
 import { UserInfoSection } from '@/components/sidebar/UserInfoSection';
@@ -530,7 +530,7 @@ describe('Shared task actions in the sidebar account menu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Close sharing' }));
     expect(screen.queryByRole('dialog', { name: 'Join shared task' })).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Rejoin shared task' }));
-    expect(screen.getByRole('dialog', { name: 'Join shared task' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Return to tasks' }));
+    expect(navigate).toHaveBeenCalledWith('/');
   });
 });
