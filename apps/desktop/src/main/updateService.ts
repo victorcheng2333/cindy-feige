@@ -78,7 +78,6 @@ import {
 import { linuxPasswordStoreRelaunchArgs } from './linuxPasswordStore';
 import { CURRENT_CINDY_REGION } from '../shared/brandRegion';
 import { disposeAndroidAdb } from './mcp-integrations/android';
-import { abortIOSSimulatorOperationsForExit } from './mcp-integrations/ios-simulator-exit';
 import { getGhostNodeRuntimeBroker } from './cindy-brain/index';
 import { cleanOldUpdateFiles } from './updateArtifacts';
 import {
@@ -1581,9 +1580,6 @@ function forceQuit(): void {
   // 绕过 onQuit 链意味着 disposeAndroidAdb 不会被自动调用——显式 fire-and-forget
   // 收掉自带 adb server,避免它锁住安装目录阻碍 updater 替换文件。
   disposeAndroidAdb();
-  // build_app uses detached process groups, so parent exit does not reliably
-  // reap xcodebuild. Abort synchronously before process.exit bypasses Host dispose.
-  abortIOSSimulatorOperationsForExit();
   // Residual window only, and now a millisecond-scale one: `executeRelaunch`
   // reclaimed this runtime's runners and then confirmed the agent home was
   // still quiet, refusing to get here otherwise. What is left is the gap
@@ -2067,6 +2063,70 @@ async function executeRelaunchUnguarded(theme: 'light' | 'dark'): Promise<void> 
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
+
+/** Report known platform apply blockers before suggesting the built-in update action. */
+function agentUpdateApplyBlockReason(): string | null {
+  if (process.platform !== 'win32' && process.platform !== 'darwin' && process.platform !== 'linux') {
+    return '当前平台不支持应用内更新。';
+  }
+  if (isMacAppTranslocated()) return '请先将 Cindy 移入「应用程序」文件夹，再安装更新。';
+  if (process.platform === 'win32' && !checkWindowsUpdaterPrerequisites(undefined, process.resourcesPath).satisfied) {
+    return 'Windows 更新器运行环境不可用；已下载的更新将保留。';
+  }
+  if (process.platform === 'linux') {
+    const exePath = app.getPath('exe');
+    const installation = findLinuxUserInstallation(exePath, os.homedir(), process.getuid?.() ?? -1);
+    if (installation) {
+      if (installation.region !== CURRENT_CINDY_REGION || missingLinuxUserInstallTools().length > 0) {
+        return '当前 Linux 用户安装环境不支持应用内更新。';
+      }
+    } else {
+      const debianCheck = checkDebianManagedInstallation(exePath);
+      if (debianCheck.status !== 'managed') {
+        return debianCheck.status === 'error'
+          ? '暂时无法验证 Linux 安装来源，请稍后重试。'
+          : '当前 Linux 安装方式不支持应用内更新；请使用安装说明或系统包管理器。';
+      }
+    }
+  }
+  return null;
+}
+
+export async function checkAppUpdateForAgent(): Promise<{
+  status: string;
+  currentVersion: string;
+  targetVersion?: string;
+  reason?: string;
+}> {
+  const currentVersion = app.getVersion();
+  if (!app.isPackaged || isDev() || isCindyPersonalRuntime() || isVersionlessAppVersion(currentVersion)) {
+    return { status: 'unsupported', currentVersion, reason: '此构建不支持应用内更新。' };
+  }
+  const platformBlock = agentUpdateApplyBlockReason();
+  if (platformBlock) return { status: 'unsupported', currentVersion, reason: platformBlock };
+  if (currentStatus === 'downloading' || currentStatus === 'superseding') {
+    return { status: 'downloading', currentVersion, targetVersion: readyVersion };
+  }
+  if (currentStatus === 'ready' && readyVersion) {
+    return { status: 'ready', currentVersion, targetVersion: readyVersion };
+  }
+  // An Agent check must not stage a patch: checkForUpdate() downloads it and
+  // enables the existing auto-relaunch-on-idle path. Read only the manifest;
+  // the user can download and install through the built-in update action.
+  const manifest = await fetchManifest();
+  if (!manifest) return { status: 'manifest_failed', currentVersion, reason: '无法读取当前渠道的更新信息。' };
+  const relation = compareAppUpdateVersions(manifest.app?.version, currentVersion);
+  if (relation === 'invalid') return {
+    status: 'manifest_failed', currentVersion, reason: '当前渠道的更新版本信息无效。',
+  };
+  if (relation === 'newer' && resolveUpdateAsset(manifest)) {
+    return { status: 'available', currentVersion, targetVersion: manifest.app.version };
+  }
+  return {
+    status: 'no_installable_update', currentVersion,
+    reason: '当前渠道没有适用于这台设备的可安装更新；也可能已是最新版本。',
+  };
+}
 
 export function initUpdateService(): void {
   // Observe the successful old-updater receipt before existing cleanup removes

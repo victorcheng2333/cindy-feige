@@ -11,6 +11,8 @@
  */
 
 import os from 'node:os';
+import { tryPeerInvoke } from './filePeer';
+import { assertBackgroundLinkAccepted, linkOpenCapabilities } from './backgroundLink';
 import { deviceName, initializeDeviceName } from './deviceName';
 import { watchNetworkChanges } from './networkChanges';
 import path from 'node:path';
@@ -42,10 +44,12 @@ import {
   type LinkClosePayload,
   type Envelope,
   type PushPayload,
+  type NotifySender,
   DeviceLinkError,
   resolveRemoteInvokeTimeoutMs,
 } from '@cindy/device-link';
 import { DEVICE_LINK_VOICE_DICTIONARY_SNAPSHOT_CHANNEL } from '@cindy/maker-shared/device-link-contract';
+import { sanitizeSourceName, type MessageSourceHostDevice } from '@cindy/maker-shared/message-source';
 import * as authManager from '../authManager';
 import { remoteCredentialHost } from '../remote-desktop/credentialHost';
 import { activeOwnerScopeKey, getActiveDataOwnerPushStamp, isAppSessionBoundaryPending } from '../appSessionState.js';
@@ -91,6 +95,7 @@ import {
   setControllerDisplayName,
   setControllerFallbackDisplayName,
   clearControllerDisplayNames,
+  getControllerDisplayName,
   setDispatchPresenceOfflineCheck,
 } from './dispatch';
 import {
@@ -136,6 +141,7 @@ import { startSharedTaskRuntime, stopSharedTaskRuntime } from './sharedTaskRunti
 import { sharedTaskApi } from './sharedTaskApi.js';
 import {
   MobileNotifyDeduper,
+  buildBotGroupNotifyPayload,
   buildSessionNotifyPayload,
   type MobileSessionEventKind,
 } from './mobileNotify';
@@ -724,12 +730,12 @@ export function initDeviceLinkService(options: DeviceLinkServiceOptions = {}): v
       }
       return client.invoke(deviceId, { channel, args }, resolveRemoteInvokeTimeoutMs(channel, args, 'desktop'));
     },
-    onUnresponsiveChanged: (deviceId, unresponsive) => {
-      broadcast(DEVICE_LINK_PUSH.RESPONSIVENESS_CHANGED, { deviceId, unresponsive });
+    onUnresponsiveChanged: (deviceId, unresponsive, recovered) => {
+      broadcast(DEVICE_LINK_PUSH.RESPONSIVENESS_CHANGED, { deviceId, unresponsive, recovered });
       // 恢复时主动重放该设备的订阅:熔断 open 期间 subscribe 都被快速失败挡掉了,
       // 不重放的话 push 驱动的列表 / 会话镜像会一直缺流,直到用户手动重试。
       // linkTornDown 闸:teardown 的 resetAll 也会触发本回调,那时不能再发订阅。
-      if (!unresponsive && !linkTornDown && client?.getStatus() === 'online') {
+      if (recovered && !linkTornDown && client?.getStatus() === 'online') {
         replayActiveSubscriptions(`responsiveness-recovered:${deviceId.slice(0, 8)}`, deviceId);
       }
     },
@@ -1433,6 +1439,11 @@ export async function setKeepAwakeEnabled(enabled: boolean): Promise<void> {
   log.info(`keep-awake ${enabled ? 'enabled' : 'disabled'}`);
 }
 
+/** 被控端:控制端展示名(链路/presence 优先,其次本机缓存);都没有时返回 undefined。 */
+export function getControllerName(deviceId: string): string | undefined {
+  return getControllerDisplayName(deviceId) ?? readLastKnownDeviceNames()[deviceId];
+}
+
 /** 被控端:一键断开当前所有控制链路(WS 与开关保持) */
 export function disconnectAllControllers(): void {
   if (client) dropAllControllers(client, 'user');
@@ -1669,7 +1680,11 @@ export async function openRemoteLink(
       controllerName: deviceName(),
       protocolVersion: 1,
       appVersion: app.getVersion(),
-      capabilities: [...CONTROLLER_CAPABILITIES],
+      // 本机不在控制对端(无订阅)时声明后台链路,对端不进入受控状态(见 backgroundLink)。
+      capabilities: linkOpenCapabilities(
+        CONTROLLER_CAPABILITIES,
+        snapshotSubscriptions(deviceId).length > 0,
+      ),
     });
     revokedByRemote.delete(deviceId);
     return accepted;
@@ -1730,6 +1745,31 @@ export function getSelfDeviceId(): string | null {
   return client?.getSelfDeviceId() ?? null;
 }
 
+/**
+ * 被控电脑自身的身份,用于发给模型的设备说明里指明「本机」。
+ * 名字优先取设备目录里用户为本机设置的名字(last-known 缓存),否则回退系统设备名;
+ * 同一台设备的 id / 名字不随轮次变化。未连接时 id 缺省,说明里只写名字。
+ */
+export function getHostSourceDevice(): MessageSourceHostDevice {
+  const deviceId = getSelfDeviceId() ?? undefined;
+  const now = Date.now();
+  // 每条远程消息都要用到;名字来自设置文件,短时缓存避免逐条读盘。改名后最多晚一分钟生效。
+  if (
+    hostSourceDeviceCache &&
+    hostSourceDeviceCache.deviceId === deviceId &&
+    now - hostSourceDeviceCache.at < HOST_SOURCE_DEVICE_CACHE_MS
+  ) {
+    return hostSourceDeviceCache.value;
+  }
+  const name = sanitizeSourceName((deviceId ? readLastKnownDeviceNames()[deviceId] : undefined) ?? deviceName());
+  const value = { ...(deviceId ? { deviceId } : {}), ...(name ? { name } : {}) };
+  hostSourceDeviceCache = { deviceId, at: now, value };
+  return value;
+}
+
+const HOST_SOURCE_DEVICE_CACHE_MS = 60_000;
+let hostSourceDeviceCache: { deviceId: string | undefined; at: number; value: MessageSourceHostDevice } | null = null;
+
 /** 控制端:对目标设备远程 invoke 一个 allowlist 内的 channel。
  *  被控端自身持有执行预算的 channel(desktop-cmd:run)按协议契约放宽隧道超时,
  *  避免与被控端执行超时对撞(见 INVOKE_TIMEOUT_OVERRIDES_MS)。 */
@@ -1752,16 +1792,27 @@ export async function remoteInvoke(
       throw new DeviceLinkError('LINK_NOT_OPEN', 'link closed while waiting to reconnect');
     }
   };
+  const preSend = (): void => {
+    assertRemoteControlTargetEnabled(deviceId);
+    assertLinkNotClosedSinceStart();
+    options?.preSend?.();
+  };
   const invoke = async (): Promise<InvokeResultPayload> => {
     // 熔断门禁(外层 guardInvoke)在连接等待之前:open 态快速失败,不消耗 1.5s 等待。
     await ensureOnlineForRequest();
     // fail-closed 边界不得跨 await 失效:等待期间用户可能已关闭该设备控制(复验
     // 授权),或显式 CLOSE_LINK(复验取消代次)(review P1 ×2)。
-    assertRemoteControlTargetEnabled(deviceId);
-    assertLinkNotClosedSinceStart();
-    options?.preSend?.();
+    preSend();
     if (!client) throw new Error('[DEVICE_LINK_NOT_CONNECTED] device-link client not initialized');
-    return client.invoke(deviceId, { channel, args }, resolveRemoteInvokeTimeoutMs(channel, args, 'desktop'));
+    if (!parseSharedTaskPeer(deviceId)) {
+      const accelerated = await tryPeerInvoke(deviceId, channel, args, (peer, nextChannel, nextArgs) => {
+        preSend();
+        return remoteInvoke(peer, nextChannel, nextArgs, { preSend });
+      });
+      preSend();
+      if (accelerated) return accelerated;
+    }
+    return client.invoke(deviceId, { channel, args }, resolveRemoteInvokeTimeoutMs(channel, args, 'desktop'), { preSend });
   };
   const run = (): Promise<InvokeResultPayload> =>
     invokeWithClosedLinkRecovery(
@@ -1780,6 +1831,26 @@ export async function remoteInvoke(
   // (不占管道、不等 12~30s 超时),恢复由周期单飞探测驱动。tracker 未初始化时直通。
   if (!responsivenessTracker) return run();
   return responsivenessTracker.guardInvoke(deviceId, channel, run);
+}
+
+/**
+ * 控制端:后台只读请求(如用量历史读取其它电脑)。本机不在控制对端时,建的链路声明后台能力,
+ * 对端不进入受控状态。旧被控端不认该能力、仍会装 legacy '*':需要新建链路且对端未声明支持时,
+ * 若本机仍无控制意图(无订阅)就立即关闭本次建的链路,以 UNSUPPORTED_CAPABILITY 失败,不发请求。
+ * 链路已就绪(用户正在控制对端)时直接复用,不产生新的 link-open。
+ */
+export async function remoteBackgroundInvoke(
+  deviceId: string,
+  channel: string,
+  args: unknown[],
+): Promise<InvokeResultPayload> {
+  if (!client?.isLinkReady(deviceId)) {
+    assertBackgroundLinkAccepted(await openRemoteLink(deviceId), {
+      hasOutboundSubscriptions: () => snapshotSubscriptions(deviceId).length > 0,
+      closeLink: () => closeRemoteLink(deviceId),
+    });
+  }
+  return remoteInvoke(deviceId, channel, args);
 }
 
 /**
@@ -1876,6 +1947,9 @@ export function sendMobileSessionNotify(payload: {
   detail?: string;
   fallbackBody?: string;
   eventId?: string;
+  /** 伙伴主任务的 Bot id；让手机按伙伴聊天打开通知。 */
+  teammateBotId?: string;
+  teammateAvatar?: NotifySender['avatar'];
   /**
    * 发起时捕获的 getMobileNotifyGeneration()。调用路径里有 await(取正文/等
    * 其它通道)时必传:与当前代次不一致说明期间发生过登出/失去持有权,任务
@@ -1908,12 +1982,40 @@ export function sendMobileSessionNotify(payload: {
       selfDeviceId,
       fallbackBody: payload.fallbackBody ?? getSessionNotificationBody(payload.kind),
       detail: payload.detail,
+      ...(payload.teammateBotId ? { teammateBotId: payload.teammateBotId } : {}),
+      ...(payload.teammateAvatar ? { teammateAvatar: payload.teammateAvatar } : {}),
     }),
   );
   if (sent) {
     mobileNotifyDeduper.recordSent(payload.sessionId, payload.kind, now, payload.eventId);
     log.debug(`mobile notify sent: session=${payload.sessionId.slice(0, 8)} kind=${payload.kind}`);
   }
+  return sent;
+}
+
+/** Phone push for a 分工 step that stopped for the user (bot-group-chat.md §8.3). */
+export function sendMobileBotGroupNotify(payload: {
+  groupId: string;
+  title: string;
+  body: string;
+  /** Unique per settled step, so a redo of the same step notifies again. */
+  eventId: string;
+  generation?: number;
+}): boolean {
+  if (!client) return false;
+  if (payload.generation !== undefined && payload.generation !== mobileNotifyGeneration) return false;
+  const selfDeviceId = client.getSelfDeviceId();
+  if (!selfDeviceId) return false;
+  const key = `bot-group:${payload.groupId}`;
+  const now = Date.now();
+  if (!mobileNotifyDeduper.shouldSend(key, 'needs-reply', now, payload.eventId)) return false;
+  const sent = client.sendNotify(buildBotGroupNotifyPayload({
+    groupId: payload.groupId,
+    title: payload.title,
+    body: payload.body,
+    selfDeviceId,
+  }));
+  if (sent) mobileNotifyDeduper.recordSent(key, 'needs-reply', now, payload.eventId);
   return sent;
 }
 

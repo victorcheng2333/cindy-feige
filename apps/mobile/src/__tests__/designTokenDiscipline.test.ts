@@ -35,7 +35,6 @@ const COLOR_EXEMPT = [/Html\.ts$/i, /src\/session\/ImageLightbox\.tsx$/];
 
 /** 组件几何 / 特殊语义的登记豁免:file 后缀匹配 + 行内容包含 snippet 即放行。 */
 const ALLOWLIST: Array<{ file: string; snippet: string; reason: string }> = [
-  { file: 'src/session/ComposerFrame.ios.tsx', snippet: 'borderRadius: 30', reason: 'Native glass shares the existing composer geometry' },
   { file: 'src/session/MobileComposerInputRow.tsx', snippet: 'borderRadius: 0', reason: 'Unframed child delegates its contour to native glass' },
   {
     file: 'src/session/MobileComposerInputRow.tsx',
@@ -76,6 +75,11 @@ const ALLOWLIST: Array<{ file: string; snippet: string; reason: string }> = [
     file: 'src/session/HomeSurface.tsx',
     snippet: 'borderRadius: 0',
     reason: '显式方角覆盖,非漂移(通栏布局回退恢复,用户改稿 2026-07-21)',
+  },
+  {
+    file: 'src/session/RemoteSourceMark.tsx',
+    snippet: 'strokeWidth={1.4}',
+    reason: '远程标记波纹:16 单位 viewBox 内的图形几何(移植桌面同值,随图标缩放),非阶梯图标描边',
   },
 ];
 

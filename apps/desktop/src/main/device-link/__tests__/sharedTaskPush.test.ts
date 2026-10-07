@@ -150,3 +150,148 @@ describe('shared task metadata uses only its authorized task subscription', () =
     expect(__testing.queuedPushesFor(guestA)).toEqual([]);
   });
 });
+
+describe('shared task guests never see the owner private message sources', () => {
+  const privateOrigin = {
+    kind: 'session',
+    senderSessionId: 'owner-private-task',
+    senderSessionTitle: 'Owner private plan',
+    senderBotId: 'bot-1',
+    senderBotName: 'Cindy',
+    displayText: 'please review',
+  };
+  const message = {
+    clientId: 'm1', sessionId: 'task-a', role: 'user', content: 'please review',
+    agentMeta: {
+      origin: privateOrigin,
+      // Host-internal agent-facing copy used for overflow replay. Rows written before the
+      // unified source note may still carry the old hand-written teammate prefix.
+      agentFacingWireContent: { type: 'user', content: '[来自 Cindy 的补充]\n\nplease review' },
+    },
+  };
+  const privateText = /Cindy|owner-private-task|Owner private plan|bot-1/;
+
+  it('redacts new-message pushes for the guest but keeps them for same-account controllers', async () => {
+    const transport = client();
+    __testing.setActiveClient(transport as never);
+    subscriptions.subscribe(guestA, ['session:task-a']);
+    subscriptions.subscribe('own-task', ['session:task-a']);
+    __testing.forwardPush('local-db:messages:created', { sessionId: 'task-a', message });
+    await vi.advanceTimersByTimeAsync(300);
+    const sent = new Map(transport.sendPush.mock.calls.map((call) => [call[0], call[2]]));
+    expect(sent.get(guestA).message.agentMeta.origin).toEqual({ kind: 'session' });
+    expect(JSON.stringify(sent.get(guestA))).not.toMatch(privateText);
+    expect(sent.get('own-task').message.agentMeta).toEqual(message.agentMeta);
+  });
+
+  it('redacts queued-message sources in input projection pushes for the guest', async () => {
+    const transport = client();
+    __testing.setActiveClient(transport as never);
+    subscriptions.subscribe(guestA, ['session:task-a']);
+    subscriptions.subscribe('own-task', ['session:task-a']);
+    // Legacy teammate interjections (queued before the unified source note) carry the
+    // sender name in the agent-facing text and origin.displayText; only the prefix-free
+    // persisted body may reach a guest.
+    const interjection = {
+      clientId: 'q1',
+      text: '[来自 Cindy 的补充]\n\nplease review',
+      persistedContent: 'please review',
+      origin: { ...privateOrigin, displayText: '[来自 Cindy 的补充]\n\nplease review' },
+    };
+    const projection = {
+      sessionId: 'task-a',
+      pendingQueue: [
+        interjection,
+        { clientId: 'q2', text: 'from lead', origin: { kind: 'orca', senderLabel: 'Lead', senderSessionId: 'lead-task' } },
+      ],
+      recovery: { kind: 'active-turn', item: { ...interjection, clientId: 'q0' } },
+    };
+    __testing.forwardPush('maker:input:projection', projection);
+    await vi.advanceTimersByTimeAsync(300);
+    const sent = new Map(transport.sendPush.mock.calls.map((call) => [call[0], call[2]]));
+    const guestView = sent.get(guestA);
+    expect(guestView.pendingQueue.map((item: { text: string; origin: unknown }) => [item.text, item.origin])).toEqual([
+      ['please review', { kind: 'session', senderSessionId: '', displayText: 'please review' }],
+      ['from lead', { kind: 'orca', senderLabel: 'Lead' }],
+    ]);
+    expect(guestView.recovery.item.text).toBe('please review');
+    expect(guestView.recovery.item.origin).toEqual({ kind: 'session', senderSessionId: '', displayText: 'please review' });
+    expect(JSON.stringify(guestView)).not.toMatch(/Cindy|owner-private-task|Owner private plan|bot-1|lead-task/);
+    expect(sent.get('own-task')).toEqual(projection);
+  });
+
+  it('hides owner devices, plugins and automation identities from the guest only', async () => {
+    const transport = client();
+    __testing.setActiveClient(transport as never);
+    subscriptions.subscribe(guestA, ['session:task-a']);
+    subscriptions.subscribe('own-task', ['session:task-a']);
+    const sourceDevice = { deviceId: 'owner-phone', name: 'Owner iPhone', platform: 'mobile' };
+    const sourcePlugin = { pluginId: 'owner-plugin', name: 'Owner Plugin' };
+    const schedulerOrigin = { kind: 'scheduler', scheduleId: 'owner-schedule', scheduleName: 'Owner nightly', runId: 'run-1' };
+    const deviceRow = { clientId: 'm2', sessionId: 'task-a', role: 'user', content: 'hi', agentMeta: { sourceDevice, uuid: 'u2' } };
+    const scheduledRow = {
+      clientId: 'm3', sessionId: 'task-a', role: 'user', content: 'nightly',
+      agentMeta: { origin: schedulerOrigin, sourcePlugin },
+    };
+    __testing.forwardPush('local-db:messages:created', { sessionId: 'task-a', message: deviceRow });
+    __testing.forwardPush('local-db:messages:created', { sessionId: 'task-a', message: scheduledRow });
+    const hookRow = {
+      clientId: 'm4', sessionId: 'task-a', role: 'user', content: 'from slack',
+      agentMeta: { origin: { kind: 'scheduler', scheduleId: 'hook:owner-conn', scheduleName: 'Hook · Owner Slack' } },
+    };
+    __testing.forwardPush('local-db:messages:created', { sessionId: 'task-a', message: hookRow });
+    const projection = {
+      sessionId: 'task-a',
+      pendingQueue: [
+        { clientId: 'q3', text: 'hi', persistedContent: 'hi', sourceDevice, sourcePlugin },
+        {
+          clientId: 'q4',
+          text: 'nightly\n\n---\n[Scheduled run context]\nschedule: 「Owner nightly」(schedule_id: owner-schedule)',
+          persistedContent: 'nightly',
+          origin: schedulerOrigin,
+        },
+      ],
+    };
+    __testing.forwardPush('maker:input:projection', projection);
+    await vi.advanceTimersByTimeAsync(300);
+    const guestPushes = transport.sendPush.mock.calls.filter((call) => call[0] === guestA).map((call) => call[2]);
+    const ownPushes = transport.sendPush.mock.calls.filter((call) => call[0] === 'own-task').map((call) => call[2]);
+    const guestRows = guestPushes.filter((payload) => payload.message).map((payload) => payload.message.agentMeta);
+    expect(guestRows).toEqual([
+      { uuid: 'u2' },
+      { origin: { kind: 'scheduler' } },
+      // Hook 渠道消息只保留 `hook:` 前缀：访客端仍显示渠道，而不是「由自动化发送」。
+      { origin: { kind: 'scheduler', scheduleId: 'hook:' } },
+    ]);
+    const guestQueue = guestPushes.find((payload) => payload.pendingQueue).pendingQueue;
+    expect(guestQueue[0]).toEqual({ clientId: 'q3', text: 'hi', persistedContent: 'hi' });
+    expect(guestQueue[1].origin).toEqual({ kind: 'scheduler' });
+    expect(guestQueue[1].text).toBe('nightly');
+    expect(JSON.stringify(guestPushes)).not.toMatch(
+      /owner-phone|Owner iPhone|owner-plugin|Owner Plugin|owner-schedule|Owner nightly|run-1|owner-conn|Owner Slack/,
+    );
+    // Same-account controllers keep the full attribution.
+    expect(ownPushes.filter((payload) => payload.message).map((payload) => payload.message.agentMeta))
+      .toEqual([deviceRow.agentMeta, scheduledRow.agentMeta, hookRow.agentMeta]);
+    expect(ownPushes.find((payload) => payload.pendingQueue)).toEqual(projection);
+  });
+
+  it('redacts message history and queue reads answered to the guest only', () => {
+    const transport = client();
+    __testing.setActiveClient(transport as never);
+    __testing.sendInvokeResultSafe(transport as never, guestA, 'r1', { ok: true, result: [message] }, 'local-db:messages:list', ['task-a']);
+    __testing.sendInvokeResultSafe(transport as never, 'own-task', 'r2', { ok: true, result: [message] }, 'local-db:messages:list', ['task-a']);
+    __testing.sendInvokeResultSafe(transport as never, guestA, 'r3', {
+      ok: true,
+      result: {
+        sessionId: 'task-a',
+        pendingQueue: [{ clientId: 'q1', text: 'x', persistedContent: 'please review', origin: privateOrigin }],
+      },
+    }, 'maker:input:get-projection', ['task-a']);
+    const results = new Map(transport.sendInvokeResult.mock.calls.map((call) => [call[1], call[2]]));
+    expect(results.get('r1').result[0].agentMeta.origin).toEqual({ kind: 'session' });
+    expect(JSON.stringify(results.get('r1'))).not.toMatch(privateText);
+    expect(results.get('r2').result[0].agentMeta.origin).toEqual(privateOrigin);
+    expect(results.get('r3').result.pendingQueue[0].origin).toEqual({ kind: 'session', senderSessionId: '', displayText: 'please review' });
+  });
+});

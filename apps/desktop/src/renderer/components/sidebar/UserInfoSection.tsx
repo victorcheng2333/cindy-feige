@@ -275,9 +275,9 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
             >
               <AccountMenuAvatar account={account} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-13 font-medium">{primaryLabel}</span>
+                <span className="block truncate">{primaryLabel}</span>
                 {secondaryLabel ? (
-                  <span className="mt-0.5 block truncate text-11 text-[var(--text-secondary)]">
+                  <span className="mt-0.5 block truncate text-12 leading-[1.33] text-[var(--cmd-palette-item-meta)]">
                     {secondaryLabel}
                   </span>
                 ) : null}
@@ -285,7 +285,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
               {switching ? (
                 <Spinner size={14} className="shrink-0 text-[var(--text-secondary)]" />
               ) : account.isCurrent ? (
-                <span className="flex shrink-0 items-center gap-1 text-11 text-[var(--text-secondary)]">
+                <span className="flex shrink-0 items-center gap-1 text-12 leading-[1.33] text-[var(--cmd-palette-item-meta)]">
                   <Check className="h-4 w-4" aria-hidden="true" />
                   {t('sidebar.accountSwitcher.current')}
                 </span>
@@ -370,7 +370,7 @@ export function UserInfoSection({ isCollapsed, onOpenUpdateNotice }: UserInfoSec
   // Keep sharing dialogs outside the dropdown: selecting an item unmounts its content.
   const sharedTaskDialogs = (
     <>
-      <SharedTaskEndedNotice onJoin={() => setJoinSharedTaskOpen(true)} />
+      <SharedTaskEndedNotice onReturnToTasks={() => navigate('/')} />
       {joinSharedTaskOpen && (
         <JoinSharedTaskDialog open={joinSharedTaskOpen} onOpenChange={setJoinSharedTaskOpen} />
       )}

@@ -196,6 +196,13 @@ export interface RuntimeState {
   streamRequestIdByParent: Map<string, string>;
   /** Per-parent active provider request used to merge message_start + message_delta usage. */
   activeUsageSegmentByParent: Map<string, string>;
+  /**
+   * 主流当前 provider 请求：main message_start 打开；main message_stop、下一次
+   * main message_start 或 result 收口。Claude Code 每个 content block 结束就先
+   * yield 完整 assistant，携带 output usage 的 message_delta 在整条回复生成完才到，
+   * 所以「本请求 streamed output 是否完整」只能在请求边界判定，不能在 assistant 到达时判定。
+   */
+  mainOpenRequest: { requestId?: string; sawAssistant: boolean } | null;
   /** Price variant frozen for the active request of each parent stream. */
   activeUsagePriceVariantByParent: Map<string, 'standard' | 'priority'>;
   /** Price variant captured for the next request before its message_start arrives. */
@@ -204,6 +211,13 @@ export interface RuntimeState {
   toolResultBatchSeq: number;
   usageSegmentSeq: number;
   generation: ClaudeGenerationState;
+  /**
+   * 被拒额度窗口(`rateLimitType`)→ 重置时刻(unix ms)。每条 `rate_limit_event`
+   * 只描述一个窗口,只有同一窗口再报非 rejected 才移除,别的窗口的 allowed 不影响。
+   * 会话级而非 turn 级:CLI 已知被拒后会本地短路后续请求,那些 turn 直接报限额
+   * 错误、不再重发事件,仍要能带上同一个重置时刻。
+   */
+  rateLimitRejectedResetAtMs: Map<string, number>;
 }
 
 export function newRuntimeState(): RuntimeState {
@@ -223,11 +237,13 @@ export function newRuntimeState(): RuntimeState {
     streamStopTokenByKey: new Map(),
     streamRequestIdByParent: new Map(),
     activeUsageSegmentByParent: new Map(),
+    mainOpenRequest: null,
     activeUsagePriceVariantByParent: new Map(),
     pendingUsagePriceVariantByParent: new Map(),
     toolResultBatchSeq: 0,
     usageSegmentSeq: 0,
     generation: newClaudeGenerationState(),
+    rateLimitRejectedResetAtMs: new Map(),
   };
 }
 
@@ -253,6 +269,33 @@ function mainActiveSegmentHasOutput(ctx: TranslateContext): boolean {
     if (segment.id === segmentId) return segment.outputTokens > 0;
   }
   return false;
+}
+
+/**
+ * 在主流请求边界收口：本请求已产出 assistant 却没有 streamed output usage 时，
+ * 父级分子残缺，子代理在场的 live tok/s 必须 fail closed。随后摘掉当前 usage 段，
+ * 下一请求不得沿用本请求的 streamed output。
+ */
+function settleMainRequest(ctx: TranslateContext): void {
+  const open = ctx.rt.mainOpenRequest;
+  if (!open) return;
+  if (open.sawAssistant && !mainActiveSegmentHasOutput(ctx)) {
+    noteClaudeParentStreamedOutputIncomplete(ctx.rt.generation);
+  }
+  ctx.rt.activeUsageSegmentByParent.delete(CLAUDE_MAIN_USAGE_PARENT);
+  ctx.rt.mainOpenRequest = null;
+}
+
+/** 主流完整 assistant 只登记到所属请求；它早于该请求的 message_delta，不能在此判完整性。 */
+function observeMainAssistant(ctx: TranslateContext, requestId: string | undefined): void {
+  const open = ctx.rt.mainOpenRequest;
+  if (open && (!requestId || !open.requestId || open.requestId === requestId)) {
+    open.sawAssistant = true;
+    return;
+  }
+  // 没见过 message_start 的请求：不会再有可归属的 message_delta，分子必然残缺。
+  settleMainRequest(ctx);
+  noteClaudeParentStreamedOutputIncomplete(ctx.rt.generation);
 }
 
 function applySubagentLiveReliability(ctx: TranslateContext): void {
@@ -896,6 +939,26 @@ export function translateSdkMessage(
       return;
     }
 
+    case 'rate_limit_event': {
+      // 订阅额度快照另由 index.ts 旁路转给 host;这里只记被拒窗口的重置时刻,
+      // 供限额错误带给下游(目标模式据此到点自动续跑)。
+      const info = (rawMsg as {
+        rate_limit_info?: { status?: unknown; resetsAt?: unknown; rateLimitType?: unknown };
+      }).rate_limit_info;
+      if (typeof info?.status !== 'string') return;
+      const windowKey = typeof info.rateLimitType === 'string' ? info.rateLimitType : '';
+      const resetsAt = typeof info.resetsAt === 'number' && info.resetsAt > 0 ? info.resetsAt : null;
+      if (info.status === 'rejected' && resetsAt != null) {
+        // resetsAt 是 epoch 秒;误给毫秒时不再放大。
+        const resetAtMs = resetsAt > 1e12 ? resetsAt : resetsAt * 1000;
+        ctx.rt.rateLimitRejectedResetAtMs.set(windowKey, resetAtMs);
+        ctx.log.info('SDK ▷ rate limit rejected', { rateLimitType: windowKey, resetAtMs });
+      } else if (info.status !== 'rejected') {
+        ctx.rt.rateLimitRejectedResetAtMs.delete(windowKey);
+      }
+      return;
+    }
+
     case 'control_response': {
       // SDK 对每个 control request (setModel / applyFlagSettings / setPermissionMode / interrupt 等)
       // 都会回一条 control_response。这里只打日志做可见性 —— 排查"我点了切模型怎么没反应"很有用。
@@ -1415,15 +1478,7 @@ function handleAssistant(
   // 而父级 Agent 工具区间已从分母排除。记 sawSubagent，live tok/s 只用父级
   // streamed output，不再把整轮计时打成不可靠。
   if (parentToolUseId) observeClaudeSubagentStream(ctx, parentToolUseId);
-  else {
-    // Active __main__ segment is this request only. Keep it while checking
-    // completeness, then detach so the next open interval cannot inherit
-    // the previous request's streamed output.
-    if (!mainActiveSegmentHasOutput(ctx)) {
-      noteClaudeParentStreamedOutputIncomplete(ctx.rt.generation);
-    }
-    ctx.rt.activeUsageSegmentByParent.delete(CLAUDE_MAIN_USAGE_PARENT);
-  }
+  else observeMainAssistant(ctx, assistantRequestId);
   // 完整 child assistant 是实际执行模型的正式观测来源。SDK 不保证 child 的
   // partial message_start 一定向外暴露，所以不能只靠 handleStreamEvent 填模型；
   // 同时保持 main 新增的 loop guard 按 parent scope 读取同一张 stream model 表。
@@ -1796,6 +1851,11 @@ function handleStreamEvent(
     return;
   }
 
+  if (event.type === 'message_stop') {
+    if (!parentToolUseId) settleMainRequest(ctx);
+    return;
+  }
+
   if (event.type === 'message_start') {
     // 新 API call 开始, 清掉残留 thinking buffer。
     // message_start 内 message.model 是这一 API call 真实用的模型,
@@ -1805,8 +1865,16 @@ function handleStreamEvent(
       model: event.message?.model ?? ctx.getModel(),
     });
     ctx.turn.apiCalls += 1;
+    // 上一请求缺 message_stop(中断、重试)时，在新请求开段前补收口。
+    if (!parentToolUseId) settleMainRequest(ctx);
     const segmentId = `claude:${++ctx.rt.usageSegmentSeq}:${parentStreamKey}`;
     ctx.rt.activeUsageSegmentByParent.set(parentStreamKey, segmentId);
+    if (!parentToolUseId) {
+      ctx.rt.mainOpenRequest = {
+        ...(typeof eventRequestId === 'string' && eventRequestId ? { requestId: eventRequestId } : {}),
+        sawAssistant: false,
+      };
+    }
     const priceVariant =
       ctx.rt.pendingUsagePriceVariantByParent.get(parentStreamKey) ??
       ctx.turn.nextRequestPriceVariant ??
@@ -2110,6 +2178,7 @@ function handleResult(
 
   // turn end usage 锁定: Claude Code result.usage 是 session aggregate,
   // 这里先转成 turn delta; tracker.endTurn 内部覆盖 currentTurn 然后返回 snapshot 再 reset。
+  settleMainRequest(ctx);
   finalizeClaudeGeneration(ctx.rt.generation);
   const liveTurnOutput = liveParentOutputTokens(
     ctx,
@@ -2315,6 +2384,17 @@ function handleResult(
     const errDetail = redactSensitiveText(rawResult);
     const errorStatus = resultSignals.errorStatus ?? pendingApiError?.errorStatus;
     const usageLimit = pendingApiError?.usageLimit === true || resultSignals.usageLimit;
+    // 多个窗口同时被拒时取最晚的重置,早醒只会再撞一次限额。已过点也照带:
+    // 下游按零延迟立即续跑,丢掉反而只能等手动恢复。但过点的只用一次——到点后
+    // 仍被本地短路拒绝时不会有新事件,反复带同一个过期时刻会让下游无限立即重试。
+    const rejectedResets = [...ctx.rt.rateLimitRejectedResetAtMs.values()];
+    const usageReset = rejectedResets.length > 0
+      ? { usageResetAt: Math.max(...rejectedResets) }
+      : {};
+    const nowMs = Date.now();
+    for (const [windowKey, resetAtMs] of ctx.rt.rateLimitRejectedResetAtMs) {
+      if (resetAtMs <= nowMs) ctx.rt.rateLimitRejectedResetAtMs.delete(windowKey);
+    }
     const errorMessage = pendingApiError?.agentMeta
       ? pendingApiError.message
       : errDetail || pendingApiError?.message;
@@ -2350,6 +2430,7 @@ function handleResult(
             ...classifiedReason,
             ...(errorStatus !== undefined ? { errorStatus } : {}),
             ...(usageLimit ? { usageLimit: true } : {}),
+            ...usageReset,
             ...(pendingApiError.retryAttempt !== undefined
               ? { retryAttempt: pendingApiError.retryAttempt }
               : {}),
@@ -2365,6 +2446,7 @@ function handleResult(
             ...classifiedReason,
             ...(errorStatus !== undefined ? { errorStatus } : {}),
             ...(usageLimit ? { usageLimit: true } : {}),
+            ...usageReset,
             ...modelAccessError,
           }
         // reason 是稳定 key, renderer 按它走 i18n(规则 18); message 仅作非

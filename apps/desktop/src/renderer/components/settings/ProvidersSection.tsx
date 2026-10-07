@@ -47,6 +47,7 @@ import { useClaudeAccountUsageResult } from '@/hooks/useClaudeAccountUsage';
 import { useXdAssetPrimaryAction } from '@/hooks/useXdAssetPrimaryAction';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Tip } from '@/components/ui/tooltip';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { useSignInToCindy } from '@/hooks/useSignInToCindy';
@@ -87,6 +88,8 @@ import { QuotaHoverCard } from '../status/QuotaHoverCard';
 import { ProviderConnectionDialog } from './ProviderConnectionDialog';
 import { AddProviderWizard, type WizardEntry } from './AddProviderWizard';
 import { OllamaProviderDetail } from './OllamaProviderDetail';
+import { LlamaCppProviderDetail } from './LlamaCppProviderDetail';
+import { MANAGED_LLAMACPP_PROVIDER_ID } from '../../../shared/llamaCpp';
 import {
   isLocalRuntimeBetaProviderId,
   MANAGED_LMSTUDIO_PROVIDER_ID,
@@ -134,6 +137,71 @@ function writeProviderDisabled(providerId: string, disabled: boolean, errorText:
   void window.electronAPI.maker
     .setModelDisable({ kind: 'provider', providerId, disabled })
     .catch(() => toast.error(errorText));
+}
+
+/**
+ * 「允许被远程调用」(供应商级远程 Agent 授权)。默认关闭；只在本机允许远程控制时出现，
+ * 由调用方判定。成功后 main 广播 PROVIDER_CHANGED 刷新快照。
+ */
+function RemoteProviderAccessRow({ provider }: { provider: ProviderView }) {
+  const { t } = useTranslation();
+  const [enabled, setEnabled] = useState(provider.remoteInvocationEnabled === true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setEnabled(provider.remoteInvocationEnabled === true);
+  }, [provider.remoteInvocationEnabled]);
+  return (
+    <div
+      data-testid="provider-remote-access"
+      className="flex shrink-0 items-start justify-between gap-3 border-t px-5 py-3"
+      style={{ borderColor: 'var(--settings-theme-card-border)' }}
+    >
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-13 font-medium text-[var(--text-primary)]">
+          {t('settings.providers.detail.remoteAccess.label')}
+        </span>
+        <span className="text-12 leading-[1.4] text-[var(--text-tertiary)]">
+          {t('settings.providers.detail.remoteAccess.description')}
+        </span>
+      </div>
+      <Switch
+        checked={enabled}
+        disabled={busy}
+        aria-label={t('settings.providers.detail.remoteAccess.ariaLabel')}
+        onCheckedChange={(next) => {
+          const previous = enabled;
+          setEnabled(next);
+          setBusy(true);
+          void window.electronAPI.maker
+            .setProviderRemoteAccess({ providerId: provider.id, enabled: next })
+            .catch(() => {
+              setEnabled(previous);
+              toast.error(t('settings.providers.detail.remoteAccess.writeFailed'));
+            })
+            .finally(() => setBusy(false));
+        }}
+      />
+    </div>
+  );
+}
+
+/** 本机是否允许同账号设备远程控制。「允许被远程调用」只在它打开时有意义。 */
+function useRemoteControlEnabled(): boolean {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    // 读不到(设备互联未就绪等)按未开启处理：开关不出现，不影响供应商页其余部分。
+    void Promise.resolve()
+      .then(() => window.electronAPI.deviceLink.getState())
+      .then((state) => {
+        if (!cancelled) setEnabled(state.remoteControlEnabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return enabled;
 }
 
 /** 供应商行图标(内置品牌 mark / 首字母 monogram)。 */
@@ -1227,6 +1295,8 @@ function GenericOAuthHeader({
         onChanged();
       } else if (r.reason === 'login_cancelled') {
         /* 用户取消,不弹错 */
+      } else if (r.reason === 'claude_account_retired') {
+        toast.info(t('settings.providers.claudeAccountRetired'), { duration: 8000 });
       } else {
         toast.error(
           t('settings.providers.genericOAuth.toast.loginFailed', { name: provider.name }),
@@ -1852,7 +1922,42 @@ function XdGatewayHeader({
   );
 }
 
-function OllamaHeader({
+function isManagedLocalProvider(id: string): boolean {
+  return id === MANAGED_OLLAMA_PROVIDER_ID || id === MANAGED_LLAMACPP_PROVIDER_ID;
+}
+
+function useManagedLocalRuntimeLive(providerId: string): boolean | null {
+  const [localLive, setLocalLive] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!isManagedLocalProvider(providerId)) return;
+    let cancelled = false;
+    if (providerId === MANAGED_LLAMACPP_PROVIDER_ID) {
+      let timer: ReturnType<typeof setTimeout>;
+      const read = async () => {
+        try {
+          const next = await window.electronAPI.maker.llamaCppStatus();
+          if (!cancelled) setLocalLive(next.running);
+        } catch { if (!cancelled) setLocalLive(false); }
+        if (!cancelled) timer = setTimeout(() => void read(), 2000);
+      };
+      void read();
+      return () => { cancelled = true; clearTimeout(timer); };
+    }
+    void window.electronAPI.maker.localModelStatus().then((next) => {
+      if (!cancelled) setLocalLive(next.kind === 'ready' || next.kind === 'pulling');
+    });
+    const off = window.electronAPI.maker.onLocalModelStatus((next) => {
+      setLocalLive(next.kind === 'ready' || next.kind === 'pulling');
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [providerId]);
+  return localLive;
+}
+
+function LocalRuntimeHeader({
   children,
   provider,
   onDelete,
@@ -1862,6 +1967,7 @@ function OllamaHeader({
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const localLive = useManagedLocalRuntimeLive(provider.id);
   return (
     <DetailHeader
       children={children}
@@ -1869,8 +1975,8 @@ function OllamaHeader({
       title={provider.name || t('settings.providers.local.title')}
       subtitle={t('settings.providers.local.subtitle')}
       status={{
-        kind: provider.connected ? 'connected' : 'neutral',
-        label: t('settings.providers.pill.disconnected'),
+        kind: localLive ? 'connected' : 'neutral',
+        label: t(provider.id === MANAGED_LLAMACPP_PROVIDER_ID ? 'settings.providers.llamacpp.startOnUse' : 'settings.providers.pill.disconnected'),
       }}
       provider={provider}
       badge={<BetaTag label={t('settings.providers.local.beta')} />}
@@ -2048,21 +2154,7 @@ function ListRow({
 }) {
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
-  const [ollamaLive, setOllamaLive] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (provider.id !== MANAGED_OLLAMA_PROVIDER_ID) return;
-    let cancelled = false;
-    void window.electronAPI.maker.localModelStatus().then((next) => {
-      if (!cancelled) setOllamaLive(next.kind === 'ready' || next.kind === 'pulling');
-    });
-    const off = window.electronAPI.maker.onLocalModelStatus((next) => {
-      setOllamaLive(next.kind === 'ready' || next.kind === 'pulling');
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [provider.id]);
+  const localLive = useManagedLocalRuntimeLive(provider.id);
   const modelCount = useMemo(
     () => (providerHasModels(provider) ? buildUnionRows(provider).length : null),
     [provider],
@@ -2153,8 +2245,8 @@ function ListRow({
             style={{
               backgroundColor: reconnectRequired
                 ? 'var(--remote-status-failed)'
-                : provider.id === MANAGED_OLLAMA_PROVIDER_ID
-                  ? ollamaLive
+                : isManagedLocalProvider(provider.id)
+                  ? localLive
                     ? 'var(--remote-status-ready)'
                     : 'var(--border-default)'
                   : provider.connected && !provider.suspended
@@ -2234,6 +2326,7 @@ export function ProvidersSection() {
   // OpenAI 的 reconnect-required 是 useCodexAuth 独有状态(目录 connected 此时为 false):
   // 该状态下 OpenAI 行必须留在左栏,否则「重新连接」入口不可达,用户被迫从向导重发现。
   const codexAuth = useCodexAuth();
+  const remoteControlEnabled = useRemoteControlEnabled();
   const openaiReconnectRequired = codexAuth.state.kind === 'reconnect-required';
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2361,6 +2454,7 @@ export function ProvidersSection() {
       if (
         p.source === 'user' &&
         (p.id === MANAGED_OLLAMA_PROVIDER_ID ||
+          p.id === MANAGED_LLAMACPP_PROVIDER_ID ||
           p.id === MANAGED_LMSTUDIO_PROVIDER_ID ||
           providerHasModels(p) ||
           (p.auth.method === 'oauth' && (!!p.auth.oauth || !!p.auth.native)))
@@ -2775,9 +2869,9 @@ export function ProvidersSection() {
         />
       );
     }
-    if (p.id === MANAGED_OLLAMA_PROVIDER_ID) {
+    if (isManagedLocalProvider(p.id)) {
       return (
-        <OllamaHeader children={children} provider={p} onDelete={() => void handleDeleteOllama()} />
+        <LocalRuntimeHeader children={children} provider={p} onDelete={() => void (p.id === MANAGED_OLLAMA_PROVIDER_ID ? handleDeleteOllama() : handleDelete(p))} />
       );
     }
     return (
@@ -3017,15 +3111,26 @@ export function ProvidersSection() {
                         />
                       </div>
                     )}
+                  {/* 允许被远程调用：只在本机允许远程控制、供应商已连接且能跑 Agent 时出现。 */}
+                  {remoteControlEnabled &&
+                    !effectiveSelected.suspended &&
+                    effectiveSelected.connected &&
+                    effectiveSelected.agents.length > 0 &&
+                    effectiveSelected.remoteInvocationEnabled !== undefined && (
+                      <RemoteProviderAccessRow
+                        key={effectiveSelected.id}
+                        provider={effectiveSelected}
+                      />
+                    )}
                   {!effectiveSelected.suspended &&
                     (providerHasModels(effectiveSelected) ||
                       isCustomRoutedProvider(effectiveSelected) ||
                       (isBuiltinRefreshableProviderId(effectiveSelected.id) &&
                         !effectiveSelected.modelDiscoveryFailure) ||
-                      effectiveSelected.id === MANAGED_OLLAMA_PROVIDER_ID) && (
+                      isManagedLocalProvider(effectiveSelected.id)) && (
                       <>
                         {(providerHasModels(effectiveSelected) ||
-                          effectiveSelected.id !== MANAGED_OLLAMA_PROVIDER_ID) && (
+                          !isManagedLocalProvider(effectiveSelected.id)) && (
                           <div
                             className="border-t"
                             style={{ borderColor: 'var(--settings-theme-card-border)' }}
@@ -3049,7 +3154,7 @@ export function ProvidersSection() {
                               ? t(
                                   `settings.providers.detail.discoveryFailed.${effectiveSelected.modelDiscoveryFailure.kind}`,
                                 )
-                              : effectiveSelected.id === MANAGED_OLLAMA_PROVIDER_ID
+                              : isManagedLocalProvider(effectiveSelected.id)
                                 ? t('settings.providers.local.emptyInstalled')
                                 : t(
                                     effectiveSelected.connected
@@ -3057,8 +3162,8 @@ export function ProvidersSection() {
                                       : 'settings.providers.detail.emptyModels',
                                   )
                           }
-                          compactWhenEmpty={effectiveSelected.id === MANAGED_OLLAMA_PROVIDER_ID}
-                          compact={effectiveSelected.id === MANAGED_OLLAMA_PROVIDER_ID}
+                          compactWhenEmpty={isManagedLocalProvider(effectiveSelected.id)}
+                          compact={isManagedLocalProvider(effectiveSelected.id)}
                           {...(isBuiltinRefreshableProviderId(effectiveSelected.id)
                             ? {
                                 onRefresh: () => void handleRefreshBuiltinModels(effectiveSelected),
@@ -3066,7 +3171,7 @@ export function ProvidersSection() {
                                 refreshDisabled: refreshingProviderId !== null,
                                 refreshIdleLabel: t('settings.providers.models.refreshBuiltinAria'),
                               }
-                            : effectiveSelected.source === 'user'
+                            : effectiveSelected.source === 'user' && effectiveSelected.id !== MANAGED_LLAMACPP_PROVIDER_ID
                               ? {
                                   onRefresh: () => void handleRefreshModels(effectiveSelected),
                                   refreshing: refreshingProviderId === effectiveSelected.id,
@@ -3079,7 +3184,7 @@ export function ProvidersSection() {
                   {!effectiveSelected.suspended &&
                     !providerHasModels(effectiveSelected) &&
                     !isCustomRoutedProvider(effectiveSelected) &&
-                    effectiveSelected.id !== MANAGED_OLLAMA_PROVIDER_ID &&
+                    !isManagedLocalProvider(effectiveSelected.id) &&
                     (Boolean(effectiveSelected.modelDiscoveryFailure) ||
                       !isBuiltinRefreshableProviderId(effectiveSelected.id)) && (
                       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center text-13">
@@ -3114,6 +3219,9 @@ export function ProvidersSection() {
                     )}
                   {effectiveSelected.id === MANAGED_OLLAMA_PROVIDER_ID && (
                     <OllamaProviderDetail onChanged={refetch} />
+                  )}
+                  {effectiveSelected.id === MANAGED_LLAMACPP_PROVIDER_ID && (
+                    <LlamaCppProviderDetail onChanged={refetch} />
                   )}
                 </>,
               )
