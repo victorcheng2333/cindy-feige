@@ -839,6 +839,8 @@ export interface MobileMakerTransport {
     resume(sessionId: string): Promise<InputProjection>;
     retryLastError(sessionId: string): Promise<InputProjection>;
     clearError(sessionId: string): Promise<InputProjection>;
+    /** 取消账号限额重置后的自动继续;老被控端没有该通道时会被拒(调用方只在投影带等待时显示入口)。 */
+    cancelUsageLimitWait(sessionId: string): Promise<InputProjection>;
     remove(sessionId: string, clientId: string): Promise<InputProjection>;
     updateText(
       sessionId: string,
@@ -885,7 +887,11 @@ export interface MobileMakerTransport {
       relPath: string,
       signal?: AbortSignal,
       beforeInvoke?: () => Promise<unknown>,
-      options?: { stream?: boolean },
+      options?: {
+        stream?: boolean;
+        /** Upload progress while the computer stages the file in cloud storage. */
+        onProgress?: (uploaded: number, total: number) => void;
+      },
     ): Promise<MobileRemoteMediaFetchResult>;
     caps(workdir: string): Promise<FileBrowserCapsResult>;
     /** 返回裸 entries(unknown),消费方用 normalizeRemoteOpDirEntries 归一化。 */
@@ -1388,6 +1394,8 @@ export function createMobileMakerTransport({
       retryLastError: (sessionId) =>
         call("maker:input:retry-last-error", [sessionId]),
       clearError: (sessionId) => call("maker:input:clear-error", [sessionId]),
+      cancelUsageLimitWait: (sessionId) =>
+        call("maker:input:cancel-usage-limit-wait", [sessionId]),
       remove: (sessionId, clientId) =>
         call("maker:input:remove", [sessionId, clientId]),
       updateText: (
@@ -1440,7 +1448,7 @@ export function createMobileMakerTransport({
         });
         assertFileReadActive(signal);
         const fallback = () =>
-          exportDeviceFile(retryOp, workdir, relPath, signal);
+          exportDeviceFile(retryOp, workdir, relPath, signal, options?.onProgress);
         if (!caps.fileRead) {
           mobileDebugLog("debug", "files", "file export without direct read", {
             reason: "host-lacks-file-read",
