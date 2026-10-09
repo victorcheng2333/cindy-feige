@@ -18,9 +18,12 @@ import type { Effort } from '@/lib/userPreferences.types';
 import { getModelEngineOverride, useModelEnginePrefsVersion } from '@/state/modelEnginePrefs';
 import { useModelFavorites, type ModelFavoriteItem } from '@/state/modelFavorites';
 import { useProviderModelMemoryVersion } from '@/state/providerModelMemory';
+import { useAgentDeviceModelMemoryVersion } from '@/state/agentDeviceModelMemory';
 
 import { flashScrollbar } from '@/lib/scrollbarAutoHide';
 import { MORPH_CONTENT_RESIZE_EVENT } from '@/components/ui/morph-popover';
+
+import { isProviderShareAgentDeviceId } from '../../../shared/providerShare';
 
 import { ModelConfigFlyout, type ModelConfigFlyoutState } from './ModelConfigFlyout';
 // ModelSelector 反过来也 import 本文件 —— ESM 循环 import 在这里安全:两边用到的都是
@@ -342,12 +345,14 @@ export function UnifiedModelPanel({
 }: UnifiedModelPanelProps) {
   const { t } = useTranslation();
   const storedFavorites = useModelFavorites();
-  const remoteFavorites = useRemoteModelFavorites(deviceId);
+  // 分享来的供应商(`share:<id>`)不是同账号的电脑，没有可同步的收藏：不去读，也不报同步失败。
+  const remoteFavorites = useRemoteModelFavorites(isProviderShareAgentDeviceId(deviceId) ? undefined : deviceId);
   const favorites = selectionPolicy === 'official' ? NO_FAVORITES : deviceId ? remoteFavorites.items : storedFavorites;
   // 引擎 override / 深度 / Fast 三份 store 的版本号:任一变化都要重算行三元组与浮层
-  // (其它窗口的 storage 事件、device-link 推送同样经这两个版本号进来)。
+  // (其它窗口的 storage 事件、device-link 推送同样经这两个版本号进来)。远程 Agent 的档位记忆
+  // 是另一份 store,版本号并进 memoryVersion。
   const enginePrefsVersion = useModelEnginePrefsVersion();
-  const memoryVersion = useProviderModelMemoryVersion();
+  const memoryVersion = useProviderModelMemoryVersion() + useAgentDeviceModelMemoryVersion();
 
   const sessionAgent = sessionEngineFilter?.currentAgent;
 
