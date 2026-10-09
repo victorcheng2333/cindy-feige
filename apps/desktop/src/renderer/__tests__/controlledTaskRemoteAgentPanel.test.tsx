@@ -166,6 +166,8 @@ function renderControlledTaskPanel(
       onProviderChange,
       actualRoute: true,
       vendorKey: 'cc',
+      // 本 fork 产品默认是原始供应商面板；本文件锁的是统一面板的远程 Agent 轨道。
+      unifiedPanel: true,
       // 被控电脑上的任务:ChatInput 传的 deviceId 是模型目录所在电脑(此处 Agent 在 B)。
       deviceId: 'device-b',
       remoteAgent: {
@@ -292,6 +294,7 @@ describe('远程控制下新建任务:草稿的模型面板同样列出第三台
         onProviderChange,
         actualRoute: false,
         vendorKey: 'cc',
+        unifiedPanel: true,
         deviceId: 'device-b',
         onUnifiedSelect,
         remoteAgent: {
