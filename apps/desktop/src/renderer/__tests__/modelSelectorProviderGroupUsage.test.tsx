@@ -189,6 +189,8 @@ function renderTask(route: { deviceId: string | null; providerId: string }, task
       actualRoute: true,
       taskStarted,
       vendorKey: 'cc',
+      // 本 fork 产品默认是原始供应商面板；本文件锁的是统一面板的供应商组用量。
+      unifiedPanel: true,
       remoteAgent: {
         devices,
         selectedDeviceId: route.deviceId,
@@ -278,6 +280,7 @@ describe('模型列表里供应商组那一项的用量', () => {
           actualRoute: true,
           taskStarted: true,
           vendorKey: 'cc',
+          unifiedPanel: true,
           remoteAgent: {
             devices,
             selectedDeviceId: 'device-d',

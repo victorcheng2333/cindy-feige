@@ -187,6 +187,8 @@ function renderLocalTaskPanel() {
       onProviderChange: vi.fn(),
       actualRoute: true,
       vendorKey: 'cc',
+      // 本 fork 产品默认是原始供应商面板；本文件锁的是统一面板的供应商组标题。
+      unifiedPanel: true,
       remoteAgent: { devices, selectedDeviceId: null, onRelocate: vi.fn(async () => true) },
     }),
   );

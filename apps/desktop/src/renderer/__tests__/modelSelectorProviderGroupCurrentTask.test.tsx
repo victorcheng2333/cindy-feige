@@ -180,6 +180,8 @@ async function renderTask(options: {
       onProviderChange,
       actualRoute: true,
       vendorKey: 'cc',
+      // 本 fork 产品默认是原始供应商面板；本文件锁的是统一面板的供应商组当前任务。
+      unifiedPanel: true,
       remoteAgent: {
         devices,
         selectedDeviceId: options.selectedDeviceId === undefined ? 'vm' : options.selectedDeviceId,
@@ -289,6 +291,7 @@ describe('任务正跑在组里的某台电脑上', () => {
         onProviderChange: vi.fn(),
         actualRoute: true,
         vendorKey: 'cc',
+        unifiedPanel: true,
         deviceId: 'mini',
         remoteAgent: {
           devices: [{ deviceId: 'vm', name: 'grok-bot-vm' }],
