@@ -105,7 +105,7 @@ export function BotSettingsDrawer() {
     <Dialog.Root open={open} onOpenChange={(next) => !next && close()}>
       <Dialog.Portal>
         {/* Keep portaled controls inside the overlay’s React tree so its scroll lock allows them. */}
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--overlay-modal)]">
+        <Dialog.Overlay className="modal-scrim fixed inset-0 z-50">
           <Dialog.Content
             onPointerDownOutside={(event) => event.preventDefault()}
             aria-describedby={undefined}
@@ -140,8 +140,8 @@ export function BotSettingsDrawer() {
             ) : bot ? (
               <BotPronounProvider bot={bot}>
                 <BotSettings
-                  key={`${bot.id}:${open}:${initialPage}`}
-                  initialPage={initialPage}
+                  key={`${bot.id}:${open}:${requestedPage === 'model' ? 'model' : initialPage}`}
+                  initialPage={requestedPage === 'model' ? 'model' : initialPage}
                   beforeCloseRef={beforeCloseRef}
                   bot={bot}
                   onBack={performClose}

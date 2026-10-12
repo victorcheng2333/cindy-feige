@@ -192,7 +192,7 @@ describe.each(SUPPORTED_LOCALES)('WeChat auto-review guidance in %s', locale => 
       projection={{ error: message, errorRetryText: 'original user message' } as InputProjection}
       sessionSource="wechat"
       readOnlyReason={null}
-     
+
       onRetryError={vi.fn()}
       onClearError={vi.fn()}
       onResume={vi.fn()}

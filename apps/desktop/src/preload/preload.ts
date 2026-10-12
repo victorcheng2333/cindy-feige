@@ -1,3 +1,4 @@
+import { createAccessibilitySupportBridge } from './accessibilitySupport';
 import type { CompanionImportApi, CompanionImportSelection } from '@cindy/maker-shared/companion-import';
 import { TASK_MIGRATION_LOCAL_CHANNEL } from '@cindy/device-link';
 import type { WorktreeRecycleAction, WorktreeRecycleStatus } from '../shared/worktreeRecycle';
@@ -26,7 +27,9 @@ import type { BotToolsetContext } from '../shared/botRemoteCapabilities';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { DESKTOP_LOCAL, type RemoteDesktopApi } from '../shared/remoteDesktop';
 import { DEVICE_LINK_PUSH } from '../shared/deviceLinkIpc';
-import type { MobileCodexRateLimitsResult } from '@cindy/maker-shared/device-link-contract';
+import { PROVIDER_SHARE_IPC, type ProviderShareCommand } from '../shared/providerShare';
+import { PROVIDER_GROUP_IPC, type ProviderGroupCommand } from '../shared/providerGroup';
+import type { MobileCodexRateLimitsResult, MobileCodexRateLimitResetResult } from '@cindy/maker-shared/device-link-contract';
 import type { AppearanceSettings } from '../shared/appearanceSettings';
 import type { DialogueWorkspaceSettingsState } from '../shared/dialogueWorkspaceSettings';
 import type {
@@ -56,11 +59,13 @@ import {
   AGENT_ISLAND_SET_DISPLAY_TARGET_CHANNEL,
   AGENT_ISLAND_SET_ENABLED_CHANNEL,
   AGENT_ISLAND_SET_MASCOT_SKIN_CHANNEL,
+  AGENT_ISLAND_SET_REMOTE_SESSIONS_CHANNEL,
   AGENT_ISLAND_SET_SOUND_SETTINGS_CHANNEL,
   AGENT_ISLAND_SET_VISIBLE_SESSION_CHANNEL,
   type AgentIslandDisplayOption,
   type AgentIslandDisplayTarget,
   type AgentIslandMascotSkin,
+  type AgentIslandRemoteSessionInput,
   type AgentIslandSessionActivity,
   type AgentIslandSoundChoice,
   type AgentIslandSoundSettings,
@@ -79,6 +84,11 @@ import {
   type LinuxCloseBehavior,
   type WindowsCloseBehavior,
 } from '../shared/windowBehavior';
+import {
+  MENUBAR_GET_STATE_CHANNEL,
+  MENUBAR_SET_ENABLED_CHANNEL,
+  type MenubarState,
+} from '../shared/menubarQuota';
 import {
   CODEX_MICRO_GUARD_GET_STATE_CHANNEL,
   CODEX_MICRO_GUARD_RECOVER_CHANNEL,
@@ -247,28 +257,6 @@ import type {
   DesktopLoginAction,
   DesktopLoginActionResult,
 } from '../shared/authIpc';
-import type {
-  IOSSimulatorAccessRequest,
-  IOSSimulatorAccessRequestResult,
-  IOSSimulatorCopyScreenshotRequest,
-  IOSSimulatorCopyScreenshotResult,
-  IOSSimulatorPreferences,
-  IOSSimulatorSessionStatus,
-  IOSSimulatorAgentControlRequest,
-  IOSSimulatorFocusRequest,
-  IOSSimulatorH264FramePush,
-  IOSSimulatorRouteStatusPush,
-  IOSSimulatorLiveTouchRequest,
-  IOSSimulatorMutationControlRequest,
-  IOSSimulatorRetryNativeRouteRequest,
-  IOSSimulatorStatusRequest,
-  IOSSimulatorToolRequest,
-  IOSSimulatorToolResponse,
-  IOSSimulatorViewerRouteRequest,
-  IOSSimulatorViewerVisibilityRequest,
-  IOSSimulatorStreamProfileRequest,
-} from '../shared/iosSimulatorIpc';
-import { IOS_SIMULATOR_ROUTE_STATUS_CHANNEL } from '../shared/iosSimulatorIpc';
 import { BILLING_INVOKE, type BillingRendererApi } from '../shared/billing';
 import {
   REMOTE_PRECREATED_WORKTREE_LEDGER_CHANNELS,
@@ -421,6 +409,8 @@ type DiscordBotSessionAuthCheckWire = {
 
 /** Public shape of the local session-list bridge options. */
 type LocalDbSessionListOptions = {
+  /** Local list continuation; does not change the default capped query. */
+  before?: { updatedAt: number; id: string };
   includePinned?: boolean;
   fresh?: boolean;
   usageHistory?: boolean;
@@ -684,6 +674,7 @@ const fanOutAppShortcutsChanged = createIpcFanOut('app-shortcuts:changed');
 const fanOutLayoutChanged = createIpcFanOut('layout:changed');
 // 意识仓库变化广播 (install/uninstall 后 main 推全量已装清单,多窗口热更新;
 // 见 main/cindy-brain/index.ts)。
+const fanOutRetirementOpen = createIpcFanOut('ghosts:retirement-open');
 const fanOutGhostsChanged = createIpcFanOut('ghosts:changed');
 const fanOutPluginPublisherProgress = createIpcFanOut('plugin-publisher:progress');
 const fanOutPluginPublisherConfirm = createIpcFanOut('plugin-publisher:confirm');
@@ -793,9 +784,6 @@ const fanOutMakerSessionCredentialSwitchFailed = createIpcFanOut(
   'maker:session-credential-switch-failed',
 );
 const fanOutMakerClaudeSessionRouteChanged = createIpcFanOut('maker:claude-session-route-changed');
-const fanOutIOSSimulatorFocusRequest = createIpcFanOut('maker:ios-simulator:focus-request');
-const fanOutIOSSimulatorH264Frame = createIpcFanOut('maker:ios-simulator:h264-frame');
-const fanOutIOSSimulatorRouteStatus = createIpcFanOut(IOS_SIMULATOR_ROUTE_STATUS_CHANNEL);
 // 会话后台活动翻转广播(payload = { sessionId, active }):turn 已结束但 CC 子进程仍在调模型。
 const fanOutMakerSessionBackgroundActivityChanged = createIpcFanOut(
   'maker:session-background-activity-changed',
@@ -804,6 +792,7 @@ const fanOutBotDelegationChanged = createIpcFanOut('maker:bot-delegation:changed
 const fanOutBotDirectMessageChanged = createIpcFanOut('maker:bot-direct-message:changed');
 const fanOutBotGroupChanged = createIpcFanOut('maker:bot-group:changed');
 const fanOutBotProfileChanged = createIpcFanOut('maker:bot-profile:changed');
+const fanOutBotWorkbenchChanged = createIpcFanOut('maker:bot-workbench:changed');
 const fanOutBotLifecycleChanged = createIpcFanOut('maker:bot-lifecycle:changed');
 const fanOutMakerPiPackagesChanged = createIpcFanOut('maker:pi-packages:changed');
 const fanOutMakerUsageTodaySpend = createIpcFanOut('usage:today-spend-changed'); // Claude USD
@@ -843,6 +832,13 @@ const fanOutDeviceLinkControlledState = createIpcFanOut('device-link:controlled-
 const fanOutDeviceLinkAccessRevoked = createIpcFanOut('device-link:access-revoked');
 const fanOutDeviceLinkControlTargetChanged = createIpcFanOut('device-link:control-target-changed');
 const fanOutDeviceLinkKeepAwakeChanged = createIpcFanOut('device-link:keep-awake-changed');
+const fanOutProviderShareOwnedChanged = createIpcFanOut(PROVIDER_SHARE_IPC.OWNED_CHANGED);
+const fanOutProviderGroupChanged = createIpcFanOut(PROVIDER_GROUP_IPC.CHANGED);
+const fanOutProviderShareReceivedChanged = createIpcFanOut(PROVIDER_SHARE_IPC.RECEIVED_CHANGED);
+const fanOutProviderShareRequested = createIpcFanOut(PROVIDER_SHARE_IPC.REQUESTED);
+const fanOutProviderShareSettled = createIpcFanOut(PROVIDER_SHARE_IPC.SETTLED);
+const fanOutProviderShareOpenJoin = createIpcFanOut(PROVIDER_SHARE_IPC.OPEN_JOIN);
+const fanOutProviderShareOpenManage = createIpcFanOut(PROVIDER_SHARE_IPC.OPEN_MANAGE);
 const fanOutDeviceLinkOwnershipChanged = createIpcFanOut('device-link:ownership-changed');
 // 控制端:目标设备「无响应」熔断状态翻转(payload = { deviceId, unresponsive })
 const fanOutDeviceLinkResponsivenessChanged = createIpcFanOut('device-link:responsiveness-changed');
@@ -1017,6 +1013,8 @@ interface ComputerDriverUpdateCheck {
   latestVersion: string | null;
   updateAvailable: boolean;
   updating: boolean;
+  checkStatus?: 'success' | 'error';
+  checkedAt?: number;
 }
 
 const appDisplayVersionInfo = ipcRenderer.sendSync('get-app-display-version-info') as {
@@ -1087,6 +1085,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
   platform: process.platform,
+  accessibilitySupport: createAccessibilitySupportBridge(),
   supportsBetaUpdateChannel: supportsBetaUpdateChannel(process.platform, process.arch),
   windowBackdropMaterial: readWindowBackdropMaterialFromArgv(process.argv),
   onWindowBackdropMaterialChanged: (
@@ -1130,6 +1129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pageZoomReset: (): Promise<{ ok: true; zoomFactor: number }> =>
     ipcRenderer.invoke('page-zoom:reset'),
   appearanceSettings: {
+    importWallpaper: () => ipcRenderer.invoke('appearance-settings:import-wallpaper'),
+    ensureWallpaperVideo: (id: string) => ipcRenderer.invoke('appearance-settings:ensure-wallpaper-video', id),
+    removeWallpaper: () => ipcRenderer.invoke('appearance-settings:remove-wallpaper'),
     getSync: (): AppearanceSettings | null => appearanceSettingsInfo,
     get: (): Promise<unknown> => ipcRenderer.invoke('appearance-settings:get'),
     setPatch: (patch: Partial<AppearanceSettings>): Promise<AppearanceSettings> =>
@@ -1372,8 +1374,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       id: string,
     ): Promise<{ status: 'saved'; savedPath: string } | { status: 'canceled' }> =>
       ipcRenderer.invoke('ghosts:export', id),
+    openRetirement: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke('ghosts:open-retirement', id),
+    onRetirementOpen: (callback: (id: string) => void): (() => void) =>
+      fanOutRetirementOpen((id: unknown) => { if (typeof id === 'string') callback(id); }),
+    acknowledgeRetirement: (id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke('ghosts:acknowledge-retirement', id),
     setEnabled: (id: string, enabled: boolean): Promise<{ ok: true }> =>
       ipcRenderer.invoke('ghosts:set-enabled', id, enabled),
+    requestTaskApproval: (id: string): Promise<{ granted: boolean }> =>
+      ipcRenderer.invoke('ghosts:request-task-approval', id),
     /** 目录级禁用清单(插件页项目范围视图;sendSync 保证切换同帧渲染)。 */
     workdirPrefsSync: (workdir: string): { disabled: string[] } =>
       ipcRenderer.sendSync('ghosts:workdir-prefs', workdir),
@@ -1772,6 +1782,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getLoginItem: (): Promise<LoginItemState> => ipcRenderer.invoke(LOGIN_ITEM_GET_CHANNEL),
     setLoginItem: (enabled: boolean): Promise<LoginItemState> =>
       ipcRenderer.invoke(LOGIN_ITEM_SET_CHANNEL, enabled),
+    // macOS menu bar quota item; `available` is false on other platforms and before macOS 14.
+    getMenubarState: (): Promise<MenubarState> => ipcRenderer.invoke(MENUBAR_GET_STATE_CHANNEL),
+    setMenubarEnabled: (enabled: boolean): Promise<MenubarState> =>
+      ipcRenderer.invoke(MENUBAR_SET_ENABLED_CHANNEL, enabled),
     // 通知 main 落盘"首次点击是否吞掉"。仅落盘,不改变已创建窗口的行为——macOS
     // acceptFirstMouse 是 BrowserWindow 构造参数,需要下次启动才读到新值。Windows
     // 上此调用只是保持 userData 落盘和 renderer localStorage 一致,Windows JS
@@ -1998,6 +2012,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(AGENT_ISLAND_SET_VISIBLE_SESSION_CHANNEL, sessionId),
     setEnabled: (enabled: boolean): Promise<{ ok: true }> =>
       ipcRenderer.invoke(AGENT_ISLAND_SET_ENABLED_CHANNEL, enabled),
+    /** 按侧栏「任务范围」筛过的远程设备任务活动(灵动岛 / 桌面通知用)。 */
+    setRemoteSessions: (sessions: AgentIslandRemoteSessionInput[]): Promise<{ ok: true }> =>
+      ipcRenderer.invoke(AGENT_ISLAND_SET_REMOTE_SESSIONS_CHANNEL, sessions),
     setSoundSettings: (settings: AgentIslandSoundSettings): Promise<{ ok: true }> =>
       ipcRenderer.invoke(AGENT_ISLAND_SET_SOUND_SETTINGS_CHANNEL, settings),
     setMascotSkin: (skin: AgentIslandMascotSkin): Promise<{ ok: true }> =>
@@ -2865,6 +2882,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       mtimeMs: number;
       remoteHostId?: string | null;
       deviceId?: string | null;
+      requestId?: string;
     }): Promise<{ ok: true; cachePath: string; stale: boolean } | { ok: false; message: string }> =>
       ipcRenderer.invoke('maker:file-browser:fetch-remote', params),
     /** 读缓存副本内容(cached 态文本预览;32MB 显示上限,二进制回 kind:'binary')。 */
@@ -2892,12 +2910,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         relPath: string;
         received: number;
         total: number;
-        phase?: 'upload' | 'download';
+        phase?: 'pack' | 'upload' | 'download' | 'extract';
+        /** fetchRemote / chatFetch / chatDownload 发起时带的请求 id。 */
+        requestId?: string;
       }) => void,
     ): (() => void) => fanOutFileBrowserTransfer(cb as IpcCallback),
     /**
      * 聊天流文件取回:远端绝对路径 → 本地缓存副本(fetch-到缓存-再操作)。
-     * 进度沿用 onTransferProgress,relPath 键 = 原始 absPath。失败按 code 分流:
+     * 进度沿用 onTransferProgress,按 requestId 关联请求。失败按 code 分流:
      * OUTSIDE_WORKDIR(SSH workdir 外,明确占位)/ NOT_FOUND / FETCH_FAILED。
      */
     previewHtml: (params: {
@@ -2912,6 +2932,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       origin: { kind: 'device'; deviceId: string } | { kind: 'ssh'; remoteHostId: string };
       workdir: string;
       absPath: string;
+      requestId?: string;
     }): Promise<
       | { ok: true; cachePath: string; stale: boolean; size: number }
       | {
@@ -2920,6 +2941,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
           message?: string;
         }
     > => ipcRenderer.invoke('maker:chat-file:fetch', params),
+    /**
+     * 远程文件 / 文件夹下载到系统「下载」文件夹(重名自动加编号),返回最终路径。
+     * 进度沿用 onTransferProgress,按 requestId 关联请求。
+     */
+    chatDownload: (params: {
+      origin: { kind: 'device'; deviceId: string } | { kind: 'ssh'; remoteHostId: string };
+      workdir: string;
+      absPath: string;
+      /** 进度推送回带此 id,用于区分同一路径上的并行请求。 */
+      requestId?: string;
+    }): Promise<
+      | { ok: true; path: string; stale: boolean; skipped: number }
+      | {
+          ok: false;
+          code:
+            | 'BAD_ARGS'
+            | 'OUTSIDE_WORKDIR'
+            | 'NOT_FOUND'
+            | 'FETCH_FAILED'
+            | 'REMOTE_UNSUPPORTED'
+            | 'NO_SPACE';
+          message?: string;
+        }
+    > => ipcRenderer.invoke('maker:chat-file:download', params),
     /** 聊天流文件 chip 点亮预检:远端精确 stat。file=点亮;nonfile=保持纯文本;unknown=乐观点亮。 */
     chatStat: (params: {
       origin: { kind: 'device'; deviceId: string } | { kind: 'ssh'; remoteHostId: string };
@@ -3655,6 +3700,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     title: string;
     kind: 'done' | 'error' | 'needs-reply';
     channels?: { desktop?: boolean; feishu?: boolean; mobile?: boolean };
+    markAttention?: boolean;
   }): Promise<void> => ipcRenderer.invoke('notification:show-session-event', payload),
   notificationSetDesktopEnabled: (enabled: boolean): Promise<{ ok: true }> =>
     ipcRenderer.invoke('notification:set-desktop-enabled', enabled),
@@ -3771,6 +3817,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         | { type: 'share-import'; filePath: string }
         | { type: 'provider-import'; importId: string }
         | { type: 'shared-task-join'; invitation: string; server: string }
+        | { type: 'chat-invite'; token: string }
         | { type: 'settings'; tab: 'voice-input' | 'providers'; connect?: string },
     ) => void,
   ): (() => void) =>
@@ -3783,6 +3830,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         filePath?: unknown;
         importId?: unknown;
         invitation?: unknown;
+        token?: unknown;
         server?: unknown;
         tab?: unknown;
         connect?: unknown;
@@ -3809,6 +3857,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
           tab: p.tab,
           ...(p.tab === 'providers' && p.connect !== undefined ? { connect: p.connect } : {}),
         });
+      } else if (p.type === 'chat-invite' && typeof p.token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(p.token)) {
+        callback({ type: 'chat-invite', token: p.token });
       } else if (p.type === 'shared-task-join' && typeof p.invitation === 'string' && /^[A-Za-z0-9_-]{43}$/.test(p.invitation) && typeof p.server === 'string' && p.server.length <= 2048) {
         callback({ type: 'shared-task-join', invitation: p.invitation, server: p.server });
       } else if (
@@ -3848,6 +3898,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     | { type: 'share-import'; filePath: string }
     | { type: 'provider-import'; importId: string }
     | { type: 'shared-task-join'; invitation: string; server: string }
+    | { type: 'chat-invite'; token: string }
     | { type: 'settings'; tab: 'voice-input' | 'providers'; connect?: string }
     | null
   > => ipcRenderer.invoke('deep-link:take-pending'),
@@ -4485,6 +4536,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     account: (command: import('@cindy/device-link').SharedTaskAccountCommand): Promise<unknown> =>
       ipcRenderer.invoke('shared-task:account', command),
   },
+  // 供应商分享：分享者管理与受邀者申请走同一个命令通道(只接受本机应用窗口)。
+  providerShare: {
+    command: (command: ProviderShareCommand): Promise<unknown> =>
+      ipcRenderer.invoke(PROVIDER_SHARE_IPC.COMMAND, command),
+    onOwnedChanged: fanOutProviderShareOwnedChanged,
+    onReceivedChanged: fanOutProviderShareReceivedChanged,
+    onRequested: fanOutProviderShareRequested,
+    onSettled: fanOutProviderShareSettled,
+    onOpenJoin: fanOutProviderShareOpenJoin,
+    onOpenManage: fanOutProviderShareOpenManage,
+  },
+  // 供应商组：这台电脑上某个供应商的组设置(只接受本机应用窗口)。
+  providerGroup: {
+    command: (command: ProviderGroupCommand): Promise<unknown> =>
+      ipcRenderer.invoke(PROVIDER_GROUP_IPC.COMMAND, command),
+    onChanged: fanOutProviderGroupChanged,
+  },
   deviceLink: {
     taskMigration: (deviceId: string | null, request: import('@cindy/device-link').TaskMigrationRequest): Promise<import('@cindy/device-link').TaskMigrationView> =>
       ipcRenderer.invoke(TASK_MIGRATION_LOCAL_CHANNEL, deviceId, request),
@@ -4616,6 +4684,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         expectedOwnerToken?: string,
         expectedAccountCounter?: number,
         historyView?: string,
+        mergeListMessage?: boolean,
       ): Promise<{ ok: true; invalidation?: number }> =>
         ipcRenderer.invoke('device-link:mirror-cache:messages:put', {
           deviceId,
@@ -4625,6 +4694,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           expectedOwnerToken,
           expectedAccountCounter,
           historyView,
+          mergeListMessage,
         }),
       /** 读侧边栏远程会话列表快照 */
       getSessionList: (): Promise<{
@@ -4721,6 +4791,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }): Promise<{ host: unknown }> => ipcRenderer.invoke('maker:remote-ssh:update', host),
     remove: (id: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke('maker:remote-ssh:remove', { id }),
+    reviewHostKey: (id: string): Promise<{ updated: boolean }> =>
+      ipcRenderer.invoke('maker:remote-ssh:review-host-key', { id }),
     connect: (id: string): Promise<{ host: unknown }> =>
       ipcRenderer.invoke('maker:remote-ssh:connect', { id }),
     disconnect: (id: string): Promise<{ host: unknown }> =>
@@ -5502,6 +5574,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('local-db:bots:create-canonical-session', body),
       history: (botId: string): Promise<unknown[]> =>
         ipcRenderer.invoke('local-db:bots:history', botId),
+      todos: {
+        list: (botId: string) => ipcRenderer.invoke('local-db:bots:todos:list', botId),
+        update: (botId: string, patch: import('@cindy/maker-shared/teammate-todo').TodoPatch) => ipcRenderer.invoke('local-db:bots:todos:update', botId, patch),
+        act: (botId: string, input: {id:string;revision:number;requestId:string;locale?:string}) => ipcRenderer.invoke('local-db:bots:todos:act', botId, input),
+      },
+      workbench: {
+        get: (botId: string): Promise<unknown> =>
+          ipcRenderer.invoke('local-db:bots:workbench:get', botId),
+        addDirectory: (botId: string, path: string): Promise<unknown> =>
+          ipcRenderer.invoke('local-db:bots:workbench:add-directory', botId, path),
+        removeDirectory: (botId: string, path: string): Promise<void> =>
+          ipcRenderer.invoke('local-db:bots:workbench:remove-directory', botId, path),
+        readTask: (botId: string, taskId: string): Promise<unknown> =>
+          ipcRenderer.invoke('local-db:bots:workbench:read-task', botId, taskId),
+        candidates: (botId: string): Promise<unknown> =>
+          ipcRenderer.invoke('local-db:bots:workbench:candidates', botId),
+        followScopes: (): Promise<unknown> =>
+          ipcRenderer.invoke('local-db:bots:workbench:follow-scopes'),
+      },
       listSkills: (botId: string): Promise<import('../shared/botSkill').BotSkillSummary[]> =>
         ipcRenderer.invoke('local-db:bots:skills:list', botId),
       memory: {
@@ -5670,6 +5761,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('maker:team:end', leadSessionId),
       getCollaborationSettings: (): Promise<unknown> =>
         ipcRenderer.invoke('maker:collaboration-settings:get'),
+      listExecutionDevices: (): Promise<unknown> =>
+        ipcRenderer.invoke('maker:orca:execution-devices'),
       setCollaborationSetting: (key: string, value: number): Promise<unknown> =>
         ipcRenderer.invoke('maker:collaboration-settings:set', { key, value }),
       resetCollaborationSettings: (): Promise<unknown> =>
@@ -5884,6 +5977,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ): Promise<import('../shared/botDirectMessage').BotDirectMessageThreadResult> =>
       ipcRenderer.invoke('maker:bot-direct-message-thread:get', threadId, viewerBotId),
     onBotDirectMessageChanged: fanOutBotDirectMessageChanged,
+    chatServer: {
+      manage: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['manage']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['manage']> =>
+        ipcRenderer.invoke('maker:chat-server:manage', input),
+      ownedBots: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['ownedBots']> =>
+        ipcRenderer.invoke('maker:chat-server:ownedBots'),
+      refreshProfile: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['refreshProfile']> =>
+        ipcRenderer.invoke('maker:chat-server:refreshProfile'),
+      status: (): ReturnType<import('../shared/botGroupChat').ChatServerApi['status']> =>
+        ipcRenderer.invoke('maker:chat-server:status'),
+      thread: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['thread']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['thread']> =>
+        ipcRenderer.invoke('maker:chat-server:thread', input),
+      reply: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['reply']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['reply']> =>
+        ipcRenderer.invoke('maker:chat-server:reply', input),
+      react: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['react']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['react']> =>
+        ipcRenderer.invoke('maker:chat-server:react', input),
+      createInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['createInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['createInvite']> =>
+        ipcRenderer.invoke('maker:chat-server:createInvite', input),
+      revokeInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['revokeInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['revokeInvite']> =>
+        ipcRenderer.invoke('maker:chat-server:revokeInvite', input),
+      previewInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['previewInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['previewInvite']> =>
+        ipcRenderer.invoke('maker:chat-server:previewInvite', input),
+      acceptInvite: (input: Parameters<import('../shared/botGroupChat').ChatServerApi['acceptInvite']>[0]): ReturnType<import('../shared/botGroupChat').ChatServerApi['acceptInvite']> =>
+        ipcRenderer.invoke('maker:chat-server:acceptInvite', input),
+    },
     listBotGroups: (): Promise<import('../shared/botGroupChat').BotGroupListResult> =>
       ipcRenderer.invoke('maker:bot-group:list'),
     getBotGroup: (
@@ -5935,6 +6052,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('maker:bot-group:plan-edit', input),
     onBotGroupChanged: fanOutBotGroupChanged,
     onBotProfileChanged: fanOutBotProfileChanged,
+    onBotWorkbenchChanged: fanOutBotWorkbenchChanged,
     runBotLifecycleAction: (
       request: import('../shared/botLifecycle').BotLifecycleActionRequest,
     ): Promise<import('../shared/botLifecycle').BotLifecycleActionResult> =>
@@ -5983,6 +6101,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       providers: import('@cindy/model-providers').ProviderView[];
       providerOrder: string[];
     }> => ipcRenderer.invoke('maker:provider:list'),
+    setProviderRemoteAccess: (input: { providerId: string; enabled: boolean }): Promise<{ ok: true; enabled: boolean }> =>
+      ipcRenderer.invoke('maker:provider:remote-access:set', input),
     /** Refresh one built-in provider through its existing main-process discovery source. */
     refreshBuiltinProviderModels: (
       providerId: import('../shared/providerModelRefresh').BuiltinRefreshableProviderId,
@@ -6621,6 +6741,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         workerPermissionMode?: 'auto' | 'bypassPermissions';
         /** 新建 Lead 专用：等首条输入 accepted 且可查询后再派任务。 */
         deferDelegateTask?: boolean;
+        /** 首个 Worker 放到同账号另一台电脑运行；缺省 = 本机。 */
+        executionDeviceId?: string;
+        /** 运行设备上的工作目录；缺省由那台分配。 */
+        workingDir?: string;
+        /** 首个 Worker 的 Agent 所在电脑(远程供应商)；null = 任务所在电脑，缺省 = 跟 Lead。 */
+        agentDeviceId?: string | null;
       },
       // main handler 实际返回 teamId(见 enableOrcaInternal);此前类型写成 workflowId 是漂移。
     ): Promise<{
@@ -6837,6 +6963,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       providerId?: string | null,
       effort?: string,
       fastMode?: boolean,
+      // 远程 Agent:同时换 Agent 所在电脑(null = 任务所在电脑)。不传 = 位置不变。
+      options?: { agentDeviceId?: string | null },
     ): Promise<{
       switched: boolean;
       agentKind: 'claude-code' | 'codex' | 'pi';
@@ -6846,15 +6974,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       sameEngineRevision?: number;
       sameEngineSuperseded?: boolean;
     }> =>
-      ipcRenderer.invoke(
-        'maker:switch-session-agent',
-        sessionId,
-        targetAgentKind,
-        model,
-        providerId,
-        effort,
-        fastMode,
-      ),
+      options
+        ? ipcRenderer.invoke(
+            'maker:switch-session-agent',
+            sessionId,
+            targetAgentKind,
+            model,
+            providerId,
+            effort,
+            fastMode,
+            options,
+          )
+        : ipcRenderer.invoke(
+            'maker:switch-session-agent',
+            sessionId,
+            targetAgentKind,
+            model,
+            providerId,
+            effort,
+            fastMode,
+          ),
     // 读 main 权威的 pending 切换意图(内存态,不落库)。重开视图 / 远程会话重连后
     // 用它恢复乐观显示——否则用户登记的意图在 UI 上凭空消失,下一条消息却按意图切换。
     getSessionAgentSwitchIntent: (
@@ -6872,6 +7011,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('maker:set-effort', sessionId, effort),
     setPermissionMode: (sessionId: string, mode: string): Promise<void> =>
       ipcRenderer.invoke('maker:set-permission-mode', sessionId, mode),
+    getPluginWriteAccessRecovery: (sessionId: string): Promise<{available: boolean}> =>
+      ipcRenderer.invoke('maker:get-plugin-write-access-recovery', sessionId),
+    retryPluginWriteAccess: (sessionId: string): Promise<{granted: boolean; mode?: 'acceptEdits' | 'auto'}> =>
+      ipcRenderer.invoke('maker:retry-plugin-write-access', sessionId),
     setFastMode: (sessionId: string, enabled: boolean): Promise<void> =>
       ipcRenderer.invoke('maker:set-fast-mode', sessionId, enabled),
     setThinkingEnabled: (sessionId: string, enabled: boolean): Promise<void> =>
@@ -7353,6 +7496,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         opts?: { expectedClearBoundaryMs?: number | null },
       ): Promise<import('../shared/agentInputQueue').AgentInputProjection> =>
         ipcRenderer.invoke('maker:input:clear-error', sessionId, opts),
+      cancelUsageLimitWait: (
+        sessionId: string,
+        opts?: { expectedClearBoundaryMs?: number | null },
+      ): Promise<import('../shared/agentInputQueue').AgentInputProjection> =>
+        ipcRenderer.invoke('maker:input:cancel-usage-limit-wait', sessionId, opts),
       persistTurnErrorDeferred: (
         sessionId: string,
         errData: Record<string, unknown> | null,
@@ -7578,6 +7726,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       /** Codex app-server authoritative windows and banked reset-credit metadata. */
       getCodexRateLimits: (providerId?: string): Promise<MobileCodexRateLimitsResult> =>
         ipcRenderer.invoke('maker:usage:codex-rate-limits', providerId),
+      /** Consume one desktop-issued reset offer; Main validates its account and expiry. */
+      consumeCodexRateLimitReset: (idempotencyKey: string, providerId?: string): Promise<MobileCodexRateLimitResetResult> =>
+        ipcRenderer.invoke('maker:usage:codex-rate-limit-reset', idempotencyKey, providerId),
       /** Claude 订阅账号余量 (5h/周/分模型窗口, cached-first, main 侧按需后台刷新)。 */
       getClaudeSubscription: (providerId?: string): Promise<unknown | null> =>
         ipcRenderer.invoke('maker:usage:claude-subscription', providerId),
@@ -7842,56 +7993,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       prepareAdb: (): Promise<AndroidAdbPreparationState> =>
         ipcRenderer.invoke('maker:android:prepare-adb'),
     },
-    iosSimulator: {
-      getPreferences: (): Promise<IOSSimulatorPreferences> =>
-        ipcRenderer.invoke('maker:ios-simulator:get-preferences'),
-      setAutoOpenEmbeddedPanel: (enabled: boolean): Promise<IOSSimulatorPreferences> =>
-        ipcRenderer.invoke('maker:ios-simulator:set-auto-open-embedded-panel', { enabled }),
-      requestAccess: (
-        request: IOSSimulatorAccessRequest,
-      ): Promise<IOSSimulatorAccessRequestResult> =>
-        ipcRenderer.invoke('maker:ios-simulator:request-access', request),
-      status: (request: IOSSimulatorStatusRequest): Promise<IOSSimulatorSessionStatus> =>
-        ipcRenderer.invoke('maker:ios-simulator:status', request),
-      call: (request: IOSSimulatorToolRequest): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:call', request),
-      setAgentControl: (
-        request: IOSSimulatorAgentControlRequest,
-      ): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:set-agent-control', request),
-      setMutationControl: (
-        request: IOSSimulatorMutationControlRequest,
-      ): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:set-mutation-control', request),
-      setViewerVisibility: (
-        request: IOSSimulatorViewerVisibilityRequest,
-      ): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:set-viewer-visibility', request),
-      retryNativeRoute: (
-        request: IOSSimulatorRetryNativeRouteRequest,
-      ): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:retry-native-route', request),
-      latestFrame: (request: IOSSimulatorViewerRouteRequest): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:latest-frame', request),
-      copyScreenshot: (
-        request: IOSSimulatorCopyScreenshotRequest,
-      ): Promise<IOSSimulatorCopyScreenshotResult> =>
-        ipcRenderer.invoke('maker:ios-simulator:copy-screenshot', request),
-      setStreamProfile: (
-        request: IOSSimulatorStreamProfileRequest,
-      ): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:set-stream-profile', request),
-      liveTouch: (request: IOSSimulatorLiveTouchRequest): Promise<IOSSimulatorToolResponse> =>
-        ipcRenderer.invoke('maker:ios-simulator:live-touch', request),
-      onH264Frame: (callback: (payload: IOSSimulatorH264FramePush) => void) =>
-        fanOutIOSSimulatorH264Frame((payload) => callback(payload as IOSSimulatorH264FramePush)),
-      onRouteStatus: (callback: (payload: IOSSimulatorRouteStatusPush) => void) =>
-        fanOutIOSSimulatorRouteStatus((payload) =>
-          callback(payload as IOSSimulatorRouteStatusPush),
-        ),
-      onFocusRequest: (callback: (request: IOSSimulatorFocusRequest) => void) =>
-        fanOutIOSSimulatorFocusRequest((request) => callback(request as IOSSimulatorFocusRequest)),
-    },
     computer: {
       status: (options?: ComputerDriverStatusOptions): Promise<ComputerDriverStatus> =>
         ipcRenderer.invoke('maker:computer:status', options),
@@ -7920,8 +8021,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         fanOutComputerPermissionGuideStatusChanged((data: unknown) =>
           callback(data as ComputerDriverStatus),
         ),
-      checkUpdate: (): Promise<ComputerDriverUpdateCheck> =>
-        ipcRenderer.invoke('maker:computer:check-update'),
+      checkUpdate: (options?: { force?: boolean }): Promise<ComputerDriverUpdateCheck> =>
+        ipcRenderer.invoke('maker:computer:check-update', options),
       updateDriver: (opts?: { joinOnly?: boolean }): Promise<ComputerDriverInstallResult> =>
         ipcRenderer.invoke('maker:computer:update-driver', opts),
       onUpdateProgress: fanOutComputerDriverUpdateProgress,

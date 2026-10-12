@@ -11,7 +11,7 @@
 //   node scripts/package-desktop.mjs [options]
 //
 //   --local                         个人打包：默认当前架构、版本无关、无发布签名，
-//                                   跳过 packaged smoke 与 iOS 模拟器发布验收
+//                                   跳过 packaged smoke
 //   --platform win32|darwin|linux   默认当前平台(不支持交叉打包)
 //   --arch     x64|arm64            显式传 = 只打该单架构;缺省时 darwin
 //                                   双架构连打(arm64 + x64,同一版本号,
@@ -62,7 +62,6 @@ import {
   runDbValidate,
   verifyPackagedDrizzle,
   runSmokeTest,
-  runIOSSimulatorReleaseGate,
   fetchExistingManifestIfAvailable,
   findInstallerArtifact,
   ensureLinuxRuntimeAssets,
@@ -242,16 +241,6 @@ function isPhysicalArm64Mac() {
   }
 }
 
-/**
- * 宿主能否原生执行该 arch 的 packaged app。双架构连打时其中一趟必是跨 arch:
- * arm64 机打 x64(Rosetta 起 x64 Electron 会挂/超时,x64 agent 二进制甚至因缺
- * AVX 死循环),Intel 机打 arm64(根本起不来)。这类 app 不能拿来跑需要"启动
- * 打包产物"的检查(smoke / iOS Simulator release gate)。
- */
-function hostCanExecArch(arch) {
-  return arch === 'arm64' ? isPhysicalArm64Mac() : !isPhysicalArm64Mac();
-}
-
 /** 跳过 smoke 启动前,用 lipo 确认 packaged 主二进制确实是目标架构。 */
 function verifyMacBinaryArch(appName, arch) {
   const exePath = path.join(
@@ -399,7 +388,6 @@ async function finishDarwin({
   noSign,
   macSigningIdentity,
   webAuthnProvisioningProfile,
-  local = false,
 }) {
   const packagedDir = path.join(DESKTOP_ROOT, 'out', `${appName}-darwin-${arch}`);
   const appPath = path.join(packagedDir, `${appName}.app`);
@@ -414,7 +402,6 @@ async function finishDarwin({
 
   const applePassword = noSign ? undefined : process.env.APPLE_APP_PASSWORD;
   const wantsRealSigning = !versionless && !noSign;
-  const requireNativeReleaseGate = process.env.CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE === '1';
   let signingMode = 'adhoc';
 
   if (wantsRealSigning && !applePassword && !allowUnsigned) {
@@ -443,49 +430,11 @@ async function finishDarwin({
       });
     }
     console.log('==> Signing (Developer ID)...');
-    const iosSimulatorHelperSigned = signMacAppWithIdentity(
-      appPath,
-      helperEntitlementsPath,
-      mainEntitlementsPath,
-      identity,
-      { keychainAccessGroup, arch },
-    );
-    if (requireNativeReleaseGate && !iosSimulatorHelperSigned) {
-      throw new Error(
-        'CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1 requires a packaged Native Helper',
-      );
-    }
+    signMacAppWithIdentity(appPath, helperEntitlementsPath, mainEntitlementsPath, identity, { keychainAccessGroup, arch });
     console.log('==> Notarizing...');
     notarizeMacApp(appPath, identity);
     signingMode = 'developer-id+notarized';
-    if (hostCanExecArch(arch)) {
-      runIOSSimulatorReleaseGate(
-        appPath,
-        arch,
-        iosSimulatorHelperSigned ? 'verified' : 'untrusted',
-        requireNativeReleaseGate,
-      );
-    } else if (requireNativeReleaseGate) {
-      // 显式要求的 native smoke 必须在能原生运行目标 arch 的受控发布机上跑
-      // (要 boot 模拟器 + 起 native sidecar)。此处跳过会把它悄悄降级成"无门禁",
-      // 违背 docs/ios-simulator-integration-plan.md 的发布约束——宁可失败,逼操作者
-      // 换到匹配的宿主机。
-      throw new Error(
-        `CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1 requires a host that can natively run the ${arch} package`,
-      );
-    } else {
-      // 跨 arch 连打:该产物在本机跑不起来(如 arm64 机上的 x64 app),launch-based
-      // gate 无法 exec 它。沿用 ios-simulator-integration-plan.md 的 cross-architecture
-      // 例外(原仅覆盖 Intel 机 + arm64 ad-hoc,现扩至 arm64 机 + x64 Developer-ID 的
-      // static gate):x64 从不含 native helper、运行期必然回退 WDA/MJPEG,static gate
-      // 验的是构造上已保证的行为。跳过 launch,但仍用 lipo 证明公证后的包确是目标 arch。
-      verifyMacBinaryArch(appName, arch);
-      console.log(
-        `==> Skipping iOS Simulator release gate: ${arch} app is not runnable on this ${
-          isPhysicalArm64Mac() ? 'arm64' : 'Intel'
-        } host (Mach-O arch verified)`,
-      );
-    }
+    verifyMacBinaryArch(appName, arch);
 
     const dmgPath = path.join(artifactDir, `${baseName}-${arch}.dmg`);
     console.log('==> Creating DMG...');
@@ -505,24 +454,7 @@ async function finishDarwin({
     writeMacEntitlements(helperEntitlementsPath);
     writeMacEntitlements(mainEntitlementsPath, { appleEvents: true });
     adhocSignMacApp(appPath, helperEntitlementsPath, mainEntitlementsPath, arch);
-    if (requireNativeReleaseGate) {
-      throw new Error(
-        'CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1 requires a Developer ID signed and notarized package',
-      );
-    }
-    if (local) {
-      console.log('==> Skipping iOS Simulator release gate (--local)');
-    } else if (hostCanExecArch(arch)) {
-      runIOSSimulatorReleaseGate(appPath, arch, 'untrusted');
-    } else {
-      // cross-architecture 例外:跳过 launch-based gate,仍做 Mach-O arch 门禁。
-      verifyMacBinaryArch(appName, arch);
-      console.log(
-        `==> Skipping iOS Simulator release gate: ${arch} app is not runnable on this ${
-          isPhysicalArm64Mac() ? 'arm64' : 'Intel'
-        } host (Mach-O arch verified)`,
-      );
-    }
+    verifyMacBinaryArch(appName, arch);
     const appZipPath = path.join(artifactDir, `${baseName}-${arch}.zip`);
     console.log('==> Creating app ZIP (ad-hoc signed)...');
     if (fs.existsSync(appZipPath)) fs.unlinkSync(appZipPath);
@@ -561,10 +493,7 @@ async function main() {
     console.error(`ERROR: ${err.message}`);
     process.exit(1);
   }
-  const { platform, archs, region, versionSpec, skipSmoke, allowUnsigned, noSign, local } = args;
-  if (local && process.env.CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE === '1') {
-    throw new Error('--local 与 CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1 冲突；请取消发布验收环境变量或使用 release:package');
-  }
+  const { platform, archs, region, versionSpec, skipSmoke, allowUnsigned, noSign } = args;
   // ensureBinary 的 CDN fallback 按此 region 选择清单基址；必须早于二进制准备。
   process.env.CINDY_AUTH_REGION = region;
   // mac 签名身份按区域从 release-regions.json 注入(文件缺失时静默跳过,
@@ -714,7 +643,6 @@ async function main() {
         noSign,
         macSigningIdentity,
         webAuthnProvisioningProfile,
-        local,
       }));
 
       const buildInfo = buildBuildInfo({

@@ -180,4 +180,3 @@ describe('ImageHoverPreview', () => {
     expect(layers).toEqual(['outline', 'stroke']);
   });
 });
-

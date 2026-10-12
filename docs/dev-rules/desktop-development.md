@@ -17,9 +17,8 @@ pnpm package
 ARM 和 Intel），区域默认 Global；中国大陆版用 `pnpm package -- --region cn`。
 无需先提交代码或创建 PR，也不前置单测、覆盖率、typecheck、lint、独立 review。
 
-个人模式跳过 packaged smoke 和 iOS 模拟器发布验收，不使用发布证书或 Apple 公证；
+个人模式跳过 packaged smoke，不使用发布证书或 Apple 公证；
 macOS 保留 ad-hoc 签名。依赖准备、编译、资源和迁移文件完整性检查照常执行。
-显式设置了 `CINDY_IOS_SIMULATOR_RELEASE_NATIVE_SMOKE=1` 时会提示配置冲突，需先取消。
 版本固定为既有的 `0.0.0` 本地包，不参与自动更新；要更新自己的安装请重新打包。
 
 产物位于 `apps/desktop/release/artifacts/<region>/unversioned/<platform>-<arch>/`：
@@ -66,6 +65,11 @@ pnpm restart:desktop:remote -- --shared
 `DESKTOP_DEV_VERDICT=failed` 或根本没有 verdict 行，不得声称开发版已起来。
 失败时把 `code` / `message` 交给用户。若有 `next=` 且用户没有点名必须共享，
 可以执行那条 next 命令重试。不要给启动命令接会吞退出码的管道。
+
+Agent 没有 TTY 时，dev 会在新开的 Terminal（macOS）／cmd（Windows）窗口里运行。macOS 上
+该窗口的输出同时写入当前 checkout 的 `apps/desktop/logs/dev-terminal.log`（每次启动覆盖，
+只保留前 8MB，足够覆盖启动过程；之后的运行日志看按天轮转的 `main-*.log`），窗口关掉后仍可查；启动失败时命令会直接打印日志末尾，verdict 带 `log=` 指向该文件。
+排查启动失败先读这份日志，不要靠反复重启猜原因。
 
 Desktop 连接的是你自己的 Cindy 云端账号（remote）。这与登录页中免 Cindy 账号的
 「跳过登录」（应用内显示为「未登录」，无需账号即可使用本机 agent；代码内部标识仍为
@@ -156,7 +160,11 @@ checkout 的启动器顶掉）。因此并行多开的标准姿势是：**每个
 
 - **userData 冲突门**：目标 userData（按 `--isolated` 名字推导）已被其他 checkout 的
   dev 实例占用时，restart 会在杀任何进程之前中止并列出占用进程——不代杀、不共库。
-  换一个沙箱名字，或由用户自己停掉那个实例后重试。检测靠 helper 进程命令行上的
+  verdict 为 `USERDATA_IN_USE` 并给出 `next=… --isolated=@worktree`：执行它即可改用本
+  worktree 自己的沙箱并行启动（首次需登录）；或由用户自己停掉那个实例后重试。
+- **嵌套的托管 worktree 不算本 checkout**：`.cindy-worktrees/<name>` 位于主 checkout
+  目录内，进程归属按命中的最深 worktree 判定。从主 checkout restart 不会停掉托管 worktree
+  的实例，冲突门也会把它们当作其他 checkout。检测靠 helper 进程命令行上的
   `--user-data-dir`，对方实例刚启动还没起 helper 时可能漏检，属尽力而为。
 - **CDP 端口**：dev 的 remote-debugging-port 固定 9222，只有先起的实例能绑上。后起
   实例需要 CDP 调试面时，用 `XDT_CDP_PORT=<端口>` 覆写（仅数字生效，dev-only）。
@@ -217,6 +225,12 @@ pnpm test:unit
 - 数据库 migration、协议、更新器、权限与用户数据另有高风险专项规则；命中时先读取
   对应规则，不以本页命令替代专项验证。
 - 记录实际执行和结果；未执行的高相关检查必须说明原因。
+
+## Windows 窗口恢复实验
+
+Windows 偶发黑屏/灰屏的后台节流对照实验见
+[窗口恢复对照](../../apps/desktop/scripts/render-recovery/README.md)。它按需使用 GitHub
+Windows runner，独立于默认单测；短流程通过和完整 Cindy 故障已修复必须分开判断。
 
 ## Windows 安装目录与授权
 

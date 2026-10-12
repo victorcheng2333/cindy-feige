@@ -50,10 +50,92 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+it('retains standalone Images on edit and saves only the selected runtime when toggled off', async () => {
+  const initial: CustomProviderConfig = {
+    id: 'images', name: 'Images', auth: { method: 'apiKey' },
+    runtimes: { pi: {
+      baseUrl: 'https://images.example.test/v1', wireProtocol: 'openai-chat',
+      imageApi: 'openai-images',
+      models: [{ id: 'gpt-image-2', name: 'Image', mode: 'image_generation' }],
+    } },
+  };
+  customProviderMocks.readCustomProviderKey.mockResolvedValue('invalid-test-key');
+  const user = userEvent.setup();
+  render(<ProviderConnectionDialog initial={initial} focusAgent="pi" onSaved={vi.fn()} onClose={vi.fn()} />);
+  await waitForInitialDialogFocus();
+  const checkbox = screen.getByLabelText('settings.providers.custom.fields.openaiImages');
+  expect((checkbox as HTMLInputElement).checked).toBe(true);
+  await user.click(screen.getByRole('button', { name: 'settings.providers.custom.save' }));
+  await waitFor(() => expect(customProviderMocks.updateCustomProvider).toHaveBeenCalledOnce());
+  expect(customProviderMocks.updateCustomProvider.mock.calls[0]?.[0].runtimes.pi).toMatchObject({
+    imageApi: 'openai-images',
+  });
+  cleanup();
+  render(<ProviderConnectionDialog initial={initial} focusAgent="pi" onSaved={vi.fn()} onClose={vi.fn()} />);
+  await waitForInitialDialogFocus();
+  await user.click(screen.getByLabelText('settings.providers.custom.fields.openaiImages'));
+  await user.click(screen.getByRole('button', { name: 'settings.providers.custom.save' }));
+  await waitFor(() => expect(customProviderMocks.updateCustomProvider).toHaveBeenCalledTimes(2));
+  expect(customProviderMocks.updateCustomProvider.mock.calls[1]?.[0].runtimes.pi.imageApi).toBeUndefined();
+  expect(initial.runtimes.pi?.imageApi).toBe('openai-images');
+});
+it('retains standalone Videos on edit and saves only the selected runtime when toggled off', async () => {
+  const initial: CustomProviderConfig = {
+    id: 'images', name: 'Images', auth: { method: 'apiKey' },
+    runtimes: { pi: {
+      baseUrl: 'https://images.example.test/v1', wireProtocol: 'openai-chat',
+      videoApi: 'xai-videos',
+      models: [{ id: 'private-video', name: 'Video', mode: 'video_generation' }],
+    } },
+  };
+  customProviderMocks.readCustomProviderKey.mockResolvedValue('invalid-test-key');
+  const user = userEvent.setup();
+  render(<ProviderConnectionDialog initial={initial} focusAgent="pi" onSaved={vi.fn()} onClose={vi.fn()} />);
+  await waitForInitialDialogFocus();
+  const checkbox = screen.getByLabelText('settings.providers.custom.fields.xaiVideos');
+  expect((checkbox as HTMLInputElement).checked).toBe(true);
+  await user.click(screen.getByRole('button', { name: 'settings.providers.custom.save' }));
+  await waitFor(() => expect(customProviderMocks.updateCustomProvider).toHaveBeenCalledOnce());
+  expect(customProviderMocks.updateCustomProvider.mock.calls[0]?.[0].runtimes.pi).toMatchObject({
+    videoApi: 'xai-videos',
+  });
+  cleanup();
+  render(<ProviderConnectionDialog initial={initial} focusAgent="pi" onSaved={vi.fn()} onClose={vi.fn()} />);
+  await waitForInitialDialogFocus();
+  await user.click(screen.getByLabelText('settings.providers.custom.fields.xaiVideos'));
+  await user.click(screen.getByRole('button', { name: 'settings.providers.custom.save' }));
+  await waitFor(() => expect(customProviderMocks.updateCustomProvider).toHaveBeenCalledTimes(2));
+  expect(customProviderMocks.updateCustomProvider.mock.calls[1]?.[0].runtimes.pi.videoApi).toBeUndefined();
+  expect(initial.runtimes.pi?.videoApi).toBe('xai-videos');
+});
+
 async function waitForInitialDialogFocus(): Promise<void> {
   const nameInput = screen.getByPlaceholderText('settings.providers.custom.fields.namePlaceholder');
   await waitFor(() => expect(document.activeElement).toBe(nameInput));
 }
+
+it('selects one Images owner while preserving other runtime endpoints, models and credentials', async () => {
+  const initial: CustomProviderConfig = {
+    id: 'relay', name: 'Relay', auth: { method: 'apiKey' }, runtimes: {
+      pi: { baseUrl: 'https://pi.example.test/v1', models: [{ id: 'image', name: 'Image' }] },
+      codex: { baseUrl: 'https://codex.example.test/v1', imageApi: 'openai-images', models: [{ id: 'image', name: 'Image' }] },
+    },
+  };
+  customProviderMocks.readCustomProviderKey.mockResolvedValue('invalid-test-key');
+  const user = userEvent.setup();
+  render(<ProviderConnectionDialog initial={initial} focusAgent="pi" onSaved={vi.fn()} onClose={vi.fn()} />);
+  await waitForInitialDialogFocus();
+  await user.click(screen.getByLabelText('settings.providers.custom.fields.openaiImages'));
+  await user.click(screen.getByRole('button', { name: 'settings.providers.custom.save' }));
+  await waitFor(() => expect(customProviderMocks.updateCustomProvider).toHaveBeenCalledOnce());
+  const [config, keys] = customProviderMocks.updateCustomProvider.mock.calls[0]!;
+  expect(config.runtimes.pi.imageApi).toBe('openai-images');
+  expect(config.runtimes.codex.imageApi).toBeUndefined();
+  expect(config.runtimes.codex.baseUrl).toBe(initial.runtimes.codex!.baseUrl);
+  expect(config.runtimes.codex.models).toEqual(initial.runtimes.codex!.models);
+  expect(keys).toEqual({});
+  expect(initial.runtimes.codex!.imageApi).toBe('openai-images');
+});
 
 function modelRoutedCodexProvider(): CustomProviderConfig {
   return {
@@ -1242,11 +1324,10 @@ describe('ProviderConnectionDialog accessibility', () => {
     expect(document.querySelectorAll('#custom-provider-image-generation-help-card')).toHaveLength(
       1,
     );
-    await user.unhover(help);
     await user.hover(screen.getByRole('tooltip'));
     await act(() => new Promise((resolve) => window.setTimeout(resolve, 150)));
     expectCompleteImageGenerationHelp(screen.getByRole('tooltip'));
-    await user.unhover(screen.getByRole('tooltip'));
+    await user.hover(advanced);
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
 
     await user.hover(help);
@@ -1260,7 +1341,7 @@ describe('ProviderConnectionDialog accessibility', () => {
     expect(onClose).not.toHaveBeenCalled();
     await act(() => new Promise((resolve) => window.setTimeout(resolve, 0)));
     expect(screen.queryByRole('tooltip')).toBeNull();
-    await user.unhover(help);
+    await user.hover(advanced);
 
     await act(async () => help.focus());
     expect(screen.queryByRole('tooltip')).toBeNull();
@@ -1293,14 +1374,14 @@ describe('ProviderConnectionDialog accessibility', () => {
     expect(onClose).not.toHaveBeenCalled();
     await act(() => new Promise((resolve) => window.setTimeout(resolve, 0)));
     expect(screen.queryByRole('tooltip')).toBeNull();
-    await user.unhover(help);
+    await user.hover(advanced);
 
     await user.click(help);
     helpPopover = await screen.findByRole('dialog', {
       name: 'settings.providers.custom.fields.runtimeSupportsImageGenerationHelpLabel',
     });
     expectCompleteImageGenerationHelp(helpPopover);
-    await user.unhover(help);
+    await user.hover(advanced);
     await act(() => new Promise((resolve) => window.setTimeout(resolve, 150)));
     expect(
       screen.getByRole('dialog', {
@@ -1365,9 +1446,6 @@ describe('ProviderConnectionDialog accessibility', () => {
     expect(document.activeElement).toBe(help);
     expect(onClose).not.toHaveBeenCalled();
     await act(async () => capability.focus());
-    await user.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalledOnce();
-
     await act(async () => help.focus());
     expectCompleteImageGenerationHelp(await screen.findByRole('tooltip'));
     await user.keyboard(' ');
@@ -1382,6 +1460,11 @@ describe('ProviderConnectionDialog accessibility', () => {
         }),
       ).toBeNull(),
     );
+
+    await act(async () => capability.focus());
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     expect(consoleError.mock.calls.flat().join('\n')).not.toMatch(
       /changing an (uncontrolled|controlled).*component/i,
@@ -1815,4 +1898,35 @@ it('saves OpenRouter OAuth connections that leave scopes empty for provider defa
   expect(customProviderMocks.updateCustomProvider.mock.calls[0][0].auth).toMatchObject({
     method: 'oauth', oauth: { scopes: '' },
   });
+});
+
+it('main provider form contains Tab and blocks dismissal only during the actual save', async () => {
+  let finish!: () => void;
+  customProviderMocks.readCustomProviderKey.mockResolvedValue(null);
+  customProviderMocks.updateCustomProvider.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+  const onSaved = vi.fn();
+  const onClose = vi.fn();
+  const user = userEvent.setup();
+  render(<ProviderConnectionDialog initial={modelRoutedCodexProvider()} onSaved={onSaved} onClose={onClose} />);
+  await waitForInitialDialogFocus();
+  const name = screen.getByPlaceholderText('settings.providers.custom.fields.namePlaceholder');
+  const save = screen.getByRole('button', { name: 'settings.providers.custom.save' });
+  const cancel = screen.getByRole('button', { name: 'settings.providers.custom.cancel' }) as HTMLButtonElement;
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(save);
+  await user.tab();
+  expect(document.activeElement).toBe(name);
+  await user.type(name, ' renamed');
+  await user.click(save);
+  await waitFor(() => expect(customProviderMocks.updateCustomProvider).toHaveBeenCalledOnce());
+  expect(cancel.disabled).toBe(true);
+  await user.keyboard('{Escape}');
+  fireEvent.click(cancel);
+  fireEvent.pointerDown(document.querySelector('[data-custom-provider-dialog-scrim]')!);
+  expect(onClose).not.toHaveBeenCalled();
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  await act(async () => finish());
+  await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

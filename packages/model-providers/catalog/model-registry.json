@@ -1,6 +1,6 @@
 {
   "schemaVersion": 5,
-  "updatedAt": "2026-09-29T19:00:00.002Z",
+  "updatedAt": "2026-10-10T16:00:00.000Z",
   "models": [
     {
       "id": "openai/gpt-6.1-sol",
@@ -116,6 +116,36 @@
       ],
       "nativeApi": "anthropic-messages",
       "modelRef": "anthropic/claude-opus-5-5"
+    },
+    {
+      "id": "anthropic/claude-sonnet-5-5",
+      "name": "Sonnet 5.5",
+      "status": "active",
+      "sortOrder": 6,
+      "routes": [
+        {
+          "providerId": "anthropic",
+          "modelId": "claude-sonnet-5-5",
+          "agents": ["claude-code", "codex"]
+        }
+      ],
+      "nativeApi": "anthropic-messages",
+      "modelRef": "anthropic/claude-sonnet-5-5"
+    },
+    {
+      "id": "anthropic/claude-haiku-5-5",
+      "name": "Haiku 5.5",
+      "status": "active",
+      "sortOrder": 9,
+      "routes": [
+        {
+          "providerId": "anthropic",
+          "modelId": "claude-haiku-5-5",
+          "agents": ["claude-code", "codex"]
+        }
+      ],
+      "nativeApi": "anthropic-messages",
+      "modelRef": "anthropic/claude-haiku-5-5"
     },
     {
       "id": "openai/gpt-5.6-sol",
@@ -2486,6 +2516,11 @@
     },
     {
       "providerId": "xd",
+      "modelIdPrefix": "openai-codex/gpt-",
+      "nativeApi": "openai-responses"
+    },
+    {
+      "providerId": "xd",
       "modelIdPrefix": "openai/gpt-",
       "nativeApi": "openai-responses"
     },
@@ -3319,6 +3354,33 @@
           ]
         }
       ]
+    },
+    {
+      "id": "anthropic/claude-sonnet-5-5",
+      "aliases": ["claude-sonnet-5-5"],
+      "defaults": {
+        "name": "Sonnet 5.5",
+        "group": "anthropic",
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000,
+        "efforts": ["low", "medium", "high", "xhigh", "max"],
+        "defaultEffort": "medium",
+        "supportsImageInput": true
+      }
+    },
+    {
+      "id": "anthropic/claude-haiku-5-5",
+      "aliases": ["claude-haiku-5-5"],
+      "defaults": {
+        "name": "Haiku 5.5",
+        "description": "Fastest for quick answers",
+        "group": "anthropic",
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000,
+        "efforts": ["low", "medium", "high", "xhigh", "max"],
+        "defaultEffort": "medium",
+        "supportsImageInput": true
+      }
     },
     {
       "id": "openai/gpt-5.6-sol",
@@ -5465,7 +5527,7 @@
     },
     {
       "id": "z-ai/glm-5.3",
-      "aliases": [],
+      "aliases": ["glm-5.3"],
       "defaults": {
         "name": "GLM-5.3",
         "description": "Zhipu GLM-5.3 agentic coding model; 1M context",

@@ -99,4 +99,3 @@ describe('Worker creation preferences', () => {
     });
   });
 });
-

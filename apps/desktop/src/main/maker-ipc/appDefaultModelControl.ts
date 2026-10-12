@@ -60,12 +60,13 @@ async function readSelection() {
   const providers = await getDesktopProviderService().listProviders({ allowSideEffects: false });
   assertOwner();
   const current = getSelectedNewMakerRoute(owner) ?? null;
-  const available = availableAppDefaultModels({ providers, currentRoute: current,
+  const inputs = { providers, currentRoute: current,
     tuning: (agent, providerId, model) => getNewMakerModelTuning(owner, agent, providerId, model),
     availableAgents: new Set((getMakerIfReady()?.listAvailableAgents() ?? []).map(agent => agent === 'claude-code' ? 'cc' : agent)),
     enabled: (agent, providerId, model) => isModelVisible(getModelVisibilityOverride(agent, providerId, model.id), model.defaultEnabled),
-  });
-  return { owner, assertOwner, current, available };
+  } satisfies Parameters<typeof availableAppDefaultModels>[0];
+  const available = availableAppDefaultModels(inputs);
+  return { owner, assertOwner, current, available, inputs };
 }
 
 export async function inspectAppDefaultModel() {
@@ -73,14 +74,14 @@ export async function inspectAppDefaultModel() {
   return { current, available };
 }
 
-export interface BotTaskModelSelection {
+export interface TaskModelSelection {
   id: string;
   effort?: string;
   fastMode?: boolean;
 }
 
 /** Resolve one per-task selection from the live catalog; never mutate picker/default preferences. */
-export async function resolveBotTaskModelSelection(selection: BotTaskModelSelection): Promise<BotModelRoute> {
+export async function resolveTaskModelSelection(selection: TaskModelSelection): Promise<BotModelRoute> {
   const { available } = await inspectAppDefaultModel();
   const option = available.find(entry => entry.id === selection.id);
   if (!option) throw new Error('任务模型已不可用，请重新查询可用模型');
@@ -96,13 +97,24 @@ export async function resolveBotTaskModelSelection(selection: BotTaskModelSelect
   };
 }
 
+/** Resolve legacy implicit sources using the ordinary default policy, without persisting changes. */
+export async function resolveAvailableTaskModels(routes: readonly BotModelRoute[]): Promise<Array<BotModelRoute | null>> {
+  const { available, inputs } = await readSelection();
+  return routes.map(route => {
+    const resolved = defaultBotModelChain({ providers: inputs.providers, providersLoading: false,
+      availableAgents: inputs.availableAgents, availableAgentsLoaded: true,
+      preferredRoute: route, isModelEnabled: inputs.enabled })[0];
+    if (!resolved) return null;
+    const entry = available.find(item => item.route.harness === resolved.harness
+      && item.route.model === resolved.model && item.route.providerId === resolved.providerId);
+    return entry && (!resolved.effort || entry.efforts.some(effort => effort === resolved.effort))
+      && (!resolved.fastMode || entry.supportsFastMode) ? resolved : null;
+  });
+}
+
 /** Check a saved full route without changing the application or teammate's primary model. */
-export async function validateBotTaskModel(route: BotModelRoute): Promise<boolean> {
-  const { available } = await inspectAppDefaultModel();
-  return available.some(entry => entry.route.harness === route.harness
-    && entry.route.model === route.model && entry.route.providerId === route.providerId
-    && (!route.effort || entry.efforts.some(effort => effort === route.effort))
-    && (!route.fastMode || entry.supportsFastMode));
+export async function validateTaskModel(route: BotModelRoute): Promise<boolean> {
+  return !!(await resolveAvailableTaskModels([route]))[0];
 }
 
 /** Wait for a fresh owner-fenced mirror after the real setter persisted the selected route. */

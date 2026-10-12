@@ -2,6 +2,7 @@ import ts from "typescript";
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
+  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -45,6 +46,7 @@ const captured = vi.hoisted(() => ({
   remoteModels: new Map<string, string>(),
   refreshAckMode: 'ok' as 'ok' | 'invalid',
   hasRefreshCommand: true,
+  failThinkingLevel: null as null | 'reject' | 'throw',
   requestHandler: undefined as
     | undefined
     | ((command: Record<string, unknown>) => Promise<{
@@ -93,6 +95,7 @@ vi.mock("../rpc-client.js", () => {
     PiRpcRequestTimeoutError,
     PiRpcProcess: class {
       isClosed = false;
+      private nativeSettings: Record<string, unknown> | undefined;
       constructor(opts: {
         onEvent: (event: Record<string, unknown>) => void;
         onExit: (info: {
@@ -120,6 +123,21 @@ vi.mock("../rpc-client.js", () => {
         captured.initialModel ??= argValue("--model");
         captured.runtimeProvider ??= captured.initialProvider;
         captured.runtimeModel ??= captured.initialModel;
+        if (!this.nativeSettings) {
+          const file = path.join(String(captured.env.PI_CODING_AGENT_DIR), 'settings.json');
+          const remote = captured.remoteModels.get(file)
+            ?? [...captured.remoteModels].find(([name]) => name.endsWith('/settings.json'))?.[1];
+          this.nativeSettings = JSON.parse(remote ?? (existsSync(file) ? readFileSync(file, 'utf8') : '{}'));
+        }
+        if (command.type === 'refresh_models' || command.type === 'set_compaction_reserve_tokens') {
+          return { success: false, error: `Unknown command: ${command.type}` };
+        }
+        if (command.type === 'set_thinking_level' && captured.failThinkingLevel === 'reject') {
+          return { success: false, error: 'mock reject' };
+        }
+        if (command.type === 'set_thinking_level' && captured.failThinkingLevel === 'throw') {
+          throw new Error('mock rpc timeout');
+        }
         const response = captured.requestHandler
           ? await captured.requestHandler(command)
           : command.type === "get_state"
@@ -136,12 +154,14 @@ vi.mock("../rpc-client.js", () => {
           const nonce = command.message.split(" ")[1];
           captured.onEvent?.({ type: "extension_ui_request", method: "input",
             title: "cindy:provider-refresh", id: "refresh-input", placeholder: JSON.stringify({ nonce }) });
+          const snapshot = JSON.parse(String(captured.responses.findLast((response) => response.id === 'refresh-input')?.value ?? '{}'));
           captured.onEvent?.({ type: "extension_ui_request", method: "input",
             title: "cindy:provider-refresh-ack", id: "refresh-ack",
-            placeholder: JSON.stringify(captured.refreshAckMode === 'invalid'
-              ? { nonce, ok: false, code: 'INVALID_PAYLOAD' } : { nonce, ok: true }) });
+            placeholder: JSON.stringify(captured.refreshAckMode === 'invalid' && snapshot.operation === 'refresh'
+              ? { nonce, ok: false, code: 'INVALID_PAYLOAD' } : { nonce, ok: true,
+                runtimeSettings: { version: '1.0.0', compaction: this.nativeSettings?.compaction ?? {} } }) });
         }
-        if (response.success && command.type === "refresh_models" &&
+        if (response.success && command.type === "get_available_models" &&
             !Array.isArray((response.data as { models?: unknown } | undefined)?.models)) {
           const modelFile = path.join(String(captured.env.PI_CODING_AGENT_DIR), "models.json");
           const remoteModelContent = captured.remoteModels.get(modelFile)
@@ -153,9 +173,6 @@ vi.mock("../rpc-client.js", () => {
           return { success: true, data: { aborted: false, errors: {}, models:
             Object.entries(configured.providers).flatMap(([provider, spec]) =>
               (spec.models ?? []).map((model) => ({ provider, id: model.id }))) } };
-        }
-        if (response.success && command.type === "set_compaction_reserve_tokens") {
-          return { success: true, data: { reserveTokens: command.reserveTokens ?? 16_384 } };
         }
         if (response.success && command.type === "get_commands" &&
             !Array.isArray((response.data as { commands?: unknown } | undefined)?.commands)) {
@@ -269,6 +286,7 @@ describe("Pi provider-aware model routing", () => {
     captured.remoteModels.clear();
     captured.refreshAckMode = 'ok';
     captured.hasRefreshCommand = true;
+    captured.failThinkingLevel = null;
     captured.requestHandler = undefined;
     agentHome = mkdtempSync(path.join(tmpdir(), "pi-provider-home-"));
     cwd = mkdtempSync(path.join(tmpdir(), "pi-provider-cwd-"));
@@ -328,6 +346,143 @@ describe("Pi provider-aware model routing", () => {
     expect(captured.requests.some(request => request.type === 'set_fast_mode')).toBe(false);
     await handle.close();
     expect(JSON.parse(query({ provider: 'relay', model: 'private-sol' })).fast).toBe(false);
+  });
+
+  it('re-asserts the session effort after a full-path model switch (pi resets it to the model default)', async () => {
+    const deps: AgentDeps = {
+      auth: {
+        getState: async () => ({ authenticated: true, identity: 'test', authSource: 'api-key' as const }),
+        triggerLogin: async () => ({ authenticated: true }),
+        logout: async () => {},
+        getAuthEnv: async () => ({}),
+      },
+      runtimeConfig: { endpoint: 'http://127.0.0.1:9' },
+      binaryPath: path.join(agentHome, 'pi'),
+      logger: noopLogger,
+      capabilityAdditions: {
+        availableModels: [
+          {
+            id: 'model-a',
+            displayName: 'Model A',
+            contextWindow: 200_000,
+            efforts: ['low', 'high', 'max'],
+            defaultEffort: 'high',
+          },
+          {
+            id: 'model-b',
+            displayName: 'Model B',
+            contextWindow: 200_000,
+            efforts: ['low', 'high', 'max'],
+            defaultEffort: 'high',
+          },
+        ],
+      },
+      resolvePiAgentHome: () => agentHome,
+      resolvePiNativeProviders: async () => ({
+        providers: [
+          { id: 'native-a', name: 'Native A', baseUrl: 'http://a.test', api: 'openai-completions', models: [{ id: 'model-a', reasoning: true, thinkingLevelMap: { low: 'low', medium: 'medium', high: 'high', max: 'max' } }] },
+          { id: 'native-b', name: 'Native B', baseUrl: 'http://b.test', api: 'openai-completions', models: [{ id: 'model-b', reasoning: true, thinkingLevelMap: { low: 'low', medium: 'medium', high: 'high', max: 'max' } }] },
+        ],
+        env: {},
+      }),
+    };
+    const agent = new PiAgent(deps);
+    const handle = await agent.startSession({
+      sessionId: 'model-switch-effort',
+      workingDir: cwd,
+      model: 'model-a',
+      providerId: 'native-a',
+      effort: 'max',
+    });
+    const thinkingCalls = () =>
+      captured.requests.filter((request) => request.type === 'set_thinking_level');
+    expect(thinkingCalls().at(-1)).toEqual({ type: 'set_thinking_level', level: 'max' });
+
+    // ① 带显式 effort 的跨模型切换：set_model 后下发该档。
+    const afterStartup = thinkingCalls().length;
+    await handle.setModel!('model-b', { providerId: 'native-b', effort: 'low' });
+    expect(thinkingCalls().slice(afterStartup)).toContainEqual({
+      type: 'set_thinking_level', level: 'low',
+    });
+
+    // ② 不带 effort 切回：恢复会话原档位（mutableEffort 已被①更新为 low）。
+    const beforeRestore = thinkingCalls().length;
+    await handle.setModel!('model-a', { providerId: 'native-a' });
+    expect(captured.requests.slice(beforeRestore)).toContainEqual({
+      type: 'set_model', provider: 'native-a', modelId: 'model-a',
+    });
+    expect(thinkingCalls().slice(beforeRestore)).toContainEqual({
+      type: 'set_thinking_level', level: 'low',
+    });
+
+    await handle.close();
+  });
+
+  it('effort 恢复失败不阻断已确认的模型切换，也不把被拒档位记成已生效', async () => {
+    const deps: AgentDeps = {
+      auth: {
+        getState: async () => ({ authenticated: true, identity: 'test', authSource: 'api-key' as const }),
+        triggerLogin: async () => ({ authenticated: true }),
+        logout: async () => {},
+        getAuthEnv: async () => ({}),
+      },
+      runtimeConfig: { endpoint: 'http://127.0.0.1:9' },
+      binaryPath: path.join(agentHome, 'pi'),
+      logger: noopLogger,
+      capabilityAdditions: {
+        availableModels: [
+          {
+            id: 'model-a',
+            displayName: 'Model A',
+            contextWindow: 200_000,
+            efforts: ['low', 'high', 'max'],
+            defaultEffort: 'high',
+          },
+          {
+            id: 'model-b',
+            displayName: 'Model B',
+            contextWindow: 200_000,
+            efforts: ['low', 'high', 'max'],
+            defaultEffort: 'high',
+          },
+        ],
+      },
+      resolvePiAgentHome: () => agentHome,
+      resolvePiNativeProviders: async () => ({
+        providers: [
+          { id: 'native-a', name: 'Native A', baseUrl: 'http://a.test', api: 'openai-completions', models: [{ id: 'model-a', reasoning: true, thinkingLevelMap: { low: 'low', medium: 'medium', high: 'high', max: 'max' } }] },
+          { id: 'native-b', name: 'Native B', baseUrl: 'http://b.test', api: 'openai-completions', models: [{ id: 'model-b', reasoning: true, thinkingLevelMap: { low: 'low', medium: 'medium', high: 'high', max: 'max' } }] },
+        ],
+        env: {},
+      }),
+    };
+    const agent = new PiAgent(deps);
+    const handle = await agent.startSession({
+      sessionId: 'model-switch-effort-restore-fail',
+      workingDir: cwd,
+      model: 'model-a',
+      providerId: 'native-a',
+      effort: 'max',
+    });
+
+    // ① set_thinking_level 超时/链路抛错：模型路由已确认，setModel 必须照常完成，
+    //    不能把已成功的切换变成失败（否则子代理快照收尾被跳过，pending 卡死委派）。
+    captured.failThinkingLevel = 'throw';
+    await expect(handle.setModel!('model-b', { providerId: 'native-b', effort: 'low' }))
+      .resolves.toBeUndefined();
+    expect(handle.getEffort!()).toBe('max');
+
+    // ② set_thinking_level 被拒：mutableEffort 不跟随未生效的目标档。
+    captured.failThinkingLevel = 'reject';
+    await handle.setModel!('model-a', { providerId: 'native-a', effort: 'low' });
+    expect(handle.getEffort!()).toBe('max');
+
+    // ③ 成功路径不受影响：恢复生效后 getEffort 报新档。
+    captured.failThinkingLevel = null;
+    await handle.setModel!('model-b', { providerId: 'native-b', effort: 'low' });
+    expect(handle.getEffort!()).toBe('low');
+
+    await handle.close();
   });
 
   it("uses providerId as the primary key when duplicate model ids exist", async () => {
@@ -656,6 +811,14 @@ describe("Pi provider-aware model routing", () => {
   });
 
   it("routes host subscriptions through PI native providers and wire model ids", async () => {
+    captured.requestHandler = async (command) => ({ success: true, data:
+      command.type === 'get_available_models' ? { models: [
+        { provider: 'anthropic', id: 'claude-opus-5', contextWindow: 200_000 },
+        { provider: 'xai', id: 'grok-4.5', contextWindow: 200_000 },
+        { provider: 'xai', id: 'grok-4.6', contextWindow: 200_000 },
+      ] } : command.type === 'get_state'
+        ? { sessionFile: '/mock/s.jsonl', model: { contextWindow: 200_000 } } : {},
+    });
     const authProviderIds: Array<string | null | undefined> = [];
     let resolveProxyProviderId: (() => string | null) | undefined;
     const proxyRegistrations: Array<{
@@ -892,6 +1055,7 @@ describe("Pi provider-aware model routing", () => {
       JSON.parse(readFileSync(path.join(configHome, "settings.json"), "utf8")),
     ).toEqual({
       transport: "sse",
+      compaction: { modelOverrides: expect.any(Object) },
       retry: {
         enabled: true,
         maxRetries: 6,
@@ -1597,7 +1761,7 @@ describe("Pi provider-aware model routing", () => {
     await expect(
       handle.setModel!("shared-model", { providerId: "xd" }),
     ).resolves.toBeUndefined();
-    expect(captured.requests.some((request) => request.type === "refresh_models")).toBe(true);
+    expect(captured.requests.some((request) => request.type === "get_available_models")).toBe(true);
     await handle.close();
   });
 
@@ -1685,7 +1849,7 @@ describe("Pi provider-aware model routing", () => {
     });
     includeXai = true;
     await handle.setModel!("xai/grok-4.6", { providerId: "xai" });
-    expect(captured.requests.some((request) => request.type === "refresh_models")).toBe(true);
+    expect(captured.requests.some((request) => request.type === "get_available_models")).toBe(true);
     expect(captured.requests.some((request) => request.type === "switch_session")).toBe(false);
     expect(captured.requests).toContainEqual({
       type: "set_model",
@@ -1724,11 +1888,11 @@ describe("Pi provider-aware model routing", () => {
       models: [
         {
           id: "grok-4.6",
+          contextWindow: 200_000,
           wireId: "grok-4.6",
           name: "Grok 4.6",
           api: "openai-responses" as const,
           catalogAddition: true,
-          contextWindow: 100_000,
         },
       ],
     };
@@ -1789,7 +1953,7 @@ describe("Pi provider-aware model routing", () => {
                   name: "Native A",
                   baseUrl: "http://a.test",
                   api: "openai-completions",
-                  models: [{ id: "wide-model" }, { id: "narrow-model" }],
+                  models: [{ id: "wide-model", contextWindow: 200_000 }, { id: "narrow-model", contextWindow: 200_000 }],
                 },
               ],
               env: { CINDY_PI_XAI_PROXY_API_KEY: "xai-proxy-placeholder" },
@@ -1858,7 +2022,7 @@ describe("Pi provider-aware model routing", () => {
           },
         };
       }
-      if (command.type === "refresh_models" && ++refreshCalls === 2) {
+      if (command.type === "get_available_models" && ++refreshCalls === 1) {
         return { success: false, error: "refresh failed" };
       }
       return { success: true, data: {} };
@@ -1956,6 +2120,7 @@ describe("Pi provider-aware model routing", () => {
         },
       ],
     };
+    let privatePrompts = 0;
     captured.requestHandler = async (command) => {
       if (command.type === "get_state") {
         return {
@@ -1966,7 +2131,7 @@ describe("Pi provider-aware model routing", () => {
           },
         };
       }
-      if (command.type === "prompt") {
+      if (command.type === "prompt" && ++privatePrompts === 2) {
         const modelsPath = path.join(
           captured.env.PI_CODING_AGENT_DIR as string,
           "models.json",
@@ -2062,6 +2227,7 @@ describe("Pi provider-aware model routing", () => {
         },
       ],
     };
+    let privatePrompts = 0;
     captured.requestHandler = async (command) => {
       if (command.type === "get_state") {
         return {
@@ -2072,7 +2238,7 @@ describe("Pi provider-aware model routing", () => {
           },
         };
       }
-      if (command.type === "prompt") {
+      if (command.type === "prompt" && ++privatePrompts === 2) {
         throw new Error("pi rpc timeout after 30000ms: prompt");
       }
       return { success: true, data: {} };
@@ -2248,7 +2414,9 @@ describe("Pi provider-aware model routing", () => {
               },
             },
           }
-        : { success: true, data: {} };
+        : command.type === 'get_available_models'
+          ? { success: true, data: { models: [{ provider: 'xai', id: 'grok-4.5', contextWindow: 500_000 }] } }
+          : { success: true, data: {} };
     const agent = new PiAgent({
       auth: {
         getState: async () => ({
@@ -2746,13 +2914,13 @@ describe("Pi provider-aware model routing", () => {
     );
 
     for (const [index, model] of ["grok-4.6", "xai/grok-4.6"].entries()) {
-      await expect(
-        agent.startSession({
+      const startupFailure = await agent.startSession({
           sessionId: `providerless-grok-proxy-not-ready-${index}`,
           workingDir: cwd,
           model,
-        }),
-      ).rejects.toBe(proxyNotReady);
+        }).catch((error: unknown) => error);
+      expect(startupFailure).toMatchObject({ name: 'AgentStartupStoppedError' });
+      expect((startupFailure as Error).cause).toBe(proxyNotReady);
     }
     expect(captured.args).toEqual([]);
   });
@@ -3787,6 +3955,55 @@ describe("Pi provider-aware model routing", () => {
     resolvePiNativeProviders,
   });
 
+  it.each([
+    { label: 'different live window', window: 400_000, action: 'rebuild' },
+    { label: 'matching live window', window: 128_000, action: 'hot' },
+    { label: 'missing live window', window: undefined, action: 'rebuild' },
+    { label: 'failed live catalog read', window: null, action: 'rebuild' },
+  ] as const)('checks an inherited model before switching: $label', async ({ window, action }) => {
+    const deps = byomDeps(async () => ({ providers: [
+      { id: 'native-a', name: 'Current', baseUrl: 'http://a.test', api: 'openai-completions',
+        models: [{ id: 'local-model', contextWindow: 200_000 }] },
+      { id: 'pi-native', sourceProviderId: 'native-account', name: 'Inherited', baseUrl: 'http://b.test',
+        inheritModels: true, modelIdAliases: { 'catalog-alias': 'catalog-model' },
+        models: [{ id: 'catalog-model', wireId: 'wire-model' }] },
+    ], env: {} }));
+    deps.runtimeConfig = { ...deps.runtimeConfig, piAutoCompactThresholdPct: 75 };
+    captured.requestHandler = async (command) => {
+      if (command.type === 'get_available_models') return window === null
+        ? { success: false, error: 'catalog unavailable' }
+        : { success: true, data: { models: [
+          { provider: 'unrelated', id: 'wire-model', contextWindow: 128_000 },
+          { provider: 'pi-native', id: 'wire-model', contextWindow: window },
+        ] } };
+      return { success: true, data: command.type === 'get_state'
+        ? { sessionFile: '/mock/s.jsonl', model: { contextWindow: captured.runtimeProvider === 'pi-native' ? window : 200_000 } }
+        : {} };
+    };
+    const handle = await new PiAgent(deps).startSession({
+      sessionId: 'inherited-window', workingDir: cwd, model: 'local-model', providerId: 'native-a',
+    });
+    const config = captured.env.PI_CODING_AGENT_DIR!;
+    const before = ['models.json', 'settings.json'].map(file => readFileSync(path.join(config, file), 'utf8'));
+    captured.requests.length = 0;
+    const preview = await handle.previewModelSwitch?.('catalog-alias', { providerId: 'native-account' });
+    expect(preview).toMatchObject({ action, targetContextWindow: window ?? null, windowVerified: false });
+    expect(captured.requests).toContainEqual({ type: 'get_available_models' });
+    if (action === 'rebuild') {
+      await expect(handle.setModel!('catalog-alias', { providerId: 'native-account' })).rejects.toThrow(/before selecting/);
+      expect(captured.requests.some(request => request.type === 'set_model')).toBe(false);
+      expect(['models.json', 'settings.json'].map(file => readFileSync(path.join(config, file), 'utf8'))).toEqual(before);
+      expect(captured.closes).toBe(0);
+      expect(handle.model).toBe('local-model');
+    } else {
+      await handle.setModel!('catalog-alias', { providerId: 'native-account' });
+      expect(captured.runtimeProvider).toBe('pi-native');
+      expect(captured.runtimeModel).toBe('wire-model');
+      expect(captured.closes).toBe(0);
+    }
+    await handle.close();
+  });
+
   it('refreshes a managed adapter when the same model ID gets a new descriptor', async () => {
     let window = 100_000;
     const deps = byomDeps(async () => ({ providers: [{
@@ -3806,7 +4023,7 @@ describe("Pi provider-aware model routing", () => {
     expect(captured.requests).toContainEqual(expect.objectContaining({
       type: 'prompt', message: expect.stringMatching(/^\/cindy-native-provider-refresh /),
     }));
-    expect(captured.requests.filter((request) => request.type === 'refresh_models')).toHaveLength(2);
+    expect(captured.requests.filter((request) => request.type === 'get_available_models')).toHaveLength(1);
     expect(captured.requests.some((request) => request.type === 'switch_session')).toBe(false);
     await handle.close();
   });
@@ -3840,7 +4057,7 @@ describe("Pi provider-aware model routing", () => {
     expect(await handle.previewModelSwitch?.('local-model', { providerId: 'native-a' }))
       .toMatchObject({ action: 'refresh' });
     await handle.setModel!('local-model', { providerId: 'native-a' });
-    const snapshot = JSON.parse(String(captured.responses.find(response => response.id === 'refresh-input')?.value));
+    const snapshot = JSON.parse(String(captured.responses.findLast(response => response.id === 'refresh-input' && JSON.parse(String(response.value)).operation === 'refresh')?.value));
     expect(snapshot.env.CINDY_PI_KEY_ACTIVE).toBe('running-endpoint-key');
     expect(snapshot.env).not.toHaveProperty('CINDY_PI_KEY_UNUSED');
     for (const alias of snapshot.aliases) {
@@ -3882,7 +4099,7 @@ describe("Pi provider-aware model routing", () => {
     expect(captured.closes).toBe(0);
     await handle.setModel!('local-model', { providerId: 'native-a' });
     expect(captured.requests.filter((request) => request.type === 'set_model')).toHaveLength(2);
-    expect(captured.requests.filter((request) => request.type === 'refresh_models')).toHaveLength(2);
+    expect(captured.requests.filter((request) => request.type === 'get_available_models')).toHaveLength(1);
     await handle.close();
   });
 
@@ -4070,6 +4287,8 @@ describe("Pi provider-aware model routing", () => {
     captured.requests.length = 0;
     await handle.setModel!("model-b", { providerId: "native-a" });
     expect(captured.requests.map((request) => request.type)).toEqual([
+      "get_commands",
+      "prompt",
       "set_model",
       "get_state",
     ]);
@@ -5654,13 +5873,14 @@ describe("Pi provider-aware model routing", () => {
       resolveRemotePiBinaryPath: async () => "/remote/pi",
       getRemotePiFileOps: () => ({
         mkdirp: async () => {},
-        writeFile: async (file) => {
+        writeFile: async (file, content) => {
+          captured.remoteModels.set(file, content);
           remoteWrittenFiles.push(file);
         },
         stat: async () => ({ isFile: true }),
         rm: async () => {},
         listDir: async () => [],
-        readFile: async () => { throw new Error("Unexpected remote file read in empty directory fixture"); },
+        readFile: async (file) => captured.remoteModels.get(file) ?? "",
         sha256File: async () => { throw new Error("Unexpected remote file hash in empty directory fixture"); },
       }),
       getRemotePiTransport: async (_hostId, opts) => {
@@ -5879,13 +6099,14 @@ describe("Pi provider-aware model routing", () => {
       resolveRemotePiBinaryPath: async () => "/remote/pi",
       getRemotePiFileOps: () => ({
         mkdirp: async () => {},
-        writeFile: async () => {
+        writeFile: async (file, content) => {
+          captured.remoteModels.set(file, content);
           remoteWrites += 1;
         },
         stat: async () => ({ isFile: true }),
         rm: async () => {},
         listDir: async () => [],
-        readFile: async () => { throw new Error("Unexpected remote file read in empty directory fixture"); },
+        readFile: async (file) => captured.remoteModels.get(file) ?? "",
         sha256File: async () => { throw new Error("Unexpected remote file hash in empty directory fixture"); },
       }),
       getRemotePiTransport: async (_hostId, opts) => {

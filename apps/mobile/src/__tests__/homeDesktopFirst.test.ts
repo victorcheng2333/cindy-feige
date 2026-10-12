@@ -230,7 +230,7 @@ describe('mobile home desktop-first surface', () => {
     expect(source).toContain('</HomeChromeFrost>');
     expect(source).toContain('<HomeNativeStackHeader');
     expect(source).toContain('onProjectDragStart={displayedProjectOrder === \'custom\'');
-    expect(source).toContain('projectOrder={displayedProjectOrder}');
+    expect(source).toContain('projectOrder: displayedProjectOrder,');
     expect(source).toContain('resolveDisplayedProjectOrder(');
     expect(source).not.toContain('projectOrder={selectedDeviceId ? hostProjectOrder : projectOrder}');
     expect(source).toContain('<HomeGlassMenuPanel');
@@ -276,13 +276,11 @@ describe('mobile home desktop-first surface', () => {
     expect(rootLayout).toContain('name="settings"');
     expect(rootLayout).toContain("animation: 'slide_from_left'");
     expect(source).toContain("label={t('devices.list.allConversations')}");
-    expect(source).toContain("label={t('devices.list.menu.groupByProject')}");
-    expect(source).toContain("label={t('devices.list.menu.groupDialogue')}");
+    // 显示菜单只有一份菜单模型(homeChromeMenus),原生下拉 / 自绘兜底都消费它,不再有平行的自绘面板。
+    expect(source).toContain('homeDisplayActionPatch(id, displayMenuState)');
+    expect(source).not.toContain('HomeDisplaySettingsModal');
     expect(source).not.toContain('testID="home.deviceMenu.remoteSettings"');
     expect(source).not.toContain('onOpenRemoteSettings');
-    expect(source).toContain('testID="home.deviceMenu.sort.priority"');
-    expect(source).toContain('testID="home.deviceMenu.projectOrder.custom"');
-    expect(source).toContain('testID="home.deviceMenu.status.archived"');
     // 注:首页分区构造逻辑(buildMixedHomeRows / buildGroupedHomeRows / buildHomeSections)
     // 已抽到 @/session/homeSections,并由 homeSections.test.ts 做行为测试,这里不再做源码字符串断言。
     expect(source).toContain('styles.sessionListRow');
@@ -399,7 +397,11 @@ describe('mobile home desktop-first surface', () => {
     expect(providerMarkSource).not.toContain('CLAUDE_AGENT_PATH');
     expect(providerMarkSource).not.toContain('CODEX_AGENT_FLOWER_PATH');
     expect(vendorIconSource).toContain("import { MobileAgentMark } from './MobileAgentMark';");
-    expect(vendorIconSource).toContain("agentKind={vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code'}");
+    // vendor → Agent mark 的映射要带上 pi,不能把 π 吞成 Claude 脸。
+    expect(vendorIconSource).toContain(
+      "const agentKind: AgentMarkKind = vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';",
+    );
+    expect(vendorIconSource).toContain('<MobileAgentMark agentKind={agentKind} color={color} size={size} />');
     expect(vendorIconSource).not.toContain('viewBox="136 137 282 158"');
     expect(vendorIconSource).not.toContain('transform="translate(');
     expect(vendorIconSource).toContain('Easing.inOut(Easing.ease)');
@@ -411,7 +413,7 @@ describe('mobile home desktop-first surface', () => {
     expect((homeSource.match(/useRemoteHomeStatusVersion\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
     expect(homeSource).toContain('useRemoteSessionMessagePreview(item.session.id)');
     expect(homeSource).toContain('useRemoteMessageVersion(normalizedSearchQuery.length > 0)');
-    expect(homeSource).toContain('useMinuteNow();');
+    expect(readSource('src/session/HomeSessionInfoMeta.tsx')).toContain('useMinuteNow();');
     expect(homeSource).toContain('<RadioTower');
     expect(homeSource).toContain('<UsersRound');
     expect(homeSource).not.toContain('<Puzzle');
@@ -558,22 +560,43 @@ describe('mobile home desktop-first surface', () => {
     expect(projectRowSource).not.toContain('<SquarePen');
     expect(projectRowSource).not.toContain('<Ellipsis');
     expect(projectRowSource).not.toContain('project.pendingInteractionCount');
+    // 收起组头汇总对齐桌面 ProjectNode:仅收起时计算,运行态走图标呼吸,右槽只放一颗点。
+    expect(desktopProjectNode).toContain('isCollapsed && lamp?.running');
+    expect(projectRowSource).toMatch(/collapsed\s*\?\s*resolveMobileCollapsedGroupStatus\(project\.sessions,/);
+    expect(projectRowSource).toContain('<SessionStatusPulse running={!!collapsedStatus?.running}>');
+    expect(projectRowSource).toContain('home.projectCollapsedStatus.');
+    // 组头按钮是单个无障碍元素:汇总状态必须挂在按钮自身,读屏才能读出。
+    expect(projectRowSource).toContain('accessibilityValue={collapsedStatusA11y ? { text: collapsedStatusA11y } : undefined}');
     expect(projectRowSource).not.toContain('project.subtitle');
     expect(sessionRowSource).toContain('titleTestIDPrefix = \'home.sessionRowTitle\'');
     expect(sessionRowSource).toContain('`home.sessionRowTitle.${item.session.id}`');
+    // 标签色球紧跟标题(与桌面侧栏一致):标题与色球同在一组,标题只取文字宽度,
+    // 不能再用 flex: 1 把色球挤到行尾贴着时间。
+    const titleCluster = sessionRowSource.slice(
+      sessionRowSource.indexOf('<View style={styles.sessionTitleCluster}>'),
+      sessionRowSource.indexOf('{sourceLabel ? ('),
+    );
+    expect(titleCluster).toMatch(/\{item\.title\}\s*<\/Text>\s*<TaskTagDots tags=\{item\.session\.tags\}/);
+    const listStyles = readSource('src/session/HomeListVisuals.tsx');
+    const titleStyle = listStyles.slice(listStyles.indexOf('  sessionTitle: {'), listStyles.indexOf('},', listStyles.indexOf('  sessionTitle: {')));
+    expect(titleStyle).toContain('flexShrink: 1');
+    expect(titleStyle).not.toContain('flex: 1');
     expect(sessionRowSource).toContain('ellipsizeMode="tail"');
     expect(sessionRowSource).toContain('numberOfLines={1}');
     expect(sessionRowSource).toContain('buildRemoteSessionCardPreview(');
     expect(sessionRowSource).toContain('useRemoteSessionMessagePreview(item.session.id)');
     expect(sessionRowSource).toContain('testID={`home.sessionRowPreview.${item.session.id}`}');
-    expect(sessionRowSource).toContain('const showPreviewLine = !!preview?.trim() || showSchedule || showPinned;');
+    expect(sessionRowSource).toContain('const showPreviewLine = !textMode && (!!group || !!preview?.trim() || showSchedule || showPinned);');
     expect(sessionRowSource).toContain('!showPreviewLine && styles.sessionListRowSingleLine');
     expect(sessionRowSource).toContain('!showPreviewLine && styles.sessionIconCellSingleLine');
     expect(sessionRowSource).toContain('{showPreviewLine ? (');
     expect(sessionRowSource).not.toContain('numberOfLines={2}');
     // 相对时间下沉到独家订阅分钟心跳的叶子组件(行主体 memo 化后由它单独保鲜,风暴修复)
-    expect(sessionRowSource).toContain('<SessionRelativeTime lastActivityAt={item.lastActivityAt}');
-    expect(source).toContain('formatRemoteSessionSidebarTime(lastActivityAt)');
+    // 时间槽改由「任务信息」渲染,时间仍是其中独家订阅分钟心跳的叶子组件。
+    expect(sessionRowSource).toContain('<HomeSessionInfoMeta item={item} textStyle={styles.sessionTime} />');
+    const infoMeta = readSource('src/session/HomeSessionInfoMeta.tsx');
+    expect(infoMeta).toContain('<SessionRelativeTime lastActivityAt={item.lastActivityAt}');
+    expect(infoMeta).toContain('formatRemoteSessionSidebarTime(lastActivityAt)');
     expect(sessionRowSource).toContain('item.pendingInteractionCount');
     expect(sessionRowSource).toContain('item.scheduleInfo?.unreadCount');
     expect(sessionRowSource).toContain('item.session.pinnedAt');
@@ -614,7 +637,7 @@ describe('mobile home desktop-first surface', () => {
     expect(source).toMatch(/startBoundedStartupRead\(\s*getCachedHomeListSnapshot\(homeCacheUserId\)/);
     expect(source).toContain('await syncInFlightRef.current;');
     expect(source).toMatch(/startBoundedStartupRead\(\s*loadDeviceIdentityCache\(\)/);
-    expect(source).toMatch(/startBoundedStartupRead<HomeViewPreferences \| null>\(\s*readHomeViewPreferences\(\)/);
+    expect(source).toMatch(/startBoundedStartupRead<HomeViewPreferences \| null>\(\s*readHomeViewPreferences\(preferenceOwnerRef\.current\)/);
     const preferenceHydration = source.slice(
       source.indexOf('// 冷启动恢复上次的首页视图偏好'),
       source.indexOf('// 卸载时取消所有延后中的 schedule-index hydration'),
@@ -742,7 +765,16 @@ describe('mobile home desktop-first surface', () => {
     expect(source).toContain('testID="home.remoteAccessGuide"');
     // 引导态没有可筛选的对话:表头退化为纯品牌标题(无下拉菜单),新建 FAB 不渲染。
     expect(source).toContain('{showRemoteGuide ? (');
-    expect(source).toContain("{newSessionInSystemBar || showRemoteGuide || taskSuggestionsPending || taskSuggestionsMode === 'empty' ? null : (");
+    expect(source).toContain("const newSessionEntryVisible = !showRemoteGuide && !taskSuggestionsPending && taskSuggestionsMode !== 'empty';");
+    expect(source).toContain('{newSessionInSystemBar || newSessionInHeader || !newSessionEntryVisible ? null : (');
+    // 临时任务列表抽屉不浮动新建按钮,新建放进抽屉顶栏;常驻列与首页不变。
+    expect(source).toContain('const headerNewSession = newSessionInHeader && newSessionEntryVisible;');
+    // 顶栏新建与浮动按钮走同一入口(openNewSession → guardedPush → 抽屉 runNavigation 先关再跳)。
+    expect(source).toContain('onPress={() => openNewSession()} testID="home.headerNewSessionButton">');
+    expect(source).toContain("if (run) run(() => push(href)); else push(href);");
+    // 抽屉与首页左上角都只打开系统菜单(HomeChromeDrawer 自有渲染测试),不再有关闭分支。
+    expect(source).toContain('onPress={openChromeMenu}\n          testID="home.chromeMenu"');
+    expect(source).not.toContain('onDismiss');
 
     const guideSource = readSource('src/components/RemoteAccessGuide.tsx');
     // 文案已 i18n 化,断言改查 zh-CN catalog(单一事实源);源码只保留结构/交互契约。

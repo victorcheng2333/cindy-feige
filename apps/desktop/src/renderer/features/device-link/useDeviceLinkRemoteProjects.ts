@@ -34,9 +34,11 @@ import { evictTaskTagCatalog } from '../task-tags/taskTagEvents';
 
 import { useEffect, useRef } from 'react';
 import { isSharedTaskPeer } from '@cindy/device-link';
+import { projectScheduleEvent } from '@cindy/maker-shared/schedule-events';
 import { useAuth } from '@/contexts/AuthContext';
 import { isDeviceLinkRemotePushCurrent } from '@/lib/remoteDataOwnerPushFence';
 import { createLogger } from '@/lib/logger';
+import { makerChatStore } from '@/lib/makerChatStore';
 import {
   requestRemoteSessionStatus,
   remoteProjectsStore,
@@ -509,6 +511,9 @@ export function useDeviceLinkRemoteProjects(
         if (!canBootstrap(deviceId, lifecycleEpoch)) return;
         await prefetchDeviceGitSafetySettings(deviceId);
         if (!canBootstrap(deviceId, lifecycleEpoch)) return;
+        // Bootstrap follows a gap in live pushes (start, reconnect). Read changed tasks ahead
+        // so opening them shows what the list already shows; one window does it for all.
+        if (windowRole === 'main') void makerChatStore.prefetchRemoteHistories(deviceId);
       }
       // 未被撤销(ok 或普通失败):清掉可能残留的「已撤销」标记(被控端恢复 → 自动接回的收尾)。
       revokedDevicesStore.clearRevoked(deviceId);
@@ -792,6 +797,10 @@ export function useDeviceLinkRemoteProjects(
         const watching =
           periodicReconcileActiveRef.current && (mainPresenceRef.current?.isActive() ?? true);
         if (!watching) return;
+        // 与手机同一份事件投影：运行诊断、静默提醒这类不改索引的事件不重拉，
+        // 否则 run 进行期间高频推送会反复取消在途的列表 / 索引读取。
+        const { refresh } = projectScheduleEvent(push.payload);
+        if (!refresh.sessionIndex && !refresh.scheduleList && !refresh.unreadSummary) return;
         void refreshRemoteDeviceSessions(push.deviceId, eligible.get(push.deviceId), { scope: 'schedule' }).then((result) => {
           if (result === 'revoked' && !disposed) handleRevoked(push.deviceId);
         });

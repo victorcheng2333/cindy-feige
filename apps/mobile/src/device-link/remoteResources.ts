@@ -21,7 +21,7 @@ import {
   type RemoteActionDescriptor,
   type RemoteResourceBlock,
 } from '@cindy/device-link';
-import { BOT_GROUP_CHAT_PRIMITIVE } from '@cindy/maker-shared/botGroupChat';
+import { BOT_GROUP_CHAT_PRIMITIVE, type BotGroupMemberView } from '@cindy/maker-shared/botGroupChat';
 
 import { normalizeRemoteActions, normalizeRemoteBlocks } from './remoteResourceContent';
 import type { RemoteInvoke } from './mobileMakerTransport';
@@ -42,6 +42,9 @@ const RICH_REMOTE_RESOURCE_PRIMITIVES: readonly string[] = [
   'routine-list',
   'routine-detail',
   BOT_GROUP_CHAT_PRIMITIVE,
+  'plugin-capabilities',
+  'plugin-card-actions',
+  'teammate-todos',
 ];
 
 /** Routines remain a desktop feature; other portable collections stay available. */
@@ -150,7 +153,7 @@ function normalizeRemoteStatus(value: unknown): RemoteResourceStatus | null {
 function normalizeRemoteAvatar(value: unknown): RemoteResourceAvatar | null {
   const record = recordOf(value);
   const kind = boundedString(record?.kind, 64);
-  const avatarValue = boundedString(record?.value, 4_096, true);
+  const avatarValue = boundedString(record?.value, 256_000, true);
   const fallbackText = boundedString(record?.fallbackText, 64, true);
   if (!record || !kind || avatarValue === null || fallbackText === null) return null;
   const color = boundedString(record.color, 64);
@@ -188,6 +191,11 @@ function normalizeRemoteDisplay(value: unknown): RemoteResourceDisplay | null {
     ...(normalizeRemoteTimestamp(record.lastReplyAt) !== undefined ? { lastReplyAt: record.lastReplyAt as number } : {}),
     ...(avatar ? { avatar } : {}),
     ...(status ? { status } : {}),
+    ...(Array.isArray(record.badges) ? { badges: record.badges.slice(0, 8).flatMap(value => {
+      const badge = recordOf(value);
+      const accessibilityLabel = normalizeRemoteText(badge?.accessibilityLabel, 512);
+      return accessibilityLabel ? [{ accessibilityLabel, tone: boundedString(badge?.tone, 64) ?? 'neutral' }] : [];
+    }) } : {}),
   };
 }
 
@@ -362,11 +370,13 @@ export async function getRemoteResource(
   ref: RemoteResourceRef,
   locale?: string,
   supportedPrimitives: readonly string[] = [],
+  query?: string,
 ): Promise<RemoteResource> {
   assertMobileRemoteCollectionSupported(ref.collectionId);
   const raw = await invoke<unknown>(target.deviceId, REMOTE_RESOURCE_GET_CHANNEL, [{
     client: { ...clientDescriptor(locale), primitives: [...MOBILE_REMOTE_RESOURCE_PRIMITIVES, ...supportedPrimitives] },
     ref,
+    ...(query ? {query} : {}),
   }]);
   const normalized = normalizeRemoteCollectionItem(raw, ref.collectionId);
   if (!normalized || normalized.ref.kind !== ref.kind || normalized.ref.id !== ref.id) {
@@ -433,7 +443,17 @@ function normalizeRemoteCollectionItem(
         return normalized ? [normalized] : [];
       })
     : [];
-  return { ref, display, links, revision };
+  const rawOrder = collectionId === 'plugins' ? recordOf(item.pluginOrder) : null;
+  const addedAt = rawOrder?.addedAt;
+  const recentIndex = rawOrder?.recentIndex;
+  const pluginOrder = rawOrder ? {
+    ...(typeof addedAt === 'number' && Number.isSafeInteger(addedAt) && addedAt > 0 ? { addedAt } : {}),
+    ...(typeof recentIndex === 'number' && Number.isSafeInteger(recentIndex) && recentIndex >= 0 && recentIndex < 100 ? { recentIndex } : {}),
+  } : undefined;
+  return { ref, display, links, revision,
+    ...(pluginOrder && Object.keys(pluginOrder).length ? { pluginOrder } : {}),
+    ...(collectionId === 'plugins' ? { actions: normalizeRemoteActions(item.actions) } : {}),
+  };
 }
 
 export function normalizeRemoteCollectionItems(
@@ -453,6 +473,10 @@ export interface HostedRemoteCollectionItem {
   key: string;
   host: RemoteResourceHostTarget;
   item: RemoteCollectionItem;
+  /** Local direct Chat Server projection; never changes the device-link wire display. */
+  lastReplySequence?: string;
+  /** Authorized server identities for direct group rows; display only, never cached as permissions. */
+  groupMembers?: readonly Pick<BotGroupMemberView, 'botId' | 'name' | 'avatar' | 'avatarUrl' | 'avatarColor'>[];
 }
 
 /** Replace successful host shards while retaining stale rows for transiently failed hosts. */

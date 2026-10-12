@@ -345,4 +345,3 @@ describe('filterUsageHistoryPayload', () => {
     expect(result?.days.map((row) => row.day)).toEqual(source.days.map((row) => row.day));
   });
 });
-

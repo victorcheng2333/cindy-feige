@@ -100,7 +100,7 @@ export function BotSettings({
   beforeCloseRef,
   initialPage = 'home',
 }: {
-  initialPage?: 'home' | 'memory' | 'capabilities';
+  initialPage?: 'home' | 'memory' | 'capabilities' | 'model';
   bot: BotProfile;
   beforeCloseRef?: { current: (() => Promise<boolean>) | null };
   onBack: () => void;
@@ -400,12 +400,8 @@ export function BotSettings({
     />
   );
 
-  if (
-    bot.invitation &&
-    bot.invitation.stage !== 'ready' &&
-    !(bot.invitation.stage === 'avatar' && bot.canonicalSessionId)
-  )
-    return <BotInvitationWelcome bot={bot} />;
+  const invitationPending = bot.invitation && bot.invitation.stage !== 'ready'
+    && !(bot.invitation.stage === 'avatar' && bot.canonicalSessionId);
 
   const settingsRows = [
     ['profile', Info, t('bots.profile.title')],
@@ -420,6 +416,15 @@ export function BotSettings({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8">
       <div className="mx-auto w-full max-w-xl">
+        {invitationPending && (page === 'home' || page === 'model') ? (
+          <BotInvitationWelcome bot={bot}
+            onConfigureModel={page === 'model' ? undefined : () => go('model')}
+            onRetry={async () => {
+              // A retry must use the confirmed selection, never race an autosave.
+              if (!await canLeave()) throw new Error('Bot settings have not been saved');
+              await retryBotInvitation(bot.id);
+            }} />
+        ) : null}
         <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
           {page !== 'home' ? (
             <div className="flex min-w-0 items-center gap-2">
@@ -520,6 +525,7 @@ export function BotSettings({
         <div hidden={page !== 'profile'} className="pt-3">
           <BotBasicProfileFields
             centeredAvatar
+            readOnly={!!invitationPending}
             value={{ name, description, avatar, avatarColor }}
             avatarControl={avatarPicker}
             composition={autosave.composition}
@@ -561,6 +567,7 @@ export function BotSettings({
         <div hidden={page !== 'personality'} className="pt-3">
           <Textarea
             aria-label={t('bots.profile.personality')}
+            readOnly={!!invitationPending}
             value={identitySource}
             onChange={(next) => {
               setIdentitySource(next);
@@ -625,6 +632,19 @@ export function BotSettings({
         {page === 'capabilities' && (
           <div>
             <BotCapabilitySettings
+              onConfigure={(kind, id) => {
+                void canLeave().then(ok => {
+                  if (!ok) return;
+                  const toolSettings: Record<string, string> = {
+                    browser: 'computer-use', computer: 'computer-use', android: 'computer-use',
+                    contacts: 'personalization&section=personalization.contacts',
+                    ssh: 'remote-control&section=remoteControl.ssh',
+                    slack: 'im-bot&section=imBot.cindy.slack', feishu_bot: 'im-bot', wechat: 'im-bot',
+                    'ios-simulator': 'ghosts',
+                  };
+                  navigate(kind === 'skill' ? '/skillhub/local' : `/settings?tab=${toolSettings[id ?? ''] ?? 'builtin-tools'}`);
+                });
+              }}
               expanded={page === 'capabilities'}
               bot={bot}
               capabilities={capabilities}
@@ -1009,19 +1029,8 @@ export function BotsHomeView() {
   )
     return (
       <main className="flex h-full items-center justify-center px-6" role="main">
-        {selectedBot.invitation.stage === 'failed' ? (
-          <Button
-            variant="secondary"
-            size="lg"
-            tone="quiet"
-            type="button"
-            onClick={() => void retryBotInvitation(selectedBot.id)}
-          >
-            {t('commonUi.retry')}
-          </Button>
-        ) : (
-          <Spinner size={20} />
-        )}
+        <BotInvitationWelcome bot={selectedBot}
+          onConfigureModel={() => navigate(`/bots/${selectedBot.id}?settings=1&settingsPage=model`)} />
       </main>
     );
 
