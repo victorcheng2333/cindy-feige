@@ -56,6 +56,35 @@ const chatStream = [
 ].map(frame => `data: ${JSON.stringify(frame)}\r\n\r\n`).join('') + 'data: [DONE]\r\n\r\n';
 
 describe('Claude Code custom provider translation', () => {
+  it.each([
+    ['openai-chat', false], ['openai-responses', false], ['openai-chat', true], ['openai-responses', true],
+  ] as const)('preserves Gemini budgets through a %s gateway (native serializer=%s)', async (protocol, native) => {
+    const model = 'google/gemini-4-argon';
+    const upstream = 'https://gateway.example/v1';
+    const api = protocol === 'openai-chat' ? 'openai-completions' : 'openai-responses';
+    const provider = buildUserProvider({ id: 'gateway-fixture', name: 'Gateway', runtimes: {
+      'claude-code': { baseUrl: upstream, wireProtocol: protocol, models: [{ id: model, name: model, api }] },
+    } });
+    const row = invocationModelRecord(provider.models['claude-code']![0], upstream, api)!;
+    const budget = '<total_tokens>14945031 tokens left</total_tokens>';
+    let sent: Record<string, unknown> | undefined;
+    const response = protocol === 'openai-chat' ? chatStream
+      : 'data: {"type":"response.completed","response":{"id":"r","status":"completed","output":[],"usage":{"input_tokens":0,"output_tokens":0}}}\n\n';
+    const result = await runBridge(protocol, true, response, (_url, init) => { sent = JSON.parse(String(init?.body)); },
+      { ...(native ? { model: row, nativeUpstream: upstream } : {}), efforts: [] }, 'low', false, {}, {
+        model, system: 'Stable policy.', messages: [{ role: 'user', content: 'Hello' },
+          { role: 'system', content: [{ type: 'text', text: budget, cache_control: { type: 'ephemeral' } }] }],
+      });
+    expect(result.status).toBe(200);
+    expect(result.body).toContain('message_stop');
+    const history = (sent?.messages ?? sent?.input) as Array<{ role: string; content: unknown }>;
+    const budgetMessages = history.filter(message => JSON.stringify(message).includes(budget));
+    expect(budgetMessages).toHaveLength(1);
+    expect(budgetMessages[0].role).toBe('user');
+    expect(JSON.stringify(history.filter(message => ['system', 'developer'].includes(message.role)))).not.toContain('total_tokens');
+    expect(JSON.stringify(sent?.instructions ?? '')).not.toContain('total_tokens');
+  });
+
   it.each(['google-vertex', 'google'] as const)('keeps appended Claude budgets out of %s system instructions without moving tool results', async provider => {
     type WireContent = { role: string; parts: Array<Record<string, unknown>> };
     const sent: Array<{ systemInstruction: unknown; contents: WireContent[]; tools: unknown }> = [];

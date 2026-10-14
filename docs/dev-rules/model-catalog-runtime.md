@@ -310,7 +310,7 @@ Claude Code 会在历史消息中追加独立的 `<total_tokens>数字 tokens le
 系统消息。将每次变化的预算一起提前合入 Google `systemInstruction` 会破坏稳定前缀。
 2026-10-14 经维护者确认，宿主桥仅对 Google / Vertex 的这类独立、非起始预算消息，
 保留原文和原位置，以 Google 支持的 user 消息承载。普通系统指令、含其他文字的混合消息、
-起始系统段及非 Google 路由保持原逻辑；不删预算、不改模型、不改工具配对或思考签名。
+起始系统段及非目标模型保持原逻辑；不删预算、不改模型、不改工具配对或思考签名。
 
 Pi 的 Google SDK 通过定向依赖 override 升至 `@google/genai@2.29.1`，不修改 Pi 二进制 pin。
 旧 SDK 也能读取隐式缓存，升级不是本次缓存问题的根因修复。
@@ -319,3 +319,30 @@ Pi 的 Google SDK 通过定向依赖 override 升至 `@google/genai@2.29.1`，�
 这是指定项目、Global / Argon 的受控验证，不保证所有请求命中率，也不代表安装版已经更新。
 回归覆盖两种 Google API 的出站前缀、工具结果顺序、非目标消息与缓存用量映射，见
 `claudeProviderBridge.test.ts`、`piProviderTransport.test.ts`、`vertexServiceAccountTransport.test.ts`。
+
+### Gemini 网关路径的同类预算问题
+
+原生 Google 桥修复不覆盖 XD / TapSvc 的 Anthropic 直通路径；直通只意味着 Cindy 不做
+Google 转换，不能据此认为网关不会把中段 system 提前合并。2026-10-14 维护者要求修复
+该路径后，新增共用 `model-compat/cindy/gemini-token-budget.ts`：对 `gemini-*` 或
+`google/gemini-*` 请求，只将已有 user/assistant 消息之后、内容精确为单条 token 预算的
+system 消息改为 user。保留原位置、原文及 block 元数据，不匹配混合指令，不改顶层 system。
+
+Claude 代理的转发 transform 与 `createClaudeProviderBridge` 入口都调用同一规则，因为
+localHandler 不运行转发 transform 链。Pi transport 的预算判定也覆盖以 Gemini ID 调用的
+兼容协议，防止 Responses 中的中段 developer 预算被重新提前。未命中返回 null，保留
+原请求字节；不改缓存开关、模型 ID、思考参数或网关服务端，不涉及其他品牌的同名文本。
+
+回归覆盖字符串和带 cache_control 的单 text block、连续历史、工具配对、默认/显式网关
+转发、Chat/Responses 两协议及原生 serializer、非目标消息与幂等性。见
+`model-compat/src/__tests__/gemini-token-budget.test.ts` 和 Desktop
+`geminiGatewayBudget.test.ts`、`claudeProviderBridge.test.ts`。
+
+2026-10-14 使用同一 TapSvc workspace 账号、`google/gemini-4-argon` 的真实合成请求验证：
+原始历史第二次请求缓存读为 0；应用共用改写后第二次缓存读 24,576、普通输入 4,417、输出 5。
+非流式响应的 `x-litellm-response-cost` 分别约为 USD 0.05804 与 0.0113416；这是该组请求的
+服务端报告值，不能用来推导所有型号、档位或时段的固定单价。
+费用展示另有数据缺口：同账号 `/v1/models` 不返回 Argon 报价；实际流式 `/v1/messages`
+最终 usage 只含 token，未提供费用，响应头费用分项为占位零值。不能把这些零值当作免费，
+也不能以读取非流式费用头宣称已修复 Claude Code 的流式费用展示。需服务端报价或最终费用
+契约与客户端接入共同验证。

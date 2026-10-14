@@ -17,6 +17,7 @@
  */
 
 import { createAttachmentRecovery } from './oversized-attachment-recovery.js';
+import { preserveGeminiTokenBudgetMessages } from '@cindy/model-compat';
 import {
   createAnthropicCompatProxy,
   createActiveStripTransform,
@@ -1212,6 +1213,10 @@ export async function ensureAnthropicCompatProxyReady(): Promise<void> {
           const sdkSessionId = headers['x-claude-code-session-id'];
           return sdkSessionId ? observeCcSessionId(sdkSessionId) : null;
         }),
+        // Forwarded Gemini requests (XD / Anthropic-compatible gateways) do not
+        // enter the local Google bridge. Normalize CC budgets before the gateway
+        // can hoist them into its own systemInstruction.
+        preserveGeminiTokenBudgetMessages,
         stripNonAnthropicFields,
       ],
       recoveryRules: [

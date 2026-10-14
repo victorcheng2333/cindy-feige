@@ -1,4 +1,5 @@
 import { vertexServiceAccountOptions, vertexArgonPayload } from '@cindy/model-providers';
+import { isGeminiModelId, isStandaloneClaudeTokenBudget } from '@cindy/model-compat';
 import { randomUUID, createHash } from 'node:crypto';
 import { reconcileOutboundReasoningEffort } from './outbound-reasoning-effort.js';
 import { withOpenCodeGoSessionHeader } from './opencode-go-session.js';
@@ -254,9 +255,9 @@ export function createPiProviderFetch(options: PiProviderTransportOptions): type
         // into Google's systemInstruction invalidates the reusable prompt prefix.
         // Google has no mid-conversation system role: retain only this exact
         // runtime-counter message at its original position, without rewriting it.
-        const inlineGoogleBudget = (model.api === 'google-vertex' || model.api === 'google-generative-ai')
+        const inlineGoogleBudget = (model.api === 'google-vertex' || model.api === 'google-generative-ai' || isGeminiModelId(model.id))
           && context.messages.length > 0
-          && /^<total_tokens>\d+ tokens left<\/total_tokens>$/.test(message.content.trim());
+          && isStandaloneClaudeTokenBudget(message.content);
         if (inlineGoogleBudget) {
           context.messages.push({ role: 'user', content: [{ type: 'text', text: message.content }], timestamp: 0 });
         } else {

@@ -1,4 +1,4 @@
-import { normalizeProviderRequest } from '@cindy/model-compat';
+import { normalizeProviderRequest, preserveGeminiTokenBudgetMessages } from '@cindy/model-compat';
 import { createHash } from 'node:crypto';
 import type { Effort, ProviderModelRecord } from '@cindy/model-providers';
 import { reconcileOutboundReasoningEffort } from './outbound-reasoning-effort.js';
@@ -155,7 +155,7 @@ export function createClaudeProviderBridge(options: {
     });
     return new Response(stream, { status: upstream.status, headers: { 'content-type': 'text/event-stream' } });
   };
-  return createResponsesHandler({
+  const handler = createResponsesHandler({
     providers: [{
       prefix: '', reasoningNamespace: claudeProviderReasoningNamespace(options.url, options.providerId), upstreamBase: options.url, wireProtocol: 'openai-responses',
       // The native branch rebuilds the SDK request from its own headers and never forwards
@@ -174,4 +174,9 @@ export function createClaudeProviderBridge(options: {
     }],
     fetchImpl: upstreamFetch,
   });
+  // Local handlers bypass the proxy transform chain, including for Gemini models
+  // exposed by a gateway through Chat / Responses rather than Google's API.
+  return { handle: args => handler.handle({ ...args,
+    parsedBody: preserveGeminiTokenBudgetMessages(args.parsedBody) ?? args.parsedBody,
+  }) };
 }
