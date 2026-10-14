@@ -3290,7 +3290,17 @@
         "groupLocal": "本機模型",
         "metaLocalRecommended": "推薦 · 在 Cindy 內下載",
         "metaLocalConnect": "連接已執行的本機服務",
-        "moreLocal": "更多本機服務"
+        "moreLocal": "更多本機服務",
+        "vertex": {
+          "chooseFile": "選擇服務帳戶 JSON",
+          "invalidFile": "無法讀取有效的 Google 服務帳戶 JSON 檔案",
+          "project": "專案 ID",
+          "location": "區域",
+          "useApiKey": "改用 API 金鑰",
+          "fileNote": "憑證保留在這台電腦的原始檔案中，請勿移動或刪除",
+          "configured": "已設定服務帳戶檔案驗證",
+          "serviceAccount": "服務帳戶檔案"
+        }
       },
       "local": {
         "title": "Ollama",

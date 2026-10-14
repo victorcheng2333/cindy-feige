@@ -6,12 +6,18 @@
 ## 本 fork 的个人打包约定（优先于下文通用交付流程）
 
 - 本 fork 主要供维护者自己使用，默认不向 upstream 提 PR。
-- 用户说「打包」时，直接在当前 checkout 执行 `pnpm package`；默认当前机器架构、
-  Global、版本无关包。明确要求中国大陆版时用 `pnpm package -- --region cn`。
+- 维护者的区域偏好：未指定区域时一律按中国大陆版处理，不主动处理国际版；只有明确
+  要求 Global／国际版时才使用它。本条优先于下文通用区域默认约定，由 Agent 显式传参落实。
+- 用户说「打包」时，直接在当前 checkout 执行 `pnpm package -- --region cn`；默认当前
+  机器架构、版本无关包。明确要求国际版时用 `pnpm package -- --region global`。
+- macOS 默认交付 **Developer ID 签名版，不做 Apple 公证**。基础打包完成后，必须按
+  `desktop-development.md` 的步骤用本机 Developer ID 证书重签并重新压缩；不能把基础入口
+  生成的 ad-hoc 包当作最终交付，也不需要为公证索取 Apple 账号或应用专用密码。
 - 单纯打包不先跑单测、覆盖率、typecheck、lint、全仓检查或独立 review，不为了打包
   创建分支、commit、push 或 PR，也不反复请求确认。允许打包当前未提交的改动。
-- 该入口跳过启动冒烟；保留构建必需的依赖、资源、数据库迁移文件
-  完整性校验及 macOS ad-hoc 签名。失败时针对实际构建错误修复，不扩展成全仓治理。
+- 该入口跳过启动冒烟；保留构建必需的依赖、资源、数据库迁移文件完整性校验，
+  macOS 最终执行 Developer ID 签名与严格签名校验。失败时针对实际构建错误修复，
+  不扩展成全仓治理。
 - 只有明确要求正式发布、提交／PR 或全面验证时，才进入对应交付门禁。
   打包成功只表示产物生成成功，不得声称测试已通过；返回实际产物路径。
 - 具体入口及产物见 `docs/dev-rules/desktop-development.md`「个人打包」。

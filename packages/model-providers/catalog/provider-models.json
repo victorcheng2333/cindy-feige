@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-22T00:00:00.000Z",
+  "generatedAt": "2026-10-14T01:59:42.115Z",
   "source": "pi",
   "providers": {
     "amazon-bedrock": [
@@ -15140,6 +15140,52 @@
               "off": null
             }
           }
+        }
+      },
+      {
+        "id": "gemini-4-argon",
+        "name": "Gemini 4 Argon",
+        "upstream": "https://{location}-aiplatform.googleapis.com",
+        "contextWindow": 1048576,
+        "maxOutput": 65536,
+        "modalities": {
+          "input": [
+            "text",
+            "image"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "supportsImageInput": true,
+        "reasoning": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "supportsToolCalls": true,
+        "reasoningRequired": true,
+        "nativeApi": "google-generative-ai",
+        "defaultEffort": "medium",
+        "execution": {
+          "pi": {
+            "api": "google-vertex",
+            "thinkingLevelMap": {
+              "off": null,
+              "minimal": null,
+              "low": "LOW",
+              "medium": "MEDIUM",
+              "high": "HIGH",
+              "xhigh": null,
+              "max": null
+            }
+          }
+        },
+        "cost": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.1
         }
       }
     ],

@@ -43,6 +43,7 @@ describe("Pi catalog sync upstream precedence", () => {
           "catalog-format.mjs",
           "openai-catalog-corrections.mjs",
           "xai-catalog-corrections.mjs",
+          "gemini-catalog-additions.mjs",
         ]) {
           cpSync(
             path.join(root, "tools/pi", script),

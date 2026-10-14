@@ -3290,7 +3290,17 @@
         "groupLocal": "ローカルモデル",
         "metaLocalRecommended": "おすすめ · Cindy 内でダウンロード",
         "metaLocalConnect": "起動中のローカルサーバーに接続",
-        "moreLocal": "その他のローカルサーバー"
+        "moreLocal": "その他のローカルサーバー",
+        "vertex": {
+          "chooseFile": "サービスアカウント JSON を選択",
+          "invalidFile": "有効な Google サービスアカウント JSON ファイルを読み込めませんでした",
+          "project": "プロジェクト ID",
+          "location": "ロケーション",
+          "useApiKey": "API キーに切り替え",
+          "fileNote": "認証情報はこのコンピューターの元のファイルに保存されています。移動や削除はしないでください。",
+          "configured": "サービスアカウントファイル認証が設定されています",
+          "serviceAccount": "サービスアカウントファイル"
+        }
       },
       "local": {
         "title": "Ollama",

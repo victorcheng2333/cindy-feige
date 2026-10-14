@@ -333,3 +333,6 @@ export { providerSetupLink } from './providerSetupLinks.js';
 export { providerPresetOAuth, providerPresetOAuthRuntimes, providerOAuthContract } from './providerPresetOAuth.js';
 
 export { alignModelApiRoute, providerWireProtocolForApi, providerBaseUrlForApi } from "./providerInterfaceRoutes.js";
+export { VERTEX_SERVICE_ACCOUNT_PREFIX, parseVertexServiceAccountReference, vertexServiceAccountEndpoint, vertexServiceAccountOptions } from './vertexServiceAccount.js';
+export type { VertexServiceAccountReference } from './vertexServiceAccount.js';
+export { vertexArgonPayload } from './vertexArgon.js';

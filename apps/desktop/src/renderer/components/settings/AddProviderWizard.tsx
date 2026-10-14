@@ -1,3 +1,5 @@
+import { vertexServiceAccountEndpoint } from '@cindy/model-providers';
+import type { VertexServiceAccountSelection } from '@/../shared/vertexServiceAccount';
 import { providerSetupLink, providerPresetOAuth, providerPresetOAuthRuntimes, buildUserProvider, isMimoTokenPlanPreset } from '@cindy/model-providers';
 import { bindProviderPresetRuntime, providerEndpointBindings, bindProviderEndpoint } from '@cindy/model-providers';
 /**
@@ -390,6 +392,24 @@ export function AddProviderWizard({
   // 预设表单态
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [vertexSelection, setVertexSelection] = useState<VertexServiceAccountSelection | null>(null);
+  const [vertexLocation, setVertexLocation] = useState('global');
+  const [vertexSelecting, setVertexSelecting] = useState(false);
+  const vertexActive = sel?.kind === 'preset' && sel.preset.id === 'google-vertex' && !!vertexSelection;
+  const setVertexRegion = (location: string) => {
+    setVertexLocation(location);
+    let endpoint = '';
+    try { endpoint = vertexServiceAccountEndpoint(location.trim()); } catch { /* Invalid region keeps Next disabled. */ }
+    setPresetBaseUrls({ 'claude-code': endpoint, codex: endpoint, pi: endpoint });
+  };
+  const chooseVertexFile = async () => {
+    setVertexSelecting(true);
+    try {
+      const selection = await window.electronAPI.maker.selectVertexServiceAccount();
+      if (selection) { setVertexSelection(selection); setApiKey(''); setVertexRegion(vertexLocation); }
+    } catch { toast.error(t('settings.providers.wizard.vertex.invalidFile')); }
+    finally { setVertexSelecting(false); }
+  };
   const [presetBaseUrls, setPresetBaseUrls] = useState<PresetBaseUrls>({});
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -705,6 +725,8 @@ export function AddProviderWizard({
       setName(presetDisplayName(preset, i18n.language));
       setApiKey('');
       setPresetBaseUrls({});
+      setVertexSelection(null);
+      setVertexLocation('global');
       setStep(2);
     },
     [i18n.language, onDone, providers, pickOauth],
@@ -1019,6 +1041,10 @@ export function AddProviderWizard({
     }
     setPicks(initial);
     setStep(3);
+    if (preset.id === 'google-vertex' && vertexSelection) {
+      setFetchState({ status: 'done', failed: false, empty: false });
+      return;
+    }
     setFetchState({ status: 'fetching' });
     const seq = ++fetchSeqRef.current;
     // 并行拉取**每个已配置 runtime** 的列模型端点:双 runtime 预设两端各自发现,
@@ -1220,7 +1246,7 @@ export function AddProviderWizard({
       failed: !results.some((r) => r.ok),
       empty: !results.some((r) => r.models.length > 0),
     });
-  }, [sel, apiKey, presetBaseUrls]);
+  }, [sel, apiKey, presetBaseUrls, vertexSelection]);
 
   /**
    * 零推荐模型的本机代理（例如 LiteLLM）若 `/models` 不可用或返回空清单，仍允许用户
@@ -1371,16 +1397,21 @@ export function AddProviderWizard({
         if (oauthDraft) oauthDraftRef.current = oauthDraft;
         return;
       }
-      await (oauthDraft ? updateCustomProvider : createCustomProvider)(
-        {
+      const config: CustomProviderConfig = {
           ...(oauthDraft ?? {}),
           id,
           name: name.trim() || presetDisplayName(preset, i18n.language),
           ...(preset.authMethod === 'none' ? { auth: { method: 'none' as const } } : {}),
           runtimes,
-        },
-        keys,
-      );
+      };
+      if (vertexActive && vertexSelection) {
+        const result = await window.electronAPI.maker.createVertexServiceAccountProvider(config, {
+          selectionId: vertexSelection.selectionId, project: vertexSelection.project, location: vertexLocation.trim(),
+        });
+        if (!result.ok) throw new Error('Vertex connection was not saved');
+      } else {
+        await (oauthDraft ? updateCustomProvider : createCustomProvider)(config, keys);
+      }
       toast.success(
         t('settings.providers.wizard.createdToast', {
           name: name.trim() || presetDisplayName(preset, i18n.language),
@@ -1394,7 +1425,7 @@ export function AddProviderWizard({
       savingRef.current = false;
       setSaving(false);
     }
-  }, [sel, picks, name, apiKey, presetBaseUrls, providers, onDone, t, i18n.language]);
+  }, [sel, picks, name, apiKey, presetBaseUrls, providers, onDone, t, i18n.language, vertexActive, vertexSelection, vertexLocation]);
 
   // ── 步骤指示 ─────────────────────────────────────────────────────────
   // 目录步默认按完整路径显示三步(选择供应商 → 连接 → 选择模型);选中真的
@@ -1447,7 +1478,7 @@ export function AddProviderWizard({
   const presetCanContinue =
     sel?.kind === 'preset' &&
     presetBaseUrlsValid &&
-    (!presetNeedsApiKey || apiKey.trim().length > 0);
+    (!presetNeedsApiKey || apiKey.trim().length > 0 || vertexActive);
 
   return (
     <Dialog.Root open={dialog.open} onOpenChange={(open) => { if (!open) handleClose(); }}>
@@ -1965,7 +1996,29 @@ export function AddProviderWizard({
                   {t(`settings.providers.wizard.setupLink.${providerSetupLink(sel.preset)!.kind}`)}
                 </a>
               )}
-              {presetNeedsApiKey ? (
+              {sel.preset.id === 'google-vertex' && (
+                <div className="flex flex-col gap-2">
+                  <Button variant="secondary" disabled={vertexSelecting} onClick={chooseVertexFile}>
+                    {t('settings.providers.wizard.vertex.chooseFile')}
+                  </Button>
+                  {vertexSelection && <>
+                    <InfoLine text={vertexSelection.fileName} />
+                    <InfoLine text={t('settings.providers.wizard.vertex.fileNote')} />
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-12" style={{ color: 'var(--text-secondary)' }}>{t('settings.providers.wizard.vertex.project')}</span>
+                      <SettingsTextInput value={vertexSelection.project} onChange={project => setVertexSelection({ ...vertexSelection, project })} size="md" mono />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-12" style={{ color: 'var(--text-secondary)' }}>{t('settings.providers.wizard.vertex.location')}</span>
+                      <SettingsTextInput value={vertexLocation} onChange={setVertexRegion} size="md" mono />
+                    </label>
+                    <Button variant="secondary" onClick={() => { setVertexSelection(null); setPresetBaseUrls({}); }}>
+                      {t('settings.providers.wizard.vertex.useApiKey')}
+                    </Button>
+                  </>}
+                </div>
+              )}
+              {!vertexActive && (presetNeedsApiKey ? (
                 <div className="flex flex-col gap-1.5">
                   <label className="text-12 font-medium" style={{ color: 'var(--text-secondary)' }}>
                     {t('settings.providers.custom.fields.apiKey')}
@@ -1985,9 +2038,9 @@ export function AddProviderWizard({
                 </div>
               ) : (
                 <InfoLine text={t('settings.providers.wizard.noAuthNote')} />
-              )}
+              ))}
               <div className="flex flex-col gap-2">
-                {presetAgents.map((agent) => {
+                {!vertexActive && presetAgents.map((agent) => {
                   const rt = sel.preset.runtimes[agent];
                   if (rt?.baseUrlEditable) {
                     const value = presetRuntimeBaseUrl(sel.preset, agent, presetBaseUrls);

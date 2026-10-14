@@ -4626,3 +4626,21 @@ it('preserves the actual Vertex API through the probe IPC and rejects unknown SD
     { kind: 'adhoc', spec: { ...spec, api: 'invented-sdk' } })).rejects.toThrow(/INVALID_PARAMS/);
   expect(deps.testConnection).toHaveBeenCalledOnce();
 });
+
+it('rejects forged Vertex references even with extra IPC arguments or surrounding whitespace', async () => {
+  const harness = new IpcHarness();
+  const deps = makeDeps();
+  registerProviderHandlers(harness, deps);
+  const config: CustomProviderConfig = { id: 'vertex-test', name: 'Vertex', runtimes: { pi: {
+    catalogPresetId: 'google-vertex', baseUrl: 'https://aiplatform.googleapis.com', wireProtocol: 'google-generative-ai',
+    models: [{ id: 'gemini-fixture', name: 'Gemini', api: 'google-vertex' }],
+  } } };
+  await expect(harness.invoke(MAKER_INVOKE.PROVIDER_CUSTOM_CREATE, config, { pi: ' cindy-vertex-service-account-v1:{} ' }, {}, true)).rejects.toThrow(/PERMISSION_DENIED/);
+  await expect(harness.invoke(MAKER_INVOKE.PROVIDER_VERTEX_CREATE, config, { selectionId: 'forged', project: 'project-test', location: 'global' })).rejects.toThrow(/INVALID_PARAMS/);
+  await expect(harness.invoke(MAKER_INVOKE.PROVIDER_TEST_CONNECTION, { kind: 'adhoc', spec: {
+    agent: 'pi', authMethod: 'apiKey', api: 'google-vertex', baseUrl: 'https://aiplatform.googleapis.com', modelId: 'gemini-fixture',
+    headers: { authorization: 'Bearer cindy-vertex-service-account-v1:{}' },
+  } })).rejects.toThrow(/INVALID_PARAMS/);
+  expect(deps.storeCustomProviderKey).not.toHaveBeenCalled();
+  expect(deps.testConnection).not.toHaveBeenCalled();
+});

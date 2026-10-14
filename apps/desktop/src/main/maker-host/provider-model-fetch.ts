@@ -1,3 +1,4 @@
+import { parseVertexServiceAccountReference } from '@cindy/model-providers';
 import { collectModelDiscoveryPages } from './model-discovery-pages.js';
 import type { DiscoveredModel } from '@cindy/model-providers';
 /**
@@ -245,6 +246,9 @@ export async function fetchProviderModels(
   spec: ProviderModelsFetchSpec,
   fetchImpl: typeof fetch = outboundFetch,
 ): Promise<ProviderModelsFetchResult> {
+  if (parseVertexServiceAccountReference(spec.apiKey)) {
+    return { ok: false, code: 'UNKNOWN', detail: 'Use the Vertex model catalog for service account connections' };
+  }
   if (
     spec.authMethod === 'none' &&
     (!isLoopbackProviderUrl(spec.baseUrl) ||

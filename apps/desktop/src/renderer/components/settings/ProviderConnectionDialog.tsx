@@ -1,3 +1,4 @@
+import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
 import { useDialogExit } from '@/hooks/useDialogExit';
 import { WINDOW_DRAG_STYLE, WINDOW_NO_DRAG_STYLE } from '@/components/layout/windowDrag';
 import { providerEndpointBindings, canonicalProviderEndpoint, BUNDLED_CATALOG, mergeModelMetadata } from '@cindy/model-providers';
@@ -2109,7 +2110,9 @@ export function ProviderConnectionDialog({
               }}
               options={(['apiKey', 'oauth', 'none'] as const).map((mode) => ({
                 value: mode,
-                label: t(`settings.providers.custom.authMode.${mode}`),
+                label: mode === 'apiKey' && f.apiKey.startsWith(VERTEX_SERVICE_ACCOUNT_PREFIX)
+                  ? t('settings.providers.wizard.vertex.serviceAccount')
+                  : t(`settings.providers.custom.authMode.${mode}`),
               }))}
             />
             {authMode === 'oauth' && (
@@ -2333,7 +2336,10 @@ export function ProviderConnectionDialog({
             )}
 
             {/* API 密钥（OAuth 形态隐藏——鉴权走 Runner 的 Bearer，不收集 key） */}
-            {authMode === 'apiKey' && (
+            {authMode === 'apiKey' && f.apiKey.startsWith(VERTEX_SERVICE_ACCOUNT_PREFIX) && (
+              <p className="text-12" style={{ color: 'var(--text-secondary)' }}>{t('settings.providers.wizard.vertex.configured')}</p>
+            )}
+            {authMode === 'apiKey' && !f.apiKey.startsWith(VERTEX_SERVICE_ACCOUNT_PREFIX) && (
               <div className="flex flex-col gap-[7px]">
                 <FormField
                   id={fieldId(`${activeTab}:apiKey`)}

@@ -1,3 +1,4 @@
+import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,6 +24,7 @@ function bridge() {
   const handlers = new Map<string, Handler>();
   const log = { error: vi.fn(), debug: vi.fn(), warn: vi.fn() };
   const deps = {
+    VERTEX_SERVICE_ACCOUNT_PREFIX,
     ipcMain: { handle: (channel: string, handler: Handler) => { handlers.set(channel, handler); } },
     isRendererAccessibleSafeStorageKey, isCustomProviderRuntimeKeyStorageKey,
     assertTrustedAppRendererEvent: vi.fn(),
@@ -81,4 +83,10 @@ describe('generic safeStorage companion boundary', () => {
     expect(api.safeStorage.encryptString).toHaveBeenCalledTimes(1);
     expect(api.safeStorage.decryptString).toHaveBeenCalledTimes(1);
   });
+});
+
+it('rejects forged service account file references through generic secret storage', async () => {
+  const h = bridge();
+  expect(await h.invoke('store', customProviderSecretStorageKey('vertex', 'pi'), VERTEX_SERVICE_ACCOUNT_PREFIX + '{}')).toBe(false);
+  expect(h.safeStorage.encryptString).not.toHaveBeenCalled();
 });

@@ -559,6 +559,10 @@ export function buildUserProvider(
             ? providerPresetModelRecord(rt.catalogPresetId, m.id) : undefined)
           ?? (followsPreset && sameRoute && m.api && presetModel?.api === m.api
             ? providerPresetModelRecord(preset?.id, m.id, m.api) : undefined)
+          // A newer bundled model can precede the server preset's model list.
+          // Only the bound single-API preset may supply that exact model record.
+          ?? (followsPreset && !m.api && !m.piApi && !m.route && presetApi
+            ? providerPresetModelRecord(preset?.id, m.id, presetApi) : undefined)
           ?? providerModelGenerationRecord(m.id, m.route?.baseUrl ?? resolvedBaseUrl, m.api ?? m.piApi ?? wire, followsPreset ? preset?.id : undefined)
         : undefined;
       // Existing catalog identities keep their established execution path. A

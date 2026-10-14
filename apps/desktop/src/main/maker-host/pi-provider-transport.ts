@@ -1,3 +1,4 @@
+import { vertexServiceAccountOptions, vertexArgonPayload } from '@cindy/model-providers';
 import { randomUUID, createHash } from 'node:crypto';
 import { reconcileOutboundReasoningEffort } from './outbound-reasoning-effort.js';
 import { withOpenCodeGoSessionHeader } from './opencode-go-session.js';
@@ -200,6 +201,7 @@ function nativeThinkingLevel(requested: unknown, row: ProviderModelRecord, model
 function nativeInvocationModel(options: PiProviderTransportOptions, modelId: string): Model<Api> {
   const row = options.row;
   const destination = options.upstream ?? row.upstream;
+  vertexServiceAccountOptions(options.apiKey, row.execution.pi.api, destination);
   assertHostCredentialEndpoint(row.execution.pi.api, destination, options.apiKey);
   const model: Model<Api> = { id: modelId, name: row.name, provider: providerModelAdapterId(row) ?? options.providerId,
     api: row.execution.pi.api, baseUrl: destination, contextWindow: row.contextWindow ?? 200_000,
@@ -222,12 +224,15 @@ export async function probePiProvider(options: PiProviderTransportOptions, signa
   const adapter = adapters[model.api];
   if (!adapter) throw new Error('Native API is not supported by the bundled Pi adapter');
   const cloudflare = model.provider === 'cloudflare-ai-gateway';
-  return adapter.streamSimple(model, { messages: [{ role: 'user', content: 'ping', timestamp: 0 }] }, {
+  const vertex = vertexServiceAccountOptions(options.apiKey, model.api, model.baseUrl);
+  return adapter.streamSimple(vertex ? { ...model, baseUrl: '' } : model, { messages: [{ role: 'user', content: 'ping', timestamp: 0 }] }, {
     apiKey: cloudflare ? undefined : options.apiKey,
     env: options.env,
+    ...vertexServiceAccountOptions(options.apiKey, model.api, model.baseUrl),
     headers: cloudflare ? cloudflareGatewayHeaders(options.apiKey, options.headers) : options.headers,
     ...(!['google-generative-ai', 'google-vertex', 'bedrock-converse-stream'].includes(model.api)
       ? { fetch: options.fetchImpl } : {}),
+    ...(model.api === 'google-vertex' && model.id === 'gemini-4-argon' ? { onPayload: (payload: unknown) => vertexArgonPayload(payload) } : {}),
     signal, maxRetries: 0, maxTokens: Math.min(16, model.maxTokens),
   }).result();
 }
@@ -245,7 +250,18 @@ export function createPiProviderFetch(options: PiProviderTransportOptions): type
     const toolNames = new Map<string, string>();
     for (const message of converted.request.messages) {
       if (message.role === 'system' || message.role === 'developer') {
-        context.systemPrompt = [context.systemPrompt, message.content].filter(Boolean).join('\n\n');
+        // Claude's per-call token budget is appended mid-conversation. Hoisting it
+        // into Google's systemInstruction invalidates the reusable prompt prefix.
+        // Google has no mid-conversation system role: retain only this exact
+        // runtime-counter message at its original position, without rewriting it.
+        const inlineGoogleBudget = (model.api === 'google-vertex' || model.api === 'google-generative-ai')
+          && context.messages.length > 0
+          && /^<total_tokens>\d+ tokens left<\/total_tokens>$/.test(message.content.trim());
+        if (inlineGoogleBudget) {
+          context.messages.push({ role: 'user', content: [{ type: 'text', text: message.content }], timestamp: 0 });
+        } else {
+          context.systemPrompt = [context.systemPrompt, message.content].filter(Boolean).join('\n\n');
+        }
       } else if (message.role === 'user') {
         const content: Array<TextContent | ImageContent> = typeof message.content === 'string'
           ? [{ type: 'text', text: message.content }] : message.content.map(part => {
@@ -306,8 +322,12 @@ export function createPiProviderFetch(options: PiProviderTransportOptions): type
     const routeHeaders = withOpenCodeGoSessionHeader(options.headers, {
       providerId: options.providerId, catalogPresetId: options.catalogPresetId, upstream: model.baseUrl, sessionId,
     });
-    const events = adapter.streamSimple(model, context, {
+    const vertex = vertexServiceAccountOptions(options.apiKey, model.api, model.baseUrl);
+    // Pi treats an explicit base URL as collection-scoped and drops projects/locations.
+    // For ADC use the SDK's official endpoint derived from the validated location.
+    const events = adapter.streamSimple(vertex ? { ...model, baseUrl: '' } : model, context, {
       apiKey: cloudflareGateway ? undefined : options.apiKey, env: options.env,
+      ...vertexServiceAccountOptions(options.apiKey, model.api, model.baseUrl),
       headers: cloudflareGateway ? cloudflareGatewayHeaders(options.apiKey, routeHeaders) : routeHeaders,
       ...(sessionId ? { sessionId } : {}),
       // Pi's Google SDK rejects injected fetch. Its native transport must be used; all other
@@ -315,6 +335,8 @@ export function createPiProviderFetch(options: PiProviderTransportOptions): type
       ...(!['google-generative-ai', 'google-vertex', 'bedrock-converse-stream'].includes(model.api)
         ? { fetch: diagnosticFetch } : {}),
       signal, maxRetries: 0,
+      ...(model.api === 'google-vertex' && model.id === 'gemini-4-argon'
+        ? { onPayload: (payload: unknown) => vertexArgonPayload(payload, nativeThinkingLevel(request.reasoning?.effort, options.row, model)) } : {}),
       ...(options.row.supportsFastMode === true && request.service_tier === 'priority' &&
         ['openai-responses', 'azure-openai-responses', 'openai-completions'].includes(model.api)
         ? { onPayload: (payload: unknown) => payload && typeof payload === 'object' && !Array.isArray(payload)

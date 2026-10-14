@@ -297,6 +297,8 @@ beforeEach(() => {
   testI18n.language = 'zh-CN';
   (window as unknown as { electronAPI: unknown }).electronAPI = {
     maker: {
+      selectVertexServiceAccount: vi.fn(async () => ({ selectionId: 'opaque-selection', fileName: 'service.json', project: 'project-test' })),
+      createVertexServiceAccountProvider: vi.fn(async () => ({ ok: true })),
       llamaCppEnsure: vi.fn(async () => undefined),
       llamaCppStatus: vi.fn(async () => ({ installed: false, supported: true, running: false, models: [] })),
       llamaCppInstall: vi.fn(async () => undefined),
@@ -744,6 +746,29 @@ describe('AddProviderWizard — preset 直达', () => {
     expect(inputs).toHaveLength(2);
     fireEvent.change(inputs[0], { target: { value: 'https://myres.openai.azure.com/openai/v1' } });
     expect(screen.getAllByDisplayValue('https://myres.openai.azure.com/openai/v1')).toHaveLength(2);
+  });
+
+  it('configures Vertex from a file without API key input or unauthenticated discovery', async () => {
+    const preset = { id: 'google-vertex', name: 'Google Vertex AI', runtimes: {
+      pi: { baseUrl: 'https://{location}-aiplatform.googleapis.com', baseUrlEditable: true,
+        wireProtocol: 'google-generative-ai' as const, models: [{ id: 'gemini-fixture', name: 'Gemini', piApi: 'google-vertex' as const }] },
+    } };
+    vi.mocked(window.electronAPI.maker.listProviderPresets).mockResolvedValueOnce({ presets: [preset] });
+    renderWizard('google-vertex');
+    fireEvent.click(await screen.findByText('settings.providers.wizard.vertex.chooseFile'));
+    await screen.findByDisplayValue('project-test');
+    expect(screen.queryByPlaceholderText('sk-…')).toBeNull();
+    const next = screen.getByText('settings.providers.wizard.next').closest('button')!;
+    expect(next.disabled).toBe(false);
+    fireEvent.click(next);
+    await screen.findByText('Gemini');
+    expect(window.electronAPI.maker.fetchProviderModels).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('settings.providers.wizard.finish'));
+    await waitFor(() => expect(window.electronAPI.maker.createVertexServiceAccountProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ runtimes: { pi: expect.objectContaining({ catalogPresetId: 'google-vertex', baseUrl: 'https://aiplatform.googleapis.com' }) } }),
+      { selectionId: 'opaque-selection', project: 'project-test', location: 'global' },
+    ));
+    expect(createCustomProvider).not.toHaveBeenCalled();
   });
 
   it('accepts the official Vertex global host and rejects an unrelated host on the Vertex template', async () => {

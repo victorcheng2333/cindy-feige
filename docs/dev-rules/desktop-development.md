@@ -7,18 +7,38 @@
 
 ## 个人打包
 
-本 fork 默认供个人使用。用户说「打包」时直接运行：
+本 fork 默认供个人使用。用户说「打包」时先运行基础构建：
 
 ```bash
-pnpm package
+pnpm package -- --region cn
 ```
 
 根入口调用 `package-desktop.mjs --local`，默认只打当前 Node 架构（macOS 不再连打
-ARM 和 Intel），区域默认 Global；中国大陆版用 `pnpm package -- --region cn`。
+ARM 和 Intel）。本 fork 的维护者未指定区域时按中国大陆版处理，Agent 必须显式传
+`--region cn`；只有明确要求国际版才传 `--region global`。底层脚本省略区域时仍默认
+Global，因此不能省略参数来执行本 fork 的个人打包。
 无需先提交代码或创建 PR，也不前置单测、覆盖率、typecheck、lint、独立 review。
 
-个人模式跳过 packaged smoke，不使用发布证书或 Apple 公证；
-macOS 保留 ad-hoc 签名。依赖准备、编译、资源和迁移文件完整性检查照常执行。
+个人模式跳过 packaged smoke。依赖准备、编译、资源和迁移文件完整性检查照常执行。
+**macOS 默认交付 Developer ID 签名版，不做 Apple 公证**；不索取公证凭据，也不因
+缺少公证凭据改交 ad-hoc 包。现有 `pnpm package` 基础入口仍先生成 ad-hoc 包，
+Agent 必须完成下述签名收尾后才算打包完成：
+
+1. 核对 `security find-identity -v -p codesigning` 中的可用 Developer ID Application
+   身份。本机已验证可用的是 `Developer ID Application: Tools UG (KQY8A3BNVG)`，
+   Team ID 为 `KQY8A3BNVG`；证书不可用时如实报告，不静默降级。
+2. 核对 `apps/desktop/out/Cindy-darwin-<arch>/Cindy.app` 的 bundle ID；中国大陆版
+   必须为 `com.xd.cindycn`。复用 `apps/desktop/scripts/ci/lib.mjs` 导出的
+   `signMacAppWithIdentity`，传入基础构建生成的 `release/build-helper.entitlements`、
+   `release/build-main.entitlements`、上述签名身份与目标架构，逐层签名原生组件、
+   Helper、Framework 和主应用。该函数执行 `codesign --verify --deep --strict`。
+3. 签名通过后用 `ditto -c -k --keepParent` 重新压缩 `.app`，中国大陆版最终文件名为
+   `cindy-cn-unversioned-<arch>-developer-id.zip`，存入下述 `cn` 产物目录。
+   校验 ZIP 完整性、包内 bundle ID 和 Developer ID 证书链；交付新签名包的路径。
+   若保存签名包元数据，单独记录其 SHA256、大小、区域、源码提交、签名身份及
+   `notarized: false`，不要沿用基础 ad-hoc ZIP 的哈希或签名状态。
+
+Developer ID 签名不等于 Apple 公证，也不代表远程控制已经实机验收；交付时如实说明。
 版本固定为既有的 `0.0.0` 本地包，不参与自动更新；要更新自己的安装请重新打包。
 
 产物位于 `apps/desktop/release/artifacts/<region>/unversioned/<platform>-<arch>/`：

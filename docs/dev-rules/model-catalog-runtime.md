@@ -261,3 +261,61 @@ Server 对应入口为 `model-access-server/src/routes/modelCatalog.ts`、`servi
 继承默认档不会压过新型号实报的推荐档；既有型号目录默认优先规则保持不变。
 未来型号沿已实现的 API 序列化发送自身 ID。新协议仍需实现，不能靠继承配置获得新传输能力。
 Desktop、Mobile 和远程选择器共同消费执行端目录，不增加 UI 提示或用户步骤。
+
+## Vertex AI 服务账号文件认证
+
+本机「添加供应商 → Google Vertex AI」可选择服务账号 JSON，自动读取项目 ID，
+区域默认 `global`，两者可在保存前修改。系统文件选择器授权读取，Main 校验
+服务账号类型、RSA 私钥与官方 token URI；Renderer 只接收文件名、项目 ID 和
+绑定窗口及账号代次的短期选择标识，不接收私钥。文件留在用户原位置，不复制入仓。
+
+连接复用现有逐供应商、逐引擎的加密凭证槽，保存带版本的
+`cindy-vertex-service-account-v1:` 引用（路径、项目、区域，不含私钥）；不是可发送的
+API Key。通用凭证写入和未保存的连接探测不接受用户拼造的引用。普通 API Key
+连接保持原语义，已有服务账号引用的编辑只允许原值保留。
+
+Claude Code / Codex 的宿主桥和 Pi 原生适配器均按请求解析引用，将 ADC 环境参数
+传给 Google SDK，不修改进程全局环境。地址固定为所选区域的官方端点；实际 SDK
+调用不设置集合级 base URL，避免 Pi SDK 丢掉 `projects/locations` 路径。
+文件移动、删除或失效后认证失败；重新添加连接可重新选择文件。
+
+文件选择和创建入口仅本机开放，不增加 device-link 白名单。手机与远程设备可经已有
+执行端连接使用已配模型，凭证文件留在执行电脑。SSH Pi 无法读取本机文件时明确拒绝
+该本机连接，不把凭证路径或私钥复制到 SSH 主机。不承诺 SSH 直连服务账号认证。
+
+### Gemini 4 Argon（2026-10-14 本地补充）
+
+Vertex 离线目录补入 `gemini-4-argon`，原生 SDK API 为 `google-vertex`，窗口
+1,048,576、普通流式输出上限 65,536、推理 LOW / MEDIUM / HIGH，默认 MEDIUM。
+以 [Google Cloud 型号页](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon)
+和[开发指南](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-4-argon)
+为依据。不宣称支持 long decode、厂商工具或百万输出续传。
+报价于 2026-10-14 对照 [Google Cloud 官方价格页](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing)
+补入 Global Standard 优惠后参考价（USD / 百万 tokens）：输入 2、输出（含推理）10、缓存读取 0.1。
+Vertex 优惠通过净消费 50% credits 返还实现，参考估算不等于原始账单扣费。
+优惠截至 2026-11-30；2026-12-01 起为 4 / 20 / 0.2，非 Global 端点上述价格再乘 1.1。
+当前通用目录只有静态 `cost`，不会按日期或区域自动切换；该报价仅适用于 Global Standard，
+到期需更新目录，非 Global 或其他服务档位需显式覆盖。未填写独立缓存写入单价。
+补充函数 `tools/pi/gemini-catalog-additions.mjs` 接入原目录同步入口，已有上游精确条目优先。
+未修改独立 Server，也未部署公共目录。
+
+当前固定 Pi 适配器会把 Gemini 4 当旧型号发送 `thinkingBudget`，而 Google 明确禁止。
+Claude Code / Codex 宿主桥与 Pi 扩展均通过原生 `onPayload` 钩子，将这个精确型号改为
+`thinkingLevel`，保留原生工具、签名和历史序列化；不修改 Pi 源码或二进制。
+用户账号在 global 下已完成最小文本生成和 MEDIUM 参数验证；这不是复杂 Agent 质量评估。
+
+### Claude Code 经 Google 原生桥的缓存前缀
+
+Claude Code 会在历史消息中追加独立的 `<total_tokens>数字 tokens left</total_tokens>`
+系统消息。将每次变化的预算一起提前合入 Google `systemInstruction` 会破坏稳定前缀。
+2026-10-14 经维护者确认，宿主桥仅对 Google / Vertex 的这类独立、非起始预算消息，
+保留原文和原位置，以 Google 支持的 user 消息承载。普通系统指令、含其他文字的混合消息、
+起始系统段及非 Google 路由保持原逻辑；不删预算、不改模型、不改工具配对或思考签名。
+
+Pi 的 Google SDK 通过定向依赖 override 升至 `@google/genai@2.29.1`，不修改 Pi 二进制 pin。
+旧 SDK 也能读取隐式缓存，升级不是本次缓存问题的根因修复。
+真实 Vertex 合成请求对照中，预算提前合并时缓存读为 0；修复后的完整 Claude → Vertex 桥，
+第二次请求输入合计 34,006 tokens，其中缓存读 28,672（约 84.3%），两次均成功输出。
+这是指定项目、Global / Argon 的受控验证，不保证所有请求命中率，也不代表安装版已经更新。
+回归覆盖两种 Google API 的出站前缀、工具结果顺序、非目标消息与缓存用量映射，见
+`claudeProviderBridge.test.ts`、`piProviderTransport.test.ts`、`vertexServiceAccountTransport.test.ts`。

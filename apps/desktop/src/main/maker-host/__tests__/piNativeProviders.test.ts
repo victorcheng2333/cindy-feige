@@ -2915,3 +2915,19 @@ it('does not borrow a provider adapter for a future generation on an unrelated r
   expect(result.providers[0]?.models[0].id).toBe('claude-opus-9');
   expect(result.providers[0]?.adapterProvider).toBeUndefined();
 });
+
+it('keeps service account authentication on manually added Vertex models and rejects protocol changes', () => {
+  const key = 'cindy-vertex-service-account-v1:' + JSON.stringify({ credentialsPath: '/fixture/key.json', project: 'project-test', location: 'global' });
+  const config: Cfg = { id: 'vertex-service', name: 'Vertex', runtimes: { pi: {
+    catalogPresetId: 'google-vertex', baseUrl: 'https://aiplatform.googleapis.com', wireProtocol: 'google-generative-ai',
+    models: [{ id: 'user-added-model', name: 'Custom Vertex', piApi: 'google-vertex', api: 'google-vertex' }],
+  } } };
+  const resolved = buildPiNativeProvidersFromConfigs([config], () => key);
+  expect(resolved.providers).toHaveLength(1);
+  expect(resolved.providers[0]?.adapterProvider).toBe('google-vertex');
+  config.runtimes.pi!.models[0]!.api = 'openai-completions';
+  config.runtimes.pi!.models[0]!.piApi = 'openai-completions';
+  const rejected = buildPiNativeProvidersFromConfigs([config], () => key);
+  expect(rejected.providers).toHaveLength(0);
+  expect(Object.values(rejected.env)).not.toContain(key);
+});

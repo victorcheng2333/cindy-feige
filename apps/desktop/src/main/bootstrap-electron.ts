@@ -1,3 +1,4 @@
+import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
 import { registerAccessibilitySupportIpc } from './accessibility-support-ipc.js';
 import { prepareImportedAutomation, finishImportedAutomation } from './bot-import/automationRuntime.js';
 import { ensureImportedAutomationReady, recoverCompanionImports } from './bot-import/host.js';
@@ -5601,6 +5602,8 @@ const registerIpcHandlers = () => {
       try {
         assertTrustedAppRendererEvent(event);
         if (!isValidRendererKey(key)) return false;
+        // File credential references must be minted by the authorized file-picker flow.
+        if (typeof value === 'string' && value.includes(VERTEX_SERVICE_ACCOUNT_PREFIX)) return false;
         const filepath = resolveSafeStorageFilepath(key);
         if (!filepath) return false;
         if (!safeStorage.isEncryptionAvailable()) return false;

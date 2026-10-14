@@ -3290,7 +3290,17 @@
         "groupLocal": "로컬 모델",
         "metaLocalRecommended": "추천 · Cindy에서 다운로드",
         "metaLocalConnect": "실행 중인 로컬 서버에 연결",
-        "moreLocal": "기타 로컬 서버"
+        "moreLocal": "기타 로컬 서버",
+        "vertex": {
+          "chooseFile": "서비스 계정 JSON 선택",
+          "invalidFile": "유효한 Google 서비스 계정 JSON 파일을 읽을 수 없습니다",
+          "project": "프로젝트 ID",
+          "location": "리전",
+          "useApiKey": "API 키로 전환",
+          "fileNote": "인증 정보는 이 컴퓨터의 원본 파일에 유지됩니다. 파일을 이동하거나 삭제하지 마세요.",
+          "configured": "서비스 계정 파일 인증이 설정되었습니다",
+          "serviceAccount": "서비스 계정 파일"
+        }
       },
       "local": {
         "title": "Ollama",

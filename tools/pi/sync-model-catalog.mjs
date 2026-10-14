@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { applyVertexArgonAddition } from './gemini-catalog-additions.mjs';
 
 import fs from "node:fs/promises";
 import { toCindyCatalog } from "./catalog-format.mjs";
@@ -124,6 +125,7 @@ async function main() {
   if (providers.xai) providers.xai = applyKnownXaiCorrections(providers.xai);
   applyGrok47CatalogAddition(providers);
   applyAstraCatalogAdditions(providers);
+  applyVertexArgonAddition(providers);
   if (bundlePath) {
     applyPinnedAstraCorrections(providers, sourceVersion);
     applyPinnedXaiAdditions(providers, sourceVersion);

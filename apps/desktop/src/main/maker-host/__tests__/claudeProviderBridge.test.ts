@@ -15,6 +15,7 @@ async function runBridge(
   effort = 'high',
   fast = false,
   inboundHeaders: Record<string, string> = {},
+  requestOverrides: Record<string, unknown> = {},
 ) {
   const handler = createClaudeProviderBridge({
     url: `https://supplier.example/v1/${protocol === 'openai-chat' ? 'chat/completions' : 'responses'}`,
@@ -43,6 +44,7 @@ async function runBridge(
       body: JSON.stringify({ model: 'test-model', stream, max_tokens: 8192,
         messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' },
           { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }] }],
+        ...requestOverrides,
       }),
     });
     return { status: response.status, body: await response.text() };
@@ -54,6 +56,94 @@ const chatStream = [
 ].map(frame => `data: ${JSON.stringify(frame)}\r\n\r\n`).join('') + 'data: [DONE]\r\n\r\n';
 
 describe('Claude Code custom provider translation', () => {
+  it.each(['google-vertex', 'google'] as const)('keeps appended Claude budgets out of %s system instructions without moving tool results', async provider => {
+    type WireContent = { role: string; parts: Array<Record<string, unknown>> };
+    const sent: Array<{ systemInstruction: unknown; contents: WireContent[]; tools: unknown }> = [];
+    const upstream = createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      sent.push(JSON.parse(Buffer.concat(chunks).toString()));
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(`data: ${JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'OK' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 1, totalTokenCount: 101 } })}\n\n`);
+    });
+    upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
+    try {
+      const row = PROVIDER_MODEL_CATALOG.providers[provider].find(row => row.id.startsWith('gemini-3'))!;
+      const firstBudget = '<total_tokens>15000000 tokens left</total_tokens>';
+      const nextBudget = '<total_tokens>14989995 tokens left</total_tokens>';
+      const messages: Array<Record<string, unknown>> = [
+        { role: 'user', content: 'Read the inventory.' },
+        { role: 'system', content: [{ type: 'text', text: firstBudget, cache_control: { type: 'ephemeral' } }] },
+      ];
+      for (let turn = 0; turn < 2; turn++) {
+        const result = await runBridge('openai-chat', true, '', () => {
+          throw new Error('Google must use its native SDK transport');
+        }, { model: row, providerId: provider,
+          nativeUpstream: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}` }, 'low', false, {}, {
+          model: row.id, system: 'Stable policy.', messages,
+          tools: [{ name: 'read_inventory', description: 'Read inventory', input_schema: { type: 'object', properties: {} } }],
+        });
+        expect(result.status).toBe(200);
+        expect(result.body).toContain('message_stop');
+        if (turn === 0) messages.push(
+          { role: 'assistant', content: [{ type: 'tool_use', id: 'call_inventory', name: 'read_inventory', input: {} }] },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_inventory', content: 'Inventory inspected.' }] },
+          { role: 'system', content: nextBudget },
+        );
+      }
+      expect(sent).toHaveLength(2);
+      expect(sent[1].systemInstruction).toEqual(sent[0].systemInstruction);
+      expect(JSON.stringify(sent[1].systemInstruction)).toContain('Stable policy.');
+      expect(JSON.stringify(sent[1].systemInstruction)).not.toContain('total_tokens');
+      expect(sent[1].tools).toEqual(sent[0].tools);
+      expect(sent[1].contents.slice(0, sent[0].contents.length)).toEqual(sent[0].contents);
+      expect(sent[0].contents.at(-1)).toMatchObject({ role: 'user', parts: [{ text: firstBudget }] });
+      const tail = sent[1].contents.slice(sent[0].contents.length);
+      expect(tail).toMatchObject([
+        { role: 'model', parts: [{ functionCall: { name: 'read_inventory' } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'read_inventory', response: { output: 'Inventory inspected.' } } }] },
+        { role: 'user', parts: [{ text: nextBudget }] },
+      ]);
+    } finally {
+      upstream.closeAllConnections();
+      await new Promise<void>(resolve => upstream.close(() => resolve()));
+    }
+  });
+
+  it.each([true, false])('preserves Vertex implicit cache usage through the real Google SDK (stream=%s)', async stream => {
+    // Google can emit metadata-only chunks before the final token totals.
+    // Exercise the SDK and both bridges, rather than mocking Pi's parsed usage.
+    const vertex = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* drain the synthetic request */ }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end([
+        { usageMetadata: { trafficType: 'ON_DEMAND' } },
+        { candidates: [{ content: { role: 'model', parts: [{ text: 'OK' }] }, finishReason: 'STOP' }],
+          usageMetadata: { promptTokenCount: 26530, cachedContentTokenCount: 24476,
+            candidatesTokenCount: 5, totalTokenCount: 26535 } },
+      ].map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join(''));
+    });
+    vertex.listen(0, '127.0.0.1'); await once(vertex, 'listening');
+    try {
+      const row = PROVIDER_MODEL_CATALOG.providers['google-vertex'][0]!;
+      const result = await runBridge('openai-chat', stream, '', () => {
+        throw new Error('Google must use its native SDK transport');
+      }, { model: row, providerId: 'vertex-fixture',
+        nativeUpstream: `http://127.0.0.1:${(vertex.address() as AddressInfo).port}` });
+      expect(result.status).toBe(200);
+      const usage = stream
+        ? result.body.split('\n').filter(line => line.startsWith('data: '))
+          .map(line => JSON.parse(line.slice(6))).find(event => event.type === 'message_delta')?.usage
+        : JSON.parse(result.body).usage;
+      expect(usage).toMatchObject({ input_tokens: 2054, cache_read_input_tokens: 24476,
+        cache_creation_input_tokens: 0, output_tokens: 5 });
+    } finally {
+      vertex.closeAllConnections();
+      await new Promise<void>(resolve => vertex.close(() => resolve()));
+    }
+  });
+
   it.each(['openai-chat', 'openai-responses'] as const)(
     'reconciles saved effort against current capabilities before %s forwarding', async protocol => {
       const sent: unknown[] = [];

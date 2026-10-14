@@ -173,3 +173,40 @@ describe('Cindy native provider refresh bridge', () => {
     expect(calls.at(-1)?.payload).toMatchObject({ ok: true, runtimeSettings: { version: '1.0.0' } });
   });
 });
+
+it('executes the embedded Vertex credential resolver after serialization', () => {
+  const source = PI_NATIVE_PROVIDER_ADAPTER_SOURCE + '\nglobalThis.resolveVertex = vertexServiceAccountOptions;';
+  const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const sandbox: Record<string, any> = {};
+  runInNewContext(compiled, sandbox);
+  const credential = 'cindy-vertex-service-account-v1:' + JSON.stringify({ credentialsPath: '/fixture/service.json', project: 'project-test', location: 'global' });
+  expect(sandbox.resolveVertex(credential, 'google-vertex', 'https://aiplatform.googleapis.com')).toEqual({
+    apiKey: 'gcp-vertex-credentials', env: { GOOGLE_APPLICATION_CREDENTIALS: '/fixture/service.json', GOOGLE_CLOUD_PROJECT: 'project-test', GOOGLE_CLOUD_LOCATION: 'global' },
+  });
+  expect(() => sandbox.resolveVertex(credential, 'google-vertex', 'https://attacker.example')).toThrow();
+});
+
+it('sends Argon native requests with per-connection ADC and thinkingLevel, preserving payload hooks', async () => {
+  const handlers = new Map<string, any>();
+  let provider: any;
+  let sentModel: any;
+  let sentOptions: any;
+  const model = { provider: 'vertex-one', api: 'google-vertex', id: 'gemini-4-argon', baseUrl: 'https://aiplatform.googleapis.com' };
+  const sandbox: Record<string, any> = {
+    process: { env: { CINDY_PI_NATIVE_PROVIDER_ADAPTERS: JSON.stringify([{ id: 'vertex-one', name: 'Vertex', provider: 'google-vertex', keyEnv: 'CINDY_PI_KEY_VERTEX' }]) } },
+    __loadPiAi: async (name: string) => name.endsWith('/compat')
+      ? { getApiProvider: () => ({ streamSimple: (m: any, _c: any, options: any) => { sentModel = m; sentOptions = options; return []; } }) }
+      : { lazyStream: (_m: any, load: () => unknown) => load(), envApiKeyAuth: () => ({}) },
+  };
+  const source = PI_NATIVE_PROVIDER_ADAPTER_SOURCE.replaceAll('import(', '__loadPiAi(') + '\nglobalThis.register = registerCindyNativeProviderAdapters;';
+  runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, sandbox);
+  await sandbox.register({ on: (name: string, handler: any) => handlers.set(name, handler), registerProvider: (p: any) => { provider = p; } });
+  handlers.get('session_start')({}, { modelRegistry: { getAll: () => [model] } });
+  const key = 'cindy-vertex-service-account-v1:' + JSON.stringify({ credentialsPath: '/fixture/key.json', project: 'project-test', location: 'global' });
+  await provider.streamSimple(model, { messages: [] }, { apiKey: key, reasoning: 'high', onPayload: (p: any) => ({ ...p, priorHook: true }) });
+  expect(sentModel.baseUrl).toBe('');
+  expect(sentOptions.apiKey).toBe('gcp-vertex-credentials');
+  expect(sentOptions.env.GOOGLE_CLOUD_PROJECT).toBe('project-test');
+  const payload = await sentOptions.onPayload({ config: { thinkingConfig: { thinkingBudget: 2048 }, temperature: 0 } }, model);
+  expect(payload).toEqual({ priorHook: true, config: { thinkingConfig: { includeThoughts: true, thinkingLevel: 'HIGH' } } });
+});

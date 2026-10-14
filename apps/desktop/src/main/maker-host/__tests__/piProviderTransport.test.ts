@@ -13,6 +13,27 @@ const reply = [
 ].map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n';
 
 describe('Pi-owned transport for Cindy harnesses', () => {
+  it('retains the existing system role for token budgets on non-Google routes', async () => {
+    const upstream = 'https://fixture.example/v1';
+    const provider = buildUserProvider({ id: 'fixture', name: 'Fixture', runtimes: {
+      codex: { baseUrl: upstream, wireProtocol: 'openai-chat', models: [{ id: 'fixture-model', name: 'Fixture' }] },
+    } });
+    const row = invocationModelRecord(provider.models.codex![0], upstream, 'openai-completions')!;
+    let sent: { messages: Array<{ role: string; content: unknown }> } | undefined;
+    const send = createPiProviderFetch({ row, providerId: provider.id, apiKey: 'fixture-key', fetchImpl: async (_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return new Response(reply, { headers: { 'content-type': 'text/event-stream' } });
+    } });
+    const budget = '<total_tokens>14989995 tokens left</total_tokens>';
+    await (await send('https://unused.invalid', { body: JSON.stringify({ model: row.id,
+      instructions: 'Stable policy.', input: [{ role: 'user', content: 'Question' }, { role: 'developer', content: budget }],
+    }) })).text();
+    expect(sent?.messages).toEqual([
+      { role: 'system', content: `Stable policy.\n\n${budget}` },
+      { role: 'user', content: [{ type: 'text', text: 'Question' }] },
+    ]);
+  });
+
   it.each([true, false, undefined])('sends discovered Sub2API effort and declared Fast (%s) through the native Chat adapter', async supportsFastMode => {
     const upstream = 'https://sub2api.example/custom/v1';
     const models = parseModelsListResponse({ data: [{ id: 'grok-4.7',

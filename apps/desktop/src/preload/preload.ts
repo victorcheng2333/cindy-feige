@@ -6349,6 +6349,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       options?: { releaseOwner?: boolean; ownerId?: string },
     ): Promise<{ ok: true }> =>
       ipcRenderer.invoke('maker:provider:oauth:cancel', providerId, options),
+    selectVertexServiceAccount: (): Promise<import('../shared/vertexServiceAccount').VertexServiceAccountSelection | null> =>
+      ipcRenderer.invoke('maker:provider:vertex:select'),
+    createVertexServiceAccountProvider: (config: import('@cindy/model-providers').CustomProviderConfig, selection: import('../shared/vertexServiceAccount').VertexServiceAccountSave): Promise<CustomProviderUpdateResult> =>
+      ipcRenderer.invoke('maker:provider:vertex:create', config, selection),
     previewProviderImport: (
       importId: string,
       targetProviderId?: string,

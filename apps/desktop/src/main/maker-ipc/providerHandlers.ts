@@ -1,3 +1,7 @@
+import { dialog } from 'electron';
+import { createVertexServiceAccountSelections } from '../maker-host/vertex-service-account.js';
+import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
+import type { VertexServiceAccountSave } from '../../shared/vertexServiceAccount.js';
 import { setProviderPresentation, retainProviderPresentationAfterAuthChange } from '../maker-host/provider-presentation-store.js';
 import { pruneProviderGroupBindings } from '../provider-group/bindings.js';
 import { writeProviderGroup } from '../provider-group/store.js';
@@ -465,6 +469,12 @@ export interface ModelContextLimitView {
 }
 
 /** 校验 PROVIDER_TEST_CONNECTION 入参形状（确定性代码校验，非法直接 INVALID_PARAMS）。 */
+function hasVertexReferenceInput(spec: Record<string, unknown>): boolean {
+  return (typeof spec.apiKey === 'string' && spec.apiKey.includes(VERTEX_SERVICE_ACCOUNT_PREFIX))
+    || (!!spec.headers && typeof spec.headers === 'object'
+      && Object.values(spec.headers).some(value => typeof value === 'string' && value.includes(VERTEX_SERVICE_ACCOUNT_PREFIX)));
+}
+
 function parseTestInput(input: unknown): ProviderTestInput | null {
   if (!input || typeof input !== 'object') return null;
   const i = input as Record<string, unknown>;
@@ -477,6 +487,7 @@ function parseTestInput(input: unknown): ProviderTestInput | null {
     const s = i.spec;
     if (!s || typeof s !== 'object') return null;
     const spec = s as Record<string, unknown>;
+    if (hasVertexReferenceInput(spec)) return null;
     if (typeof spec.agent !== 'string' || !VALID_AGENTS.includes(spec.agent)) return null;
     if (typeof spec.authMethod !== 'string' || !VALID_ADHOC_AUTH_METHODS.includes(spec.authMethod))
       return null;
@@ -529,6 +540,7 @@ function parseTestInput(input: unknown): ProviderTestInput | null {
 function parseModelsFetchInput(input: unknown): ProviderModelsFetchSpec | null {
   if (!input || typeof input !== 'object') return null;
   const spec = input as Record<string, unknown>;
+  if (hasVertexReferenceInput(spec)) return null;
   if (typeof spec.agent !== 'string' || !VALID_AGENTS.includes(spec.agent)) return null;
   if (typeof spec.authMethod !== 'string' || !VALID_ADHOC_AUTH_METHODS.includes(spec.authMethod))
     return null;
@@ -1932,12 +1944,14 @@ export function registerProviderHandlers(
     input: unknown,
     keyInput?: unknown,
     optionsInput?: unknown,
+    vertexAuthorized = false,
   ): Promise<CustomProviderUpdateResult> {
     assertTrustedProviderMutationSender(event);
     const v = validateCustomProviderConfig(input);
     if (!v.ok) throwIpcError(v.code, v.message);
     const keys = parseRuntimeKeys(keyInput);
     if (!keys) throwIpcError('INVALID_PARAMS', 'invalid provider runtime keys');
+    if (!vertexAuthorized && Object.values(keys).some(key => key?.includes(VERTEX_SERVICE_ACCOUNT_PREFIX))) throwIpcError('PERMISSION_DENIED', 'Select the service account file in Cindy');
     const options = parseCustomProviderUpdateOptions(optionsInput);
     if (!options) throwIpcError('INVALID_PARAMS', 'invalid custom provider create options');
     const config = input as CustomProviderConfig;
@@ -1950,6 +1964,7 @@ export function registerProviderHandlers(
         'managed local providers cannot be created from the custom form',
       );
     }
+    if (Object.values(config.runtimes).some(runtime => runtime && hasVertexReferenceInput({ headers: runtime.headers }))) throwIpcError('INVALID_PARAMS', 'Service account references cannot be used as HTTP headers');
     const separated = splitCustomProviderHeaders(config);
     const ownerAtIngress = captureProviderOwnerSession();
     return withProviderConfigMutation(config.id, async (commitRouteMutation) => {
@@ -2000,7 +2015,43 @@ export function registerProviderHandlers(
       }
     });
   }
-  registry.handle(MAKER_INVOKE.PROVIDER_CUSTOM_CREATE, createProviderFromInput);
+  // Never expose the internal authorization flag as an IPC argument.
+  registry.handle(MAKER_INVOKE.PROVIDER_CUSTOM_CREATE, (event, input, keys, options) => createProviderFromInput(event, input, keys, options));
+  const vertexSelections = createVertexServiceAccountSelections();
+  const vertexScope = (event: unknown) => ({
+    sender: (event as { sender?: unknown }).sender,
+    owner: JSON.stringify(providerImportScope()),
+  });
+  registry.handle(MAKER_INVOKE.PROVIDER_VERTEX_SELECT, async (event) => {
+    assertTrustedProviderMutationSender(event);
+    const owner = captureProviderOwnerSession();
+    const scope = vertexScope(event);
+    try {
+      const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+      assertProviderMutationOwner(owner);
+      if (result.canceled || !result.filePaths[0]) return null;
+      const selection = await vertexSelections.select(result.filePaths[0], scope);
+      assertProviderMutationOwner(owner);
+      return selection;
+    } catch { throwIpcError('INVALID_PARAMS', 'Unable to read a valid Google service account JSON file'); }
+  });
+  registry.handle(MAKER_INVOKE.PROVIDER_VERTEX_CREATE, async (event, input: unknown, selectionInput: unknown) => {
+    const selection = selectionInput as VertexServiceAccountSave;
+    assertTrustedProviderMutationSender(event);
+    const validation = validateCustomProviderConfig(input);
+    if (!validation.ok) throwIpcError(validation.code, validation.message);
+    const owner = captureProviderOwnerSession();
+    const config = input as CustomProviderConfig;
+    if (config.auth && config.auth.method !== 'apiKey') throwIpcError('INVALID_PARAMS', 'Invalid Vertex authentication');
+    let key: string;
+    try { key = await vertexSelections.resolve(selection, config, vertexScope(event)); }
+    catch { throwIpcError('INVALID_PARAMS', 'Invalid or expired Vertex service account selection'); }
+    assertProviderMutationOwner(owner);
+    const keys = Object.fromEntries(Object.keys(config.runtimes).map(agent => [agent, key]));
+    const result = await createProviderFromInput(event, config, keys, { source: 'manual-settings' }, true);
+    if (result.ok) vertexSelections.consume(selection.selectionId);
+    return result;
+  });
 
   async function updateProviderFromInput(
     event: unknown,
@@ -2026,6 +2077,7 @@ export function registerProviderHandlers(
         'managed local providers cannot be edited from the custom form',
       );
     }
+    if (Object.values(config.runtimes).some(runtime => runtime && hasVertexReferenceInput({ headers: runtime.headers }))) throwIpcError('INVALID_PARAMS', 'Service account references cannot be used as HTTP headers');
     let separated = splitCustomProviderHeaders(config);
     const ownerAtIngress = captureProviderOwnerSession();
     return withProviderConfigMutation(config.id, async (commitRouteMutation) => {
@@ -2037,6 +2089,12 @@ export function registerProviderHandlers(
         const previous = await getCustomProvider(config.id);
         assertProviderMutationOwner(ownerAtIngress);
         if (!previous) throwIpcError('NOT_FOUND', `custom provider '${config.id}' not found`);
+    for (const [agent, key] of Object.entries(keys)) {
+      if (key?.includes(VERTEX_SERVICE_ACCOUNT_PREFIX) && deps.readCustomProviderKeyForMutation((input as CustomProviderConfig).id, agent as AgentKind) !== key) {
+        throwIpcError('PERMISSION_DENIED', 'Select the service account file in Cindy');
+      }
+    }
+
         if (resolveLatest) {
           // Main-only key import merges under the same queue, never from a stale UI snapshot.
           config = resolveLatest(previous);

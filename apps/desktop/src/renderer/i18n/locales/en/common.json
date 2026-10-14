@@ -3316,7 +3316,17 @@
         "groupLocal": "Local models",
         "metaLocalRecommended": "Recommended · download in Cindy",
         "metaLocalConnect": "Connect a running local server",
-        "moreLocal": "More local servers"
+        "moreLocal": "More local servers",
+        "vertex": {
+          "chooseFile": "Choose Service Account JSON",
+          "invalidFile": "Could not read a valid Google service account JSON file",
+          "project": "Project ID",
+          "location": "Location",
+          "useApiKey": "Use API Key Instead",
+          "fileNote": "Credentials stay in the original file on this computer. Keep the file in place.",
+          "configured": "Service account file authentication is configured",
+          "serviceAccount": "Service Account File"
+        }
       },
       "local": {
         "title": "Ollama",

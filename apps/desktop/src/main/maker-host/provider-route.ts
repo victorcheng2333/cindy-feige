@@ -1,3 +1,4 @@
+import { parseVertexServiceAccountReference, vertexServiceAccountOptions } from '@cindy/model-providers';
 /**
  * provider-route —— 把 catalog 的 `RoutingDescriptor` 翻译成 loopback proxy 的 `RoutingDecision`,
  * 并据 per-session 选定的供应商解析本会话的路由。
@@ -347,6 +348,11 @@ export function buildRouteDecision(
   oauthToken?: string | null,
 ): RoutingDecision | null {
   if (routing.disabled) return disabledProviderRouteDecision();
+  if (parseVertexServiceAccountReference(apiKey)) {
+    if (routing.wireProtocol !== 'google-generative-ai' || routing.requestPath) return disabledProviderRouteDecision();
+    try { vertexServiceAccountOptions(apiKey, 'google-vertex', routing.upstream); }
+    catch { return disabledProviderRouteDecision(); }
+  }
   switch (routing.authStrategy) {
     case 'none': {
       // 本机 / 自托管无鉴权代理：仍固定路由到所选 upstream，但显式剥掉子进程自带的

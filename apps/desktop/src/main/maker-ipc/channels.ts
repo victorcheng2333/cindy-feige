@@ -530,6 +530,8 @@ export const MAKER_INVOKE = {
    * create/update 入参 = config + runtimeKeys；delete 入参 = providerId。
    * 成功后 main 重算 active-catalog 并广播 PROVIDER_CHANGED（见 MAKER_PUSH）。
    */
+  PROVIDER_VERTEX_SELECT: 'maker:provider:vertex:select',
+  PROVIDER_VERTEX_CREATE: 'maker:provider:vertex:create',
   PROVIDER_CUSTOM_CREATE: 'maker:provider:custom:create',
   PROVIDER_CUSTOM_UPDATE: 'maker:provider:custom:update',
   PROVIDER_CUSTOM_DELETE: 'maker:provider:custom:delete',

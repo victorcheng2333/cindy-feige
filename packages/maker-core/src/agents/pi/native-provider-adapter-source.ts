@@ -1,3 +1,4 @@
+import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
 /** Preserve Pi's provider-specific serializers for independently named Cindy connections. */
 export function nativeProviderAdapterAliases(
   nativeProviders: Array<{ id: string; name: string; adapterProvider?: string; apiKeyEnvVar?: string }>,
@@ -15,6 +16,24 @@ export function nativeProviderAdapterAliases(
 }
 
 export const PI_NATIVE_PROVIDER_ADAPTER_SOURCE = String.raw`
+const VERTEX_SERVICE_ACCOUNT_PREFIX = ${JSON.stringify(VERTEX_SERVICE_ACCOUNT_PREFIX)};
+// This extension runs inside the separate Pi runtime, without Cindy packages.
+// Keep the wire-reference decoder in parity with model-providers/vertexServiceAccount.
+function vertexServiceAccountOptions(value: unknown, api: string, endpoint: string) {
+  if (typeof value !== 'string' || !value.startsWith(VERTEX_SERVICE_ACCOUNT_PREFIX)) return undefined;
+  let v: any;
+  try { v = JSON.parse(value.slice(VERTEX_SERVICE_ACCOUNT_PREFIX.length)); } catch { throw new Error('Invalid Vertex service account reference'); }
+  if (!v || typeof v.credentialsPath !== 'string' || !v.credentialsPath || v.credentialsPath.length > 4096 || /[\x00-\x1f]/.test(v.credentialsPath)
+    || typeof v.project !== 'string' || !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(v.project)
+    || typeof v.location !== 'string' || !/^(global|us|eu|[a-z]+(?:-[a-z]+)+[0-9]+)$/.test(v.location)) throw new Error('Invalid Vertex service account reference');
+  const expected = v.location === 'global' ? 'https://aiplatform.googleapis.com'
+    : v.location === 'us' || v.location === 'eu' ? 'https://aiplatform.' + v.location + '.rep.googleapis.com'
+    : 'https://' + v.location + '-aiplatform.googleapis.com';
+  if (api !== 'google-vertex' || endpoint.replace(/\/$/, '') !== expected) throw new Error('Vertex service account requires its configured Google endpoint');
+  return { apiKey: 'gcp-vertex-credentials', env: {
+    GOOGLE_APPLICATION_CREDENTIALS: v.credentialsPath, GOOGLE_CLOUD_PROJECT: v.project, GOOGLE_CLOUD_LOCATION: v.location,
+  } };
+}
 type CindyAdapterAlias = { id: string; name: string; provider: string; keyEnv?: string };
 type CindyProviderRefreshSnapshot = {
   nonce: string;
@@ -92,7 +111,8 @@ async function registerCindyNativeProviderAdapters(pi: any) {
       const stream = (model: any, context: any, options: any, simple: boolean) => lazyStream(model, async () => {
         const api = getApiProvider(model.api);
         if (!api) throw new Error('The selected native provider API is unavailable');
-        const nativeModel = { ...model, provider: alias.provider };
+        const vertex = vertexServiceAccountOptions(options?.apiKey, model.api, model.baseUrl);
+        const nativeModel = { ...model, provider: alias.provider, ...(vertex ? { baseUrl: '' } : {}) };
         const nativeContext = { ...context, messages: context.messages.map((message: any) =>
           message.role === 'assistant' && message.provider === alias.id
             ? { ...message, provider: alias.provider } : message) };
@@ -104,8 +124,18 @@ async function registerCindyNativeProviderAdapters(pi: any) {
           ? { ...options, apiKey: undefined, headers: { ...options?.headers,
               ...(gatewayKey ? { 'cf-aig-authorization': gatewayKey } : {}),
               Authorization: null, 'x-api-key': null } }
-          : options;
-        const events = simple ? api.streamSimple(nativeModel, nativeContext, nativeOptions) : api.stream(nativeModel, nativeContext, nativeOptions);
+          : { ...options, ...vertex };
+        // Older Pi catalogs classify Argon as a token-budget model. Use the public
+        // payload hook so native signatures/tools/history handling stays intact.
+        const invocationOptions = model.api === 'google-vertex' && model.id === 'gemini-4-argon'
+          ? { ...nativeOptions, onPayload: async (payload: any, currentModel: any) => {
+              const prior = await nativeOptions?.onPayload?.(payload, currentModel) ?? payload;
+              const { temperature, topP, topK, ...config } = prior.config ?? {};
+              const level = nativeOptions?.reasoning === 'low' ? 'LOW' : nativeOptions?.reasoning === 'high' ? 'HIGH' : 'MEDIUM';
+              return { ...prior, config: { ...config, thinkingConfig: { includeThoughts: true, thinkingLevel: level } } };
+            } }
+          : nativeOptions;
+        const events = simple ? api.streamSimple(nativeModel, nativeContext, invocationOptions) : api.stream(nativeModel, nativeContext, invocationOptions);
         return (async function* () {
           for await (const event of events) yield { ...event,
             ...(event.partial ? { partial: { ...event.partial, provider: alias.id } } : {}),

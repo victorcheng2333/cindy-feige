@@ -1,3 +1,4 @@
+import { parseVertexServiceAccountReference, vertexServiceAccountOptions } from '@cindy/model-providers';
 import { listCindyManagedSkills } from './managed-skills.js';
 import { resolveCompanionRuntimeEnvironment } from '../bot-import/runtime.js';
 import { readCachedGenericOAuthAccessToken } from './generic-oauth.js';
@@ -1340,6 +1341,7 @@ export function buildPiNativeProvidersFromConfigs(
           )
         : undefined;
     let apiKeyEnvVar: string | undefined;
+    let vertexServiceAccount = false;
     if (authMethod === 'apiKey') {
       const key = readKey(cfg.id, 'pi');
       if (!key && !headers) {
@@ -1347,6 +1349,15 @@ export function buildPiNativeProvidersFromConfigs(
         continue;
       }
       if (key) {
+        if (parseVertexServiceAccountReference(key)) {
+          try {
+            rt.models.forEach((model, index) => vertexServiceAccountOptions(key, modelApis[index]!, model.route?.baseUrl ?? rt.baseUrl));
+          } catch {
+            onSkip?.(cfg.id, 'service account requires a matching Vertex API and endpoint');
+            continue;
+          }
+          vertexServiceAccount = true;
+        }
         apiKeyEnvVar = uniqueEnvVar(cfg.id);
         env[apiKeyEnvVar] = key;
       }
@@ -1371,7 +1382,8 @@ export function buildPiNativeProvidersFromConfigs(
       return adapter ? [adapter] : [];
     }));
     providers.push({
-      ...(adapterIds.size === 1 ? { adapterProvider: [...adapterIds][0] } : {}),
+      ...(vertexServiceAccount ? { adapterProvider: 'google-vertex' }
+        : adapterIds.size === 1 ? { adapterProvider: [...adapterIds][0] } : {}),
       id: runtimeCustomProviderId(cfg.id),
       name: cfg.name,
       // The proxy already retains the supplier base path (e.g. /api/v1).
@@ -1800,7 +1812,16 @@ export async function resolvePiNativeProviders(ctx: {
   }
   const custom = buildPiNativeProvidersFromConfigs(
     mergeByokNativeConfigs(configs, getActiveCatalog().providers),
-    readCustomProviderKey,
+    (id, agent) => {
+      const key = readCustomProviderKey(id, agent);
+      if (isRemote && parseVertexServiceAccountReference(key)) {
+        if (ctx.providerId === id || ctx.providerId === runtimeCustomProviderId(id)) {
+          throw new Error('[REMOTE_LOCAL_ONLY_PROVIDER] Vertex service account file is on this computer; run this connection locally');
+        }
+        return null;
+      }
+      return key;
+    },
     (id, reason) => log.warn('resolvePiNativeProviders: skipped custom provider', { id, reason }),
     bundledModels ?? undefined,
     getActiveCatalog(),

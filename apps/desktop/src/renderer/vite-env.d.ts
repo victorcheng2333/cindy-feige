@@ -5626,6 +5626,8 @@ interface ElectronAPI {
       providerId: string,
       options?: { releaseOwner?: boolean; ownerId?: string },
     ) => Promise<{ ok: true }>;
+    selectVertexServiceAccount: () => Promise<import('../shared/vertexServiceAccount').VertexServiceAccountSelection | null>;
+    createVertexServiceAccountProvider: (config: import('@cindy/model-providers').CustomProviderConfig, selection: import('../shared/vertexServiceAccount').VertexServiceAccountSave) => Promise<CustomProviderUpdateResult>;
     previewProviderImport: (
       importId: string,
       targetProviderId?: string,
