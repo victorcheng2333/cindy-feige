@@ -9,6 +9,46 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { parseArgs as parsePersonalReleaseArgs, validateMetadata, commonSource, validateOrigin, REPOSITORY } from '../release-personal-macos.mjs';
+
+test('personal release is restricted to the fork and rejects accidental publishing options', () => {
+  assert.equal(REPOSITORY, 'victorcheng2333/cindy-feige');
+  for (const argv of [[], ['--tag'], ['--tag', '../escape'], ['--tag', 'v1.2.3'],
+    ['--tag', 'personal-cn-a..b'], ['--repo', 'makecindy/cindy'], ['--region', 'global'], ['--arch', 'x64']]) {
+    assert.throws(() => parsePersonalReleaseArgs(argv));
+  }
+  assert.deepEqual(parsePersonalReleaseArgs(['--tag', 'personal-cn-2026-10-13', '--reuse-artifacts', '--prepare-only']), {
+    tag: 'personal-cn-2026-10-13', reuse: true, prepareOnly: true, help: false,
+  });
+  assert.equal(parsePersonalReleaseArgs(['--help']).help, true);
+  for (const url of [`git@github.com:${REPOSITORY}.git`, `https://github.com/${REPOSITORY}.git`, `https://github.com/${REPOSITORY}`]) {
+    assert.doesNotThrow(() => validateOrigin(url));
+  }
+  for (const url of ['git@github.com:makecindy/cindy.git', `https://example.com/${REPOSITORY}.git`,
+    `git@github.com:${REPOSITORY}.git\ngit@github.com:makecindy/cindy.git`]) {
+    assert.throws(() => validateOrigin(url));
+  }
+});
+
+test('personal release rejects wrong region, signing, version, and mixed source builds', () => {
+  const make = (arch) => ({
+    file: `cindy-cn-unversioned-${arch}-developer-id.zip`, region: 'cn', arch,
+    version: '0.0.0', bundleIdentifier: 'com.xd.cindycn', notarized: false,
+    signingIdentity: 'Developer ID Application: Tools UG (KQY8A3BNVG)', sourceCommit: 'a'.repeat(40),
+  });
+  const arm = make('arm64');
+  const intel = make('x64');
+  for (const info of [arm, intel]) assert.doesNotThrow(() => validateMetadata(info, info.arch));
+  for (const bad of [{ region: 'global' }, { arch: 'x64' }, { version: '1.2.3' },
+    { bundleIdentifier: 'com.xd.cindy' }, { notarized: true }, { signingIdentity: 'adhoc' },
+    { sourceCommit: 'not-a-commit' }, { file: '../other.zip' }]) {
+    assert.throws(() => validateMetadata({ ...arm, ...bad }, 'arm64'));
+  }
+  assert.equal(commonSource([arm, intel]), arm.sourceCommit);
+  assert.throws(() => commonSource([arm, { ...intel, sourceCommit: 'b'.repeat(40) }]));
+  assert.throws(() => commonSource([arm]));
+  assert.throws(() => commonSource([arm, arm]));
+});
 
 import {
   PLATFORM_ARCHS,
