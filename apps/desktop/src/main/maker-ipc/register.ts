@@ -11,7 +11,7 @@ import { pluginWorkerCompletedAt } from './pluginWorkerCompletion.js';
 import { createPluginTaskStore } from './pluginTaskStore.js';
 import { hasAcceptedUserTaskInput } from './pluginTaskInput.js';
 import { controlOwnedSessionExecution, isSameSessionExecution, withdrawOwnedSessionInputs } from './sessionExecutionOwnership.js';
-import { showMobilePluginTaskPermission, setPluginTaskHandler, getPluginTaskSourceSessionId, setPluginTaskUninstaller, isPluginTaskAuthorized, getPluginTaskInstallRevision, pluginTaskAuthorizationRevision } from '../cindy-brain/index.js';
+import { showMobilePluginTaskPermission, setPluginTaskHandler, getPluginTaskSourceSessionId, setPluginTaskUninstaller, setPluginTaskRelocator, isPluginTaskAuthorized, getPluginTaskInstallRevision, pluginTaskAuthorizationRevision } from '../cindy-brain/index.js';
 import type { PluginTaskRoute, PluginTaskRequest } from '../../shared/pluginTasks.js';
 import { createHash as pluginTaskConfigHash } from 'node:crypto';
 import { finishCompanionEnvironmentRemoval } from '../bot-import/runtime.js';
@@ -27,6 +27,7 @@ import { handleListDevices, defaultDeps as deviceDirectoryDeps } from '../device
 import { getHostSourceDevice, getSelfDeviceId, remoteBackgroundInvoke, remoteInvoke as invokeBotPeer } from '../device-link/index.js';
 import { readDeviceProviderViews } from '../remote-agent/controller/deviceCatalog.js';
 import { checkDeviceRoute } from '../remote-agent/controller/deviceRouteCheck.js';
+import { forgetCredentialGrants } from '../remote-agent/executor/credentialGrants.js';
 import { isProviderShareAgentDeviceId } from '../../shared/providerShare.js';
 import {
   isProviderGroupReleased,
@@ -47,6 +48,7 @@ import {
   getProviderGroupRemoteGroups,
   getProviderGroupRouter,
   setProviderGroupLocalLoad,
+  setProviderGroupClaudeUsageReader,
   setProviderGroupSessionGroupReader,
   setProviderGroupTurnProbe,
 } from '../provider-group/runtime.js';
@@ -181,7 +183,7 @@ import { isRetainableProjectSession } from '../../shared/sessionSource.js';
 import { initializePluginOauthCards } from '../plugin-oauth/cards.js';
 import { currentOauthIdentityScope, loadOauthSigningKey } from '../plugin-oauth/desktopIdentity.js';
 import { readDeviceLinkSettings, readLastKnownDeviceNames } from '../device-link/settings-store.js';
-import { getDeviceLinkStatus, getMobileNotifyGeneration, sendMobileBotGroupNotify } from '../device-link/index.js';
+import { getDeviceLinkStatus, getMobileNotifyGeneration, sendMobileBotGroupNotify, sendMobileSessionNotify } from '../device-link/index.js';
 import type { AgentMeta, Session as RendererSession } from '../../renderer/lib/ccAgent.types';
 import {
   deriveAutoTitleSeed,
@@ -218,6 +220,8 @@ import {
   type GhostGrantConfirmInteractionSnapshot,
 } from '../cindy-brain/ghostGrantConfirmBridge.js';
 import { createFeishuDesktopConfirmNotifier } from '../im/desktopConfirmNoticeWiring.js';
+import { buildInputHandoffNoticeText } from '../im/desktopConfirmNotice.js';
+import { sendInputHandoffChannelNotice } from '../im/shared/inputHandoffChannelNotice.js';
 import { bindingStore } from '../im/binding.js';
 import { isHeadlessGhostSetupTurn } from '../mcp-integrations/ghostSetupInteractionSurface.js';
 import {
@@ -241,11 +245,17 @@ import {
   executeGhostSetupAction,
   executeGhostSetupInlineAction,
   bindGhostSetupConnectionAction,
+  findGhostForInstanceId,
+  ghostInstallMutationTargetFor,
   getGhostManager,
   getGhostPipeDispatcher,
   getGhostSetupAssessment,
   isGhostAvailableForActiveSession,
 } from '../cindy-brain/index.js';
+import {
+  hasDeliveryNamespace,
+  installedGhostStoragePart,
+} from '../../shared/pluginIdentity.js';
 import {
   assertTrustedAppRendererEvent,
   isTrustedAppRendererEvent,
@@ -377,6 +387,13 @@ import { buildReviewPrompt } from '../reviewer/reviewPrompt.js';
 import { resolveReviewScope, withSessionReviewWorkspace } from '../git-review/scopeResolver.js';
 import { selectReviewWorkspace, shouldSelectReviewWorkspace } from '../reviewer/reviewWorkspaceSelection.js';
 import {
+  additionalReviewRepositoriesAreCurrent,
+  loadAdditionalReviewRepositories,
+  resolveReviewRepoRoot,
+  type LoadedReviewRepository,
+  type SkippedReviewRepository,
+} from '../reviewer/reviewAdditionalRepositories.js';
+import {
   listReviewHistoricalAttachments,
   loadReviewEvidence,
   readReviewContextFingerprint,
@@ -406,6 +423,8 @@ import { reviewChangeSetContentPaths, usableReviewChangeSet } from '../reviewer/
 import { enforceReviewCreateOptions } from '../reviewer/reviewSessionPolicy.js';
 import { reviewSourceIdentityMatches } from '../reviewer/reviewSourceIdentity.js';
 import { buildReviewSessionTitle } from '../reviewer/reviewSessionTitle.js';
+import { buildReviewFollowUpMessage, buildReviewInputSummary } from '../reviewer/reviewFollowUp.js';
+import { listSessionTouchedDirsLive } from '../git-context/sessionDirResolver.js';
 import {
   readReviewRunFromAgentMeta,
   type ReviewRunMeta,
@@ -544,10 +563,17 @@ import {
 import { createBotGroupChatService, type BotGroupChatService, type BotGroupChatServiceDeps } from './botGroupChatService.js';
 import { settleUndispatchedBotGroupTurn } from './botGroupRuntimeFailure.js';
 import { withChatServer } from './chatServer.js';
+import { companionHomes, isCompanionShadowed } from '../companion-cloud/homes.js';
+import { createCompanionCloudHost } from '../companion-cloud/host.js';
+import { activeCompanionCloud } from '../companion-cloud/runtime.js';
+import { companionCloudView } from '../companion-cloud/view.js';
+import type { CompanionCloudActionResult } from '../../shared/companionCloud.js';
 import { createBotGroupPlanDecider } from './botGroupPlanDecider.js';
 import { botGroupMembersVisibleRemotely, registerBotGroupRemoteResourceProvider } from './botGroupRemoteResourceProvider.js';
 import { broadcastBotGroupRemoteResourceChanged } from './botGroupRemoteResourceInvalidation.js';
-import { getBotGroupStepNotificationBody } from '../sessionNotificationCopy.js';
+import { getBotGroupStepNotificationBody, getInputHandoffNotificationBody } from '../sessionNotificationCopy.js';
+import { readSessionTitle } from '../im/shared/controlProjects.js';
+import { readSessionNotificationPreview } from '../localDb/sessionNotificationPreview.js';
 import { createBotGroupWorkDir } from './botGroupWorkDir.js';
 import { createBotGroupAttachmentStore } from './botGroupAttachments.js';
 import { requestUtilityText } from '../utility-model/oneShotCandidates.js';
@@ -571,7 +597,7 @@ import {
 } from './botCompactRuntimeRefresh.js';
 import { isBotCanonicalReplacementBusy } from './botCanonicalReplacementGuard.js';
 import { configureBotCanonicalReplacementCoordinator } from './botCanonicalReplacementCoordinator.js';
-import { botSessionInputBlockReason } from './botSessionInputGuard.js';
+import { botSessionInputBlockReason, isShadowedCompanionCanonical, SHADOWED_COMPANION_INPUT_MESSAGE } from './botSessionInputGuard.js';
 import { configureBotRuntimeEpochRefreshRequest } from './botRuntimeEpochRefreshSignal.js';
 import { createGitSnapshotCoordinator } from '../maker-host/git-snapshot-host.js';
 import {
@@ -737,6 +763,7 @@ import {
 import { readXaiSubscriptionUsageSnapshotForDeviceLink, readClaudeSubscriptionUsageSnapshotForDeviceLink } from './usage.js';
 import { requireEnum, requireObject, throwIpcError } from '../utils/ipcValidate.js';
 import { applyPersistedCindyMakeMarker } from './cindyMakeSessionStart.js';
+import { assertCindyMakeEnabled, assertCindyMakeSessionAvailable } from '../cindy-make/featureGate.js';
 import { CINDY_MAKE_SESSION_SOURCE } from '../../shared/cindyMakeSession.js';
 import { cindyMakeManager } from '../cindy-make/manager.js';
 import { assertCindyMakeWorkspace, withCindyMakeProjectUse } from '../cindy-make/projectAccess.js';
@@ -861,6 +888,7 @@ import {
   normalizeUserMessage,
   materializeDirectSendOssAttachments,
   materializeQueuedOssAttachmentsDeferred,
+  collectQueuedAttachmentRefs,
 } from './normalizeAttachments.js';
 import { QueuedAttachmentOwnershipRegistry } from './queuedAttachmentOwnership.js';
 import { prepareRemoteReviewAttachments } from './reviewRemoteInput.js';
@@ -929,9 +957,16 @@ import {
   createOrcaRemoteWorkerSessionOpener,
   registerOrcaRemoteWorkerHandlers,
 } from './orcaRemoteWorkerHost.js';
-import { createOrcaRemoteWorkers, isExecutionDeviceCandidate, type OrcaRemoteWorkers } from './orcaRemoteWorkers.js';
+import { createOrcaRemoteWorkers, invokeDeviceValue, isExecutionDeviceCandidate, type OrcaRemoteWorkers } from './orcaRemoteWorkers.js';
 import { getReceivedShares, providerShareAgentDeviceId } from '../device-link/providerShareGuest.js';
-import { ORCA_EXECUTION_DEVICES_CHANNEL } from '@cindy/device-link';
+import { ORCA_EXECUTION_DEVICES_CHANNEL, COMPANION_CLOUD_CAPS_CHANNEL, COMPANION_CLOUD_VERSION, isCompanionCloudCaps } from '@cindy/device-link';
+import { INPUT_HANDOFF_LOCAL_CHANNEL, INPUT_HANDOFF_LOCAL_PICTURE_CHANNEL, type InputHandoffHolder, type InputHandoffSnapshot } from '@cindy/device-link';
+import { getInputHandoffService, initInputHandoffService } from '../input-handoff/service.js';
+import { closeInputHandoffAskpass, initInputHandoffAskpass } from '../input-handoff/askpass/index.js';
+import { onQuit } from '../lifecycle.js';
+import { isInputHandoffDisabledForSession } from '../input-handoff/botPolicy.js';
+import { createMacHandoffDriver } from '../input-handoff/macDriver.js';
+import { supportsRemotePluginOauth } from '../plugin-oauth/runtime.js';
 import {
   parseOrcaRemoteLead,
   serializeOrcaRemoteLead,
@@ -956,9 +991,11 @@ import {
   type HandoffWireMessage,
 } from './agentHandoff.js';
 import { sanitizeSourceName } from '@cindy/maker-shared/message-source';
+import { registerSessionHandoffIpc } from './sessionHandoffIpc.js';
 import { UI_ACTION_TRIGGER_PREFIX } from '@cindy/maker-shared/synthetic-trigger';
 import {
   createContextOverflowRollover,
+  canContinueContextRecovery,
   hasModelWindowContextToProtect,
   isContextOverflowErrorData,
   isOversizedHistoryErrorData,
@@ -2598,6 +2635,13 @@ let orcaCollabServiceHolder: OrcaCollabService | null = null;
 let botDelegationServiceHolder: BotDelegationService | null = null;
 let botDirectMessageServiceHolder: BotDirectMessageService | null = null;
 let botGroupChatServiceHolder: BotGroupChatService | null = null;
+/**
+ * Settle a pending account / endpoint switch before using the companion runtime: the lazy Chat
+ * Server wrapper rebinds only when touched. (The home registry itself is owner-scoped.)
+ */
+function settleCompanionOwner(): void { void botGroupChatServiceHolder?.chatServer; }
+let unsubscribeCompanionCloudBroadcast: (() => void) | null = null;
+const listCompanionDevices = async () => (await handleListDevices(deviceDirectoryDeps())).devices;
 
 const botRuntimeRestoreCoordinator = createBotRuntimeRestoreCoordinator({
   readDbIdentity: () => {
@@ -2912,19 +2956,142 @@ const ghostSetupInteractionBridge = initGhostSetupInteractionBridge({
   logger: log,
 });
 
+/**
+ * 代输入 (input handoff). Like Desktop-only confirmations these are Host-owned
+ * waits: they never block a later user turn and are not turn-idle zombies.
+ * Broadcasts carry step structure only; owner values never leave the
+ * trusted local channel or the signed v3 exchange.
+ */
+const inputHandoffImNotified = new Set<string>();
+/** Who is answering: this Desktop, or the server-verified controller device. */
+function inputHandoffActor(): InputHandoffHolder {
+  const context = getDeviceLinkInvokeContext();
+  if (!context) return { local: true };
+  return { deviceId: context.controllerDeviceId };
+}
+function describeInputHandoffDevice(deviceId: string): Omit<InputHandoffHolder, 'local' | 'deviceId'> {
+  const source = readDeviceLinkInvokeSourceDevice();
+  const name = (source?.deviceId === deviceId ? source.name : undefined) ?? readLastKnownDeviceNames()[deviceId];
+  return {
+    ...(name ? { name: name.slice(0, 60) } : {}),
+    ...(source?.deviceId === deviceId ? { platform: source.platform } : {}),
+  };
+}
+const inputHandoffImNotifier = createFeishuDesktopConfirmNotifier(buildInputHandoffNoticeText);
+/**
+ * Tell the owner a screen is waiting, wherever they are. The phone push is
+ * sent from main (not the renderer) so an unattended desktop with Cindy
+ * focused still alerts, and each new screen alerts again. The body is fixed
+ * copy: no screen contents, no purpose text, never a value.
+ */
+function notifyInputHandoffOwner(sessionId: string, snapshot: InputHandoffSnapshot): void {
+  const generation = getMobileNotifyGeneration();
+  void (async () => {
+    try {
+      const [title, preview] = await Promise.all([
+        readSessionTitle(sessionId),
+        readSessionNotificationPreview(sessionId, false).catch(() => undefined),
+      ]);
+      // An IM-driven task gets one text pointer per request, not one per screen.
+      if (!inputHandoffImNotified.has(snapshot.requestId)) {
+        inputHandoffImNotified.add(snapshot.requestId);
+        // Channel-driven tasks get it in their chat; a desktop task taken over from Feishu (/ctr) by its binding.
+        if (!sendInputHandoffChannelNotice(sessionId, buildInputHandoffNoticeText(title), log))
+          inputHandoffImNotifier(sessionId, title);
+      }
+      sendMobileSessionNotify({
+        sessionId,
+        title: preview?.teammateName ?? title,
+        kind: 'needs-reply',
+        fallbackBody: getInputHandoffNotificationBody(),
+        eventId: `input-handoff:${snapshot.requestId}:${snapshot.stepNumber}`,
+        generation,
+        ...(preview?.teammateBotId ? { teammateBotId: preview.teammateBotId } : {}),
+        ...(preview?.teammateAvatar ? { teammateAvatar: preview.teammateAvatar } : {}),
+      });
+    } catch (err) {
+      log.warn('[input-handoff] owner push failed (non-fatal)', err);
+    }
+  })();
+}
+let inputHandoffContinuation:
+  | ((sessionId: string, requestId: string, message: string) => Promise<void>)
+  | null = null;
+initInputHandoffService({
+  broadcast: (channel, payload) => {
+    broadcastToAllWindows(channel, payload);
+    const value = payload as { sessionId?: unknown; requestId?: unknown; request?: InputHandoffSnapshot };
+    if (typeof value.sessionId !== 'string') return;
+    if (channel === MAKER_PUSH.INTERACTION_REQUEST && value.request?.kind === 'input_handoff') {
+      if (!shouldNotifyAgentIslandForSession(value.sessionId)) return;
+      if (value.request.terminal === true) {
+        getAgentIslandService()?.handleInteractionDismissed(value.sessionId, value.request.requestId);
+        return;
+      }
+      getAgentIslandService()?.handlePluginSetupInteraction(
+        value.sessionId,
+        value.request.requestId,
+        value.request.purpose,
+        'input_handoff',
+      );
+      return;
+    }
+    if (channel === MAKER_PUSH.INTERACTION_DISMISSED && typeof value.requestId === 'string') {
+      getAgentIslandService()?.handleInteractionDismissed(value.sessionId, value.requestId);
+    }
+  },
+  createDriver: () => (process.platform === 'darwin' ? createMacHandoffDriver() : null),
+  hostPid: process.pid,
+  remoteInputAvailable: supportsRemotePluginOauth,
+  // A live view of just the window rides remote desktop, so only where the owner allowed it.
+  liveViewAvailable: () => {
+    if (process.platform !== 'darwin') return false;
+    const settings = readDeviceLinkSettings();
+    return settings.remoteControlEnabled && settings.remoteDesktopEnabled;
+  },
+  notifyOwner: (sessionId, snapshot) => notifyInputHandoffOwner(sessionId, snapshot),
+  describeDevice: describeInputHandoffDevice,
+  onClosed: (_sessionId, requestId) => {
+    inputHandoffImNotified.delete(requestId);
+  },
+  continueAgent: async (sessionId, requestId, message) => {
+    if (!inputHandoffContinuation) throw new Error('INPUT_HANDOFF_CONTINUATION_UNAVAILABLE');
+    await inputHandoffContinuation(sessionId, requestId, message);
+  },
+  logger: log,
+});
+// sudo / ssh / git password prompts in the owner's local tasks become one-step 代输入 cards.
+initInputHandoffAskpass({
+  startTerminalPrompt: (request) => getInputHandoffService()?.startTerminalPrompt(request) ?? { ok: false },
+  isDisabledForSession: isInputHandoffDisabledForSession,
+  logger: log,
+});
+onQuit('input-handoff-askpass', closeInputHandoffAskpass, 'async');
+
 initGhostSetupCoordinator({
+  getTargetToken: ghostInstallMutationTargetFor,
   remoteConnection: true,
   changeBus: getGhostSetupChangeBus(),
   bridge: ghostSetupInteractionBridge,
+  resolveStoreId: (ghostId) => {
+    const ghost = findGhostForInstanceId(ghostId);
+    return ghost ? installedGhostStoragePart(ghost) : ghostId;
+  },
   assess: (ghostId) => getGhostSetupAssessment(ghostId),
   validateTarget: (ghostId, tool, workingDir) => {
     // Coordinator 的 UI 只消费 TARGET_UNAVAILABLE 状态；这里的 message 会随
     // ensureReady 结果回到模型，因此与 ghost_info / ghost_call 共用同一口径。
-    const visibility = classifyGhostVisibility(ghostId, workingDir ?? null, {
-      listGhosts: () => getGhostManager().list(),
-      isAvailableForActiveSession: isGhostAvailableForActiveSession,
-      isDisabledForWorkdir: isGhostDisabledForWorkdir,
-    });
+    const instance = findGhostForInstanceId(ghostId);
+    const visibility = classifyGhostVisibility(
+      instance?.manifest.id ?? ghostId,
+      workingDir ?? null,
+      {
+        listGhosts: () => getGhostManager().list(),
+        isAvailableForActiveSession: isGhostAvailableForActiveSession,
+        isDisabledForWorkdir: isGhostDisabledForWorkdir,
+      },
+      instance && hasDeliveryNamespace(instance) ? instance.namespace : undefined,
+    );
     if (!visibility.ok) return visibility;
     const ghost = visibility.ghost;
     if (tool && !(ghost.manifest.tools ?? []).some((candidate) => candidate.name === tool)) {
@@ -2937,22 +3104,20 @@ initGhostSetupCoordinator({
     return { ok: true };
   },
   getGhostIdentity: (ghostId) => {
-    const ghost = getGhostManager()
-      .list()
-      .find((candidate) => candidate.manifest.id === ghostId);
-    return ghost
-      ? {
-          id: ghostId,
-          name: ghost.manifest.name,
-          ...(ghost.iconDataUrl ? { iconDataUrl: ghost.iconDataUrl } : {}),
-        }
-      : null;
+    const ghost = findGhostForInstanceId(ghostId);
+    if (!ghost) return null;
+    return {
+      id: installedGhostStoragePart(ghost),
+      name: ghost.manifest.name,
+      ...(ghost.iconDataUrl ? { iconDataUrl: ghost.iconDataUrl } : {}),
+    };
   },
-  executeAction: ({ sessionId, ghostId, action, responseTarget }) =>
+  executeAction: ({ sessionId, ghostId, action, responseTarget, assertCurrent }) =>
     executeGhostSetupAction({
       sessionId,
       ghostId,
       action,
+      assertCurrent,
       ...(responseTarget ? { responseTarget } : {}),
     }),
   executeInlineAction: executeGhostSetupInlineAction,
@@ -2966,6 +3131,7 @@ initializePluginOauthCards({
   loadKey: loadOauthSigningKey,
   bridge: ghostSetupInteractionBridge,
   bots: getBotAuthorizationService,
+  inputHandoff: getInputHandoffService,
   owner: () => currentOauthIdentityScope() ? activeOwnerScopeKey() : null,
   available: peer => {
     const settings = readDeviceLinkSettings();
@@ -3030,7 +3196,8 @@ type RecoverableInteractionSnapshot =
   | GhostSetupInteractionSnapshot
   | IssueConfirmInteractionSnapshot
   | RenameSessionsConfirmInteractionSnapshot
-  | GhostGrantConfirmInteractionSnapshot;
+  | GhostGrantConfirmInteractionSnapshot
+  | InputHandoffSnapshot;
 
 type PendingInteractionSnapshotEntry = {
   request: RecoverableInteractionSnapshot;
@@ -3057,6 +3224,7 @@ function getPendingInteractionsForSession(sessionId: string): PendingInteraction
       .map(({ request }) => ({ request })),
     ...ghostGrantConfirmBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
     ...ghostSetupInteractionBridge.pendingSnapshots(sessionId).map(({ request }) => ({ request })),
+    ...(getInputHandoffService()?.pendingSnapshots(sessionId) ?? []).map(({ request }) => ({ request })),
   );
   return out;
 }
@@ -3315,6 +3483,8 @@ function cleanupPendingInteractionsForSession(sessionId: string, reason: string)
     sessionId,
     reason === 'session_closed' ? 'session_closed' : 'session_aborted',
   );
+  // 代输入 follows the same real close/abort boundary; silent, no continuation.
+  getInputHandoffService()?.cleanupForSession(sessionId);
   // fs 槽 workdir 写确认的会话级记忆只在会话真正关闭时清(防 Set 无界增长)。
   // 本函数在 session_aborted(用户点停止)等瞬态也会被调,那些场景确认卡该收、
   // 但"同目录本会话免弹"的记忆要保住——否则用户每
@@ -4059,6 +4229,22 @@ export function createAutomationUserTurnGitBaselineHooks(): AutomationUserTurnGi
     beforeDispatchUserTurn: (sessionId) => gitSnapshotCoordinator?.onTurnStart(sessionId),
     onUndispatchedUserTurn: (sessionId) => gitSnapshotCoordinator?.onTurnAbort(sessionId),
   };
+}
+
+/** Goal direct dispatch must yield to the same input boundary as ordinary messages. */
+export function isGoalInputBlocked(sessionId: string): boolean {
+  return !agentInputCoordinatorHolder
+    || agentInputCoordinatorHolder.shouldQueueNewTurn(sessionId)
+    || hasPendingAgentInteractionForSession(sessionId);
+}
+
+export async function ensureGoalInputReady(sessionId: string): Promise<boolean> {
+  const coordinator = agentInputCoordinatorHolder;
+  if (!coordinator) return false;
+  await coordinator.ensureQueueRestored(sessionId);
+  return coordinator === agentInputCoordinatorHolder
+    && coordinator.isQueueRestored(sessionId)
+    && !isGoalInputBlocked(sessionId);
 }
 
 export function isSessionInTurn(sessionId: string): boolean {
@@ -5796,6 +5982,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // device-link 由 dispatch 拦截直读注入的 reader(见 dispatch.ts 同名 setter 注释)。
   setDeviceLinkRemoteXaiSubscriptionUsageReader(readXaiSubscriptionUsageSnapshotForDeviceLink);
   setDeviceLinkRemoteClaudeSubscriptionUsageReader(readClaudeSubscriptionUsageSnapshotForDeviceLink);
+  setProviderGroupClaudeUsageReader(readClaudeSubscriptionUsageSnapshotForDeviceLink);
 
   // device-link 远程 set-* 持久化回流:effort/permission/fastMode/extraDirs 等
   // runtime-only handler 经这个注入写被控端 DB + 广播 patched。SET_MODEL 是例外:
@@ -6883,6 +7070,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   ipcMain.handle(MAKER_INVOKE.EXECUTE_DESKTOP_COMMAND, async (e, name: unknown, ctx: unknown) => {
     if (name === 'cindy-make-doctor' || name === 'cindy-make') {
       assertTrustedAppRendererEvent(e);
+      assertCindyMakeEnabled();
       if (ctx != null && (typeof ctx !== 'object' || Array.isArray(ctx)))
         throwIpcError('INVALID_PARAMS', 'Invalid Make context');
     }
@@ -7366,7 +7554,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   }
 
   async function assertReviewExternalInputAllowed(sessionId: string): Promise<void> {
-    await assertReviewSessionExternalInputAllowed(sessionId, readSessionSource);
+    const source = await readSessionSource(sessionId);
+    assertCindyMakeSessionAvailable(source);
+    await assertReviewSessionExternalInputAllowed(sessionId, async () => source);
   }
 
   async function assertReviewSettingsUnlocked(sessionId: string): Promise<void> {
@@ -7792,6 +7982,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     didInjectProjectContext: boolean;
   }> {
     assertAccess?.();
+    await applyPersistedCindyMakeMarker(o, readSessionSource);
+    assertAccess?.();
     // 协同远端 Worker 的代理任务行只承接计槽与回报，真实任务在运行设备上，绝不在本机起 Agent。
     if (o.id && await orcaRemoteWorkersForHost?.isRemoteWorker(o.id)) {
       throw new Error('[PRECONDITION_FAILED] this Worker runs on another device and cannot start locally');
@@ -7834,7 +8026,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     }
     assertAccess?.();
     await applyPersistedReviewMode(o);
-    await applyPersistedCindyMakeMarker(o, readSessionSource);
     const didInjectOrcaInstructions = o.reviewMode === true ? false : applyOrcaInstructions(o);
     const didInjectProjectContext =
       o.reviewMode === true ? false : await applyProjectContextInjection(o);
@@ -8799,6 +8990,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       .where(eq(sessions.id, sessionId));
     broadcastSessionPatched(sessionId, { orcaRemoteLead: lead });
   };
+  // Cloud companions: another computer asks before handing a companion here (read-only constant).
+  makerSessionRegistry.handle(COMPANION_CLOUD_CAPS_CHANNEL, () => ({ companionCloud: COMPANION_CLOUD_VERSION }));
   registerOrcaRemoteWorkerHandlers(makerSessionRegistry, createOrcaRemoteWorkerHost({
     getCaller: () => {
       const context = getDeviceLinkInvokeContext();
@@ -9056,6 +9249,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       }
 
       let evidence!: Awaited<ReturnType<typeof loadReviewEvidence>>;
+      let primaryRepoRoot: string | null = null;
+      let additionalRepositories: LoadedReviewRepository[] = [];
+      let skippedRepositories: SkippedReviewRepository[] = [];
+      let uncheckedTaskDirs = 0;
       let workspaceSelected = false;
       let historyCaptureIncomplete = false;
       let sourceArtifactFingerprint = '';
@@ -9107,10 +9304,26 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           sourceArtifactFingerprint = prepared.fingerprint;
         };
         await prepareEvidence();
+        // A task can change several repositories or worktrees (a client worktree
+        // plus a server checkout). Review them as one deliverable instead of only
+        // the directory the latest tool call happened to use.
+        primaryRepoRoot = await resolveReviewRepoRoot(sourceWorkingDir);
+        const additional = await loadAdditionalReviewRepositories({
+          sourceSessionId: source.id,
+          primaryRoot: primaryRepoRoot ?? sourceWorkingDir,
+          touchedDirs: await listSessionTouchedDirsLive(source.id),
+          warn: (message, fields) => log.warn(message, { sourceSessionId: source.id, ...fields }),
+        });
+        additionalRepositories = additional.repos;
+        skippedRepositories = additional.skipped;
+        uncheckedTaskDirs = additional.uncheckedDirs;
         // An empty checkout or non-Git source commonly means the work happened
         // elsewhere. Historical turn metadata cannot tell us which current code
         // the user wants; ask about the directory instead of refusing the run.
-        if (shouldSelectReviewWorkspace(evidence, isDeviceLinkInvoke())) {
+        if (
+          additionalRepositories.length === 0 &&
+          shouldSelectReviewWorkspace(evidence, isDeviceLinkInvoke())
+        ) {
           const selectedDir = await selectReviewWorkspace(event as IpcMainInvokeEvent, sourceWorkingDir);
           if (!selectedDir) throwIpcError('MUTATION_CANCELLED', 'Review workspace selection cancelled');
           workspaceSelected = true;
@@ -9151,6 +9364,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         !evidence.branch &&
         !evidence.changeSet &&
         evidence.artifacts.length === 0 &&
+        additionalRepositories.length === 0 &&
         !request.focus &&
         !workspaceSelected
       ) {
@@ -9177,6 +9391,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             ? { branchUnavailableReason: evidence.branchUnavailableReason }
             : {}),
           changeSet: evidence.changeSet,
+          ...(additionalRepositories.length > 0
+            ? {
+                primaryRoot: primaryRepoRoot ?? sourceWorkingDir,
+                additionalRepositories,
+              }
+            : {}),
+          ...(skippedRepositories.length > 0 ? { skippedRepositories } : {}),
+          ...(uncheckedTaskDirs > 0 ? { uncheckedTaskDirs } : {}),
           artifacts: evidence.artifacts,
           artifactsOmitted: evidence.artifactsOmitted,
           artifactExcerpts: evidence.artifactExcerpts,
@@ -9187,15 +9409,26 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         throw error;
       }
 
+      const additionalWorkingDirs = additionalRepositories.map((repo) => repo.root);
+      const reviewWorkspaceMeta = {
+        workingDir: sourceWorkingDir,
+        ...(evidence.branch ? { baseRef: evidence.branch.baseRef } : {}),
+        hasUncommittedChanges: !!evidence.workspace?.dirty,
+        ...(additionalWorkingDirs.length > 0 ? { additionalWorkingDirs } : {}),
+      };
       return {
         sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi',
         prompt: builtPrompt.prompt,
+        replyLanguage: builtPrompt.replyLanguage,
+        inputSummary: buildReviewInputSummary({
+          ...reviewWorkspaceMeta,
+          uncoveredWorkingDirs: skippedRepositories.map((repo) => repo.root),
+          uncheckedTaskDirs,
+          artifactCount: evidence.artifacts.length,
+          focus: evidence.focusPath ?? request.focus,
+        }),
         targetKind: builtPrompt.targetKind,
-        workspace: {
-          workingDir: sourceWorkingDir,
-          ...(evidence.branch ? { baseRef: evidence.branch.baseRef } : {}),
-          hasUncommittedChanges: !!evidence.workspace?.dirty,
-        },
+        workspace: reviewWorkspaceMeta,
         onAccepted: () => acceptRemoteAttachments?.(),
         cleanup: async () => {
           await cleanupPreparedArtifacts?.();
@@ -9336,7 +9569,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
               permissionMode: 'ask',
               planMode: false,
               reviewMode: true,
-              reviewReadPaths: [...reviewReadPaths],
+              // Additional repositories are read grants only. Their freshness is
+              // bound through their Git fingerprints, not the bounded artifact
+              // hash, which cannot cover a whole checkout.
+              reviewReadPaths: [...reviewReadPaths, ...additionalWorkingDirs],
               makerMemoryEnabled: false,
               ...(readRoots.size > 0 ? { extraDirs: [...readRoots] } : {}),
             }),
@@ -9377,6 +9613,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
                   code: 'source-files-changed',
                   message:
                     'The branch comparison base changed before Review started. Run /review again for the current result.',
+                };
+              }
+              if (!(await additionalReviewRepositoriesAreCurrent(source.id, additionalRepositories))) {
+                return {
+                  code: 'source-files-changed',
+                  message:
+                    'Files in another reviewed repository changed before Review started. Run /review again for the current result.',
                 };
               }
               if (
@@ -9437,6 +9680,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
                     'The branch comparison base changed while Review was running. Run /review again for the current result.',
                 };
               }
+              if (!(await additionalReviewRepositoriesAreCurrent(source.id, additionalRepositories))) {
+                return {
+                  code: 'source-files-changed',
+                  message:
+                    'Files in another reviewed repository changed while Review was running. Run /review again for the current result.',
+                };
+              }
               if (
                 !(await artifactFingerprintIsCurrent(
                   authorizedArtifactPaths,
@@ -9491,16 +9741,46 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         .where(eq(sessions.id, reviewerSessionId));
     },
     broadcastReviewerCreated: broadcastSessionCreated,
-    persistReviewerPrompt: async ({ reviewerSessionId, runId, prompt, sourceAgentKind }) => {
+    persistReviewerPrompt: async ({ reviewerSessionId, sourceSessionId, runId, prompt, sourceAgentKind }) => {
+      // The existing "sent by task" label links the Reviewer back to its source.
+      // Reviewer tasks are not in the task list, so this is their durable way back.
+      const origin = sessionQueueOriginForDispatcher({
+        dispatcherSessionId: sourceSessionId,
+        ...(await readSenderIdentity(sourceSessionId)),
+        message: prompt,
+      });
       await createDbMessage(reviewerSessionId, {
         clientId: `review-prompt:${runId}`,
         role: 'user',
         content: prompt,
+        ...(origin ? { agentMeta: { origin } } : {}),
         agentKind: sourceAgentKind,
       });
     },
     drainPersistQueue,
     readReviewerResult: readLatestReviewerResult,
+    // Close the loop like an inline review: the source agent receives the
+    // conclusion as a hidden host-queued turn attributed to the Reviewer task,
+    // and verifies/fixes it. Busy sources queue it behind their current turn.
+    forwardResultToSource: async ({ sourceSessionId, reviewerSessionId, runId, result, replyLanguage }) => {
+      const followUp = buildReviewFollowUpMessage(result, replyLanguage);
+      const sent = await sendToSessionInternal({
+        targetSessionId: sourceSessionId,
+        clientId: `review-follow-up:${runId}`,
+        message: followUp,
+        // Hidden host input: the review card is what the user sees; the source
+        // agent's reply follows it. The model text omits this prefix.
+        persistedContent: `${UI_ACTION_TRIGGER_PREFIX}${followUp}`,
+        dispatcherSessionId: reviewerSessionId,
+        forceQueue: true,
+        autoReviewUserText: { kind: 'delegated-continuation' },
+        resumeWithStoredPermissionMode: true,
+      });
+      if (!sent.ok) {
+        throw new Error(`${sent.errorCode}: ${sent.message}`);
+      }
+      if (sent.wakeKind === 'queued') await awaitAgentInputQueueSnapshotPersistence(sourceSessionId);
+    },
     closeReviewer: async (reviewerSessionId) => {
       try {
         await maker.closeSession(reviewerSessionId);
@@ -10157,6 +10437,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
      */
     source?: { origin?: unknown; sourcePlugin?: unknown; persistedText?: string },
   ): Promise<SessionSendResult> {
+    assertCindyMakeSessionAvailable(await readSessionSource(session.id));
     const dispatchMergeTurn = prepareUpstreamMergeTurn(session.id);
     if (!session.remoteHostId && isCindyMakeWorktreePath(app.getPath('userData'), session.workDir)) {
       if (cindyMakeManager.isTaskPreparing(session.id))
@@ -10755,6 +11036,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           message: `session ${targetSessionId} is deleted`,
         };
       }
+      // Internal sends (plugins, tasks, routines) reach idle sessions without sendToAgentAccepted.
+      const [companionLink] = await getDbClient().drizzle
+        .select({ role: botSessionLinks.role, botId: botSessionLinks.botId })
+        .from(botSessionLinks).where(eq(botSessionLinks.sessionId, targetSessionId)).limit(1);
+      if (isShadowedCompanionCanonical(companionLink, isCompanionShadowed)) {
+        return { ok: false as const, errorCode: 'AGENT_NOT_READY' as const, message: SHADOWED_COMPANION_INPUT_MESSAGE };
+      }
 
       // 崩溃恢复:在路由决策前加载快照,确保恢复的排队 prompt 不被跳过。
       // 失败时 shouldQueueNewTurn 仍返回 true(未恢复即入队),消息不丢。
@@ -11149,6 +11437,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     files?: AgentInputQueuedMessage['files'];
     onAccepted?: (replayed?: boolean) => void | Promise<void>;
     onAcceptedRollback?: () => void | Promise<void>;
+    /** Remote-origin input: a cold session resumes with its stored permission mode, never bypass. */
+    resumeWithStoredPermissionMode?: boolean;
   }) => {
     if (params.clientId && params.authorizationGuard) {
       const delivery = await resolveBotAuthorizationDelivery(params.clientId, async (clientId) => {
@@ -11260,6 +11550,22 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
 
   setBotInvitationWelcomeDispatch(dispatchBotSessionMessage);
 
+  // 代输入 ended: hidden metadata-only continuation, mirroring the bot
+  // authorization resume. A deterministic client id keeps delivery idempotent.
+  inputHandoffContinuation = async (sessionId, requestId, message) => {
+    await inputCoordinator.ensureQueueRestored(sessionId).catch(() => undefined);
+    const result = await dispatchBotSessionMessage({
+      targetSessionId: sessionId,
+      message,
+      persistedContent: `${UI_ACTION_TRIGGER_PREFIX}${message}`,
+      clientId: `input-handoff-result:${requestId}`,
+    });
+    if (!result.ok) throw new Error(`Input handoff continuation not accepted: ${result.errorCode}`);
+  };
+
+  // 同账号另一台电脑上的任务发来的消息（Agent 的 send_to_session 传 deviceId::sessionId）。
+  registerSessionHandoffIpc({ send: (params) => sendToSessionInternal(params) });
+
   initializeBotAuthorizationHost(async (card, validate, assertAuthorizationCurrent) => {
     await inputCoordinator.ensureQueueRestored(card.sessionId);
     const generation = inputCoordinator.getGeneration(card.sessionId);
@@ -11368,6 +11674,34 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     git: async (args, cwd) => (await gitExec(args, cwd, { timeoutMs: 10_000 })).stdout,
     trashItem: (fullPath) => shell.trashItem(fullPath),
   });
+  // The companion "restart": durable handoff from DB history, no replay of any input.
+  async function restartBotCanonicalRuntime(sessionId: string, assertOwnerCurrent: () => void): Promise<void> {
+    const recovery = contextOverflowRolloverHolder;
+    if (!recovery) throwIpcError('PRECONDITION_FAILED', 'Bot recovery is not ready');
+    await restartBotRuntime(sessionId, assertOwnerCurrent, {
+      stopInput: (id) => {
+        // Save the visible partial reply before abort/close clears the stream buffers.
+        flushAssistantBlock(id);
+        flushOrphanToolResults(id, null);
+        resetAutomaticRecoveryForExplicitStop(id);
+        recovery.cancelRecovery(id);
+        // Cancel sends/retries before waiting for their serialization lock.
+        // Preserve queued user input, paused until the user explicitly resumes it.
+        agentInputCoordinatorHolder?.stop(id, { keepQueue: true, pauseQueue: true, resumeOnUserInput: true });
+      },
+      withSessionLock: withSessionRestartLock,
+      rebuild: async (id, assertCurrent, signal) => {
+        await pauseGoalBeforeExplicitStop(id);
+        assertCurrent();
+        cleanupPendingInteractionsForSession(id, 'session_closed');
+        await recovery.prepareNativeSessionRecovery(id, null, assertCurrent, signal);
+      },
+      onClosed: (id) => agentInputCoordinatorHolder?.onSessionClosed(id),
+    });
+  }
+  // A turn is running or queued in a companion's main task: no context rebuild, no hand-over.
+  const companionTurnActive = (sessionId: string) => !!maker.getSession(sessionId)?.isTurnRunning?.()
+    || inputCoordinator.getQueueControlSnapshot(sessionId).pendingQueue.length > 0;
   const botGroupChatDeps: BotGroupChatServiceDeps = {
     ensureLane: async (input) => {
       try {
@@ -11451,6 +11785,50 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       // Phones read groups as remote resources; any change re-reads the row and the chat.
       broadcastBotGroupRemoteResourceChanged(payload.groupId);
     },
+    companionCloud: createCompanionCloudHost({
+      log,
+      ensureCanonicalSession: async (botId) => {
+        if (!botDelegationServiceHolder) throw new Error('DELEGATION_UNAVAILABLE');
+        const ensured = await botDelegationServiceHolder.ensureCanonicalSession(botId);
+        if (!ensured.ok) throw new Error(ensured.errorCode);
+        return ensured.sessionId;
+      },
+      // Cloud history was added: rebuild like a restart, but never interrupt a turn.
+      rebuildContext: async (sessionId) => {
+        if (companionTurnActive(sessionId)) return 'busy';
+        const scope = captureDataOwnerBroadcastScope();
+        await restartBotCanonicalRuntime(sessionId, () => {
+          if (!isDataOwnerBroadcastScopeCurrent(scope)) throw new Error('OWNER_CHANGED');
+        });
+        return 'rebuilt';
+      },
+      isTurnActive: companionTurnActive,
+      listDevices: listCompanionDevices,
+      // Old clients answer CHANNEL_NOT_ALLOWED; unreachable ones time out. Neither may receive a companion.
+      probeCompanionCloud: async (deviceId) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const value = await Promise.race([
+            invokeDeviceValue(invokeBotPeer, deviceId, COMPANION_CLOUD_CAPS_CHANNEL, []),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('[INVOKE_TIMEOUT] caps probe timed out')), 5_000); }),
+          ]);
+          return isCompanionCloudCaps(value);
+        } catch { return false; } finally { clearTimeout(timer); }
+      },
+      // A message the owner wrote in the companion's room reaches its main task like any user input.
+      deliverToCanonical: async (botId, text, clientId) => {
+        // A room message drives the companion's main task like a same-account device: only where this
+        // computer allows same-account device control (the room carries no authenticated device).
+        if (!readDeviceLinkSettings().remoteControlEnabled) return { ok: false as const, errorCode: 'REMOTE_CONTROL_DISABLED' };
+        if (!botDelegationServiceHolder) return { ok: false as const, errorCode: 'DELEGATION_UNAVAILABLE' };
+        const ensured = await botDelegationServiceHolder.ensureCanonicalSession(botId);
+        if (!ensured.ok) return { ok: false as const, errorCode: ensured.errorCode };
+        // Content from the cloud room must not wake the task with more permission than the user chose.
+        const result = await dispatchBotSessionMessage({ targetSessionId: ensured.sessionId, message: text, clientId,
+          resumeWithStoredPermissionMode: true });
+        return result.ok ? { ok: true as const } : { ok: false as const, errorCode: result.errorCode };
+      },
+    }),
     onStepSettled: (event, scope) => {
       const ownerScope = scope as ReturnType<typeof captureDataOwnerBroadcastScope> | undefined;
       if (ownerScope && !isDataOwnerBroadcastScopeCurrent(ownerScope)) return;
@@ -11472,6 +11850,15 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     log,
   };
   botGroupChatServiceHolder = withChatServer(createBotGroupChatService(botGroupChatDeps), botGroupChatDeps);
+  unsubscribeCompanionCloudBroadcast?.();
+  unsubscribeCompanionCloudBroadcast = companionHomes.onChange((snapshot) => {
+    const scope = captureDataOwnerBroadcastScope();
+    void companionCloudView(snapshot, listCompanionDevices).then((view) => {
+      // Device lookups can finish out of order: a superseded snapshot is never pushed after a newer one.
+      if (companionHomes.snapshot() !== snapshot) return;
+      broadcastToAllWindows(MAKER_PUSH.COMPANION_CLOUD_CHANGED, view, scope);
+    });
+  });
   // Phones reach groups through the Remote Resource protocol (bot-group-chat.md §8).
   registerBotGroupRemoteResourceProvider(() => botGroupChatServiceHolder);
   botDelegationServiceHolder?.dispose();
@@ -11614,30 +12001,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   });
   registerBotLifecycleHandlers({
     maker,
-    restartRuntime: async (sessionId, assertOwnerCurrent) => {
-      const recovery = contextOverflowRolloverHolder;
-      if (!recovery) throwIpcError('PRECONDITION_FAILED', 'Bot recovery is not ready');
-      await restartBotRuntime(sessionId, assertOwnerCurrent, {
-        stopInput: (id) => {
-          // Save the visible partial reply before abort/close clears the stream buffers.
-          flushAssistantBlock(id);
-          flushOrphanToolResults(id, null);
-          resetAutomaticRecoveryForExplicitStop(id);
-          recovery.cancelRecovery(id);
-          // Cancel sends/retries before waiting for their serialization lock.
-          // Preserve queued user input, paused until the user explicitly resumes it.
-          agentInputCoordinatorHolder?.stop(id, { keepQueue: true, pauseQueue: true, resumeOnUserInput: true });
-        },
-        withSessionLock: withSessionRestartLock,
-        rebuild: async (id, assertCurrent, signal) => {
-          await pauseGoalBeforeExplicitStop(id);
-          assertCurrent();
-          cleanupPendingInteractionsForSession(id, 'session_closed');
-          await recovery.prepareNativeSessionRecovery(id, null, assertCurrent, signal);
-        },
-        onClosed: (id) => agentInputCoordinatorHolder?.onSessionClosed(id),
-      });
-    },
+    restartRuntime: restartBotCanonicalRuntime,
     getDelegationService: () => botDelegationServiceHolder,
     onPaused: (botId) => updateBotRoutineLifecycle(botId, 'pause'),
     onResumed: async (botId) => {
@@ -11650,6 +12014,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     onBeforeDelete: prepareCompanionImportDeletion,
     onDeleted: async (botId, assertOwner) => {
       assertOwner();
+      // Deleted on its home: other devices stop showing it. Started first and independently, so a
+      // local cleanup failure below never skips it; it records retirePending and retries itself.
+      // A demoted copy never retires the cloud companion.
+      settleCompanionOwner();
+      void activeCompanionCloud()?.retire(botId).catch((error: unknown) => {
+        log.warn('companion cloud retire failed', { error: error instanceof Error ? error.message.slice(0, 80) : 'UNKNOWN' });
+      });
       // Profile deletion has committed. Startup also purges orphaned routines
       // if this cleanup fails or the process stops before it finishes.
       await updateBotRoutineLifecycle(botId, 'delete');
@@ -11784,6 +12155,47 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   ipcMain.handle(MAKER_INVOKE.BOT_GROUP_PLAN_START, async (event, input: unknown) => {
     assertTrustedAppRendererEvent(event);
     return botGroupChatServiceHolder ? botGroupChatServiceHolder.startPlan(input) : botGroupNotReady;
+  });
+  const currentCompanionHomes = () => { settleCompanionOwner(); return companionHomes; };
+  ipcMain.handle(MAKER_INVOKE.COMPANION_CLOUD_STATE, async (event) => {
+    assertTrustedAppRendererEvent(event);
+    return companionCloudView(currentCompanionHomes().snapshot(), listCompanionDevices);
+  });
+  const companionBotId = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim() || value.length > 200) throwIpcError('INVALID_PARAMS', 'botId required');
+    return value;
+  };
+  const companionNotEnabled: CompanionCloudActionResult = { ok: false, code: 'NOT_ENABLED' };
+  ipcMain.handle(MAKER_INVOKE.COMPANION_CLOUD_TAKE_OVER, async (event, botId: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    const id = companionBotId(botId);
+    currentCompanionHomes();
+    return activeCompanionCloud()?.takeOver(id) ?? companionNotEnabled;
+  });
+  ipcMain.handle(MAKER_INVOKE.COMPANION_CLOUD_TRANSFER, async (event, botId: unknown, targetDeviceId: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    const id = companionBotId(botId);
+    if (typeof targetDeviceId !== 'string' || !targetDeviceId || targetDeviceId.length > 200) throwIpcError('INVALID_PARAMS', 'targetDeviceId required');
+    currentCompanionHomes();
+    return activeCompanionCloud()?.transfer(id, targetDeviceId) ?? companionNotEnabled;
+  });
+  ipcMain.handle(MAKER_INVOKE.COMPANION_CLOUD_TRANSCRIPT, async (event, botId: unknown, before: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    const id = companionBotId(botId);
+    if (before !== undefined && before !== null && (typeof before !== 'string' || !/^[1-9][0-9]{0,18}$/.test(before)))
+      throwIpcError('INVALID_PARAMS', 'Invalid cursor');
+    const runtime = activeCompanionCloud();
+    if (!runtime) throwIpcError('PRECONDITION_FAILED', 'Cloud companions are not available');
+    try {
+      return await runtime.transcript(id, typeof before === 'string' ? before : undefined);
+    } catch (error) {
+      log.warn('companion transcript read failed', { error: error instanceof Error ? error.message.slice(0, 80) : 'UNKNOWN' });
+      throwIpcError('PRECONDITION_FAILED', 'Companion conversation is not available');
+    }
+  });
+  ipcMain.handle(MAKER_INVOKE.COMPANION_CLOUD_DEVICES, async (event) => {
+    assertTrustedAppRendererEvent(event);
+    return (await activeCompanionCloud()?.transferTargets()) ?? [];
   });
   ipcMain.handle(MAKER_INVOKE.BOT_GROUP_PLAN_DISMISS, async (event, input: unknown) => {
     assertTrustedAppRendererEvent(event);
@@ -12463,6 +12875,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   };
   setPluginTaskHandler(handlePluginTask);
   setPluginTaskUninstaller((pluginId, remove) => pluginTaskServiceForCurrentOwner!().withUninstall(pluginId, remove));
+  setPluginTaskRelocator((from, to) => pluginTaskServiceForCurrentOwner!().relocatePlugin(from, to));
 
   // Local task UI only. The plugin and device-link protocols have no recovery operation.
   const pluginWriteAccessFromHost = async (event: Electron.IpcMainInvokeEvent, taskId: unknown, retry: boolean) => {
@@ -15790,13 +16203,19 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           remoteHostId: sessions.remoteHostId,
           profileStatus: botProfiles.status,
           hiddenAt: botProfiles.hiddenAt,
+          botId: botSessionLinks.botId,
         })
         .from(sessions)
         .leftJoin(botSessionLinks, eq(botSessionLinks.sessionId, sessions.id))
         .leftJoin(botProfiles, eq(botProfiles.id, botSessionLinks.botId))
         .where(eq(sessions.id, sessionId))
         .limit(1);
+      assertCindyMakeSessionAvailable(botInput?.source);
       const blocked = botSessionInputBlockReason(botInput ?? null);
+      // Rechecked under the send lock right before every real send, including queue drains.
+      if (botInput?.source === 'bot' && isShadowedCompanionCanonical(botInput, isCompanionShadowed)) {
+        throwIpcError('PRECONDITION_FAILED', SHADOWED_COMPANION_INPUT_MESSAGE);
+      }
       if (args[2] && typeof args[2] === 'object') {
         if (botInput?.source === 'bot' && ['canonical', 'delegation', 'group'].includes(botInput.role ?? '')) {
           botFallbackInputs.add(args[2]);
@@ -15822,29 +16241,43 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         : withCindyMakeProjectUse(app.getPath('userData'), botInput?.workingDir, () => sendToAgentAcceptedUnlocked(...args));
     });
   };
+  // Shared by pre-send pressure checks and the final automatic-continuation gate.
+  // A stale/archived link must not turn a delegated or deleted companion into a direct chat.
+  const readContextRecoverySession = async (sessionId: string) => {
+    const [row] = await getDbClient()
+      .drizzle.select({
+        status: sessions.status,
+        source: sessions.source,
+        botRole: botSessionLinks.role,
+        botLinkArchivedAt: botSessionLinks.archivedAt,
+        botStatus: botProfiles.status,
+        botHiddenAt: botProfiles.hiddenAt,
+        agentKind: sessions.agentKind,
+        remoteHostId: sessions.remoteHostId,
+        clearedAt: sessions.clearedAt,
+        sdkSessionId: sessions.sdkSessionId,
+        contextTokens: sessions.contextTokens,
+        contextWindow: sessions.contextWindow,
+        model: sessions.model,
+        providerId: sessions.providerId,
+        workingDir: sessions.workingDir,
+      })
+      .from(sessions)
+      .leftJoin(botSessionLinks, eq(botSessionLinks.sessionId, sessions.id))
+      .leftJoin(botProfiles, eq(botProfiles.id, botSessionLinks.botId))
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
+    if (!row) return null;
+    return {
+      ...row,
+      botRole: row.botStatus === 'active' && !row.botHiddenAt && row.botLinkArchivedAt === null
+        ? row.botRole : null,
+    };
+  };
   contextOverflowRolloverHolder = createContextOverflowRollover({
     hasExternalRecoveryOwner: (sessionId) =>
       isHeadlessGhostSetupTurn(sessionId) || !!bindingStore.findByTarget(sessionId),
-    getSessionRow: async (sessionId) => {
-      const [row] = await getDbClient()
-        .drizzle.select({
-          status: sessions.status,
-          source: sessions.source,
-          agentKind: sessions.agentKind,
-          remoteHostId: sessions.remoteHostId,
-          clearedAt: sessions.clearedAt,
-          sdkSessionId: sessions.sdkSessionId,
-          contextTokens: sessions.contextTokens,
-          contextWindow: sessions.contextWindow,
-          model: sessions.model,
-          providerId: sessions.providerId,
-          workingDir: sessions.workingDir,
-        })
-        .from(sessions)
-        .where(eq(sessions.id, sessionId))
-        .limit(1);
-      return row ?? null;
-    },
+    getSessionRow: readContextRecoverySession,
     classifyCodexHistory: async (threadId) => {
       const ownerScope = captureDataOwnerBroadcastScope();
       const dbSnapshot = getCurrentDbClientSnapshot();
@@ -16019,9 +16452,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             content: recovery.sourceUserContent,
           })
         : undefined;
-      if (recovery?.continueFromHistory &&
-        (row.source !== 'desktop' || isHeadlessGhostSetupTurn(sessionId) || bindingStore.findByTarget(sessionId))) {
-        return { accepted: false };
+      if (recovery?.continueFromHistory) {
+        const current = await readContextRecoverySession(sessionId);
+        if (!current || !canContinueContextRecovery(current) || current.status !== 'active'
+          || isHeadlessGhostSetupTurn(sessionId) || bindingStore.findByTarget(sessionId)) {
+          return { accepted: false };
+        }
       }
       const sendReplay = () => sendToAgentAcceptedUnlocked(
         sessionId,
@@ -16823,7 +17259,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   const discardQueuedAttachmentOwnership = (
     sessionId: string,
     clientId: string,
-    keepOwnerId?: string,
+    opts?: { keepCurrentOwner?: boolean },
   ): void => {
     // Coordinator discard callbacks can run before the state mutation that
     // removes the item emits its replacement snapshot (remove/stop/clear do
@@ -16835,7 +17271,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       void (async () => {
         try {
           await awaitAgentInputQueueSnapshotPersistence(sessionId);
-          await queuedAttachmentOwnership.discardClient(sessionId, clientId, keepOwnerId);
+          // A superseding edit keeps whichever owner is current when the
+          // discard finally runs: a later edit accepted while this one waited
+          // may have replaced or merged the owner that was current earlier.
+          await (opts?.keepCurrentOwner
+            ? queuedAttachmentOwnership.discardSuperseded(sessionId, clientId)
+            : queuedAttachmentOwnership.discardClient(sessionId, clientId));
         } catch (error) {
           // A failed snapshot must keep the ownership callbacks alive. The
           // recycler/next lifecycle boundary can retry without losing data.
@@ -17468,6 +17909,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     }),
     emitProjection: (projection) => {
       broadcastToAllWindows(MAKER_PUSH.INPUT_PROJECTION, projection);
+      if (!isGoalInputBlocked(projection.sessionId)) notifyGoalIdleAfterTurnSettled(projection.sessionId);
     },
     // 意识拦截钩(订阅槽①):派发/落库前问已装钩子意识;fail-open 由
     // screenGhostUserMessage 内部收敛,快路径(无钩子意识)零开销。
@@ -18447,7 +18889,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         sid,
         parsed.clientId,
         materialized.cleanupLocalMaterialization,
-        { cleanupAfterDurable: materialized.cleanupAfterAcceptance },
+        {
+          cleanupAfterDurable: materialized.cleanupAfterAcceptance,
+          parts: materialized.materializedParts,
+        },
       );
       let acceptedByCoordinator = false;
       try {
@@ -18665,6 +19110,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             cleanupAfterAcceptance: undefined,
             cleanupBeforeAcceptance: undefined,
             cleanupLocalMaterialization: undefined,
+            materializedParts: undefined,
           }
         : await materializeQueuedOssAttachmentsDeferred(sid, parsed);
       const attachmentOwnerId = steeringStoredQueueItem
@@ -18673,7 +19119,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             sid,
             parsed.clientId,
             materialized.cleanupLocalMaterialization,
-            { cleanupAfterDurable: materialized.cleanupAfterAcceptance },
+            {
+              cleanupAfterDurable: materialized.cleanupAfterAcceptance,
+              parts: materialized.materializedParts,
+            },
           );
       let acceptedByCoordinator = false;
       let previousAttachmentOwnerId: string | null = null;
@@ -19039,7 +19488,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         sid,
         cid,
         materialized.cleanupLocalMaterialization,
-        { cleanupAfterDurable: materialized.cleanupAfterAcceptance },
+        {
+          cleanupAfterDurable: materialized.cleanupAfterAcceptance,
+          parts: materialized.materializedParts,
+        },
       );
       let acceptedByCoordinator = false;
       try {
@@ -19077,14 +19529,26 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         );
         acceptedByCoordinator = result.updated;
         if (result.updated) {
-          // The replacement supersedes any older local materialisation owned by
-          // this clientId. Keep the new owner alive for the queue item's later
-          // persistence/discard boundary, but release old refs now.
-          if (attachmentOwnerId) {
-            queuedAttachmentOwnership.activateCurrentOwner(sid, cid, attachmentOwnerId);
+          // The replacement supersedes older local materialisations owned by
+          // this clientId, except media it still carries: an edit that keeps an
+          // attachment creates no new copy, so the existing owner must survive
+          // or the queued item would point at a deleted blob. Release only the
+          // owners whose media the edit dropped.
+          const replacementRefs = collectQueuedAttachmentRefs(update);
+          const survivingOwnerId = queuedAttachmentOwnership.retainReferencedOwners(
+            sid,
+            cid,
+            attachmentOwnerId,
+            (ref) => replacementRefs.has(ref),
+          );
+          if (survivingOwnerId) {
+            queuedAttachmentOwnership.activateCurrentOwner(sid, cid, survivingOwnerId);
+          } else {
+            // The replacement carries none of the owned media; nothing stays current.
+            queuedAttachmentOwnership.restoreCurrentOwner(sid, cid, null);
           }
-          discardQueuedAttachmentOwnership(sid, cid, attachmentOwnerId ?? undefined);
-          markQueuedAttachmentDurableAfterSnapshot(sid, cid, attachmentOwnerId);
+          discardQueuedAttachmentOwnership(sid, cid, { keepCurrentOwner: true });
+          markQueuedAttachmentDurableAfterSnapshot(sid, cid, survivingOwnerId);
         } else {
           await materialized.cleanupBeforeAcceptance?.();
           if (attachmentOwnerId) {
@@ -19365,6 +19829,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         return { accepted: true };
       }
       if (await getBotAuthorizationService()?.resolve(requestId, decision, pluginSetupResponseTarget)) return { accepted: true };
+      // 代输入: value-less decisions only (hand back / cancel / stay / refresh).
+      // Values never use this generic channel; see INPUT_HANDOFF_LOCAL_CHANNEL.
+      if (!sharedTask && getInputHandoffService()?.resolve(requestId, decision, inputHandoffActor())) return { accepted: true };
       log.warn('resolve-interaction: no pending resolver (likely already dismissed/timed out)', {
         requestId,
       });
@@ -19385,8 +19852,32 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 快照:打开/重连/刷新会话时,renderer 拉当前挂起交互重建面板(本机 + device-link 远程共用)。
   ipcMain.handle(MAKER_INVOKE.GET_PENDING_INTERACTIONS, (_e, sessionId: unknown) => {
     if (typeof sessionId !== 'string' || !sessionId) return [];
-    const pending = getPendingInteractionsForSession(sessionId);
+    let pending = getPendingInteractionsForSession(sessionId);
+    // Shared-task guests never see the owner's input handoff.
+    if (getDeviceLinkInvokeContext()?.sharedTask)
+      pending = pending.filter(({ request }) => request.kind !== 'input_handoff');
     return projectPendingInteractionsForRemote(pending, isDeviceLinkInvoke());
+  });
+
+  /**
+   * 代输入 values: Cindy's own trusted top-level renderer only. Never on the
+   * device-link allowlist; remote devices use the signed v3 exchange instead.
+   * The payload is never logged, persisted or echoed back.
+   */
+  ipcMain.handle(INPUT_HANDOFF_LOCAL_CHANNEL, async (event, requestId: unknown, submission: unknown) => {
+    if (isDeviceLinkInvoke()) throwIpcError('PERMISSION_DENIED', 'input handoff values must be entered on this Desktop');
+    assertTrustedAppRendererEvent(event);
+    if (typeof requestId !== 'string' || !requestId) throwIpcError('INVALID_PARAMS', 'requestId required');
+    return { accepted: (await getInputHandoffService()?.submit(requestId, submission)) ?? false };
+  });
+
+  /** 代输入 screenshot step on this computer: shown in Cindy's own window only, never pushed or stored. */
+  ipcMain.handle(INPUT_HANDOFF_LOCAL_PICTURE_CHANNEL, (event, requestId: unknown, revision: unknown) => {
+    if (isDeviceLinkInvoke()) throwIpcError('PERMISSION_DENIED', 'input handoff pictures stay on this Desktop');
+    assertTrustedAppRendererEvent(event);
+    if (typeof requestId !== 'string' || !requestId || !Number.isSafeInteger(revision))
+      throwIpcError('INVALID_PARAMS', 'requestId and revision required');
+    return getInputHandoffService()?.picture(requestId, revision as number) ?? null;
   });
 
   // ── 运行时切换 (Stage 2 B) ───────────────────────────────────────────────
@@ -21320,6 +21811,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           }
           throw error;
         }
+        // 分享供应商的「本任务总是允许」随权限档变化失效；Agent 实例被回收时执行器收不到这次切换。
+        if (row.permissionMode !== mode) forgetCredentialGrants(sessionId);
         broadcastSessionPatched(sessionId, { permissionMode: mode });
         if (remote) {
           const result = {};
@@ -21372,6 +21865,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           }
           throw error;
         }
+        // 计划模式同属权限档：分享供应商的「本任务总是允许」随之失效(同上)。
+        if (!!row.planModeEnabled !== enabled) forgetCredentialGrants(sessionId);
         if (remote) {
           const result = {};
           markRemoteSettingPersistedInsideHandler(result);

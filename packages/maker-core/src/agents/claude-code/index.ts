@@ -1212,7 +1212,9 @@ export class ClaudeCodeAgent extends BaseAgent {
    * 按 name 去重), 二者共享 ~/.claude/{...} 扫盘事实, 但消费者不同。
    */
   async listCustomizations(opts: ListCustomizationsOptions): Promise<ListCustomizationsResult> {
-    const result = await scanClaudeCustomizations(opts);
+    const result = await (this.deps.scanLocalCustomizations
+      ? this.deps.scanLocalCustomizations('claude-code', opts)
+      : scanClaudeCustomizations(opts));
     if (!opts.kinds || opts.kinds.includes('skill')) {
       result.items.push(...(await this.deps.getManagedSkills?.() ?? []).filter((skill) => skill.path).map((skill) => ({
         engine: 'claude-code' as const, kind: 'skill', scope: 'user', name: skill.name,
@@ -1657,6 +1659,10 @@ export class ClaudeCodeAgent extends BaseAgent {
       ? `${DEVICE_HOSTED_GUEST_ROUTE_HEADER}: ${guestProvider.routeToken}`
       : undefined;
     if (guestProvider) env.ANTHROPIC_SMALL_FAST_MODEL = sdkModel;
+    // Input handoff askpass for this owner's own local tasks only.
+    if (!opts.remoteHostId && !hosted && !reviewMode && opts.sessionId) {
+      Object.assign(env, this.deps.runtimeConfig.taskShellEnv?.({ sessionId: opts.sessionId }));
+    }
     if (guestRouteHeader) {
       env.ANTHROPIC_CUSTOM_HEADERS = env.ANTHROPIC_CUSTOM_HEADERS
         ? `${env.ANTHROPIC_CUSTOM_HEADERS}\n${guestRouteHeader}`
@@ -3066,9 +3072,9 @@ export class ClaudeCodeAgent extends BaseAgent {
         // keep exact repetition/rotation guards, not category-only retries.
         contractConsecutiveLimit: Number.POSITIVE_INFINITY,
       }), {
-        // 供应商分享受邀者不复核：复核走本机用户自己的辅助模型，会把受邀者的工具内容发给分享之外的
-        // 供应商。疑似循环按缺省直接中断。
-        reviewer: hosted?.guest ? undefined : this.deps.toolLoopReviewer,
+        // 供应商分享受邀者同样复核：与本机自己的任务一样走本机(分享者)的辅助模型链
+        // (2026-10-13 用户裁决)。
+        reviewer: this.deps.toolLoopReviewer,
         reviewBudget: toolLoopReviewBudget,
         context: () => ({
           sessionId: sid,

@@ -36,6 +36,7 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
         variant: 'tool-output',
       }),
     );
+    fireEvent.load(screen.getByAltText('focus.png'));
     const trigger = screen.getByRole('button', { name: 'focus.png' });
     trigger.focus();
 
@@ -76,6 +77,7 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
         },
       }),
     );
+    fireEvent.load(screen.getByAltText('model-preview.png'));
     const trigger = screen.getByRole('button', { name: 'model-preview.png' });
     trigger.focus();
     expect(viewerModuleLoaded).not.toHaveBeenCalled();
