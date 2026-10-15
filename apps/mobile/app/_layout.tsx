@@ -74,7 +74,7 @@ import { useUpdateChannelGate } from '@/update/useUpdateChannelGate';
 import type { UpdateChannel } from '@cindy/maker-shared/update-channel';
 import { useStartupEndpointGate } from '@/config/useStartupEndpointGate';
 import { IS_OTA_SELFHOST } from '@/config/env';
-import { getNewSessionCreationTask } from '@/session/newSessionCreation';
+import { hasLiveNewSessionCreation } from '@/session/newSessionCreation';
 import { isExactRemoteSessionClaimed } from '@/session/newSessionWorktree';
 import {
   isPrecreatedWorktreeRegistrationInFlight,
@@ -202,8 +202,6 @@ function NavigationGate() {
           <Stack.Screen name="sessions/new" options={({ route }) => ({
             animation: readComposerEntry((route.params as { composerMorph?: string } | undefined)?.composerMorph) ? 'none' : 'default',
           })} />
-          {/* 设置从左侧抽屉进入:接着抽屉方向从左边推出,不要默认从右边盖上来。 */}
-          <Stack.Screen name="settings" options={{ animation: 'slide_from_left' }} />
           <Stack.Screen
             name="add-account"
             options={{ animation: 'fade', gestureEnabled: false }}
@@ -311,7 +309,7 @@ function PrecreatedWorktreeRecoveryBridge() {
         (id) => invoke(deviceId, 'local-db:sessions:get', [id]),
       ),
       shouldDefer: (record) => (
-        getNewSessionCreationTask(record.sessionId) !== null
+        hasLiveNewSessionCreation(record.sessionId)
         || isPrecreatedWorktreeRegistrationInFlight(record.sessionId)
       ),
       // Account selection updates user/token while the AuthProvider stays mounted.
