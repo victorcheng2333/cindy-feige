@@ -1,3 +1,6 @@
+import { createHookMediaStore } from '../hookOutbox';
+import { createHookRequestLedger, HOOK_TERMINAL_DELIVERY_TTL_MS } from '../../hook-control/requestLedger';
+import type { TurnEndPayload } from '@cindy/slack-hook-protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -433,7 +436,16 @@ describe('task image delivery', () => {
       if (kind === 'symlink') {
         const outside = path.join(state.root, 'private.png');
         await fs.writeFile(outside, PNG);
-        await fs.symlink(outside, source);
+        // Windows 目录 junction 无需文件软链权限，仍验证真实图片经链接逃出任务目录。
+        if (process.platform === 'win32') {
+          const link = path.join(work, 'linked');
+          await fs.symlink(state.root, link, 'junction');
+          source = path.join(link, 'private.png');
+        } else {
+          await fs.symlink(outside, source, 'file');
+        }
+        expect(await fs.realpath(source)).toBe(await fs.realpath(outside));
+        await expect(readTaskImage(source, [await fs.realpath(work)])).rejects.toThrow('task-image: outside task');
       } else await fs.writeFile(source, kind === 'not-image' ? Buffer.from('not png') : PNG);
       const row = insert(`![image](${source})`);
       expect(await restoreTaskImageRows(client, [row])).toEqual([row]);
@@ -588,4 +600,56 @@ describe('Markdown image contract', () => {
       rewriteTaskImageReferences(text, new Map([[ref.url, 'cindy-media://blobs/test.png']])),
     ).toBe('before ![a](cindy-media://blobs/test.png "caption") after');
   });
+});
+
+// #6447 integration: actual media bytes/DB, owner-scoped JSON, fresh store restore,
+// ACK release, task deletion and expiry. Old tests only exercised the JSON ledger.
+it.each(['image/png', 'video/mp4'])('hook outbox manages %s through recovery and deletion', async (mimeType) => {
+  const bytes = mimeType === 'image/png' ? PNG : Buffer.alloc(6 * 1024 * 1024, 7);
+  const attachments = [{ name: 'result', mimeType, dataBase64: bytes.toString('base64') }];
+  const turn: TurnEndPayload = { requestId: 'r', externalKey: 'x:t', sessionId: 's', status: 'ok',
+    finalText: 'done', errorMessage: null, usage: { durationMs: 0 }, attachments };
+  const store = createHookMediaStore();
+  const media = await store.prepare(turn, () => {});
+  const { attachments: _, ...text } = turn;
+  const filePath = path.join(state.root, 'hook-ledger.json');
+  const log = { warn: vi.fn() };
+  const saved = { connectionId: 'x', requestId: 'r', ack: { requestId: 'r', result: 'accepted' as const,
+    sessionId: 's', reason: null, queuePosition: null }, turnEnd: text, media,
+    delivery: 'pending' as const, completedAt: Date.now() };
+  const first = createHookRequestLedger({ filePath, log, releaseMedia: store.release });
+  expect(first.set(saved)).toBe(true);
+  expect((await fs.stat(filePath)).size).toBeLessThan(2048);
+  expect(await fs.readFile(filePath, 'utf8')).not.toContain('dataBase64');
+  const next = createHookMediaStore();
+  const ledgerAfterRestart = createHookRequestLedger({ filePath, log, releaseMedia: next.release });
+  const recovered = ledgerAfterRestart.listPending('x')[0]!;
+  expect((await next.restore(recovered.turnEnd!, recovered.media!))?.attachments).toEqual(attachments);
+  ledgerAfterRestart.markSent('x', 'r');
+  // The release runs asynchronously after the atomic JSON write.
+  await vi.waitFor(() => expect(raw.prepare('SELECT count(*) AS n FROM media_refs').get()).toEqual({ n: 0 }), { interval: 1 });
+  expect((await fs.readFile(resolveSafe(media[0]!.url).absPath)).equals(bytes)).toBe(true); // recycler owns bytes
+
+  const deletedMedia = await next.prepare(turn, () => {});
+  raw.prepare("UPDATE sessions SET status = 'deleted' WHERE id = 's'").run();
+  await ledger.removeSessionRefs('s', client.drizzle);
+  expect(await next.restore(text, deletedMedia)).toBeNull();
+  expect(raw.prepare('SELECT count(*) AS n FROM media_refs').get()).toEqual({ n: 0 });
+
+  raw.prepare("UPDATE sessions SET status = 'active' WHERE id = 's'").run();
+  await next.prepare(turn, () => {});
+  raw.prepare('UPDATE media_refs SET created_at = ?').run(Date.now() - HOOK_TERMINAL_DELIVERY_TTL_MS - 1);
+  await next.prune();
+  expect(raw.prepare('SELECT count(*) AS n FROM media_refs').get()).toEqual({ n: 0 });
+});
+
+// Integration: a switch during ingestion must leave neither a pin nor a replayable result.
+it('rolls back hook media if its owner changes during ingestion', async () => {
+  const store = createHookMediaStore();
+  state.afterIngest = () => { state.valid = false; };
+  await expect(store.prepare({ requestId: 'r', externalKey: 'x:t', sessionId: 's', status: 'ok',
+    finalText: 'done', errorMessage: null, usage: { durationMs: 0 },
+    attachments: [{ name: 'image.png', mimeType: 'image/png', dataBase64: PNG.toString('base64') }],
+  }, () => {})).rejects.toThrow();
+  expect(raw.prepare('SELECT count(*) AS n FROM media_refs').get()).toEqual({ n: 0 });
 });

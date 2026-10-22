@@ -1,3 +1,8 @@
+import { readFailedImageDelivery, readToolProcessMedia, readToolProcessText } from '@cindy/maker-shared/tool-process-media';
+import { isSharedTaskPeer } from '@cindy/device-link';
+import { Button } from '@/components/ui/button';
+import { ChatVideoView } from './ChatVideoView';
+import { ChatImageView } from './ChatImageView';
 import { FileTypeIcon } from '@/components/ui/file-type-icon';
 /**
  * AgentActionRow
@@ -80,7 +85,14 @@ import { extractDisplayParam } from '@/lib/agent-actions/actionPresentation';
 import { SUPPORTED_IMAGE_EXTS, extractExt } from '@/lib/fileTypes';
 import { toLocalFileUrl, resolveToolFilePath } from '@/lib/localPathResolver';
 import { isBrowserOpenablePath } from '../../../shared/browserOpenableExts';
-import { isGhostCallToolName } from '../../../shared/ghost';
+import { isGhostCallToolName, isValidGhostId } from '../../../shared/ghost';
+import {
+  createPluginLogicalIdentity,
+  findInstalledGhostByIdentity,
+  findInstalledGhostByInstanceId,
+  resolveInstalledGhost,
+} from '../../../shared/pluginIdentity';
+import { isValidPluginNamespace } from '@cindy/plugin-protocol';
 import { shouldOpenTextLightboxForOrigin } from '@/lib/filePreview';
 import { toRemoteMediaOrigin } from '@/lib/sessionFileOrigin';
 import { rewriteToRemoteMediaOrigin } from '../../../shared/remoteMediaUrl';
@@ -96,6 +108,7 @@ import { ImageLightbox } from './ImageLightbox';
 import { TextLightbox } from './TextLightbox';
 import { ToolPayloadLightbox, type ToolPayloadMode } from './ToolPayloadLightbox';
 import { useFileChipContextMenu } from './useFileChipContextMenu';
+import { activateInlineLinkFromKeyboard } from './linkInteraction';
 import {
   formatToolResultCompactionBytes,
   parseToolResultCompactionMarker,
@@ -780,12 +793,14 @@ export function AgentActionRow({
   onActivateOverride,
 }: AgentActionRowProps) {
   const { t } = useTranslation();
-  const compactedToolResult = parseToolResultCompactionMarker(toolResult);
+  const processMedia = useMemo(() => readToolProcessMedia(toolResult), [toolResult]);
+  const resultText = readToolProcessText(toolResult);
+  const compactedToolResult = parseToolResultCompactionMarker(resultText);
   const displayedToolResult = compactedToolResult
     ? t('chat.toolResultCompacted', {
         size: formatToolResultCompactionBytes(compactedToolResult.originalBytes),
       })
-    : toolResult;
+    : resultText;
   // 会话文件来源:remote 时 Read 图片走远程媒体改写、文件打开走远程分流。
   const fileCtx = useChatSessionFile();
   const toolName = message.toolName ?? '';
@@ -798,7 +813,22 @@ export function AgentActionRow({
   const ghostInfo = useMemo(() => {
     if (!isGhostCallToolName(toolName) || !inp) return null;
     const gid = typeof inp.ghost_id === 'string' ? inp.ghost_id : '';
-    const hit = installedGhosts.find((g) => g.manifest.id === gid);
+    const namespace = inp.namespace;
+    const identity = isValidGhostId(gid) &&
+      (namespace === null || (typeof namespace === 'string' && isValidPluginNamespace(namespace)))
+      ? createPluginLogicalIdentity(namespace, gid)
+      : null;
+    // 裸 ID 与 main 侧一样按唯一逻辑身份解析；实例键才按物理键精确查找。
+    const bareIdResult = namespace === undefined && isValidGhostId(gid)
+      ? resolveInstalledGhost(installedGhosts, gid)
+      : null;
+    const hit = identity
+      ? findInstalledGhostByIdentity(installedGhosts, identity)
+      : bareIdResult?.status === 'unique'
+        ? bareIdResult.ghost
+        : namespace === undefined && !isValidGhostId(gid)
+          ? findInstalledGhostByInstanceId(installedGhosts, gid)
+          : undefined;
     return {
       name: hit?.manifest.name ?? (gid || 'ghost'),
       tool: typeof inp.tool === 'string' ? inp.tool : '',
@@ -987,6 +1017,7 @@ export function AgentActionRow({
   // Claude 取 file_path，Codex 单文件 change 取目标路径 —— 模型可能给相对
   // 路径(见 onActivate 注释),菜单动作统一经 resolveToolFilePath 补成绝对路径。
   const fileChipMenu = useFileChipContextMenu({
+    fileName: chipFilePath,
     getAbsPath: () => resolveToolFilePath(chipFilePath, fileCtx.workingDir),
     canOpenInBrowser: isBrowserOpenablePath(chipFilePath),
   });
@@ -1056,20 +1087,33 @@ export function AgentActionRow({
 
   const onRowKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (!chipFilePath) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      activateInlineLinkFromKeyboard(e);
+      return;
+    }
     if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
     e.preventDefault();
     e.stopPropagation();
     const chipRect = fileChipRef.current?.getBoundingClientRect();
     const rowRect = e.currentTarget.getBoundingClientRect();
     const rect = chipRect ?? rowRect;
-    fileChipMenu.openAt(rect.left, rect.bottom + 2);
+    fileChipMenu.openAt(rect.left, rect.bottom + 2, e.currentTarget);
   };
 
   return (
     <div className="flex flex-col" data-message-client-id={message.clientId}>
       <button
         type="button"
-        onClick={(e) => void onActivate(e.currentTarget)}
+        onClick={(e) => {
+          const anchor = e.currentTarget;
+          if (chipFilePath) fileChipMenu.onActivate(e, () => onActivate(anchor));
+          else void onActivate(anchor);
+        }}
+        onAuxClick={(e) => {
+          if (e.button !== 1 || !chipFilePath) return;
+          const anchor = e.currentTarget;
+          fileChipMenu.onActivate(e, () => onActivate(anchor));
+        }}
         onContextMenu={onRowContextMenu}
         onKeyDown={onRowKeyDown}
         aria-expanded={isInlineExpand && !onActivateOverride ? expanded : undefined}
@@ -1133,6 +1177,14 @@ export function AgentActionRow({
           className="min-w-0 truncate px-2 pb-[3px] pl-[30px] font-mono text-12 leading-[1.5] text-[var(--msg-tool-card-chevron)]"
         >
           {rawCommand}
+        </div>
+      )}
+      {readFailedImageDelivery(resultText) && <GeneratedImageRetry imageId={readFailedImageDelivery(resultText)!} />}
+      {processMedia.length > 0 && (
+        <div className="flex min-w-0 flex-col gap-3 py-2 pl-8" data-tool-process-media="true">
+          {processMedia.map((media) => media.kind === 'image'
+            ? <ChatImageView key={media.url} src={media.url} variant="tool-output" sessionId={fileCtx.sessionId} filename={media.url.split('/').pop() ?? media.kind} />
+            : <ChatVideoView key={media.url} src={media.url} variant="tool-output" sessionId={fileCtx.sessionId} filename={media.url.split('/').pop() ?? media.kind} />)}
         </div>
       )}
       {chipFilePath ? fileChipMenu.menu : null}
@@ -1203,4 +1255,21 @@ export function AgentActionRow({
       )}
     </div>
   );
+}
+
+function GeneratedImageRetry({ imageId }: { imageId: string }) {
+  const { t } = useTranslation();
+  const { sessionId, origin } = useChatSessionFile();
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return <div className="flex flex-wrap items-center gap-2 py-2 pl-8 text-13 text-muted-foreground">
+    <span role="status">{t(failed ? 'chat.imageDelivery.retryFailed' : 'chat.imageDelivery.failed')}</span>
+    {sessionId && !(origin.kind === 'device' && isSharedTaskPeer(origin.deviceId)) && <Button variant="secondary" size="sm" disabled={pending} onClick={async () => {
+      setPending(true); setFailed(false);
+      try {
+        if (origin.kind === 'device') await window.electronAPI.deviceLink.invoke(origin.deviceId, 'maker:images:retry', [sessionId, imageId]);
+        else await window.electronAPI.maker.input.retryImageDelivery(sessionId, imageId);
+      } catch { setFailed(true); } finally { setPending(false); }
+    }}>{t(pending ? 'chat.imageDelivery.retrying' : 'chat.imageDelivery.retry')}</Button>}
+  </div>;
 }

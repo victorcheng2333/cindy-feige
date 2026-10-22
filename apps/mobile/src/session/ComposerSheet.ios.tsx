@@ -9,6 +9,7 @@ import {
   HStack,
   Image,
   RNHostView,
+  ScrollView,
   Spacer,
   Text,
   VStack,
@@ -36,9 +37,10 @@ import {
   scrollDismissesKeyboard,
 } from "@expo/ui/swift-ui/modifiers";
 import { useTranslation } from "react-i18next";
-import { ScrollView, View, useWindowDimensions } from "react-native";
+import { ScrollView as RNScrollView, View, useWindowDimensions } from "react-native";
 import { useTheme } from "@/theme";
 import type { ComposerSheetProps } from "./ComposerSheet";
+import { CompanionNativeContent } from "./CompanionNativeContent.ios";
 
 /** One native presentation; secondary pages replace content without a second backdrop. */
 export function ComposerSheet({
@@ -47,6 +49,7 @@ export function ComposerSheet({
   onClosed,
   title,
   onBack,
+  backDisabled = false,
   backLabel,
   children,
   aboveContent,
@@ -54,6 +57,7 @@ export function ComposerSheet({
   footer,
   testID,
   nativeContent,
+  contentScrolls,
   nativeList,
   nativeHeader,
   nativeRoot,
@@ -97,7 +101,7 @@ export function ComposerSheet({
               ]}
             >
               {onBack ? (
-                <Button onPress={onBack} modifiers={[buttonStyle("plain"), accessibilityLabel(backLabel ?? t("interaction.contextSheet.backAccessibility"))]}>
+                <Button onPress={onBack} modifiers={[buttonStyle("plain"), disabled(backDisabled), accessibilityLabel(backLabel ?? t("interaction.contextSheet.backAccessibility"))]}>
                   <Image size={iconSize.lg} systemName="chevron.left" modifiers={[frame({ width: 44, height: 44 }), contentShape(shapes.rectangle())]} />
                 </Button>
               ) : null}
@@ -179,10 +183,10 @@ export function ComposerSheet({
               ]}>
                 {children}
               </Form>
-            ) : (
+            ) : contentScrolls ? (
               <RNHostView>
                 <View style={{ flex: 1 }} testID={testID}>
-                  <ScrollView
+                  <RNScrollView
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="interactive"
                     contentContainerStyle={{
@@ -191,12 +195,28 @@ export function ComposerSheet({
                     }}
                   >
                     {children}
-                  </ScrollView>
+                  </RNScrollView>
                   {footer ? (
                     <View style={{ padding: 16 }}>{footer}</View>
                   ) : null}
                 </View>
               </RNHostView>
+            ) : (
+              <>
+                {/* Native scrolling keeps the viewport aligned with the sheet detent. */}
+                <ScrollView modifiers={[scrollDismissesKeyboard("interactively")]}>
+                  <CompanionNativeContent>
+                    <View testID={testID} style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                      {children}
+                    </View>
+                  </CompanionNativeContent>
+                </ScrollView>
+                {footer ? (
+                  <CompanionNativeContent>
+                    <View style={{ padding: 16 }}>{footer}</View>
+                  </CompanionNativeContent>
+                ) : null}
+              </>
             )}
             {nativeContent && footer ? (
               <Group

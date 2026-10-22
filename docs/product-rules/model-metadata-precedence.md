@@ -124,6 +124,13 @@ Pi 显式列表提供公共成员（包括空数组与退役条目）；缺字�
 服务器声明的新模型不要求先出现在 Pi SDK 名单中；有明确原生协议
 即可构造 models.json。OpenAI 订阅仍使用专用 Codex Responses 认证传输。
 
+独立 OpenAI 账号恢复后，Pi 与 Codex 根使用同一份账号成员快照：优先当前发现结果，
+尚无结果时复用该账号已保存的 Codex 清单。这里只补成员和可移植资料，不把 Codex
+运行时的用户配置当成 Pi 覆盖；思考档位按 Pi 支持的档位及公共资料解析，Pi 专属
+用户覆盖仍走原有路径。原生 SDK 清单只提供同 API 的序列化细节，新型号不因缺少
+SDK 条目被隐藏；普通 API-key／自定义连接继续按自己的模型 API 和路由适配，
+不借用订阅认证。回归见 `openAiAccountCatalogParity.test.ts`、`piNativeProviders.test.ts`。
+
 旧顶层 Pi 条目的静态资料是旧格式兜底，不能标为账号 discovery；
 Registry 的公共定义／显式条目／路由／perAgent 继续覆盖旧默认，账号实报与用户覆盖另行优先。
 已解析的名称、窗口、输出上限、档位、输入能力和价格必须进入实际运行配置。
@@ -214,6 +221,12 @@ Server `catalog/providers.json` 是数据正本；客户端 `catalog/model-regis
 
 复用当前目录接口与 Registry V4 协商，不增加请求或数据库表。旧 V1/V2/V3 客户端收到展开后的旧字段；不同资料的多条路由在兼容响应中拆成独立条目，保留上游 ID，额外条目使用派生目录 ID。旧协议不支持的公共引用、覆盖指令与图片字段被移除，空默认以缺省表达。
 
-供应商总容量与客户端工作预算分开：所有来源 OpenAI 聊天模型的至多 272K 工作默认继续保留（含第三方、自定义与组织连接，用户显式设置优先）；这里的 `contextWindowMax` 指客户端 CatalogModel 投影，不是 Server 字段。Registry 资料中的 contextWindow 与合法 perAgent 工作默认分别维护；用户显式窗口覆盖仍优先。协议和实际执行能力门禁继续由运行时负责，元数据不能解锁未实现协议或伪造可售性。
+供应商总容量与客户端工作预算分开：OpenAI 订阅采用 Server Registry 的 `perAgent` 工作默认，
+Pi 跟随 Codex 的订阅预算；GPT-6.1 Sol 为 500K，Astra 仍为 272K。未声明订阅预算及其它来源
+（含第三方、自定义与组织连接）继续采用至多 272K 的工作默认，不扩大较小的已解析窗口。
+不能从 route 或公共型号的总容量推导工作预算。用户显式窗口覆盖仍最高，恢复默认重新读取当前
+订阅预算或 272K 回退。这里的 `contextWindowMax` 指客户端 CatalogModel 投影，不是 Server 字段，
+不随工作默认缩小；Registry 资料中的 contextWindow 与合法 perAgent 工作默认分别维护。
+协议和实际执行能力门禁继续由运行时负责，元数据不能解锁未实现协议或伪造可售性。
 
 验收至少覆盖缺字段继承、供应商优先、force 修正、用户最高、显式 false/null/空数组、未知供应商公共识别、刷新与保存、旧版解析、离线与坏快照回退。模型推荐标准另见 [本地模型筛选](local-model-selection.md)，仍只按能力、速度和实际运行内存筛选。

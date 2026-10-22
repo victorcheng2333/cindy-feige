@@ -1,4 +1,5 @@
 import { formatCompactionDuration, formatSessionDuration, formatShellDuration } from '@/lib/sessionDurationFormat';
+import { InputHandoffRecordRow, readInputHandoffRecordData } from '@/features/input-handoff/InputHandoffRecordRow';
 import { Button } from '@/components/ui/button';
 import { BotSessionTaskResultCard } from '@/features/bots/BotSessionTaskResultCard';
 /**
@@ -44,6 +45,8 @@ import {
   BotSessionTaskMessageTrace,
 } from '@/features/bots/BotCollaborationCard';
 import { BotDirectMessageCard } from '@/features/bots/BotDirectMessageCard';
+import { VoiceCallCard, VoiceCallTaskEntry } from '@/features/bots/voice/VoiceCallTranscript';
+import { readVoiceCallRecord } from '@/../shared/voiceConversation';
 import {
   ACTIVITY_ROW_CHEVRON_SLOT_CLASS,
   ACTIVITY_ROW_COLOR_TRANSITION_CLASS,
@@ -51,13 +54,15 @@ import {
   ACTIVITY_ROW_RADIUS_CLASS,
 } from './activityRowChrome';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { CindyMakeDoctorCard } from './CindyMakeDoctorCard';
 import { builtInSkillDescriptionKey } from '@/features/skillhub/lib/builtInSkillPresentation';
-import { CindyMakeCompleteCard } from '@/components/cindy-make/CindyMakeCompleteCard';
 import { getSessionDeviceId } from '@/features/device-link/remoteProjectsStore';
 
 interface SystemCardProps {
   cardType:
+    | 'voice-call'
+    | 'voice-call-task'
+    | 'mcp-app'
+    | 'input-handoff'
     | 'cindy-make-doctor'
     | 'cindy-make'
     | 'help'
@@ -1122,8 +1127,19 @@ function isEnglishSourceHandoff(handoff: string): boolean {
 /**
  * 远程 Agent 换电脑的分隔条文案:只有边界行带 toAgentDeviceId 时才是换电脑。null = 任务所在电脑 ——
  * 在本机打开的任务就是「本机」;远程控制另一台电脑上的任务时那台不是本机,用切换时快照的名字。
+ * 用户确认为了先用那台的配额换过去的(switchReason: 'quota-rebalance')在后面写明原因。
  */
 function agentRelocationLabel(
+  data: Record<string, unknown> | undefined,
+  sessionId: string | undefined,
+  t: ReturnType<typeof useTranslation>['t'],
+): string | null {
+  const place = agentRelocationPlace(data, sessionId, t);
+  if (place === null || data?.switchReason !== 'quota-rebalance') return place;
+  return `${place} · ${t('chat.systemCard.agentSwitch.quotaRebalance')}`;
+}
+
+function agentRelocationPlace(
   data: Record<string, unknown> | undefined,
   sessionId: string | undefined,
   t: ReturnType<typeof useTranslation>['t'],
@@ -1149,7 +1165,8 @@ function AgentSwitchCard({ data, sessionId }: { data?: Record<string, unknown>; 
   const toLabel = engineLabel(data?.toAgentKind);
   const toModel = typeof data?.toModel === 'string' ? data.toModel : '';
   const handoff = typeof data?.handoff === 'string' ? data.handoff : '';
-  const label =
+  const modelOnly = data?.modelOnly === true;
+  const label = modelOnly ? `${data?.fromModel ?? ''} → ${toModel}` :
     agentRelocationLabel(data, sessionId, t) ??
     t('chat.systemCard.agentSwitch.label', { from: fromLabel, to: toLabel });
 
@@ -1171,8 +1188,8 @@ function AgentSwitchCard({ data, sessionId }: { data?: Record<string, unknown>; 
           title={handoff ? t('chat.systemCard.agentSwitch.toggleHint') : undefined}
         >
           <ArrowLeftRight size={12} className="shrink-0" />
-          <span>{label}</span>
-          {toModel && (
+          <span className="min-w-0 truncate" title={label}>{label}</span>
+          {toModel && !modelOnly && (
             <>
               <span className="opacity-50">·</span>
               <span title={toModel} className="min-w-0 truncate font-mono">
@@ -1229,13 +1246,17 @@ function ContextRebuildCard({ data }: { data?: Record<string, unknown> }) {
       ? 'timeout'
       : data?.reason === 'codex-history-strip'
         ? 'strip'
-        : 'overflow';
+        : data?.reason === 'idle-gap'
+          ? 'idle'
+          : 'overflow';
   const label = t(
     reason === 'timeout'
       ? 'chat.systemCard.contextRebuild.labelTimeout'
       : reason === 'strip'
         ? 'chat.systemCard.contextRebuild.labelStrip'
-        : 'chat.systemCard.contextRebuild.labelOverflow',
+        : reason === 'idle'
+          ? 'chat.systemCard.contextRebuild.labelIdleGap'
+          : 'chat.systemCard.contextRebuild.labelOverflow',
   );
 
   return (
@@ -1312,6 +1333,9 @@ function ReviewCard({ data, workingDir }: { data?: Record<string, unknown>; work
     ? data.workspace as Record<string, unknown> : null;
   const reviewedDir = typeof workspace?.workingDir === 'string' ? workspace.workingDir : workingDir;
   const reviewedBase = typeof workspace?.baseRef === 'string' ? workspace.baseRef : '';
+  const additionalDirs = Array.isArray(workspace?.additionalWorkingDirs)
+    ? workspace.additionalWorkingDirs.filter((dir): dir is string => typeof dir === 'string' && !!dir)
+    : [];
   const error = typeof data?.error === 'string' ? data.error : '';
   const failureCode =
     readReviewFailureCode(data?.failureCode) ?? reviewFailureCodeFromLegacyError(error);
@@ -1345,7 +1369,15 @@ function ReviewCard({ data, workingDir }: { data?: Record<string, unknown>; work
             compact
             tone="quiet"
             type="button"
-            onClick={() => navigate(`/cc-agent/${reviewerSessionId}`)}
+            onClick={() =>
+              navigate(`/cc-agent/${reviewerSessionId}`, {
+                state: {
+                  from: 'review-source',
+                  sourceSessionId:
+                    typeof data?.sourceSessionId === 'string' ? data.sourceSessionId : undefined,
+                },
+              })
+            }
           >
             {t('chat.systemCard.review.openTask')}
             <ArrowRight size={12} />
@@ -1356,6 +1388,11 @@ function ReviewCard({ data, workingDir }: { data?: Record<string, unknown>; work
         <p className="mt-1 break-all pl-[23px] text-xs text-muted-foreground">
           {t('chat.systemCard.review.directory')}{reviewedDir}
           {reviewedBase && <> · {t('chat.systemCard.review.baseline')}{reviewedBase}</>}
+        </p>
+      )}
+      {workspace && additionalDirs.length > 0 && (
+        <p className="mt-0.5 break-all pl-[23px] text-xs text-muted-foreground">
+          {t('chat.systemCard.review.additionalDirectories')}{additionalDirs.join(', ')}
         </p>
       )}
       {status === 'running' && (
@@ -1394,10 +1431,12 @@ export function SystemCard({
   workingDir,
   autoResumeInFlight,
 }: SystemCardProps) {
+  if (
+    cardType === 'cindy-make-doctor' ||
+    cardType === 'cindy-make' ||
+    cardType === 'cindy-make-complete'
+  ) return null;
   switch (cardType) {
-    case 'cindy-make-doctor':
-    case 'cindy-make':
-      return <CindyMakeDoctorCard data={data} sessionId={sessionId} />;
     case 'help':
       return <HelpCard data={data} />;
     case 'cost':
@@ -1416,8 +1455,6 @@ export function SystemCard({
       return <GoalCompleteCard data={data} />;
     case 'goal-resumed':
       return <GoalResumedCard data={data as { kind?: string } | undefined} />;
-    case 'cindy-make-complete':
-      return <CindyMakeCompleteCard data={data} />;
     case 'auto-resume': {
       // 同一个卡类型承载两套自愈:带中断上下文的是本份的「重连」记录,没有的是 silent-stop
       // 的「已自动继续」分隔条 —— 后者保持原形态原文案,不被重连三态改写(copilot review)。
@@ -1438,6 +1475,12 @@ export function SystemCard({
       return <LearnStatusCard data={data} contextSessionId={sessionId} />;
     case 'review':
       return <ReviewCard data={data} workingDir={workingDir} />;
+    case 'voice-call': {
+      const record = readVoiceCallRecord(data?.record);
+      return record ? <VoiceCallCard record={record} /> : null;
+    }
+    case 'voice-call-task':
+      return typeof data?.text === 'string' ? <VoiceCallTaskEntry text={data.text} /> : null;
     case 'bot-session-task-message':
       return <BotSessionTaskMessageTrace data={data} />;
     case 'bot-session-task-result':
@@ -1448,6 +1491,10 @@ export function SystemCard({
       return <BotAuthorizationCardView data={data} sessionId={sessionId} />;
     case 'bot-direct-message':
       return <BotDirectMessageCard data={data} sessionId={sessionId} />;
+    case 'input-handoff': {
+      const record = readInputHandoffRecordData(data);
+      return record ? <InputHandoffRecordRow record={record} at={typeof data?.at === 'string' ? data.at : undefined} /> : null;
+    }
     default:
       return null;
   }

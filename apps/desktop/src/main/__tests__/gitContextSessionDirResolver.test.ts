@@ -12,10 +12,12 @@ vi.mock('electron-store', () => ({ default: class {} }));
 
 import type { GitHeadInfo } from '../git-context/headReader';
 import {
+  collectTouchedDirs,
   extractDirCandidate,
   findLiveLinkedWorktree,
   posixDriveToWin32,
   resolveSessionGitDir,
+  resolveWorkerInheritedDirectory,
   type ResolveSessionGitDirDeps,
 } from '../git-context/sessionDirResolver';
 
@@ -298,5 +300,98 @@ describe('findLiveLinkedWorktree', () => {
       probeGitDir: async () => null,
     });
     expect(res).toBeNull();
+  });
+});
+
+describe('collectTouchedDirs', () => {
+  const client = path.resolve('/work/client/.cindy-worktrees/fix');
+  const server = path.resolve('/work/server');
+  const piRepo = path.resolve('/work/pi-repo');
+  const row = (createdAt: number, toolName: string, input: Record<string, unknown>) => ({
+    createdAt,
+    content: JSON.stringify({ toolName, input }),
+  });
+
+  it('separates edited directories from command-only ones across Codex, Claude and Pi', () => {
+    // Rows arrive newest first, like the telemetry query.
+    const dirs = collectTouchedDirs([
+      row(60, 'exec', { cwd: server }),
+      row(50, 'file_change', { changes: [{ path: path.join(client, 'src', 'panel.tsx') }, { path: 'relative.ts' }] }),
+      row(40, 'edit', { path: path.join(piRepo, 'price.ts'), edits: [] }),
+      row(35, 'write', { path: 'relative-to-task.ts', content: '' }),
+      row(30, 'bash', { command: 'cd /work/server && git status' }),
+      row(20, 'Edit', { file_path: path.join(server, 'limits.ts') }),
+      row(10, 'Read', { file_path: path.join(piRepo, 'ignored.ts') }),
+    ]);
+    expect(dirs).toEqual([
+      { dir: server, edited: true, firstSeenAt: 20 },
+      { dir: path.join(client, 'src'), edited: true, firstSeenAt: 50 },
+      { dir: piRepo, edited: true, firstSeenAt: 40 },
+    ]);
+  });
+
+  it('records Pi bash and Codex exec directories as command-only', () => {
+    // Shell commands carry POSIX paths on every platform (Git Bash on Windows).
+    const piShellDir = '/work/pi-repo';
+    expect(collectTouchedDirs([
+      row(2, 'bash', { command: `cd '${piShellDir}' && ls`, timeout: 30 }),
+      row(1, 'exec', { cwd: server }),
+    ])).toEqual([
+      { dir: path.resolve(piShellDir), edited: false, firstSeenAt: 2 },
+      { dir: server, edited: false, firstSeenAt: 1 },
+    ]);
+  });
+});
+
+// Test value: Worker inheritance is stricter than the header's directory badge.
+// Existing resolver tests accept any valid repository; a different common-dir is the minimal
+// unsafe input. Unit tier uses injected probes (no Git processes or disk writes).
+describe('Worker same-repository inheritance', () => {
+  const recorded = {directory: '/repo', realDirectory: '/repo', checkoutRoot: '/repo', baseRepo: '/repo', commonDir: '/repo/.git',
+    branch: 'main', exists: true, dirty: false, isWorktree: false};
+  it.each([
+    ['linked checkout', '/repo/.git', true, '/checkout'],
+    ['independent clone', '/clone/.git', true, '/repo'],
+    ['nested repository', '/repo/nested/.git', true, '/repo'],
+    ['deleted checkout', '/repo/.git', false, '/repo'],
+    ['non-Git directory', null, true, '/repo'],
+  ])('%s selects only a live directory with the same common-dir', async (_name, commonDir, exists, expected) => {
+    const result = await resolveWorkerInheritedDirectory({id: 'lead', workingDir: '/repo'}, {
+      infer: async () => ({workdir: '/checkout', head: branchHead('feature'), source: 'telemetry'}),
+      probe: async directory => directory === '/repo' ? recorded : {...recorded, directory, realDirectory: directory, checkoutRoot: '/checkout', commonDir, exists, isWorktree: true},
+    });
+    expect(result.directory).toBe(expected);
+  });
+  // Regression: Edit telemetry identifies a file's parent, not the desired Worker cwd.
+  // The previous implementation submitted that subdirectory; retain checkout/subproject scope.
+  it.each([
+    ['/repo', '/repo/src', '/repo', true, '/repo'],
+    ['/alias/repo', '/repo/src', '/repo', true, '/alias/repo'],
+    ['/repo', '/checkout/src', '/checkout', true, '/checkout'],
+    ['/repo/apps/web', '/checkout/src', '/checkout', true, '/checkout/apps/web'],
+    ['/repo/apps/web', '/checkout/src', '/checkout', false, '/checkout'],
+    ['/repo/apps/web', '/repo/lib', '/repo', true, '/repo/apps/web'],
+  ])('keeps project scope from %s with telemetry %s (candidate checkout %s, matching subproject exists=%s)', async (rawDirectory, rawTelemetry, rawCheckoutRoot, subprojectExists, expected) => {
+    const directory = path.resolve(rawDirectory);
+    const telemetry = path.resolve(rawTelemetry);
+    const checkoutRoot = path.resolve(rawCheckoutRoot);
+    const original = {...recorded, directory, checkoutRoot: path.resolve('/repo'), realDirectory: path.resolve(rawDirectory.replace('/alias', ''))};
+    const result = await resolveWorkerInheritedDirectory({id: 'lead', workingDir: directory}, {
+      infer: async () => ({workdir: telemetry, head: branchHead('feature'), source: 'telemetry'}),
+      probe: async dir => dir === directory ? original : {
+        ...recorded, directory: dir, realDirectory: dir, checkoutRoot,
+        exists: dir === path.resolve('/checkout/apps/web') ? subprojectExists : true,
+        isWorktree: checkoutRoot === path.resolve('/checkout'),
+      },
+    });
+    expect(result.directory).toBe(path.resolve(expected));
+    if (checkoutRoot === path.resolve('/repo')) expect(result).toBe(original);
+  });
+  it('preserves the recorded directory without telemetry or a Git identity', async () => {
+    const infer = vi.fn(async () => ({workdir: null, head: null, source: null} as const));
+    const result = await resolveWorkerInheritedDirectory({id: 'lead', workingDir: '/repo'}, {
+      infer, probe: async () => ({...recorded, commonDir: null}),
+    });
+    expect(result.directory).toBe('/repo');
   });
 });

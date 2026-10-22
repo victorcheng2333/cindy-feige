@@ -13,7 +13,9 @@
 
 import {
   connectedProvidersForAgent,
+  isCindyAutoModelId,
   effectiveSourceIdForModel,
+  isCindyDistributedProvider,
   isCustomRoutedProvider,
   isModelSelectableForNewRoute,
   nativeDefaultSourceId,
@@ -21,6 +23,25 @@ import {
   type CatalogModel,
   type ProviderView,
 } from '@cindy/model-providers';
+import {
+  hasAvailableServerMarkedGroupAuto,
+  resolveNewMakerDefaultTuple,
+} from './newMakerDefaultTuple.js';
+
+type ModelEnabledPredicate = Parameters<typeof resolveNewMakerDefaultTuple>[0]['isModelEnabled'];
+
+/** Keep startup, send-time calibration and headless defaults on one factory policy. */
+function factoryModelForAgent(
+  providers: readonly ProviderView[],
+  agent: AgentKind,
+  isModelEnabled?: ModelEnabledPredicate,
+): PickedConnectedModel | null {
+  const tuple = resolveNewMakerDefaultTuple({
+    providers, providersLoading: false, availableAgentsLoaded: true, isModelEnabled,
+    availableAgents: new Set([agent === 'claude-code' ? 'cc' : agent]),
+  });
+  return tuple ? { model: tuple.model, providerId: tuple.providerId } : null;
+}
 
 /**
  * 挑选顺序（2026-07-30 产品定稿）：**可用的里面选第一个 —— 供应商优先订阅的，
@@ -128,7 +149,7 @@ function markedDefaultModelIdForAgent(
 
 /**
  * 在该 agent 的已连接来源里挑 (模型, 来源)：
- *   0. 目录/服务端**显式标记**为新对话默认（`newSessionDefault`）、且可用且默认可见的模型
+ *   0. 同一 Harness 的可用出厂组合优先；没有时才取目录/服务端**显式标记**为新对话默认（`newSessionDefault`）、且可用且默认可见的模型
  *      优先 —— 未显式选过模型的用户应跟随它，即便种子恰好是另一个可用模型（种子是
  *      capabilities 未到位时算的冷启动值，不反映标记）。按订阅优先取第一家提供它的来源，
  *      同一来源多个被标记时按 sortOrder 决胜。每个 Agent 只接受自己的标记，不跨 Agent
@@ -154,10 +175,13 @@ export function pickConnectedModelForAgent(
   providers: readonly ProviderView[],
   agent: AgentKind,
   preferredModelId: string,
+  isModelEnabled?: ModelEnabledPredicate,
 ): PickedConnectedModel | null {
   const ranked = providersByPreference(providers, agent);
   if (ranked.length === 0) return null;
-  // 0. 目录/服务端显式标记的新对话默认(newSessionDefault)优先；每个 Agent 只认自己的标记。
+  const factory = factoryModelForAgent(ranked, agent, isModelEnabled);
+  if (factory) return factory;
+  // 无可用出厂组合时，保留目录/服务端显式标记的回退；每个 Agent 只认自己的标记。
   const flaggedModelId = markedDefaultModelIdForAgent(ranked, agent);
   if (flaggedModelId !== null) {
     // 标记只存在于区域门控后的 XD 条目；来源选择仍必须独立遵守 ranked 的订阅优先。
@@ -203,6 +227,8 @@ export interface DraftModelCalibrationInput {
   preferredProviderId?: string | null;
   /** 供应商清单是否仍在加载：加载期不校准，避免首帧把默认模型闪成别的。 */
   providersLoading: boolean;
+  /** Use the startup model switches for factory recommendations; hidden fallback remains available. */
+  isModelEnabled?: ModelEnabledPredicate;
 }
 
 /** 校准结果：草稿应当展示 / 发送的模型，以及（若校准出了结论）它该走哪家来源。 */
@@ -224,6 +250,7 @@ export function calibrateDraftModel({
   chosenByUser,
   preferredProviderId,
   providersLoading,
+  isModelEnabled,
 }: DraftModelCalibrationInput): DraftModelCalibrationResult {
   if (chosenByUser || providersLoading) return { model, providerId: null };
   const connectedPreferred = preferredProviderId
@@ -232,6 +259,17 @@ export function calibrateDraftModel({
       )
     : undefined;
   if (connectedPreferred) {
+    // 普通草稿只有在服务端提供可用的组默认时才跨 Cindy 来源校准；旧目录保留号池来源。
+    // 草稿本身已是组 Auto 时仍跨来源寻找，以保留搬迁及撤销后的回退。
+    const followsGroupDefault =
+      isCindyDistributedProvider(connectedPreferred) &&
+      ((model !== 'auto' && isCindyAutoModelId(model)) ||
+        hasAvailableServerMarkedGroupAuto(providers, agent, isModelEnabled));
+    const factoryScope = followsGroupDefault
+      ? connectedProvidersForAgent([...providers], agent).filter(isCindyDistributedProvider)
+      : [connectedPreferred];
+    const factory = factoryModelForAgent(factoryScope, agent, isModelEnabled);
+    if (factory) return factory;
     // marker 只需由策略来源声明一次（当前为 XD），用户选定的来源若也提供同一 ID，仍应由
     // 该来源承接；不能因它自己的目录副本没重复 marker 就退回旧模型或偷偷改走 XD。
     const markedModelId = markedDefaultModelIdForAgent(providers, agent);
@@ -250,7 +288,7 @@ export function calibrateDraftModel({
     }
   }
   const candidates = connectedPreferred ? [connectedPreferred] : providers;
-  const picked = pickConnectedModelForAgent(candidates, agent, model);
+  const picked = pickConnectedModelForAgent(candidates, agent, model, isModelEnabled);
   return picked ?? { model, providerId: null };
 }
 
@@ -266,7 +304,7 @@ export interface NewTaskDraftSelection {
  * 不由用户当场选模型的入口（定时任务、/learn、IM 新建任务、协同 Worker 兜底等）的默认
  * (模型, 来源)：与新建任务同一口径，不另写一个固定型号。
  *   1. 用户在新建任务里显式选过、且仍有已连接来源可用的模型 → 用它；
- *   2. 否则按新建任务「没选过模型」的校准口径挑（区域标记 → 草稿种子 → 订阅优先的第一项）；
+ *   2. 否则按新建任务「没选过模型」的校准口径挑（可用出厂组合 → 区域标记 → 草稿种子 → 订阅优先的第一项）；
  *   3. 一个可用来源都没有 → null，由调用方明确失败，不编造一个看似可用的模型。
  * `requiredProviderId` 给定时只在该来源内挑（任务显式指定了来源）。
  */
@@ -340,7 +378,16 @@ export function resolveDraftSessionProviderId({
   effectiveProviderId,
 }: DraftSessionProviderResolutionInput): string | null {
   if (explicitProviderId) {
-    return explicitProviderId;
+    // 显式来源原样提交；唯一例外是服务端把 Auto 挪到了另一家 Cindy 来源，此时来源解析
+    // 已改指新来源，提交旧来源只会让首条请求落到不再提供该模型的连接上。
+    const explicitProvider = providers.find((provider) => provider.id === explicitProviderId);
+    const effectiveProvider = providers.find((provider) => provider.id === effectiveProviderId);
+    return effectiveProvider &&
+      effectiveProvider.id !== explicitProviderId &&
+      isCindyDistributedProvider(explicitProvider) &&
+      isCindyDistributedProvider(effectiveProvider)
+      ? effectiveProvider.id
+      : explicitProviderId;
   }
   if (!effectiveProviderId) return null;
   // 预设通过「添加供应商」落地后同样属于 user provider。即使它是当前模型唯一的
@@ -365,4 +412,41 @@ export function resolveDraftSessionProviderId({
     agentDefaultProviderId === effectiveProviderId
     ? null
     : effectiveProviderId;
+}
+
+/**
+ * 新建任务草稿此刻实际会落在哪个来源：与新建页同口径(显式来源 > 校准挑中的来源 > 原生默认)。
+ * 草稿没存来源(跟随默认路由)时不能直接按模型 id 取原生默认——校准可能把它指向订阅来源。
+ * 用于任务内换模时判断「新建默认是否已在别的来源上」；未选过模型时剔除清单发现失败的来源，
+ * 与新建页自动校准一致。解析不出来返回 null。
+ */
+export function resolveDraftEffectiveProviderId(args: {
+  providers: readonly ProviderView[];
+  agent: AgentKind;
+  model: string;
+  providerId: string | null | undefined;
+  chosenByUser: boolean;
+  /** 与新建页同源的模型可见性谓词：用户隐藏的推荐模型不参与校准。 */
+  isModelEnabled?: ModelEnabledPredicate;
+}): string | null {
+  const { providers, agent, model, chosenByUser } = args;
+  const providerId = args.providerId ?? null;
+  const healthy =
+    chosenByUser || providerId ? providers : providers.filter((p) => !p.modelDiscoveryFailure);
+  const candidates = healthy.length > 0 ? healthy : providers;
+  const calibration = calibrateDraftModel({
+    providers: candidates,
+    agent,
+    model,
+    chosenByUser,
+    preferredProviderId: providerId,
+    providersLoading: false,
+    isModelEnabled: args.isModelEnabled,
+  });
+  return effectiveSourceIdForModel(
+    [...candidates],
+    providerId ?? calibration.providerId,
+    calibration.model,
+    agent,
+  );
 }

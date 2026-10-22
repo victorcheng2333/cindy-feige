@@ -38,7 +38,7 @@ function harness(options: {
   row?: Partial<ProviderGroupSessionRow>;
   /** undefined = 组所在电脑读不到；null = 那台没有这个组。 */
   config?: ProviderGroupConfig | null | undefined;
-  picks?: Array<ProviderGroupMember | 'unavailable' | 'none' | Error>;
+  picks?: Array<ProviderGroupMember | 'unavailable' | 'none' | Error | { kind: 'unavailable'; usageLimit: { resetAtMs: number | null } }>;
   view?: Partial<Record<string, ProviderGroupView['members'][number]['state']>>;
   live?: boolean;
 } = {}) {
@@ -73,13 +73,15 @@ function harness(options: {
       const next = picks.shift() ?? 'unavailable';
       if (next instanceof Error) throw next;
       if (next === 'unavailable' || next === 'none') return { kind: next };
+      if (next.kind === 'unavailable') return next;
       const { key, kind, agentDeviceId, providerId } = next;
       return { kind: 'member' as const, member: { key, kind, agentDeviceId, providerId }, label: next.label! };
     }),
     cool: vi.fn(async () => undefined),
-    view: vi.fn(async (): Promise<ProviderGroupView> => ({
+    view: vi.fn(async (_ownerDeviceId: string, _providerId: string, model?: string): Promise<ProviderGroupView> => ({
       providerId: 'anthropic',
       config: config ?? null,
+      ...(model ? { model } : {}),
       members: (config?.members ?? []).map((m) => ({
         key: m.key,
         kind: m.kind,
@@ -196,6 +198,15 @@ describe('assigning through a group on another computer', () => {
     await expect(h.service.assignBeforeStart(START)).rejects.toThrow(PROVIDER_GROUP_UNAVAILABLE_ERROR);
   });
 
+  // Unit regression: group quota details must survive both initial allocation and model switches.
+  it('preserves the quota error before starting an agent', async () => {
+    const h = harness({ picks: [{ kind: 'unavailable', usageLimit: { resetAtMs: 5_000_000 } }] });
+    await expect(h.service.assignBeforeStart(START)).rejects.toMatchObject({
+      message: expect.stringContaining('REMOTE_AGENT_GROUP_USAGE_LIMIT'), limit: { resetAtMs: 5_000_000 },
+    });
+    expect(h.deps.persistRoute).not.toHaveBeenCalled();
+  });
+
   it('takes in a task that already ran on the group computer without moving it, and leaves shares alone', async () => {
     const ran = harness({ row: { sdkSessionId: 'native-1' } });
     expect(await ran.service.assignBeforeStart(START)).toBeNull();
@@ -295,7 +306,7 @@ describe('switching computers within a group on another computer', () => {
     const h = bound({ picks: [OWNER_LOCAL] });
     h.service.onTurnError('s1', { sdkError: 'rate_limit' }, 3);
     await flush();
-    expect(h.remote.cool).toHaveBeenCalledWith(OWNER, { providerId: 'anthropic', memberKey: STUDIO.key, cause: 'usage-limit', resetAt: 5_000 });
+    expect(h.remote.cool).toHaveBeenCalledWith(OWNER, { providerId: 'anthropic', memberKey: STUDIO.key, cause: 'usage-limit', resetAt: 5_000, model: MODEL });
     expect(h.remote.pick).toHaveBeenCalledWith(OWNER, expect.objectContaining({ exclude: expect.arrayContaining([STUDIO.key]) }));
     expect(h.deps.switchAgentLocation).toHaveBeenCalledWith('s1', expect.objectContaining({ agentDeviceId: OWNER, providerId: 'anthropic' }), expect.anything());
     expect(h.deps.continueSession).toHaveBeenCalledWith('s1', 7, expect.objectContaining({
@@ -373,6 +384,20 @@ describe('switching computers within a group on another computer', () => {
     expect(gone.deps.sleep).toHaveBeenCalledTimes(PROVIDER_GROUP_RECONNECT_MAX_ATTEMPTS);
     expect(gone.deps.fallback).toHaveBeenCalledTimes(1);
     expect(gone.deps.switchAgentLocation).not.toHaveBeenCalled();
+  });
+
+  it('keeps the retry entry when the session closes while the task record is read (#5880)', async () => {
+    const h = bound({ config: undefined });
+    h.probe.mockResolvedValueOnce('offline').mockResolvedValueOnce('ok');
+    // 读任务记录期间终态错误的 drain 宽限到点、会话关闭：关闭撤销了限额等待候选，之后再取句柄会落空。
+    h.deps.readSessionRow.mockImplementation(async () => {
+      h.deps.leaseRecovery.mockReturnValue(null);
+      return h.row;
+    });
+    await h.service.onTurnError('s1', { message: '[REMOTE_AGENT_DEVICE_UNREACHABLE] gone' }, 3);
+    expect(h.deps.continueSession).toHaveBeenCalledWith('s1', 7, expect.objectContaining({
+      agentReconnect: { computer: '' },
+    }));
   });
 
   it('waits before sending for its own computer when the group computer cannot be read and the session must be reopened', async () => {
@@ -469,11 +494,17 @@ describe('switching computers within a group on another computer', () => {
     expect(h.deps.switchAgentLocation).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({ agentDeviceId: 'share:s1', providerId: 'anthropic' }),
-      { beforeSend: true },
+      { beforeSend: true, isCurrent: expect.any(Function) },
     );
     const healthy = bound();
     await healthy.service.beforeSend('s1');
     expect(healthy.deps.switchAgentLocation).not.toHaveBeenCalled();
+  });
+
+  it('asks the group computer for the bound model when checking before send', async () => {
+    const h = bound();
+    await h.service.beforeSend('s1');
+    expect(h.remote.view).toHaveBeenCalledWith(OWNER, 'anthropic', MODEL, 'claude-code');
   });
 });
 
@@ -482,7 +513,7 @@ describe('old tasks already running on the group computer', () => {
     const h = harness({ row: { sdkSessionId: 'native-1' }, picks: [STUDIO] });
     h.service.onTurnError('s1', { sdkError: 'rate_limit' }, 3);
     await flush();
-    expect(h.remote.cool).toHaveBeenCalledWith(OWNER, { providerId: 'anthropic', memberKey: OWNER_LOCAL.key, cause: 'usage-limit', resetAt: 5_000 });
+    expect(h.remote.cool).toHaveBeenCalledWith(OWNER, { providerId: 'anthropic', memberKey: OWNER_LOCAL.key, cause: 'usage-limit', resetAt: 5_000, model: MODEL });
     expect(h.deps.switchAgentLocation).toHaveBeenCalledWith(
       's1',
       expect.objectContaining({ agentDeviceId: 'studio', providerId: STUDIO.providerId }),
@@ -650,6 +681,15 @@ describe('moving a task into a group on another computer from the model list (20
     const h = harness({ picks: ['unavailable'] });
     await expect(h.service.resolveSwitchTarget('s1', target)).rejects.toThrow(PROVIDER_GROUP_UNAVAILABLE_ERROR);
     expect(h.bindings.size).toBe(0);
+  });
+
+  it('preserves an unknown group quota reset without adopting the requested route', async () => {
+    const h = harness({ picks: [{ kind: 'unavailable', usageLimit: { resetAtMs: null } }] });
+    await expect(h.service.resolveSwitchTarget('s1', target)).rejects.toMatchObject({
+      message: expect.stringContaining('REMOTE_AGENT_GROUP_USAGE_LIMIT'), limit: { resetAtMs: null },
+    });
+    expect(h.bindings.size).toBe(0);
+    expect(h.deps.persistRoute).not.toHaveBeenCalled();
   });
 
   it('keeps the chosen place when it is not a group or the group computer cannot be read', async () => {
