@@ -706,7 +706,7 @@ Decision: [#6796, maintainer confirmation](https://github.com/makecindy/cindy/is
 
 ### Desktop teammate sidebar
 
-The expanded teammate section previews five chats (local teammates, remote teammates, groups and the merged Cindy device row share this limit). Keep the current chat visible within those five rows. Use the task list’s “Show all N” footer style, with “Show less” after expansion. Collapsing the section to its existing avatar strip resets the preview; the strip’s +N button opens the full list. This limit applies to the Desktop sidebar, not the Mobile teammate home list.
+The expanded teammate section previews five chats (local teammates, remote teammates, groups and the merged Cindy device row share this limit). Keep the current chat visible within those five rows. Use the task list’s “Show all N” footer style, with “Show less” after expansion. Collapsing the section hides all rows and avatars, keeps only the section header and its add control, and resets the preview (owner request, 2026-10-22). Reopening restores the five-chat preview. This limit applies to the Desktop sidebar, not the Mobile teammate home list.
 
 ### Mobile iOS navigation chrome / iPhone Duo
 

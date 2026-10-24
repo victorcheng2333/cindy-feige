@@ -1,6 +1,6 @@
 import { BotGenerationLabel } from './BotGenerationLabel';
 import { botRosterLabel } from '../../../shared/botCreation';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -46,11 +46,10 @@ import { BotCreateMenu } from './BotCreateMenu';
 import { useBotMarketEntryHint } from './botMarketEntryHint';
 import { BotDeleteDialog } from './BotDeleteDialog';
 import { BotGroupSidebarRow } from './BotGroupSidebarRow';
-import { BotGroupSidebarAvatar } from './BotGroupAvatars';
 import { refreshBotGroups, useBotGroupList } from './botGroupStore';
 import { BOT_GROUP_SETTINGS_PARAM } from './botGroupPresentation';
 import { chatErrorKey } from './chatError';
-import { subscribeBotReadState, getBotLastReadAtMap, isBotGroupUnread } from './botReadState';
+import { subscribeBotReadState, getBotLastReadAtMap } from './botReadState';
 import { withoutBotHiddenLanes } from './botGroupLane';
 import {
   botListSubtitle,
@@ -91,32 +90,11 @@ const HEADER_HOVER_ACTION_CLASS = cn(
 const HEADER_ICON_BUTTON_CLASS =
   'flex h-5 w-5 shrink-0 items-center justify-center rounded-lg text-[var(--sidebar-list-muted)] transition-colors hover:text-[var(--sidebar-nav-text)]';
 
-/** 收起态头像行:28px 头像 + 8px 间距。 */
-const AVATAR_SLOT_PX = 36;
 const CHAT_PREVIEW_LIMIT = 5;
 
 /**
- * 收起态只占一行:按内容宽度算出能放几个头像(含末尾「+N」),伙伴再多也不换行。
- * 尚未测量(宽度 0,如首帧或测试环境)时不截断。
- */
-function useAvatarRowCapacity(ref: RefObject<HTMLDivElement | null>, active: boolean): number {
-  const [width, setWidth] = useState(0);
-  // 头像行只在收起时挂载:每次收起后重新挂上观察。
-  useEffect(() => {
-    const element = active ? ref.current : null;
-    if (!element || typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver((entries) => {
-      setWidth(Math.floor(entries[0]?.contentRect.width ?? 0));
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref, active]);
-  return width > 0 ? Math.max(1, Math.floor((width + 8) / AVATAR_SLOT_PX)) : Number.POSITIVE_INFINITY;
-}
-
-/**
  * 侧栏第一层的「伙伴」段(2026-10-13 定稿):固定在置顶段上方,与置顶、全部任务并存。
- * 点伙伴只切换主区域,左栏不再整栏切换。段名在「展开(行列表)」与「收起成一排头像」
+ * 点伙伴只切换主区域,左栏不再整栏切换。段名在「展开(行列表)」与「收起后仅保留段头」
  * 之间切换,默认展开,按账号记住。通知不在这里发 —— 唯一 owner 是任务侧栏。
  */
 export function TeammatesSection() {
@@ -139,8 +117,6 @@ export function TeammatesSection() {
   const selectedGroupId = matchPath('/bots/groups/:groupId', pathname)?.params.groupId;
   const [collapsed, setCollapsed] = useState(() => readTeammatesSectionCollapsed(dataOwnerId));
   const [showAllChats, setShowAllChats] = useCollapsibleShowAll(collapsed);
-  const avatarRowRef = useRef<HTMLDivElement>(null);
-  const avatarCapacity = useAvatarRowCapacity(avatarRowRef, collapsed);
   useEffect(() => {
     setCollapsed(readTeammatesSectionCollapsed(dataOwnerId));
     setShowAllChats(false);
@@ -475,12 +451,6 @@ export function TeammatesSection() {
 
   const ToggleIcon = collapsed ? ChevronRight : ChevronDown;
   const toggleLabel = collapsed ? t('bots.list.sectionExpand') : t('bots.list.sectionCollapse');
-  const openChat = (entry: (typeof visibleChats)[number]) => {
-    if (entry.kind === 'group') navigate(`/bots/groups/${encodeURIComponent(entry.group.id)}`);
-    else if (entry.kind === 'cindy') { if (currentCindy) navigate(currentCindy.route); }
-    else if ('deviceId' in entry.bot) navigate(`/bots/remote/${encodeURIComponent(entry.bot.deviceId)}/${encodeURIComponent(entry.bot.id)}`);
-    else navigate(`/bots/${entry.bot.id}`);
-  };
 
   return (
     <div ref={sidebarRef} className="flex w-full flex-col gap-0.5" data-sidebar-section="teammates">
@@ -520,79 +490,6 @@ export function TeammatesSection() {
           <BotCreateMenu variant="header" entryHint={marketHint} />
         </div>
       </div>
-
-      {collapsed ? (
-        // 收起:单行头像,未读带点;顺序与展开时一致,放不下的收进末尾「+N」(点开即展开整段)。
-        <div ref={avatarRowRef} className="flex flex-nowrap items-center gap-2 overflow-hidden py-1 pr-0 pl-[22px]">
-          {(() => {
-            const entries = visibleChats.map((entry) => {
-              const key = entry.kind === 'group' ? `group:${entry.group.id}`
-                : entry.kind === 'cindy' ? 'cindy-devices'
-                  : 'deviceId' in entry.bot ? remoteBotKey(entry.bot) : entry.bot.id;
-              const name = entry.kind === 'group' ? entry.group.name
-                : entry.kind === 'cindy' ? currentCindy?.bot.name ?? '' : entry.bot.name;
-              const selected = entry.kind === 'group' ? entry.group.id === selectedGroupId
-                : entry.kind === 'cindy' ? Boolean(routeCindy)
-                  : 'deviceId' in entry.bot ? entry.bot.id === botId && entry.bot.deviceId === deviceId
-                    : !deviceId && entry.bot.id === botId;
-              const unread = entry.kind === 'group' ? isBotGroupUnread(entry.group)
-                : entry.kind === 'cindy' ? cindyOptions.some(option => option.unread)
-                  : 'deviceId' in entry.bot ? isRemoteBotUnread(entry.bot) : (unreadByBotId[entry.bot.id] ?? 0) > 0;
-              return { entry, key, name, selected, unread };
-            });
-            const overflow = entries.length > avatarCapacity;
-            let shown = overflow ? entries.slice(0, Math.max(0, avatarCapacity - 1)) : entries;
-            // 正在看的聊天始终留在行内,占最后一个可见位。
-            const selectedEntry = entries.find((item) => item.selected);
-            if (overflow && selectedEntry && !shown.includes(selectedEntry) && shown.length > 0) {
-              shown = [...shown.slice(0, -1), selectedEntry];
-            }
-            const hidden = entries.filter((item) => !shown.includes(item));
-            return (
-              <>
-                {shown.map(({ entry, key, name, selected, unread }) => (
-                  <Tip key={key} text={name} side="bottom">
-                    <button
-                      type="button"
-                      onClick={() => openChat(entry)}
-                      aria-label={unread && !selected ? `${name} · ${t('bots.list.unread', { count: 1 })}` : name}
-                      aria-current={selected ? 'page' : undefined}
-                      className={cn(
-                        'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        selected && 'ring-2 ring-[var(--sidebar-nav-text)] ring-offset-2 ring-offset-sidebar',
-                      )}
-                    >
-                      {entry.kind === 'group' ? (
-                        <BotGroupSidebarAvatar members={entry.group.members} compact />
-                      ) : (entry.kind === 'cindy' ? currentCindy?.bot : entry.bot) ? (
-                        <BotAvatar bot={(entry.kind === 'cindy' ? currentCindy?.bot : entry.bot)!} size="sm" />
-                      ) : null}
-                      {unread && !selected ? (
-                        <span aria-hidden className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-sidebar bg-[var(--bot-unread-bg)]" />
-                      ) : null}
-                    </button>
-                  </Tip>
-                ))}
-                {hidden.length > 0 ? (
-                  <Tip text={t('bots.list.sectionExpand')} side="bottom">
-                    <button
-                      type="button"
-                      onClick={() => { toggleCollapsed(); setShowAllChats(true); }}
-                      aria-label={`${t('bots.list.sectionExpand')} · +${hidden.length}`}
-                      className="relative flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-[var(--surface-chip)] px-1.5 text-11 font-medium tabular-nums text-[var(--sidebar-nav-text)] outline-none hover:bg-sidebar-item-hover focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      +{hidden.length}
-                      {hidden.some((item) => item.unread) ? (
-                        <span aria-hidden className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-sidebar bg-[var(--bot-unread-bg)]" />
-                      ) : null}
-                    </button>
-                  </Tip>
-                ) : null}
-              </>
-            );
-          })()}
-        </div>
-      ) : null}
 
       <SectionCollapse collapsed={collapsed}>
       <div className="flex flex-col pt-1 pr-0 pl-3">

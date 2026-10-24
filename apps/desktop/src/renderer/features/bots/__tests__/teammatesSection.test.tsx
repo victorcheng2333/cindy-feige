@@ -400,7 +400,7 @@ describe('TeammatesSection header', () => {
   const header = () => screen.getByRole('button', { name: 'bots.title' });
 
   // #6444: six rows used to shrink to five before SectionCollapse could animate.
-  // Existing tests cover the avatar end state, not the closing interval. Unit tier:
+  // Existing tests cover the collapsed end state, not the closing interval. Unit tier:
   // render the real section with six entries and advance fake time (no real wait).
   it('keeps the full list mounted until the section collapse finishes', () => {
     vi.useFakeTimers();
@@ -418,79 +418,41 @@ describe('TeammatesSection header', () => {
     expect(screen.getAllByText('Ready')).toHaveLength(5);
   });
 
-  it('starts expanded and collapses into a row of avatars that is remembered per account', async () => {
-    mocks.profiles = [
-      bot({ id: 'bot-1', name: 'PR steward', lastMessagePreview: 'Two checks are still red' }),
-      bot({ id: 'bot-2', name: 'Writer' }),
-    ];
-    mocks.unread = { 'bot-2': 1 };
-    await renderSidebar();
+  // Owner request: collapsing the section must hide avatars as well as full rows.
+  // The old tests explicitly required an avatar strip. Minimal failure: one bot,
+  // then collapse. Unit tier exercises the real section, saved state and reopening.
+  it('hides all teammate content when collapsed and remembers the choice per account', () => {
+    vi.useFakeTimers();
+    mocks.profiles = [bot({ id: 'bot-1', name: 'PR steward', lastMessagePreview: 'Two checks are still red' })];
+    mocks.unread = { 'bot-1': 1 };
+    mocks.params = { botId: 'bot-1' };
+    render(<TeammatesSection />);
     expect(header().getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText('Two checks are still red')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'PR steward' })).toBeNull();
     expect(readTeammatesSectionCollapsed('fixture-owner')).toBe(false);
 
     fireEvent.click(header());
+    act(() => vi.advanceTimersByTime(200));
     expect(header().getAttribute('aria-expanded')).toBe('false');
     expect(readTeammatesSectionCollapsed('fixture-owner')).toBe(true);
-    // Collapsed: one avatar per chat; an unread teammate says so in its label.
-    fireEvent.click(screen.getByRole('button', { name: 'PR steward' }));
-    expect(mocks.navigate).toHaveBeenLastCalledWith('/bots/bot-1');
-    expect(screen.getByRole('button', { name: 'Writer · bots.list.unread:{"count":1}' })).toBeTruthy();
-    // The full rows leave once the collapse animation has finished.
-    await waitFor(() => expect(screen.queryByText('Two checks are still red')).toBeNull());
+    expect(screen.queryByText('Two checks are still red')).toBeNull();
+    expect(screen.queryByRole('button', { name: /PR steward/ })).toBeNull();
+    expect(screen.queryByText('🧭')).toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
 
-    // A fresh mount (another route, a relaunch) restores the saved choice.
     cleanup();
-    await renderSidebar();
+    render(<TeammatesSection />);
     expect(header().getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByText('Two checks are still red')).toBeNull();
-    expect(screen.getByRole('button', { name: 'PR steward' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /PR steward/ })).toBeNull();
+    expect(screen.queryByText('🧭')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'bots.list.sectionExpand' }));
     expect(header().getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText('Two checks are still red')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'PR steward' })).toBeNull();
+    expect(screen.getByText('🧭')).toBeTruthy();
     expect(readTeammatesSectionCollapsed('fixture-owner')).toBe(false);
     expect(window.localStorage.getItem('sidebar.teammatesSection.v1.owner.fixture-owner')).toBe('expanded');
-  });
-
-  it('keeps the collapsed row on one line and folds the rest into +N', async () => {
-    const original = globalThis.ResizeObserver;
-    // 4 slots: 3 avatars + the +N chip (36px per slot, 8px gap).
-    globalThis.ResizeObserver = class {
-      constructor(private readonly callback: ResizeObserverCallback) {}
-      observe() { this.callback([{ contentRect: { width: 136 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
-      disconnect() {}
-      unobserve() {}
-    } as unknown as typeof ResizeObserver;
-    try {
-      mocks.profiles = Array.from({ length: 6 }, (_, index) => bot({ id: `bot-${index}`, name: `Mate ${index}` }));
-      mocks.unread = { 'bot-5': 1 };
-      mocks.params = { botId: 'bot-4' };
-      await renderSidebar();
-      fireEvent.click(header());
-      const avatars = screen.getAllByRole('button', { name: /^Mate \d$/ });
-      expect(avatars).toHaveLength(3);
-      // The open chat keeps a slot even when it sorts past the cut.
-      expect(screen.getByRole('button', { name: 'Mate 4' }).getAttribute('aria-current')).toBe('page');
-      const more = screen.getByRole('button', { name: 'bots.list.sectionExpand · +3' });
-      fireEvent.click(more);
-      expect(header().getAttribute('aria-expanded')).toBe('true');
-    } finally {
-      globalThis.ResizeObserver = original;
-    }
-  });
-
-  it('marks the open chat in the collapsed avatar row', async () => {
-    mocks.profiles = [bot({ id: 'bot-1', name: 'PR steward' }), bot({ id: 'bot-2', name: 'Writer' })];
-    mocks.unread = { 'bot-1': 2 };
-    mocks.params = { botId: 'bot-1' };
-    await renderSidebar();
-    fireEvent.click(header());
-    // The chat being read is current and does not also advertise its unread replies.
-    expect(screen.getByRole('button', { name: 'PR steward' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('button', { name: 'Writer' }).hasAttribute('aria-current')).toBe(false);
   });
 
   it('leaves session notifications to the task sidebar', async () => {

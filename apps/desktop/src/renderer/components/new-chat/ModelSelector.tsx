@@ -2179,7 +2179,7 @@ function ModelSelectorContentView({
     }
     return [...merged.values()].map((section) => ({
       ...section,
-      models: section.models.filter((model) => matchesModelName(model, query, t)),
+      models: section.models.filter((model) => !unifiedExcludeModel?.(model) && matchesModelName(model, query, t)),
     })).filter((section) => section.models.length > 0);
     // visibilityVersion 仅作刷新触发器(设置页改显示开关后强制重算);deviceId 切换需重算分段。
   }, [
@@ -2189,6 +2189,7 @@ function ModelSelectorContentView({
     suspendedActiveSourceId,
     agentKind,
     excludeChatBridgedCodex,
+    unifiedExcludeModel,
     unifiedIsVisible,
     modelId,
     activeSourceId,

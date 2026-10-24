@@ -121,6 +121,8 @@ function renderPanel(
   const onNavigateToProviders = vi.fn();
   render(
     React.createElement(ModelSelectorContent, {
+      // This suite exercises the retained unified panel's source rail.
+      unifiedPanel: true,
       modelId: 'a-model',
       effort: 'high',
       onModelChange: vi.fn(),

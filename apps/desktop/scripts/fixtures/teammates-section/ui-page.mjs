@@ -12,7 +12,7 @@ export default {
   name: 'teammates-section',
   entry: './teammates-fixture.tsx',
   viewport: { width: 800, height: 600 },
-  real: 'TeammatesSection rows, current-chat preview, show-all/show-less controls, avatar strip, theme and translations',
+  real: 'TeammatesSection rows, current-chat preview, show-all/show-less controls, full collapse, theme and translations',
   notCovered: 'Roster loading, cloud/device connections, create/delete menus and message delivery',
   stubs: {
     'src/renderer/contexts/AuthContext': { partial: 'export const useAuth=()=>({dataOwnerId:"ui-fixture"});' },
@@ -64,7 +64,9 @@ export default {
     const header = page.getByRole('button', { name: await ui.t('bots.title'), exact: true });
     await header.click();
     await rows.first().waitFor({ state: 'detached' });
-    await ui.capture('avatars');
+    assert.equal(await page.locator('[aria-current="page"]').count(), 0, 'collapsed section hides the selected avatar too');
+    assert.equal(await page.getByRole('button', { name: /Reviewer|Cindy/ }).count(), 0, 'collapsed section has no avatar buttons');
+    await ui.capture('collapsed');
     await header.click();
     assert.equal(await rows.count(), 5, 'reopening the section restores its compact preview');
   },

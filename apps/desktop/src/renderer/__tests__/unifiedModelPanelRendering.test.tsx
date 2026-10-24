@@ -4208,8 +4208,15 @@ describe('Worker creation with the real model picker', () => {
 
   it.each([true, false])('selects and submits a Pi API route (SSH: %s)', async (sshRemote) => {
     const onCreate = renderWorker(sshRemote);
-    const list = await screen.findByRole('listbox');
-    for (const restricted of [...subscriptionModels, bridgedModel]) {
+    await screen.findByRole('listbox');
+    // The fork's picker browses one Harness at a time; inspect both routes explicitly.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
+    await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-codex')); });
+    expect(within(screen.getByRole('listbox', { name: '模型列表' })).queryByText(bridgedModel.name) !== null).toBe(!sshRemote);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
+    await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-pi')); });
+    const list = screen.getByRole('listbox', { name: '模型列表' });
+    for (const restricted of subscriptionModels) {
       expect(within(list).queryByText(restricted.name) !== null).toBe(!sshRemote);
     }
     await act(async () => { fireEvent.click(within(list).getByText(apiModel.name)); });
@@ -4378,6 +4385,7 @@ describe('外层 ModelSelector · 取消当前选中的收藏先应用默认配�
           onUnifiedSelect={onUnifiedSelect}
           onSessionFavoriteAnchorChange={onSessionFavoriteAnchorChange}
           selectedFavoriteUid={uid}
+          unifiedPanel
         />
       );
     }
