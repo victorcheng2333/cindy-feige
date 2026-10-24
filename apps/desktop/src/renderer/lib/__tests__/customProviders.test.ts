@@ -646,7 +646,7 @@ describe('appendDiscoveredCustomProviderModels', () => {
       .toContainEqual(expect.objectContaining({ id: 'anthropic/openai/new[1m]' }));
     expect(existing[0].id).toBe('anthropic/openai/new[1m]');
   });
-  it('puts new models first without overriding native-engine defaults', () => {
+  it('puts new models first without selecting them or changing existing defaults', () => {
     const result = appendDiscoveredCustomProviderModels(
       [{ id: 'kept', name: 'Kept' }],
       [
@@ -658,11 +658,17 @@ describe('appendDiscoveredCustomProviderModels', () => {
     );
     expect(result).toEqual({
       models: [
-        { id: 'new', name: 'New', discoveredMetadata: { name: 'New' } },
+        { id: 'new', name: 'New', discoveredMetadata: { name: 'New' }, defaultEnabled: false },
         { id: 'kept', name: 'Kept', nameExplicit: true, discoveredMetadata: { name: 'New name' } },
       ],
       addedIds: ['new'],
     });
+    const refreshed = appendDiscoveredCustomProviderModels(result.models, [
+      { id: 'new', name: 'New' }, { id: 'kept', name: 'Kept' },
+    ]);
+    expect(refreshed.addedIds).toEqual([]);
+    expect(refreshed.models.find(model => model.id === 'new')?.defaultEnabled).toBe(false);
+    expect(refreshed.models.find(model => model.id === 'kept')?.defaultEnabled).toBeUndefined();
   });
 
   it('carries the endpoint-declared contextWindow into appended models (#386)', () => {
@@ -678,11 +684,12 @@ describe('appendDiscoveredCustomProviderModels', () => {
       {
         id: 'big',
         name: 'Big',
+        defaultEnabled: false,
         discoveredMetadata: { name: 'Big', contextWindow: 1_000_000 },
       },
-      { id: 'plain', name: 'Plain', discoveredMetadata: { name: 'Plain' } },
+      { id: 'plain', name: 'Plain', discoveredMetadata: { name: 'Plain' }, defaultEnabled: false },
       // 非法值不落盘,回落保守默认
-      { id: 'bogus', name: 'Bogus', discoveredMetadata: { name: 'Bogus' } },
+      { id: 'bogus', name: 'Bogus', discoveredMetadata: { name: 'Bogus' }, defaultEnabled: false },
     ]);
   });
 });

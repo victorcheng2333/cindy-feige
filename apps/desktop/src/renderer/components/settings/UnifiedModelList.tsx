@@ -310,7 +310,12 @@ function rowEnabled(
 ): boolean | null {
   const m = row.byAgent[agent];
   if (!m) return null;
-  if (isAgentSelectableModel(m, { userProvider }) || rowHasVisibilitySwitch(row, userProvider)) {
+  // Match modelVisibilityTargets: a mixed chat/media row only controls chat routes.
+  // Otherwise an untouched media route can keep the switch on after clearing it.
+  if (
+    isAgentSelectableModel(m, { userProvider }) ||
+    (isCapabilityRow(row, userProvider) && rowHasVisibilitySwitch(row, userProvider))
+  ) {
     return isModelEnabled(agent, providerId, m);
   }
   return null;

@@ -299,15 +299,15 @@ describe('ProvidersSection — 双栏管理', () => {
       ]) }) }),
     }), {});
     const saved = vi.mocked(updateCustomProvider).mock.calls[0]![0];
-    // Refresh adds membership without freezing a visibility choice. Native
-    // projection decides defaults; compatibility still requires an override.
+    // Manual refresh adds membership without selecting newly discovered models,
+    // including routes supported natively by the engine.
     for (const modelId of ['new-model', 'chat-model']) {
       const model = saved.runtimes.codex?.models.find(model => model.id === modelId);
       expect(model).toBeDefined();
-      expect(model).not.toHaveProperty('defaultEnabled');
+      expect(model).toHaveProperty('defaultEnabled', false);
     }
     const projected = buildUserProvider(saved).models.codex!;
-    expect(projected.find(model => model.id === 'new-model')?.defaultEnabled).toBe(true);
+    expect(projected.find(model => model.id === 'new-model')?.defaultEnabled).toBe(false);
     expect(projected.find(model => model.id === 'chat-model')?.defaultEnabled).toBe(false);
     if (hasModels) expect(projected.find(model => model.id === 'old-model')?.defaultEnabled).toBe(false);
     expect(refetchProvidersSpy).toHaveBeenCalled();

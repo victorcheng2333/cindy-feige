@@ -159,7 +159,7 @@ export function providerViewToCustomProviderConfig(p: ProviderView): CustomProvi
   };
 }
 
-/** Refresh metadata and append new models; native-engine defaults decide visibility. */
+/** Manual refresh preserves existing choices and leaves newly discovered models unselected. */
 export function appendDiscoveredCustomProviderModels(
   existing: readonly ProviderRuntimeModelConfig[],
   discovered: readonly DiscoveredModel[],
@@ -185,7 +185,7 @@ export function appendDiscoveredCustomProviderModels(
     }
     prior = [...normalized.values()];
   }
-  const models = mergeDiscoveredRuntimeModels(prior, discovered);
+  const models = mergeDiscoveredRuntimeModels(prior, discovered, true);
   const known = new Set(existing.map((model) => model.id));
   return {
     models,
