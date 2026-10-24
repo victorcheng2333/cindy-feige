@@ -1,4 +1,7 @@
 import { parseVertexServiceAccountReference, vertexServiceAccountOptions } from '@cindy/model-providers';
+import { modelWithInterface } from '@cindy/model-providers';
+import { sessionModelInterface } from './session-model-interface.js';
+import { ANSWER_DELIVERY_PROMPT } from '@cindy/maker-shared/rich-answer-guide';
 import { listCindyManagedSkills } from './managed-skills.js';
 import { scanLocalCustomizations } from '../skillhub/customizationScanHost';
 import { resolveCompanionRuntimeEnvironment } from '../bot-import/runtime.js';
@@ -120,6 +123,7 @@ import {
 } from './pi-gateway-model-catalog.js';
 import { isExclusiveXaiModelId } from '../../shared/subscriptionModels.js';
 import { resolvePiRuntimeModelDescriptor, resolveModelDefaultContextWindow, resolveModelContextProviderId } from './catalog-to-descriptors.js';
+import { readPiNativeCompatOverride } from './pi-native-compat-overrides-store.js';
 import {
   resolveManagedPiNativePackagePaths,
   resolveManagedPiPackageResources,
@@ -865,6 +869,7 @@ function buildDesktopPiRuntimeConfig(): AgentRuntimeConfig {
     taskShellEnv: inputHandoffTaskShellEnv,
     // 保留 host 共用身份段,再追加 Pi 专属行为段；maker-core 会整体追加到 Pi 原生 prompt。
     systemPrompt: composePiSystemPrompt(hostSystemPrompt, piSystemPrompt),
+    answerDeliveryPrompt: ANSWER_DELIVERY_PROMPT,
     // Pi 的 grep 以及 Cindy 覆盖的 find 都固定复用随 Desktop 校验、打包的 rg。
     // 下发绝对路径而非 PATH，避免 Windows 从不受信工作目录优先命中同名 rg.exe。
     managedExecutablePaths: { ripgrep: ripgrepPath },
@@ -1219,6 +1224,7 @@ export function buildPiNativeProvidersFromConfigs(
           reasoningEfforts?: PiReasoningEffort[];
           api?: PiModelApi;
           piApi?: PiModelApi;
+          selectedInterface?: import('@cindy/model-providers').ModelInterfaceSnapshot;
           route?: {
             baseUrl: string;
             wireProtocol: ProviderWireProtocol;
@@ -1255,8 +1261,15 @@ export function buildPiNativeProvidersFromConfigs(
     }
   };
   for (const cfg of configs) {
-    const rt = cfg.runtimes.pi;
-    if (!rt) continue;
+    const savedRuntime = cfg.runtimes.pi;
+    if (!savedRuntime) continue;
+    const resolvedProvider = resolvedCatalog?.providers.find(p => p.id === runtimeCustomProviderId(cfg.id));
+    const rt = { ...savedRuntime, models: savedRuntime.models.map(model => {
+      const resolved = resolvedProvider?.models.pi?.find(item => item.id === model.id);
+      return resolved?.selectedInterface ? { ...model, api: resolved.api, piApi: resolved.piApi,
+        route: resolved.route, selectedInterface: resolved.selectedInterface } : model;
+    }) };
+
     const authMethod = cfg.auth?.method ?? 'apiKey';
     if (authMethod === 'oauth' && (!cfg.auth?.oauth || !oauthProxyEndpoint)) {
       onSkip?.(cfg.id, 'oauth proxy not ready for pi native');
@@ -1402,6 +1415,7 @@ export function buildPiNativeProvidersFromConfigs(
       // The proxy already retains the supplier base path (e.g. /api/v1).
       // OpenAI SDKs append /chat/completions or /responses themselves.
       baseUrl: authMethod === 'oauth' ? oauthProxyEndpoint! : rt.baseUrl,
+      ...(authMethod === 'oauth' ? { cacheIdentityBaseUrl: rt.baseUrl } : {}),
       api: providerApi,
       apiKeyEnvVar,
       ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
@@ -1439,6 +1453,8 @@ export function buildPiNativeProvidersFromConfigs(
           m.route && explicitRouteApi === modelApi ? explicitRoute?.baseUrl : undefined;
         const spec = {
           id: m.id,
+          ...(m.selectedInterface ? { wireId: m.selectedInterface.wireModelId } : {}),
+          ...(authMethod === 'oauth' ? { cacheIdentityBaseUrl: modelBaseUrl ?? rt.baseUrl } : {}),
           ...(resolved?.supportsFastMode !== undefined ? { supportsFastMode: resolved.supportsFastMode } : {}),
           ...(m.api || m.piApi || modelApi !== providerApi ? { api: modelApi } : {}),
           ...(authMethod === 'oauth'
@@ -1743,6 +1759,7 @@ export function resolvePiCindyGatewayModelSpec(
 
 /** BYOM:读 DB 自定义 provider + safeStorage key → pi 原生 provider spec。IO 外壳,逻辑在上面。 */
 export async function resolvePiNativeProviders(ctx: {
+  sessionId?: string;
   workingDir: string;
   remoteHostId?: string | null;
   providerId?: string | null;
@@ -1833,6 +1850,17 @@ export async function resolvePiNativeProviders(ctx: {
       }
     }
   }
+  const sessionCatalog = getActiveCatalog();
+  const pinnedCatalog = ctx.sessionId && ctx.purpose !== 'preview' ? { ...sessionCatalog,
+    providers: sessionCatalog.providers.map(provider => provider.id !== ctx.providerId ? provider : {
+      ...provider, models: { ...provider.models, pi: provider.models.pi?.map(model => {
+        if (model.id !== ctx.model) return model;
+        const selected = sessionModelInterface(ctx.sessionId!, provider.id, 'pi', model, sessionCatalog.modelRegistry,
+          ctx.resumeSessionId ? provider.routing.pi?.wireProtocol : undefined);
+        return modelWithInterface(model, selected);
+      }) },
+    }),
+  } : sessionCatalog;
   const custom = buildPiNativeProvidersFromConfigs(
     mergeByokNativeConfigs(configs, getActiveCatalog().providers),
     (id, agent) => {
@@ -1847,7 +1875,7 @@ export async function resolvePiNativeProviders(ctx: {
     },
     (id, reason) => log.warn('resolvePiNativeProviders: skipped custom provider', { id, reason }),
     bundledModels ?? undefined,
-    getActiveCatalog(),
+    pinnedCatalog,
     !isRemote && compatProxyReady ? getClaudeEndpoint() : undefined,
   );
   // Remote PI cannot use the local native overlay. Preserve upstream's exact
@@ -1920,6 +1948,10 @@ export function buildPiAgent(opts: BuildPiAgentOpts): PiAgent | null {
   return new PiAgent({
     resolveSessionEnvironment: resolveCompanionRuntimeEnvironment,
     getDisabledSkillPaths: readDisabledSkillPaths,
+    // 上游拒收可选请求字段（如 prompt_cache_retention / prompt_cache_key）后学到的 per-model
+    // compat 修正，写 models.json 时合并；只改 compat，不动路由与凭证。
+    resolvePiNativeCompatOverride: (providerId, modelId, routeKey) =>
+      readPiNativeCompatOverride(providerId, modelId, routeKey),
     getManagedSkills: listCindyManagedSkills,
     scanLocalCustomizations,
     resolveModelContextLimit: (providerId, modelId) => {
