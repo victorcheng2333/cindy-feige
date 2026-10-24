@@ -227,6 +227,8 @@ function renderPanel(
       currentProviderId: 'a-local',
       onProviderChange,
       vendorKey: 'cc',
+      // 本 fork 产品默认是原始供应商面板；本文件锁的是统一面板的远程收藏轨道。
+      unifiedPanel: true,
       onUnifiedSelect,
       remoteAgent: { devices, selectedDeviceId: null, ...remoteAgent },
       ...props,
@@ -401,6 +403,7 @@ describe('被控电脑上的任务:收藏读写被控电脑那一份', () => {
         currentProviderId: 'b-main',
         onProviderChange: vi.fn(),
         vendorKey: 'cc',
+        unifiedPanel: true,
         deviceId: 'device-b',
       }),
     );
@@ -698,6 +701,7 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
         currentProviderId: 'xd',
         onProviderChange: vi.fn(),
         vendorKey: 'cc',
+        unifiedPanel: true,
         deviceId: 'share:magi',
       }),
     );
@@ -718,6 +722,7 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
         currentProviderId: 'xd',
         onProviderChange: vi.fn(),
         vendorKey: 'cc',
+        unifiedPanel: true,
         deviceId: 'device-b',
       }),
     );
