@@ -131,6 +131,9 @@ const DISCORD_RUNTIME_DEPS = ['discord.js'];
 // `@protobufjs/inquire` (the eval-based dynamic require was removed in its
 // 2026 security fixes) — don't re-add it, resolvePackageDir would throw.
 const NATIVE_RUNTIME_DEPS = [
+  // Turndown's Node DOM parser remains a runtime require in the bundled
+  // opencli browser recipes. It must resolve without the workspace hoist.
+  '@mixmark-io/domino',
   'better-sqlite3',
   'bindings',
   'file-uri-to-path',
