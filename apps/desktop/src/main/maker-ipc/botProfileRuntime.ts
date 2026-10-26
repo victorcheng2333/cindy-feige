@@ -28,6 +28,7 @@ import { PROVIDER_NAME_TO_PLUGIN_ID } from '../maker-host/plugins/builtin-plugin
 import { normalizeBotToolCapabilities } from '../../shared/botCapabilitySelection.js';
 import { BOT_BASELINE_PLUGIN_IDS } from '../maker-host/plugins/types.js';
 import { BOT_IM_CHANNELS_VENDOR_KEY, type BotImChannel } from '../../shared/botImConnection.js';
+import businessOwnershipPrompt from '../maker-host/business-ownership-prompt.md?raw';
 
 const log = createLogger('maker-ipc:bot-profile-runtime');
 
@@ -43,7 +44,7 @@ interface BotSkillCatalogItem {
 
 interface BotMcpCatalogItem {
   name: string;
-  source: 'builtin' | 'custom';
+  source: 'builtin' | 'custom' | 'harness';
   available?: boolean;
   generation?: string;
 }
@@ -138,7 +139,7 @@ export interface BotProfileRuntimeDeps {
   listOwnSkills?: (input: { botId: string }) => Promise<{
     pluginRoot: string;
     baseline?: { pluginRoot: string; skill: { name: string; description: string; path: string; filePath: string } };
-    skills: { name: string; description: string; path: string; filePath?: string }[];
+    skills: { name: string; description: string; path: string; filePath?: string; updatedAt?: string }[];
   }>;
   readSkillSource?: (input: {
     path: string;
@@ -295,6 +296,7 @@ export function buildBotProfileContextPrompt(displayName: string): string {
     `Active Cindy Bot profile: ${name}.`,
     'Your name is the active profile name; your personality, role, and relationship with the user come from the current SOUL and user profile. Keep them consistent across replies, context compaction, restarts, and model changes. Do not reverse who is the boss or invent a relationship from habitual forms of address. Correct earlier replies that conflict with the current profile instead of treating them as identity facts.',
     'The user is talking to this named teammate inside Cindy. Pi, Claude Code, and Codex are execution engines, not your personal identity or the user-facing application. Their native coding instructions describe how to use tools; they do not replace your profile. If asked about the engine or model, distinguish it from your identity and only state runtime facts you can verify.',
+    businessOwnershipPrompt.trim(),
     'Use available host tools for model changes and verify their results before claiming a change. Connecting a new model or signing in to a provider is managed in Cindy settings. Do not present terminal-only slash commands such as /login or /model as commands available in this chat or assume the user is in a Pi terminal. When the exact Cindy entry is unknown, say so rather than inventing steps. When the user asks about a native CLI, explain which instructions belong to that terminal. This distinction does not restrict native tools, Pi package management, extensions, or self-repair.',
   ].join('\n');
 }
@@ -434,7 +436,7 @@ export function resolveBotMcpReferences(input: {
 }): { resolved: string[]; unavailable: string[] } {
   const available = new Set(
     input.catalog
-      .filter((item) => item.source === 'custom' && item.available !== false)
+      .filter((item) => item.source !== 'builtin' && item.available !== false)
       .map((item) => item.name),
   );
   if (input.mode === 'inherit') {
@@ -717,7 +719,7 @@ export async function hydrateBotProfileRuntime(
     伙伴在任务里刚学会一个技能,紧接着要能续跑同一个任务;把自己写的文件也
     冻上,等于「一学会就再也 resume 不了」。
   */
-  let ownSkills: { name: string; description: string; path: string; filePath?: string }[] = [];
+  let ownSkills: { name: string; description: string; path: string; filePath?: string; updatedAt?: string }[] = [];
   let ownSkillPluginRoots: string[] = [];
   // SSH remote 会话的 harness 跑在远端文件系统上,本机 userData 里的技能目录
   // 在那边不存在 —— 与其挂一串打不开的路径,不如这类会话直接不挂。
@@ -1046,12 +1048,17 @@ export async function hydrateBotProfileRuntime(
     profilePrompt: opts.botProfilePrompt ?? '',
     contextPrompt: opts.botProfileContextPrompt ?? '',
     userProfilePrompt: opts.botUserProfilePrompt ?? '',
+    // All live chats compare this epoch before their next input. Shared learning
+    // must invalidate their frozen indexes even when the Profile did not change.
+    memoryIndex: opts.makerMemoryIndexSnapshot ?? '',
     skillResources: resolvedSkillEntries.map((entry) => ({
       name: entry.runtimeCommandName?.trim() || entry.name.trim(),
       path: entry.path?.trim() || null,
       sha256: entry.contentSha256 ?? null,
     })),
-    botOwnSkillResources: ownSkills.map((entry) => ({ name: entry.name, path: entry.path })),
+    botOwnSkillResources: ownSkills.map((entry) => ({
+      name: entry.name, path: entry.path, description: entry.description, updatedAt: entry.updatedAt ?? null,
+    })),
     mcpResources: resolvedMcpServers.map((name) => {
       const entry = mcpCatalog.find((item) => item.name === name);
       return { name, generation: entry?.generation ?? null };

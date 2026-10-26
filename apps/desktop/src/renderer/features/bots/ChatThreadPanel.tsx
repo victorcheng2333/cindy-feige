@@ -10,6 +10,7 @@ import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useR
 import { Bell, BellRing, Check, CornerDownRight, MessageSquareShare, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
+import { useMessageEntrance } from '@/components/chat/useMessageEntrance';
 import { cn } from '@/lib/utils';
 import { findThreadMessageElement, flashThreadTarget } from './BotGroupThreadViews';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ import {
   type BotGroupTimelineMessage,
 } from './BotGroupTimelineModel';
 import { chatErrorKey, messageReactionRevision } from './ChatServerControls';
+import type { ThreadPanelResize } from './useThreadPanelResize';
 const key = (name: string) => `bots.groupChat.server.${name}`;
 const api = () => window.electronAPI.maker.chatServer;
 const STICK_TO_BOTTOM_PX = 48;
@@ -148,7 +150,7 @@ export function animateThreadPanelWidth(panel: HTMLElement, from: string, to: st
  * `quoteSources` are the main timeline's verified messages (older pages included), so a
  * 话题 root's quote reads the same as it does in the timeline; without them, the latest page.
  */
-export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, focus, sharedReplies, onRevealShare, onClose }: {
+export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, focus, sharedReplies, onRevealShare, onClose, resize }: {
   group: BotGroupDetail; rootId: string; quoteSources?: readonly BotGroupMessageView[];
   /** A reply to bring into view; a new nonce repeats the jump. */
   focus?: { messageId: string; nonce: number } | null;
@@ -156,6 +158,7 @@ export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, 
   /** Scroll the main chat to a share; false when it is not loaded there. */
   onRevealShare?: (messageId: string) => boolean;
   onClose: () => void;
+  resize?: ThreadPanelResize;
 }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
@@ -331,6 +334,9 @@ export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, 
     [realReplies, pendingSends, pendingMatches],
   );
   const rootRows = useMemo(() => projectBotGroupExecutionFailures(root ? [root] : [], executionFailures), [root, executionFailures]);
+  const entranceSignature = replyRows.map(message => adoptedKeysRef.current.get(message.id) ?? message.id).join('\0');
+  const entranceKeys = useMemo(() => entranceSignature ? entranceSignature.split('\0') : [], [entranceSignature]);
+  const enterMessage = useMessageEntrance(entranceKeys, root !== null);
   const layout = useMemo(() => layoutBotGroupTimeline(replyRows), [replyRows]);
   const lastRealSequenceRef = useRef(0);
   lastRealSequenceRef.current = realReplies[realReplies.length - 1]?.sequence ?? 0;
@@ -455,6 +461,7 @@ export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, 
     return (
       <BotGroupTimelineItem
         message={message}
+        entranceRef={node => enterMessage(node, adoptedKeysRef.current.get(message.id) ?? message.id)}
         continued={continued}
         authorName={authorName}
         avatar={{ name: authorName, avatar: member?.avatar ?? null, avatarUrl: member?.avatarUrl, avatarColor: member?.avatarColor ?? null }}
@@ -484,7 +491,8 @@ export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, 
   const firstNewId = firstNewIndex > 0 ? replyRows[firstNewIndex]!.id : null;
 
   return <aside ref={panelRef} aria-labelledby={titleId}
-        className="flex h-full min-w-0 w-1/2 max-w-[min(50%,28rem)] shrink-0 flex-col overflow-hidden border-l border-[var(--border-default)] bg-[var(--surface)]">
+        style={resize?.width === undefined ? undefined : { width: resize.width, maxWidth: 'none' }}
+        className="relative flex h-full min-w-0 w-1/2 max-w-[min(50%,28rem)] shrink-0 flex-col overflow-hidden border-l border-[var(--border-default)] bg-[var(--surface)]">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--border-default)] px-5">
           <h2 id={titleId} className="text-15 font-medium text-[var(--text-primary)]">{t(key('topic'))}</h2>
           <div className="flex items-center gap-1">
@@ -568,5 +576,9 @@ export function ChatThreadPanel({ group, rootId, quoteSources = group.messages, 
             />
           </div>
         </>}
+        {/* Keep the existing Shift+Tab route from Close back into the group. */}
+        {resize && <div role="separator" aria-orientation="vertical" aria-label={t('diffPanel.shell.resizeHandleAria')}
+          tabIndex={0} {...resize.handleProps}
+          className="absolute inset-y-0 left-0 z-10 w-2 touch-none cursor-col-resize hover:border-l hover:border-[var(--text-tertiary)] focus-visible:border-l focus-visible:border-[var(--focus-ring)] focus-visible:outline-none" />}
   </aside>;
 }

@@ -125,7 +125,8 @@ export async function settleBotGroupLaneTerminal(
 export interface BotGroupChatServiceDeps {
   /**
    * With `plan`, the Bot's 分工 Session for that plan (bot-group-chat.md §7.4); with
-   * `threadRootId`, the Bot's own lane for that Thread (§3).
+   * `threadRootId`, the Bot's own lane for that Thread (§3); with `talkPlanId`, its own
+   * lane for that queue (§7.0).
    */
   ensureLane: (input: {
     botId: string;
@@ -134,6 +135,7 @@ export interface BotGroupChatServiceDeps {
     chatAccess?: import('../../shared/botGroupChat.js').ChatLaneAccess;
     plan?: { planId: string; workDir: string; sessionId?: string };
     threadRootId?: string;
+    talkPlanId?: string;
   }) => Promise<LaneResult>;
   /** Same hidden, durable input path as Bot DMs; attachments go with the turn like a task message's. */
   dispatch: (params: {
@@ -181,6 +183,7 @@ export interface BotGroupChatServiceDeps {
   captureOwnerScope?: () => DataOwnerBroadcastScope;
   isOwnerScopeCurrent?: (scope: DataOwnerBroadcastScope) => boolean;
   onChanged?: (payload: BotGroupChangedPayload, ownerScope?: DataOwnerBroadcastScope) => void;
+  onChatMessageNotification?: (payload: import('./chatMessageNotifications.js').ChatMessageNotification, current: () => boolean) => void;
   /** Cloud companions (cloud-companions.md); absent keeps the Chat Server per-computer only. */
   companionCloud?: import('../companion-cloud/runtime.js').CompanionCloudHost;
   now?: () => number;
@@ -2148,7 +2151,8 @@ export function createBotGroupChatService(deps: BotGroupChatServiceDeps) {
     });
   };
 
-  const stopRound = async (groupIdInput: unknown): Promise<BotGroupMutationResult> => {
+  // Local groups have one owner; the stop scope only matters in multi-account server groups.
+  const stopRound = async (groupIdInput: unknown, _scope?: unknown): Promise<BotGroupMutationResult> => {
     const groupId = readId(groupIdInput);
     if (!groupId) return failure('INVALID_PARAMS', 'groupId 无效');
     return serialize(groupId, async () => {

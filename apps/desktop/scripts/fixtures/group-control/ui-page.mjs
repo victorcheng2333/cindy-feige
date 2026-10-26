@@ -5,25 +5,35 @@ const members = [
   { botId: 'b', name: 'Nova' },
 ];
 const base = { name: 'Design review', members, messages: 0, sidebar: true };
+const QUEUE_CROWD = ['Aster', 'Nova', 'Mira', 'Orin', 'Pax', 'Quill', 'Rhea'].map((name, i) => ({ botId: 'abcdefg'[i], name }));
 const LONG_DEVICE = 'Mac Studio · A very long device name for layout verification';
 
-/** Migrated from check-group-control-layout.mjs (remote-control notice above the composer). */
+/** Exercise the real group composer and the fork's notice-free existing-chat layout. */
 export default {
   name: 'group-chat',
+  // The single-page builder does not implement Vite's ?url imports. Voice is outside this fixture.
+  stubs: {
+    'src/renderer/voice-input/workletUrl': 'export const getVoiceInputWorkletUrl = () => { throw new Error("Voice input is not covered by this fixture"); };',
+  },
   entry: './group-control-fixture.tsx',
   viewport: { width: 1280, height: 800 },
   real: 'BotGroupChatView (timeline, composer, send button, header registration), ControlledBanner, ContentHeader shell, Markdown, theme, fonts and translations',
   notCovered:
     'Sending, round control, real device-link control and revocation, pending interactions, plans and attachments; the bubbles case shows a task snapshot, not a live task; the sidebar is an empty frame',
   cases: {
+    'body-answer': {
+      about: '#6550: component body is readable; literal punctuation and surrounding Markdown are retained',
+      viewport: { width: 720, height: 700 },
+      data: { ...base, sidebar: false, bodyAnswer: true },
+    },
     default: { about: 'Empty group, short controller name, expanded sidebar', data: base },
     'long-thread': {
-      about: '40 messages: bottom pin and history position survive notice changes',
+      about: '40 messages: bottom pin and history position survive remote-control changes',
       viewport: { width: 800, height: 600 },
       data: { ...base, messages: 40 },
     },
     'long-device': {
-      about: 'Long controller device name in the notice',
+      about: 'Long controller device name does not add a notice to an existing chat',
       data: base,
       controller: LONG_DEVICE,
     },
@@ -32,6 +42,40 @@ export default {
     bubbles: {
       about: 'Teammate bubbles: quote, corner reaction, thread entry, task card, long text at the width cap; hover shows the toolbar beside the bubble',
       data: { ...base, bubbles: true },
+    },
+    arrangement: {
+      about: 'Single-speaker server group, nobody named: the queue card stands on its own, Aster answered and Nova is speaking next by itself',
+      data: { ...base, arrangement: 'running' },
+    },
+    'work-mentioned': {
+      about: 'Preserved running work plan in mentioned mode: ordinary text has no implicit worker recipient',
+      data: { ...base, arrangement: 'running', workMentioned: true },
+    },
+    'arrangement-done': {
+      about: 'The same queue once every turn is done: no 继续 row',
+      data: { ...base, arrangement: 'done' },
+    },
+    'arrangement-long': {
+      about: 'Seven teammates: the first five answered by themselves, the card folds to three turns around Quill, who waits for 继续',
+      data: { ...base, members: QUEUE_CROWD, arrangement: 'long' },
+    },
+    'division-waiting': {
+      about: 'A 分工 you started stopped after step 1: the card footer switch is off and 下一步 · 继续 waits',
+      viewport: { width: 1000, height: 760 },
+      data: { ...base, division: 'waiting' },
+    },
+    'division-auto': {
+      about: 'The same 分工 with 做完一步自动交给下一位 on: Nova started step 2 by itself, no 继续 row',
+      viewport: { width: 1000, height: 760 },
+      data: { ...base, division: 'auto' },
+    },
+    settings: {
+      about: 'Single-speaker group settings: reply mode, organizer, project folder and 分工交接 (off) as before; no speaking mode',
+      data: { ...base, arrangement: 'running', settings: true },
+    },
+    division: {
+      about: 'Single-speaker group: 「+」→ 安排分工 is offered again; tagged, the composer says steps may be written out',
+      data: { ...base, arrangement: 'done' },
     },
     'thread-unread': {
       about: 'Server read state: unread thread entries (with @you), the in-chat 话题 hint above the composer and its list of this group\'s Threads',
@@ -52,6 +96,14 @@ export default {
   },
   async check(page, ui) {
     const definition = this.cases[ui.case];
+    if (ui.case === 'body-answer') {
+      const timeline = page.getByTestId('bot-group-timeline');
+      assert.ok((await timeline.innerText()).includes('保留 <name>、*literal* 和 & 符号'));
+      assert.ok((await timeline.innerText()).includes('以上是本轮结论。'));
+      assert.equal(await timeline.getByText('重点', { exact: true }).count(), 1);
+      assert.ok(!(await timeline.innerText()).includes('"op":"create"'));
+      return;
+    }
     const input = page.locator('textarea');
     const chip = page.locator('[data-controlled-banner-chip]');
     const collapsedDot = page.locator('[data-controlled-banner="collapsed"]');
@@ -64,18 +116,59 @@ export default {
         }),
         'banner subscribed to controlled state',
       );
-      await chip.waitFor({ state: connected ? 'visible' : 'detached' });
-    };
-    const collapse = async () => {
-      await page.locator('[data-controlled-banner-collapse]').click();
-      await collapsedDot.waitFor();
-      assert.equal(await chip.count(), 0);
-    };
-    const expand = async () => {
-      await collapsedDot.click();
-      await chip.waitFor();
+      // The fork shows the app-level notice only on the new-task route.
+      // Preserve the real controlled-state subscription while checking absence here.
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(await chip.count(), 0, 'existing group chats have no connection notice');
+      assert.equal(await collapsedDot.count(), 0, 'existing group chats have no collapsed notice');
     };
 
+    if (ui.case === 'settings') {
+      const drawer = page.getByRole('dialog');
+      await drawer.getByText(await ui.t('bots.groupChat.server.settings.name'), { exact: true }).waitFor();
+      const replyMode = drawer.getByRole('combobox', { name: await ui.t('bots.groupChat.settings.replyMode'), exact: true });
+      await replyMode.click();
+      await page.getByRole('option', { name: await ui.t('bots.groupChat.settings.replyModeMentioned'), exact: true }).click();
+      assert.equal(await replyMode.innerText(), await ui.t('bots.groupChat.settings.replyModeMentioned'));
+      // Reply mode and the 分工 settings stay; one teammate at a time leaves no speaking mode (bot-group-chat.md §4.0).
+      assert.equal(await drawer.getByText(await ui.t('bots.groupChat.settings.speakingMode'), { exact: true }).count(), 0, 'speakingMode');
+      for (const key of ['bots.groupChat.organizer', 'bots.groupChat.settings.projectDir', 'bots.groupChat.settings.handoff'])
+        assert.ok(await drawer.getByText(await ui.t(key), { exact: true }).count() > 0, key);
+      return;
+    }
+    if (ui.case === 'division-waiting' || ui.case === 'division-auto') {
+      // You started this 分工: its card footer switches 做完一步自动交给下一位 (bot-group-chat.md §7.4).
+      const auto = ui.case === 'division-auto';
+      const toggle = page.getByTestId('bot-group-plan-auto');
+      await toggle.waitFor();
+      assert.equal(await toggle.getAttribute('aria-checked'), String(auto));
+      assert.equal(await page.getByTestId('bot-group-plan-follow-up').count(), auto ? 0 : 1, '下一步 · 继续');
+      return;
+    }
+    if (ui.case === 'division') {
+      await page.getByRole('button', { name: '更多操作' }).click();
+      await page.getByRole('menuitem', { name: /安排分工/ }).click();
+      await page.waitForFunction(() => document.querySelector('textarea')?.getAttribute('placeholder')?.startsWith('写好谁做什么'));
+      await ui.capture('tagged');
+      return;
+    }
+    if (ui.case === 'work-mentioned') {
+      assert.equal(await input.getAttribute('placeholder'), await ui.t('bots.groupChat.composer.placeholder'));
+      return;
+    }
+    if (ui.case.startsWith('arrangement')) {
+      const card = page.getByTestId('bot-group-arrangement');
+      await card.waitFor();
+      // The card is its own row, never part of a teammate's answer.
+      assert.equal(await card.locator('xpath=ancestor::article').count(), 0);
+      // Only a queue past its first five waits for 继续; a long queue folds to three turns until expanded.
+      assert.equal(await page.getByTestId('bot-group-plan-follow-up').count(), ui.case === 'arrangement-long' ? 1 : 0);
+      assert.equal(await card.locator('li').count(), ui.case === 'arrangement-long' ? 3 : 2);
+      // A queue waiting for 继续 takes a new request: the composer does not offer to revise the last answer.
+      const placeholder = await input.getAttribute('placeholder');
+      assert.ok(ui.case === 'arrangement' ? placeholder.includes('正在说') : !placeholder.includes('改改'), placeholder);
+      return;
+    }
     if (ui.case === 'thread-unread') {
       await page.getByText('Android 更新卡那个 PR', { exact: false }).waitFor();
       // Unread replies replace the last-reply time on the entry; an @you is named there too.
@@ -234,6 +327,17 @@ export default {
     }
 
     if (ui.case === 'long-thread') {
+      // Browser integration: presentation translation must not enlarge the
+      // native range, which onScroll would mistake for the reader leaving tail.
+      const translatedRange = await scroller.evaluate(el => {
+        const content = el.querySelector('[data-bot-group-message-id]').parentElement;
+        const before = el.scrollHeight;
+        content.style.transform = 'translateY(100px)';
+        const after = el.scrollHeight;
+        content.style.transform = '';
+        return { before, after };
+      });
+      assert.equal(translatedRange.after, translatedRange.before, 'follow movement cannot add scrollable overflow');
       const bottomGap = () =>
         scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
       await page.waitForFunction(() => {
@@ -246,8 +350,6 @@ export default {
       });
       for (const [step, action] of [
         ['connection', () => connect()],
-        ['collapse', collapse],
-        ['expand', expand],
         ['disconnection', () => connect(false)],
       ]) {
         await action();
@@ -260,8 +362,6 @@ export default {
       });
       for (const [step, action] of [
         ['connection', () => connect()],
-        ['collapse', collapse],
-        ['expand', expand],
         ['disconnection', () => connect(false)],
       ]) {
         await action();
@@ -285,84 +385,20 @@ export default {
     // BotGroupComposer labels its send button with bots.send (not the shared SendButton default).
     const sendLabel = await ui.t('bots.send');
     const layout = await page.evaluate((sendLabel) => {
-      const notice = document.querySelector('[data-controlled-banner-chip]');
       const textarea = document.querySelector('textarea');
-      const card = textarea.parentElement.getBoundingClientRect();
       const send = textarea.parentElement.querySelector(`button[aria-label="${sendLabel}"]`);
       const reachable = (el) => {
         if (!el) return false;
         const r = el.getBoundingClientRect();
         return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
       };
-      const n = notice.getBoundingClientRect();
-      return {
-        centerDelta: Math.abs(n.x + n.width / 2 - card.x - card.width / 2),
-        above: n.bottom <= card.y,
-        reachable: [
-          textarea,
-          send,
-          notice.querySelector('button'),
-          notice.querySelector('[data-controlled-banner-collapse]'),
-        ].map(reachable),
-      };
+      return { input: reachable(textarea), send: reachable(send) };
     }, sendLabel);
-    assert.ok(layout.centerDelta < 1, 'notice is centered on the composer');
-    assert.ok(layout.above, 'notice sits above the composer');
-    assert.deepEqual(
-      Object.fromEntries(
-        ['input', 'send', 'revoke', 'collapse'].map((name, i) => [name, layout.reachable[i]]),
-      ),
-      { input: true, send: true, revoke: true, collapse: true },
-      `input, send ("${sendLabel}"), revoke and collapse are clickable`,
-    );
+    assert.deepEqual(layout, { input: true, send: true }, 'composer input and send remain clickable');
     await ui.capture('connected');
-    await collapse();
-    const dot = await page.evaluate(() => {
-      const el = document.querySelector('[data-controlled-banner="collapsed"]');
-      const r = el.getBoundingClientRect();
-      const card = document.querySelector('textarea').parentElement.getBoundingClientRect();
-      return {
-        centerDelta: Math.abs(r.x + r.width / 2 - card.x - card.width / 2),
-        above: r.bottom <= card.y,
-        reachable: el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)),
-      };
-    });
-    assert.ok(dot.centerDelta < 1 && dot.above && dot.reachable, 'collapsed indicator placement');
-    await ui.capture('collapsed');
-    await expand();
-    // Reach the notice through normal tab order; both activation keys toggle it.
-    const viaKeyboard = async (selector, key) => {
-      await input.focus();
-      await page.keyboard.press('Shift+Tab');
-      const target = page.locator(selector);
-      assert.ok(
-        await target.evaluate(
-          (el) =>
-            el === document.activeElement &&
-            Boolean(el.getAttribute('aria-label')) &&
-            el.matches(':focus-visible') &&
-            getComputedStyle(el).boxShadow !== 'none',
-        ),
-        `${selector} is keyboard reachable with visible focus`,
-      );
-      await page.keyboard.press(key);
-    };
-    for (const key of ['Enter', 'Space']) {
-      await viaKeyboard('[data-controlled-banner-collapse]', key);
-      await collapsedDot.waitFor();
-      await viaKeyboard('[data-controlled-banner="collapsed"]', key);
-      await chip.waitFor();
-    }
+    await connect(false);
     await input.focus();
-    await page.keyboard.press('Shift+Tab');
-    await page.keyboard.press('Shift+Tab');
-    assert.ok(
-      await chip
-        .locator('button')
-        .first()
-        .evaluate((el) => el === document.activeElement),
-      'revoke is a separate tab stop',
-    );
-    assert.equal(await page.getByRole('dialog').count(), 0, 'folding never opens a dialog');
+    assert.ok(await input.evaluate(el => el === document.activeElement), 'composer remains keyboard focusable');
+    assert.equal(await page.getByRole('dialog').count(), 0, 'control-state changes never open a dialog');
   },
 };

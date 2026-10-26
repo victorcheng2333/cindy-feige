@@ -500,6 +500,134 @@ describe('BotGroupChatView', () => {
     } finally { cleanup(); motion.restore(); }
   });
 
+  describe('thread width resizing', () => {
+    let available = 1200;
+    const observed = new Map<Element, ResizeObserverCallback>();
+    let restoreGeometry: () => void;
+
+    beforeEach(() => {
+      available = 1200;
+      observed.clear();
+      vi.stubGlobal('ResizeObserver', class {
+        constructor(private callback: ResizeObserverCallback) {}
+        observe(element: Element) { observed.set(element, this.callback); }
+        disconnect() {}
+      });
+      vi.stubGlobal('PointerEvent', class extends MouseEvent {
+        pointerId: number;
+        isPrimary: boolean;
+        constructor(type: string, init: PointerEventInit = {}) {
+          super(type, init);
+          this.pointerId = init.pointerId ?? 1;
+          this.isPrimary = init.isPrimary ?? true;
+        }
+      });
+      const original = HTMLElement.prototype.getBoundingClientRect;
+      const geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this.tagName === 'ASIDE') return new DOMRect(0, 0, Number.parseFloat(this.style.width) || 448, 800);
+        if (this.querySelector(':scope > main')) return new DOMRect(0, 0, available, 800);
+        return original.call(this);
+      });
+      restoreGeometry = () => geometry.mockRestore();
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
+    });
+    afterEach(() => { restoreGeometry(); });
+
+    async function openResizableThread() {
+      renderView();
+      const triggers = await screen.findAllByRole('button', { name: 'bots.groupChat.server.startTopic' });
+      fireEvent.click(triggers[0]!);
+      await screen.findByText('Reply to u1');
+      const panel = screen.getByRole('complementary');
+      const handle = within(panel).getByRole('separator', { name: 'diffPanel.shell.resizeHandleAria' });
+      Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => true, releasePointerCapture: vi.fn() });
+      return { panel, handle, triggers };
+    }
+
+    it('only changes the width, keeping both inputs, message rows and scrolling in place', async () => {
+      const { panel, handle } = await openResizableThread();
+      const main = screen.getByRole('main');
+      const groupInput = within(main).getByRole('textbox');
+      const replyInput = within(panel).getByRole('textbox');
+      const message = screen.getByText('周六 8:10 有票').closest('article');
+      const timeline = screen.getByTestId('bot-group-timeline');
+      timeline.scrollTop = 25;
+      fireEvent.change(groupInput, { target: { value: 'Group draft' } });
+      fireEvent.change(replyInput, { target: { value: 'Reply draft' } });
+      expect(panel.style.width).toBe('');
+      expect(panel.style.maxWidth).toBe('');
+      fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 752 });
+      fireEvent.pointerMove(handle, { pointerId: 2, clientX: 100 });
+      expect(panel.style.width).toBe('');
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 552 });
+      expect(panel.style.width).toBe('648px');
+      expect(panel.style.maxWidth).toBe('none');
+      expect(handle.getAttribute('aria-valuenow')).toBe('648');
+      fireEvent.pointerUp(handle, { pointerId: 1 });
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 100 });
+      expect(panel.style.width).toBe('648px');
+      expect(within(main).getByRole('textbox')).toBe(groupInput);
+      expect(within(panel).getByRole('textbox')).toBe(replyInput);
+      expect((groupInput as HTMLTextAreaElement).value).toBe('Group draft');
+      expect((replyInput as HTMLTextAreaElement).value).toBe('Reply draft');
+      expect(screen.getByText('周六 8:10 有票').closest('article')).toBe(message);
+      expect(screen.getByTestId('bot-group-timeline')).toBe(timeline);
+      expect(timeline.scrollTop).toBe(25);
+      // Dragging must not acquire a CSS transition that would lag behind the pointer.
+      expect(panel.className).not.toMatch(/transition/);
+    });
+
+    it('bounds both columns, adapts to container resizing, and ends cancelled pointer gestures', async () => {
+      const { panel, handle } = await openResizableThread();
+      fireEvent.pointerDown(handle, { button: 2, clientX: 752 });
+      fireEvent.pointerMove(handle, { clientX: 100 });
+      expect(panel.style.width).toBe('');
+      fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 752 });
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: -1000 });
+      expect(panel.style.width).toBe('800px');
+      fireEvent.pointerCancel(handle, { pointerId: 1 });
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 2000 });
+      expect(panel.style.width).toBe('800px');
+      const layout = panel.parentElement!;
+      available = 600;
+      act(() => observed.get(layout)!([], {} as ResizeObserver));
+      expect(panel.style.width).toBe('360px');
+      available = 1200;
+      act(() => observed.get(layout)!([], {} as ResizeObserver));
+      expect(panel.style.width).toBe('800px');
+      fireEvent.pointerDown(handle, { button: 0, pointerId: 3, clientX: 400 });
+      fireEvent.pointerMove(handle, { pointerId: 3, clientX: 2000 });
+      expect(panel.style.width).toBe('280px');
+      fireEvent.lostPointerCapture(handle, { pointerId: 3 });
+      fireEvent.pointerMove(handle, { pointerId: 3, clientX: 0 });
+      expect(panel.style.width).toBe('280px');
+    });
+
+    it('keeps the chosen width when switching topics and reopening, with the existing open/close motion', async () => {
+      const motion = mockThreadMotion('200ms');
+      try {
+        const { panel, handle, triggers } = await openResizableThread();
+        fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+        expect(motion.animations[0]!.cancel).toHaveBeenCalled();
+        expect(panel.style.width).toBe('464px');
+        fireEvent.keyDown(handle, { key: 'ArrowRight' });
+        expect(panel.style.width).toBe('448px');
+        fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+        fireEvent.click(triggers[1]!);
+        await screen.findByText('Reply to b1');
+        const switched = screen.getByRole('complementary');
+        expect(switched.style.width).toBe('464px');
+        fireEvent.click(within(switched).getByRole('button', { name: 'bots.close' }));
+        await act(async () => motion.animations[1]!.finish());
+        expect(screen.queryByRole('complementary')).toBeNull();
+        fireEvent.click(triggers[0]!);
+        const reopened = screen.getByRole('complementary');
+        expect(reopened.style.width).toBe('464px');
+        expect(motion.animate).toHaveBeenLastCalledWith([{ width: '0px' }, { width: '464px' }], expect.anything());
+      } finally { cleanup(); motion.restore(); }
+    });
+  });
+
   it('expands a sibling thread panel, keeps the group usable, switches threads and restores the layout on close', async () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
@@ -1296,11 +1424,16 @@ describe('BotGroupChatView', () => {
     it('keeps the header with a retry when the first read fails', async () => {
       await listGroups([detail()]);
       mocks.getBotGroup.mockResolvedValueOnce({ ok: false, errorCode: 'REQUEST_TIMEOUT', message: '' });
-      renderView();
-      expect(await screen.findByText('bots.groupChat.loadFailedTitle')).toBeTruthy();
-      expect(screen.getByTestId('content-header').textContent).toContain('周末出游');
-      fireEvent.click(screen.getByRole('button', { name: /bots.retry/ }));
-      expect(await screen.findByText('周六 8:10 有票')).toBeTruthy();
+      vi.useFakeTimers();
+      try {
+        await act(async () => { renderView(); });
+        expect(screen.getByText('bots.groupChat.loadFailedTitle')).toBeTruthy();
+        expect(screen.getByTestId('content-header').textContent).toContain('周末出游');
+        await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+        expect(mocks.getBotGroup).toHaveBeenCalledTimes(1);
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /bots.retry/ })); });
+        expect(screen.getByText('周六 8:10 有票')).toBeTruthy();
+      } finally { cleanup(); vi.useRealTimers(); }
     });
 
     it('shows no header for a group that is no longer listed, then the unavailable state', async () => {
@@ -1322,6 +1455,94 @@ describe('BotGroupChatView', () => {
     await waitFor(() => expect(mocks.getBotGroup).toHaveBeenCalledTimes(2));
     act(() => mocks.pushes.forEach((push) => push({ groupId: 'g1', change: 'deleted' })));
     expect(await screen.findByText('bots.groupChat.unavailableTitle')).toBeTruthy();
+  });
+
+  describe('failed timeline read recovery', () => {
+    afterEach(() => {
+      cleanup();
+      vi.useRealTimers();
+      mocks.ownerGeneration = { dataOwnerId: 'account-a', generation: 1 };
+    });
+
+    // The completion push is already consumed: no later event can rescue the stale page.
+    // Exercise the real timeline component, including its single-flight read queue.
+    it.each(['response', 'exception'] as const)('recovers completed work without another push after a failed %s', async (failure) => {
+      const running = plan({ status: 'running', currentStep: 0,
+        steps: [{ ...plan().steps[0]!, status: 'running' }, plan().steps[1]!] });
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(running) });
+      renderView();
+      await screen.findByText('bots.groupChat.header.stepRunning:咪咪');
+      vi.useFakeTimers();
+      if (failure === 'response') mocks.getBotGroup.mockResolvedValueOnce({ ok: false, errorCode: 'REQUEST_TIMEOUT', message: '' });
+      else mocks.getBotGroup.mockRejectedValueOnce(new Error('read failed'));
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(plan({ status: 'done' }),
+        [msg({ id: 'result', sequence: 11, content: '分工结果已就绪' })]) });
+      await act(async () => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'plan' })); });
+      expect(screen.getByText('bots.groupChat.header.stepRunning:咪咪')).toBeTruthy();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(screen.getByText('分工结果已就绪')).toBeTruthy();
+      expect(screen.queryByText('bots.groupChat.header.stepRunning:咪咪')).toBeNull();
+      const reads = mocks.getBotGroup.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(mocks.getBotGroup).toHaveBeenCalledTimes(reads);
+    });
+
+    it('keeps recovery reads serialized and lets a newer push cancel the pending retry', async () => {
+      renderView();
+      await screen.findByText('周六 8:10 有票');
+      vi.useFakeTimers();
+      mocks.getBotGroup.mockResolvedValue({ ok: false, errorCode: 'REQUEST_TIMEOUT', message: '' });
+      await act(async () => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'messages' })); });
+      let finish!: (value: { ok: true; group: BotGroupDetail }) => void;
+      mocks.getBotGroup.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(mocks.getBotGroup).toHaveBeenCalledTimes(3);
+      await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+      expect(mocks.getBotGroup).toHaveBeenCalledTimes(3);
+      await act(async () => { finish({ ok: true, group: detail() }); });
+      mocks.getBotGroup.mockResolvedValueOnce({ ok: false, errorCode: 'SERVICE_ERROR', message: '' });
+      await act(async () => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'messages' })); });
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ messages: [msg({ content: '推送已恢复' })] }) });
+      await act(async () => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'messages' })); });
+      expect(screen.getByText('推送已恢复')).toBeTruthy();
+      const reads = mocks.getBotGroup.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(mocks.getBotGroup).toHaveBeenCalledTimes(reads);
+    });
+
+    it('recovers a failed queued refresh before the initial snapshot has rendered', async () => {
+      let first!: (value: { ok: true; group: BotGroupDetail }) => void;
+      mocks.getBotGroup.mockImplementationOnce(() => new Promise(resolve => { first = resolve; }));
+      mocks.getBotGroup.mockResolvedValueOnce({ ok: false, errorCode: 'REQUEST_TIMEOUT', message: '' });
+      renderView();
+      vi.useFakeTimers();
+      await act(async () => {
+        mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'plan' }));
+        first({ ok: true, group: detail() });
+      });
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ messages: [msg({ content: '排队读取已恢复' })] }) });
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(screen.getByText('排队读取已恢复')).toBeTruthy();
+    });
+
+    it.each(['unmount', 'delete', 'owner', 'not-found'] as const)('stops pending recovery after %s', async (boundary) => {
+      const view = renderView();
+      await screen.findByText('周六 8:10 有票');
+      vi.useFakeTimers();
+      mocks.getBotGroup.mockResolvedValue({ ok: false, errorCode: 'REQUEST_TIMEOUT', message: '' });
+      await act(async () => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'messages' })); });
+      if (boundary === 'unmount') view.unmount();
+      else if (boundary === 'delete') act(() => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'deleted' })); });
+      else if (boundary === 'owner') mocks.ownerGeneration = { dataOwnerId: 'account-b', generation: 2 };
+      else {
+        mocks.getBotGroup.mockResolvedValue({ ok: false, errorCode: 'NOT_FOUND', message: '' });
+        await act(async () => { mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'messages' })); });
+        expect(screen.getByText('bots.groupChat.unavailableTitle')).toBeTruthy();
+      }
+      const reads = mocks.getBotGroup.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(mocks.getBotGroup).toHaveBeenCalledTimes(reads);
+    });
   });
 
   describe('乐观显示', () => {
@@ -2076,8 +2297,9 @@ describe('BotGroupChatView', () => {
   });
 
   describe('分工', () => {
-    it('shows the organizer’s plan card and starts or skips the open plan', async () => {
-      mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(plan()) });
+    // A server's queue migration marks every older plan kind=work: it stays a division of work.
+    it.each([undefined, 'work'] as const)('shows the organizer’s plan card and starts or skips the open plan (kind=%s)', async (kind) => {
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(plan(kind ? { kind } : {})) });
       renderView();
       const card = await screen.findByTestId('bot-group-plan');
       expect(card.textContent).toContain('bots.groupChat.plan.intro');
@@ -2180,6 +2402,51 @@ describe('BotGroupChatView', () => {
       const remove = await screen.findByRole('menuitem', { name: /bots\.groupChat\.plan\.removeStep/ });
       expect(remove.getAttribute('aria-disabled')).toBe('true');
       expect(remove.textContent).toContain('bots.groupChat.plan.keepOneStep');
+    });
+
+    // bot-group-chat.md §7: a server queue stands on its own (no organizer authorship) and folds
+    // a long queue to the turns around the current one; a short queue shows every turn.
+    it.each([
+      ['a short queue', 2, 2, false],
+      ['a long queue after its first five turns', 7, 3, true],
+    ] as const)('shows %s on its own, folded to the turns that matter', async (_label, count, shown, foldable) => {
+      const base = plan().steps;
+      // Waiting for 继续: after the first turn of a short queue, or after the five that run by themselves.
+      const done = count > 5 ? 5 : 1;
+      const queue = plan({
+        status: 'waiting', currentStep: done - 1, kind: 'talk', canManage: true,
+        steps: Array.from({ length: count }, (_, position) => ({ ...base[position % 2]!, position, task: '',
+          status: position < done ? 'done' as const : 'pending' as const })),
+      });
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(queue) });
+      renderView();
+      const card = await screen.findByTestId('bot-group-arrangement');
+      expect(card.closest('article')).toBeNull();
+      expect(card.textContent).not.toContain('bots.groupChat.plan.intro');
+      expect(card.textContent).toContain('bots.groupChat.plan.talkTurn');
+      expect(card.querySelectorAll('li')).toHaveLength(shown);
+      expect(screen.getByTestId('bot-group-plan-follow-up')).toBeTruthy();
+      const fold = screen.queryByTestId('bot-group-plan-fold');
+      expect(!!fold).toBe(foldable);
+      if (fold) {
+        fireEvent.click(fold);
+        expect(card.querySelectorAll('li')).toHaveLength(count);
+      }
+    });
+
+    // Only the creator, an owner or an admin may change who speaks next in a waiting queue.
+    it.each([[true, 1], [false, 0]] as const)('offers reassigning a waiting queue turn only to a manager (canManage=%s)', async (canManage, menus) => {
+      const base = plan().steps;
+      const queue = plan({
+        status: 'waiting', currentStep: 0, kind: 'talk', canManage,
+        steps: [{ ...base[0]!, task: '', status: 'done' }, { ...base[1]!, task: '', status: 'pending' }],
+      });
+      mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(queue) });
+      renderView();
+      const card = await screen.findByTestId('bot-group-arrangement');
+      const pending = within(card).getAllByTestId('bot-group-plan-step')[1]!;
+      fireEvent.pointerDown(pending, { button: 0, ctrlKey: false });
+      expect(screen.queryAllByRole('menu')).toHaveLength(menus);
     });
 
     it('offers the next step after a hand-off and opens its files inside the work directory', async () => {
@@ -2740,11 +3007,13 @@ it('keeps copy/share in each author row\'s more menu and shares only message con
     const scroll = view.container.querySelector('.overflow-y-auto.px-5') as HTMLElement;
     Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 100 } });
     scroll.scrollTop = 0; fireEvent.scroll(scroll);
-    mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ messages: [msg({ id: 'new', ...incoming, content: 'New reply', createdAt: 1200 })] }) });
+    mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ messages: [msg({ id: 'new', sequence: 3, ...incoming, content: 'New reply', createdAt: 1200 })] }) });
     act(() => mocks.pushes.forEach(push => push({ groupId: 'g1', change: 'messages' })));
     await screen.findByText('New reply');
     act(() => window.dispatchEvent(new Event('focus')));
     expect(getBotLastReadAt(botGroupReadKey('g1'))).toBe(200);
+    expect(scroll.scrollTop).toBe(0);
+    expect(screen.getByRole('button', { name: 'chat.newMessageIndicator.aria' })).toBeTruthy();
     scroll.scrollTop = 900; fireEvent.scroll(scroll);
     expect(getBotLastReadAt(botGroupReadKey('g1'))).toBe(1200);
   } finally { focus.mockRestore(); resetBotReadStateForTests(); }
@@ -2922,6 +3191,22 @@ describe('Telegram / Slack-grade timeline', () => {
     }
   });
 
+  // bot-group-chat.md §7.0: a queue turn is someone speaking, not a numbered step with an empty task.
+  it('labels a running queue turn as speaking in the progress strip', async () => {
+    const turn = plan({
+      status: 'running', currentStep: 0, kind: 'talk', updatedAt: Date.now() - 125_000,
+      steps: [{ ...plan().steps[0]!, task: '', status: 'running' }, { ...plan().steps[1]!, task: '' }],
+    });
+    mocks.getBotGroup.mockResolvedValue({ ok: true, group: withPlan(turn, [], {
+      speakingBotIds: ['mimi'],
+      round: { status: 'running', speakers: [{ botId: 'mimi', sessionId: 'plan-mimi', activity: 'step' }], canContinue: false },
+    }) });
+    renderView();
+    const strip = await screen.findByTestId('bot-group-progress');
+    expect(strip.textContent).toContain('bots.groupChat.progress.speaking');
+    expect(strip.textContent).not.toContain('bots.groupChat.progress.step');
+  });
+
   it('pins a progress strip above the composer while a plan step runs', async () => {
     const running = plan({
       status: 'running',
@@ -2968,7 +3253,8 @@ describe('Telegram / Slack-grade timeline', () => {
       expect(strip.textContent).not.toContain('NO_REPLY');
       mocks.activity = { compactDetail: '正在读 README.md', startedAtMs: Date.now() - 5_000, phase: 'running' };
       fireEvent.click(within(strip).getByRole('button', { name: 'bots.groupChat.progress.viewProcess' }));
-      await waitFor(() => expect(screen.getByTestId('bot-group-progress').textContent).toContain('正在读 README.md'));
+      expect(mocks.navigate).toHaveBeenCalledWith('/cc-agent/plan-mimi');
+      expect(mocks.stopBotGroupRound).not.toHaveBeenCalled();
     } finally {
       mocks.activity = null;
     }
@@ -3624,4 +3910,18 @@ describe('pending main-chat copies across accounts', () => {
     expect(mocks.shareToMain.mock.calls).toEqual(Array.from({ length: 3 }, () => [{ groupId: 'g1', messageId: 'new-reply' }]));
     expect(mocks.reply).toHaveBeenCalledTimes(1);
   });
+});
+
+// #6550: actual timeline must project a bot's component body before Markdown rendering.
+it('renders component body as readable text without changing the message', async () => {
+  const content = 'Before\n\n```cindy-ui\n' + JSON.stringify({ seq: 1, version: 1, op: 'create', id: 'body', kind: 'text', props: { text: 'Readable answer' } }) + '\n```\n\nAfter';
+  const reply = msg({ id: 'rich-body', sequence: 1, authorKind: 'bot', authorBotId: 'a', content });
+  mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ messages: [reply] }) });
+  renderView();
+  await screen.findByText(/Readable answer/);
+  const body = screen.getByTestId('bot-group-timeline');
+  expect(body.textContent).toContain('Before');
+  expect(body.textContent).toContain('After');
+  expect(body.textContent).not.toContain('"op":"create"');
+  expect(reply.content).toBe(content);
 });
