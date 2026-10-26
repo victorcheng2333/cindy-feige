@@ -212,6 +212,10 @@ const NATIVE_RUNTIME_DEPS = [
   // 无需带闭包。注: 这是 vendored runtime 里仅有的两个运行时外部 require 之一
   // (另一个是 playwright-core),已全覆盖。
   'undici',
+  // Vendored browser recipes bundle Turndown, whose Node parser retains a
+  // runtime require of Domino. Hoisted dev dependencies hide the missing
+  // module, but the packaged main process imports this chunk at startup.
+  '@mixmark-io/domino',
 ];
 
 /**
