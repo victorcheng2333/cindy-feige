@@ -223,6 +223,7 @@ export function recordSessionPiTurnUsage(
                 sdkCostDelta: billingRoute === 'provider-api' ? undefined : group.sdkCostUsd,
                 pricing,
                 context: {
+                  agent: 'pi',
                   providerId: sessionProvider,
                   billingRoute,
                   region: CURRENT_CINDY_REGION,

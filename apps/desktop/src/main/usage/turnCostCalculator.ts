@@ -3,6 +3,7 @@
  */
 
 import type { CindyRegion } from '@cindy/maker-shared/brand-identity';
+import type { AgentKind } from '@cindy/model-providers';
 
 import { gatewayLedgerCurrency, getModelPriceQuote } from '../../shared/modelPriceQuote.js';
 import {
@@ -112,6 +113,8 @@ export interface TurnPricingContext {
   providerId: string | null;
   billingRoute: BillingRoute;
   region: CindyRegion;
+  /** Reference quotes and overrides are scoped to the engine that made the request. */
+  agent?: AgentKind;
   /** Captured when the request starts, so logout cannot reclassify an in-flight enterprise turn. */
   accessKind?: 'subscription' | 'api' | 'managed' | null;
 }
@@ -317,7 +320,7 @@ export function resolveTurnCost(args: {
 
   const providerQuote =
     context.billingRoute === 'provider-api'
-      ? getModelPriceQuote(pricing, context.providerId, model, 'claude-code')
+      ? getModelPriceQuote(pricing, context.providerId, model, context.agent ?? 'claude-code')
       : undefined;
   if (context.accessKind === 'managed') {
     return {

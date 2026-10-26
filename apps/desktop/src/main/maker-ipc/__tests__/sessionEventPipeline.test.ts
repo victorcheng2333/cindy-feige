@@ -1652,6 +1652,38 @@ describe('usage through the production event pipeline', () => {
     effects.fn('consumeLastAssistantPersistId').mockReturnValue('assistant-row');
   }
 
+  it('prices a Pi-only Vertex model using its engine quote without recording actual spend', async () => {
+    const h = harness();
+    pricing(false);
+    const model = 'gemini-4-argon';
+    effects.fn('getSessionProvider').mockReturnValue('vertex-account');
+    effects.fn('isUserProviderSession').mockReturnValue(true);
+    effects.fn('getActiveCatalog').mockReturnValue({ providers: [
+      { id: 'vertex-account', source: 'user', auth: { method: 'apiKey' }, access: { kind: 'api' } },
+    ] });
+    effects.fn('getReferenceModelPricing').mockReturnValue({ 'vertex-account': {
+      [`${model}\u0000pi`]: {
+        providerId: 'vertex-account', modelId: model, currency: 'USD',
+        source: 'provider-reference', approximate: true,
+        inputPerMtok: 2, outputPerMtok: 10, cacheReadPerMtok: 0.1,
+      },
+    } });
+    h.emit(event('done', { usage: { ...tokens,
+      segments: [{ ...segment, model, costUsd: 123 }], segmentsComplete: true,
+    } }, { source: 'pi' }));
+    await microtasks();
+    expect(effects.fn('recordSchedulerTurnCost')).toHaveBeenCalledWith(expect.objectContaining({
+      clientId: 'assistant-row',
+      money: expect.objectContaining({ amount: 0.000401, currency: 'USD', kind: 'value-estimate' }),
+    }));
+    expect(effects.fn('recordModelTurnUsage')).toHaveBeenCalledWith(expect.objectContaining({
+      model, agentKind: 'pi', money: null, inputTokensDelta: 100, cacheReadTokensDelta: 10,
+    }));
+    expect(effects.fn('recordTurnSpend')).not.toHaveBeenCalled();
+    expect(effects.fn('recordSessionTurnSpend')).not.toHaveBeenCalled();
+    await h.dispose();
+  });
+
   it.each(['priced', 'missing-write-price', 'legacy-summary'] as const)(
     'preserves Codex cache writes without guessing cost (%s)', async (mode) => {
       const h = harness();
