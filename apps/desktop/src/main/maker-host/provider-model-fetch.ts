@@ -1,4 +1,5 @@
 import { parseVertexServiceAccountReference } from '@cindy/model-providers';
+import { resolveCopilotAccountUrl } from './copilot-account-url.js';
 import { collectModelDiscoveryPages } from './model-discovery-pages.js';
 import type { DiscoveredModel } from '@cindy/model-providers';
 /**
@@ -100,10 +101,11 @@ export async function fetchSavedOAuthProviderModels(
   if (!isCurrent()) return { ok: false, code: 'AUTH_INVALID' };
   const token = readCachedGenericOAuthAccessToken(storageProviderId, oauth);
   if (!token) return { ok: false, code: 'AUTH_INVALID' };
+  const modelsUrl = route.modelsUrl ?? oauth.modelsDiscoveryUrl;
   const result = await fetchProviderModels({
     agent,
-    baseUrl: route.upstream,
-    modelsUrl: route.modelsUrl ?? oauth.modelsDiscoveryUrl,
+    baseUrl: resolveCopilotAccountUrl(route.upstream, token),
+    modelsUrl: modelsUrl ? resolveCopilotAccountUrl(modelsUrl, token) : modelsUrl,
     wireProtocol: route.wireProtocol,
     authMethod: 'oauth',
     apiKey: token,

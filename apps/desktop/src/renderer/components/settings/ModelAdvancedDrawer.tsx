@@ -39,6 +39,7 @@ import { ClaudeMark } from '@/components/icons/ClaudeMark';
 import { CodexMark } from '@/components/icons/CodexMark';
 import { PiMark } from '@/components/icons/PiMark';
 import { useModelContextLimit } from '@/hooks/useModelContextLimit';
+import { ModelCompactionSettings } from './ModelCompactionSettings';
 import { modelPriceDetailRows, type ModelPricePresentation } from '@/lib/modelPriceFormat';
 import {
   isModelEnabled,
@@ -474,8 +475,7 @@ export function ModelAdvancedDrawer({
     ? getProviderModelEffort(primaryAgent, provider.id, primaryModel.id) ?? primaryModel.defaultEffort
     : null;
   const effortMixed = efforts.length > 0 && commonEfforts.length === 0;
-  const currentEffort = preferredEffort && commonEfforts.some((effort) => effort === preferredEffort)
-    ? preferredEffort : commonEfforts[0] ?? null;
+  const currentEffort = preferredEffort ?? commonEfforts[0] ?? null;
   const shownEfforts = EFFORT_ORDER.filter((effort) =>
     chatAgents.some((agent) => {
       const model = row.byAgent[agent];
@@ -866,6 +866,11 @@ export function ModelAdvancedDrawer({
                             </p>
                           )}
                         </>
+                      )}
+                      {ctx.compaction && (
+                        <ModelCompactionSettings policy={ctx.compaction}
+                          disabled={paymentRequired || ctx.loading || localConfigurationBlocked}
+                          onChange={ctx.setCompaction} />
                       )}
                     </Section>
                   )}
