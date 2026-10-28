@@ -5,7 +5,7 @@ import type { AgentRuntimeConfig } from '../../../interfaces/runtime-config.js';
 import {
   EXPLORE_INHERIT_CAP_DISABLE_ENV,
   SENSITIVE_ANTHROPIC_ENV_KEYS,
-  applyClaudeDesktopEntrypoint,
+  applySdkEntrypoint,
   applyExploreInheritCapEnv,
   applySubagentModelEnv,
   buildClaudeEnv,
@@ -71,20 +71,20 @@ describe('buildClaudeEnv', () => {
     expect(env.CLAUDE_CODE_DISABLE_CRON).toBe('1');
   });
 
-  it.each(['local', 'remote'] as const)('pins the Desktop entrypoint after auth and behavior flags in %s mode', async (mode) => {
+  it.each(['local', 'remote'] as const)('pins the SDK entrypoint after auth and behavior flags in %s mode', async (mode) => {
     const env = await buildClaudeEnv(
       createAuthAdapter({ ANTHROPIC_API_KEY: 'session-key', CLAUDE_CODE_ENTRYPOINT: 'cli' }),
-      { behaviorFlags: { CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' } },
+      { behaviorFlags: { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' } },
       { mode },
     );
-    expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('claude-desktop');
+    expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-ts');
     expect(env.ANTHROPIC_API_KEY).toBe('session-key');
   });
 
-  it('reapplies the Desktop entrypoint after remote route materialization without changing credentials', () => {
-    const env = { CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ANTHROPIC_AUTH_TOKEN: 'route-token' };
-    applyClaudeDesktopEntrypoint(env);
-    expect(env).toEqual({ CLAUDE_CODE_ENTRYPOINT: 'claude-desktop', ANTHROPIC_AUTH_TOKEN: 'route-token' });
+  it('reapplies the SDK entrypoint after remote route materialization without changing credentials', () => {
+    const env = { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop', ANTHROPIC_AUTH_TOKEN: 'route-token' };
+    applySdkEntrypoint(env);
+    expect(env).toEqual({ CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', ANTHROPIC_AUTH_TOKEN: 'route-token' });
   });
 
   it('pins ANTHROPIC_SMALL_FAST_MODEL to the session wire model when provided (#3557)', async () => {
@@ -664,11 +664,10 @@ describe('buildClaudeEnv', () => {
       for (const [k, v] of origMetadata) restore(k, v);
     });
 
-    it('oauth-spawn: uses the Desktop entrypoint without IDE-specific defaults', async () => {
-      // cc 的 401 续命回调有 entrypoint 白名单(claude-desktop/local-agent/claude-vscode),
-      // SDK 默认 sdk-ts 不在其中;dev 下 Electron 由终端 cc 启动继承来的 sdk-ts 同样会
-      // 关掉闸门 —— 必须硬覆盖,否则回调静默失效(不报错不打日志)。
-      process.env.CLAUDE_CODE_ENTRYPOINT = 'sdk-ts';
+    it('oauth-spawn: uses the SDK entrypoint without IDE-specific defaults', async () => {
+      // SDK 子进程必须使用真实入口身份,覆盖宿主继承的 Desktop 标记。
+      // 此处只验证旧 adapter env 的合并兼容,不代表原生订阅会注入 token 或启用刷新回调。
+      process.env.CLAUDE_CODE_ENTRYPOINT = 'claude-desktop';
       // 清掉宿主可能自带的 IDE_SKIP,确保断言命中的是 builder 的默认填充分支,
       // 而不是 process.env 继承(继承时测试假通过,没测到目标逻辑)。
       delete process.env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL;
@@ -677,19 +676,19 @@ describe('buildClaudeEnv', () => {
         {},
       );
       expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('at-live');
-      expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('claude-desktop');
+      expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-ts');
       expect(env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL).toBeUndefined();
       expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBe('1');
     });
 
-    it('gateway-key: uses the same Desktop entrypoint without OAuth or IDE defaults', async () => {
+    it('gateway-key: uses the same SDK entrypoint without OAuth or IDE defaults', async () => {
       delete process.env.CLAUDE_CODE_ENTRYPOINT;
       // 宿主环境(如 Claude Code IDE 会话)可能自带 IDE_SKIP=1,不清会经 process.env
       // 继承进 buildClaudeEnv 输出,让下面的 toBeUndefined 断言只在特定环境失败。
       delete process.env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL;
       const env = await buildClaudeEnv(createAuthAdapter({ ANTHROPIC_API_KEY: 'sk-gw' }), {});
       expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
-      expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('claude-desktop');
+      expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-ts');
       expect(env.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL).toBeUndefined();
     });
 
@@ -796,8 +795,8 @@ describe('buildClaudeEnv', () => {
       }
       // 网络配置不是凭证,照常下发。
       expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:7890');
-      // 本机 CLI 自己读取登录凭证,入口仍与 Desktop Code 对齐。
-      expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('claude-desktop');
+      // 本机 CLI 自己读取登录凭证,入口使用 SDK 身份。
+      expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-ts');
     });
 
     it('strips an inherited host-managed marker so the CLI can read its own login', async () => {

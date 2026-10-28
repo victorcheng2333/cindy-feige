@@ -51,8 +51,13 @@
 
 ## Claude 订阅只经 Claude Code 自己的登录
 
-Anthropic 只允许用户用自己的订阅登录**未修改的 Claude Code**；第三方应用不得提供
-Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此只做内置 CLI 的外壳：
+Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订阅凭证。
+这是一项实现边界，不等于第三方产品获得了订阅使用授权。2026-10-28 核对的官方
+[SDK 套餐说明](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+仍说明订阅登录的 Agent SDK / `claude -p` 消耗订阅限额；同时
+[账号登录规则](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account)
+要求面向他人的产品使用 API key，禁止虚报应用身份，并保留第三方工具改扣 usage credits
+的权利。不得以入口标记或不持有 token 推导出合规、计费或账号安全保证。
 
 - 登录只拉起内置 CLI 的 `claude auth login --claudeai`，登录态只读
   `claude auth status --json`。凭证留在 CLI 默认凭证库（macOS 钥匙串 / `~/.claude`），
@@ -70,11 +75,13 @@ Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此�
   端口，它对每个目标重新按系统代理 / PAC 决定直连或走代理（env 作用于整棵进程树，含 Bash
   工具里的 git / npm，内网例外必须照旧直连），明文 HTTP 不下发代理。都是 TCP 隧道，TLS
   端到端，代理、转发端口与 Cindy 都看不到凭证。
-- 订阅会话不设 host 接管标记；Cindy 的所有 Claude 会话统一使用 `claude-desktop` 入口，
-  CLI 会启用 Desktop 宿主的项目级上游 / 鉴权环境过滤。入口身份不改变凭证来源，普通项目
-  设置、权限与 hooks 仍由 CLI 加载。SDK 模式仍没有终端的工作区信任确认，因此继续对
+- 订阅会话不设 host 接管标记；Cindy 的所有 Claude 会话统一使用 `sdk-ts` 入口，
+  不声明 Claude Desktop 身份，也不依赖 CLI 的 Desktop 项目级上游 / 鉴权环境过滤。
+  入口身份不改变凭证来源，普通项目设置、权限与 hooks 仍由 CLI 加载。
+  原生登录与续期由 CLI 自己处理，不依赖旧宿主 OAuth 刷新回调。SDK 模式没有终端的
+  工作区信任确认，因此对
   CLI 实际加载的项目级设置（工作目录的两份文件，加上主仓库根目录的 `settings.local.json`）
-  设闸作为纵深防御（maker-core `workspace-settings-guard`），不依赖上游过滤替代宿主检查：
+  设闸作为主防线（maker-core `workspace-settings-guard`）：
   - 每次拉起 CLI 进程前（含会话中途重建）命中就拒绝启动；
   - 会话运行中，任何设置变更（ConfigChange hook）与 Cindy 触发的 flag settings 应用（切模型 /
     effort / fast）前都整体复查；命中即判会话已污染，阻止这次变更并结束当前 CLI 进程——被拒

@@ -129,7 +129,7 @@ import {
 } from '../shared/tool-loop-review.js';
 import {
   applyExploreInheritCapEnv,
-  applyClaudeDesktopEntrypoint,
+  applySdkEntrypoint,
   applySubagentModelEnv,
   buildClaudeEnv,
   applyClaudeContextWindow,
@@ -1705,8 +1705,8 @@ export class ClaudeCodeAgent extends BaseAgent {
       for (const key of REMOTE_ROUTE_OVERRIDE_ENV_KEYS) delete remoteEnv[key];
       Object.assign(remoteEnv, remoteRoute.env);
       remoteEnv.ANTHROPIC_BASE_URL = remoteRoute.endpoint;
-      // route.env 只决定路由和认证;入口身份继续与 Desktop Code 对齐。
-      applyClaudeDesktopEntrypoint(remoteEnv);
+      // route.env 只决定路由和认证;入口身份继续使用 SDK 标记。
+      applySdkEntrypoint(remoteEnv);
     }
     // 远端路由决策日志(排障还原「为什么这个会话走网关/直连/自定义上游」)。只打安全
     // 字段:endpoint 只取 host,凭证形态与接线布尔量;绝不打 token / header 值。
@@ -4468,19 +4468,11 @@ export class ClaudeCodeAgent extends BaseAgent {
                   }),
               }
             : {}),
-          // 订阅 token 到期续命回调 —— 仅当本次 spawn 实际注入了订阅 OAuth token
-          // (oauth-spawn, 见 desktop auth-adapters getAuthEnv)且 host 实现了强刷时接线。
-          // cc 侧 turn 中途 401 会发 oauth_token_refresh control 请求, SDK 调本回调向
-          // host 要新 token (SDK 检测到回调存在时自动注入 CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH=1
-          // 告知 CLI)。gateway-key 模式 env 里没有 CLAUDE_CODE_OAUTH_TOKEN, 不接 —— 避免
-          // API-key 401 被误引导去刷订阅 token。回调字段 SDK Options 类型未声明但运行时
-          // 支持 (sdk.mjs oauth_token_refresh 分支), 经 spread 注入绕过 excess property 检查。
-          // ⚠️ 本回调生效有两个前提, 缺一即静默失效: (a) SDK 注入的 SDK_HAS_OAUTH_REFRESH;
-          // (b) CLAUDE_CODE_ENTRYPOINT 在 cc 的白名单内 —— 由 env-builder 在 oauth-spawn
-          // 时强制设为 claude-desktop。cc 的 401 恢复有两条路: 先走本回调
-          // (tengu_oauth_401_sdk_callback_refreshed), 回调超时/失败后还会直接重读系统
-          // 凭证库兜底 (tengu_oauth_401_recovered_from_disk) —— host 刷新总是写回凭证库,
-          // 所以即使回调超时返回 null, 第二条路仍能捡到新 token, 排障时两条都要看。
+          // 旧宿主 token 刷新接线暂保留:只有 env 带 token 且 adapter 实现刷新时才传入。
+          // 当前 Desktop adapter 不实现刷新,nativeCliAuth 也会剥除 token,不会进入此分支。
+          // sdk-ts 不在旧 CLI 的刷新回调入口白名单内,不能把保留此字段当作续期保证;
+          // 当前订阅登录与续期由 CLI 自己的凭证库处理,不为旧回调改用 Desktop 身份。
+          // getOAuthToken 未在 SDK Options 类型中声明,保留原有 spread 接线形式。
           ...(env.CLAUDE_CODE_OAUTH_TOKEN && this.deps.auth.getFreshSubscriptionToken
             ? {
                 getOAuthToken: (): Promise<string | null> =>

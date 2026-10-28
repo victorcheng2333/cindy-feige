@@ -196,16 +196,16 @@ export const REMOTE_ROUTE_OVERRIDE_ENV_KEYS = [
 ] as const;
 
 /**
- * 对齐 Claude Desktop Code 的入口标记,覆盖从终端继承或路由注入的旧身份。
+ * 使用 Claude Agent SDK 的入口标记,覆盖从终端继承或路由注入的其它身份。
  * 本机登录、API Key 与远端会话共用此规则;不以是否注入 OAuth token 区分入口。
  *
- * claude-desktop 也在 CLI 的 OAuth 刷新回调白名单内,并启用原生 desktop-host
- * 配置过滤(项目级设置不能改写上游 / 鉴权)。凭证来源仍由 nativeCliAuth /
- * CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST 决定,不因此注入凭证或改变认证路由。
+ * 原生订阅登录与续期由 CLI 自己处理,不依赖宿主 OAuth 刷新回调白名单。
+ * 不使用 Desktop 身份或依赖其项目设置过滤;订阅会话由 workspace-settings-guard
+ * 守门。凭证来源仍由 nativeCliAuth / CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST 决定。
  * 远端路由 materialization 后再次调用,避免 route.env 覆盖入口。
  */
-export function applyClaudeDesktopEntrypoint(env: Record<string, string>): void {
-  env.CLAUDE_CODE_ENTRYPOINT = 'claude-desktop';
+export function applySdkEntrypoint(env: Record<string, string>): void {
+  env.CLAUDE_CODE_ENTRYPOINT = 'sdk-ts';
 }
 
 /**
@@ -532,8 +532,8 @@ export async function buildClaudeEnv(
   //  第二道: cleanProcessEnv 拦字典副本里的残留)
   // ⚠️ cc >= 2.1.198 语义扩大: 设了此 flag 的子进程**完全不读**本机凭证
   // (系统凭证库的 claudeAiOauth、settings 的 apiKeyHelper、/login managed key 全被禁),
-  // 凭证必须由 host 经上面的 authEnv 显式递入 —— 订阅模式对应 CLAUDE_CODE_OAUTH_TOKEN
-  // (desktop auth-adapters getAuthEnv 注入), API 模式对应 ANTHROPIC_API_KEY。
+  // 凭证必须由 host 经上面的 authEnv 显式递入(如 API 模式的 ANTHROPIC_API_KEY)。
+  // 当前订阅模式不注入 OAuth token,而是使用下面的 nativeCliAuth 分支。
   // 若 host 只设 flag 不递凭证, cc 毫秒级判 "Not logged in"(2026-07-03 线上事故)。
   // 订阅会话(nativeCliAuth)反过来必须**不设**:CLI 要读自己的登录凭证。代价是 CLI 不再
   // 剥掉工作区设置里的上游 / 鉴权键(SDK 模式也没有终端的工作区信任确认),所以每次拉起
@@ -544,7 +544,7 @@ export async function buildClaudeEnv(
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = '1';
   }
 
-  applyClaudeDesktopEntrypoint(env);
+  applySdkEntrypoint(env);
 
   // xdt-maker 自己托管会话生命周期和自动任务。Claude Code 原生 cron 会读取
   // workdir/.claude/scheduled_tasks.json，并把到期任务作为隐藏 meta prompt 注入
