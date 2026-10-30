@@ -861,6 +861,46 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@25.9.5)(jiti@2.7.0)(jsdom@29.1.1(@noble/hashes@1.8.0))(lightningcss@1.33.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0)
 
+  apps/remote-ios-usage:
+    dependencies:
+      '@cindy/auth-client':
+        specifier: workspace:*
+        version: link:../../packages/auth-client
+      '@cindy/device-link':
+        specifier: workspace:*
+        version: link:../../packages/device-link
+      expo:
+        specifier: ~57.0.23
+        version: 57.0.23(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.14)(expo-router@57.0.17)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(patch_hash=c4e335ad426e4028c24ae12915857a01c4eeb7e6e2ea00efdc07dbb7bffa56f0)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+      expo-build-properties:
+        specifier: ~57.0.20
+        version: 57.0.20(expo@57.0.23)
+      expo-crypto:
+        specifier: ~57.0.2
+        version: 57.0.2(expo@57.0.23)
+      expo-secure-store:
+        specifier: ^57.0.2
+        version: 57.0.2(expo@57.0.23)
+      expo-web-browser:
+        specifier: ~57.0.2
+        version: 57.0.2(expo@57.0.23)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-native:
+        specifier: 0.86.3
+        version: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3)
+      react-native-safe-area-context:
+        specifier: ~5.7.0
+        version: 5.7.0(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
+    devDependencies:
+      '@types/react':
+        specifier: ~19.2.0
+        version: 19.2.17
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
   packages/anthropic-compat-proxy:
     dependencies:
       '@cindy/model-compat':
