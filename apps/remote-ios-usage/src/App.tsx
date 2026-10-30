@@ -91,20 +91,41 @@ function UsageApp() {
     [error, setError] = useState(""),
     [outcome, setOutcome] = useState<LoginOutcome | null>(null);
   const [restoring, setRestoring] = useState(true);
+  const [restoreHint, setRestoreHint] = useState("正在恢复登录");
+  const [restoreNotice, setRestoreNotice] = useState("");
   const [org, setOrg] = useState("xd");
   const [ssoChoices, setSsoChoices] = useState<SsoOrgDiscovery | null>(null);
   const ssoAbort = useRef<AbortController | null>(null);
   useEffect(() => () => ssoAbort.current?.abort(), []);
   const epoch = useRef(0),
-    reading = useRef(false),
+    reading = useRef<number | null>(null),
     cooldown = useRef(0);
   useEffect(() => {
     let live = true;
     void Remote.create()
-      .then((r) => {
+      .then(async (r) => {
+        let list: Device[] = [], target: Device | null = null, warning = "";
+        if (!live) { r.disconnect(); return; }
+        if (r.tokens) {
+          try {
+            const lastDeviceId = await r.readLastDevice();
+            if (!live) { r.disconnect(); return; }
+            if (lastDeviceId) {
+              setRestoreHint("正在恢复上次查看的电脑");
+              list = await r.devices();
+              target = list.find(d => d.deviceId === lastDeviceId && d.online && d.remoteControlEnabled) ?? null;
+              if (!target) warning = "上次查看的电脑当前不可用，请从列表选择。";
+            }
+          } catch {
+            warning = "暂时无法恢复上次查看的电脑，已回到设备首页。";
+          }
+        }
         if (live) {
           setRemote(r);
           setSigned(!!r.tokens);
+          setDevices(r.tokens ? list : []);
+          setDevice(r.tokens ? target : null);
+          setRestoreNotice(warning);
           setRestoring(false);
         } else r.disconnect();
       })
@@ -172,9 +193,9 @@ function UsageApp() {
     }
   };
   const refresh = async () => {
-    if (reading.current || demo || !remote) return;
     const g = epoch.current;
-    reading.current = true;
+    if (reading.current === g || demo || !remote) return;
+    reading.current = g;
     try {
       await run(async () => {
         if (device) {
@@ -186,7 +207,7 @@ function UsageApp() {
         }
       });
     } finally {
-      reading.current = false;
+      if (reading.current === g) reading.current = null;
     }
   };
   useEffect(() => {
@@ -207,6 +228,7 @@ function UsageApp() {
     setOutcome(null);
     setSent(false);
     setCode("");
+    setRestoreNotice("");
   };
   const logout = () => {
     epoch.current++;
@@ -216,15 +238,33 @@ function UsageApp() {
       clearLoginView();
     });
   };
+  const navigateToDevice = async (next: Device | null) => {
+    const g = ++epoch.current;
+    setBusy(true);
+    setError("");
+    setRestoreNotice("");
+    try {
+      if (!demo) {
+        if (!remote) throw Error("正在初始化，请稍后");
+        await remote.rememberDevice(next?.deviceId ?? null);
+      }
+      if (g !== epoch.current) return;
+      setSelected(null);
+      setAccounts(demo && next ? demoAccounts : []);
+      setDevice(next);
+    } catch {
+      if (g === epoch.current) setError("无法保存上次查看的设备，请重试。");
+    } finally {
+      if (g === epoch.current) setBusy(false);
+    }
+  };
   const leave = () => {
+    if (device && !selected) { void navigateToDevice(null); return; }
     epoch.current++;
     setBusy(false);
     setError("");
     if (selected) setSelected(null);
-    else if (device) {
-      setDevice(null);
-      setAccounts([]);
-    } else if (demo) clearLoginView();
+    else if (demo) clearLoginView();
   };
   const label = (q: Pick<Quota, "minutes" | "label">) =>
     `${q.label ? q.label + " · " : ""}${q.minutes === 10080 ? "7 天" : q.minutes === null ? "周期未知" : q.minutes % 60 === 0 ? `${q.minutes / 60} 小时` : `${q.minutes} 分钟`}`;
@@ -300,7 +340,7 @@ function UsageApp() {
         }}
       >
         <ActivityIndicator color={c.muted} />
-        {txt("正在恢复登录", { color: c.muted })}
+        {txt(restoreHint, { color: c.muted })}
       </SafeAreaView>
     );
   return (
@@ -320,7 +360,7 @@ function UsageApp() {
               : demo
                 ? button("退出演示", leave)
                 : !signed
-                  ? txt("Usage Remote", { fontWeight: "600" })
+                  ? txt("猫猫", { fontWeight: "600" })
                   : null}
             {signed && !demo && !device && !selected
               ? button("退出登录", logout)
@@ -353,7 +393,7 @@ function UsageApp() {
                 : "选择一台电脑，查看它连接的订阅账号。",
             { fontSize: 15, color: c.muted },
           )}
-          {error ? txt(error, { fontSize: 13, color: c.accent }) : null}
+          {error || restoreNotice ? txt(error || restoreNotice, { fontSize: 13, color: c.accent }) : null}
           {busy ? <ActivityIndicator color={c.muted} /> : null}
           {!signed && !demo ? (
             <View style={{ gap: 14, marginTop: 18 }}>
@@ -568,12 +608,7 @@ function UsageApp() {
                   accessibilityState={{
                     disabled: !d.online || !d.remoteControlEnabled,
                   }}
-                  onPress={() => {
-                    epoch.current++;
-                    setAccounts(demo ? demoAccounts : []);
-                    setDevice(d);
-                    setError("");
-                  }}
+                  onPress={() => void navigateToDevice(d)}
                   style={[
                     styles.card,
                     {

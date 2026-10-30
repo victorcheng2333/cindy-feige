@@ -1,4 +1,4 @@
-# Usage Remote
+# 猫猫 iOS
 
 独立的 iOS 订阅用量客户端，默认连接中国大陆 Cindy。独立 Bundle ID：
 `com.chengfei.remoteiosusage`，不依赖原版应用组、推送或分享扩展，也不修改原版 Mobile。
@@ -15,7 +15,7 @@ pnpm --dir apps/remote-ios-usage exec expo export --platform ios
 ```
 
 首次真机签名在 Xcode 中选择自己的开发团队。独立 App 仍需要自己的开发签名，不代表已获得苹果分发资格。
-不要复用 Cindy 原版的 Bundle ID 或 provisioning profile。2026-10-30 已使用本机 Apple Development 团队构建 Release 0.1.0（6），安装到配对 iPhone 并成功启动。
+不要复用 Cindy 原版的 Bundle ID 或 provisioning profile。2026-10-30 已使用本机 Apple Development 团队构建 Release 0.1.0（8），覆盖安装到配对 iPhone 并成功启动；系统应用列表已核对显示名称为「猫猫」、构建号为 8。
 
 ## 页面
 
@@ -50,6 +50,16 @@ SSO 检查：xd 已识别为心动公司；mobile 授权请求被现网接受并
 
 账号总览按 Claude / Anthropic 在前、ChatGPT / OpenAI 在后排列，同类保持电脑原有顺序。
 原创图标的可编辑源为 `assets/icon.svg`，`assets/icon.png` 为 iOS 图标资源。
+
+0.1.0（7）：系统显示名称与登录页名称改为「猫猫」，Bundle ID 和钥匙串键保持不变，
+以覆盖安装保留原 App 数据。设备列表按 `quota-cat-` 设备身份排除猫猫 Mac 查看端，
+不按名称判断，也不隐藏真正离线或未开放远程连接的电脑。
+
+0.1.0（8）：记住最后停留的设备，冷启动恢复登录后先核对设备列表，再进入该设备的用量页；
+从账号详情返回仍记住这台设备，显式返回设备首页则记住首页。设备离线、被移除、未开放远程
+连接或暂时无法读取时回到首页并说明原因，不在后台刷新后突然跳页。演示模式不写真实记录。
+偏好键 `usage-cn-last-device-v1` 只存所属账号 ID 与设备 ID，放在本机 SecureStore，退出登录清除，
+不跨账号恢复。旧版未记录过停留位置，升级后首次仍进入首页，从新版选过设备后开始记忆。
 
 ## 验证
 

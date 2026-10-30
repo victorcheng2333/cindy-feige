@@ -11,6 +11,8 @@ const fake = vi.hoisted(() => ({
   disconnect: vi.fn(),
   devices: vi.fn(),
   usage: vi.fn(),
+  readLastDevice: vi.fn(),
+  rememberDevice: vi.fn(),
 }));
 vi.mock("./remote", () => ({ Remote: { create: async () => fake } }));
 vi.mock("./sso", () => ({ loginSso: vi.fn() }));
@@ -62,7 +64,9 @@ beforeEach(() => {
     fake.tokens = null;
   });
   fake.disconnect.mockReset();
-  fake.devices.mockResolvedValue([
+  fake.readLastDevice.mockReset().mockResolvedValue(null);
+  fake.rememberDevice.mockReset().mockResolvedValue(undefined);
+  fake.devices.mockReset().mockResolvedValue([
     {
       deviceId: "mac",
       name: "Test Mac",
@@ -70,7 +74,7 @@ beforeEach(() => {
       remoteControlEnabled: true,
     },
   ]);
-  fake.usage.mockResolvedValue([
+  fake.usage.mockReset().mockResolvedValue([
     {
       id: "account",
       name: "Test Claude",
@@ -155,4 +159,57 @@ it("pops one level only after a qualifying left-edge rightward swipe", async () 
     ),
   ).toBe(true);
   expect(fake.logout).not.toHaveBeenCalled();
+});
+
+// User request: cold-launch into the last device; a plain Remote storage test cannot
+// prove the App chooses that route or preserves Home after the user explicitly returns.
+it("opens the remembered device after cold login restoration and saves Home on Back", async () => {
+  fake.readLastDevice.mockResolvedValue("mac");
+  await act(async () => root.render(<App />));
+  expect(host.textContent).toContain("Test Claude");
+  expect(host.textContent).not.toContain("退出登录");
+  await click("‹ 返回");
+  expect(fake.rememberDevice).toHaveBeenLastCalledWith(null);
+  expect(host.textContent).toContain("你的电脑");
+  expect(host.textContent).toContain("退出登录");
+});
+
+it("persists the device when entering it but keeps it remembered when returning from account details", async () => {
+  await act(async () => root.render(<App />));
+  await click("Test Mac");
+  expect(fake.rememberDevice).toHaveBeenLastCalledWith("mac");
+  await click("Test Claude");
+  await click("‹ 返回");
+  expect(fake.rememberDevice).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("Test Mac");
+});
+
+it.each(["missing", "offline", "disabled"])("falls back to Home when the remembered device is %s", async reason => {
+  fake.readLastDevice.mockResolvedValue("mac");
+  fake.devices.mockResolvedValue(reason === "missing" ? [] : [{ deviceId: "mac", name: "Test Mac", online: reason !== "offline", remoteControlEnabled: reason !== "disabled" }]);
+  await act(async () => root.render(<App />));
+  expect(host.textContent).toContain("你的电脑");
+  expect(host.textContent).toContain("上次查看的电脑当前不可用");
+  expect(fake.usage).not.toHaveBeenCalled();
+});
+
+it("does not overwrite the remembered device while browsing demo data", async () => {
+  fake.tokens = null;
+  await act(async () => root.render(<App />));
+  await click("先看看界面");
+  await click("我的 MacBook");
+  await click("‹ 返回");
+  expect(fake.rememberDevice).not.toHaveBeenCalled();
+});
+
+it("loads the selected device immediately even while an older homepage refresh is pending", async () => {
+  await act(async () => root.render(<App />));
+  let finish!: (value: unknown[]) => void;
+  fake.devices.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  await click("刷新");
+  await click("Test Mac");
+  expect(host.textContent).toContain("Test Claude");
+  await act(async () => finish([]));
+  expect(host.textContent).toContain("Test Claude");
+  expect(host.textContent).not.toContain("退出登录");
 });
