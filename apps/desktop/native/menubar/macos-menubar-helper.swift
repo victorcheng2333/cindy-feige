@@ -27,6 +27,16 @@ struct MBSettings: Codable, Equatable {
   var scope: String
 }
 
+struct MBQuotaWindow: Decodable, Identifiable, Equatable {
+  let id: String
+  let label: String
+  let value: String
+  let fill: Double
+  let level: String
+  let reserve: Bool
+  let when: String
+}
+
 struct MBCell: Decodable, Identifiable, Equatable {
   let id: String
   let kind: String
@@ -35,6 +45,9 @@ struct MBCell: Decodable, Identifiable, Equatable {
   let value: String?
   let valueUnit: String?
   let valueLabel: String?
+  /// Absent in older main snapshots and for sources without a subscription window.
+  let periodLabel: String?
+  let periods: [MBQuotaWindow]?
   let level: String
   let fill: Double?
   let reserve: Bool
@@ -420,17 +433,14 @@ enum Logos {
 
   /// Opaque silhouette with tonal, tapered strands and a larger, left-shifted earring.
   /// Fit the mark to the 18pt status canvas; other brand surfaces keep their original mark.
-  static func statusIcon(dark: Bool, controlled: Bool = false) -> NSImage? {
-    if controlled { return dark ? darkControlledStatusIcon : lightControlledStatusIcon }
+  static func statusIcon(dark: Bool) -> NSImage? {
     return dark ? darkStatusIcon : lightStatusIcon
   }
 
   private static let lightStatusIcon = makeStatusIcon(dark: false)
   private static let darkStatusIcon = makeStatusIcon(dark: true)
-  private static let lightControlledStatusIcon = makeStatusIcon(dark: false, controlled: true)
-  private static let darkControlledStatusIcon = makeStatusIcon(dark: true, controlled: true)
 
-  private static func makeStatusIcon(dark: Bool, controlled: Bool = false) -> NSImage? {
+  private static func makeStatusIcon(dark: Bool) -> NSImage? {
     let silhouette = dark ? "#ffffff" : "#000000"
     let strand = dark ? "#686868" : "#bdbdbd"
     let earring = "M 10.22879,11.96118 L 13.40721,13.91787 L 13.40721,14.65125 L 10.22879,16.60782 L 10.22879,15.50708 L 12.30648,14.28390 L 10.22879,13.06192 L 10.22879,11.96118 Z"
@@ -493,20 +503,13 @@ enum Logos {
     L 17.346,7.646 L 17.475,7.644 L 17.604,7.649 L 17.735,7.660 L 17.866,7.678 L 18.000,7.700 Z
     "/>
     """
-    // Brighter orange for this small menu-bar indicator. The clear rim lets
-    // wallpaper show through and keeps the 5pt dot distinct from the silhouette.
+    // Remote-control state is explained in the panel, without a status-icon dot.
     let svg = """
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
-      <defs><mask id="control-dot-cutout"><rect width="18" height="18" fill="white"/>
-        \(controlled ? "<circle cx=\"4.5\" cy=\"4.5\" r=\"3.25\" fill=\"black\"/>" : "")
-      </mask></defs>
-      <g mask="url(#control-dot-cutout)">
       <g transform="translate(-0.765 -0.445) scale(0.8157)">
         <path fill="\(silhouette)" fill-rule="evenodd" d="\(cindySilhouettePath) \(earring)"/>
         \(hairStrands)
       </g>
-      </g>
-      \(controlled ? "<circle cx=\"4.5\" cy=\"4.5\" r=\"2.5\" fill=\"\(Palette.remoteControlHex)\"/>" : "")
     </svg>
     """
     guard let data = svg.data(using: .utf8), let image = NSImage(data: data) else { return nil }
@@ -874,8 +877,7 @@ final class StatusController: NSObject, NSWindowDelegate {
   private func updateStatusIcon() {
     guard let button = statusItem.button else { return }
     let dark = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-    let controlled = store.view?.remotelyControlled == true
-    button.image = Logos.statusIcon(dark: dark, controlled: controlled)
+    button.image = Logos.statusIcon(dark: dark)
   }
 
   @objc func toggle() {
@@ -2141,11 +2143,63 @@ struct Cells: View {
   var body: some View {
     HStack(alignment: .top, spacing: cells.count > 6 ? 4 : 8) {
       ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
-        CellView(cell: cell, index: index, fillToken: store.fillToken, tubeHeight: store.short ? 82 : 104) {
-          store.go(.detail(cell.id))
+        if let periods = cell.periods, !periods.isEmpty {
+          SubscriptionCellView(cell: cell, periods: periods, index: index, fillToken: store.fillToken, short: store.short) {
+            store.go(.detail(cell.id))
+          }
+        } else {
+          CellView(cell: cell, index: index, fillToken: store.fillToken, tubeHeight: store.short ? 82 : 104) {
+            store.go(.detail(cell.id))
+          }
         }
       }
     }
+  }
+}
+
+/// Each account has one column; short and weekly limits retain independent scales and clocks.
+struct SubscriptionCellView: View {
+  let cell: MBCell
+  let periods: [MBQuotaWindow]
+  let index: Int
+  let fillToken: Int
+  let short: Bool
+  let action: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 12) {
+        VStack(spacing: 4) {
+          LogoView(svg: cell.logoSvg, size: 12)
+          Text(cell.name).font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
+        }
+        ForEach(periods) { period in
+          VStack(spacing: 4) {
+            Text(period.label).font(.system(size: 10, weight: .medium))
+              .foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+              CountUpText(text: period.value, font: NumFont.font(18), replayToken: fillToken, delay: Double(index) * 0.06)
+              Text("%").font(NumFont.font(11)).foregroundStyle(Palette.ink3)
+            }
+            .foregroundStyle(Palette.level(period.level) ?? Palette.ink)
+            TubeView(fill: period.fill, level: period.level, reserve: period.reserve,
+              emphasized: false, active: cell.active == true, hovered: hovering,
+              index: index, fillToken: fillToken, height: short ? 48 : 60)
+            Text(period.when).font(.system(size: 10, weight: .medium)).monospacedDigit()
+              .foregroundStyle(Palette.level(period.level) ?? Palette.ink2)
+              .lineLimit(1).minimumScaleFactor(0.8).frame(height: 15)
+          }
+        }
+      }
+      .padding(.top, 4).padding(.bottom, 2)
+      .frame(maxWidth: .infinity, alignment: .top)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(CellPressStyle())
+    .onHover { hovering = $0 }
+    .accessibilityLabel(cell.accessibilityLabel)
   }
 }
 
@@ -2216,6 +2270,13 @@ struct CellView: View {
     Button(action: action) {
       VStack(spacing: 7) {
         valueLabel.frame(height: 22, alignment: .bottom)
+        Text(cell.periodLabel ?? "")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(Palette.ink2)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .frame(height: 13)
+          .padding(.top, -5)
         TubeView(
           fill: cell.kind == "payg" ? nil : cell.fill,
           level: cell.level,
@@ -3839,7 +3900,7 @@ struct StatusPreview: View {
         Spacer()
         Image(systemName: "wifi").font(.system(size: 12, weight: .semibold)).opacity(0.5).padding(.horizontal, 6)
         HStack(spacing: 5) {
-          if let icon = Logos.statusIcon(dark: dark, controlled: view.remotelyControlled == true) {
+          if let icon = Logos.statusIcon(dark: dark) {
             Image(nsImage: icon).renderingMode(.original).resizable().frame(width: 18, height: 18)
           }
           if !text.isEmpty {

@@ -70,11 +70,11 @@ function input(sources: MenubarSourceInput[], options: { locale?: SupportedLocal
 }
 
 describe('buildMenubarView', () => {
-  it('recommends the source with the most room and outlines its tube', () => {
+  it('shows period quotas without ranking accounts across unlike limits', () => {
     const view = buildMenubarView(input([codex('alpha', 80), codex('beta', 20)]));
-    expect(view.headlinePrimary).toBe('beta has the most left.');
+    expect(view.headlinePrimary).toBe('Remaining quota by period');
     const beta = view.sources.find((s) => s.id === 'beta');
-    expect(beta).toMatchObject({ value: '80', valueUnit: '%', level: 'normal', fill: 0.8, emphasized: true });
+    expect(beta).toMatchObject({ value: '80', valueUnit: '%', level: 'normal', fill: 0.8, emphasized: false });
     expect(view.sources.find((s) => s.id === 'alpha')?.emphasized).toBe(false);
   });
 
@@ -177,7 +177,7 @@ describe('buildMenubarView', () => {
     const empty = buildMenubarView(input([]));
     expect(empty.headlinePrimary).toBe('Nothing with a quota yet.');
     const usedUp = buildMenubarView(input([codex('alpha', 100)]));
-    expect(usedUp.headlinePrimary).toBe('Everything is used up.');
+    expect(usedUp.headlinePrimary).toBe('Remaining quota by period');
   });
 
   it('carries the sign-in gate with no status text', () => {
@@ -196,7 +196,10 @@ describe('buildMenubarView', () => {
       ],
     });
     const view = buildMenubarView(input([claude], { locale: 'zh-CN' }));
-    expect(view.sources[0]).toMatchObject({ value: '90', when: '6天7时后重置', whenLevel: 'normal' });
+    expect(view.sources[0].periods).toMatchObject([
+      { label: '5 小时限额', value: '100', fill: 1, when: '4时46分后重置' },
+      { label: '周限额', value: '90', fill: 0.9, when: '6天7时后重置' },
+    ]);
     // Plenty left: the headline does not narrate a reset.
     expect(view.headlineSecondary).toBeNull();
   });
@@ -207,8 +210,27 @@ describe('buildMenubarView', () => {
     });
     const view = buildMenubarView(input([low, codex('beta', 20)]));
     expect(view.sources.find((cell) => cell.id === 'alpha')).toMatchObject({ when: 'Resets in 3h 5m', whenLevel: 'warn' });
-    expect(view.headlineSecondary).toBe('alpha resets in 3h 5m.');
+    expect(view.headlineSecondary).toBe('alpha 5-hour limit resets in 3h 5m.');
     expect(view.headlineAlert).toBe(true);
+  });
+
+  // Unit regression (2026-10-30): the overview hid the limiting period and called
+  // the highest-percentage account "running low" without its calculated ETA.
+  // Existing reset tests cover weekly data only; this two-window input must keep
+  // the label, percentage and reset together, with a conditional pace estimate.
+  it('keeps both limits visible and qualifies depletion by its period and average pace', () => {
+    const source = codex('alpha', 0, { windows: [
+      { kind: 'session', usedPercent: 60, resetsAtMs: NOW + 3 * HOUR, windowMinutes: 300 },
+      { kind: 'week', usedPercent: 20, resetsAtMs: NOW + 4 * DAY, windowMinutes: 10_080 },
+    ] });
+    const view = buildMenubarView(input([source], { locale: 'zh-CN' }));
+    expect(view.sources[0].periods).toMatchObject([
+      { label: '5 小时限额', value: '40', fill: 0.4, when: '3时后重置' },
+      { label: '周限额', value: '80', fill: 0.8, when: '4天后重置' },
+    ]);
+    expect(view.sources[0].accessibilityLabel).toContain('5 小时限额');
+    expect(view.headlinePrimary).toBe('各周期剩余配额');
+    expect(view.headlineSecondary).toBe('alpha 5 小时限额按本周期均速预计 1 小时 20 分后用完。');
   });
 
   it('ripples only the tubes of sources a running task draws on', () => {
@@ -223,7 +245,7 @@ describe('buildMenubarView', () => {
 
   it('localizes the headline', () => {
     const view = buildMenubarView(input([codex('alpha', 80), codex('beta', 20)], { locale: 'zh-CN' }));
-    expect(view.headlinePrimary).toBe('beta 余量最足。');
+    expect(view.headlinePrimary).toBe('各周期剩余配额');
   });
 });
 

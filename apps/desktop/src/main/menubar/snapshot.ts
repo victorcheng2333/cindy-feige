@@ -428,6 +428,12 @@ class Builder {
     return this.t('window.week');
   }
 
+  private quotaPeriodLabel(window: MenubarWindowInput): string {
+    return window.kind === 'session'
+      ? this.t('cell.sessionLimit', { hours: Math.round(window.windowMinutes / 60) })
+      : this.t('cell.weekLimit');
+  }
+
   // ── Identity ──────────────────────────────────────────────────────────────
 
   private handle(source: MenubarSubscriptionInput): string | null {
@@ -495,23 +501,24 @@ class Builder {
    * When nearly-empty sources get their limiting window back, within a week, grouped when the
    * same family resets within 6 hours. Sources with plenty left are not worth a headline.
    */
-  private restores(): { atMs: number; sources: MenubarSubscriptionInput[] }[] {
-    const events: { atMs: number; source: MenubarSubscriptionInput }[] = [];
+  private restores(): { atMs: number; sources: MenubarSubscriptionInput[]; window: MenubarWindowInput }[] {
+    const events: { atMs: number; source: MenubarSubscriptionInput; window: MenubarWindowInput }[] = [];
     for (const source of this.visibleSubscriptions()) {
       const { limit, remaining } = this.state(source);
       const atMs = limit?.window.resetsAtMs ?? null;
       if (remaining === null || remaining > WARN_REMAINING || atMs === null) continue;
       if (atMs - this.input.nowMs > RESTORE_HORIZON_MS) continue;
-      events.push({ atMs, source });
+      if (limit) events.push({ atMs, source, window: limit.window });
     }
     events.sort((a, b) => a.atMs - b.atMs);
-    const groups: { atMs: number; sources: MenubarSubscriptionInput[] }[] = [];
+    const groups: { atMs: number; sources: MenubarSubscriptionInput[]; window: MenubarWindowInput }[] = [];
     for (const event of events) {
       const last = groups[groups.length - 1];
-      if (last && event.atMs - last.atMs < RESTORE_GROUP_MS && last.sources[0]?.family === event.source.family) {
+      if (last && event.atMs - last.atMs < RESTORE_GROUP_MS && last.sources[0]?.family === event.source.family
+        && last.window.kind === event.window.kind && last.window.windowMinutes === event.window.windowMinutes) {
         if (!last.sources.includes(event.source)) last.sources.push(event.source);
       } else {
-        groups.push({ atMs: event.atMs, sources: [event.source] });
+        groups.push({ atMs: event.atMs, sources: [event.source], window: event.window });
       }
     }
     return groups;
@@ -521,18 +528,22 @@ class Builder {
     const recommended = this.recommended();
     const groups = this.restores();
     const soon = this.visibleSubscriptions()
-      .map((source) => ({ source, eta: this.state(source).limit?.etaMs ?? null }))
-      .filter((entry): entry is { source: MenubarSubscriptionInput; eta: number } => entry.eta !== null && entry.eta < SOON_MS)
+      .flatMap((source) => this.state(source).windows
+        .filter((state) => state.window.kind !== 'scoped')
+        .map((state) => ({ source, window: state.window, eta: state.etaMs })))
+      .filter((entry): entry is { source: MenubarSubscriptionInput; window: MenubarWindowInput; eta: number } => entry.eta !== null && entry.eta < SOON_MS)
       .sort((a, b) => a.eta - b.eta)[0];
     const big = groups.find((group) => group.sources.length > 1) ?? groups[0];
     const parts: string[] = [];
     if (big) {
       const first = big.sources[0]!;
       const name = big.sources.length > 1 ? first.brand : this.who(first);
-      parts.push(this.t('headline.restore', { name, duration: this.duration(big.atMs - this.input.nowMs) }));
+      parts.push(this.t('headline.restore', { name, window: this.quotaPeriodLabel(big.window), duration: this.duration(big.atMs - this.input.nowMs) }));
     }
-    // A source already named for its reset does not also need "running low".
-    if (soon && !big?.sources.includes(soon.source)) parts.push(this.t('headline.soon', { name: this.who(soon.source) }));
+    // Each estimate names its own period; it is not an account-wide remaining balance.
+    if (soon && !(big?.sources.includes(soon.source) && big.window.kind === soon.window.kind)) {
+      parts.push(this.t('headline.soon', { name: this.who(soon.source), window: this.quotaPeriodLabel(soon.window), duration: this.duration(soon.eta) }));
+    }
     const sentence = (items: string[]): string | null =>
       items.length ? this.t('headline.sentence', { text: items.join(this.t('headline.joiner')) }) : null;
     if (!recommended) {
@@ -547,7 +558,7 @@ class Builder {
           : { primary: this.t('headline.empty'), secondary: this.t('headline.emptyHint'), alert: false };
       }
       return {
-        primary: this.t('headline.none'),
+        primary: this.t('headline.quotaByPeriod'),
         secondary: sentence(parts.length ? [parts[0]!] : [this.t('headline.waitReset')]),
         alert: true,
       };
@@ -561,7 +572,7 @@ class Builder {
       };
     }
     return {
-      primary: this.t('headline.recommend', { name: this.who(recommended) }),
+      primary: this.t('headline.quotaByPeriod'),
       secondary: sentence(parts),
       alert: parts.length > 0,
     };
@@ -572,7 +583,7 @@ class Builder {
   private cells(): MenubarSourceCell[] {
     const recommended = this.recommended();
     const roomy = this.visible.length <= ROOMY_CELL_LIMIT;
-    return this.visible.map((source) => this.cell(source, source === recommended, roomy));
+    return this.visible.map((source) => this.cell(source, source.kind === 'balance' && source === recommended, roomy));
   }
 
   /** A quota counts down to its reset like a subscription; a wallet says how long it lasts. */
@@ -648,6 +659,21 @@ class Builder {
     const level = levelOf(remaining);
     const reserve = remaining <= 0 && (source.creditsUnlimited || (source.credits ?? 0) > 0);
     const limit = state.limit;
+    const periodLabel = this.quotaPeriodLabel(limit.window);
+    const periods = state.windows
+      .filter((entry) => entry.window.kind !== 'scoped')
+      .sort((a, b) => a.window.windowMinutes - b.window.windowMinutes)
+      .map((entry, index) => ({
+        id: `${entry.window.kind}:${index}`,
+        label: this.quotaPeriodLabel(entry.window),
+        value: String(Math.round(entry.remaining)),
+        fill: clamp(entry.remaining / 100, 0, 1),
+        level: levelOf(entry.remaining),
+        reserve: entry.remaining <= 0 && (source.creditsUnlimited || (source.credits ?? 0) > 0),
+        when: entry.window.resetsAtMs === null ? '' : this.t('cell.resetsIn', {
+          duration: this.shortDuration(entry.window.resetsAtMs - this.input.nowMs),
+        }),
+      }));
     // Read together with the percentage above: "90% · resets in 6d 7h", for the window shown.
     let when = '';
     if (limit.window.resetsAtMs !== null) {
@@ -660,15 +686,17 @@ class Builder {
       name,
       value: reserve ? null : String(Math.round(remaining)),
       valueUnit: reserve ? null : '%',
+      periodLabel,
+      periods,
       valueLabel: reserve ? this.t('cell.credits') : null,
       level,
       fill: clamp(remaining / 100, 0, 1),
       reserve,
       when,
       whenLevel,
-      accessibilityLabel: reserve
-        ? this.t('a11y.reserve', { name: `${source.brand} ${name}` })
-        : this.t('a11y.remaining', { name: source.brand === name ? name : `${source.brand} ${name}`, n: Math.round(remaining) }),
+      accessibilityLabel: periods.map((period) => this.t('a11y.remaining', {
+        name: source.brand === name ? name : `${source.brand} ${name}`, window: period.label, n: period.value,
+      }) + (period.when ? `, ${period.when}` : '')).join('; '),
     };
   }
 

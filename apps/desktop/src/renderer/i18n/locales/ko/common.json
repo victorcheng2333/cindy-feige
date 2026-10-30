@@ -1386,15 +1386,15 @@
       "scoped": "{{model}} 이번 주"
     },
     "headline": {
-      "recommend": "{{name}}에 가장 많이 남았어요.",
+      "quotaByPeriod": "기간별 남은 할당량",
       "balance": "Cindy 잔액은 아직 쓸 수 있어요.",
       "quota": "Cindy 이번 기간 할당량이 아직 남아 있어요.",
       "none": "모두 다 썼어요.",
       "unread": "남은 양을 아직 읽지 못했어요.",
       "empty": "남은 양을 보여 줄 계정이 아직 없어요.",
       "emptyHint": "Cindy에서 구독을 연결하면 여기에 남은 양이 표시돼요.",
-      "restore": "{{name}} {{duration}} 후 초기화",
-      "soon": "{{name}} 곧 소진",
+      "restore": "{{name}} {{window}}가 {{duration}} 후 초기화",
+      "soon": "{{name}} {{window}}는 이번 기간의 평균 사용 속도로 약 {{duration}} 후 소진될 것으로 예상",
       "subscriptionsUsed": "구독은 모두 다 썼어요",
       "waitReset": "구독 초기화를 기다리는 중",
       "sentence": "{{text}}.",
@@ -1409,6 +1409,8 @@
       "lastsDays": "약 {{n}}일",
       "lastsDaysShort": "{{n}}일",
       "resetsIn": "{{duration}} 후 초기화",
+      "sessionLimit": "{{hours}}시간 한도",
+      "weekLimit": "주간 한도",
       "credits": "credits"
     },
     "a11y": {
@@ -1419,7 +1421,7 @@
       "quota": "Cindy 할당량 {{amount}} 남음",
       "noData": "{{name}}, 데이터 없음",
       "reserve": "{{name}}, 다 씀, credits 사용 가능",
-      "remaining": "{{name}} {{n}}% 남음"
+      "remaining": "{{name}}, {{window}}, {{n}}% 남음"
     },
     "detail": {
       "balanceCaption": "잔액",

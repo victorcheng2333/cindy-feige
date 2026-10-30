@@ -1386,15 +1386,15 @@
       "scoped": "{{model}} 今週"
     },
     "headline": {
-      "recommend": "{{name}} がいちばん余裕があります。",
+      "quotaByPeriod": "期間別の残りクォータ",
       "balance": "Cindy 残高はまだ使えます。",
       "quota": "Cindy の今期クォータはまだ使えます。",
       "none": "すべて使い切りました。",
       "unread": "残りをまだ取得できていません。",
       "empty": "残りを表示できるアカウントがまだありません。",
       "emptyHint": "Cindy でサブスクリプションを接続すると、ここに残りが表示されます。",
-      "restore": "{{name}} は{{duration}}後にリセット",
-      "soon": "{{name}} はまもなく上限",
+      "restore": "{{name}} の{{window}}は {{duration}}後にリセット",
+      "soon": "{{name}} の{{window}}は今期間の平均ペースで約 {{duration}}後に使い切る見込み",
       "subscriptionsUsed": "サブスクリプションはすべて使い切り",
       "waitReset": "サブスクリプションのリセット待ち",
       "sentence": "{{text}}。",
@@ -1409,6 +1409,8 @@
       "lastsDays": "約{{n}}日",
       "lastsDaysShort": "{{n}}日",
       "resetsIn": "{{duration}}後にリセット",
+      "sessionLimit": "{{hours}}時間の上限",
+      "weekLimit": "週間上限",
       "credits": "credits"
     },
     "a11y": {
@@ -1419,7 +1421,7 @@
       "quota": "Cindy クォータ残り {{amount}}",
       "noData": "{{name}}、データなし",
       "reserve": "{{name}}、使い切り、credits は使用可能",
-      "remaining": "{{name}} 残り {{n}}%"
+      "remaining": "{{name}}、{{window}}、残り {{n}}%"
     },
     "detail": {
       "balanceCaption": "残高",
