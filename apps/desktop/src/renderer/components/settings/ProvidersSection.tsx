@@ -441,6 +441,7 @@ function useProviderChangeConfirmation() {
       change: (options: CustomProviderUpdateOptions) => Promise<CustomProviderUpdateResult | void>,
     ) => {
       const result = await change({ source: 'manual-settings' });
+      if (result?.ok && result.cleanupPending) toast.warning(t('settings.providers.claudeCleanupPending'), { duration: 10000 });
       if (!result || result.ok) return true;
       if (
         !(await confirm({
@@ -455,6 +456,7 @@ function useProviderChangeConfirmation() {
         source: 'manual-settings',
         codexImageGenerationRestartPolicy: 'interrupt',
       });
+      if (retry?.ok && retry.cleanupPending) toast.warning(t('settings.providers.claudeCleanupPending'), { duration: 10000 });
       return !retry || retry.ok;
     },
     [confirm, t],
@@ -750,6 +752,7 @@ function DetailHeader({
               >
                 <span
                   className="min-w-0 truncate text-14 font-medium leading-tight"
+                  title={provider ? providerDisplayName(provider, t) : title}
                   style={{ color: 'var(--settings-section-title)' }}
                 >
                   {provider ? providerDisplayName(provider, t) : title}
@@ -777,6 +780,7 @@ function DetailHeader({
               </div>
               <span
                 className="truncate text-13 leading-tight"
+                title={[subtitle, singleAgentNote].filter(Boolean).join(' · ')}
                 style={{ color: 'var(--settings-integration-subtitle)' }}
               >
                 {subtitle}
@@ -1360,7 +1364,7 @@ function XaiHeader({
 // 通用 OAuth —— 目录 auth.oauth 描述符驱动的供应商(非 bespoke 四家)。
 // ---------------------------------------------------------------------------
 
-function GenericOAuthHeader({
+export function GenericOAuthHeader({
   children,
   provider,
   onChanged,
@@ -1502,6 +1506,8 @@ function GenericOAuthHeader({
       <Button variant="secondary" size="md" onClick={() => void handleLogin('device')}>
         {t('settings.connections.xai.deviceLogin')}
       </Button>
+    ) : !connected && !loggingIn && provider.auth.native === 'claude' ? (
+      <p className="text-13 text-[var(--text-secondary)]">{t('settings.providers.claudeAccountRetired')}</p>
     ) : undefined;
 
   return (
@@ -1510,7 +1516,11 @@ function GenericOAuthHeader({
       icon={providerIcon(provider, 18)}
       title={provider.name}
       subtitle={
-        provider.openAiAccount
+        provider.auth.native === 'claude'
+          ? [t('settings.providers.anthropic.modelLabel'), provider.subscriptionAccount?.identity]
+              .filter(Boolean)
+              .join(' · ')
+          : provider.openAiAccount
           ? [
               t(`settings.providers.openai.accountSource.${provider.openAiAccount.source}`),
               provider.openAiAccount.identity,

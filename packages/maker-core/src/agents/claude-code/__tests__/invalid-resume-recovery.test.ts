@@ -227,7 +227,153 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
+// Reuse this account-home fixture instead of another module-loading test file.
+// Rule: native memory controls are global within the owner, never across owners,
+// and must not remove native transcripts or CLI credentials. Tier: unit.
+describe('Claude account memory', () => {
+  it('counts and clears memory across supplied homes while retaining identity, history and other owners', async () => {
+    const root = await makeTempDir();
+    const homes = ['system', 'managed', 'other-owner'].map(name => path.join(root, name));
+    for (const home of homes) {
+      await fs.mkdir(path.join(home, 'projects', 'project', 'memory'), { recursive: true });
+      await fs.writeFile(path.join(home, 'projects', 'project', 'memory', 'MEMORY.md'), 'note');
+      await fs.writeFile(path.join(home, 'projects', 'project', 'history.jsonl'), 'native-history');
+      await fs.writeFile(path.join(home, '.credentials.json'), 'invalid-test-only');
+    }
+    const deps = createDeps(); deps.auth.getClaudeMemoryHomes = () => homes.slice(0, 2);
+    deps.auth.getClaudeHistoryScope = () => 'owner';
+    const agent = new ClaudeCodeAgent(deps);
+    expect((await agent.getMemoryStatus()).stats).toMatchObject({ entryCount: 2, sizeBytes: 8 });
+    expect((await agent.getMemoryStatus()).stats?.storagePath).toBeUndefined();
+    expect(await agent.resetMemory()).toEqual({ removedEntries: 2, removedBytes: 8 });
+    expect((await agent.getMemoryStatus()).stats?.entryCount).toBe(0);
+    expect(await fs.readFile(path.join(homes[2], 'projects', 'project', 'memory', 'MEMORY.md'), 'utf8')).toBe('note');
+    for (const home of homes) {
+      expect(await fs.readFile(path.join(home, 'projects', 'project', 'history.jsonl'), 'utf8')).toBe('native-history');
+      expect(await fs.readFile(path.join(home, '.credentials.json'), 'utf8')).toBe('invalid-test-only');
+    }
+  });
+
+  it('does not follow another home through a link or delete after the owner changes', async () => {
+    const root = await makeTempDir();
+    const home = path.join(root, 'owner'); const external = path.join(root, 'external');
+    await fs.mkdir(path.join(home, 'projects', 'project'), { recursive: true });
+    await fs.mkdir(external); await fs.writeFile(path.join(external, 'MEMORY.md'), 'keep');
+    await fs.symlink(external, path.join(home, 'projects', 'project', 'memory'), process.platform === 'win32' ? 'junction' : 'dir');
+    const deps = createDeps(); deps.auth.getClaudeMemoryHomes = () => [home];
+    expect(await new ClaudeCodeAgent(deps).resetMemory()).toEqual({ removedEntries: 0, removedBytes: 0 });
+    let captures = 0; deps.auth.getClaudeHistoryScope = () => ++captures === 1 ? 'owner-a' : 'owner-b';
+    await expect(new ClaudeCodeAgent(deps).resetMemory()).rejects.toThrow('Claude memory owner changed');
+    expect(await fs.readFile(path.join(external, 'MEMORY.md'), 'utf8')).toBe('keep');
+  });
+});
+
 describe('Claude invalid-resume recovery', () => {
+  it('blocks a managed home authentication override introduced while a native task is live', async () => {
+    const root = await makeTempDir(); const home = path.join(root, 'account');
+    await fs.mkdir(home);
+    const deps = createDeps();
+    deps.auth.getState = async () => ({ authenticated: true, authSource: 'oauth' });
+    deps.auth.getClaudeRuntimeContext = async () => ({ configDir: home, scopeKey: 'owner', revision: 'login' });
+    const stream = createControlledStream(); sdkMock.query.mockReturnValue(createFakeQuery(stream));
+    const handle = await new ClaudeCodeAgent(deps).startSession({ sessionId: 'managed-settings', workingDir: root, providerId: 'anthropic', model: 'claude-sonnet-4' });
+    try {
+      const file = path.join(home, 'settings.json');
+      await fs.writeFile(file, JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://invalid.example' } }));
+      const hook = sdkMock.query.mock.calls.at(-1)![0].options.hooks.ConfigChange[0].hooks[0];
+      expect(await hook({ hook_event_name: 'ConfigChange', source: 'user_settings', file_path: file }))
+        .toMatchObject({ decision: 'block', reason: expect.stringContaining('ANTHROPIC_BASE_URL') });
+    } finally { await handle.close(); stream.end(); }
+  });
+  // Account selection is verified before the host persists its route; this probe
+  // must not publish a new history owner or send a user turn. Tier: unit.
+  it.each(['accepted', 'rejected', 'owner-changed'] as const)('preflights an account resume without a turn when %s', async outcome => {
+    const root = await makeTempDir();
+    const sourceHome = path.join(root, 'source'); const targetHome = path.join(root, 'target');
+    const cwd = path.join(root, 'workspace'); await fs.mkdir(cwd);
+    const nativeId = '30000000-0000-4000-8000-000000000001';
+    await seedTranscript(sourceHome, cwd, nativeId);
+    let current = true;
+    const close = vi.fn();
+    sdkMock.query.mockReturnValue({ close, initializationResult: async () => {
+      if (outcome === 'rejected') throw new Error('resume rejected');
+      if (outcome === 'owner-changed') current = false;
+      return {};
+    } });
+    const deps = createDeps();
+    const remember = vi.fn();
+    deps.auth.getClaudeRuntimeContext = async () => ({ configDir: targetHome, scopeKey: 'owner', revision: 'login' });
+    deps.auth.getClaudeHistoryHome = () => sourceHome;
+    deps.auth.isClaudeRuntimeContextCurrent = () => current;
+    deps.auth.rememberClaudeHistoryHome = remember;
+    const pending = new ClaudeCodeAgent(deps).prepareClaudeAccountResume({ nativeId, workingDir: cwd, model: 'claude-sonnet-4', providerId: 'claude-b' });
+    if (outcome === 'accepted') {
+      const prepared = await pending;
+      prepared.assertCurrent(); current = false;
+      expect(prepared.assertCurrent).toThrow('Claude account changed');
+    } else await expect(pending).rejects.toThrow(outcome === 'rejected' ? 'resume rejected' : 'Claude account changed');
+    const { prompt, options } = sdkMock.query.mock.calls.at(-1)![0];
+    expect(options).toMatchObject({ resume: nativeId, persistSession: false, tools: [], strictMcpConfig: true,
+      env: { CLAUDE_CONFIG_DIR: targetHome } });
+    const sent = []; for await (const value of prompt) sent.push(value);
+    expect(sent).toEqual([]);
+    expect(close).toHaveBeenCalledOnce();
+    expect(remember).not.toHaveBeenCalled();
+    const original = path.join(sourceHome, 'projects', sanitizeClaudeProjectKey(await fs.realpath(cwd)), `${nativeId}.jsonl`);
+    expect(await fs.readFile(original, 'utf8')).toBe('{"type":"summary"}\n');
+  });
+  // Account transfer must be accepted by native initialization before publishing
+  // a new history home; existing fresh-fallback cases do not cover this boundary.
+  it.each(['accepted', 'rejected', 'owner-changed'] as const)('keeps account history binding transactional when resume is %s', async outcome => {
+    const root = await makeTempDir();
+    const sourceHome = path.join(root, 'source');
+    const targetHome = path.join(root, 'target');
+    const cwd = path.join(root, 'workspace');
+    await fs.mkdir(cwd);
+    const sid = '10000000-0000-4000-8000-000000000001';
+    await seedTranscript(sourceHome, cwd, sid);
+    const stream = createControlledStream();
+    const query = createFakeQuery(stream);
+    let current = true;
+    const initializationResult = vi.fn(async () => {
+      if (outcome === 'rejected') throw new Error('native resume failed');
+      if (outcome === 'owner-changed') current = false;
+      return {};
+    });
+    sdkMock.query.mockReturnValue({ ...query, initializationResult });
+    const deps = createDeps({ runtimeConfig: { endpoint: 'https://must-not-route.invalid' } });
+    deps.auth.getAuthEnv = async () => ({ ANTHROPIC_API_KEY: 'fake-host-key' });
+    const remember = vi.fn();
+    deps.auth.getClaudeRuntimeContext = async () => ({ configDir: targetHome, scopeKey: 'test-owner', revision: 'test-revision' });
+    deps.auth.getClaudeHistoryHome = () => sourceHome;
+    deps.auth.isClaudeRuntimeContextCurrent = () => current;
+    deps.auth.rememberClaudeHistoryHome = remember;
+    const fallback = vi.fn(async () => true);
+    const start = new ClaudeCodeAgent(deps).startSession({
+      sessionId: 'test-transfer', workingDir: cwd, model: 'claude-sonnet-4',
+      providerId: 'claude-a', resumeSessionId: sid, onInvalidResumeSession: fallback,
+    });
+    if (outcome === 'accepted') {
+      const handle = await start;
+      expect(remember).toHaveBeenCalledWith(sid, expect.objectContaining({ configDir: targetHome }));
+      expect(await handle.requiresModelSwitchRebuild?.('claude-sonnet-4', { providerId: 'claude-b' })).toBe(true);
+      await expect(handle.setModel?.('claude-sonnet-4', { providerId: 'claude-b' })).rejects.toThrow('native runtime rebuild');
+      expect(query.setModel).not.toHaveBeenCalled();
+      await handle.close();
+    } else {
+      await expect(start).rejects.toThrow(outcome === 'rejected' ? 'native resume failed' : 'Claude account changed');
+      expect(remember).not.toHaveBeenCalled();
+      expect(sdkMock.query.mock.calls.at(-1)?.[0].options.abortController.signal.aborted).toBe(true);
+    }
+    expect(fallback).not.toHaveBeenCalled();
+    expect(initializationResult).toHaveBeenCalled();
+    const env = sdkMock.query.mock.calls.at(-1)![0].options.env;
+    expect(env.CLAUDE_CONFIG_DIR).toBe(targetHome);
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBeUndefined();
+    stream.end();
+  });
   it('does not publish transferred history before the CLI accepts its resume', async () => {
     let release!: () => void;
     const handshake = new Promise<void>(resolve => { release = resolve; });

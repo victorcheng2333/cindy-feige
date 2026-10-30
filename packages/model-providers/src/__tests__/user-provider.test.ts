@@ -26,7 +26,7 @@ import { BUNDLED_CATALOG } from "../catalog.js";
 import { providerCatalogId } from "../provider-identity.js";
 
 describe('native subscription instances', () => {
-  it('retired independent Claude accounts stay listed but serve no agent', () => {
+  it('independent Claude accounts declare only the native CLI harness without granting models', () => {
     const account = buildUserProvider({
       id: 'anthropic-a',
       name: 'anthropic',
@@ -35,7 +35,9 @@ describe('native subscription instances', () => {
     });
     expect(providerCatalogId(account)).toBe('anthropic');
     expect(account.auth.native).toBe('claude');
-    expect(account.agents).toEqual([]);
+    expect(account.agents).toEqual(['claude-code']);
+    expect(account.models['claude-code'] ?? []).toEqual([]);
+    expect(account.routing['claude-code']?.authStrategy).toBe('oauth-passthrough');
     expect(Object.keys(account.routing)).toEqual(['claude-code']);
   });
 

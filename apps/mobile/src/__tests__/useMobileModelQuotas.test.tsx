@@ -95,6 +95,24 @@ it("does not start quota work when no provider has a subscription", async () => 
   expect(vi.getTimerCount()).toBe(0);
 });
 
+// Multi-account contract: the device response must identify the requested
+// connection. Existing Codex-only fixtures did not exercise two Claude homes.
+it("keeps two Claude account quotas separate and rejects a legacy default-account reply", async () => {
+  const sources = ["claude-a", "claude-b", "claude-legacy"].map((id) => ({
+    id, connected: true, auth: { method: "oauth", native: "claude" },
+  })) as ProviderView[];
+  h.invoke.mockImplementation(async (_device, channel, [id]) => {
+    expect(channel).toBe("maker:usage:claude-subscription");
+    return { providerId: id === "claude-legacy" ? "anthropic" : id,
+      sevenDay: { utilization: id === "claude-a" ? 20 : 80, resetsAt: 86400 } };
+  });
+  await mount(sources);
+  expect(view.quotas["claude-a"].remaining).toBe(80);
+  expect(view.quotas["claude-b"].remaining).toBe(20);
+  expect(view.quotas["claude-legacy"]).toBeUndefined();
+  expect(h.invoke.mock.calls.map((call) => call[2])).toEqual([["claude-a"], ["claude-b"], ["claude-legacy"]]);
+});
+
 it("updates and expires a model-specific countdown even while the generic quota stays stable", async () => {
   const generic = { secondary: window(4 * 86400) };
   h.invoke.mockResolvedValue({

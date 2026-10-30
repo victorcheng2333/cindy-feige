@@ -296,14 +296,14 @@ describe('distinctRemoteSubscriptions', () => {
     sub(`remote:${id}`, { device: { id, name: id }, ...extra });
 
   it('drops an account this computer already shows, matched by its fingerprint', () => {
-    const local = sub('anthropic', { accountKeys: ['claude:fp:abc'], windows: [week(40)] });
-    const same = remote('studio', { accountKeys: ['claude:fp:abc'], windows: [week(55)] });
+    const local = sub('anthropic', { accountKeys: ['claude:fp:v2:abc'], windows: [week(40)] });
+    const same = remote('studio', { accountKeys: ['claude:fp:v2:abc'], windows: [week(55)] });
     expect(distinctRemoteSubscriptions([local], [same])).toEqual([]);
   });
 
   it('keeps a different account even when its numbers happen to match', () => {
-    const local = sub('anthropic', { accountKeys: ['claude:fp:abc'] });
-    const other = remote('studio', { accountKeys: ['claude:fp:xyz'] });
+    const local = sub('anthropic', { accountKeys: ['claude:fp:v2:abc'] });
+    const other = remote('studio', { accountKeys: ['claude:fp:v2:xyz'] });
     expect(distinctRemoteSubscriptions([local], [other])).toEqual([other]);
   });
 
@@ -313,16 +313,16 @@ describe('distinctRemoteSubscriptions', () => {
     expect(distinctRemoteSubscriptions([local], [teammate])).toEqual([teammate]);
   });
 
-  it('falls back to identical windows when neither side names the account', () => {
+  it('keeps unknown Claude identities even when their windows match', () => {
     const local = sub('anthropic', { windows: [week(40)] });
     const mirror = remote('studio', { windows: [week(41, NOW + 3 * 86_400_000 + 30_000)] });
     const other = remote('laptop', { windows: [week(70)] });
-    expect(distinctRemoteSubscriptions([local], [mirror, other])).toEqual([other]);
+    expect(distinctRemoteSubscriptions([local], [mirror, other])).toEqual([mirror, other]);
   });
 
   it('lists an account shared by two other computers once, from the fresher reading', () => {
-    const older = remote('studio', { accountKeys: ['claude:fp:abc'], updatedAtMs: NOW - 600_000 });
-    const newer = remote('laptop', { accountKeys: ['claude:fp:abc'], updatedAtMs: NOW });
+    const older = remote('studio', { accountKeys: ['claude:fp:v2:abc'], updatedAtMs: NOW - 600_000 });
+    const newer = remote('laptop', { accountKeys: ['claude:fp:v2:abc'], updatedAtMs: NOW });
     expect(distinctRemoteSubscriptions([], [older, newer])).toEqual([newer]);
   });
 

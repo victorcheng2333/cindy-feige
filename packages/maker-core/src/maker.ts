@@ -1719,6 +1719,10 @@ export class Maker {
     return this.requireAgent('codex').requiresCodexThreadHostTransfer(opts);
   }
 
+  prepareClaudeAccountResume(opts: Parameters<BaseAgent['prepareClaudeAccountResume']>[0]) {
+    return this.requireAgent('claude-code').prepareClaudeAccountResume(opts);
+  }
+
   // ── Agent 鉴权 ───────────────────────────────────────────────────────────
   // 透传到 agent.deps.auth, 让 host 的 maker:auth:* IPC 不必直接拿 AuthAdapter,
   // renderer 也不需要写死任何 vendor 名 (统一 maker:auth:get-state(agentKind) 入口)。

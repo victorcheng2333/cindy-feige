@@ -301,7 +301,11 @@ describe('AddProviderWizard — OpenAI 授权边界', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(newId));
     expect(onDone).toHaveBeenCalledTimes(1);
   });
-  it.each(['xai'])('cancels only the pending independent %s authorization', async id => {
+  // Regression: Claude's backend supported managed accounts but the wizard hid its
+  // only creation button. Existing detail-header tests started with saved accounts.
+  // Unit/jsdom: click the real wizard with a connected builtin; verify distinct
+  // account creation/completion and cancellation, without CLI or real credentials.
+  it.each(['xai', 'anthropic'])('cancels only the pending independent %s authorization', async id => {
     let finish!: (value: { ok: boolean; reason: string }) => void;
     providerOAuthLogin.mockReturnValue(new Promise(resolve => { finish = resolve; }));
     const onDone = vi.fn();
@@ -316,7 +320,7 @@ describe('AddProviderWizard — OpenAI 授权边界', () => {
     expect(deleteAccount).toHaveBeenCalledWith(accountId);
     expect(onDone).not.toHaveBeenCalled();
   });
-  it.each([['xai', 'xai']] as const)('adds another %s account even when its builtin provider is connected', async (id, native) => {
+  it.each([['xai', 'xai'], ['anthropic', 'claude']] as const)('adds another %s account even when its builtin provider is connected', async (id, native) => {
     const onDone = vi.fn();
     render(<AddProviderWizard providers={[{ ...OPENAI_PROVIDER, id, name: id, connected: true }]}
       onOpenCustomForm={vi.fn()} onClose={vi.fn()} onDone={onDone} />);
@@ -327,17 +331,16 @@ describe('AddProviderWizard — OpenAI 授权边界', () => {
     expect(accountId).toMatch(new RegExp(`^${id}-`));
     expect(createAccount).toHaveBeenCalledWith(expect.objectContaining({ id: accountId, auth: { method: 'oauth', native } }), {});
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(accountId));
+    expect(triggerLogin).not.toHaveBeenCalled();
   });
-  // Claude 订阅只能经内置 Claude Code 自己的登录使用:即使内置 anthropic 已连接,
-  // 也只提供「使用本机 Claude」(= 重新连接 CLI 登录),不再创建独立 Claude 账号。
-  it('offers only the bundled Claude Code login for a connected anthropic provider', async () => {
+  it('keeps the default Claude Code login separate from independent account creation', async () => {
     triggerLogin.mockResolvedValue({ ok: true, authorized: true });
     const onDone = vi.fn();
     render(<AddProviderWizard providers={[{ ...OPENAI_PROVIDER, id: 'anthropic', name: 'anthropic', connected: true }]}
       onOpenCustomForm={vi.fn()} onClose={vi.fn()} onDone={onDone} />);
     fireEvent.click(await screen.findByText('anthropic'));
     const useClaude = await screen.findByText('settings.providers.localAccount.useClaude');
-    expect(screen.queryByText('settings.providers.openai.addIndependentAccount')).toBeNull();
+    expect(screen.getByText('settings.providers.openai.addIndependentAccount')).toBeTruthy();
     fireEvent.click(useClaude);
     await waitFor(() => expect(onDone).toHaveBeenCalledExactlyOnceWith('anthropic'));
     expect(triggerLogin).toHaveBeenCalledExactlyOnceWith(expect.any(String));

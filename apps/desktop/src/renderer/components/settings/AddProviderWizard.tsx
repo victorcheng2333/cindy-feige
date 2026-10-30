@@ -1952,7 +1952,7 @@ export function AddProviderWizard({
                         {t('settings.providers.openai.useLocalAccount')}
                       </Button>
                     )}
-                    {/* Claude 订阅唯一入口:已添加时点它等同重新连接本机 Claude Code 登录。 */}
+                    {/* 默认连接复用终端登录；独立账号由下方入口分配自己的 CLI home。 */}
                     {sel.provider.id === 'anthropic' && (
                       <Button
                         variant="secondary"
@@ -1963,18 +1963,15 @@ export function AddProviderWizard({
                         {t('settings.providers.localAccount.useClaude')}
                       </Button>
                     )}
-                    {/* Claude 订阅只能经内置 Claude Code 自己的登录使用,不提供独立账号。 */}
-                    {sel.provider.id !== 'anthropic' && (
-                      <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize()}>
-                        {t(
-                          ['openai', 'xai'].includes(sel.provider.id)
-                              ? 'settings.providers.openai.addIndependentAccount'
-                              : sel.provider.auth.oauth?.flow === 'device-code'
-                                ? 'settings.providers.wizard.authorizeWithDeviceCode'
-                                : 'settings.providers.button.authorize',
-                        )}
-                      </Button>
-                    )}
+                    <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize()}>
+                      {t(
+                        ['openai', 'anthropic', 'xai'].includes(sel.provider.id)
+                          ? 'settings.providers.openai.addIndependentAccount'
+                          : sel.provider.auth.oauth?.flow === 'device-code'
+                            ? 'settings.providers.wizard.authorizeWithDeviceCode'
+                            : 'settings.providers.button.authorize',
+                      )}
+                    </Button>
                     {sel.provider.id === 'xai' && (
                       <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize('device')}>
                         {t('settings.connections.xai.deviceLogin')}

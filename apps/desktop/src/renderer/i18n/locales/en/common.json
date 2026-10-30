@@ -1650,6 +1650,7 @@
       "sourcesShown": "{{a}} of {{b}} shown",
       "statusIcon": "Menu bar icon",
       "statusIconMode": {
+        "account": "Chosen account",
         "icon": "Icon only",
         "lowest": "Lowest left",
         "today": "Today's usage",
@@ -4198,7 +4199,8 @@
         "pending": "Preparing credentials",
         "unavailable": "Temporarily unavailable"
       },
-      "claudeAccountRetired": "Cindy no longer supports signing in to your subscription through this legacy Claude connection. Your Claude account and subscription are unaffected. Use “Sign in with Claude Code” to connect.",
+      "claudeAccountRetired": "Sign in with Claude Code to connect this account. Legacy connections require a new sign-in; your connection name and task history are kept.",
+      "claudeCleanupPending": "The connection was deleted, but Claude Code could not finish signing out of one or more private account folders. Cindy will retry at the next startup. Task history is kept.",
       "speechSetup": {
         "title": "Speech",
         "add": "Add speech models",

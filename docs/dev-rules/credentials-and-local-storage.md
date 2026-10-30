@@ -61,9 +61,11 @@ Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订
 
 - 登录只拉起内置 CLI 的 `claude auth login --claudeai`，登录态只读
   `claude auth status --json`。凭证留在 CLI 默认凭证库（macOS 钥匙串 / `~/.claude`），
-  Cindy 不读取、不复制、不刷新它。CLI 按配置目录区分凭证库，所以本机 CLI 的会话（任何来源）
-  与登录检查都不得设 `CLAUDE_CONFIG_DIR`（dev 多实例也用默认目录），否则会看不到本机已有的
-  Claude Code 登录；SSH 远端的配置目录由远端 cc-manager 自己管理，不在此列。
+  Cindy 不读取、不复制、不刷新它。本机连接的会话与登录检查不设 `CLAUDE_CONFIG_DIR`
+  （dev 多实例也用默认目录），继续沿用终端登录。独立 Claude 连接使用当前 Cindy 数据 owner
+  命名空间下的受管 home：登录前分配固定目录，登录后只提交连接元数据，不移动目录或凭证。
+  配置目录仅由 Main 的可信运行上下文传给子进程；环境变量、项目设置和远控参数不能选择它。
+  SSH 远端的配置目录仍由远端 cc-manager 自己管理，不接收本机订阅 home。
   只有 Claude.ai 订阅账号的 OAuth 登录算「Claude 订阅」；CLI 用 Console 账号、API Key、
   apiKeyHelper、中转 token 或第三方云登录时按 `not_a_subscription` 处理，也不替用户改 CLI 的登录。
 - 登录态读取不得阻塞与订阅无关的路径：启动只在已连接时等待，列表类读取用缓存并后台刷新，
@@ -96,7 +98,27 @@ Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订
   SSH 远端、辅助 one-shot（标题、自动复核等）不使用订阅。订阅会话的子代理请求同样由 CLI
   直连，只注入 Anthropic 一方的子代理模型覆写。
 - 「断开」只撤销 Cindy 的使用许可（`nativeProviderAuthBinding`），不登出 CLI。
-  旧版独立 Claude 账号已停用，但不删除其已存凭证。
+  旧版独立 Claude 账号在完成 CLI 重新登录前保持停用，不把旧凭证搬入新 home。
+  新独立连接只保存非敏感的身份、目录引用与授权代次；断开保留原生历史，删除的 CLI 登出
+  必须在连接事务提交后对准确的受管 home 执行，失败留下可重试状态，绝不登出默认本机账号。
+  登录、状态、模型、用量和运行实例使用相同的配置目录；迟到结果按 owner 与认证代次拒绝。
+  原生历史单独保存 home 归属，连接改名、删除或重新登录不能让历史查询猜用另一账号目录。
+  - 受管目录为 `owners/<owner>/claude-accounts/<connection>/homes/<uuid>`；每次登录新建一代，
+    身份元数据保存在 `account.json`，登录、断开、回滚与清理共用连接级跨进程锁。
+    清理意图在拉起 CLI 前持久化；启动时只回放当前 owner 的精确意图。若数据库已删除连接而
+    finalizer 未完成，以权威连接清单补清理；仅仅断开的连接仍保留登录。正在使用的新 home 不得登出。
+  - 项目无关的个人说明、Skill、子代理、命令与输出风格以受限文件快照继承；用哈希清单保留
+    用户在账号目录内的修改。不复制凭证、缓存或可写符号链接；settings 只继承代理环境键。
+  - 原生历史绑定保存在 `claude-history-homes/<native-id>.json`，独立于连接的当前 home。
+    手动切换账号时只复制该任务的原生历史及 checkpoint，CLI 确认 resume 后才更新绑定；失败
+    保留源历史，不自动抛弃历史开新任务。Fork 通过 SDK 的显式 SessionStore 读写，不修改进程环境。
+    移动工作目录按各历史 id 的绑定分别迁移；Skill 统计扫描当前 owner 的保留目录并去除账号间副本。
+    原生历史导入先落默认历史目录并登记归属，再由目标账号的严格恢复路径接续；不随宿主环境变量
+    隐式改到另一目录。原生记忆的统计与清理覆盖默认目录和当前 owner 的保留账号目录，只处理
+    `projects/*/memory`，不跟随目录符号链接，不删除转录或凭证。
+  - 命名连接在通用路由层可能先归类为 `provider-oauth`；仅 AuthAdapter 返回的受管运行上下文
+    可以将其确定为 CLI 原生订阅模式。启动环境仍执行上述直连与凭证剥除规则；已经删除的显式
+    连接在准入、运行上下文和鉴权环境三处拒绝，不能借用默认终端登录。
 - 套餐余量由内置 CLI 的 `get_usage` 控制请求查询（CLI 用自己的登录发请求，拉起时不读
   项目级设置、不起 MCP、不落会话记录），会话内的 SDK `rate_limit_event` 做增量刷新；
   模型列表来自 SDK `supportedModels` 与 Registry；

@@ -4,10 +4,12 @@ import { getGrokAccessToken, peekGrokAccessToken, hasGrokOAuthLogin } from './gr
 import { refreshXaiModelsFromHttp } from './model-discovery/xai.js';
 import { setXaiDiscoveredModels } from './active-catalog.js';
 import { invalidateXaiBridgeAuth } from './xai-auth-invalidation-host.js';
+import { refreshManagedClaudeModels } from './claude-account-models.js';
 
-/** 独立订阅账号的模型清单刷新。独立 Claude 账号已停用,不拉清单(返回 false)。 */
+/** Independent subscription discovery: Claude via its CLI home, xAI via the existing credential adapter. */
 export async function refreshSubscriptionAccountModels(providerId: string): Promise<boolean> {
   const kind = subscriptionAccountKind(providerId);
+  if (kind === 'claude') return refreshManagedClaudeModels(providerId, { force: true });
   if (kind === 'xai')
     return refreshXaiModelsFromHttp({
       getAccessToken: () => getGrokAccessToken(providerId),

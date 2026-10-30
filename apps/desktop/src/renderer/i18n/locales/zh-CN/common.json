@@ -1621,6 +1621,7 @@
       "sourcesShown": "{{a}} / {{b}} 显示",
       "statusIcon": "菜单栏图标",
       "statusIconMode": {
+        "account": "指定账号",
         "icon": "只图标",
         "lowest": "最低余量",
         "today": "今日用量",
@@ -4167,7 +4168,8 @@
         "pending": "凭据准备中",
         "unavailable": "暂时不可用"
       },
-      "claudeAccountRetired": "Cindy 已不再支持通过这条旧版 Claude 连接登录订阅，不影响你的 Claude 账号和订阅。请改用「使用 Claude Code 登录」连接订阅",
+      "claudeAccountRetired": "通过 Claude Code 登录此账号。旧版连接需要重新登录，连接名称和任务历史会保留。",
+      "claudeCleanupPending": "连接已删除，但 Claude Code 尚未完成部分独立账号目录的退出。Cindy 将在下次启动时重试，任务历史会保留。",
       "speechSetup": {
         "title": "语音",
         "add": "添加语音模型",

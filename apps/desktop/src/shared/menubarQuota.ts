@@ -7,7 +7,7 @@
  * task's clock, chart scrub readouts).
  */
 
-export const MENUBAR_STATUS_TEXT_MODES = ['icon', 'lowest', 'today', 'task'] as const;
+export const MENUBAR_STATUS_TEXT_MODES = ['icon', 'lowest', 'today', 'task', 'account'] as const;
 export type MenubarStatusTextMode = (typeof MENUBAR_STATUS_TEXT_MODES)[number];
 
 export const MENUBAR_USAGE_SCOPES = ['local', 'all'] as const;
@@ -23,6 +23,8 @@ export interface MenubarSettings {
   /** Source ids the user turned back on after being hidden by default. */
   shown: string[];
   statusText: MenubarStatusTextMode;
+  /** Explicit display selection; never changes a task route. */
+  pinnedSourceId?: string | null;
   lowAlert: boolean;
   privacy: boolean;
   scope: MenubarUsageScope;
@@ -34,6 +36,7 @@ export const DEFAULT_MENUBAR_SETTINGS: MenubarSettings = {
   hidden: [],
   shown: [],
   statusText: 'icon',
+  pinnedSourceId: null,
   lowAlert: true,
   privacy: false,
   scope: 'all',

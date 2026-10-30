@@ -1,3 +1,4 @@
+import { loadManagedClaudeModels, refreshManagedClaudeModels } from './claude-account-models.js';
 import { readProviderPresentation } from './provider-presentation-store.js';
 import { projectSubscriptionFastPolicy } from './subscription-fast-policy.js';
 import { filterLegacyGptContextProfiles } from './legacy-context-profiles.js';
@@ -843,10 +844,23 @@ export async function refreshCustomProvidersIntoCatalog(
         return;
       }
       setCustomProviderConfigs(fresh);
+      for (const config of fresh) {
+        if (config.auth?.native === 'claude') {
+          await loadManagedClaudeModels(config.id);
+          if (!isCurrent()) return;
+          void refreshManagedClaudeModels(config.id).catch(() => {});
+        }
+      }
       log.info('custom providers merged into active catalog after cas miss', { count: fresh.length });
       return;
     }
     setCustomProviderConfigs(next);
+    for (const config of next) {
+      if (config.auth?.native !== 'claude') continue;
+      await loadManagedClaudeModels(config.id);
+      if (!isCurrent()) return;
+      void refreshManagedClaudeModels(config.id).catch(() => {});
+    }
     log.info('custom providers merged into active catalog', { count: next.length });
   } catch (err) {
     if (!isCurrent()) {

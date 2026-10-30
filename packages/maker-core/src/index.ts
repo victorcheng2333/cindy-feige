@@ -6,6 +6,7 @@
  */
 
 export const VERSION = '0.0.0';
+export { findSettingsFileOverride } from './agents/claude-code/workspace-settings-guard.js';
 export { standardSpeedRequest, withFastModePolicy } from './agents/shared/fast-mode-policy.js';
 
 // types

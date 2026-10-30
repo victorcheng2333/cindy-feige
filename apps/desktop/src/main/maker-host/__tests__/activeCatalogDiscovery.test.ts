@@ -384,11 +384,28 @@ describe('active-catalog discovered augment', () => {
       expect(provider.models.pi ?? []).toEqual([]);
       expect(provider.models.codex ?? []).toEqual([]);
       if (kind === 'independent') {
-        // 独立 Claude 账号已停用:不向任何 agent 提供模型。
-        expect(provider.agents).toEqual([]);
+        expect(provider.agents).toEqual(['claude-code']);
+        expect(provider.models['claude-code']?.map(model => model.id)).toEqual(['claude-new']);
       }
     },
   );
+
+  it('uses each independent Claude account snapshot, never the default account or its sibling', () => {
+    const catalog = bundledWithoutRegistry();
+    for (const id of ['claude-a', 'claude-b']) catalog.providers.push(buildUserProvider({
+      id, name: id, auth: { method: 'oauth', native: 'claude' }, runtimes: {},
+    }));
+    setActiveCatalog(catalog);
+    setAnthropicDiscoveredModels([fake('claude-default-only')]);
+    setDiscoveredProviderModels('claude-a', 'claude-code', [fake('claude-a-only')]);
+    setDiscoveredProviderModels('claude-b', 'claude-code', [fake('claude-b-only')]);
+    const ids = (id: string) => getActiveCatalog().providers.find(provider => provider.id === id)!.models['claude-code']?.map(model => model.id);
+    expect(ids('claude-a')).toEqual(['claude-a-only']);
+    expect(ids('claude-b')).toEqual(['claude-b-only']);
+    setDiscoveredProviderModels('claude-a', 'claude-code', []);
+    expect(ids('claude-a')).toEqual([]);
+    expect(ids('claude-b')).toEqual(['claude-b-only']);
+  });
 
   it('missing Pi declarations use fallback but explicit empty lists remove public Pi membership', () => {
     const expected = openaiIds('pi');

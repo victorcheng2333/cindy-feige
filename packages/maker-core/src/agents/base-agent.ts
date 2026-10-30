@@ -2892,6 +2892,14 @@ export abstract class BaseAgent {
     return this.throwNotSupported('forkSdkSession', 'sdk-missing');
   }
 
+  /** Preflight a local subscription-account switch without accepting any user input. */
+  async prepareClaudeAccountResume(opts: {
+    nativeId: string; workingDir: string; model: string; providerId: string;
+  }): Promise<{ assertCurrent(): void }> {
+    void opts;
+    return this.throwNotSupported('prepareClaudeAccountResume', 'sdk-missing');
+  }
+
   async requiresCodexThreadHostTransfer(
     opts: Pick<StartSessionOptions, 'sessionId' | 'model' | 'providerId' | 'reviewMode' | 'remoteHostId'> & { threadId: string },
   ): Promise<boolean> {

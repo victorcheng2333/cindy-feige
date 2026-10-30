@@ -12,7 +12,7 @@ import { setSessionProvider } from '../maker-host/session-provider-store.js';
  * PendingCredentialSwitchService —— 会话凭证形态切换的「延迟生效」登记表。
  *
  * Busy 时登记目标 (model, providerId)，在 turn 结束或会话关闭时再应用。
- * Pi 走原生模型切换和既有窗口容量事务；其它 harness 维持关闭后重建。
+ * Pi / Claude 走宿主的原生模型切换事务；其它 harness 维持关闭后重建。
  * 应用失败会回滚旧路由并广播失败，输入队列只有在结果确定后才解冻。
  *
  * 生效路径(代码保证确定性,不依赖任何 LLM 行为):
@@ -82,9 +82,11 @@ export interface PendingCredentialSwitchDeps {
     resolved: { model: string; providerId: string | null },
     isCurrent: () => boolean,
   ) => Promise<'applied' | 'deferred'>;
+  /** Claude account changes use the same host transaction and failure rollback. */
+  applyClaudePending?: PendingCredentialSwitchDeps['applyPiPending'];
   broadcastFailed?: (payload: { sessionId: string; reason: 'apply-failed' | 'rollback-failed' }) => void;
   isPiOwnerCurrent?: (ownerEpoch: string) => boolean;
-  /** Serialize Pi rollback with all user route selections and queued sends. */
+  /** Serialize native rollback with all user route selections and queued sends. */
   withPiSessionLock?: (sessionId: string, run: () => Promise<void>) => Promise<void>;
   /**
    * 停用轴裁决(生产 = model-route-guard-live 的 resolveLenientSessionRoute)。
@@ -132,7 +134,7 @@ export class PendingCredentialSwitchService {
   private readonly applying = new Set<string>();
   /** 自愈兜底定时器(per session,pending 收口即清)。 */
   private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly failedPiTargets = new WeakSet<PendingCredentialSwitch>();
+  private readonly failedNativeTargets = new WeakSet<PendingCredentialSwitch>();
 
   constructor(private readonly deps: PendingCredentialSwitchDeps) {}
 
@@ -187,8 +189,8 @@ export class PendingCredentialSwitchService {
   async onTurnSettled(sessionId: string): Promise<void> {
     const target = this.pending.get(sessionId);
     if (!target) return;
-    if (this.failedPiTargets.has(target)) return;
-    if (target.agentKind === 'pi' && target.ownerEpoch &&
+    if (this.failedNativeTargets.has(target)) return;
+    if ((target.agentKind === 'pi' || target.agentKind === 'claude-code') && target.ownerEpoch &&
         this.deps.isPiOwnerCurrent?.(target.ownerEpoch) === false) {
       this.pending.delete(sessionId);
       this.clearRetry(sessionId);
@@ -202,23 +204,25 @@ export class PendingCredentialSwitchService {
 
     this.applying.add(sessionId);
     try {
-      if ((session?.agentKind ?? target.agentKind) === 'pi' && this.deps.applyPiPending) {
+      const applyNative = (session?.agentKind ?? target.agentKind) === 'pi' ? this.deps.applyPiPending
+        : (session?.agentKind ?? target.agentKind) === 'claude-code' ? this.deps.applyClaudePending : undefined;
+      if (applyNative) {
         const resolved = await this.resolveApplyRoute(target);
         if (this.pending.get(sessionId) !== target) return;
         if (!resolved.apply) {
-          await this.failPiPending(sessionId, target, new Error('Pi model route could not be revalidated'));
+          await this.failNativePending(sessionId, target, new Error('Native model route could not be revalidated'));
           return;
         }
         try {
-          const outcome = await this.deps.applyPiPending(sessionId, target, {
+          const outcome = await applyNative(sessionId, target, {
             model: resolved.model ?? target.model,
             providerId: resolved.providerId,
-          }, () => this.pending.get(sessionId) === target && this.piOwnerCurrent(target));
-          if (outcome === 'deferred' || this.pending.get(sessionId) !== target || !this.piOwnerCurrent(target)) return;
+          }, () => this.pending.get(sessionId) === target && this.ownerCurrent(target));
+          if (outcome === 'deferred' || this.pending.get(sessionId) !== target || !this.ownerCurrent(target)) return;
           this.pending.delete(sessionId);
           this.clearRetry(sessionId);
           try { this.deps.onApplied?.(sessionId); } catch (error) {
-            this.deps.logger?.warn('pending Pi switch queue wake failed', {
+            this.deps.logger?.warn('pending native switch queue wake failed', {
               sessionId, error: error instanceof Error ? error.message : String(error),
             });
           }
@@ -227,12 +231,12 @@ export class PendingCredentialSwitchService {
               sessionId, model: resolved.model ?? target.model, providerId: resolved.providerId,
             });
           } catch (error) {
-            this.deps.logger?.warn('pending Pi switch applied broadcast failed', {
+            this.deps.logger?.warn('pending native switch applied broadcast failed', {
               sessionId, error: error instanceof Error ? error.message : String(error),
             });
           }
         } catch (error) {
-          await this.failPiPending(sessionId, target, error);
+          await this.failNativePending(sessionId, target, error);
         }
         return;
       }
@@ -276,26 +280,26 @@ export class PendingCredentialSwitchService {
     }
   }
 
-  private async failPiPending(sessionId: string, target: PendingCredentialSwitch, error: unknown): Promise<void> {
+  private async failNativePending(sessionId: string, target: PendingCredentialSwitch, error: unknown): Promise<void> {
     if (this.pending.get(sessionId) !== target) return;
-    if (!this.piOwnerCurrent(target)) {
+    if (!this.ownerCurrent(target)) {
       this.pending.delete(sessionId);
       this.clearRetry(sessionId);
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
-    this.failedPiTargets.add(target);
+    this.failedNativeTargets.add(target);
     this.clearRetry(sessionId);
-    this.deps.logger?.error?.('pending Pi model switch failed', { sessionId, error: message });
+    this.deps.logger?.error?.('pending native model switch failed', { sessionId, error: message });
     let rollbackFailed = false;
     let restored = false;
     try {
       const rollback = async () => {
-        if (this.pending.get(sessionId) !== target || !this.piOwnerCurrent(target)) return;
+        if (this.pending.get(sessionId) !== target || !this.ownerCurrent(target)) return;
         if (target.previousRoute && this.deps.persistRoute) {
           await this.deps.persistRoute(sessionId, target.previousRoute);
         }
-        if (this.pending.get(sessionId) !== target || !this.piOwnerCurrent(target)) return;
+        if (this.pending.get(sessionId) !== target || !this.ownerCurrent(target)) return;
         if (target.previousRoute) setSessionProvider(sessionId, target.previousRoute.providerId);
         this.pending.delete(sessionId);
         restored = true;
@@ -304,16 +308,16 @@ export class PendingCredentialSwitchService {
       else await rollback();
     } catch (rollbackError) {
       rollbackFailed = true;
-      this.deps.logger?.error?.('pending Pi model switch rollback failed; queue remains gated', {
+      this.deps.logger?.error?.('pending native model switch rollback failed; queue remains gated', {
         sessionId, error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
       });
     }
     if ((!restored && !rollbackFailed) ||
         (this.pending.has(sessionId) && this.pending.get(sessionId) !== target)) return;
-    if (this.piOwnerCurrent(target)) {
+    if (this.ownerCurrent(target)) {
       if (restored) {
         try { this.deps.onApplied?.(sessionId); } catch (wakeError) {
-          this.deps.logger?.warn('pending Pi rollback queue wake failed', {
+          this.deps.logger?.warn('pending native rollback queue wake failed', {
             sessionId, error: wakeError instanceof Error ? wakeError.message : String(wakeError),
           });
         }
@@ -321,14 +325,14 @@ export class PendingCredentialSwitchService {
       try {
         this.deps.broadcastFailed?.({ sessionId, reason: rollbackFailed ? 'rollback-failed' : 'apply-failed' });
       } catch (broadcastError) {
-        this.deps.logger?.warn('pending Pi failure broadcast failed', {
+        this.deps.logger?.warn('pending native failure broadcast failed', {
           sessionId, error: broadcastError instanceof Error ? broadcastError.message : String(broadcastError),
         });
       }
     }
   }
 
-  private piOwnerCurrent(target: PendingCredentialSwitch): boolean {
+  private ownerCurrent(target: PendingCredentialSwitch): boolean {
     return !target.ownerEpoch || this.deps.isPiOwnerCurrent?.(target.ownerEpoch) !== false;
   }
 
@@ -343,9 +347,10 @@ export class PendingCredentialSwitchService {
     if (this.applying.has(sessionId)) return;
     const target = this.pending.get(sessionId);
     if (!target) return;
-    if (this.failedPiTargets.has(target)) return;
-    if (target.agentKind === 'pi' && this.deps.applyPiPending) {
-      // A crashed or externally closed Pi turn still has native history in the
+    if (this.failedNativeTargets.has(target)) return;
+    if ((target.agentKind === 'pi' && this.deps.applyPiPending) ||
+        (target.agentKind === 'claude-code' && this.deps.applyClaudePending)) {
+      // A crashed or externally closed native turn still has history in the
       // persisted task. Re-enter the same cold model-window transaction.
       void this.onTurnSettled(sessionId);
       return;
@@ -577,7 +582,7 @@ export class PendingCredentialSwitchService {
       void this.onTurnSettled(sessionId).finally(() => {
         // 仍未收口(还在跑 / busy 竞态)→ 继续兜底。收口路径已 clearRetry。
         const target = this.pending.get(sessionId);
-        if (target && !this.failedPiTargets.has(target) && !this.retryTimers.has(sessionId)) {
+        if (target && !this.failedNativeTargets.has(target) && !this.retryTimers.has(sessionId)) {
           this.scheduleRetry(sessionId);
         }
       });

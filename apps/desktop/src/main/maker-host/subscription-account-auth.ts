@@ -1,3 +1,4 @@
+import { claudeAccountState, loginClaudeAccount, cancelClaudeAccountLogin, disconnectClaudeAccount, disconnectClaudeAccountReversibly } from './claude-account-auth.js';
 import { activeOwnerScopeKey, isAppSessionBoundaryPending, ownerScopedUserDataPath } from '../appSessionState.js';
 import { genericOAuthSecretIo } from '../secrets/providerSecretStore.js';
 import { getActiveCatalog, setDiscoveredProviderModels, setXaiDiscoveredModels } from './active-catalog.js';
@@ -18,9 +19,8 @@ export function setSubscriptionAccountInvalidatedHandler(handler: typeof onInval
   onInvalidated = handler;
 }
 /**
- * 独立 Claude 账号已停用的归因。它的凭证是 Cindy 自己跑 OAuth 登录后保存的,而 Claude 订阅
- * 只允许经官方 Claude Code CLI 自己的登录使用(见 claude-native-cli);已有条目保留在设置里
- * 供用户查看 / 删除,不再参与任何会话。
+ * 旧版 Cindy OAuth 连接没有 CLI 所属目录，必须经官方 CLI 重新登录才可用于任务。
+ * 保留连接 id、名称与历史；不把旧令牌复制到新的 CLI 凭证库。
  */
 export const CLAUDE_ACCOUNT_RETIRED_REASON = 'claude_account_retired';
 
@@ -55,7 +55,7 @@ export function subscriptionAccountState(providerId: string): {
 } {
   const kind = subscriptionAccountKind(providerId);
   if (kind === 'claude') {
-    return { authenticated: false, errorReason: CLAUDE_ACCOUNT_RETIRED_REASON, authSource: 'oauth' };
+    return claudeAccountState(providerId);
   }
   return {
     authenticated: kind === 'xai' ? hasGrokOAuthLogin(providerId) : false,
@@ -65,6 +65,7 @@ export function subscriptionAccountState(providerId: string): {
 }
 const logins = new Map<string, { cancel: () => void }>();
 export function cancelSubscriptionAccountLogin(providerId: string): void {
+  if (subscriptionAccountKind(providerId) === 'claude') { cancelClaudeAccountLogin(providerId); return; }
   logins.get(`${activeOwnerScopeKey()}:${providerId}`)?.cancel();
 }
 export function resetSubscriptionAccountCaches(): void {
@@ -81,11 +82,22 @@ export async function loginSubscriptionAccount(
   ok: boolean;
   reason?: string;
   firstLogin?: boolean;
-  rollbackCredentials?: () => boolean;
+  rollbackCredentials?: () => boolean | Promise<boolean>;
+  afterCommit?: () => Promise<void>;
 }> {
   const kind = subscriptionAccountKind(providerId);
   if (!kind) throw new Error('Unknown subscription account');
-  if (kind === 'claude') return { ok: false, reason: CLAUDE_ACCOUNT_RETIRED_REASON };
+  if (kind === 'claude') {
+    if (options?.method === 'device') throw new Error('Device login is not supported for Claude');
+    const scope = activeOwnerScopeKey();
+    const result = await loginClaudeAccount(providerId, isCurrent);
+    if (result.ok && isCurrent()) await clearSubscriptionAccountDiscoveredModels(providerId);
+    const finish = result.afterCommit;
+    return { ...result, afterCommit: async () => {
+      if (activeOwnerScopeKey() === scope) genericOAuthSecretIo.remove(providerId);
+      await finish?.();
+    } };
+  }
   if (kind !== 'xai' && options?.method === 'device') throw new Error('Device login is only available for Grok');
   const scope = activeOwnerScopeKey();
   const key = `${scope}:${providerId}`;
@@ -159,7 +171,29 @@ export async function loginSubscriptionAccount(
     if (logins.get(key) === operation) logins.delete(key);
   }
 }
-export function removeSubscriptionAccountCredentialsReversibly(providerId: string): () => boolean {
+export function removeSubscriptionAccountCredentialsReversibly(providerId: string): (() => boolean) | Promise<() => Promise<boolean>> {
+  if (subscriptionAccountKind(providerId) === 'claude') return (async () => {
+    const scope = activeOwnerScopeKey();
+    // This is the retired Cindy-owned blob, never the CLI's credential store.
+    // Stage its removal before deletion commits so failures cannot leave a
+    // credential with no connection or an unrecorded promise to retry it later.
+    const legacy = genericOAuthSecretIo.readStrict(providerId);
+    const restoreNative = await disconnectClaudeAccountReversibly(providerId);
+    if (activeOwnerScopeKey() !== scope || isAppSessionBoundaryPending()) {
+      await restoreNative();
+      throw new Error('Claude account changed');
+    }
+    if (legacy !== null && !genericOAuthSecretIo.remove(providerId)) {
+      await restoreNative();
+      throw new Error('Failed to remove legacy Claude credentials');
+    }
+    return async () => {
+      if (activeOwnerScopeKey() !== scope || isAppSessionBoundaryPending() ||
+          genericOAuthSecretIo.readStrict(providerId) !== null) return false;
+      if (!await restoreNative()) return false;
+      return legacy === null || genericOAuthSecretIo.write(providerId, legacy);
+    };
+  })();
   cancelSubscriptionAccountLogin(providerId);
   const scope = activeOwnerScopeKey();
   const previous = genericOAuthSecretIo.readStrict(providerId);
@@ -176,6 +210,7 @@ export function removeSubscriptionAccountCredentialsReversibly(providerId: strin
     return restored;
   };
 }
-export function logoutSubscriptionAccount(providerId: string): void {
-  removeSubscriptionAccountCredentialsReversibly(providerId);
+export async function logoutSubscriptionAccount(providerId: string): Promise<void> {
+  if (subscriptionAccountKind(providerId) === 'claude') return disconnectClaudeAccount(providerId);
+  await removeSubscriptionAccountCredentialsReversibly(providerId);
 }

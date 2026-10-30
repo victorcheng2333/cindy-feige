@@ -14,7 +14,15 @@ const state = vi.hoisted(() => ({
   secrets: new Map<string, string>(),
   login: vi.fn(),
   removeFails: false,
+  claudeLogin: vi.fn(),
 }));
+vi.mock('../claude-account-auth.js', () => ({
+  claudeAccountState: () => ({ authenticated: false, errorReason: 'claude_account_retired', authSource: 'oauth' }),
+  loginClaudeAccount: (...args: unknown[]) => state.claudeLogin(...args),
+  cancelClaudeAccountLogin: vi.fn(), disconnectClaudeAccount: vi.fn(),
+  disconnectClaudeAccountReversibly: () => () => true,
+}));
+vi.mock('../claude-account-models.js', () => ({ refreshManagedClaudeModels: async () => false }));
 vi.mock('electron', () => ({ app: { getPath: () => state.directory } }));
 vi.mock('../../appSessionState.js', () => ({
   activeOwnerScopeKey: () => state.scope,
@@ -60,6 +68,16 @@ const storedToken = (id: string): string | undefined =>
   JSON.parse(state.secrets.get(`${state.scope}:${id}`) ?? 'null')?.access_token;
 
 describe('independent subscription account credentials', () => {
+  it('stages legacy Claude credential deletion and restores it when the connection mutation rolls back', async () => {
+    putToken('claude-a', 'fake-legacy');
+    const restore = await removeSubscriptionAccountCredentialsReversibly('claude-a');
+    expect(storedToken('claude-a')).toBeUndefined();
+    expect(await restore()).toBe(true);
+    expect(storedToken('claude-a')).toBe('fake-legacy');
+    state.removeFails = true;
+    await expect(removeSubscriptionAccountCredentialsReversibly('claude-a')).rejects.toThrow('Failed to remove legacy Claude credentials');
+    expect(storedToken('claude-a')).toBe('fake-legacy');
+  });
   it.each(['result', 'throw'])('restores the previous account if login fails after persistence (%s)', async failure => {
     putToken('grok-a', 'fake-original');
     state.login.mockImplementation(async opts => {
@@ -71,11 +89,12 @@ describe('independent subscription account credentials', () => {
     else expect((await loginSubscriptionAccount('grok-a', () => true)).ok).toBe(false);
     expect(storedToken('grok-a')).toBe('fake-original');
   });
-  it('retired independent Claude accounts never log in, refresh or expose credentials', async () => {
+  it('routes Claude login to its CLI without reviving or copying legacy OAuth credentials', async () => {
+    state.claudeLogin.mockResolvedValueOnce({ ok: true });
     putToken('claude-a', 'fake-stored');
-    await expect(loginSubscriptionAccount('claude-a', () => true)).resolves.toEqual({
-      ok: false, reason: 'claude_account_retired',
-    });
+    const result = await loginSubscriptionAccount('claude-a', () => true);
+    expect(result).toMatchObject({ ok: true });
+    expect(state.claudeLogin).toHaveBeenCalledOnce();
     expect(state.login).not.toHaveBeenCalled();
     expect(subscriptionAccountState('claude-a')).toEqual({
       authenticated: false, errorReason: 'claude_account_retired', authSource: 'oauth',
@@ -84,8 +103,9 @@ describe('independent subscription account credentials', () => {
     expect(state.fetch).not.toHaveBeenCalled();
     // 已存的凭证不被静默删除;用户删除账号时才清。
     expect(storedToken('claude-a')).toBe('fake-stored');
-    removeSubscriptionAccountCredentialsReversibly('claude-a');
+    await result.afterCommit?.();
     expect(storedToken('claude-a')).toBeUndefined();
+
   });
   beforeEach(async () => {
     state.directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'cindy-account-discovery-'));
@@ -101,6 +121,7 @@ describe('independent subscription account credentials', () => {
     state.pending = false;
     state.secrets.clear();
     state.login.mockReset();
+    state.claudeLogin.mockReset();
     state.removeFails = false;
     setSubscriptionAccountInvalidatedHandler(() => {});
   });
@@ -188,7 +209,7 @@ describe('independent subscription account credentials', () => {
     putToken(id, 'fake-old'); putToken(peer, 'fake-peer');
     respondModels('claude-account-only-old');
     await refreshSubscriptionAccountModels(id); await refreshSubscriptionAccountModels(peer);
-    const restore = removeSubscriptionAccountCredentialsReversibly(id);
+    const restore = await removeSubscriptionAccountCredentialsReversibly(id);
     expect(discoveredIds(id).some(m => m.includes('account-only-old'))).toBe(false);
     expect(restore()).toBe(true);
     state.login.mockImplementation(async opts => {
@@ -204,11 +225,11 @@ describe('independent subscription account credentials', () => {
   });
   it('credential removal is reversible and cannot replace a newer login', async () => {
     putToken('grok-a', 'fake-a');
-    const restore = removeSubscriptionAccountCredentialsReversibly('grok-a');
+    const restore = await removeSubscriptionAccountCredentialsReversibly('grok-a');
     expect(storedToken('grok-a')).toBeUndefined();
     expect(restore()).toBe(true);
     expect(storedToken('grok-a')).toBe('fake-a');
-    const staleRestore = removeSubscriptionAccountCredentialsReversibly('grok-a');
+    const staleRestore = await removeSubscriptionAccountCredentialsReversibly('grok-a');
     putToken('grok-a', 'fake-new');
     expect(staleRestore()).toBe(false);
     expect(storedToken('grok-a')).toBe('fake-new');

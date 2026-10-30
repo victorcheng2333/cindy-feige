@@ -5,7 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { nativeHistoryStorage } from '../nativeHistoryStorage';
 import { nativeHistoryDigest, type NativeHistoryManifest } from '../nativeHistoryTransfer';
 
-const mocks = vi.hoisted(() => ({ root: '', find: vi.fn(), dump: vi.fn(), importThread: vi.fn(), removeThread: vi.fn() }));
+const mocks = vi.hoisted(() => ({ root: '', find: vi.fn(), dump: vi.fn(), importThread: vi.fn(), removeThread: vi.fn(), remember: vi.fn() }));
+vi.mock('../../appSessionState.js', () => ({ activeOwnerScopeKey: () => 'test-owner' }));
+vi.mock('../../maker-host/claude-history-home.js', () => ({
+  claudeHistoryHomeCandidates: () => [mocks.root], rememberClaudeHistoryHome: mocks.remember,
+}));
 vi.mock('@cindy/maker-core', () => ({ findClaudeSessionJsonl: mocks.find, sanitizeClaudeProjectKey: () => '-target-project' }));
 vi.mock('../../maker-orchestration/claudeTranscriptAnchors', () => ({ defaultClaudeConfigDirCandidates: () => [mocks.root] }));
 vi.mock('../controller/projectFiles', () => ({ claudeConfigDir: () => mocks.root }));
@@ -29,13 +33,14 @@ it('restores Claude messages, compaction and tool output under a new native iden
   const content = rows.map(row => JSON.stringify(row)).join('\n') + '\n';
   const { file, manifest } = await fixture('claude-code', content);
   mocks.find.mockResolvedValue(file);
-  const storage = nativeHistoryStorage(mocks.root);
+  const storage = nativeHistoryStorage(mocks.root, { claudeHome: mocks.root });
   expect(await storage.locate('claude-code', nativeId)).toEqual({ file });
   const restored = await storage.restore(file, manifest, '/target/project', () => {});
   expect(restored).not.toBe(nativeId);
   const written = await fs.readFile(path.join(mocks.root, 'projects', '-target-project', `${restored}.jsonl`), 'utf8');
   expect(written.trim().split('\n').map(line => JSON.parse(line))).toEqual(rows.map(row => ({ ...row, sessionId: restored })));
   expect(await fs.readFile(file, 'utf8')).toBe(content);
+  expect(mocks.remember).toHaveBeenCalledWith(restored, { scopeKey: 'test-owner', revision: 'history-import' });
 });
 
 it('restores all Codex rollout records and rewrites the native state identity together', async () => {

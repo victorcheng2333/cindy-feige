@@ -18,6 +18,7 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import {
   findClaudeSessionJsonl,
@@ -26,6 +27,59 @@ import {
   resolveClaudeProjectsRoot,
   sanitizeClaudeProjectKey,
 } from './claude-projects-fs.js';
+
+/** Caller must retire the old writer first. Copy only this history, never either home's credentials. */
+export async function relocateClaudeSessionHome(options: {
+  sdkSessionId: string; workingDir: string; sourceHome: string; targetHome: string;
+  assertCurrent?: () => void;
+}): Promise<void> {
+  const { sdkSessionId, workingDir, sourceHome, targetHome } = options;
+  if (!/^[a-f0-9-]{36}$/i.test(sdkSessionId)) throw new Error('Invalid Claude history identity');
+  options.assertCurrent?.();
+  if (path.resolve(sourceHome) === path.resolve(targetHome)) return;
+  const cwd = await normalizedExistingPath(workingDir);
+  if (!isClaudeProjectKeyExact(cwd)) throw new Error('Claude target project path cannot be resolved');
+  const source = await findClaudeSessionJsonl(sdkSessionId, cwd, path.join(sourceHome, 'projects'));
+  if (!source) throw new Error('Claude source history is missing');
+  if (!(await fs.lstat(source)).isFile()) throw new Error('Invalid Claude source history');
+  // Every writable parent inside the trusted destination must be a real directory.
+  // Atomic file replacement never follows an existing file symlink or hard link.
+  const ensureDir = async (dir: string): Promise<void> => {
+    options.assertCurrent?.();
+    const relative = path.relative(targetHome, dir);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+      throw new Error('Invalid Claude history destination');
+    if (relative) await ensureDir(path.dirname(dir));
+    await fs.mkdir(dir, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+    if (!(await fs.lstat(dir)).isDirectory()) throw new Error('Invalid Claude history destination');
+  };
+  const copyFile = async (from: string, to: string) => {
+    await ensureDir(path.dirname(to));
+    const temp = `${to}.${randomUUID()}.tmp`;
+    try {
+      options.assertCurrent?.();
+      await fs.copyFile(from, temp);
+      await fs.chmod(temp, 0o600);
+      options.assertCurrent?.();
+      await fs.rename(temp, to);
+    } finally { await fs.rm(temp, { force: true }); }
+  };
+  const dir = path.join(targetHome, 'projects', sanitizeClaudeProjectKey(cwd));
+  const target = path.join(dir, `${sdkSessionId}.jsonl`);
+  const copySidecar = async (from: string, to: string): Promise<void> => {
+    options.assertCurrent?.();
+    const stat = await fs.lstat(from).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!stat || stat.isSymbolicLink()) return;
+    if (stat.isDirectory()) {
+      await ensureDir(to);
+      for (const item of await fs.readdir(from)) await copySidecar(path.join(from, item), path.join(to, item));
+    } else if (stat.isFile()) await copyFile(from, to);
+  };
+  // Finish supporting files first; the transcript's atomic publication is the final write.
+  await copySidecar(source.slice(0, -'.jsonl'.length), path.join(dir, sdkSessionId));
+  await copySidecar(path.join(sourceHome, 'file-history', sdkSessionId), path.join(targetHome, 'file-history', sdkSessionId));
+  await copyFile(source, target);
+}
 
 export interface RelocateClaudeTranscriptsOptions {
   /** 待迁移的 sdk session id 集合(自动去重;空集为 no-op)。 */

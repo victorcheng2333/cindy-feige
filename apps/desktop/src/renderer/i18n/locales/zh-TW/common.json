@@ -1621,6 +1621,7 @@
       "sourcesShown": "{{a}} / {{b}} 顯示",
       "statusIcon": "選單列圖示",
       "statusIconMode": {
+        "account": "指定帳號",
         "icon": "只圖標",
         "lowest": "最低餘量",
         "today": "今日用量",
@@ -4167,7 +4168,8 @@
         "pending": "憑證準備中",
         "unavailable": "暫時無法使用"
       },
-      "claudeAccountRetired": "Cindy 已不再支援透過這筆舊版 Claude 連線登入訂閱，不影響你的 Claude 帳號和訂閱。請改用「使用 Claude Code 登入」連線訂閱",
+      "claudeAccountRetired": "透過 Claude Code 登入此帳號。舊版連線需要重新登入，連線名稱和任務歷史會保留。",
+      "claudeCleanupPending": "連線已刪除，但 Claude Code 尚未完成部分獨立帳號目錄的登出。Cindy 將在下次啟動時重試，任務歷史會保留。",
       "speechSetup": {
         "title": "語音",
         "add": "新增語音模型",

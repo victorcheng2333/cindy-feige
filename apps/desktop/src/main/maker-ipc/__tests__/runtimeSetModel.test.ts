@@ -174,6 +174,45 @@ describe('closeRejectedRuntimeAndRestoreControlStores', () => {
 });
 
 describe('applyRuntimeSetModelChange', () => {
+  // The native preflight is the observable acceptance boundary for account
+  // changes; failed and deferred choices must not publish the target route.
+  it.each(['idle', 'cold', 'busy'] as const)('verifies a Claude account before publishing from %s state', async state => {
+    const id = rememberSession(`claude-preflight-${state}`);
+    setSessionProvider(id, 'claude-a');
+    const order: string[] = [];
+    const session = { id, agentKind: 'claude-code' as const, model: 'claude-sonnet-4',
+      isTurnRunning: () => state === 'busy', setModel: vi.fn() };
+    const prepare = vi.fn(async () => { order.push('prepare'); expect(getSessionProvider(id)).toBe('claude-a'); throw new Error('resume rejected'); });
+    const pending = vi.fn();
+    const operation = applyRuntimeSetModelChange({
+      maker: { getSession: () => state === 'cold' ? undefined : session,
+        listActiveSessions: () => state === 'cold' ? [] : [session],
+        closeSession: async () => { order.push('close'); } },
+      sessionId: id, model: 'claude-sonnet-4', providerId: 'claude-b',
+      prepareNativeResume: prepare, registerPendingCredentialSwitch: pending,
+    });
+    if (state === 'busy') {
+      expect(await operation).toEqual({ status: 'deferred' });
+      expect(prepare).not.toHaveBeenCalled(); expect(pending).toHaveBeenCalledOnce();
+    } else {
+      await expect(operation).rejects.toThrow('resume rejected');
+      expect(order).toEqual(state === 'idle' ? ['close', 'prepare'] : ['prepare']);
+    }
+    expect(getSessionProvider(id)).toBe('claude-a');
+    expect(session.setModel).not.toHaveBeenCalled();
+  });
+
+  it('publishes the target and wakes input only after native resume verification', async () => {
+    const id = rememberSession('claude-preflight-ok'); setSessionProvider(id, 'claude-a');
+    const order: string[] = [];
+    const session = { id, agentKind: 'claude-code' as const, model: 'claude-sonnet-4', setModel: vi.fn(), isTurnRunning: () => false };
+    await applyRuntimeSetModelChange({ sessionId: id, model: 'claude-sonnet-4', providerId: 'claude-b',
+      maker: { getSession: () => session, listActiveSessions: () => [session], closeSession: async () => { order.push('close'); } },
+      prepareNativeResume: async () => { expect(getSessionProvider(id)).toBe('claude-a'); order.push('verified'); },
+      wakeSessionInputQueue: () => { expect(getSessionProvider(id)).toBe('claude-b'); order.push('wake'); },
+    });
+    expect(order).toEqual(['close', 'verified', 'wake']);
+  });
   async function applyImageGenerationRouteChange(input: {
     testId: string;
     currentThreadModelProviderId: string;

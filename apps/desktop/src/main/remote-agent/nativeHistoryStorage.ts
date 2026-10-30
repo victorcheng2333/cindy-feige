@@ -1,23 +1,24 @@
+import { claudeHistoryHomeCandidates, rememberClaudeHistoryHome } from '../maker-host/claude-history-home.js';
+import { activeOwnerScopeKey } from '../appSessionState.js';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { findClaudeSessionJsonl, sanitizeClaudeProjectKey } from '@cindy/maker-core';
-import { defaultClaudeConfigDirCandidates } from '../maker-orchestration/claudeTranscriptAnchors';
 import { readCodexThreadStorageReadOnly } from '../maker-host/codex-thread-storage';
 import { dumpCodexThreadStateRows, importSharedCodexThread, removeSharedCodexThread } from '../maker-host/codex-local-sessions';
 import { migrationNativeContext } from '../session-share/migrationNativeContext';
 import { writeMigratedTranscript } from '../session-share/migrationTranscriptWriter';
-import { claudeConfigDir } from './controller/projectFiles';
 import type { NativeHistoryStorage } from './nativeHistoryTransfer';
 
 /** Reuses the task-copy native writers without importing a second Cindy task or any credentials. */
-export function nativeHistoryStorage(userDataDir: string): NativeHistoryStorage {
+export function nativeHistoryStorage(userDataDir: string, options?: { claudeHome?: string }): NativeHistoryStorage {
   return {
     async locate(kind, nativeId) {
       if (kind !== 'pi' && !/^[a-f0-9-]{36}$/i.test(nativeId)) throw new Error('NATIVE_HISTORY_INVALID_ID');
       if (kind === 'claude-code') {
         let file: string | null = null;
-        for (const dir of defaultClaudeConfigDirCandidates()) {
+        for (const dir of claudeHistoryHomeCandidates(nativeId)) {
           file = await findClaudeSessionJsonl(nativeId, undefined, path.join(dir, 'projects'));
           if (file) break;
         }
@@ -62,11 +63,17 @@ export function nativeHistoryStorage(userDataDir: string): NativeHistoryStorage 
         } catch (error) { await removeSharedCodexThread(nativeId, written); throw error; }
       }
       const target = manifest.kind === 'claude-code'
-        ? path.join(claudeConfigDir(), 'projects', sanitizeClaudeProjectKey(workingDir), `${nativeId}.jsonl`)
+        ? path.join(options?.claudeHome ?? path.join(os.homedir(), '.claude'), 'projects', sanitizeClaudeProjectKey(workingDir), `${nativeId}.jsonl`)
         : path.join(userDataDir, 'pi-agent-home', 'sessions', `relocated-${nativeId}.jsonl`);
       await writeMigratedTranscript(createReadStream(file), target,
         manifest.kind === 'claude-code' ? { context, agent: 'cc' }
           : { agent: 'pi', sessionId: nativeId, cwd: workingDir }, assertCurrent);
+      assertCurrent();
+      if (manifest.kind === 'claude-code') {
+        // Import is staged in the default native home. The selected execution
+        // account copies and strictly resumes it later; no wire path selects auth.
+        rememberClaudeHistoryHome(nativeId, { scopeKey: activeOwnerScopeKey(), revision: 'history-import' });
+      }
       return manifest.kind === 'pi' ? target : nativeId;
     },
   };

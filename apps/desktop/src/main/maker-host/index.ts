@@ -1,3 +1,6 @@
+import { refreshManagedClaudeModels } from './claude-account-models.js';
+import { setClaudeAccountRetirement, retryClaudeAccountCleanups } from './claude-account-auth.js';
+import { listCustomProviders } from './custom-provider-store.js';
 import { configureSessionModelInterfaceStorage, sessionModelInterface } from './session-model-interface.js';
 import { readGeneratedImageEpoch } from '../cindy-media/generatedImageStorage';
 import { resolveHelperSurface } from '../mcp-integrations/helperSurface.js';
@@ -3271,10 +3274,25 @@ export function getMaker(): Maker {
     void _codexModelBackfill.request();
     // Anthropic 清单只来自 Claude Code SDK:maker 就绪后主动读一次,不等用户先跑任务
     // (旧缓存也可能缺少 SDK 只以简称返回的当前型号)。登录 / 认领后由对应收口再次请求。
-    setAnthropicModelProbe((onSupportedModels) =>
-      makerRef.refreshAgentLocalModels('claude-code', { onSupportedModels }),
+    setAnthropicModelProbe((onSupportedModels, providerId) =>
+      makerRef.refreshAgentLocalModels('claude-code', { onSupportedModels, providerId }),
     );
+    setClaudeAccountRetirement(async providerId => {
+      for (const session of makerRef.listActiveSessions()) {
+        if (session.agentKind === 'claude-code' && !session.remoteHostId && getSessionProvider(session.id) === providerId)
+          await withRehydrateCloseSuppressed(session.id, () => makerRef.closeSession(session.id, 'runtime-refresh'));
+      }
+    });
     requestAnthropicModelProbe();
+    void (async () => {
+      const owner = activeOwnerScopeKey();
+      const configs = await listCustomProviders();
+      if (owner === activeOwnerScopeKey() && !isAppSessionBoundaryPending())
+        await retryClaudeAccountCleanups(new Set(configs.map(config => config.id)));
+    })().catch(() => {});
+    for (const provider of getActiveCatalog().providers) {
+      if (provider.auth.native === 'claude') void refreshManagedClaudeModels(provider.id).catch(() => {});
+    }
   }
   return _maker;
 }

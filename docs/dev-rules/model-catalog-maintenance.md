@@ -164,6 +164,14 @@ Codex 在实际 `turn/start` 请求中省略该档位字段，计划模式的 `r
 <a id="ordering"></a>
 ## 模型排序与成员：以账号为准
 
+独立 Claude 连接通过自己的 CLI home 查询 `supportedModels()`。按 owner、连接 ID 与登录代次
+隔离内存/磁盘结果；恢复缓存也核对同一代次。空或损坏结果不撤销既有清单，单个账号元数据损坏
+不能清空其他供应商。后台目录重载有节流，用户显式刷新可立即重试；旧探测结果不可写入新登录。
+可用成员来自 SDK，模型能力和说明继续复用现有 Registry，不复制一套按账号维护的模型定义。
+`buildUserProvider` 将独立 Claude 连接声明为仅支持 `claude-code`，原生认证策略为
+`oauth-passthrough`；实际可用性仍取决于该连接登录。`active-catalog` 分别采用每个 providerId
+的发现成员，不从默认 `anthropic` 或其它账号借模型，也不为 Codex / Pi 扩展 Claude 订阅。
+
 OpenAI（Codex 订阅）与 Anthropic（Claude 订阅）的 root **成员只来自账号清单**：Registry 只给
 已返回的型号补资料、标退役，不补入账号没返回的型号；没有账号清单时名单为空。`sortOrder` 以账号
 返回顺序为准：Codex 取 `models_cache.json` 的 `priority` 或 app-server `model/list` 的返回位置，

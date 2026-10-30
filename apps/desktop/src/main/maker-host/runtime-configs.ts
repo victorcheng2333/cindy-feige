@@ -1,3 +1,4 @@
+import { claudeAccountState } from './claude-account-auth.js';
 import { ANSWER_DELIVERY_PROMPT } from '@cindy/maker-shared/rich-answer-guide';
 /**
  * Desktop AgentRuntimeConfig 实现。
@@ -177,9 +178,9 @@ export function buildDesktopClaudeRuntimeConfig(endpointFn: () => string): Agent
         credentialMode: ctx.credentialMode,
         providerId: ctx.sessionProviderId,
         nativeAuth: getActiveCatalog().providers.find(p => p.id === ctx.sessionProviderId)?.auth.native,
-        // 独立 Claude 账号已停用,只有本机 Claude Code 登录算「连了订阅」。
+        // Resolve subscription availability from the selected connection.
         oauthConnected: () => getActiveCatalog().providers.find(p => p.id === ctx.sessionProviderId)?.auth.native === 'claude'
-          ? false : hasClaudeNativeLogin(),
+          ? claudeAccountState(ctx.sessionProviderId!).authenticated : hasClaudeNativeLogin(),
       }),
       // 工具链限核 env(agent 资源占用治理):只对本机 spawn 注入 —— 值按本机
       // 核数算,远端机器的资源不归本设置管。设置关闭时为空对象,零影响。

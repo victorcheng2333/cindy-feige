@@ -6,6 +6,7 @@ export {
   toSdkModelString,
   setClaudeSupportedModelsListener,
   setClaudeRateLimitInfoListener,
+  type ClaudeRuntimeEventContext,
 } from './claude-code/index.js';
 export type {
   ClaudeSubagentModelAccessResult,

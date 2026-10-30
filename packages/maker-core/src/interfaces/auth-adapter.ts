@@ -39,6 +39,17 @@ export interface AuthAdapterOptions {
 }
 
 export interface AuthAdapter {
+  /** Trusted local CLI storage and identity stamp; never serialized to renderer or wire. */
+  getClaudeRuntimeContext?(options?: AuthAdapterOptions): Promise<ClaudeRuntimeContext | undefined>;
+  /** Revalidate a captured local identity immediately before spawning or publishing history. */
+  isClaudeRuntimeContextCurrent?(context: ClaudeRuntimeContext, providerId?: string | null): boolean;
+  /** Internal native-history lookup; credentials and current login are irrelevant to reading history. */
+  getClaudeHistoryHome?(nativeSessionId: string): string | undefined;
+  getClaudeHistoryScope?(): string;
+  /** Trusted native memory roots belonging to the current owner, including the default CLI. */
+  getClaudeMemoryHomes?(): string[];
+  rememberClaudeHistoryHome?(nativeSessionId: string, context: ClaudeRuntimeContext): void;
+  inheritClaudeHistoryHome?(sourceNativeId: string, targetNativeId: string, expectedScope?: string): void;
   /** 检查当前鉴权状态，不触发登录 */
   getState(options?: AuthAdapterOptions): Promise<AuthState>;
 
@@ -115,4 +126,10 @@ export interface AuthAdapter {
       credentialAttribution?: 'unproven';
     },
   ): Promise<void>;
+}
+
+export interface ClaudeRuntimeContext {
+  configDir?: string;
+  scopeKey: string;
+  revision: string;
 }

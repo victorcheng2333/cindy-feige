@@ -5,6 +5,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { brandUserDataDirName } from '@cindy/maker-shared/brand-identity';
 import { CURRENT_CINDY_REGION } from '../../shared/brandRegion.js';
+import { listManagedClaudeHistoryHomes } from '../maker-host/claude-history-home.js';
 
 import type { DbClient } from '../localDb/client/DbClient.js';
 import { getCurrentDbClientSnapshot, getDbClient, type CurrentDbClientSnapshot } from '../localDb/client/current.js';
@@ -40,6 +41,8 @@ export interface TranscriptSource {
 }
 
 export interface TranscriptDiscoveryOptions {
+  /** Trusted owner-scoped homes; tests supply their own private fixtures. */
+  managedClaudeHomes?: string[];
   homeDir?: string;
   appDataDir?: string;
   userDataDir?: string;
@@ -104,7 +107,7 @@ const TRANSCRIPT_STAT_CONCURRENCY = 32;
 const ANALYZER_VERSION_META_KEY = 'skill_usage_analyzer_version';
 const MIN_BACKGROUND_REFRESH_INTERVAL_MS = 15_000;
 // 解析规则变化时递增。新版完整构建完成前，UI 继续读取旧 active 版本。
-const ANALYZER_VERSION = '6';
+const ANALYZER_VERSION = '7';
 interface SkillUsageRefreshState {
   promise: Promise<void> | null;
   lastBackgroundRefreshFinishedAt: number;
@@ -240,7 +243,10 @@ async function runLocalSkillUsageAnalyticsRefresh(
   const nowMs = options.nowMs ?? Date.now();
   const recentSince = recentWindowStartMs(nowMs);
   const platform = options.platform ?? process.platform;
-  const discovery = await discoverTranscriptSourcesForRefresh({ ...options, nowMs });
+  const discovery = await discoverTranscriptSourcesForRefresh({
+    ...options, nowMs,
+    managedClaudeHomes: options.managedClaudeHomes ?? listManagedClaudeHistoryHomes(),
+  });
   const cachedRecent = await statCachedRecentSources(
     database,
     activeBeforeRefresh,
@@ -435,7 +441,7 @@ async function discoverTranscriptSourcesForRefresh(options: TranscriptDiscoveryO
     options.maxDiscoveredTranscriptFiles ?? MAX_DISCOVERED_TRANSCRIPT_FILES,
   );
   const [claudeHomes, codexHomes] = await Promise.all([
-    uniqueExistingDirectories(claudeHomeCandidates(context), context.platform),
+    uniqueExistingDirectories([...claudeHomeCandidates(context), ...(options.managedClaudeHomes ?? [])], context.platform),
     uniqueExistingDirectories(codexHomeCandidates(context), context.platform),
   ]);
   const [claudeFileGroups, codexFileGroups] = await Promise.all([
@@ -477,7 +483,7 @@ async function discoverTranscriptSourcesForRefresh(options: TranscriptDiscoveryO
     recentSince,
   );
   return {
-    sources: result.sources,
+    sources: deduplicateClaudeHistory(result.sources),
     hadDiscoveryFailure: hadIncompleteDiscovery || result.hadStatFailure,
   };
 }
@@ -485,7 +491,10 @@ async function discoverTranscriptSourcesForRefresh(options: TranscriptDiscoveryO
 function claudeSdkSessionIdFromFile(file: string): string {
   const basename = path.basename(file, '.jsonl');
   if (path.basename(path.dirname(file)) !== 'subagents') return basename;
-  const suffix = createHash('sha256').update(path.resolve(file)).digest('hex').slice(0, 12);
+  // Account-home copies preserve this project-relative identity. Keep different
+  // projects distinct: native subagent filenames can be reused across projects.
+  const relativeIdentity = [path.basename(path.dirname(path.dirname(path.dirname(file)))), path.basename(path.dirname(path.dirname(file))), basename];
+  const suffix = createHash('sha256').update(JSON.stringify(relativeIdentity)).digest('hex').slice(0, 12);
   return `${basename}-${suffix}`;
 }
 
@@ -711,7 +720,17 @@ function mergeTranscriptSources(
   for (const source of discoveredSources) {
     byPath.set(normalizePathForCompare(source.rawFilePath, platform), source);
   }
-  return [...byPath.values()].sort(compareTranscriptSourcesByRecency);
+  return deduplicateClaudeHistory([...byPath.values()]);
+}
+
+function deduplicateClaudeHistory(sources: TranscriptSource[]): TranscriptSource[] {
+  const seen = new Set<string>();
+  return [...sources].sort(compareTranscriptSourcesByRecency).filter(source => {
+    if (source.agentKind !== 'claude-code') return true;
+    if (seen.has(source.sdkSessionId)) return false;
+    seen.add(source.sdkSessionId);
+    return true;
+  });
 }
 
 function compareTranscriptSourcesByRecency(a: TranscriptSource, b: TranscriptSource): number {

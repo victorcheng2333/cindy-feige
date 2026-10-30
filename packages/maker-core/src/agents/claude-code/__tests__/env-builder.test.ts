@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuthAdapter, AuthAdapterOptions } from '../../../interfaces/auth-adapter.js';
@@ -748,6 +749,22 @@ describe('buildClaudeEnv', () => {
 
   // Claude 订阅会话只用 CLI 自己的登录:host 不接管连接、不递任何凭证。
   describe('native CLI auth (Claude subscription)', () => {
+    // Credentials rule: a managed home is a trusted spawn input, never an ambient override.
+    it('uses only the explicit managed home and still strips credentials', async () => {
+      const home = path.resolve('managed-claude');
+      const env = await buildClaudeEnv(createAuthAdapter({
+        CLAUDE_CONFIG_DIR: path.resolve('wrong-account'), ANTHROPIC_AUTH_TOKEN: 'fake-token',
+      }), {}, { nativeCliAuth: true, nativeCliConfigDir: home });
+      expect(env.CLAUDE_CONFIG_DIR).toBe(home);
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      await expect(buildClaudeEnv(createAuthAdapter({}), {}, {
+        nativeCliAuth: true, nativeCliConfigDir: '../outside',
+      })).rejects.toThrow('Invalid managed Claude home');
+      const remote = await buildClaudeEnv(createAuthAdapter({}), {}, {
+        nativeCliAuth: true, nativeCliConfigDir: home, mode: 'remote',
+      });
+      expect(remote.CLAUDE_CONFIG_DIR).toBeUndefined();
+    });
     const LOOPBACK = 'http://127.0.0.1:54321';
     const origManaged = process.env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST;
     const origEntrypoint = process.env.CLAUDE_CODE_ENTRYPOINT;

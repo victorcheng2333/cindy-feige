@@ -16,6 +16,8 @@ vi.mock('../../localDb/client/current', () => ({
   getCurrentDbClientSnapshot: currentDbClientMocks.getCurrentDbClientSnapshot,
 }));
 
+vi.mock('../../maker-host/claude-history-home.js', () => ({ listManagedClaudeHistoryHomes: () => [] }));
+
 import { discoverTranscriptSources, refreshLocalSkillUsageAnalytics } from '../usageIndexer';
 
 const codexThreadId = '019ed672-e5d3-70b0-a160-8bb7e8f3a0b1';
@@ -132,7 +134,7 @@ function insertUsageExposure(
   rawFilePath: string,
   options: { analyzerVersion?: string; seenAt?: number; sourceMtimeMs?: number } = {},
 ): void {
-  const analyzerVersion = options.analyzerVersion ?? '6';
+  const analyzerVersion = options.analyzerVersion ?? '7';
   db.prepare(`
     INSERT INTO skill_usage_sources (
       raw_file_path, analyzer_version, agent_kind, session_id, sdk_session_id,
@@ -158,6 +160,23 @@ function insertUsageExposure(
 }
 
 describe('discoverTranscriptSources', () => {
+  // Multi-account history copies must not double-count Skill exposure. Existing
+  // default-home fixtures never scanned a retained managed account. Tier: unit.
+  it('includes explicit managed homes and counts a copied native history only once', async () => {
+    const root = await makeTempRoot();
+    const homes = [path.join(root, 'a'), path.join(root, 'b')];
+    for (const home of homes) {
+      const dir = path.join(home, 'projects', 'project');
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, `${claudeSessionId}.jsonl`), '{"type":"user"}\n');
+    }
+    const latest = path.join(homes[1], 'projects', 'project', `${claudeSessionId}.jsonl`);
+    await utimes(latest, new Date(nowMs), new Date(nowMs));
+    await utimes(path.join(homes[0], 'projects', 'project', `${claudeSessionId}.jsonl`), new Date(nowMs - dayMs), new Date(nowMs - dayMs));
+    const sources = await discoverTranscriptSources({ homeDir: path.join(root, 'system'), userDataDir: path.join(root, 'data'), env: {}, managedClaudeHomes: homes, nowMs });
+    expect(sources).toHaveLength(1);
+    expect(sources[0].rawFilePath).toBe(await realpath(latest));
+  });
   afterEach(async () => {
     currentDbClientMocks.getDbClient.mockReset();
     currentDbClientMocks.getCurrentDbClientSnapshot.mockReset();
@@ -202,7 +221,7 @@ describe('discoverTranscriptSources', () => {
     insertUsageExposure(db, firstPath, { sourceMtimeMs: 100 });
     insertUsageExposure(db, secondPath, { sourceMtimeMs: 200 });
     db.prepare(
-      "INSERT INTO migration_meta (key, value) VALUES ('skill_usage_analyzer_version', '6')",
+      "INSERT INTO migration_meta (key, value) VALUES ('skill_usage_analyzer_version', '7')",
     ).run();
 
     const query = vi.fn(async (sql: string, params: unknown[] = []) => (
@@ -489,8 +508,8 @@ describe('discoverTranscriptSources', () => {
       const activeVersion = db.prepare(`
         SELECT value FROM migration_meta WHERE key = 'skill_usage_analyzer_version'
       `).pluck().get();
-      expect(row).toEqual({ analyzerVersion: '6', skillName: 'word-doc' });
-      expect(activeVersion).toBe('6');
+      expect(row).toEqual({ analyzerVersion: '7', skillName: 'word-doc' });
+      expect(activeVersion).toBe('7');
     } finally {
       db.close();
     }
@@ -601,7 +620,7 @@ describe('discoverTranscriptSources', () => {
       nowMs,
     );
     const db = createUsageDb();
-    insertUsageExposure(db, rawFilePath, { analyzerVersion: '6', sourceMtimeMs: 1 });
+    insertUsageExposure(db, rawFilePath, { analyzerVersion: '7', sourceMtimeMs: 1 });
 
     try {
       await refreshLocalSkillUsageAnalytics(db, {
@@ -670,7 +689,7 @@ describe('discoverTranscriptSources', () => {
       seenAt: nowMs - dayMs,
     });
     insertUsageExposure(db, path.join(codexHome, 'sessions', 'partial-current.jsonl'), {
-      analyzerVersion: '6',
+      analyzerVersion: '7',
       seenAt: nowMs,
     });
 
@@ -738,7 +757,7 @@ describe('discoverTranscriptSources', () => {
       `).pluck().get();
       expect(readCallCount).toBe(3);
       expect(row.count).toBe(0);
-      expect(activeVersion).toBe('6');
+      expect(activeVersion).toBe('7');
     } finally {
       db.close();
     }

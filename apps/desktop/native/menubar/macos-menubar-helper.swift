@@ -21,6 +21,7 @@ struct MBSettings: Codable, Equatable {
   var hidden: [String]
   var shown: [String]
   var statusText: String
+  var pinnedSourceId: String?
   var lowAlert: Bool
   var privacy: Bool
   var scope: String
@@ -3553,10 +3554,24 @@ struct ManagePage: View {
       // Four labels never fit one segmented row in every language; two columns always do.
       ChoiceGrid(
         label: store.s("statusIcon"),
-        options: ["icon", "lowest", "today", "task"].map { ($0, store.s("statusIconMode." + $0)) },
+        options: ["icon", "lowest", "today", "task", "account"].map { ($0, store.s("statusIconMode." + $0)) },
         selected: view.settings.statusText
       ) { Bridge.emitSettings(["statusText": $0]) }
       .padding(EdgeInsets(top: 8, leading: 12, bottom: 0, trailing: 12))
+
+      if view.settings.statusText == "account" {
+        Picker(store.s("statusIconMode.account"), selection: Binding(
+          get: { view.settings.pinnedSourceId ?? "" },
+          set: { Bridge.emitSettings(["pinnedSourceId": $0]) }
+        )) {
+          Text("—").tag("")
+          ForEach(view.manage.filter { row in view.sources.contains { $0.id == row.id && $0.kind == "subscription" } }) { row in
+            Text(row.title).tag(row.id)
+          }
+        }
+        .pickerStyle(.menu)
+        .padding(.horizontal, 12)
+      }
 
       section(store.s("other"), nil)
       Tile {

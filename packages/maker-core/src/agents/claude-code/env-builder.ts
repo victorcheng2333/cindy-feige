@@ -13,6 +13,7 @@
  */
 
 import type { AgentCredentialMode, AuthAdapter } from '../../interfaces/auth-adapter.js';
+import path from 'node:path';
 import type { AgentRuntimeConfig } from '../../interfaces/runtime-config.js';
 import { applyPlainTextTerminalEnv } from '../shared/terminal-output.js';
 
@@ -66,6 +67,8 @@ interface ClaudeEnvBuildOptions {
    * 远端 cc-mgr 会话恒为 false。
    */
   nativeCliAuth?: boolean;
+  /** Only the trusted auth adapter may resolve this; never accept ambient env as a home. */
+  nativeCliConfigDir?: string;
   /**
    * 会话模型,仅在未指定来源(credentialMode 为 undefined)时随 getAuthEnv 递给 adapter
    * (AuthAdapterOptions.model),让它判断能否交给本机 Claude Code 登录。
@@ -490,6 +493,10 @@ export async function buildClaudeEnv(
   if (nativeCliAuth) {
     // fail-closed:订阅会话只用 CLI 自己的登录,host 递来的任何鉴权 / 上游字段一律不带。
     for (const key of REMOTE_ROUTE_OVERRIDE_ENV_KEYS) delete env[key];
+    if (options.nativeCliConfigDir !== undefined) {
+      if (!path.isAbsolute(options.nativeCliConfigDir)) throw new Error('Invalid managed Claude home');
+      env.CLAUDE_CONFIG_DIR = options.nativeCliConfigDir;
+    }
   }
 
   // Claude Code's documented child-agent model override.

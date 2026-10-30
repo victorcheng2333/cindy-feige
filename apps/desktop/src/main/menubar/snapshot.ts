@@ -53,6 +53,7 @@ export interface MenubarSubscriptionInput {
   brand: string;
   /** Account email when the provider exposes one (Codex accounts). */
   account: string | null;
+  displayName?: string;
   plan: string | null;
   /** Empty while the first read is still pending. */
   windows: MenubarWindowInput[];
@@ -430,6 +431,7 @@ class Builder {
   // ── Identity ──────────────────────────────────────────────────────────────
 
   private handle(source: MenubarSubscriptionInput): string | null {
+    if (source.displayName && !this.input.settings.privacy) return source.displayName;
     if (!source.account) return null;
     const [local] = source.account.split('@');
     if (!local) return null;
@@ -1079,7 +1081,11 @@ class Builder {
     const scope = this.input.usage.scopes[this.input.settings.scope];
     const today = scope.daily[scope.daily.length - 1];
     const running = this.input.tasks.filter((task) => task.running);
+    const pinned = this.visibleSubscriptions().find(source => source.id === this.input.settings.pinnedSourceId);
+    const week = pinned?.windows.find(window => window.kind === 'week' &&
+      window.resetsAtMs !== null && window.resetsAtMs > this.input.nowMs);
     return {
+      account: pinned ? `${Array.from(this.who(pinned)).slice(0, 10).join('')}${Array.from(this.who(pinned)).length > 10 ? '…' : ''} ${week ? `${Math.round(100 - week.usedPercent)}%` : '—'}` : '—',
       icon: null,
       lowest: tightest ? `${Math.round(this.remaining(tightest) ?? 0)}%` : hasSubscriptions ? '0%' : null,
       today: today ? this.money(today.money.reduce((sum, value) => sum + value, 0)) : null,
@@ -1094,7 +1100,7 @@ class Builder {
       locale: this.input.locale,
       moneySymbol: this.input.moneySymbol,
       strings: this.input.uiStrings,
-      statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null } : this.statusTexts(),
+      statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(),
       updatedAtMs: this.input.updatedAtMs,
       headlinePrimary: headline.primary,
       headlineSecondary: headline.secondary,

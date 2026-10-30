@@ -1621,6 +1621,7 @@
       "sourcesShown": "{{b}}개 중 {{a}}개 표시",
       "statusIcon": "메뉴 막대 아이콘",
       "statusIconMode": {
+        "account": "지정 계정",
         "icon": "아이콘만",
         "lowest": "가장 적게 남음",
         "today": "오늘 사용량",
@@ -4167,7 +4168,8 @@
         "pending": "인증 정보 준비 중",
         "unavailable": "일시적으로 사용할 수 없음"
       },
-      "claudeAccountRetired": "Cindy에서는 이 이전 Claude 연결 방식으로 구독에 로그인할 수 없습니다. Claude 계정과 구독에는 영향이 없습니다. ‘Claude Code로 로그인’을 사용해 구독을 연결하세요.",
+      "claudeAccountRetired": "Claude Code로 이 계정에 로그인하세요. 이전 방식의 연결은 다시 로그인해야 합니다. 연결 이름과 작업 기록은 유지됩니다.",
+      "claudeCleanupPending": "연결은 삭제되었지만 일부 전용 계정 폴더에서 Claude Code 로그아웃이 완료되지 않았습니다. Cindy가 다음 시작 시 다시 시도합니다. 작업 기록은 유지됩니다.",
       "speechSetup": {
         "title": "음성",
         "add": "음성 모델 추가",

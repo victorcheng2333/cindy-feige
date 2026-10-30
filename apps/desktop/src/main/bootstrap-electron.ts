@@ -1,3 +1,7 @@
+import { observeManagedClaudeStatus } from './maker-host/claude-account-auth.js';
+import { refreshManagedClaudeModels } from './maker-host/claude-account-models.js';
+import { claudeCliLoginRevision } from './maker-host/claude-native-cli-status.js';
+import { noteManagedClaudeModels } from './maker-host/claude-account-models.js';
 import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
 import { flushPluginUsageLifecycle } from './plugin-usage/current.js';
 import { registerAccessibilitySupportIpc } from './accessibility-support-ipc.js';
@@ -863,6 +867,7 @@ import {
 import {
   beginClaudeCliLogin,
   cancelClaudeCliLogin,
+  cancelAllClaudeCliLogins,
   onClaudeCliLoginStatusChange,
   readClaudeCliLoginStatus,
   runClaudeCliLogin,
@@ -2567,7 +2572,7 @@ registerPluginContributionsIpc();
 setAppSessionCommitBoundaryHook(() => {
   cancelLocalAgentConfirmations();
   // 进行中的 Claude Code 登录属于旧 owner:结束 CLI 子进程,不让它在新 owner 下完成。
-  cancelClaudeCliLogin();
+  cancelAllClaudeCliLogins();
   clearAllSessionAttention();
   remoteDesktopViewerWindows.reset();
   // 弹出的页签窗口带着旧 owner 的任务指派与 renderer 本地页签缓存:同步销毁,不让新 owner 看到旧内容。
@@ -5282,9 +5287,26 @@ const registerIpcHandlers = () => {
   // Anthropic 模型清单动态发现接线(2026-07-19 统一重构):
   //   - active-catalog 统一收口 capabilities 刷新 + revision 广播;
   //   - SDK supportedModels 捕获(maker-core 会话 init 后上报)是能力字段权威。
-  setClaudeSupportedModelsListener(noteAnthropicSdkSupportedModels);
+  setClaudeSupportedModelsListener((models, context) => {
+    if (context?.providerId && context.providerId !== 'anthropic') { noteManagedClaudeModels(models, context); return; }
+    if (context?.runtime && (context.runtime.scopeKey !== activeOwnerScopeKey() || context.runtime.revision !== `system:${claudeCliLoginRevision()}`)) return;
+    noteAnthropicSdkSupportedModels(models);
+  });
   // CLI 登录态在 Cindy 之外变化(终端里登录 / 登出)时同步连接态;登出与手动断开同款收尾。
-  onClaudeCliLoginStatusChange((status) => {
+  onClaudeCliLoginStatusChange((status, configDir) => {
+    if (configDir) {
+      const owner = activeOwnerScopeKey();
+      void observeManagedClaudeStatus(configDir, status).then(async providerId => {
+        if (!providerId || owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return;
+        await clearSubscriptionAccountDiscoveredModels(providerId);
+        if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return;
+        await syncSubscriptionAccountUsage(providerId);
+        if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return;
+        refreshSelectableModelsAndBroadcast({ providerId });
+        void refreshManagedClaudeModels(providerId).catch(() => {});
+      }).catch(() => { /* CLI observations are retried; they must not disrupt other accounts. */ });
+      return;
+    }
     void broadcastClaudeAuthStateChanged();
     syncClaudeSubscriptionUsageForAuthChange();
     if (!status.loggedIn) resetProviderModelAutoRefreshCooldowns('anthropic');
@@ -5299,7 +5321,7 @@ const registerIpcHandlers = () => {
   startLegacyClaudeConfigMigration();
   // 退出时结束进行中的登录子进程(CLI 的本机回调监听没有超时),并关闭 CLI 的代理桥。
   app.once('will-quit', () => {
-    cancelClaudeCliLogin();
+    cancelAllClaudeCliLogins();
     void closeClaudeCliProxyBridge();
   });
   ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_STATUS, async () => {

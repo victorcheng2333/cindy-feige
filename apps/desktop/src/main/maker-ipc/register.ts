@@ -1,3 +1,4 @@
+import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readTaskDeliveryNote } from '../bot-autonomy/hub.js';
 import { setVoiceTaskDispatch, setVoiceCallMemoryReader } from '../voice-conversation/taskBridge.js';
 import { buildBotMemoryScopeKey } from '@cindy/maker-core';
@@ -141,7 +142,8 @@ import { registerSessionSetModelHandler } from './sessionSetModelHandler.js';
 import { refreshSubscriptionAccountModels } from '../maker-host/subscription-account-models.js';
 import { syncSubscriptionAccountUsage } from '../usage/subscriptionAccountUsage.js';
 import { clearXaiRateLimitSnapshot } from '../usageBroadcaster.js';
-import { subscriptionAccountKind, subscriptionAccountState, loginSubscriptionAccount, logoutSubscriptionAccount, cancelSubscriptionAccountLogin, removeSubscriptionAccountCredentialsReversibly } from '../maker-host/subscription-account-auth.js';
+import { isClaudeSubscriptionProviderId, subscriptionAccountKind, subscriptionAccountState, loginSubscriptionAccount, logoutSubscriptionAccount, cancelSubscriptionAccountLogin, removeSubscriptionAccountCredentialsReversibly } from '../maker-host/subscription-account-auth.js';
+import { readClaudeHistoryHome } from '../maker-host/claude-history-home.js';
 import { isCodexAccountProvider, codexAccountState, codexAccountLoginName, loginCodexAccount, logoutCodexAccount, cancelCodexAccountLogin, removeCodexAccountCredentialsReversibly, retireCodexAccount } from '../maker-host/codex-account-auth.js';
 import { projectRemoteBotDelegations } from './remoteBotDelegations.js';
 /**
@@ -5080,7 +5082,7 @@ export async function registerPendingCredentialSwitchForSession(
       ? {
           previousRoute: {
             model: prevModel,
-            providerId: getSessionProvider(sessionId) ?? prevRow?.providerId ?? null,
+            providerId: resolveCurrentSetModelProviderId(hasSessionProvider(sessionId), getSessionProvider(sessionId), prevRow?.providerId ?? null),
             ...(prevRow?.effort ? { effort: prevRow.effort } : {}),
             ...(prevRow?.fastMode != null ? { fastMode: prevRow.fastMode } : {}),
           },
@@ -6556,7 +6558,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   });
   let applyPiModelSettingsRefresh: (sessionId: string, model: string, providerId: string | null) => Promise<void> =
     async () => { throw new Error('Pi model settings refresh is not ready'); };
-  let applyPiPendingSelection: NonNullable<PendingCredentialSwitchDeps['applyPiPending']> =
+  let applyNativePendingSelection: NonNullable<PendingCredentialSwitchDeps['applyPiPending']> =
     async () => { throw new Error('Pi pending model switch is not ready'); };
   let followMovedCindyAutoRoutesNow: () => Promise<void> = async () => {};
   const refreshContextSettings = (targets?: readonly { agent: AgentKind; providerId: string; modelId: string }[]) => {
@@ -7559,6 +7561,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         .map((session) => session.id),
     prepareCodexCustomProviderHostChange: prepareCodexForCustomProviderHostChange,
     retireCodexAccount,
+    retireClaudeAccount,
+    finalizeDeletedClaudeAccount,
     finalizeCodexCustomProviderHostChange: finalizeCodexAfterAuthModeChange,
     cancelCodexCustomProviderHostChange: cancelCodexAuthModeChange,
     beginRouteMutation: (providerId) => beginProviderRouteMutation(providerId),
@@ -7916,7 +7920,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     storeCustomProviderKey,
     removeCustomProviderKey,
     oauthLogout: async (providerId) => {
-      if (subscriptionAccountKind(providerId)) { logoutSubscriptionAccount(providerId); await syncSubscriptionAccountUsage(providerId); return; }
+      if (subscriptionAccountKind(providerId)) { await logoutSubscriptionAccount(providerId); await syncSubscriptionAccountUsage(providerId); return; }
       if (isCodexAccountProvider(providerId)) { await logoutCodexAccount(providerId); return; }
       if (!logoutGenericOAuth(storedCustomProviderId(providerId))) {
         throw new Error('failed to remove generic OAuth credentials');
@@ -7927,9 +7931,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       if (isCodexAccountProvider(providerId)) cancelCodexAccountLogin(providerId);
       else cancelGenericOAuthLogin(storedCustomProviderId(providerId));
     },
-    removeOAuthCredentials: (providerId) => {
+    removeOAuthCredentials: async (providerId) => {
       if (subscriptionAccountKind(providerId)) {
-        const restore = removeSubscriptionAccountCredentialsReversibly(providerId);
+        const restore = await removeSubscriptionAccountCredentialsReversibly(providerId);
         if (subscriptionAccountKind(providerId) === 'xai') clearXaiRateLimitSnapshot(providerId);
         return restore;
       }
@@ -16611,9 +16615,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     /** Reassess the current Pi route after its catalog descriptor or budget changed. */
     refreshPiConfiguration?: boolean;
     /** The pending service owns removal and queue release after this apply commits. */
-    applyingPiCredentialPending?: boolean;
-    /** Renderer may have staged the target in DB while the old Pi runtime went cold. */
-    previousPiRoute?: { model: string; providerId: string | null };
+    applyingNativeCredentialPending?: boolean;
+    /** Renderer may have staged the target in DB while the previous native runtime went cold. */
+    previousNativeRoute?: { model: string; providerId: string | null };
     expectedGeneration?: number;
     deferWhileRunning?: boolean;
     applyingPendingGeneration?: number;
@@ -18368,7 +18372,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         ? await maker.listAgentRuntimeSkills(session.agentKind, {
           workingDir: session.workDir,
           sessionId: session.id,
-          runtimeConfigDir: process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), '.claude'),
+          runtimeConfigDir: (() => {
+            const nativeId = maker.getSession(session.id)?.sdkSessionId;
+            const boundHome = nativeId ? readClaudeHistoryHome(nativeId) : undefined;
+            if (boundHome) return boundHome;
+            const providerId = getSessionProvider(session.id);
+            return providerId && subscriptionAccountKind(providerId) === 'claude' && readClaudeAccountRecord(providerId)
+              ? claudeAccountHome(providerId) : path.join(os.homedir(), '.claude');
+          })(),
         })
         : await maker.listAgentSkills(session.agentKind, {
           workingDir: session.workDir,
@@ -20812,7 +20823,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     isPiOwnerCurrent: sessionRuntimeControlOwnerEpochMatches,
     withPiSessionLock: withSendToSessionLock,
     applyPiPending: (sessionId, target, resolved, isCurrent) =>
-      applyPiPendingSelection(sessionId, target, resolved, isCurrent),
+      applyNativePendingSelection(sessionId, target, resolved, isCurrent),
+    applyClaudePending: (sessionId, target, resolved, isCurrent) =>
+      applyNativePendingSelection(sessionId, target, resolved, isCurrent),
     broadcastFailed: (payload) => {
       broadcastToAllWindows(MAKER_PUSH.SESSION_CREDENTIAL_SWITCH_FAILED, payload);
     },
@@ -23029,8 +23042,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           });
         }
       }
-      const currentProviderId = internalOptions.previousPiRoute
-        ? internalOptions.previousPiRoute.providerId
+      const currentProviderId = internalOptions.previousNativeRoute
+        ? internalOptions.previousNativeRoute.providerId
         : resolveCurrentSetModelProviderId(
             hasSessionProvider(sessionId),
             getSessionProvider(sessionId),
@@ -23050,7 +23063,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const currentRuntimeProfile = getSessionRuntimeControlSnapshot(sessionId).effectiveOverride;
       const currentLiveSession = maker.getSession(sessionId);
       const currentAgentKind = currentLiveSession?.agentKind ?? dbToMakerAgentKind(runtimeStatus.agentKind);
-      const currentModelId = currentLiveSession?.model ?? internalOptions.previousPiRoute?.model ?? runtimeStatus.model;
+      const currentModelId = currentLiveSession?.model ?? internalOptions.previousNativeRoute?.model ?? runtimeStatus.model;
       const runtimeProviders = sshCodexProviders ?? await getDesktopProviderService().listProviders({
         allowSideEffects: false,
         catalog: getActiveCatalog(),
@@ -23277,10 +23290,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       if (internalOptions.deferWhileRunning && isSessionInTurn(sessionId)) {
         return deferLockedSelection();
       }
-      if (internalOptions.previousPiRoute && !maker.getSession(sessionId)) {
+      if (internalOptions.previousNativeRoute && !maker.getSession(sessionId)) {
         // Renderer may have persisted the deferred target before a Pi turn exited.
         // Restore the captured source identity for the cold window transaction.
-        setSessionProvider(sessionId, internalOptions.previousPiRoute.providerId);
+        setSessionProvider(sessionId, internalOptions.previousNativeRoute.providerId);
       }
       const previousRuntime = {
         hadProviderRoute: hasSessionProvider(sessionId),
@@ -23349,7 +23362,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           : persistedSessionMeta?.agentKind);
       const targetRouteProviderId = targetProviderId;
       let currentRuntimeModel = liveSessionBeforeRouteChange?.model ??
-        internalOptions.previousPiRoute?.model ?? persistedSessionMeta?.model;
+        internalOptions.previousNativeRoute?.model ?? persistedSessionMeta?.model;
       let runtimeRouteChanged =
         currentRuntimeModel !== undefined &&
         (currentRuntimeModel !== model || currentProviderId !== targetRouteProviderId);
@@ -23656,7 +23669,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
               },
               assertCanCommit: () => { assertRuntimeOwnerCurrent(); assertSharedTaskCurrent.admit(); },
               beforeClose: () => {
-                if (!internalOptions.applyingPiCredentialPending) {
+                if (!internalOptions.applyingNativeCredentialPending) {
                   clearPendingCredentialSwitchForSession(sessionId, { wake: false });
                   pendingClearedForWindowRebuild = true;
                 }
@@ -23800,7 +23813,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         setSessionEffort(sessionId, retainedProfile.effort);
         setSessionFastMode(sessionId, retainedProfile.fastMode);
-        if (!internalOptions.applyingPiCredentialPending) pendingCredentialSwitchHolder?.clear(sessionId);
+        if (!internalOptions.applyingNativeCredentialPending) pendingCredentialSwitchHolder?.clear(sessionId);
         if (internalOptions.source === 'user') {
           recordRecoveredSessionRuntimeMutation(sessionId, retainedProfile);
         } else if (!routeExplicit) {
@@ -23829,19 +23842,22 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           });
         });
       };
+      let preparedClaudeResume: { nativeId: string; assertCurrent(): void } | undefined;
+      let claudeRouteCommitted = false;
       try {
         const transferDb = getCurrentDbClientSnapshot();
         const transferOwner = captureDataOwnerBroadcastScope();
         // A completed, owner-fenced window handoff may have already replaced the
         // native thread during this same locked selection.
-        const transferStatus = modelWindowRebuilt && runtimeAgentKind === 'codex'
+        const transferStatus = modelWindowRebuilt && (runtimeAgentKind === 'codex' || runtimeAgentKind === 'claude-code')
           ? (await transferDb!.client.drizzle.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1))[0]
           : runtimeStatus;
         assertRuntimeOwnerCurrent();
         if (!transferStatus || transferStatus.status !== 'active') {
-          throw new Error('Codex writer transfer task changed');
+          throw new Error('Native runtime transfer task changed');
         }
-        const transferMeta = runtimeAgentKind === 'codex' ? await maker.getSessionMeta(sessionId) : null;
+        const transferMeta = runtimeAgentKind === 'codex' || runtimeAgentKind === 'claude-code'
+          ? await maker.getSessionMeta(sessionId) : null;
         const transferTarget = {
           sessionId,
           model,
@@ -23851,11 +23867,15 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         };
         const canTransferThread = routeExplicit && runtimeAgentKind === 'codex' &&
           !transferStatus.remoteHostId && !!transferStatus.sdkSessionId;
+        const claudeNativeId = transferMeta?.sdkSessionId ?? transferStatus.sdkSessionId;
+        const canPrepareClaudeResume = routeExplicit && runtimeAgentKind === 'claude-code' &&
+          !transferStatus.remoteHostId && !transferStatus.agentDeviceId && !!claudeNativeId && currentProviderId !== targetRouteProviderId &&
+          typeof targetRouteProviderId === 'string' && isClaudeSubscriptionProviderId(targetRouteProviderId);
         const assertTransferOwner = () => {
           assertRuntimeOwnerCurrent();
           if (!transferDb || !isDataOwnerBroadcastScopeCurrent(transferOwner) ||
               getCurrentDbClientSnapshot()?.clientEpoch !== transferDb.clientEpoch) {
-            throw new Error('Codex writer transfer owner changed');
+            throw new Error('Native runtime transfer owner changed');
           }
         };
         const relinkCodexThread = async () => {
@@ -23942,6 +23962,18 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
                 }),
                 relinkCodexThread,
               } : {}),
+              ...(canPrepareClaudeResume ? {
+                prepareNativeResume: async () => {
+                  assertTransferOwner();
+                  const prepared = await maker.prepareClaudeAccountResume({
+                    nativeId: claudeNativeId!, workingDir: transferStatus.workingDir!,
+                    model, providerId: targetRouteProviderId!,
+                  });
+                  assertTransferOwner();
+                  prepared.assertCurrent();
+                  preparedClaudeResume = { ...prepared, nativeId: claudeNativeId! };
+                },
+              } : {}),
               ...(atomicSelection?.effort
                 ? {
                     effort: atomicSelection.effort as
@@ -23984,7 +24016,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
                 : {}),
               isSessionInTurn,
               registerPendingCredentialSwitch: registerPendingCredentialSwitchForSession,
-              clearPendingCredentialSwitch: internalOptions.applyingPiCredentialPending
+              clearPendingCredentialSwitch: internalOptions.applyingNativeCredentialPending
                 ? () => {}
                 : atomicSelection ||
                 (runtimeAgentKind === 'pi' && (runtimeRouteChanged || piConfigurationRefresh))
@@ -23993,7 +24025,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
                 : clearPendingCredentialSwitchForSession,
               // Worker rebuild must publish the accepted runtime profile before queued input
               // can lazy-create the replacement execution unit.
-              ...(!rebuildLiveOrcaWorker && !atomicSelection &&
+              ...(!rebuildLiveOrcaWorker && !atomicSelection && !canPrepareClaudeResume &&
                 !(runtimeAgentKind === 'pi' && (runtimeRouteChanged || piConfigurationRefresh))
                 ? { wakeSessionInputQueue: wakeSessionInputAfterCredentialSwitch }
                 : {}),
@@ -24156,7 +24188,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         if (
           result.persistedRoute !== true &&
-          (modelWindowRebuilt ||
+          (preparedClaudeResume !== undefined || modelWindowRebuilt ||
             (runtimeAgentKind === 'pi' && (runtimeRouteChanged || piConfigurationRefresh)) ||
             (internalOptions.source === 'user' && (isDeviceLinkInvoke() || atomicSelection)))
         ) {
@@ -24164,6 +24196,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           // 本地 renderer 的 sessionService.update 也有同一窗口。凡携带 selection 的
           // 新调用都由 host 在解锁前一次落定全部字段。
           const patch: Record<string, unknown> = { model };
+          if (preparedClaudeResume) patch.sdkSessionId = preparedClaudeResume.nativeId;
           if (effectiveProviderId !== undefined) {
             patch.providerId = normalizeSessionProviderId(
               typeof effectiveProviderId === 'string' ? effectiveProviderId : null,
@@ -24187,13 +24220,15 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           try {
             assertRuntimeOwnerCurrent();
             assertSharedTaskCurrent.admit();
+            preparedClaudeResume?.assertCurrent();
             await persistSessionFields(sessionId, patch);
+            if (preparedClaudeResume) claudeRouteCommitted = true;
           } catch (persistenceError) {
             // The live route and host stores are applied before SQLite so the
             // harness can switch atomically. If SQLite rejects, unwind every
             // in-memory side effect while generation/effectiveOverride still
             // describe the old profile.
-            if (!internalOptions.applyingPiCredentialPending) pendingCredentialSwitchHolder?.clear(sessionId);
+            if (!internalOptions.applyingNativeCredentialPending) pendingCredentialSwitchHolder?.clear(sessionId);
             restoreControlStores();
             let recoveryError: unknown;
             const shouldCloseRuntimeAfterPersistenceFailure =
@@ -24214,7 +24249,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
                 sessionId,
                 previousRuntime.pendingCredentialSwitch,
               );
-            } else if (!recoveryError && !internalOptions.applyingPiCredentialPending) {
+            } else if (!recoveryError && !internalOptions.applyingNativeCredentialPending) {
               wakeSessionInputAfterCredentialSwitch(sessionId);
             }
             if (recoveryError) {
@@ -24304,7 +24339,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             }),
           });
         }
-        if (!internalOptions.applyingPiCredentialPending && (rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||
+        if (!internalOptions.applyingNativeCredentialPending && (preparedClaudeResume || rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||
           (runtimeAgentKind === 'pi' && (runtimeRouteChanged || piConfigurationRefresh))) && !response.deferred) {
           wakeSessionInputAfterCredentialSwitch(sessionId);
         }
@@ -24379,6 +24414,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             ? currentProviderId : normalizeSessionProviderId(effectiveProviderId) ?? null,
         });
       } catch (err) {
+        if (preparedClaudeResume && !claudeRouteCommitted && sessionRuntimeControlOwnerEpochMatches(runtimeOwnerEpoch)) {
+          restoreControlStores();
+          wakeSessionInputAfterCredentialSwitch(sessionId);
+        }
         // Atomic calls suppress applyRuntimeSetModelChange's early wake. If a later step
         // rejects after clearing an older pending switch, release the queue on the still-
         // authoritative profile; a restored/new pending gate will conservatively block it.
@@ -24405,31 +24444,36 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       throw new Error('Pi model settings need a smaller context window; confirm the switch before continuing');
     }
   };
-  applyPiPendingSelection = async (sessionId, target, resolved, isCurrent) => {
+  applyNativePendingSelection = async (sessionId, target, resolved, isCurrent) => {
     const assertPendingCurrent = () => {
       if (!isCurrent() || !target.ownerEpoch ||
           !sessionRuntimeControlOwnerEpochMatches(target.ownerEpoch)) {
-        throw new Error('Pi pending model switch was superseded or its account changed');
+        throw new Error('Native pending model switch was superseded or its account changed');
       }
     };
     assertPendingCurrent();
+    if (target.agentKind === 'claude-code' && isClaudeSubscriptionProviderId(target.providerId) &&
+        resolved.providerId !== target.providerId) {
+      throw new Error('The selected Claude account is unavailable; choose another account explicitly');
+    }
     const result = await handleSetModel(sessionId, resolved.model, resolved.providerId,
       undefined, undefined, {
         source: target.selectionSource ?? 'user', applyingUserSelectionOnSend: true,
-        applyingPiCredentialPending: true, refreshPiConfiguration: true,
-        ...(target.previousRoute ? { previousPiRoute: target.previousRoute } : {}),
+        applyingNativeCredentialPending: true,
+        ...(target.agentKind === 'pi' ? { refreshPiConfiguration: true } : {}),
+        ...(target.previousRoute ? { previousNativeRoute: target.previousRoute } : {}),
         assertSelectionCurrent: assertPendingCurrent,
       });
-    if (result.superseded) throw new Error('Pi pending model switch was superseded');
+    if (result.superseded) throw new Error('Native pending model switch was superseded');
     if (result.contextWindowConfirmationRequired) {
-      throw new Error('Pi model switch needs confirmation for its smaller context window');
+      throw new Error('Native model switch needs confirmation for its smaller context window');
     }
     return result.deferred ? 'deferred' : 'applied';
   };
   applyPiImModelSelectionHolder = async (sessionId, model, providerId, previousRoute, options) => {
     const result = await handleSetModel(sessionId, model, providerId, undefined, undefined, {
       source: options?.source ?? 'user', sessionLockHeld: true, applyingUserSelectionOnSend: true,
-      ...(previousRoute ? { previousPiRoute: previousRoute } : {}),
+      ...(previousRoute ? { previousNativeRoute: previousRoute } : {}),
       ...(options?.refreshPiConfiguration ? { refreshPiConfiguration: true } : {}),
     });
     if (result.superseded) throw new Error('Pi model selection was superseded');

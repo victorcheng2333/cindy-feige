@@ -1,3 +1,5 @@
+import type { SessionStore } from '@anthropic-ai/claude-agent-sdk';
+import type { ClaudeRuntimeContext } from '../../interfaces/auth-adapter.js';
 /**
  * ClaudeCodeAgent — Claude Code 的 maker-core 一等公民实现。
  *
@@ -138,6 +140,7 @@ import {
 } from './env-builder.js';
 import {
   findWorkspaceSettingsOverride,
+  findSettingsFileOverride,
   workspaceConfigChangeBlockReason,
   workspaceSettingsOverrideMessage,
 } from './workspace-settings-guard.js';
@@ -178,7 +181,7 @@ import {
   resolveEffectiveCredentialModeFromAuthSource,
 } from '../credential-mode.js';
 import { repairForkedClaudeSessionJsonl, type RepairForkedClaudeJsonlResult } from './fork-jsonl-repair.js';
-import { ensureClaudeTranscriptInWorkingDir } from './transcript-relocation.js';
+import { ensureClaudeTranscriptInWorkingDir, relocateClaudeSessionHome } from './transcript-relocation.js';
 import { findClaudeSessionJsonl } from './claude-projects-fs.js';
 import { normalizeClaudeSessionJsonlToolIds } from './jsonl-tool-id-normalize.js';
 import { isClaudeResumeSessionNotFound } from './invalid-resume.js';
@@ -858,14 +861,19 @@ const CLAUDE_EFFORTS: EffortDescriptor[] = [
  * 纯附加能力:不阻塞 send / 不进事件热路径 / 不改 prompt 组装(缓存前缀零影响);
  * 失败静默(发现通道有 HTTP + 磁盘缓存互补,见 host 侧)。
  */
-let supportedModelsListener: ((models: unknown[]) => void) | null = null;
+export interface ClaudeRuntimeEventContext {
+  providerId: string;
+  sessionId?: string;
+  runtime?: ClaudeRuntimeContext;
+}
+let supportedModelsListener: ((models: unknown[], context?: ClaudeRuntimeEventContext) => void) | null = null;
 
 /** 主动清单探测(ClaudeCodeAgent.refreshLocalModels)的上限:CLI 冷启动通常几秒内应答。 */
 const SUPPORTED_MODELS_PROBE_TIMEOUT_MS = 30_000;
 
 /** host 注入 SDK supportedModels 捕获回调;传 null 解除。 */
 export function setClaudeSupportedModelsListener(
-  listener: ((models: unknown[]) => void) | null,
+  listener: ((models: unknown[], context?: ClaudeRuntimeEventContext) => void) | null,
 ): void {
   supportedModelsListener = listener;
 }
@@ -875,33 +883,33 @@ export function setClaudeSupportedModelsListener(
  * 5h / 7d 余量改由 CLI 自己上报的 SDK `rate_limit_event` 提供。只对本机订阅会话
  * (nativeCliAuth)转发;listener 抛错不影响会话。
  */
-let rateLimitInfoListener: ((info: unknown) => void) | null = null;
+let rateLimitInfoListener: ((info: unknown, context?: ClaudeRuntimeEventContext) => void) | null = null;
 
 /** host 注入订阅会话 rate_limit_event 捕获回调;传 null 解除。 */
-export function setClaudeRateLimitInfoListener(listener: ((info: unknown) => void) | null): void {
+export function setClaudeRateLimitInfoListener(listener: ((info: unknown, context?: ClaudeRuntimeEventContext) => void) | null): void {
   rateLimitInfoListener = listener;
 }
 
-function notifyRateLimitInfo(rawMsg: unknown): void {
+function notifyRateLimitInfo(rawMsg: unknown, context?: ClaudeRuntimeEventContext): void {
   if (!rateLimitInfoListener) return;
   const info = (rawMsg as { rate_limit_info?: unknown } | null)?.rate_limit_info;
   if (!info || typeof info !== 'object') return;
   try {
-    rateLimitInfoListener(info);
+    rateLimitInfoListener(info, context);
   } catch {
     /* listener 异常不得打断事件循环 */
   }
 }
 
 /** fire-and-forget 捕获(远端 RemoteQuery 无 supportedModels 方法时静默跳过)。 */
-function notifySupportedModels(q: Query): void {
+function notifySupportedModels(q: Query, context?: ClaudeRuntimeEventContext): void {
   if (!supportedModelsListener) return;
   const fn = (q as { supportedModels?: () => Promise<unknown[]> }).supportedModels;
   if (typeof fn !== 'function') return;
   void fn.call(q).then(
     (models) => {
       try {
-        if (Array.isArray(models)) supportedModelsListener?.(models);
+        if (Array.isArray(models)) supportedModelsListener?.(models, context);
       } catch {
         /* listener 异常不得外溢成 unhandled rejection */
       }
@@ -1067,6 +1075,58 @@ export class ClaudeCodeAgent extends BaseAgent {
     return CLAUDE_CODE_AGENT_COMMANDS;
   }
 
+  /** The host retires the previous writer first and commits its route only after this succeeds. */
+  override async prepareClaudeAccountResume(opts: Parameters<BaseAgent['prepareClaudeAccountResume']>[0]) {
+    const authOptions = { credentialMode: 'oauth-bearer' as const, providerId: opts.providerId };
+    const auth = await this.deps.auth.getState(authOptions);
+    if (!auth.authenticated) throw new AgentNotAuthenticatedError('claude-code', 'Claude account requires login');
+    const runtime = await this.deps.auth.getClaudeRuntimeContext?.(authOptions);
+    if (!runtime) throw new Error('Claude runtime identity is unavailable');
+    const assertCurrent = () => {
+      if (this.deps.auth.isClaudeRuntimeContextCurrent?.(runtime, opts.providerId) === false)
+        throw new Error('Claude account changed');
+    };
+    const targetHome = runtime.configDir ?? path.join(os.homedir(), '.claude');
+    const sourceHome = this.deps.auth.getClaudeHistoryHome?.(opts.nativeId) ?? path.join(os.homedir(), '.claude');
+    const override = await findWorkspaceSettingsOverride(opts.workingDir) ??
+      (runtime.configDir ? await findSettingsFileOverride(path.join(runtime.configDir, 'settings.json')) : null);
+    if (override) throw new Error(workspaceSettingsOverrideMessage(override));
+    await relocateClaudeSessionHome({ sdkSessionId: opts.nativeId, workingDir: opts.workingDir,
+      sourceHome, targetHome, assertCurrent });
+    const env = await buildClaudeEnv(this.deps.auth, this.deps.runtimeConfig, {
+      nativeCliAuth: true, nativeCliConfigDir: runtime.configDir, credentialMode: 'oauth-bearer',
+      sessionProviderId: opts.providerId, subagentModel: null,
+    });
+    assertCurrent();
+    const input = createAsyncQueue<never>();
+    const abortController = new AbortController();
+    let query: Query | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      query = sdkQuery({ prompt: input as unknown as Parameters<typeof sdkQuery>[0]['prompt'], options: {
+        cwd: opts.workingDir, resume: opts.nativeId, model: this.sdkModelFor(opts.model), env,
+        pathToClaudeCodeExecutable: this.deps.binaryPath, abortController,
+        persistSession: false, tools: [], mcpServers: {}, strictMcpConfig: true,
+        settingSources: ['user', 'project', 'local'], settings: { disableAllHooks: true },
+      } });
+      await Promise.race([
+        query.initializationResult(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Claude account resume verification timed out')), SUPPORTED_MODELS_PROBE_TIMEOUT_MS);
+        }),
+      ]);
+      assertCurrent();
+      // No history binding is published: until the first real target turn starts,
+      // the immutable source copy remains authoritative, including across a crash.
+      return { assertCurrent };
+    } finally {
+      if (timer) clearTimeout(timer);
+      input.end();
+      abortController.abort();
+      await query?.close();
+    }
+  }
+
   /**
    * 主动读取 Claude 订阅的模型清单:用本机 CLI 自己的登录起一个空闲 Query,只调
    * SDK `supportedModels()`,不发送任何消息、不产生模型调用,读完立即关闭。
@@ -1085,7 +1145,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     const idleInput = createAsyncQueue<never>();
     try {
       // oauth-bearer 形态下 auth adapter 只按本机 Claude Code 订阅登录作答。
-      const authState = await this.deps.auth.getState({ credentialMode: 'oauth-bearer' });
+      const authState = await this.deps.auth.getState({ credentialMode: 'oauth-bearer', providerId: options?.providerId });
       if (!authState.authenticated) return false;
       // 独立的新建空目录:不继承共享临时目录里可能存在的项目级设置;仍按订阅会话同一
       // 规则检查,能改写上游 / 鉴权 / TLS 的设置一律拒绝。
@@ -1095,11 +1155,17 @@ export class ClaudeCodeAgent extends BaseAgent {
         log.warn('probe skipped', { reason: workspaceSettingsOverrideMessage(override) });
         return false;
       }
+      const runtime = await this.deps.auth.getClaudeRuntimeContext?.({ credentialMode: 'oauth-bearer', providerId: options?.providerId });
+      if (runtime?.configDir && await findSettingsFileOverride(path.join(runtime.configDir, 'settings.json'))) return false;
       const env = await buildClaudeEnv(this.deps.auth, this.deps.runtimeConfig, {
+        nativeCliConfigDir: runtime?.configDir,
+        sessionProviderId: options?.providerId,
         credentialMode: 'oauth-bearer',
         nativeCliAuth: true,
         subagentModel: null,
       });
+      const current = () => !runtime || this.deps.auth.isClaudeRuntimeContextCurrent?.(runtime, options?.providerId) !== false;
+      if (!current()) return false;
       q = sdkQuery({
         prompt: idleInput as unknown as Parameters<typeof sdkQuery>[0]['prompt'],
         options: {
@@ -1119,8 +1185,9 @@ export class ClaudeCodeAgent extends BaseAgent {
           );
         }),
       ]);
-      if (!Array.isArray(models)) return false;
-      deliver(models);
+      if (!Array.isArray(models) || !current()) return false;
+      if (options?.onSupportedModels) options.onSupportedModels(models);
+      else supportedModelsListener?.(models, { providerId: options?.providerId ?? 'anthropic', runtime });
       return true;
     } catch (error) {
       log.warn('probe failed', { error: String(error) });
@@ -1465,17 +1532,34 @@ export class ClaudeCodeAgent extends BaseAgent {
         `claude-code not authenticated: ${authState.errorReason ?? 'no_key'}`,
       );
     }
-    const effectiveCredentialMode = resolveEffectiveCredentialModeFromAuthSource(
+    const reportedCredentialMode = resolveEffectiveCredentialModeFromAuthSource(
       credentialMode,
       authState.authSource,
     );
     // Claude 订阅(含 adapter 把隐式来源解析成订阅的情形)由 CLI 用自己的登录直连,
     // host 不接管连接、不经手凭证(见 env-builder nativeCliAuth)。远端会话不适用。
+    const nativeRuntime = !opts.remoteHostId ? await this.deps.auth.getClaudeRuntimeContext?.({
+      credentialMode: reportedCredentialMode, providerId: opts.providerId,
+    }) : undefined;
+    // Generic provider ids resolve to provider-oauth before the host identifies
+    // a managed native account. Only its trusted runtime home authorizes this
+    // override; an inherited environment variable can never select native auth.
+    const effectiveCredentialMode = nativeRuntime?.configDir ? 'oauth-bearer' : reportedCredentialMode;
     const nativeCliAuth = !opts.remoteHostId && effectiveCredentialMode === 'oauth-bearer';
+    const rememberNativeHistory = this.deps.auth.rememberClaudeHistoryHome?.bind(this.deps.auth);
+    const nativeRuntimeIsCurrent = () => !nativeRuntime ||
+      this.deps.auth.isClaudeRuntimeContextCurrent?.(nativeRuntime, opts.providerId) !== false;
+    const assertNativeRuntimeCurrent = () => {
+      if (!nativeRuntimeIsCurrent()) throw new Error('Claude account changed');
+    };
+    const eventContext: ClaudeRuntimeEventContext = {
+      providerId: opts.providerId ?? 'anthropic', sessionId: opts.sessionId, runtime: nativeRuntime,
+    };
     // 订阅会话不设 host 接管标记,CLI 会直接应用工作区设置里的 env:能改写上游 / 鉴权 /
     // TLS 信任的项目级设置会让订阅请求带着登录凭证发往别处,启动前拒绝(见 workspace-settings-guard)。
     if (nativeCliAuth) {
-      const override = await findWorkspaceSettingsOverride(opts.workingDir);
+      const override = await findWorkspaceSettingsOverride(opts.workingDir) ??
+          (nativeRuntime?.configDir ? await findSettingsFileOverride(path.join(nativeRuntime.configDir, 'settings.json')) : null);
       if (override) throw new Error(workspaceSettingsOverrideMessage(override));
     }
 
@@ -1546,8 +1630,9 @@ export class ClaudeCodeAgent extends BaseAgent {
     const companionEnvironment = opts.botRuntimeProfile && !opts.remoteHostId && opts.sessionId
       ? await this.deps.resolveSessionEnvironment?.(opts.sessionId) : undefined;
     const env = await buildClaudeEnv(this.deps.auth, this.deps.runtimeConfig, {
-      credentialMode,
+      credentialMode: effectiveCredentialMode,
       nativeCliAuth,
+      nativeCliConfigDir: nativeRuntime?.configDir,
       authModel: opts.model,
       sessionProviderId: opts.providerId ?? null,
       activeModel: sdkModel,
@@ -1740,12 +1825,24 @@ export class ClaudeCodeAgent extends BaseAgent {
     // 再开后 Lead 工具仍指向第一次的 workflow / worker"的 bug。必须用 Object.assign
     // 原地改, 让所有持有这个 ref 的闭包共享同一份最新状态。
     const vo: Record<string, unknown> = { ...(opts.vendorOptions ?? {}) };
-    const requireNativeResume = vo._cindyRequireNativeResume === true && !!opts.resumeSessionId;
+    let migratedAccountHome = false;
+    if (opts.resumeSessionId && !opts.remoteHostId) {
+      const sourceHome = this.deps.auth.getClaudeHistoryHome?.(opts.resumeSessionId);
+      const targetHome = nativeRuntime?.configDir ?? path.join(os.homedir(), '.claude');
+      const originalHome = sourceHome ?? path.join(os.homedir(), '.claude');
+      if (originalHome !== targetHome) {
+        await relocateClaudeSessionHome({ sdkSessionId: opts.resumeSessionId,
+          workingDir: opts.workingDir, sourceHome: originalHome, targetHome, assertCurrent: assertNativeRuntimeCurrent });
+        migratedAccountHome = true;
+      }
+    }
+    const requireNativeResume = (vo._cindyRequireNativeResume === true || migratedAccountHome) && !!opts.resumeSessionId;
+    let historyHomeAccepted = !requireNativeResume;
 
     log.info('startSession', {
       model: sdkModel,
       providerId: opts.providerId ?? null,
-      credentialMode: credentialMode ?? 'fallback',
+      credentialMode: effectiveCredentialMode ?? 'fallback',
       effort: opts.effort ?? 'default',
       sdkEffort: initialSdkEffort ?? '<none>',
       workDir: opts.workingDir,
@@ -2192,10 +2289,13 @@ export class ClaudeCodeAgent extends BaseAgent {
     const workspaceSettingsConfigChangeHooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
       ConfigChange: [{
         hooks: [async (input) => {
-          const reason = await workspaceConfigChangeBlockReason(
+          const workspaceReason = await workspaceConfigChangeBlockReason(
             input as { source?: string; file_path?: string },
             opts.workingDir,
           );
+          const homeOverride = nativeRuntime?.configDir
+            ? await findSettingsFileOverride(path.join(nativeRuntime.configDir, 'settings.json')) : null;
+          const reason = workspaceReason ?? (homeOverride ? workspaceSettingsOverrideMessage(homeOverride) : null);
           if (!reason) return { continue: true };
           taintWorkspaceSettings(reason);
           return { decision: 'block', reason };
@@ -3696,7 +3796,8 @@ export class ClaudeCodeAgent extends BaseAgent {
     }): Promise<Query> => {
       // 会话中途重建(rewind / 追加目录 / resume 恢复等)同样会让新 CLI 进程重读工作区设置。
       if (nativeCliAuth) {
-        const override = await findWorkspaceSettingsOverride(opts.workingDir);
+        const override = await findWorkspaceSettingsOverride(opts.workingDir) ??
+          (nativeRuntime?.configDir ? await findSettingsFileOverride(path.join(nativeRuntime.configDir, 'settings.json')) : null);
         if (override) throw new Error(workspaceSettingsOverrideMessage(override));
       }
       const currentSdkModel = sdkModelFor(mutableModel);
@@ -4538,6 +4639,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       let query: Query;
       try {
         companionEnvironment?.assertCurrent?.();
+        assertNativeRuntimeCurrent();
         if (managedPlugins && querySignal.aborted) throw new Error('Claude session closed before skill plugins were loaded');
         const queryArgs = createLocalQueryArgs();
         if (newSdkSessionId) sdkSessionId = newSdkSessionId;
@@ -4571,7 +4673,8 @@ export class ClaudeCodeAgent extends BaseAgent {
         // 先复查工作区,命中就结束会话而不是把设置应用进去。
         const applyFlagSettings = query.applyFlagSettings.bind(query);
         query.applyFlagSettings = async (settings) => {
-          const override = await findWorkspaceSettingsOverride(opts.workingDir);
+          const override = await findWorkspaceSettingsOverride(opts.workingDir) ??
+          (nativeRuntime?.configDir ? await findSettingsFileOverride(path.join(nativeRuntime.configDir, 'settings.json')) : null);
           if (override) {
             const message = workspaceSettingsOverrideMessage(override);
             taintWorkspaceSettings(message);
@@ -5589,7 +5692,7 @@ export class ClaudeCodeAgent extends BaseAgent {
             const rawSubtype = (rawMsg as { subtype?: string } | null)?.subtype;
             const rawStatus = (rawMsg as { status?: string } | null)?.status;
             // 只旁路取值,消息照常往下走(与改动前的处理顺序一致)。
-            if (rawType === 'rate_limit_event' && nativeCliAuth) notifyRateLimitInfo(rawMsg);
+            if (rawType === 'rate_limit_event' && nativeCliAuth) notifyRateLimitInfo(rawMsg, eventContext);
             const isTerminalTaskNotification =
               rawType === 'system' &&
               rawSubtype === 'task_notification' &&
@@ -5754,6 +5857,8 @@ export class ClaudeCodeAgent extends BaseAgent {
                   sdkSessionId = sid;
                   return;
                 }
+                if (sid && nativeRuntime && historyHomeAccepted && nativeRuntimeIsCurrent())
+                  rememberNativeHistory?.(sid, nativeRuntime);
                 if (sid && sid !== publishedSdkSessionId) {
                   sdkSessionId = sid;
                   durableSdkSessionId = sid;
@@ -6199,7 +6304,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     q = await buildQuery();
     startForwardLoop(q);
     // Anthropic 清单动态发现:init 后 fire-and-forget 捕获 supportedModels(见文件顶注)。
-    notifySupportedModels(q);
+    notifySupportedModels(q, eventContext);
 
     // ── AgentSessionHandle 包装 ─────────────────────────────────────────────
     // Rewind rebuild 已创建新 q、但本次 send 尚未登记 turnInFlight / bridge state 的短窗口。
@@ -6376,7 +6481,7 @@ export class ClaudeCodeAgent extends BaseAgent {
             throw new Error('Claude send cancelled before acceptance');
           }
           startForwardLoop(q);
-          notifySupportedModels(q);
+          notifySupportedModels(q, eventContext);
           await replayRuntimeDrift(runtimeSnapshot, 'cancelled continuation rebuild');
           // Cancellation rebuilds used by send need the compact→user bridge for deferred
           // model/window drift. Rewind preview/commit use the same fresh-query isolation but
@@ -6840,6 +6945,7 @@ export class ClaudeCodeAgent extends BaseAgent {
           userInputAccepted = true;
           rollbackUnacceptedFork = undefined;
           if (unacceptedForks.delete(q) && sdkSessionId) {
+            if (nativeRuntime) rememberNativeHistory?.(sdkSessionId, nativeRuntime);
             durableSdkSessionId = sdkSessionId;
             if (publishedSdkSessionId !== sdkSessionId) {
               publishedSdkSessionId = sdkSessionId;
@@ -7409,6 +7515,7 @@ export class ClaudeCodeAgent extends BaseAgent {
 
       requiresModelSwitchRebuild: (model, target) => {
         const provider = target?.providerId !== undefined ? target.providerId : mutableProviderId;
+        if (nativeCliAuth && provider !== (opts.providerId ?? null)) return true;
         const window = resolveModelContextWindow(model, provider);
         const expected: Record<string, string> = {};
         // Use the spawn normalizer, including native scaling for windows below 100K.
@@ -7427,6 +7534,10 @@ export class ClaudeCodeAgent extends BaseAgent {
         },
       ) {
         if (reviewMode) return;
+        if (nativeCliAuth && setModelOpts?.providerId !== undefined &&
+            setModelOpts.providerId !== (opts.providerId ?? null)) {
+          throw new Error('Claude account changes require a native runtime rebuild');
+        }
         if (setModelOpts?.contextWindowBudget !== undefined) {
           mutableContextWindowBudget = setModelOpts.contextWindowBudget;
         }
@@ -7559,7 +7670,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         if (setModelOpts?.effort) mutableEffort = setModelOpts.effort;
         const usedNativeAutoReview = usesNativeClaudeAutoReview();
         mutableProviderId = targetProviderId ?? null;
-        mutableAutoReviewCredentialMode = resolveEffectiveCredentialModeFromAuthSource(
+        mutableAutoReviewCredentialMode = nativeCliAuth ? 'oauth-bearer' : resolveEffectiveCredentialModeFromAuthSource(
           resolveAgentCredentialMode({
             agentKind: 'claude-code',
             providerId: mutableProviderId,
@@ -7931,6 +8042,9 @@ export class ClaudeCodeAgent extends BaseAgent {
         if (closed || sdkSessionId !== opts.resumeSessionId) {
           throw new Error('Native history resume did not restore the transferred session');
         }
+        assertNativeRuntimeCurrent();
+        historyHomeAccepted = true;
+        if (sdkSessionId && nativeRuntime) rememberNativeHistory?.(sdkSessionId, nativeRuntime);
       } catch (error) {
         await handle.close();
         throw error;
@@ -7968,74 +8082,59 @@ export class ClaudeCodeAgent extends BaseAgent {
     return { effective: 'next-session' };
   }
 
-  /**
-   * 全局 reset: 遍历 ~/.claude/projects/*\/memory/ 全删。
-   *
-   * 与开关的全局语义对称 — autoMemoryEnabled 是 ~/.claude/settings.json 全局设置,
-   * 影响所有 cwd, 所以 reset 也清所有 cwd 的 memory 子目录, 不止当前项目。
-   *
-   * 安全护栏: 严格只删 projectsRoot/<entry>/memory/ 子目录, 不动同级 *.jsonl session 历史,
-   * 不递归到 projectsRoot 自己 (那是 Claude SDK 的多项目根)。
-   */
-  async resetMemory(): Promise<MemoryResetResult> {
-    const log = this.deps.logger.child('claude-code/resetMemory');
-    const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
-    // 安全 assertion: 路径必须落在 ~/.claude/ 下
-    const claudeRoot = path.join(os.homedir(), '.claude') + path.sep;
-    if (!projectsRoot.startsWith(claudeRoot) || projectsRoot === claudeRoot.slice(0, -1)) {
-      throw new Error(`refuse to reset: unsafe projects root "${projectsRoot}"`);
-    }
-
-    let removedEntries = 0;
-    let removedBytes = 0;
-    const projects = await fs.readdir(projectsRoot, { withFileTypes: true }).catch(() => []);
-    log.info('resetMemory ▶', { projectsRoot, projectCount: projects.length });
-
-    for (const proj of projects) {
-      if (!proj.isDirectory()) continue;
-      const memoryDir = path.join(projectsRoot, proj.name, 'memory');
-      const stat = await fs.stat(memoryDir).catch(() => null);
-      if (!stat?.isDirectory()) continue;
-
-      const dirStat = await statMemoryDir(memoryDir).catch(() => ({ entryCount: 0, sizeBytes: 0 }));
-      try {
-        await fs.rm(memoryDir, { recursive: true, force: true });
-        removedEntries += dirStat.entryCount;
-        removedBytes += dirStat.sizeBytes;
-      } catch (e) {
-        log.warn('failed to remove memory dir, skipping', {
-          memoryDir,
-          error: e instanceof Error ? e.message : String(e),
-        });
+  /** Global native-memory actions cover this owner's homes, never transcripts or credentials. */
+  private async claudeMemoryDirectories() {
+    const scope = this.deps.auth.getClaudeHistoryScope?.();
+    const assertCurrent = () => {
+      if (scope !== this.deps.auth.getClaudeHistoryScope?.()) throw new Error('Claude memory owner changed');
+    };
+    const homes = [...new Set(this.deps.auth.getClaudeMemoryHomes?.() ?? [path.join(os.homedir(), '.claude')])];
+    const directories: string[] = [];
+    for (const home of homes) {
+      assertCurrent();
+      if (!path.isAbsolute(home)) throw new Error('Invalid Claude memory home');
+      if (!(await fs.lstat(home).catch(() => null))?.isDirectory()) continue;
+      const root = path.join(home, 'projects');
+      if (!(await fs.lstat(root).catch(() => null))?.isDirectory()) continue;
+      for (const project of await fs.readdir(root, { withFileTypes: true })) {
+        if (!project.isDirectory()) continue;
+        const memory = path.join(root, project.name, 'memory');
+        if ((await fs.lstat(memory).catch(() => null))?.isDirectory()) directories.push(memory);
       }
     }
+    assertCurrent();
+    return { directories, assertCurrent, storagePath: homes.length === 1 ? path.join(homes[0], 'projects') : undefined };
+  }
 
-    log.info('resetMemory ◀', { removedEntries, removedBytes });
+  async resetMemory(): Promise<MemoryResetResult> {
+    const log = this.deps.logger.child('claude-code/resetMemory');
+    const { directories, assertCurrent } = await this.claudeMemoryDirectories();
+    let removedEntries = 0;
+    let removedBytes = 0;
+    for (const memoryDir of directories) {
+      const stat = await statMemoryDir(memoryDir).catch(() => ({ entryCount: 0, sizeBytes: 0 }));
+      assertCurrent();
+      try {
+        await fs.rm(memoryDir, { recursive: true, force: true });
+        removedEntries += stat.entryCount;
+        removedBytes += stat.sizeBytes;
+      } catch (error) {
+        log.warn('failed to remove memory dir, skipping', { memoryDir, error: String(error) });
+      }
+    }
     return { removedEntries, removedBytes };
   }
 
-  /**
-   * 扫所有 ~/.claude/projects/*\/memory/ 汇总 stats。
-   * 失败/不存在 → 返回 0,0 而不是 throw, getMemoryStatus 自己 catch 兜底。
-   */
   private async collectClaudeMemoryStats() {
-    const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
+    const { directories, assertCurrent, storagePath } = await this.claudeMemoryDirectories();
     let entryCount = 0;
     let sizeBytes = 0;
-    const projects = await fs.readdir(projectsRoot, { withFileTypes: true }).catch(() => []);
-    for (const proj of projects) {
-      if (!proj.isDirectory()) continue;
-      const memoryDir = path.join(projectsRoot, proj.name, 'memory');
-      const sub = await statMemoryDir(memoryDir).catch(() => null);
-      if (!sub) continue;
-      entryCount += sub.entryCount;
-      sizeBytes += sub.sizeBytes;
+    for (const memory of directories) {
+      const stat = await statMemoryDir(memory).catch(() => null);
+      if (stat) { entryCount += stat.entryCount; sizeBytes += stat.sizeBytes; }
     }
-    return {
-      entryCount,
-      sizeBytes,
-      storagePath: projectsRoot,
-    };
+    assertCurrent();
+    return { entryCount, sizeBytes, ...(storagePath ? { storagePath } : {}) };
   }
 
   /**
@@ -8053,6 +8152,31 @@ export class ClaudeCodeAgent extends BaseAgent {
    */
   async forkSdkSession(opts: ForkSdkSessionOptions): Promise<ForkSdkSessionResult> {
     const log = this.deps.logger.child('claude-code/fork');
+    const historyScope = this.deps.auth.getClaudeHistoryScope?.();
+    const assertHistoryScope = () => {
+      if (historyScope !== this.deps.auth.getClaudeHistoryScope?.()) throw new Error('Claude history owner changed');
+    };
+    const historyHome = this.deps.auth.getClaudeHistoryHome?.(opts.sourceSdkSessionId);
+    const projectsRoot = historyHome ? path.join(historyHome, 'projects') : undefined;
+    let sessionStore: SessionStore | undefined;
+    if (projectsRoot) {
+      const source = await findClaudeSessionJsonl(opts.sourceSdkSessionId, opts.workingDir, projectsRoot);
+      if (!source) throw new Error('Claude source history is missing');
+      // SDK supports an explicit store for mutation. Never change process.env to fork
+      // another account: two concurrent forks must not observe each other's home.
+      sessionStore = {
+        load: async key => key.sessionId === opts.sourceSdkSessionId
+          ? (await fs.readFile(source, 'utf8')).split('\n').filter(line => line.trim()).map(line => JSON.parse(line))
+          : null,
+        append: async (key, entries) => {
+          assertHistoryScope();
+          if (!/^[a-f0-9-]{36}$/i.test(key.sessionId) || key.sessionId === opts.sourceSdkSessionId || key.subpath)
+            throw new Error('Invalid Claude fork target');
+          await fs.writeFile(path.join(path.dirname(source), `${key.sessionId}.jsonl`),
+            entries.map(entry => JSON.stringify(entry)).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
+        },
+      };
+    }
     const logRepairResult = (
       phase: 'source-preflight' | 'source-retry' | 'forked-post',
       sessionId: string,
@@ -8079,6 +8203,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     const forkOnce = () => sdkForkSession(opts.sourceSdkSessionId, {
       upToMessageId: opts.upToMessageId,
       title: opts.title,
+      ...(sessionStore ? { sessionStore } : {}),
     });
     log.info('forkSdkSession ▶', {
       sourceSdkSessionId: opts.sourceSdkSessionId,
@@ -8089,6 +8214,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     const sourceRepairResult = await repairForkedClaudeSessionJsonl({
       sessionId: opts.sourceSdkSessionId,
       workingDir: opts.workingDir,
+      ...(projectsRoot ? { projectsRoot } : {}),
     });
     logRepairResult('source-preflight', opts.sourceSdkSessionId, sourceRepairResult);
     if (sourceRepairResult.invalidPreservedSegmentRefCount > 0) {
@@ -8108,6 +8234,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       const retryRepairResult = await repairForkedClaudeSessionJsonl({
         sessionId: opts.sourceSdkSessionId,
         workingDir: opts.workingDir,
+        ...(projectsRoot ? { projectsRoot } : {}),
       });
       logRepairResult('source-retry', opts.sourceSdkSessionId, retryRepairResult);
       if (retryRepairResult.invalidPreservedSegmentRefCount > 0) {
@@ -8132,6 +8259,7 @@ export class ClaudeCodeAgent extends BaseAgent {
     const repairResult = await repairForkedClaudeSessionJsonl({
       sessionId: newSdkSessionId,
       workingDir: opts.workingDir,
+      ...(projectsRoot ? { projectsRoot } : {}),
     });
     logRepairResult('forked-post', newSdkSessionId, repairResult);
     if (repairResult.invalidPreservedSegmentRefCount > 0) {
@@ -8151,6 +8279,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         const outcome = await ensureClaudeTranscriptInWorkingDir({
           sdkSessionId: newSdkSessionId,
           workingDir: opts.workingDir,
+          ...(projectsRoot ? { projectsRoot } : {}),
         });
         if (outcome === 'restored') {
           log.info('forkSdkSession transcript relocation', {
@@ -8185,6 +8314,8 @@ export class ClaudeCodeAgent extends BaseAgent {
       remappedCompactRefCount: repairResult.remappedCompactRefCount,
       unresolvedCompactRefCount: repairResult.unresolvedCompactRefCount,
     });
+    assertHistoryScope();
+    this.deps.auth.inheritClaudeHistoryHome?.(opts.sourceSdkSessionId, newSdkSessionId, historyScope);
     return {
       newSdkSessionId,
       uuidMap: repairResult.uuidMap,

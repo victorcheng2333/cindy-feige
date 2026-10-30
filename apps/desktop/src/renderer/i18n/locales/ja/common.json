@@ -1621,6 +1621,7 @@
       "sourcesShown": "{{b}} 件中 {{a}} 件を表示",
       "statusIcon": "メニューバーのアイコン",
       "statusIconMode": {
+        "account": "指定アカウント",
         "icon": "アイコンのみ",
         "lowest": "最小の残り",
         "today": "今日の使用量",
@@ -4167,7 +4168,8 @@
         "pending": "認証情報を準備中",
         "unavailable": "一時的に利用できません"
       },
-      "claudeAccountRetired": "Cindy では、この旧式の Claude 接続を使ったサブスクリプションへのログインに対応していません。Claude アカウントとサブスクリプションには影響ありません。「Claude Code でログイン」から接続してください。",
+      "claudeAccountRetired": "Claude Code でこのアカウントにログインします。旧形式の接続は再ログインが必要です。接続名とタスク履歴は保持されます。",
+      "claudeCleanupPending": "接続は削除されましたが、一部の専用アカウントフォルダーで Claude Code のログアウトが完了していません。Cindy は次回起動時に再試行します。タスク履歴は保持されます。",
       "speechSetup": {
         "title": "音声",
         "add": "音声モデルを追加",

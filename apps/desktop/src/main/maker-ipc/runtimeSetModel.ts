@@ -135,6 +135,8 @@ export interface ApplyRuntimeSetModelChangeInput {
   requiresCodexThreadRelink?: boolean | (() => Promise<boolean>);
   /** Closes over the captured Profile DB and atomically commits thread + full target route. */
   relinkCodexThread?: () => Promise<void>;
+  /** Local native-account preflight, after the old writer closes and before route publication. */
+  prepareNativeResume?: () => Promise<void>;
   logger?: RuntimeSetModelLogger;
 }
 
@@ -250,6 +252,7 @@ export async function applyRuntimeSetModelChange(
       ? await sess.requiresModelSwitchRebuild?.(model, { providerId: nextProviderId }) ?? false
       : false;
   const shouldCloseSession = Boolean(sess) && (
+    input.prepareNativeResume !== undefined ||
     input.forceSessionRebuild === true ||
     modelSwitchRequiresRebuild ||
     credentialModeRequiresRebuild ||
@@ -403,6 +406,7 @@ export async function applyRuntimeSetModelChange(
         if (!input.relinkCodexThread) throw new Error(`Codex provider thread relink is required for session ${sessionId}`);
         await input.relinkCodexThread();
       }
+      await input.prepareNativeResume?.();
     } catch (error) {
       // A failed history transfer must not discard an earlier accepted pending route.
       if (clearedPending && input.registerPendingCredentialSwitch) {
@@ -435,6 +439,7 @@ export async function applyRuntimeSetModelChange(
 
   if (input.beforeMutation) await input.beforeMutation();
   input.admit?.();
+  if (!sess) await input.prepareNativeResume?.();
   if (providerId !== undefined) {
     setSessionProvider(sessionId, nextProviderId);
     // 显式选源且无需切换 → 取消尚未兑现的 pending(后选覆盖先选)。

@@ -703,8 +703,13 @@ export function noteAnthropicSdkSupportedModels(
  * 主动清单探测(生产 = maker.refreshAgentLocalModels('claude-code', { onSupportedModels })),
  * maker 就绪后注入。结果只交给传入的回调,不经全局捕获监听器。
  */
-type AnthropicModelProbe = (onModels: (models: unknown[]) => void) => Promise<boolean>;
+type AnthropicModelProbe = (onModels: (models: unknown[]) => void, providerId?: string) => Promise<boolean>;
 let modelProbe: AnthropicModelProbe | null = null;
+
+/** Explicit connection probe; the caller owns identity/generation and result attribution. */
+export function probeClaudeConnectionModels(providerId: string, onModels: (models: unknown[]) => void): Promise<boolean> {
+  return modelProbe?.(onModels, providerId) ?? Promise.resolve(false);
+}
 /** 同一授权世代内的在途探测;换代后不复用旧世代的探测。 */
 let probeInflight: { generation: number; promise: Promise<boolean> } | null = null;
 

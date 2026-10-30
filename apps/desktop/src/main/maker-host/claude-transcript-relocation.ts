@@ -31,6 +31,7 @@ import { getDbClient } from '../localDb/client/current.js';
 import type { DbClient } from '../localDb/client/DbClient.js';
 import { createLogger } from '../logger.js';
 import { defaultClaudeConfigDirCandidates } from '../maker-orchestration/claudeTranscriptAnchors.js';
+import { readClaudeHistoryHome } from './claude-history-home.js';
 
 const log = createLogger('claude-transcript-relocation');
 
@@ -141,7 +142,6 @@ export async function relocateClaudeTranscriptsForSessionMove(
     scope?.assertCurrent();
     const client = scope?.client ?? getDbClient();
     const bridge = liveCcSessionBridge;
-    const projectsRoot = path.join(defaultClaudeConfigDirCandidates()[0], 'projects');
     // 1. 内存 id 必须在关闭 handle 前取;SDK 未回填时是 '<pending>' 占位符,过滤掉
     //    (占位符不持久化、不参与迁移,但 handle 本身仍要关——它连的是旧 cwd)。
     const rawLiveId = bridge?.resolveSdkSessionId(sessionId) ?? null;
@@ -187,12 +187,27 @@ export async function relocateClaudeTranscriptsForSessionMove(
     // CLAUDE_CONFIG_DIR,否则默认 ~/.claude;dev 多实例也一样)。旧版 dev 隔离目录里
     // 尚未补拷的转录不在这里搬:下次拉起 CLI 前先补拷到默认目录,再由 resume 前的
     // 转录归位全局扫描放进新 cwd。
-    const result = await relocateClaudeSessionTranscripts({
-      sdkSessionIds,
-      oldWorkingDir,
-      newWorkingDir,
-      projectsRoot,
-    });
+    // A task's historical forks can belong to different account homes. Its current
+    // provider is not authority for moving the older forks.
+    const groups = new Map<string, string[]>();
+    for (const id of sdkSessionIds) {
+      const home = readClaudeHistoryHome(id) ?? defaultClaudeConfigDirCandidates()[0];
+      const members = groups.get(home) ?? [];
+      members.push(id);
+      groups.set(home, members);
+    }
+    const result = { copied: [] as string[], replaced: [] as string[], skipped: [] as string[], missing: [] as string[], targetKeyInexact: false };
+    for (const [home, members] of groups) {
+      scope?.assertCurrent();
+      const moved = await relocateClaudeSessionTranscripts({
+        sdkSessionIds: members, oldWorkingDir, newWorkingDir, projectsRoot: path.join(home, 'projects'),
+      });
+      result.copied.push(...moved.copied);
+      result.replaced.push(...moved.replaced);
+      result.skipped.push(...moved.skipped);
+      result.missing.push(...moved.missing);
+      result.targetKeyInexact ||= moved.targetKeyInexact;
+    }
     if (result.targetKeyInexact) {
       log.warn('transcript relocation skipped: target project key inexact (path too long)', {
         sessionId,

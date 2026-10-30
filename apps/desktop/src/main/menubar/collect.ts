@@ -235,6 +235,10 @@ function sameWindows(a: MenubarSubscriptionInput, b: MenubarSubscriptionInput): 
  */
 export function sameSubscriptionAccount(a: MenubarSubscriptionInput, b: MenubarSubscriptionInput): boolean {
   if (a.family !== b.family) return false;
+  if (a.family === 'claude') {
+    const proof = a.accountKeys?.find(key => key.startsWith('claude:fp:v2:'));
+    return !!proof && b.accountKeys?.includes(proof) === true;
+  }
   const left = a.accountKeys ?? [];
   const right = b.accountKeys ?? [];
   const valuesByKind = new Map<string, Set<string>>();
@@ -383,7 +387,8 @@ export function claudeSource(
     family: 'claude',
     logoSvg: familyLogo('claude'),
     brand: 'Claude',
-    account: provider.id === 'anthropic' ? null : accountIdentity(provider),
+    account: accountIdentity(provider),
+    displayName: provider.name,
     plan: planLabel(snapshot?.subscriptionType),
     windows,
     credits: null,

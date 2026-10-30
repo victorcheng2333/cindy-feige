@@ -17,6 +17,18 @@ const NOW = Date.UTC(2026, 9, 11, 3, 0, 0);
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+// Multi-account menu: a display pin must never follow a different account's quota.
+it('pins the chosen weekly window, keeps unknown unavailable and respects privacy', () => {
+  const a = codex('a', 20, { family: 'claude', displayName: 'Personal' });
+  const b = codex('b', 80, { family: 'claude' });
+  const settings = { statusText: 'account' as const, pinnedSourceId: a.id };
+  expect(buildMenubarView(input([a, b], { settings })).statusTextByMode.account).toBe('Personal 80%');
+  expect(buildMenubarView(input([b], { settings })).statusTextByMode.account).toBe('—');
+  const missingWeek = { ...a, windows: a.windows.map(window => ({ ...window, kind: 'session' as const })) };
+  expect(buildMenubarView(input([missingWeek, b], { settings })).statusTextByMode.account).toBe('Personal —');
+  expect(buildMenubarView(input([a], { settings: { ...settings, privacy: true } })).statusTextByMode.account).not.toContain('Personal');
+});
+
 function codex(id: string, usedPercent: number, extra: Partial<MenubarSubscriptionInput> = {}): MenubarSubscriptionInput {
   return {
     kind: 'subscription',

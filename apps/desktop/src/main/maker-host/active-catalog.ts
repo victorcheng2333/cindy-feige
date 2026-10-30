@@ -1411,7 +1411,8 @@ function computeMerged(): Catalog {
     }
     if (providerCatalogId(p) === 'anthropic') {
       // Claude 订阅只供 Claude Code(内置 CLI 用它自己的登录),不向 Codex / Pi 投影。
-      const accountModels = p.id === 'anthropic' ? anthropicModels : [];
+      const accountModels = p.id === 'anthropic' ? anthropicModels
+        : discoveredByProvider.get(p.id)?.['claude-code'] ?? [];
       const seed = accountModels.length > 0 ? accountModels : (p.models['claude-code'] ?? []);
       // 成员只来自 Claude Code SDK 返回的清单;registry 不补 SDK 没返回的型号。
       const root = assembleRoot(

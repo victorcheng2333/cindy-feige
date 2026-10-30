@@ -673,14 +673,14 @@ export function buildUserProvider(
       id: runtimeProviderId,
       name: config.name,
       source: 'user',
-      // 独立 Claude 账号已停用:它的凭证由 Cindy 自己登录并保存,而 Claude 订阅只允许经
-      // 官方 CLI 自己的登录使用。条目保留在设置里供用户查看 / 删除,不再提供给任何 agent。
-      ...(native === 'claude' ? { agents: [] } : {}),
+      // The host admits only connections migrated to their own native CLI home.
+      // Declaring the harness does not grant login or model membership.
+      ...(native === 'claude' ? { agents: ['claude-code'] as AgentKind[] } : {}),
       auth: { method: 'oauth', native },
       routing: Object.fromEntries(Object.entries(identity.routing).map(([agent, route]) => [
         agent, {
           ...route,
-          authStrategy: 'provider-oauth-header',
+          authStrategy: native === 'claude' ? 'oauth-passthrough' : 'provider-oauth-header',
           // Claude subscription requests must not carry a CLI placeholder API key alongside OAuth.
           ...(native === 'claude' && agent === 'claude-code'
             ? { headerDelete: [...new Set([...(route.headerDelete ?? []), 'x-api-key'])] }
