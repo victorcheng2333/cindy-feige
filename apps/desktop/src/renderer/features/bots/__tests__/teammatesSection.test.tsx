@@ -530,7 +530,7 @@ describe('TeammatesSection rows', () => {
 
     await renderSidebar();
 
-    expect(screen.getByLabelText('bots.list.needsAttention')).toBeTruthy();
+    expect(screen.getByLabelText('bots.avatarStatus.error')).toBeTruthy();
   });
   it('does not duplicate recent Bots in a separate Active now area', async () => {
     mocks.profiles = [bot({ id: 'bot-1', name: 'Active steward', lastMessageAt: Date.now() })];

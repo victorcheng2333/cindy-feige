@@ -69,9 +69,7 @@ export function readSplashPhaseFixture(
 ): SplashPhaseFixtureValue | null {
   if (!env.DEV) return null;
   const raw =
-    typeof env.VITE_SPLASH_PHASE_FIXTURE === 'string'
-      ? env.VITE_SPLASH_PHASE_FIXTURE.trim()
-      : '';
+    typeof env.VITE_SPLASH_PHASE_FIXTURE === 'string' ? env.VITE_SPLASH_PHASE_FIXTURE.trim() : '';
   if (!raw) return null;
   return (SPLASH_PHASE_FIXTURE_VALUES as readonly string[]).includes(raw)
     ? (raw as SplashPhaseFixtureValue)
@@ -82,9 +80,19 @@ export function readSplashPhaseFixture(
 // floor only for update relaunches, so their completion message remains readable.
 const MIN_UPDATE_DISPLAY_MS = 3000;
 const FADE_FALLBACK_MS = 500;
+const RETURNING_SESSION_FADE_FALLBACK_MS = 350;
 // splash_update_done 阶段先让 "更新完成，等待自动重启..." 这段提示文案显示 1.5s，
 // 再自动触发 relaunch，避免下载条刚到 100% 用户还没看清就直接整个窗口黑掉。
 const AUTO_RELAUNCH_DELAY_MS = 1_500;
+
+function resolveReturningSession(): boolean {
+  try {
+    return window.electronAPI?.authHasPersistedSessionHintSync?.() === true;
+  } catch {
+    // 只读提示不可用时按首启保守处理，不因优化缩短未知启动。
+    return false;
+  }
+}
 
 export function useSplash() {
   const { t } = useTranslation();
@@ -103,6 +111,7 @@ export function useSplash() {
   const { errorCode: updateErrorCode } = useUpdateStatus();
 
   const [phase, setPhase] = useState<SplashPhase>('init');
+  const [isReturningSession] = useState(resolveReturningSession);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Effect 2: envStatus drives phase ──
@@ -159,7 +168,11 @@ export function useSplash() {
     if (phase !== 'fading_out') return;
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const delay = reducedMotion ? 10 : FADE_FALLBACK_MS;
+    const delay = reducedMotion
+      ? 10
+      : isReturningSession
+        ? RETURNING_SESSION_FADE_FALLBACK_MS
+        : FADE_FALLBACK_MS;
 
     fallbackTimerRef.current = setTimeout(() => {
       setPhase('splash_done');
@@ -171,7 +184,7 @@ export function useSplash() {
         fallbackTimerRef.current = null;
       }
     };
-  }, [phase]);
+  }, [phase, isReturningSession]);
 
   // ── Tips derivation ──
   const tips: TipsInfo = useMemo<TipsInfo>(() => {
@@ -314,6 +327,7 @@ export function useSplash() {
 
   return {
     phase,
+    isReturningSession,
     isDownloading,
     downloadProgress,
     downloadInfo,
