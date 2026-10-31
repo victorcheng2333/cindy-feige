@@ -67,7 +67,7 @@ export interface PreparedRemoteMcp {
 }
 
 export interface StartRemoteAgentDeps {
-  /** Only cross-account Claude shares: local approval through existing SDK permission callbacks and MCP. */
+  /** Device-hosted Claude: local approval through existing SDK permission callbacks and MCP. */
   claudeApproval?: {
     review: NonNullable<AgentDeps['reviewAutoPermissionAction']>;
     mcpPolicy: NonNullable<AgentDeps['getMcpToolApprovalPolicy']>;
@@ -479,6 +479,9 @@ async function prepareAndStartRemoteAgentSession(
     scope: () => ({ permissionMode, extraDirs, writableDirs, model, providerId }),
     isReadOnlyPath: target => workspace.contains(target) && !writableWorkspace.contains(target),
     servers: () => new Set(['cindy_exec', ...mcp.servers.keys()]),
+    // Same-account sessions keep native WebFetch on the agent computer. Only
+    // tools actually served here may defer their callback to the local MCP gate.
+    localTools: new Set(executor.toolDefinitions().map(tool => tool.name)),
     ask: (request, signal) => controller?.decide(request, signal) ?? Promise.resolve({ kind: 'permission', behavior: 'deny', reason: 'interaction_unavailable' }),
     grant: action => executor.grantReviewedAction(action), newId: deps.newId,
     cancelPendingConfirmations: () => executor.cancelPendingConfirmations(),

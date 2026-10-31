@@ -256,6 +256,88 @@ function createHost(
 }
 
 describe('remote agent round trip', () => {
+  // Unit regression for the 2026-10-31 same-account git-diff/rg silent rejections.
+  // Earlier tests injected approval directly into startRemoteAgentSession, missing
+  // the shared-only service condition. Use the production starter and real MCP
+  // execution: Auto allows a reviewed diff, model/user denials prevent writes,
+  // and native WebFetch cannot borrow a local-tool transport allowance.
+  it('routes same-account Claude through local approval without weakening native-tool confirmation', async () => {
+    fs.writeFileSync(path.join(project, 'before.txt'), 'before\n');
+    fs.writeFileSync(path.join(project, 'after.txt'), 'after\n');
+    fs.writeFileSync(path.join(project, 'ModelSelector.tsx'), '// ModelSelector fixture\n');
+    let remoteInteraction: InteractionResolver | undefined;
+    const remoteModes: string[] = [];
+    const host = createHost(undefined, undefined, input => ({
+      ...fakeHostedAgent(input),
+      async send() {},
+      setInteractionResolver(next) { remoteInteraction = next; },
+      async setPermissionMode(mode) { remoteModes.push(mode); },
+    }));
+    const review = vi.fn(async () => ({ verdict: 'allow' as 'allow' | 'block' | 'ask', reason: 'fixture verdict' }));
+    const ask = vi.fn<InteractionResolver>(async () => ({ kind: 'permission', behavior: 'deny' }));
+    const invoke = makeDeps(host).invoke;
+    const start = createDeviceAgentStarter({
+      remoteInvoke: async (_device, _channel, args) => ({ ok: true, result: await invoke(args) }),
+      rgPath: () => RG, mcpProviders: () => [], prepareMcpBridge: async () => null,
+      makerMemory: () => undefined, captureKnownFileBefore: async () => {}, noteOpaqueTurnChange() {}, logger: historyLogger,
+      claudeApproval: { review, mcpPolicy: () => 'prompt', readOnlyTools: [] },
+    });
+    let handle: AgentSessionHandle | undefined;
+    try {
+      handle = await start({ agentKind: 'claude-code', deviceId: 'my-other-computer', options: {
+        sessionId: 'same-account-approval', workingDir: project, model: 'm', permissionMode: 'auto',
+      } });
+      handle.setInteractionResolver(ask);
+      await handle.send({ type: 'user', content: 'Inspect this source diff and update this test project.' });
+      const input = hostInputs[0];
+      const callTool = async (name: string, args: object) => {
+        const response = await fetch(`${input.tunnel.url}/mcp/cindy_exec`, {
+          method: 'POST', headers: { authorization: `Bearer ${input.tunnel.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+        });
+        return (await response.json() as { result: { isError?: boolean; content: Array<{ text?: string }> } }).result;
+      };
+      for (const [command, expected] of [
+        ['git diff --no-index before.txt after.txt | head -20', '+after'],
+        ["rg -n 'ModelSelector' -g '*.tsx' . | awk '{ print }' | head -20", 'ModelSelector fixture'],
+        ["rg -n 'ModelSelector' . --glob '*.tsx' --glob '!**/__tests__/**'", 'ModelSelector fixture'],
+      ]) {
+        const result = await callTool('Bash', { command });
+        expect(result.isError).not.toBe(true);
+        expect(JSON.stringify(result.content)).toContain(expected);
+      }
+      expect(review).toHaveBeenCalledTimes(3);
+      expect(ask).not.toHaveBeenCalled();
+      expect(input.options.permissionMode).toBe('default');
+
+      // Native WebFetch remains on the agent computer in same-account sessions.
+      // A local review is required even though its name matches a guest-only MCP tool.
+      expect(await remoteInteraction!({ kind: 'permission', requestId: 'native-fetch', toolName: 'WebFetch',
+        input: { url: 'http://127.0.0.1/private' } })).toMatchObject({ kind: 'permission', behavior: 'deny' });
+      expect(ask).toHaveBeenCalledOnce();
+      ask.mockClear();
+
+      review.mockResolvedValue({ verdict: 'block', reason: 'Denied by local reviewer' });
+      expect((await callTool('Bash', { command: 'printf denied > blocked.txt' })).isError).toBe(true);
+      expect(fs.existsSync(path.join(project, 'blocked.txt'))).toBe(false);
+      expect(ask).not.toHaveBeenCalled();
+
+      review.mockResolvedValue({ verdict: 'ask', reason: 'Need a local decision' });
+      expect((await callTool('Bash', { command: 'printf denied > ask.txt' })).isError).toBe(true);
+      expect(ask).toHaveBeenCalledOnce();
+      expect(fs.existsSync(path.join(project, 'ask.txt'))).toBe(false);
+      ask.mockResolvedValue({ kind: 'permission', behavior: 'allow' });
+      expect((await callTool('Bash', { command: 'printf allowed > ask.txt' })).isError).not.toBe(true);
+      expect(fs.readFileSync(path.join(project, 'ask.txt'), 'utf8')).toBe('allowed');
+
+      await handle.setPermissionMode?.('ask');
+      ask.mockResolvedValue({ kind: 'permission', behavior: 'deny' });
+      expect((await callTool('Write', { file_path: 'ask-mode.txt', content: 'denied' })).isError).toBe(true);
+      expect(fs.existsSync(path.join(project, 'ask-mode.txt'))).toBe(false);
+      expect(remoteModes).toEqual(['default']);
+    } finally { await handle?.close(); await host.dispose(); }
+  });
+
   // Existing wire only: an unchanged supplier uses default permission callbacks;
   // Auto/Ask/Full remain local and native permission replies cannot grant execution.
   it('keeps shared Claude approval local across input and permission changes', async () => {

@@ -395,7 +395,9 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       poller,
       pool: poolFor(target),
       rgPath: deps.rgPath(),
-      ...(shared && input.agentKind === 'claude-code' && deps.claudeApproval ? { claudeApproval: deps.claudeApproval } : {}),
+      // Both same-account remotes and shared providers execute tools here. Auto
+      // approvals must reach this gate instead of ending at the remote harness.
+      ...(input.agentKind === 'claude-code' && deps.claudeApproval ? { claudeApproval: deps.claudeApproval } : {}),
       codexPath: () => deps.codexPath?.(),
       ...(target !== input.deviceId || opts[LOCAL_AGENT_CLIENT]?.groupAssigned || (sessionId && deps.isGroupAssigned?.(sessionId))
         ? { groupAssigned: true } : {}),

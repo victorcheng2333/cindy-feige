@@ -1,4 +1,4 @@
-/** Approval for shared Claude tools belongs to the computer that executes them. */
+/** Approval for device-hosted Claude tools belongs to the computer that executes them. */
 import {
   annotatePermissionRequestForAutoReview, appendAutoReviewUserIntent,
   classifyShellCommand, composeAutoReviewIntentWithApprovedPlan, composeAutoReviewIntentWithClarification,
@@ -10,7 +10,6 @@ import {
   type ReviewableAction, type SendOptions, type UserMessage,
 } from '@cindy/maker-core';
 import type { ExecutorAction } from '../executor/gate';
-import { EXECUTOR_CC_TOOL_NAMES } from '../executor/executor';
 import type { ExecutorWorkspace } from '../executor/workspace';
 import { mapRemoteMcpArguments } from './router';
 
@@ -24,6 +23,7 @@ export interface ClaudeToolApprovalDeps {
   scope(): { permissionMode: string | undefined; extraDirs: readonly string[]; writableDirs: readonly string[]; model: string; providerId?: string | null };
   isReadOnlyPath(path: string): boolean;
   servers(): ReadonlySet<string>;
+  localTools: ReadonlySet<string>;
   review: NonNullable<AgentDeps['reviewAutoPermissionAction']>;
   mcpPolicy: NonNullable<AgentDeps['getMcpToolApprovalPolicy']>;
   readOnlyTools: readonly string[];
@@ -89,7 +89,7 @@ export class ClaudeToolApproval {
 
   done(): void { this.running = false; }
   isLocalTool(name: string): boolean {
-    return (EXECUTOR_CC_TOOL_NAMES as readonly string[]).includes(name)
+    return this.deps.localTools.has(name)
       || resolveMcpToolTarget(name, this.deps.servers()) !== null;
   }
   setPlan(enabled: boolean): void { if (!this.running) this.plan = enabled; }
