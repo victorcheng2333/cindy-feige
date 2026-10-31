@@ -30,12 +30,16 @@ function publish(snapshot: Snapshot) {
 }
 function show(anchored = false) {
   if (!window || !ready) return;
+  if (window.isMinimized()) window.restore();
   if (anchored && tray) {
     const b = tray.getBounds(), area = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
     const [width, height] = window.getSize();
     window.setPosition(...trayWindowPosition(b, area, [width, height]));
   }
-  window.show(); window.focus();
+  window.show();
+  // LSUIElement apps have no Dock activation to bring them forward for us.
+  app.focus({ steal: true });
+  window.focus();
   if (!demo) void service?.refresh();
 }
 function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
@@ -91,7 +95,14 @@ async function start() {
   const image = nativeImage.createFromPath(join(__dirname, 'trayTemplate.png'));
   image.setTemplateImage(true);
   tray = new Tray(image); tray.setToolTip('猫猫 · 远程订阅额度');
-  tray.on('click', () => window?.isVisible() ? window.hide() : show(true));
+  // A window behind another app is still "visible" to Electron. Hiding it here
+  // consumed the first click and forced users to click again to actually open it.
+  tray.on('click', () => {
+    if (window?.isVisible() && window.isFocused() && !window.isMinimized()) window.hide();
+    else show(true);
+  });
+  // A rapid second click is a distinct native event on macOS; always finish open.
+  tray.on('double-click', () => show(true));
   tray.on('right-click', () => tray?.popUpContextMenu(Menu.buildFromTemplate([
     { label: '打开猫猫', click: () => show(true) },
     { label: '刷新额度', click: () => { if (!demo) void service?.refresh(); } },

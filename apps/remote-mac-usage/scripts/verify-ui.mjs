@@ -5,13 +5,55 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 const root = fileURLToPath(new URL('..', import.meta.url)), qa = join(root, 'qa');
 await mkdir(qa, { recursive: true });
-const electron = await _electron.launch({ args: [join(root, 'dist'), '--demo'], timeout: 20000 });
+const electron = await _electron.launch({ args: [join(root, 'scripts/window-test-main.cjs'), join(root, 'dist/main.cjs'), '--demo'], timeout: 20000 });
 const errors = [], reports = [];
 try {
   const page = await electron.firstWindow();
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.getByRole('heading', { name: '订阅额度', exact: true }).waitFor();
+  // Regression: a visible but unfocused window used to be hidden by the first
+  // tray click. The previous menu-only reopen check never exercised that branch.
+  // Tier: Electron integration; actual production Tray handler and native window.
+  const trayActivation = await electron.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0], id = w.id;
+    w.blur();
+    const before = { visible: w.isVisible(), focused: w.isFocused() };
+    const start = performance.now();
+    globalThis.quotaCatTestTray.emit('click');
+    return { before, visible: w.isVisible(), sameWindow: w.id === id, elapsedMs: performance.now() - start };
+  });
+  assert.deepEqual(trayActivation.before, { visible: true, focused: false });
+  assert.equal(trayActivation.visible, true, 'first tray click must raise an unfocused window, not hide it');
+  assert.equal(trayActivation.sameWindow, true);
+  reports.push({ name: 'tray-unfocused-activation', ...trayActivation });
+  const trayToggle = await electron.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0], tray = globalThis.quotaCatTestTray;
+    // Automation may run behind the user's foreground app. Supply only the
+    // focused-state predicate for this branch; show/hide stay real native calls.
+    const isFocused = w.isFocused;
+    let hidden;
+    try { w.isFocused = () => true; tray.emit('click'); hidden = !w.isVisible(); }
+    finally { w.isFocused = isFocused; }
+    tray.emit('double-click'); const doubleClickOpen = w.isVisible();
+    w.hide(); tray.emit('click');
+    return { hidden, doubleClickOpen, hiddenReopened: w.isVisible() };
+  });
+  assert.deepEqual(trayToggle, { hidden: true, doubleClickOpen: true, hiddenReopened: true });
+  // Wait for the actual OS minimize transition; no fixed sleep in the test.
+  await electron.evaluate(({ BrowserWindow }) => new Promise((resolve, reject) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    const deadline = setTimeout(() => reject(Error('native minimize timed out')), 3000);
+    w.once('minimize', () => { clearTimeout(deadline); resolve(); });
+    w.minimize();
+  }));
+  const minimized = await electron.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0], before = w.isMinimized();
+    globalThis.quotaCatTestTray.emit('click');
+    return { before, restored: !w.isMinimized(), visible: w.isVisible() };
+  });
+  assert.deepEqual(minimized, { before: true, restored: true, visible: true });
+  reports.push({ name: 'tray-toggle-double-click-minimized', ...trayToggle, ...minimized });
   const check = async name => {
     const result = await page.evaluate(() => {
       const rgba = s => { const n = s.match(/[\d.]+/g)?.map(Number) ?? []; return [n[0] ?? 0,n[1] ?? 0,n[2] ?? 0,n[3] ?? 1]; };
