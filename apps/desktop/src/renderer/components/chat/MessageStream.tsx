@@ -520,6 +520,8 @@ interface MessageStreamProps {
   focusMessageClientId?: string | null;
   /** Incremented by the parent for each search navigation, including repeated hits. */
   focusMessageRequestId?: number;
+  /** Notifications locate messages without painting a search-result background. */
+  highlightFocusedMessage?: boolean;
   /** Source marker shown for sessions forked from another conversation. */
   forkOrigin?: {
     parentSessionId: string;
@@ -3028,6 +3030,7 @@ export function MessageStream({
   getContentWidth,
   focusMessageClientId,
   focusMessageRequestId,
+  highlightFocusedMessage = true,
   forkOrigin,
   onOpenForkOrigin,
   isLocalUserSend,
@@ -6747,7 +6750,7 @@ export function MessageStream({
                       />
                     );
                     const highlightClass =
-                      highlightMessageClientId === msg.clientId
+                      highlightFocusedMessage && highlightMessageClientId === msg.clientId
                         ? 'rounded-xl bg-[hsl(var(--search-match-bg))] ring-1 ring-[var(--border-default)]'
                         : undefined;
                     const shareAttributes = shareable

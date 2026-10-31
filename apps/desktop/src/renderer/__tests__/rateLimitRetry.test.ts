@@ -6,10 +6,10 @@ import {
 } from '@/utils/rateLimitRetry';
 
 describe('parseTerminalRateLimitRetryProgress', () => {
-  it('requires the dedicated reason and marker', () => {
+  it.each([TERMINAL_RATE_LIMIT_RETRY_REASON, 'upstream-rate-limit-retry'])('requires the dedicated reason and marker: %s', (reason) => {
     const message =
       'exceeded retry limit, last status: 429 Too Many Requests (rate-limit-retry 1/2)';
-    expect(parseTerminalRateLimitRetryProgress(message, TERMINAL_RATE_LIMIT_RETRY_REASON)).toEqual({
+    expect(parseTerminalRateLimitRetryProgress(message, reason)).toEqual({
       attempt: 1,
       maxAttempts: 2,
     });

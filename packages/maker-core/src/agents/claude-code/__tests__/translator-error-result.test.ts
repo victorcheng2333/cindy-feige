@@ -656,11 +656,10 @@ describe('Claude Code translator is_error result guard', () => {
 
     const events = await drain(queue);
     const errors = events.filter((e) => e.type === 'error');
-    // 只有一条终态：这是 connection error（非过载），重试进行中**不**透出进度。
-    // 透出的 message 是内部英文 SDK 字符串，只有过载与网络形态会被 ErrorBanner
-    // 本地化替换；把其它类别也透出来会让各语言用户看到裸英文（review #844 P1）。
-    expect(errors).toHaveLength(1);
-    expect(errors[0]?.data).toMatchObject({
+    // Progress is nonterminal; the eventual failure still carries the full error.
+    expect(errors).toHaveLength(2);
+    expect(errors[0]?.data).toMatchObject({ message: 'Reconnecting... 3/3', isTerminal: false, willRetry: true });
+    expect(errors[1]?.data).toMatchObject({
       message: 'SDK API request failed: unknown (connection error, retry 3/3)',
       sdkError: 'unknown',
       errorStatus: null,
@@ -668,7 +667,7 @@ describe('Claude Code translator is_error result guard', () => {
       maxRetries: 3,
       isTerminal: true,
     });
-    expect(errors[0]?.agentMeta, 'api_retry has no assistant transcript anchor').toBeUndefined();
+    expect(errors[1]?.agentMeta, 'api_retry has no assistant transcript anchor').toBeUndefined();
     expect(events.some((e) => e.type === 'done'), 'done tail remains available for usage accounting').toBe(true);
   });
 
@@ -699,9 +698,7 @@ describe('Claude Code translator is_error result guard', () => {
   });
 
   it.each([
-    { label: '429 rate limit', error_status: 429, error: 'rate_limit_error' },
     { label: '500 server error', error_status: 500, error: 'api_error' },
-    { label: 'connection error', error_status: null, error: 'unknown' },
   ])('does not surface non-overload retry progress ($label)', async ({ error_status, error }) => {
     // 这些类别的 message 不会被 ErrorBanner 本地化，透出等于给所有语言的用户
     // 一段裸英文；改动前它们是静默的，必须保持静默（review #844 P1）。
@@ -725,6 +722,25 @@ describe('Claude Code translator is_error result guard', () => {
 
     const events = await drain(queue);
     expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+  });
+
+  // Unit regression: SDK retries used to produce zero UI events, even after a
+  // first-byte timeout. Exercise the real translator; do not initiate another request.
+  it.each([
+    { attempt: 1, max_retries: 1, error_status: null, error: 'unknown',
+      no_response: { waited_ms: 60_000, retry_wait_ms: 120_000 }, marker: 'Reconnecting... 1/1' },
+    { attempt: 3, max_retries: 10, error_status: null, error: 'unknown', marker: 'Reconnecting... 3/10' },
+    { attempt: 2, max_retries: 5, error_status: 429, error: 'rate_limit_error', marker: '(rate-limit-retry 2/5)' },
+  ])('shows nonterminal SDK retry progress: $marker', async ({ marker, ...retry }) => {
+    const queue = createAsyncQueue<AgentEvent>();
+    translateSdkMessage({ type: 'system', subtype: 'api_retry', retry_delay_ms: 1000, ...retry },
+      queue, createCtx(new UsageTracker()));
+    const events = await drain(queue);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'error', data: {
+      message: expect.stringContaining(marker), isTerminal: false, willRetry: true,
+      ...(retry.error_status === 429 ? { reason: 'upstream-rate-limit-retry' } : {}),
+    } });
   });
 
   it('surfaces 529 overload retries as non-terminal progress carrying errorStatus', async () => {

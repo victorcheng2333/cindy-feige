@@ -1,6 +1,7 @@
 /**
  * Codex daemon 耗尽内部 retry budget 后，maker-core 接管终态 429 时使用的
- * renderer 契约。reason 与进度 marker 必须同时命中，避免把普通 429 或模型容量
+ * renderer 契约；也接受 Claude CLI 内部重试的 upstream-rate-limit-retry。
+ * reason 与进度 marker 必须同时命中，避免把普通 429 或模型容量
  * 过载误归类成这条外层重投路径。
  *
  * maker-core 侧同名常量与 formatter 位于
@@ -8,6 +9,8 @@
  * 共享代码，修改契约时必须同步。
  */
 export const TERMINAL_RATE_LIMIT_RETRY_REASON = 'terminal-rate-limit-retry';
+/** Claude CLI's own retry, presented identically without requesting a host replay. */
+export const UPSTREAM_RATE_LIMIT_RETRY_REASON = 'upstream-rate-limit-retry';
 
 const TERMINAL_RATE_LIMIT_RETRY_PROGRESS_RE = /\(rate-limit-retry\s+(\d+)\s*\/\s*(\d+)\)\s*$/;
 
@@ -15,7 +18,7 @@ export function parseTerminalRateLimitRetryProgress(
   message: string,
   reason?: string | null,
 ): { attempt: number; maxAttempts: number } | null {
-  if (reason !== TERMINAL_RATE_LIMIT_RETRY_REASON) return null;
+  if (reason !== TERMINAL_RATE_LIMIT_RETRY_REASON && reason !== UPSTREAM_RATE_LIMIT_RETRY_REASON) return null;
   const match = TERMINAL_RATE_LIMIT_RETRY_PROGRESS_RE.exec(message);
   if (!match) return null;
   const attempt = Number(match[1]);

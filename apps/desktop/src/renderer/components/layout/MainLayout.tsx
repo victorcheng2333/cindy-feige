@@ -587,7 +587,7 @@ export function MainLayout() {
         }
         if (messageClientId) {
           // 带消息锚点:即使已在目标路由也要 navigate——新的 location.state 才能
-          // 触发 CCAgentSessionView 的 searchJump 消费 effect(定位 + 高亮)。
+          // 触发 CCAgentSessionView 的 searchJump 消费 effect；通知只定位，不高亮。
           navigate(target, {
             state: {
               searchJump: {
@@ -596,6 +596,7 @@ export function MainLayout() {
                 messageId: messageClientId,
                 messageIdKind: 'clientId',
                 messageClientId,
+                highlight: false,
               },
             },
           });
@@ -627,7 +628,7 @@ export function MainLayout() {
       if (messageClientId && sessionId) {
         sessionEntryDepsRef.current.navigate(route, { state: {
           ...(islandEntryId ? islandEntryRouteState(islandEntryId) : {}),
-          searchJump: { kind: 'conversation-search', sessionId, messageId: messageClientId, messageIdKind: 'clientId', messageClientId },
+          searchJump: { kind: 'conversation-search', sessionId, messageId: messageClientId, messageIdKind: 'clientId', messageClientId, highlight: false },
         } });
         return;
       }

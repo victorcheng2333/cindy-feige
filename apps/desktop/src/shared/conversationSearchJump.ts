@@ -5,6 +5,8 @@ export interface ConversationSearchJump {
   messageId: string;
   messageIdKind?: 'id' | 'clientId';
   messageClientId: string;
+  /** External message links locate the reply without the search-result emphasis. */
+  highlight?: boolean;
 }
 
 /** 跨路由、tab 持久化和 RSB 子窗口 IPC 共用的运行时归一化。 */
@@ -16,6 +18,7 @@ export function parseConversationSearchJump(raw: unknown): ConversationSearchJum
     messageId?: unknown;
     messageIdKind?: unknown;
     messageClientId?: unknown;
+    highlight?: unknown;
   };
   if (candidate.kind !== 'conversation-search') return null;
   if (typeof candidate.sessionId !== 'string' || !candidate.sessionId) return null;
@@ -27,5 +30,6 @@ export function parseConversationSearchJump(raw: unknown): ConversationSearchJum
     messageId: candidate.messageId,
     messageIdKind: candidate.messageIdKind === 'clientId' ? 'clientId' : 'id',
     messageClientId: candidate.messageClientId,
+    ...(typeof candidate.highlight === 'boolean' ? { highlight: candidate.highlight } : {}),
   };
 }
