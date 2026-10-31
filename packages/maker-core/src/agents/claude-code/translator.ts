@@ -1038,6 +1038,7 @@ function handleSystem(
     max_retries?: number;
     retry_delay_ms?: number;
     error_status?: number | null;
+    no_response?: { waited_ms?: number; retry_wait_ms?: number };
     error?: string;
     // task_updated 专属:增量补丁(SDKTaskUpdatedMessage.patch)。只声明渲染需要的字段,
     // end_time / total_paused_ms / is_backgrounded 目前不进事件流。
@@ -1115,13 +1116,26 @@ function handleSystem(
     // 都走它），客户端再叠一层会把一次上游过载放大成指数级请求，而失败请求照扣
     // 额度。Codex 那侧要自己重投只是因为 app-server 对容量拒绝根本不重试。
     //
-    // 第 1 次不透出：单次抖动 SDK 一次重试就过，提示只会闪一下徒增噪音（与
-    // codex translator 持续重试透出的防噪口径一致）。
-    //
-    // **只透出过载类**：这条 message 是内部英文 SDK 字符串，renderer 的 ErrorBanner
-    // 只对过载与网络形态做本地化替换。若把 429、500 这类也透出来，各语言用户会直接
-    // 看到裸英文，而它们在本改动之前是静默的——那是实打实的回归。其它重试类别保持
-    // 原样静默，需要时另行补本地化再放开。
+    // Suppress a brief first retry, but a first-byte timeout has already kept the
+    // user waiting. Reuse localized Desktop/Mobile progress markers; the SDK
+    // alone owns retry execution. Do not classify quota/429 as a network failure.
+    const validRetry = typeof msg.attempt === 'number' && typeof msg.max_retries === 'number' &&
+      Number.isSafeInteger(msg.attempt) && Number.isSafeInteger(msg.max_retries) &&
+      msg.attempt >= 1 && msg.max_retries >= msg.attempt;
+    const noResponse = msg.no_response && typeof msg.no_response.waited_ms === 'number' &&
+      Number.isFinite(msg.no_response.waited_ms) && msg.no_response.waited_ms > 0;
+    const visibleRetry = validRetry && ((msg.attempt ?? 0) >= 2 || noResponse);
+    if (visibleRetry && (msg.error_status === null || msg.error_status === 429)) {
+      const rateLimited = msg.error_status === 429;
+      queue.push({ type: 'error', source: 'claude-code', data: {
+        message: rateLimited
+          ? `SDK API request rate limited (HTTP 429) (rate-limit-retry ${msg.attempt}/${msg.max_retries})`
+          : `Reconnecting... ${msg.attempt}/${msg.max_retries}`,
+        isTerminal: false, willRetry: true,
+        ...(rateLimited ? { errorStatus: 429, reason: 'upstream-rate-limit-retry' } : {}),
+      } });
+      return;
+    }
     //
     // 判据是 parseOverloadError 的**两种**形态都算（`overloaded`：529 /
     // overloaded_error；`capacity`：`at capacity`），不只 529：renderer 侧的镜像

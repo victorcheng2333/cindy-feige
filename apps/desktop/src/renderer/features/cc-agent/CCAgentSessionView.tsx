@@ -923,11 +923,13 @@ function CCAgentSessionContent({
   const [focusedMessageTarget, setFocusedMessageTarget] = useState<{
     clientId: string;
     requestId: number;
+    highlight: boolean;
   } | null>(null);
-  const requestFocusMessage = useCallback((clientId: string) => {
+  const requestFocusMessage = useCallback((clientId: string, highlight = true) => {
     setFocusedMessageTarget((current) => ({
       clientId,
       requestId: (current?.requestId ?? 0) + 1,
+      highlight,
     }));
   }, []);
   const clearSearchJumpState = useCallback(() => {
@@ -1438,7 +1440,7 @@ function CCAgentSessionContent({
     // 返回,store 侧的自愈补齐永远不会被触发,中间缺失一直修不回来(#676 review)。
     // 判定逻辑抽在 canFocusWithoutJumpLoad,由 searchJumpTargeting.test.ts 直接覆盖。
     if (canFocusWithoutJumpLoad(currentState, searchJump.messageClientId)) {
-      requestFocusMessage(searchJump.messageClientId);
+      requestFocusMessage(searchJump.messageClientId, searchJump.highlight);
       clearSearchJumpState();
       return;
     }
@@ -1456,7 +1458,7 @@ function CCAgentSessionContent({
         .messages.some((message) => message.clientId === searchJump.messageClientId);
     const finishWithFallback = (): void => {
       if (targetStillInWindow()) {
-        requestFocusMessage(searchJump.messageClientId);
+        requestFocusMessage(searchJump.messageClientId, searchJump.highlight);
       } else {
         toast.error(t('ccAgent.search.jumpFailed'));
       }
@@ -1470,7 +1472,7 @@ function CCAgentSessionContent({
       .then((message) => {
         if (cancelled) return;
         if (message) {
-          requestFocusMessage(message.clientId);
+          requestFocusMessage(message.clientId, searchJump.highlight);
           clearSearchJumpState();
           return;
         }
@@ -5309,6 +5311,7 @@ function CCAgentSessionContent({
       getContentWidth={getMessageWidth}
       focusMessageClientId={focusedMessageTarget?.clientId ?? null}
       focusMessageRequestId={focusedMessageTarget?.requestId ?? 0}
+      highlightFocusedMessage={focusedMessageTarget?.highlight ?? true}
       forkOrigin={session?.source === 'side-chat' ? undefined : forkOrigin}
       onOpenForkOrigin={handleOpenForkOrigin}
       isLocalUserSend={isLocalUserSend}

@@ -5997,7 +5997,8 @@ function parseAttemptPair(
  *  - 传输层重连: `Reconnecting... N/M`;
  *  - 上游过载退避重投: `(auto-retry N/M)`(maker-core 的
  *    agents/shared/overload-error.ts 统一后缀, Codex 与 Claude 两侧同款)。
- *  - daemon 终态 429 外层重投: reason=`terminal-rate-limit-retry` +
+ *  - 429 重试: reason=`terminal-rate-limit-retry`（宿主）或
+ *    `upstream-rate-limit-retry`（Claude CLI）+
  *    `(rate-limit-retry N/M)`；reason 与 marker 必须同时命中。
  *
  * 过载 marker 不认的话, 整个退避窗口(交互式最长约 30s)手机端只显示笼统的「思考中」, 用户看不出
@@ -6011,7 +6012,7 @@ function parseReconnectAttemptMessage(
   message: string,
   reason?: string | null,
 ): RemoteSessionReconnectAttempt | null {
-  if (reason === TERMINAL_RATE_LIMIT_RETRY_REASON) {
+  if (reason === TERMINAL_RATE_LIMIT_RETRY_REASON || reason === 'upstream-rate-limit-retry') {
     const rateLimit = parseAttemptPair(
       /\(rate-limit-retry\s+(\d+)\s*\/\s*(\d+)\)\s*$/i.exec(message),
     );

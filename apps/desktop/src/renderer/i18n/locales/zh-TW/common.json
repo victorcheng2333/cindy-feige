@@ -1386,15 +1386,15 @@
       "scoped": "{{model}} 本週"
     },
     "headline": {
-      "recommend": "{{name}} 餘量最足。",
+      "quotaByPeriod": "各週期剩餘配額",
       "balance": "Cindy 餘額還能用。",
       "quota": "Cindy 本期配額還能用。",
       "none": "餘量都用完了。",
       "unread": "還沒讀到餘量。",
       "empty": "還沒有帶餘量的帳號。",
       "emptyHint": "在 Cindy 裡連上訂閱，這裡就會顯示餘量。",
-      "restore": "{{name}} {{duration}}後重置",
-      "soon": "{{name}} 快見底",
+      "restore": "{{name}} {{window}} {{duration}}後重置",
+      "soon": "{{name}} {{window}}按本週期均速預計 {{duration}}後用完",
       "subscriptionsUsed": "訂閱都用完了",
       "waitReset": "等訂閱重置",
       "sentence": "{{text}}。",
@@ -1409,6 +1409,8 @@
       "lastsDays": "約{{n}}天",
       "lastsDaysShort": "{{n}}天",
       "resetsIn": "{{duration}}後重置",
+      "sessionLimit": "{{hours}} 小時限額",
+      "weekLimit": "週限額",
       "credits": "credits"
     },
     "a11y": {
@@ -1419,7 +1421,7 @@
       "quota": "Cindy 本期配額剩餘 {{amount}}",
       "noData": "{{name}}，暫無資料",
       "reserve": "{{name}}，已用完，還有 credits 可用",
-      "remaining": "{{name}} 剩餘 {{n}}%"
+      "remaining": "{{name}}，{{window}}剩餘 {{n}}%"
     },
     "detail": {
       "balanceCaption": "餘額",

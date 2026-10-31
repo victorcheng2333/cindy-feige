@@ -62,6 +62,16 @@ export type MenubarLevel = 'normal' | 'warn' | 'error';
 
 export type MenubarSourceKind = 'subscription' | 'balance' | 'payg';
 
+export interface MenubarQuotaWindowCell {
+  id: string;
+  label: string;
+  value: string;
+  fill: number;
+  level: MenubarLevel;
+  reserve: boolean;
+  when: string;
+}
+
 export interface MenubarSourceCell {
   id: string;
   kind: MenubarSourceKind;
@@ -73,6 +83,10 @@ export interface MenubarSourceCell {
   value: string | null;
   valueUnit: string | null;
   valueLabel: string | null;
+  /** Period of the displayed percentage; optional for older native helpers and unmeasured sources. */
+  periodLabel?: string;
+  /** Independent account-wide limits; old helpers retain the legacy single-value fields. */
+  periods?: MenubarQuotaWindowCell[];
   level: MenubarLevel;
   /** Liquid height 0...1; null draws the dashed empty tube for pay-as-you-go. */
   fill: number | null;

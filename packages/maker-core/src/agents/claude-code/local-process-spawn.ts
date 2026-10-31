@@ -2,6 +2,46 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 
+/** query.close() is void; abort/killed are requests, not proof of writer exit. */
+export class ClaudeProcessExitBarrier {
+  private readonly pending = new Set<Promise<void>>();
+
+  track<T extends SpawnedProcess & { readonly pid?: number }>(child: T): T {
+    if (child.exitCode !== null || child.signalCode != null) return child;
+    let resolve!: () => void;
+    const exited = new Promise<void>((done) => { resolve = done; });
+    this.pending.add(exited);
+    const finish = (): void => {
+      child.off('exit', finish);
+      child.off('error', onError);
+      this.pending.delete(exited);
+      resolve();
+    };
+    const onError = (): void => {
+      // AbortError / kill failure on a live child must still wait for exit.
+      if (child.pid === undefined) finish();
+    };
+    child.once('exit', finish);
+    child.on('error', onError);
+    return child;
+  }
+
+  async wait(timeoutMs = 10_000): Promise<void> {
+    if (this.pending.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.all([...this.pending]),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Claude Code process exit could not be confirmed')), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+}
+
 export interface ObservedClaudeProcessOptions {
   spawnOptions: SpawnOptions;
   registerProcess?: (pid: number) => void | (() => void);

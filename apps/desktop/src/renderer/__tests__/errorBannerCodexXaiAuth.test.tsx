@@ -239,10 +239,10 @@ describe('ErrorBanner terminal rate-limit retry guidance', () => {
   const RATE_LIMIT =
     'exceeded retry limit, last status: 429 Too Many Requests (rate-limit-retry 1/2)';
 
-  it('shows localized rate-limit progress without calling it model overload', () => {
+  it.each(['terminal-rate-limit-retry', 'upstream-rate-limit-retry'])('shows localized rate-limit progress without calling it model overload: %s', (reason) => {
     render(createElement(ErrorBanner, {
       error: RATE_LIMIT,
-      errorReason: 'terminal-rate-limit-retry',
+      errorReason: reason,
       onRetry: vi.fn(),
       isRecoverable: true,
     }));

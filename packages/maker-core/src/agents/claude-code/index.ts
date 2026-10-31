@@ -46,7 +46,7 @@ import type {
   Settings,
 } from '@anthropic-ai/claude-agent-sdk';
 import { discoverSubagentDefinitions } from './subagent-definitions.js';
-import { spawnObservedClaudeProcess } from './local-process-spawn.js';
+import { ClaudeProcessExitBarrier, spawnObservedClaudeProcess } from './local-process-spawn.js';
 import { claudeMcpServerToolsReport, type ClaudeMcpServerStatusEntry } from './mcp-server-tools.js';
 import {
   reportSubagentModelDiagnostics,
@@ -1100,12 +1100,14 @@ export class ClaudeCodeAgent extends BaseAgent {
     assertCurrent();
     const input = createAsyncQueue<never>();
     const abortController = new AbortController();
+    const processExits = new ClaudeProcessExitBarrier();
     let query: Query | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       query = sdkQuery({ prompt: input as unknown as Parameters<typeof sdkQuery>[0]['prompt'], options: {
         cwd: opts.workingDir, resume: opts.nativeId, model: this.sdkModelFor(opts.model), env,
         pathToClaudeCodeExecutable: this.deps.binaryPath, abortController,
+        spawnClaudeCodeProcess: (spawnOptions) => processExits.track(spawnObservedClaudeProcess({ spawnOptions })),
         persistSession: false, tools: [], mcpServers: {}, strictMcpConfig: true,
         settingSources: ['user', 'project', 'local'], settings: { disableAllHooks: true },
       } });
@@ -1123,7 +1125,8 @@ export class ClaudeCodeAgent extends BaseAgent {
       if (timer) clearTimeout(timer);
       input.end();
       abortController.abort();
-      await query?.close();
+      query?.close();
+      await processExits.wait();
     }
   }
 
@@ -1448,6 +1451,9 @@ export class ClaudeCodeAgent extends BaseAgent {
     opts: StartSessionOptions,
     onRuntimeStartAttempted: () => void,
   ): Promise<AgentSessionHandle> {
+    // Track every local Query generation, including ones retired by rewind/Stop.
+    // A later account transfer cannot copy history while any old writer is alive.
+    const processExits = new ClaudeProcessExitBarrier();
     // scope 带完整 s:<sessionId> 前缀 → host logger 落盘时提取 business sessionId,
     // 路由到 sessions/<id>/<date>.ndjson (logger.ts extractSessionId / sessionAgentSlot)。
     const sid = opts.sessionId ?? '';
@@ -4556,25 +4562,21 @@ export class ClaudeCodeAgent extends BaseAgent {
           ...(finalResumeAt ? { resumeSessionAt: finalResumeAt } : {}),
           ...(finalFork ? { forkSession: true } : {}),
           env,
-          ...(this.deps.registerLocalAgentProcess || this.deps.trackCcDebugFile
-            ? {
-                spawnClaudeCodeProcess: (spawnOptions) =>
-                  spawnObservedClaudeProcess({
-                    spawnOptions,
-                    registerProcess: (pid) =>
-                      this.deps.registerLocalAgentProcess?.({
-                        pid,
-                        kind: 'claude',
-                        role: 'task-host',
-                        sessionId: opts.sessionId ?? null,
-                      }),
-                    trackDebugFile: process.env.XDT_CC_DEBUG_NET === '1' && ccDebugFile
-                      ? () => this.deps.trackCcDebugFile?.(ccDebugFile, opts.sessionId) ?? (() => {})
-                      : undefined,
-                    onStderr: vo.onStderrLine as ((line: string) => void) | undefined,
-                  }),
-              }
-            : {}),
+          spawnClaudeCodeProcess: (spawnOptions) =>
+            processExits.track(spawnObservedClaudeProcess({
+              spawnOptions,
+              registerProcess: (pid) =>
+                this.deps.registerLocalAgentProcess?.({
+                  pid,
+                  kind: 'claude',
+                  role: 'task-host',
+                  sessionId: opts.sessionId ?? null,
+                }),
+              trackDebugFile: process.env.XDT_CC_DEBUG_NET === '1' && ccDebugFile
+                ? () => this.deps.trackCcDebugFile?.(ccDebugFile, opts.sessionId) ?? (() => {})
+                : undefined,
+              onStderr: vo.onStderrLine as ((line: string) => void) | undefined,
+            })),
           // 旧宿主 token 刷新接线暂保留:只有 env 带 token 且 adapter 实现刷新时才传入。
           // 当前 Desktop adapter 不实现刷新,nativeCliAuth 也会剥除 token,不会进入此分支。
           // sdk-ts 不在旧 CLI 的刷新回调入口白名单内,不能把保留此字段当作续期保证;
@@ -7399,7 +7401,8 @@ export class ClaudeCodeAgent extends BaseAgent {
       },
 
       async close() {
-        if (closed) return;
+        // A previous close can time out; retry still needs actual exit evidence.
+        if (closed) { await processExits.wait(); return; }
         // Closing/dead sessions settle through Session status (or their queued
         // terminal event), never through the successful task-stop path.
         resetClaudeGenerationTiming(runtimeState.generation);
@@ -7414,7 +7417,8 @@ export class ClaudeCodeAgent extends BaseAgent {
           dismissAllPending('session_closed', 'deny');
           inputQueue.end();
           abortController.abort();
-          // close 会终结 CLI 子进程(本地)/ 远端 session,后台任务随之死亡。
+          if (!activeRemoteQuery) q.close();
+          // Signals request teardown; the exit barrier below confirms completion.
           runningBackgroundTasks.clear();
           terminalBackgroundTaskIds.clear();
         } catch (e) {
@@ -7432,6 +7436,7 @@ export class ClaudeCodeAgent extends BaseAgent {
             log.warn('remoteQuery.close threw (best-effort)', { error: String(e) });
           }
         }
+        await processExits.wait();
       },
 
       ...(opts.remoteHostId

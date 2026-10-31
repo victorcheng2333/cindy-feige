@@ -1404,15 +1404,15 @@
       "scoped": "{{model}} weekly"
     },
     "headline": {
-      "recommend": "{{name}} has the most left.",
+      "quotaByPeriod": "Remaining quota by period",
       "balance": "Your Cindy balance still works.",
       "quota": "Your Cindy quota still has room.",
       "none": "Everything is used up.",
       "unread": "Quota not read yet.",
       "empty": "Nothing with a quota yet.",
       "emptyHint": "Connect a subscription in Cindy to see what's left here.",
-      "restore": "{{name}} resets in {{duration}}",
-      "soon": "{{name}} is running low",
+      "restore": "{{name}} {{window}} resets in {{duration}}",
+      "soon": "{{name}} {{window}} is estimated to run out in {{duration}} at this period’s average pace",
       "subscriptionsUsed": "Subscriptions are used up",
       "waitReset": "Wait for subscriptions to reset",
       "sentence": "{{text}}.",
@@ -1427,6 +1427,8 @@
       "lastsDays": "~{{n}}d left",
       "lastsDaysShort": "{{n}}d",
       "resetsIn": "Resets in {{duration}}",
+      "sessionLimit": "{{hours}}-hour limit",
+      "weekLimit": "Weekly limit",
       "credits": "credits"
     },
     "a11y": {
@@ -1437,7 +1439,7 @@
       "quota": "Cindy quota {{amount}} left",
       "noData": "{{name}}, no data yet",
       "reserve": "{{name}}, used up, credits still available",
-      "remaining": "{{name}}, {{n}}% left"
+      "remaining": "{{name}}, {{window}}, {{n}}% remaining"
     },
     "detail": {
       "balanceCaption": "Balance",

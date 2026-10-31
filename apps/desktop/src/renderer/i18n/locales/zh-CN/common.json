@@ -1386,15 +1386,15 @@
       "scoped": "{{model}} 本周"
     },
     "headline": {
-      "recommend": "{{name}} 余量最足。",
+      "quotaByPeriod": "各周期剩余配额",
       "balance": "Cindy 余额还能用。",
       "quota": "Cindy 本期配额还能用。",
       "none": "余量都用完了。",
       "unread": "还没读到余量。",
       "empty": "还没有带余量的账号。",
       "emptyHint": "在 Cindy 里连上订阅，这里就会显示余量。",
-      "restore": "{{name}} {{duration}}后重置",
-      "soon": "{{name}} 快见底",
+      "restore": "{{name}} {{window}} {{duration}}后重置",
+      "soon": "{{name}} {{window}}按本周期均速预计 {{duration}}后用完",
       "subscriptionsUsed": "订阅都用完了",
       "waitReset": "等订阅重置",
       "sentence": "{{text}}。",
@@ -1409,6 +1409,8 @@
       "lastsDays": "约{{n}}天",
       "lastsDaysShort": "{{n}}天",
       "resetsIn": "{{duration}}后重置",
+      "sessionLimit": "{{hours}} 小时限额",
+      "weekLimit": "周限额",
       "credits": "credits"
     },
     "a11y": {
@@ -1419,7 +1421,7 @@
       "quota": "Cindy 本期配额剩余 {{amount}}",
       "noData": "{{name}}，暂无数据",
       "reserve": "{{name}}，已用完，还有 credits 可用",
-      "remaining": "{{name}} 剩余 {{n}}%"
+      "remaining": "{{name}}，{{window}}剩余 {{n}}%"
     },
     "detail": {
       "balanceCaption": "余额",

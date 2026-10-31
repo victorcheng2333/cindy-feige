@@ -3,6 +3,7 @@ import type { AgentKind } from "@cindy/model-providers/types";
 import { matchCodexBucketForModel } from "@cindy/maker-shared/codex-usage-buckets";
 import type { MobileCodexRateLimitsResult } from "@cindy/maker-shared/device-link-contract";
 import type { MobileModelPricingMap } from "@/device-link/mobileMakerTransport";
+import { providerDisplayTitle } from "./modelPickerRows";
 
 /** Desktop priceTierOf: standard USD output price; discounts do not change the tier. */
 export function mobileCostMarks(
@@ -121,14 +122,7 @@ export function quotaCountdown(reset: number, now: number, unitLabel: (unit: Quo
   return `${Math.max(1, Math.ceil(remaining / 1000))}${unitLabel("second")}`;
 }
 
-/** The host's connection name and public identity, never the controller's account. */
+/** Keep the host's connection title; account identity belongs in the row subtitle. */
 export function mobileProviderAccountTitle(provider: ProviderView): string {
-  const name = provider.name || provider.id;
-  const identity = provider.openAiAccount?.identity?.trim() || provider.subscriptionAccount?.identity?.trim();
-  if (!identity || name === identity) return name;
-  const base = name.replace(/ \(\d+\)$/, '');
-  if (base.endsWith(` · ${identity}`)) return name;
-  const separator = base.indexOf(' · ');
-  if (separator >= 0 && base.length === 50 && `${base.slice(0, separator)} · ${identity}`.slice(0, 50) === base) return name;
-  return `${name} · ${identity}`;
+  return providerDisplayTitle(provider);
 }
