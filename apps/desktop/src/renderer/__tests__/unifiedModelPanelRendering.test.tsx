@@ -4483,7 +4483,6 @@ describe('外层 ModelSelector · 取消当前选中的收藏先应用默认配�
           onUnifiedSelect={onUnifiedSelect}
           onSessionFavoriteAnchorChange={onSessionFavoriteAnchorChange}
           selectedFavoriteUid={uid}
-          unifiedPanel
         />
       );
     }

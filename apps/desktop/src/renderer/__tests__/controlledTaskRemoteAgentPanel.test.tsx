@@ -544,7 +544,6 @@ describe('本机草稿:浏览其他电脑的目录后选中不写本机「最近
     const onUnifiedSelect = vi.fn(async () => true);
     render(
       React.createElement(ModelSelectorContent, {
-        unifiedPanel: true,
         modelId: 'a-model',
         effort: 'high',
         onModelChange: vi.fn(),
