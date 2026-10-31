@@ -7,7 +7,7 @@
  * task's clock, chart scrub readouts).
  */
 
-export const MENUBAR_STATUS_TEXT_MODES = ['icon', 'lowest', 'today', 'task'] as const;
+export const MENUBAR_STATUS_TEXT_MODES = ['icon', 'lowest', 'today', 'task', 'account'] as const;
 export type MenubarStatusTextMode = (typeof MENUBAR_STATUS_TEXT_MODES)[number];
 
 export const MENUBAR_USAGE_SCOPES = ['local', 'all'] as const;
@@ -23,6 +23,8 @@ export interface MenubarSettings {
   /** Source ids the user turned back on after being hidden by default. */
   shown: string[];
   statusText: MenubarStatusTextMode;
+  /** Explicit display selection; never changes a task route. */
+  pinnedSourceId?: string | null;
   lowAlert: boolean;
   privacy: boolean;
   scope: MenubarUsageScope;
@@ -34,6 +36,7 @@ export const DEFAULT_MENUBAR_SETTINGS: MenubarSettings = {
   hidden: [],
   shown: [],
   statusText: 'icon',
+  pinnedSourceId: null,
   lowAlert: true,
   privacy: false,
   scope: 'all',
@@ -59,6 +62,16 @@ export type MenubarLevel = 'normal' | 'warn' | 'error';
 
 export type MenubarSourceKind = 'subscription' | 'balance' | 'payg';
 
+export interface MenubarQuotaWindowCell {
+  id: string;
+  label: string;
+  value: string;
+  fill: number;
+  level: MenubarLevel;
+  reserve: boolean;
+  when: string;
+}
+
 export interface MenubarSourceCell {
   id: string;
   kind: MenubarSourceKind;
@@ -70,6 +83,10 @@ export interface MenubarSourceCell {
   value: string | null;
   valueUnit: string | null;
   valueLabel: string | null;
+  /** Period of the displayed percentage; optional for older native helpers and unmeasured sources. */
+  periodLabel?: string;
+  /** Independent account-wide limits; old helpers retain the legacy single-value fields. */
+  periods?: MenubarQuotaWindowCell[];
   level: MenubarLevel;
   /** Liquid height 0...1; null draws the dashed empty tube for pay-as-you-go. */
   fill: number | null;
@@ -81,6 +98,12 @@ export interface MenubarSourceCell {
   active: boolean;
   when: string;
   whenLevel: MenubarLevel;
+  /** Reset of the window the tube shows; consumers that outlive the build keep `when` current. */
+  resetsAtMs?: number | null;
+  /** The reading is the last one from a computer that cannot be reached now; `when` says its age. */
+  stale?: boolean;
+  /** A long window will reset with quota unused at the current pace; `whenLevel` colors the time. */
+  unusedAtReset?: boolean;
   accessibilityLabel: string;
 }
 
@@ -147,6 +170,20 @@ export interface MenubarModelUsage {
   tokens: number;
 }
 
+/** Live task/companion projection, independent of today's local usage ranking. */
+export interface MenubarActivity {
+  sessionId: string;
+  title: string;
+  logoSvg: string;
+  companion: boolean;
+  attention: boolean;
+  phase: 'running' | 'needs-interaction' | 'completed' | 'error';
+  preview: string;
+  status: string;
+  startedAtMs: number | null;
+  lastActivityAtMs: number;
+}
+
 export interface MenubarUsageScopeData {
   /** One entry per day, oldest first, aligned with `MenubarUsage.days`. */
   daily: {
@@ -189,6 +226,13 @@ export interface MenubarView {
   strings: MenubarStrings;
   /** Text after the menu bar icon for each mode; the active one is `settings.statusText`. */
   statusTextByMode: Record<MenubarStatusTextMode, string | null>;
+  /** Same attention count as Agent Island, shown before the optional usage text. */
+  attentionCount?: number;
+  activities?: MenubarActivity[];
+  /** Same active-controller predicate as the in-app connection indicator. */
+  remotelyControlled?: boolean;
+  /** Live display names from the same controller set as the in-app indicator. */
+  remoteControllerNames?: string[];
   updatedAtMs: number | null;
   headlinePrimary: string;
   headlineSecondary: string | null;
@@ -220,6 +264,7 @@ export type MenubarHelperMessage =
   | { type: 'open-session'; sessionId: string }
   | { type: 'detail-action'; sourceId: string }
   | { type: 'open-provider-settings' }
+  | { type: 'open-remote-control-settings' }
   | { type: 'settings'; patch: MenubarSettingsPatch };
 
 /** Settings → Window behavior toggle; only the local app renderer may call these. */

@@ -51,14 +51,21 @@
 
 ## Claude 订阅只经 Claude Code 自己的登录
 
-Anthropic 只允许用户用自己的订阅登录**未修改的 Claude Code**；第三方应用不得提供
-Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此只做内置 CLI 的外壳：
+Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订阅凭证。
+这是一项实现边界，不等于第三方产品获得了订阅使用授权。2026-10-28 核对的官方
+[SDK 套餐说明](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)
+仍说明订阅登录的 Agent SDK / `claude -p` 消耗订阅限额；同时
+[账号登录规则](https://support.claude.com/en/articles/13189465-log-in-to-your-claude-account)
+要求面向他人的产品使用 API key，禁止虚报应用身份，并保留第三方工具改扣 usage credits
+的权利。不得以入口标记或不持有 token 推导出合规、计费或账号安全保证。
 
 - 登录只拉起内置 CLI 的 `claude auth login --claudeai`，登录态只读
   `claude auth status --json`。凭证留在 CLI 默认凭证库（macOS 钥匙串 / `~/.claude`），
-  Cindy 不读取、不复制、不刷新它。CLI 按配置目录区分凭证库，所以本机 CLI 的会话（任何来源）
-  与登录检查都不得设 `CLAUDE_CONFIG_DIR`（dev 多实例也用默认目录），否则会看不到本机已有的
-  Claude Code 登录；SSH 远端的配置目录由远端 cc-manager 自己管理，不在此列。
+  Cindy 不读取、不复制、不刷新它。本机连接的会话与登录检查不设 `CLAUDE_CONFIG_DIR`
+  （dev 多实例也用默认目录），继续沿用终端登录。独立 Claude 连接使用当前 Cindy 数据 owner
+  命名空间下的受管 home：登录前分配固定目录，登录后只提交连接元数据，不移动目录或凭证。
+  配置目录仅由 Main 的可信运行上下文传给子进程；环境变量、项目设置和远控参数不能选择它。
+  SSH 远端的配置目录仍由远端 cc-manager 自己管理，不接收本机订阅 home。
   只有 Claude.ai 订阅账号的 OAuth 登录算「Claude 订阅」；CLI 用 Console 账号、API Key、
   apiKeyHelper、中转 token 或第三方云登录时按 `not_a_subscription` 处理，也不替用户改 CLI 的登录。
 - 登录态读取不得阻塞与订阅无关的路径：启动只在已连接时等待，列表类读取用缓存并后台刷新，
@@ -70,11 +77,13 @@ Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此�
   端口，它对每个目标重新按系统代理 / PAC 决定直连或走代理（env 作用于整棵进程树，含 Bash
   工具里的 git / npm，内网例外必须照旧直连），明文 HTTP 不下发代理。都是 TCP 隧道，TLS
   端到端，代理、转发端口与 Cindy 都看不到凭证。
-- 订阅会话不设 host 接管标记；Cindy 的所有 Claude 会话统一使用 `claude-desktop` 入口，
-  CLI 会启用 Desktop 宿主的项目级上游 / 鉴权环境过滤。入口身份不改变凭证来源，普通项目
-  设置、权限与 hooks 仍由 CLI 加载。SDK 模式仍没有终端的工作区信任确认，因此继续对
+- 订阅会话不设 host 接管标记；Cindy 的所有 Claude 会话统一使用 `sdk-ts` 入口，
+  不声明 Claude Desktop 身份，也不依赖 CLI 的 Desktop 项目级上游 / 鉴权环境过滤。
+  入口身份不改变凭证来源，普通项目设置、权限与 hooks 仍由 CLI 加载。
+  原生登录与续期由 CLI 自己处理，不依赖旧宿主 OAuth 刷新回调。SDK 模式没有终端的
+  工作区信任确认，因此对
   CLI 实际加载的项目级设置（工作目录的两份文件，加上主仓库根目录的 `settings.local.json`）
-  设闸作为纵深防御（maker-core `workspace-settings-guard`），不依赖上游过滤替代宿主检查：
+  设闸作为主防线（maker-core `workspace-settings-guard`）：
   - 每次拉起 CLI 进程前（含会话中途重建）命中就拒绝启动；
   - 会话运行中，任何设置变更（ConfigChange hook）与 Cindy 触发的 flag settings 应用（切模型 /
     effort / fast）前都整体复查；命中即判会话已污染，阻止这次变更并结束当前 CLI 进程——被拒
@@ -89,7 +98,30 @@ Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此�
   SSH 远端、辅助 one-shot（标题、自动复核等）不使用订阅。订阅会话的子代理请求同样由 CLI
   直连，只注入 Anthropic 一方的子代理模型覆写。
 - 「断开」只撤销 Cindy 的使用许可（`nativeProviderAuthBinding`），不登出 CLI。
-  旧版独立 Claude 账号已停用，但不删除其已存凭证。
+  旧版独立 Claude 账号在完成 CLI 重新登录前保持停用，不把旧凭证搬入新 home。
+  新独立连接只保存非敏感的身份、目录引用与授权代次；断开保留原生历史，删除的 CLI 登出
+  必须在连接事务提交后对准确的受管 home 执行，失败留下可重试状态，绝不登出默认本机账号。
+  登录、状态、模型、用量和运行实例使用相同的配置目录；迟到结果按 owner 与认证代次拒绝。
+  原生历史单独保存 home 归属，连接改名、删除或重新登录不能让历史查询猜用另一账号目录。
+  - 受管目录为 `owners/<owner>/claude-accounts/<connection>/homes/<uuid>`；每次登录新建一代，
+    身份元数据保存在 `account.json`，登录、断开、回滚与清理共用连接级跨进程锁。
+    清理意图在拉起 CLI 前持久化；启动时只回放当前 owner 的精确意图。若数据库已删除连接而
+    finalizer 未完成，以权威连接清单补清理；仅仅断开的连接仍保留登录。正在使用的新 home 不得登出。
+  - 项目无关的个人说明、Skill、子代理、命令与输出风格以受限文件快照继承；用哈希清单保留
+    用户在账号目录内的修改。不复制凭证、缓存或可写符号链接；settings 只继承代理环境键。
+  - 原生历史绑定保存在 `claude-history-homes/<native-id>.json`，独立于连接的当前 home。
+    手动切换账号时只复制该任务的原生历史及 checkpoint，CLI 确认 resume 后才更新绑定；失败
+    保留源历史，不自动抛弃历史开新任务。Fork 通过 SDK 的显式 SessionStore 读写，不修改进程环境。
+    复制前必须确认旧 CLI 的实际进程退出（包括已退役的 Query 代次）；`abort`、`killed` 和
+    SDK 的 `close()` 返回均不是退出证据。等待最多 10 秒，未确认时拒绝切换并保留源路由；
+    迟到的 exit 允许后续重试关闭。无用户输入的 resume 预检进程同样确认退出后才放行。
+    移动工作目录按各历史 id 的绑定分别迁移；Skill 统计扫描当前 owner 的保留目录并去除账号间副本。
+    原生历史导入先落默认历史目录并登记归属，再由目标账号的严格恢复路径接续；不随宿主环境变量
+    隐式改到另一目录。原生记忆的统计与清理覆盖默认目录和当前 owner 的保留账号目录，只处理
+    `projects/*/memory`，不跟随目录符号链接，不删除转录或凭证。
+  - 命名连接在通用路由层可能先归类为 `provider-oauth`；仅 AuthAdapter 返回的受管运行上下文
+    可以将其确定为 CLI 原生订阅模式。启动环境仍执行上述直连与凭证剥除规则；已经删除的显式
+    连接在准入、运行上下文和鉴权环境三处拒绝，不能借用默认终端登录。
 - 套餐余量由内置 CLI 的 `get_usage` 控制请求查询（CLI 用自己的登录发请求，拉起时不读
   项目级设置、不起 MCP、不落会话记录），会话内的 SDK `rate_limit_event` 做增量刷新；
   模型列表来自 SDK `supportedModels` 与 Registry；
@@ -101,17 +133,26 @@ Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此�
   真实 CLI 的入口、项目设置、原生 / SDK hooks 与权限回归见
   [smoke-claude-sdk.mjs](../../scripts/smoke-claude-sdk.mjs)。
 
-## Linux Hyprland / Omarchy 凭证后端
+## Linux 凭证后端
 
-- Desktop 在 Electron `ready` 之前为 Hyprland 默认选择 `gnome-libsecret`，避免桌面
-  自动识别失败导致登录回调收到令牌后无法加密保存。桌面身份依次取非空的
-  `XDG_CURRENT_DESKTOP`、`XDG_SESSION_DESKTOP`、`DESKTOP_SESSION`；其他桌面保持
-  Electron 原有选择。实现见
-  [linuxPasswordStore.ts](../../apps/desktop/src/main/linuxPasswordStore.ts)，回归见
+- Desktop 在 Electron `ready` 之前为 Hyprland、labwc，以及没有桌面身份的会话默认选择
+  `gnome-libsecret`。Chromium 不认识这些会话时会落到 `basic_text`，打包版会把它当成
+  加密不可用，即使 Secret Service 已经解锁。桌面身份依次取非空的
+  `XDG_CURRENT_DESKTOP`、`XDG_SESSION_DESKTOP`、`DESKTOP_SESSION`。GNOME、KDE、XFCE
+  等 Chromium 已能识别的桌面，以及 sway、niri 等未证实的命名桌面，保持 Electron 原有选择。
+  实现见 [linuxPasswordStore.ts](../../apps/desktop/src/main/linuxPasswordStore.ts)，回归见
   [linuxPasswordStore.test.ts](../../apps/desktop/src/main/__tests__/linuxPasswordStore.test.ts)。
 - 显式 `--password-store` 优先于此默认值。系统仍需提供可用且已解锁的 Secret Service
-  （例如 GNOME Keyring）；此修复不安装或解锁钥匙串，也不新增明文降级。现有仅限开发版的
+  （例如 GNOME Keyring）；此修复不安装或解锁钥匙串，也不新增明文降级。libsecret 缺失时
+  Chromium 仍会回退，Cindy 继续拒绝明文。现有仅限开发版的
   `XDT_DEV_SAFE_STORAGE_BASIC=1` 调试行为保持不变。
+- 不把空的桌面环境变量本身当成禁止登录的条件，也不在启动时探测钥匙串。用户发起验证码
+  请求、验证码提交或浏览器登录时，才检查当前加密后端是否可用；不可用则返回既有的
+  `CREDENTIAL_STORE_UNAVAILABLE`，不发送验证码、不打开浏览器、不交换授权码。凭证读取
+  失败时记录后端名称、`password-store` 开关类别，以及是否有桌面身份、是否有会话总线
+  两个布尔值，不记录桌面名、总线地址、令牌或完整环境变量。加密不可用且 vault 或退出
+  标记文件确实不存在时，日志说明记录缺席且后端不可用，仍抛出
+  `CREDENTIAL_STORE_UNAVAILABLE`，不把已有但暂时读不出的记录当成已删除。
 - 旧版临时处理：完全退出 Cindy 后运行 `cindy --password-store=gnome-libsecret`。
   实机验收需覆盖登录、退出应用后正常启动仍保持登录，以及 `cindy://` 回调启动路径。
 
@@ -179,16 +220,31 @@ Claude.ai 登录，也不得收集、存储或中转订阅凭证。Cindy 因此�
 
 ### 运行时会话续期退避
 
-Desktop 的运行时 refresh 遇到瞬时失败后，主动调用与定时重试共用至少 60 秒的等待；
-429 的有效 `Retry-After` 更长时按服务器等待时间执行。等待期间的调用不发请求、不延长
-原期限，也不清除凭证。成功续期/登录清除等待，登录代次改变后旧等待不约束新账号。
-唯一提前结束等待的情形是：此前失败为无服务端响应的网络错误（status 0），且 relay
-随后明确返回鉴权拒绝，证明网络路径已可达。同登录代次的自救可提前续期，仍复用在途
-refresh 与 relay 自救节流。在途 refresh 尚未返回时收到的恢复信号等待其结束；若同代次
-请求随后以网络错误失败，只补一次续期，并发恢复调用仍共享该次请求，新失败保留自己的
-等待期限。网卡变化提示不能触发该例外，429、Retry-After 和服务端错误
-仍遵守原期限。续期完成后的立即重连须复验 client、owner 与持有权，不能唤醒旧实例。
-冷启动、确定性失效和同机 token 替换恢复继续沿用原有判定。状态只留在进程内存中。
+Desktop 冷启动恢复已保存的登录时，DNS／断网、服务端临时错误及区域端点清单暂不可用
+不会清除凭证，也不在有限次数失败后放弃。启动画面仍只等待原有的 20 秒，恢复流程在
+后台持续按下述随机退避策略重试；直到恢复成功、凭证明确
+失效，或用户开始新的登录／退出／切换账号／进入未登录模式。人工操作使旧流程失效，
+迟到响应不能覆盖新界面身份；不通过中断正在轮换凭证的网络请求来实现取消。
+已发出的刷新若成功，先在既有凭证事务中核对仍保存着请求所消费的凭证，再保存轮换结果；
+即使用户正在手动登录，也不能丢掉这一结果。旧账号仍保存时仅更新它的凭证，不重新激活，
+不覆盖较新的凭证，也不复活已退出的账号。
+登录页「重试」优先恢复已保存的登录，复用正在进行的请求，并可提前结束普通网络失败
+的等待，但不能绕过服务端冷却时间。运行时续期也不与冷启动流程并发轮换同一凭证。
+实现与回归见 `authManager.ts`、`authColdStartRecovery.test.ts`。
+
+Desktop 冷启动恢复与运行时 refresh 共用随机指数退避策略：连续失败后的等待区间依次为
+1–2 分钟、2–4 分钟、4–8 分钟，之后持续在 5–10 分钟内重新随机取值，不设次数上限。
+429／503 的有效 `Retry-After` 更长时先遵守服务器期限，再追加当前退避档位的随机间隔，
+防止所有客户端在同一个服务器恢复时间一起重试。等待期间的主动调用不发请求、不延长
+原期限，也不清除凭证。成功续期／登录清除等待，登录代次改变后旧等待不约束新账号；
+冷启动画面超时转后台不能重置失败次数。冷启动的等待期限和失败次数归属于当前保存的
+凭证，返回／取消再恢复沿用原期限，取消后的迟到限流响应也必须保留期限；手动重试释放
+纯网络错误的等待时不清零失败次数。恢复停止期间的启动超时不能清除手动登录进度。
+网络变化、resume 或 relay 恢复信号均不能跳过等待或清零失败次数；在途请求仍复用同一个
+promise，恢复信号不能在旧请求结束后追加立即续期。只有用户主动点击登录页重试，且
+此前失败没有服务端响应、没有服务端等待期限时，才能提前结束冷启动等待。
+续期完成后的立即重连须复验 client、owner 与持有权，不能唤醒旧实例。
+确定性失效和同机 token 替换恢复继续沿用原有判定。状态只留在进程内存中。
 实现见 `main/authRefreshBackoff.ts`、`main/authManager.ts`；回归见
 `main/__tests__/authRefreshBackoff.test.ts`。
 
@@ -196,8 +252,14 @@ refresh 与 relay 自救节流。在途 refresh 尚未返回时收到的恢复�
 
 | 数据性质                            | 正确位置                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 引擎二进制后台下载缓存 | `userData/agent-binary-downloads/<vendor>/<归档 SHA-256>/`，只有归档、续传碎片和绑定来源/平台/版本/哈希的就绪记录，不含凭证。每种引擎保留一个候选，切换候选时回收旧候选，超过 7 天的碎片在后续检查时重建。下载与消费共用跨进程缓存锁；启动前复验哈希，复制交给原安装器后回收缓存，解压后的中间包与旧版本仍由原安装器清理。回退旧客户端时这些缓存不会被识别成已安装引擎。见 `agent-binaries/download-cache.ts` |
+| Codex 包内 shell 入口 | `<userData>/codex-package/<版本>/codex-path/codex`，打包版 macOS/Linux 在 `getMaker()` 选定实际运行的 Codex 后由主进程原子写入，转发到同包的 `bin/codex`；只更新带 Cindy 标记的旧脚本，不覆盖外来文件。随旧版本目录整体删除，不含凭证。实现见 `agent-binaries/codex-cli-launcher.ts` |
 | Cindy 管理的持久数据                | Desktop 使用 `app.getPath('userData')`，共享 package 由宿主注入等价根目录                                                                                                                                                                                                                                                                                                                                       |
-| 浏览器用户配方 | `userData/browser-recipes/<site>/recipes/<id 的 SHA-256>.json`，每站多个流程，原子替换；兼容旧 `recipe.json`，新文件优先。只保存配方定义及 active/suspended 状态，不保存试跑的 inputs/页面返回值；禁止写入凭据，业务变动值用 inputs。试跑凭证与单轮修复预算只在 MCP 会话内存中，暂停状态跨重启保留。 |
+| 浏览器用户配方与经验 | `userData/browser-recipes/<site>/recipes/<id 的 SHA-256>.json`，每站多个流程，原子替换；兼容旧 `recipe.json`，新文件优先。只保存参数化定义及 candidate/active/suspended 状态、浏览器 profile 范围，不保存试跑 inputs/页面返回值；禁止写入凭据，业务变动值用 inputs。同站 `experience.json` 最多保存 32 种操作形状（动作枚举、次数、时间），不保存 URL 路径/查询、选择器、脚本或输入输出；删除站点目录一并重置。重复形状仅提示当前 Agent 判断，不触发后台模型。试跑凭证与单轮修复预算只在 MCP 会话内存，暂停状态跨重启保留。 |
+| 浏览器大结果补读 | MCP 工具会话内存中保留最近四份原始 JSON，每份最多 200 万字符；不落盘、不上传，关闭会话后释放。`readResult` 只能读当前会话生成的引用，沿用原页面实际 profile 的代输入读取限制；切换后端、stop 或读取受保护页面时清除。工具复用宿主现有生命周期与后端对象引用，在下一次访问及异步预检后核对，包括设置/其它任务切换、切走再切回和嵌入后端恢复；切换中的动作仍报告真实结果，但不缓存原文或保存试跑凭证。超过上限明确截断，不能声称完整原文已保存。 |
+| 自建中转服务（Desktop） | `owners/<owner-key>/device-link-relay/`：`config.json` 只存选择、本机中转设置与服务器部署记录（地址、中转 ID、主人公钥，不含秘密）；`secrets/<中转ID>.enc` 是本机在该中转上的设备凭证与 Ed25519 签名私钥（本机当主人时即主人密钥），经 safeStorage 加密，Linux 只有 basic_text 时拒绝保存；第 1 版的 `credential.enc` / `owner-credential.enc` 读到旧配置时删除；`host/` 是本机运行中转时的数据（`relay-state.json` 只存各设备凭证的 SHA-256 与档案，0600 原子写入；`media/` 为设备间中转的文件，创建 24 小时后清理）。全部按账号隔离，账号作用域未提交时不读写。见 `device-link/selfHostedRelayConfig.ts`、`packages/device-link-relay` 与 [方案](../self-hosted-relay-plan.md) |
+| 自建中转服务（Mobile） | AsyncStorage `cindy.mobile.self-hosted-relay.v2.<账号>` 只存选择（中转地址、名称、主人公钥、本机设备 ID），不含秘密；设备凭证与 Ed25519 签名私钥合存为 `expo-secure-store` 的 `cindy.selfHostedRelay.credential.v2.<账号哈希>`，仅本机、解锁后可读。没有签名私钥的 v1 记录不再使用，读到时尽力删除。见 `apps/mobile/src/device-link/selfHostedRelay.ts` |
+| 自建中转服务（用户服务器） | 「部署到我的服务器」经 SSH 写入用户自己的服务器：`/opt/cindy-relay`（Node 运行环境与 `relay.mjs`）、`/var/lib/cindy-relay`（属 `cindy-relay` 系统用户、0700：设备凭证哈希与证书档案、Let's Encrypt 账户密钥、0600 原子发布的 `tls/material.json` 证书与 TLS 私钥、`status.json`）、`/etc/systemd/system/cindy-relay.service`。旧分立 PEM 文件仅在密钥配对且未过期时兼容读取；续期提交失败保留上一完整代次。主人凭证明文与主人私钥从不离开主人电脑；卸载前核对中转 ID 和主人公钥，匹配才删除。见 `device-link/selfHostedRelayDeploy.ts` |
 | 本机应用 Agent 授权 | `owners/<owner-key>/local-agent/grants.json`，仅含令牌 SHA-256、自报应用资料、账号范围和按授权归属的原生恢复绑定，不存令牌明文、供应商凭据或消息。复用原子写入与恢复 helper；profile 根 `local-agent/host.lock` 复用跨进程锁，保证一个发现端点和写入者。开发连接码从当前服务内存按需生成，不新增公共实例登记或短码映射文件。临时输入与新授权的 Codex 运行历史在同一 owner 下的 `local-agent/clients/<grant-hash>/`；撤权同时关闭执行及工具入口，不允许跨授权恢复。协议与旧版兼容见 [本机应用接入](../local-agent-api.md) |
 | 预创建 worktree 的取消标记          | `userData/worktree-cancelled-creations/<sessionId 的 SHA-256>`，空文件原子排他创建；不含路径、草稿或关联密钥。保留以拒绝重启后迟到的创建请求，不按超时删除。只在核实未被任务认领后写入。同路径加 `.lock` 是可释放的跨进程操作锁，复用既有锁协议；同一 profile、同一任务的创建登记与取消回收串行，拿不到锁不得确认回收完成。异步创建完成后、登记前再次核对取消标记                                               |
 | Mobile 已取消创建的草稿             | 复用账号隔离的 durable outbox；持久创建流程先保存草稿、原项目目录和附件，再登记 reservation 和发送远端 worktree 创建；创建回包前暂停发件箱投递。回收确认后，`creation.cancelled` 与原项目目录先持久写入，再忘记回收账本。重建使用新远端 ID，`storageSessionId` 保持原 AsyncStorage 键和附件目录，通过单次记录写入提交；写入失败时原草稿仍可读。编辑页恢复目录时重新探测资格，不沿用旧 worktree 的资格或分支偏好 |
@@ -231,6 +293,7 @@ refresh 与 relay 自救节流。在途 refresh 尚未返回时收到的恢复�
 | 语音输入声纹识别模型 | `userData/voice-models/<哈希前缀>-<文件名>.onnx`，按内容哈希从区域 CDN 下载并在可见前校验 SHA-256；不含个人数据，本机所有账号共用。新版本模型下载完成后删除旧版本文件 |
 | Mobile 语音输入声纹（生物特征） | SecureStore（iOS 钥匙串 / Android Keystore）键 `xdt.voiceSpeakerProfile.v1.<账号 key 的 SHA-256 前 32 位>`，内容同 Desktop：声纹向量、录入时间与模型哈希；开关与灵敏度 override 在 AsyncStorage `cindy.mobile.voice-speaker-filter.v1.<账号 key>`。只在本机，不同步、不上传、不进日志；退出登录时随该账号的其他本机数据一起删除（模型文件保留）。删除前写 AsyncStorage `cindy.mobile.voice-speaker-filter.cleanup.v1.<账号 key>` 重试标记，不含声纹；失败时保留标记，启动、回到前台及该账号下次读写前重试，全部删除成功后才移除。标记落盘也失败时保留进程内重试，无法保证进程终止后的恢复；不因声纹删除失败阻止退出凭证清除。朗读音频只在内存中处理 |
 | Mobile 语音输入声纹识别模型 | `cacheDirectory/voice-models/`，与 Desktop 同一组按内容哈希下载、校验 SHA-256 后才可见的文件；放缓存目录以免进入 iCloud / Android 备份。系统清理缓存后，下次语音输入发现缺失会在后台重新下载，本次不过滤 |
+| iOS 桌面小组件数据 | App Group `group.<bundle id>`（与 expo-sharing 共用）里的 `usage-widget-snapshot.json`：每台电脑最近一次的余量与用量快照（已按电脑上「隐藏个人信息」打码，含账号名或邮箱前缀、余量、近 30 天用量与模型名）、「自动」所选电脑 id 与电脑名列表；不含凭证。同一 App Group 的 UserDefaults 键 `usageWidgetPins` 只记组件选中的电脑 id 与时间，超过 2 天的丢弃。App 在前台时整份原子替换写入；切换或退出账号时删除快照文件。见 `apps/mobile/modules/cindy-usage-widgets` 与 `plugins/usage-widgets` |
 | Windows 锁屏控制的系统服务程序 | `%ProgramFiles%\Cindy Remote Desktop\<安装目录哈希>\`,由「授权开启」的管理员提权步骤写入:两个原生 helper 与记录所属安装目录的 `install.txt`。目录与文件的所有者是 Administrators,只有 Administrators 与 SYSTEM 可写——SYSTEM 服务不能从用户可写的安装目录启动,否则本机任何普通进程都能换掉它。不含凭证、账号或对话。源码运行的开发版另将构建缓存放在 `userData/remote-desktop/development/<安装身份哈希>/`，只含本机编译产物与源码摘要；它仍复制到上述受保护目录后才注册服务。只有设置页的「移除服务」(同样需要管理员确认)会删除它;按安装目录分子目录,多份安装互不影响。见 `native/remote-desktop/windows-host/src/staging.rs`、`apps/desktop/src/main/remote-desktop/windowsHost.ts` 与 [`../remote-desktop.md`](../remote-desktop.md) |
 | 用户明确导出的文件                  | 用户选择或任务明确指定的目标路径                                                                                                                                                                                                                                                                                                                                                                                |
 

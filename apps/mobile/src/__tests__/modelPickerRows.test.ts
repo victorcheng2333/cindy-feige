@@ -58,12 +58,29 @@ describe('formatContextWindow(移植桌面)', () => {
 });
 
 describe('providerDisplayTitle / formatPriceLine / buildRowMetaLine', () => {
-  it('内置供应商用桌面 zh-CN 标题,自定义回退 name', () => {
-    expect(providerDisplayTitle({ id: 'anthropic', name: 'x' })).toBe('Anthropic');
-    expect(providerDisplayTitle({ id: 'openai', name: 'x' })).toBe('OpenAI');
+  // Unit regression: renamed builtins were replaced by brand names in model details.
+  // The old fixture asserted that override; exercise the user-visible metadata too.
+  it('优先使用连接名称,仅 Cindy AI 保留产品名,缺名才回退', () => {
+    expect(providerDisplayTitle({ id: 'anthropic', name: 'Work Claude' })).toBe('Work Claude');
+    expect(providerDisplayTitle({ id: 'openai', name: 'Work Codex' })).toBe('Work Codex');
     expect(providerDisplayTitle({ id: 'xd', name: 'x' })).toBe('Cindy AI');
     expect(providerDisplayTitle({ id: 'my-proxy', name: '我的代理' })).toBe('我的代理');
+    expect(providerDisplayTitle({ id: 'anthropic', name: '' })).toBe('Anthropic');
+    expect(providerDisplayTitle({ id: 'missing', name: '' })).toBe('missing');
+    expect(buildRowMetaLine({
+      provider: { id: 'anthropic', name: 'Work Claude' },
+      model: { id: 'opus', contextWindow: 0 },
+    })).toBe('Work Claude');
   });
+
+  it.each(['Cindy AI · 个人', 'Cindy AI · 心动', 'Cindy AI · Example Studio'])(
+    'uses the source computer identity %s in model rows', (name) => {
+      const provider = { id: 'xd', name };
+      expect(providerDisplayTitle(provider)).toBe(name);
+      expect(buildRowMetaLine({ provider, model: { id: 'auto', contextWindow: 272_000 } }))
+        .toBe(`${name} · 272K 上下文`);
+    },
+  );
 
   it('价格行对齐桌面 priceTip 文案;无价 null', () => {
     expect(formatPriceLine({ inputUsdPerMtok: 3, outputUsdPerMtok: 15 })).toBe(

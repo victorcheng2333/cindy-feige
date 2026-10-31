@@ -29,6 +29,7 @@ import { readModelDisableOverrides } from '../maker-host/model-disable-store.js'
 import { isModelDisabled, isProviderDisabled } from '@cindy/model-providers';
 import { getProviderRouteCredentialRevision, isProviderRouteMutationInProgress } from '../maker-host/provider-route.js';
 import { withOpenCodeGoSessionHeader } from '../maker-host/opencode-go-session.js';
+import { withProviderAppAttribution } from '../maker-host/provider-app-attribution.js';
 import { effectiveXdGatewayBaseUrl } from '../model-access/effectiveEndpoint.js';
 import { reportCindyGatewayKeyRejected } from '../model-access/gatewayKeyRejection.js';
 import { readCustomProviderKey } from '../secrets/providerSecretStore.js';
@@ -420,12 +421,15 @@ export const DEDICATED_AUTO_REVIEW_CANDIDATES = Object.freeze([
     reasoningEffort: undefined,
   },
   {
-    id: 'chatgpt-nano',
+    // Codex's own Auto-review model. ChatGPT accounts can call it although it is not a
+    // selectable catalog model (gpt-5.4-nano is listed but rejected for ChatGPT accounts).
+    id: 'chatgpt-auto-review',
     providerId: 'openai',
     agentKind: 'codex',
-    model: 'gpt-5.4-nano',
+    model: 'codex-auto-review',
     transport: 'codex-responses',
     reasoningEffort: 'low',
+    catalogExempt: true,
   },
   {
     id: 'chatgpt-luna',
@@ -442,6 +446,8 @@ export const DEDICATED_AUTO_REVIEW_CANDIDATES = Object.freeze([
   model: string;
   transport: UtilityModelTransport;
   reasoningEffort: 'low' | undefined;
+  /** Review-only model that is reachable without being a selectable catalog entry. */
+  catalogExempt?: boolean;
 }>);
 
 export type DedicatedAutoReviewCandidate = (typeof DEDICATED_AUTO_REVIEW_CANDIDATES)[number];
@@ -625,7 +631,7 @@ export async function requestDedicatedAutoReviewCandidateText(
   ) {
     return { ok: false, reason: 'no_candidate', attempts: [skippedAttempt(profile, 'agent_unavailable')] };
   }
-  if (!configured.some((model) => model.id === candidate.model)) {
+  if (!('catalogExempt' in candidate && candidate.catalogExempt) && !configured.some((model) => model.id === candidate.model)) {
     return { ok: false, reason: 'no_candidate', attempts: [skippedAttempt(profile, 'model_unavailable')] };
   }
   if (isProviderModelRouteDisabled(candidate.providerId, candidate.model)) {
@@ -1943,7 +1949,7 @@ async function requestProviderHttpText(input: {
         method: 'POST',
         signal: controller.signal,
         headers: {
-          ...(target.headers ?? {}),
+          ...withProviderAppAttribution(target.endpoint, target.headers),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),

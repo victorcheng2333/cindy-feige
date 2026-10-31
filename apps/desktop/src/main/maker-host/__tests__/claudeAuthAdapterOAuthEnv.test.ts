@@ -5,7 +5,7 @@
  * 存储或中转订阅凭证):
  *   - 订阅会话(oauth-bearer)的 getAuthEnv 不递任何凭证,只补系统代理 env;
  *   - 未指定来源时网关 key 优先(与未连订阅时一致),没有网关 key 才交给本机登录;
- *   - 独立 Claude 账号已停用,不递凭证;
+ *   - 未迁移或已删除的独立 Claude 账号拒绝授权,不借用默认登录;
  *   - gateway-key / provider-oauth 形态保持原样。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -264,7 +264,7 @@ describe('DesktopClaudeAuthAdapter — Claude 订阅只经 CLI 自己的登录',
     for (const key of CREDENTIAL_KEYS) expect(env[key]).toBeUndefined();
   });
 
-  it('独立 Claude 账号已停用:拒绝授权、不递任何凭证', async () => {
+  it('未迁移的独立 Claude 账号拒绝授权且不递旧凭证', async () => {
     const providerId = 'anthropic-a';
     h.accounts.set(providerId, 'claude');
     const adapter = await makeAdapter();
@@ -278,6 +278,15 @@ describe('DesktopClaudeAuthAdapter — Claude 订阅只经 CLI 自己的登录',
   it('adapter 不再提供订阅 token 刷新回调', async () => {
     const adapter = await makeAdapter();
     expect((adapter as { getFreshSubscriptionToken?: unknown }).getFreshSubscriptionToken).toBeUndefined();
+  });
+
+  it.each(['oauth-bearer', 'provider-oauth'] as const)('never substitutes a default route when a deleted account has mode %s', async credentialMode => {
+    h.nativeLogin = true;
+    const adapter = await makeAdapter();
+    const options = { providerId: 'deleted-claude', credentialMode };
+    await expect(adapter.getState(options)).resolves.toMatchObject({ authenticated: false, errorReason: 'provider_unavailable' });
+    await expect(adapter.getClaudeRuntimeContext(options)).rejects.toThrow('Selected Claude account is unavailable');
+    await expect(adapter.getAuthEnv(options)).rejects.toThrow('Selected Claude account is unavailable');
   });
 
   it('gateway-key 模式:只注入 ANTHROPIC_API_KEY,不带订阅 token(即便订阅在连)', async () => {

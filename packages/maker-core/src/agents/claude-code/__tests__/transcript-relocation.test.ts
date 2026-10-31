@@ -25,6 +25,7 @@ import { sanitizeClaudeProjectKey } from '../claude-projects-fs.js';
 import {
   ensureClaudeTranscriptInWorkingDir,
   relocateClaudeSessionTranscripts,
+  relocateClaudeSessionHome,
 } from '../transcript-relocation.js';
 
 const tempDirs: string[] = [];
@@ -42,7 +43,49 @@ afterEach(async () => {
 const SESSION_A = '25aadd4d-7e47-4ae9-8f8d-235a4bc96ff0';
 const SESSION_B = '30c3a249-55d7-4051-b02d-cf12dc6d4f82';
 
+// Multi-account recovery: carry only this task's native records, preserve source and
+// prefer its latest committed copy on A→B→A; never copy credentials. Tier: unit.
+it('moves native history between homes without moving either login and refuses a missing source', async () => {
+  const root = await fs.realpath(await makeTempDir());
+  const a = path.join(root, 'account-a');
+  const b = path.join(root, 'account-b');
+  const cwd = path.join(root, 'project');
+  await fs.mkdir(cwd);
+  const source = await seedTranscript(path.join(a, 'projects'), cwd, SESSION_A, '{"content":"A"}\n');
+  await fs.writeFile(path.join(a, '.credentials.json'), 'invalid-test-only');
+  await fs.mkdir(path.join(a, 'file-history', SESSION_A), { recursive: true });
+  await fs.writeFile(path.join(a, 'file-history', SESSION_A, 'checkpoint'), 'file-before');
+  await relocateClaudeSessionHome({ sdkSessionId: SESSION_A, workingDir: cwd, sourceHome: a, targetHome: b });
+  const target = path.join(b, 'projects', sanitizeClaudeProjectKey(await fs.realpath(cwd)), `${SESSION_A}.jsonl`);
+  expect(await fs.readFile(target, 'utf8')).toBe('{"content":"A"}\n');
+  expect(await fs.readFile(source, 'utf8')).toBe('{"content":"A"}\n');
+  await expect(fs.stat(path.join(b, '.credentials.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await fs.readFile(path.join(b, 'file-history', SESSION_A, 'checkpoint'), 'utf8')).toBe('file-before');
+  await fs.writeFile(target, '{"content":"B"}\n');
+  await relocateClaudeSessionHome({ sdkSessionId: SESSION_A, workingDir: cwd, sourceHome: b, targetHome: a });
+  expect(await fs.readFile(source, 'utf8')).toBe('{"content":"B"}\n');
+  await expect(relocateClaudeSessionHome({ sdkSessionId: SESSION_B, workingDir: cwd, sourceHome: b, targetHome: a })).rejects.toThrow('source history is missing');
+});
+
 /** 在 projectsRoot 下按 cwd 转码目录放一份转录。 */
+// New multi-home copy must not follow writable sidecar links or publish after owner revocation.
+it('refuses linked destination directories and stops before publication when admission changes', async () => {
+  const root = await fs.realpath(await makeTempDir());
+  const a = path.join(root, 'a');
+  const b = path.join(root, 'b');
+  const outside = path.join(root, 'outside');
+  await fs.mkdir(outside);
+  await fs.mkdir(b);
+  await seedTranscript(path.join(a, 'projects'), root, SESSION_A, 'history');
+  await fs.symlink(outside, path.join(b, 'projects'), process.platform === 'win32' ? 'junction' : 'dir');
+  await expect(relocateClaudeSessionHome({ sdkSessionId: SESSION_A, workingDir: root, sourceHome: a, targetHome: b })).rejects.toThrow('Invalid Claude history destination');
+  expect(await fs.readdir(outside)).toEqual([]);
+  await fs.unlink(path.join(b, 'projects'));
+  const assertCurrent = () => { throw new Error('owner changed'); };
+  await expect(relocateClaudeSessionHome({ sdkSessionId: SESSION_A, workingDir: root, sourceHome: a, targetHome: b, assertCurrent })).rejects.toThrow('owner changed');
+  expect(await fs.readdir(b)).toEqual([]);
+});
+
 async function seedTranscript(projectsRoot: string, cwd: string, sdkSessionId: string, content = '{"type":"user"}\n'): Promise<string> {
   const dir = path.join(projectsRoot, sanitizeClaudeProjectKey(cwd));
   await fs.mkdir(dir, { recursive: true });

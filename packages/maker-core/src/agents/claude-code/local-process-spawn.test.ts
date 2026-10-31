@@ -1,11 +1,11 @@
 import { EventEmitter } from 'node:events';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
 
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 
-import { spawnObservedClaudeProcess } from './local-process-spawn.js';
+import { ClaudeProcessExitBarrier, spawnObservedClaudeProcess } from './local-process-spawn.js';
 
 function makeChild(pid = 4321) {
   const child = new EventEmitter() as EventEmitter & {
@@ -46,6 +46,47 @@ function spawnProcess(overrides: {
 
 beforeEach(() => {
   mocks.spawn.mockReset();
+});
+afterEach(() => { vi.useRealTimers(); });
+
+// Unit: a close ACK/AbortError cannot authorize account-history transfer.
+// Prior observer tests only checked registry disposal, not actual writer exit.
+describe('Claude process exit evidence', () => {
+  it('fails boundedly and permits another check after a late exit', async () => {
+    vi.useFakeTimers();
+    const child = makeChild(); mocks.spawn.mockReturnValue(child);
+    const barrier = new ClaudeProcessExitBarrier();
+    barrier.track(spawnProcess());
+    child.killed = true;
+    child.emit('error', new Error('abort requested'));
+    const rejected = expect(barrier.wait(100)).rejects.toThrow('exit could not be confirmed');
+    await vi.advanceTimersByTimeAsync(100); await rejected;
+    child.emit('exit', null, 'SIGTERM');
+    await expect(barrier.wait()).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('waits for every Query generation, not just the latest process', async () => {
+    const barrier = new ClaudeProcessExitBarrier();
+    const children = [makeChild(10), makeChild(11)];
+    for (const child of children) { mocks.spawn.mockReturnValue(child); barrier.track(spawnProcess()); }
+    let done = false;
+    const waiting = barrier.wait().then(() => { done = true; });
+    try {
+      children[1].emit('exit', 0, null);
+      await Promise.resolve(); await Promise.resolve();
+      expect(done).toBe(false);
+    } finally { children[0].emit('exit', 0, null); await waiting; }
+    expect(done).toBe(true);
+  });
+
+  it('accepts a failed spawn with no PID as proof that there is no writer', async () => {
+    const child = makeChild();
+    Object.assign(child, { pid: undefined }); mocks.spawn.mockReturnValue(child);
+    const barrier = new ClaudeProcessExitBarrier(); barrier.track(spawnProcess());
+    child.emit('error', Object.assign(new Error('missing binary'), { code: 'ENOENT' }));
+    await expect(barrier.wait()).resolves.toBeUndefined();
+  });
 });
 
 describe('spawnObservedClaudeProcess', () => {

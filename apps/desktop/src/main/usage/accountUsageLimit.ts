@@ -126,10 +126,10 @@ export async function readAccountUsageLimit(
         modelId,
       });
     case 'claude':
-      // 独立 Claude 账号已停用，只有内置默认账号有快照。
+      // Read only the chosen connection; managed accounts query their own CLI home.
       return providerId === 'anthropic' || !providerId
         ? claudeAccountUsageLimit(await readClaudeSubscriptionUsageSnapshot(), modelId)
-        : null;
+        : claudeAccountUsageLimit(await readSubscriptionAccountUsage(providerId, { fresh: true }) as import('../../shared/claudeSubscriptionUsage.js').ClaudeSubscriptionUsageSnapshot | null, modelId);
     case 'xai':
       return xaiAccountUsageLimit(
         !providerId || providerId === 'xai'

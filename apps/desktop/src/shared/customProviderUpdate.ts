@@ -12,7 +12,7 @@ export interface CustomProviderUpdateOptions {
 }
 
 export type CustomProviderUpdateResult =
-  | { ok: true; speechReferenceAdded?: true }
+  | { ok: true; speechReferenceAdded?: true; cleanupPending?: true }
   | {
       ok: false;
       confirmationRequired: 'codex-image-generation-reload';

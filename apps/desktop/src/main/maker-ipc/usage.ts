@@ -1,3 +1,6 @@
+import { claudeCliLoginRevision } from '../maker-host/claude-native-cli-status.js';
+import { claudeAccountPrincipal } from '../maker-host/claude-account-auth.js';
+import { noteManagedClaudeRateLimit } from '../usage/claudeManagedAccountUsage.js';
 /**
  * apps/desktop/src/main/maker-ipc/usage.ts
  *
@@ -92,8 +95,9 @@ const log = createLogger('maker-ipc:usage');
  * CLI 里换号时据此丢弃上一个账号的持久化快照。未登录 / CLI 没报邮箱时为 null。
  */
 function currentClaudeAccountFingerprint(): string | null {
-  const email = peekClaudeCliLoginStatus()?.email;
-  return email ? createHash('sha256').update(`claude-usage:${email}`).digest('hex').slice(0, 16) : null;
+  const status = peekClaudeCliLoginStatus();
+  const principal = status ? claudeAccountPrincipal(status) : null;
+  return principal ? `v2:${principal}` : null;
 }
 
 /**
@@ -199,7 +203,7 @@ export async function readXaiSubscriptionUsageSnapshotForDeviceLink(providerId?:
 export async function readClaudeSubscriptionUsageSnapshotForDeviceLink(providerId?: string, options?: { fresh?: boolean }): Promise<import('../../shared/claudeSubscriptionUsage.js').ClaudeSubscriptionUsageSnapshot | null> {
   if (!providerId || providerId === 'anthropic') return claudeSubscriptionUsageReader.read(options);
   if (subscriptionAccountKind(providerId) !== 'claude') return null;
-  return await readSubscriptionAccountUsage(providerId) as import('../../shared/claudeSubscriptionUsage.js').ClaudeSubscriptionUsageSnapshot | null;
+  return await readSubscriptionAccountUsage(providerId, options) as import('../../shared/claudeSubscriptionUsage.js').ClaudeSubscriptionUsageSnapshot | null;
 }
 
 /** SuperGrok 登录 / 登出 / 换号后强制同步(先清再拉)。调用方应 await 后再广播连接态。 */
@@ -430,7 +434,9 @@ export function registerMakerUsageIpc(maker: Maker): void {
 
   // 订阅会话的 CLI 在会话里上报 SDK rate_limit_event → 落库 + 广播(maker-core 只对本机
   // Claude 订阅会话转发)。事件晚于登出 / 断开到达时丢弃,不复活刚清掉的快照。
-  setClaudeRateLimitInfoListener((info) => {
+  setClaudeRateLimitInfoListener((info, context) => {
+    if (context?.providerId && context.providerId !== 'anthropic') { noteManagedClaudeRateLimit(info, context); return; }
+    if (context?.runtime && (context.runtime.scopeKey !== activeOwnerScopeKey() || context.runtime.revision !== `system:${claudeCliLoginRevision()}`)) return;
     if (!hasClaudeNativeLogin()) return;
     const snapshot = parseClaudeSdkRateLimitInfo(info, Date.now());
     if (!snapshot) return;

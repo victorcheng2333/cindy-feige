@@ -101,6 +101,13 @@ export const DL_SESSION_REFERENCE_CAPABILITY_CHANNEL =
 export const DL_MEDIA_FETCH_CHANNEL = 'device-link:media:fetch';
 
 /**
+ * iPhone 桌面小组件的余量与每日用量快照(控制端 → 被控端,只读)。
+ * 被控端 dispatch 拦截执行，返回菜单栏面板已算好的同一份数据（已按「隐藏个人信息」打码，
+ * 不含凭证）。老被控端不识别时回 CHANNEL_NOT_ALLOWED，手机端提示需要更新电脑上的 Cindy。
+ */
+export const DL_USAGE_WIDGET_SNAPSHOT_CHANNEL = 'device-link:usage-widget:snapshot:v1';
+
+/**
  * Legacy 出方向语音转写 channel(控制端 → 被控端):早期方案里手机端录音后先经 server
  * `/api/device-link/media/presign-put` 上传 OSS 中转区,再把 ossKey 交给被控桌面。
  * 被控端下载音频并使用本机 voice-input batch ASR 配置转写,返回文本给手机插入 composer。
@@ -248,6 +255,14 @@ const CORE_INVOKE_CHANNELS: readonly string[] = [
   // 计划模式一级开关(runtime-only, 持久化经 dispatch persistRemoteSetting 回流)。
   // 老被控端无 handler → CHANNEL_NOT_ALLOWED → 控制端 UI 本就按 capabilities.planMode 缺失隐藏入口。
   'maker:set-plan-mode',
+  // 任务级工作上下文窗口档位(会话级设置, 无本机 shell/UI 副作用; 控制端 DB 是被控端那份,
+  // 写本机不生效)。被控端落库并应用到活实例。老被控端无 handler → CHANNEL_NOT_ALLOWED
+  // → 控制端提示「该设备版本不支持」并保留原档位。
+  'maker:set-context-window-budget',
+  // 任务级窗口边界的只读查询(路由默认/物理上限/该路由模型级上限):控制端打开远程档位
+  // 菜单时拉一次,才能给出「更大」的档位。无 event.sender / 无本机副作用,不写任何存储。
+  // 老被控端无 handler → CHANNEL_NOT_ALLOWED → 控制端退回「只允许收紧」。
+  'maker:get-context-window-bounds',
   'maker:set-extra-dirs',
   'maker:set-writable-dirs',
   // Pi 原生分支树:只读快照 + 当前会话内导航。导航业务 handler 在被控端原子同步
@@ -291,12 +306,15 @@ const CORE_INVOKE_CHANNELS: readonly string[] = [
   // → CHANNEL_NOT_ALLOWED → 控制端吞掉,回退本机/按时间。
   'sidebar-settings:get-project-order',
   'sidebar-settings:apply-project-order',
+  // Host-owned project names are read-only on controllers. Local overrides and write channels stay local.
+  'sidebar-settings:get-project-aliases',
   // 模型供应商目录(只读):远程会话的模型选择器据此 1:1 镜像被控端的「供应商+模型」结构。
   // 被控端 dispatch 在返回前剥离 routing 等执行字段(见 device-link/dispatch.ts),只回显示用字段。
   'maker:provider:list',
   // 供应商分享(只读):被控电脑收到的、别人分享给它的供应商目录(经被控电脑代读，手机读不到
   // 另一个账号的电脑)。只回显示用字段，供手机模型列表的远程供应商区域使用。
   'maker:provider-share:received-catalogs', // PROVIDER_SHARE_RECEIVED_CATALOGS_CHANNEL
+  'maker:model-catalog:read', // Same-account task-host discovery + fixed read-only catalog/readiness operations.
   // Git safety 设置(只读):远程 Codex Rewind 入口必须按被控端是否会创建 safety snapshot
   // 决定显隐。SET/RESET 不放行,控制端不能改被控端全局偏好。
   'maker:git-safety:get',
@@ -304,6 +322,7 @@ const CORE_INVOKE_CHANNELS: readonly string[] = [
   // 因为控制端本地没有远端 session 的 DB、工作目录或 gh 登录态。
   'git-context:get-for-session',
   'git-context:pr-refs:list',
+  'git-context:pr-refs:manage',
   'git-context:pr-status',
   // —— 通用远程资源面——
   // 固定的 manifest / list / get / invoke 入口。业务模块只在被控端 provider
@@ -337,6 +356,8 @@ const CORE_INVOKE_CHANNELS: readonly string[] = [
   // 控制端吞错,仅靠已加载消息 + 实时 turn-cost 推送呈现部分值。
   'local-db:messages:estimatedSessionValue',
   'local-db:recent-workdirs:list',
+  // Host-owned project display names. No remote mutation of viewer preferences.
+  'local-db:project-aliases:list',
   // 窄口径写:从被控端「最近项目」列表移除一条(专用 handler,path 归一后按主键删,
   // 幂等,不动 sessions / 磁盘)。控制端项目选择器的删除入口与本机语义对等;
   // 老被控端无此 handler → CHANNEL_NOT_ALLOWED → 控制端隐藏/忽略删除能力即可。
@@ -536,6 +557,8 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   'maker:usage:codex-rate-limits',
   'maker:usage:codex-rate-limit-reset',
   'maker:usage:codex-reset-auto-use',
+  // 桌面小组件快照（只读，被控端 dispatch 拦截；准入同上方用量只读通道）。
+  DL_USAGE_WIDGET_SNAPSHOT_CHANNEL,
   // Claude 订阅账号余量快照(只读,cached-first):控制端远程会话状态栏 chip 显示
   // 被控端订阅的 5h/周/分模型窗口剩余(数据真相在被控端 —— turn 在被控端消耗其
   // 订阅额度)。快照只含利用率百分比、reset 时间与账号归属指纹(单向 scrypt 哈希,
@@ -549,6 +572,9 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   // 前拦截、直读 usage reader,不进 ipcMain。列入 allowlist 作契约登记 + 老被控端
   // CHANNEL_NOT_ALLOWED 供控制端探测降级。
   'maker:usage:xai-subscription',
+  // Same-account read-only Kimi quota; no secrets, arbitrary endpoints, shared-task or share guests.
+  // Old hosts reject the channel; callers never fall back to their local account.
+  'maker:usage:kimi-coding',
   // cc 默认路由会话的生效计费路由观察值(只读,'gateway' | 'subscription' | null):
   // 控制端远程会话据此判定订阅 / 网关显示形态 —— 路由真值在被控端 proxy 的按请求
   // 观察 registry 里,控制端拿本机凭证状态重算必然张冠李戴。入参 sessionId,无
@@ -577,6 +603,11 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   // memory, prompts, configuration, or native UI/file mutations.
   'local-db:bots:list',
   'local-db:bots:get',
+  // Same-account opted-in controllers: private topic summaries and idempotent creation.
+  // Existing Bot/root ownership and permission inheritance apply; no sender, UI or shell use.
+  // Older hosts omit dmThreadsSupported; clients keep the canonical chat usable.
+  'local-db:bots:dm-thread:list',
+  'local-db:bots:dm-thread:ensure',
   // 伙伴自主跟进的工作台「一眼」：只读宿主内存状态表的投影（任务标题、等你的一句话摘要、
   // 分钟数、设备名），不含工作目录、提示词、工具入参或代输入值；handler 只放远程可见的伙伴。
   // 放行标准：① 只读 ② 同账号已授权控制端本就能经 maker:list-active / sessions:get-many 看到
@@ -676,6 +707,10 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   // 老被控端无这些 channel → CHANNEL_NOT_ALLOWED → 控制端按对应能力降级。
   'worktree:detect-cwd',
   'worktree:list-branches',
+  // Sync status is local-only; sync mutates only by explicit fetch + fast-forward.
+  // sync-branch baseRepo also passes dispatch PATH_GUARDED_CHANNELS.
+  'worktree:branch-sync-status',
+  'worktree:sync-branch',
   'worktree:suggest-name',
   'worktree:create',
   'worktree:discard-precreated',
@@ -740,6 +775,7 @@ export const PUSH_FORWARD_ALLOWLIST: ReadonlySet<string> = new Set([
   'maker:history-work-patch',
   // Device-level runtime Agent roster changes; controllers refresh their local availability cache.
   'maker:agents:changed',
+  'maker:model-catalog:changed',
   // Host-owned resource provider 的通用失效通知；payload 只含 collection/ref/revision。
   REMOTE_RESOURCE_CHANGED_CHANNEL,
   'maker:status-changed',
@@ -812,6 +848,7 @@ export const PUSH_FORWARD_ALLOWLIST: ReadonlySet<string> = new Set([
   'local-db:session:error-persisted',
   // 被控端项目手动顺序变化:控制端 / 手机首页按被控端正本重排。
   'sidebar-settings:project-order-changed',
+  'local-db:project-aliases:changed',
   // 被控端「当前 New Maker 草稿」全量变更:被控端草稿 effort/fast/选中 等任意变化时广播,
   // 控制端的远程项目草稿据此实时刷新显示镜像(remoteDraftState)。账号 / 全局级、无 sessionId →
   // topics.ts 的 ACCOUNT_CHANNELS 把它并入 `sessions` topic(控制端按设备订阅 sessions)。
@@ -860,6 +897,8 @@ export const INVOKE_TIMEOUT_OVERRIDES_MS: Readonly<Record<string, number>> = {
   // 被控端 worktree:create 含 git worktree add(--no-checkout)+ 白名单文件选择性
   // checkout + .claude/.sivi 拷贝;大仓库 / 慢盘上可能超默认 30s,给足执行预算 + 回程余量。
   'worktree:create': 60_000,
+  // User-triggered fetch (30s) plus local probes and process cleanup. Never replay.
+  'worktree:sync-branch': 90_000,
   // 可能先等待同 sessionId 的晚到 create 释放互斥锁，再执行 git worktree remove。
   'worktree:discard-precreated': 60_000,
   'worktree:cancel-precreated': 60_000,

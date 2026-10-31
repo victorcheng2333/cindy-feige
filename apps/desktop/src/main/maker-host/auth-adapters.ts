@@ -1,3 +1,8 @@
+import { claudeCliLoginRevision } from './claude-native-cli-status.js';
+import { getActiveCatalog } from './active-catalog.js';
+import { prepareClaudeAccountAssets } from './claude-account-assets.js';
+import { claudeAccountState, readClaudeAccountContext, readClaudeAccountRecord } from './claude-account-auth.js';
+import { readClaudeHistoryHome, rememberClaudeHistoryHome, inheritClaudeHistoryHome, listManagedClaudeHistoryHomes } from './claude-history-home.js';
 import { cindyManagedSkillRoots, listCindyManagedSkills } from './managed-skills.js';
 import { retainInvalidatedProviderPresentation, retainProviderPresentationAfterAuthChange } from './provider-presentation-store.js';
 import { subscriptionAccountKind, subscriptionAccountState } from './subscription-account-auth.js';
@@ -553,8 +558,48 @@ function claudeSubscriptionServesModel(model: string | undefined): boolean {
   return model === undefined || isAnthropicWireModel(model);
 }
 
+function unavailableClaudeSubscription(options?: AuthAdapterOptions): boolean {
+  if (!options?.providerId) return false;
+  const native = subscriptionAccountKind(options.providerId);
+  if (options.credentialMode === 'oauth-bearer') return options.providerId !== 'anthropic' && native !== 'claude';
+  // A persisted named connection can disappear between admission and spawn.
+  // Its old generic credential-mode classification must not revive a default route.
+  return !native && !getActiveCatalog().providers.some(provider => provider.id === options.providerId);
+}
+
 /** Claude AuthAdapter —— 只回鉴权 env, endpoint / behavior flag 走 runtime-configs.ts。 */
 export class DesktopClaudeAuthAdapter implements AuthAdapter {
+  getClaudeHistoryHome = readClaudeHistoryHome;
+  getClaudeHistoryScope = activeOwnerScopeKey;
+  getClaudeMemoryHomes = () => [path.join(os.homedir(), '.claude'), ...listManagedClaudeHistoryHomes()];
+  rememberClaudeHistoryHome = rememberClaudeHistoryHome;
+  inheritClaudeHistoryHome = inheritClaudeHistoryHome;
+
+  isClaudeRuntimeContextCurrent(context: { scopeKey: string; revision: string; configDir?: string }, providerId?: string | null): boolean {
+    if (context.scopeKey !== activeOwnerScopeKey() || isAppSessionBoundaryPending()) return false;
+    if (!context.configDir) return context.revision === 'system-api' || context.revision === `system:${claudeCliLoginRevision()}`;
+    if (!providerId) return false;
+    try {
+      const record = readClaudeAccountRecord(providerId);
+      return record?.connected === true && !record.invalidated && record.revision === context.revision;
+    } catch { return false; }
+  }
+
+  async getClaudeRuntimeContext(options?: AuthAdapterOptions) {
+    if (unavailableClaudeSubscription(options)) throw new Error('Selected Claude account is unavailable');
+    if (options?.providerId && subscriptionAccountKind(options.providerId) === 'claude') {
+      const context = await readClaudeAccountContext(options.providerId);
+      await this.ensureSharedGlobalSkills();
+      await prepareClaudeAccountAssets(context.configDir);
+      // Owner/auth may have changed while projecting noncredential content.
+      const after = await readClaudeAccountContext(options.providerId);
+      if (after.scopeKey !== context.scopeKey || after.revision !== context.revision) throw new Error('Claude account changed');
+      return context;
+    }
+    return { scopeKey: activeOwnerScopeKey(), revision: options?.credentialMode === 'oauth-bearer'
+      ? `system:${claudeCliLoginRevision()}` : 'system-api' };
+  }
+
   private readonly sharedSkillsPreparation = new PreparationCache(30_000);
   /** Last reported set of persistent projection warnings; each set is logged once. */
   private reportedPersistentSkillWarnings = '[]';
@@ -652,7 +697,14 @@ export class DesktopClaudeAuthAdapter implements AuthAdapter {
   }
 
   async getState(options?: AuthAdapterOptions): Promise<AuthState> {
+    if (unavailableClaudeSubscription(options)) return { authenticated: false, errorReason: 'provider_unavailable' };
     if (options?.providerId && subscriptionAccountKind(options.providerId)) {
+      if (subscriptionAccountKind(options.providerId) === 'claude') {
+        const state = claudeAccountState(options.providerId);
+        if (!state.authenticated) return state;
+        try { await readClaudeAccountContext(options.providerId); return state; }
+        catch { return { authenticated: false, authSource: 'oauth', errorReason: 'oauth_expired' }; }
+      }
       if (!isAnthropicCompatProxyHandleReady()) {
         return { authenticated: false, errorReason: 'proxy_not_ready' };
       }
@@ -712,10 +764,12 @@ export class DesktopClaudeAuthAdapter implements AuthAdapter {
   }
 
   async getAuthEnv(options?: AuthAdapterOptions): Promise<Record<string, string>> {
+    if (unavailableClaudeSubscription(options)) throw new Error('Selected Claude account is unavailable');
     await this.ensureSharedGlobalSkills();
     const env: Record<string, string> = {};
     if (options?.providerId && subscriptionAccountKind(options.providerId) === 'claude') {
-      // 独立 Claude 账号已停用(getState 拒绝授权),不递任何凭证。
+      // CLI reads this connection's own login; never inject subscription credentials.
+      Object.assign(env, await claudeCliNetworkEnv());
     } else if (options?.credentialMode === 'gateway-key') {
       const apiKey = readClaudeApiKey();
       if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
@@ -735,9 +789,8 @@ export class DesktopClaudeAuthAdapter implements AuthAdapter {
         else env.ANTHROPIC_API_KEY = CLAUDE_PROVIDER_AUTH_PLACEHOLDER_KEY;
       }
     }
-    // 所有来源都用 CLI 默认配置目录(dev 多实例与正式版一致,不设 CLAUDE_CONFIG_DIR):
-    // 订阅会话的凭证库按配置目录区分,隔离会看不到本机已有的 Claude Code 登录。
-    // 旧版 dev 隔离在 <userData>/claude-home 的转录,拉起 CLI 前补拷到默认目录供 resume。
+    // 默认入口继续使用终端登录；命名连接的目录经 getClaudeRuntimeContext 注入，
+    // 不在通用鉴权 env 里广播。旧 dev 转录只补到默认目录，具名历史有自己的归属记录。
     await ensureLegacyClaudeConfigMigrated();
     return env;
   }

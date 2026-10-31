@@ -58,10 +58,12 @@ it('localizes all countdown units using the supplied language',()=>{
 });
 
 import { mobileProviderAccountTitle } from '@/session/mobileModelRowPresentation';
-it('names independently connected accounts without duplicating generated identity labels', () => {
+// Regression: iOS appended email/organization to a renamed connection title.
+// Unit: the shared picker title must preserve the host name, even with identity metadata.
+it('uses the connection name without appending account identity', () => {
   const identity = 'account@example.com';
-  expect(mobileProviderAccountTitle(provider({ name: 'OpenAI', openAiAccount: { identity } }))).toBe(`OpenAI · ${identity}`);
-  expect(mobileProviderAccountTitle(provider({ name: `OpenAI · ${identity} (2)`, openAiAccount: { identity } }))).toBe(`OpenAI · ${identity} (2)`);
-  expect(mobileProviderAccountTitle(provider({ name: 'Work', subscriptionAccount: { identity } }))).toBe(`Work · ${identity}`);
-  expect(mobileProviderAccountTitle(provider({ name: 'My API' }))).toBe('My API');
+  expect(mobileProviderAccountTitle(provider({ id: 'openai', name: 'Work', openAiAccount: { identity } }))).toBe('Work');
+  expect(mobileProviderAccountTitle(provider({ id: 'account', name: `OpenAI · ${identity} (2)`, openAiAccount: { identity } }))).toBe(`OpenAI · ${identity} (2)`);
+  expect(mobileProviderAccountTitle(provider({ id: 'claude-account', name: 'Anthropic-8', subscriptionAccount: { identity: `${identity} · Organization` } }))).toBe('Anthropic-8');
+  expect(mobileProviderAccountTitle(provider({ id: 'my-api', name: 'My API' }))).toBe('My API');
 });

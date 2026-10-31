@@ -35,7 +35,7 @@ function createNoopLogger(): Logger {
   return logger;
 }
 
-function createAgent(authenticated: boolean): { agent: ClaudeCodeAgent; getState: ReturnType<typeof vi.fn> } {
+function createAgent(authenticated: boolean, authOverrides: Partial<AuthAdapter> = {}): { agent: ClaudeCodeAgent; getState: ReturnType<typeof vi.fn> } {
   const getState = vi.fn(async () => (authenticated ? { authenticated: true } : { authenticated: false }));
   const auth: AuthAdapter = {
     getState,
@@ -46,6 +46,7 @@ function createAgent(authenticated: boolean): { agent: ClaudeCodeAgent; getState
     async getAuthEnv() {
       return {};
     },
+    ...authOverrides,
   };
   const deps: AgentDeps = {
     auth,
@@ -77,7 +78,7 @@ describe('ClaudeCodeAgent.refreshLocalModels(主动读取订阅模型清单)', (
     await expect(agent.refreshLocalModels()).resolves.toBe(true);
 
     expect(getState).toHaveBeenCalledWith({ credentialMode: 'oauth-bearer' });
-    expect(listener).toHaveBeenCalledWith(models);
+    expect(listener).toHaveBeenCalledWith(models, { providerId: 'anthropic', runtime: undefined });
     expect(q.close).toHaveBeenCalledTimes(1);
     const [{ prompt, options }] = sdkMock.query.mock.calls[0] as [
       { prompt: AsyncIterable<unknown>; options: Record<string, unknown> },
@@ -87,6 +88,25 @@ describe('ClaudeCodeAgent.refreshLocalModels(主动读取订阅模型清单)', (
     const received: unknown[] = [];
     for await (const item of prompt) received.push(item);
     expect(received).toEqual([]);
+  });
+
+  // Attribution and admission generation are part of the host callback protocol.
+  it.each([true, false])('probes the named account home and publishes only while current=%s', async stillCurrent => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'cindy-managed-model-probe-'));
+    try {
+      let current = true;
+      const runtime = { configDir: home, scopeKey: 'test-owner', revision: 'test-login' };
+      const { agent } = createAgent(true, { getClaudeRuntimeContext: async () => runtime, isClaudeRuntimeContextCurrent: () => current });
+      const models = [{ value: 'claude-sonnet-4', displayName: 'Sonnet' }];
+      const q = fakeQuery(async () => { current = stillCurrent; return models; });
+      sdkMock.query.mockReturnValue(q);
+      const listener = vi.fn(); setClaudeSupportedModelsListener(listener);
+      expect(await agent.refreshLocalModels({ providerId: 'claude-a' })).toBe(stillCurrent);
+      expect(sdkMock.query.mock.calls[0][0].options.env.CLAUDE_CONFIG_DIR).toBe(home);
+      if (stillCurrent) expect(listener).toHaveBeenCalledWith(models, { providerId: 'claude-a', runtime });
+      else expect(listener).not.toHaveBeenCalled();
+      expect(q.close).toHaveBeenCalledOnce();
+    } finally { await fs.rm(home, { recursive: true, force: true }); }
   });
 
   it('未登录订阅或 host 未接监听器时不起 CLI', async () => {

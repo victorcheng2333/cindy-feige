@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   outboundFetch: vi.fn(),
 }));
 vi.mock('../../appSessionState.js', () => ({
+  onAppSessionInvalidated: () => () => {},
   activeOwnerScopeKey: () => String(state.scope),
   isAppSessionBoundaryPending: () => false,
 }));
@@ -67,7 +68,7 @@ describe('subscription provider quota isolation', () => {
     expect(await readSubscriptionAccountUsage(a)).toBeNull();
     expect(await readSubscriptionAccountUsage(b)).toMatchObject({ updatedAt: 2 });
   });
-  it('retired claude accounts have no quota reader and never touch the network', async () => {
+  it('claude accounts use the managed reader and never touch the xai or generic network paths', async () => {
     const clearInstant = vi.fn();
     const broadcast = vi.fn();
     setSubscriptionAccountUsageBroadcaster(broadcast, clearInstant);
@@ -77,8 +78,6 @@ describe('subscription provider quota isolation', () => {
     await syncSubscriptionAccountUsage('claude-a');
     await settle();
     expect(await readSubscriptionAccountUsage('claude-a')).toBeNull();
-    expect(clearInstant).not.toHaveBeenCalled();
-    expect(broadcast).not.toHaveBeenCalled();
     expect(state.fetchXai).not.toHaveBeenCalled();
     expect(state.outboundFetch).not.toHaveBeenCalled();
   });

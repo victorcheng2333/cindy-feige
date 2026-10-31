@@ -1,3 +1,4 @@
+import { isTeammateTask } from './teammateTaskSource';
 import { readTokenSpeedSnapshot, type TokenSpeedSnapshot } from '@cindy/maker-shared/usage-format';
 import { historyTurnEnded, nextHistoryCacheReceipt } from '@cindy/maker-shared/message-window';
 import { normalizeTaskTags, reconcileTaskTags } from '@cindy/maker-shared';
@@ -150,6 +151,8 @@ export interface RemoteSessionRunStatus {
   isRunning: boolean;
   /** Terminal failure remains sticky until the next run, even after read acknowledgement. */
   hasTerminalError?: boolean;
+  /** Existing maker:event identity, retained locally for live/history error deduplication. */
+  terminalError?: { clientId: string; message: string } | null;
   reconnectAttempt: RemoteSessionReconnectAttempt | null;
   sideTaskRunning: boolean;
   startedAt: number | null;
@@ -1436,6 +1439,9 @@ const mergedSessionById = new Map<string, RemoteSession>();
 // live usage. Usage pushes must not rebuild Home's grouping/localization tree.
 let homeSessions: RemoteSession[] = [];
 const SESSION_USAGE_FIELDS = new Set(['totalMoney', 'totalCostUsd', 'totalTokenUsage']);
+// These fields cannot change shard ownership, visibility or retention. Timestamps
+// still update this task's live-row anchor; titles still reconcile local previews.
+const SESSION_METADATA_FIELDS = new Set([...SESSION_USAGE_FIELDS, 'title', 'updatedAt', 'userSendAt']);
 const homeSessionProjectionCache = new Map<string, {
   source: RemoteSession;
   projected: RemoteSession;
@@ -1781,6 +1787,7 @@ function sameElementRefs<T>(a: readonly T[], b: readonly T[]): boolean {
 
 function reconcileVisibleSessions(): void {
   const next = mergedSessions.filter((session) => session.source !== 'side-chat'
+    && (session.source !== 'bot' || isTeammateTask(session))
     && sessionListRemovalPreviews.pendingFields(session.id).length === 0
     && (CINDY_MAKE_ENABLED || !isCindyMakeSource(session.source)));
   if (!sameElementRefs(visibleSessions, next)) visibleSessions = next;
@@ -1824,6 +1831,8 @@ function preserveSessionRuntimeFields(
   if (!local) return fresh;
   let next = fresh;
   for (const key of [
+    'companion',
+    'taskTeammate',
     'agentSwitchIntent',
     'runtimeGeneration',
     'runtimeBaseline',
@@ -3307,7 +3316,13 @@ function sweepDevicesOffline(deviceIds: readonly string[]): boolean {
     // invalidation, or actual device removal will retire them.
     changed = freezeUnboundPendingHostAnchorsForOffline(sessionId, indexedDeviceId) || changed;
     changed = writeMakerTurnRunning(sessionId, false) || changed;
-    changed = writeSessionRunStatus(sessionId, EMPTY_SESSION_RUN_STATUS) || changed;
+    // Soft offline keeps history. Keep its known terminal identity too: reconnect
+    // restores the error projection without replaying the terminal maker event.
+    // The next running transition or session/device removal still retires it.
+    const terminalError = readSessionRunStatus(sessionId).terminalError;
+    changed = writeSessionRunStatus(sessionId, terminalError
+      ? { ...EMPTY_SESSION_RUN_STATUS, hasTerminalError: true, terminalError }
+      : EMPTY_SESSION_RUN_STATUS) || changed;
   }
   for (const [sessionId, pendingAnchors] of pendingHostAnchorLiveAssistantClientIds) {
     for (const identity of pendingAnchors.values()) {
@@ -3727,6 +3742,26 @@ export const remoteSessionStore = {
             return updated;
           });
           reconcileVisibleSessions();
+        }
+        emit();
+        return;
+      }
+      if (Object.keys(patch).every((key) => SESSION_METADATA_FIELDS.has(key))) {
+        const previous = mergedSessionById.get(sessionId);
+        if (previous && sessionDeviceIndex.get(sessionId) === deviceId) {
+          const updated = applyPendingTitlePreview({ ...patched, canonicalDeviceId: previous.canonicalDeviceId });
+          if (!remoteSessionEqual(previous, updated)) {
+            mergedSessions = mergedSessions.map((session) => session.id === sessionId ? updated : session);
+            mergedSessionById.set(sessionId, updated);
+            pendingMessagePreviewSessionIds.add(sessionId);
+            reconcileVisibleSessions();
+            reconcileHomeSessions();
+          }
+          bindPendingHostAnchorSendAt(sessionId, updated.userSendAt);
+          if (reanchorPendingLiveAssistantRows(sessionId,
+            updated.userSendAt ?? updated.updatedAt ?? updated.createdAt, { consumePending: false })) {
+            bumpMessageVersion();
+          }
         }
         emit();
         return;
@@ -5159,6 +5194,9 @@ export const remoteSessionStore = {
         && writeSessionRunStatus(sessionId, {
           ...readSessionRunStatus(sessionId),
           hasTerminalError: true,
+          terminalError: persistId && readString(event.data, 'message')
+            ? { clientId: persistId, message: readString(event.data, 'message')! }
+            : null,
         });
       this.setSessionRunning(
         sessionId,
@@ -5361,6 +5399,7 @@ export const remoteSessionStore = {
       const next: RemoteSessionRunStatus = {
         isRunning,
         ...(current.hasTerminalError !== undefined ? { hasTerminalError: current.hasTerminalError } : {}),
+        ...(current.terminalError !== undefined ? { terminalError: current.terminalError } : {}),
         reconnectAttempt: null,
         sideTaskRunning: isRunning ? data?.skipTurnReset === true : false,
         startedAt: isRunning ? (current.startedAt ?? Date.now()) : null,
@@ -5970,7 +6009,8 @@ function parseAttemptPair(
  *  - 传输层重连: `Reconnecting... N/M`;
  *  - 上游过载退避重投: `(auto-retry N/M)`(maker-core 的
  *    agents/shared/overload-error.ts 统一后缀, Codex 与 Claude 两侧同款)。
- *  - daemon 终态 429 外层重投: reason=`terminal-rate-limit-retry` +
+ *  - 429 重试: reason=`terminal-rate-limit-retry`（宿主）或
+ *    `upstream-rate-limit-retry`（Claude CLI）+
  *    `(rate-limit-retry N/M)`；reason 与 marker 必须同时命中。
  *
  * 过载 marker 不认的话, 整个退避窗口(交互式最长约 30s)手机端只显示笼统的「思考中」, 用户看不出
@@ -5984,7 +6024,7 @@ function parseReconnectAttemptMessage(
   message: string,
   reason?: string | null,
 ): RemoteSessionReconnectAttempt | null {
-  if (reason === TERMINAL_RATE_LIMIT_RETRY_REASON) {
+  if (reason === TERMINAL_RATE_LIMIT_RETRY_REASON || reason === 'upstream-rate-limit-retry') {
     const rateLimit = parseAttemptPair(
       /\(rate-limit-retry\s+(\d+)\s*\/\s*(\d+)\)\s*$/i.exec(message),
     );
@@ -6037,7 +6077,7 @@ function writeMakerTurnRunning(sessionId: string, running: boolean): boolean {
 function writeSessionRunStatus(sessionId: string, next: RemoteSessionRunStatus): boolean {
   const current = readSessionRunStatus(sessionId);
   if (next.isRunning && !current.isRunning && current.hasTerminalError) {
-    next = { ...next, hasTerminalError: false };
+    next = { ...next, hasTerminalError: false, terminalError: null };
   }
   if (shallowRecordEqual(current as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>)) {
     return false;
@@ -6285,6 +6325,26 @@ function usePausableRemoteSessionStoreSnapshot<T>(
 
 export function useRemoteSessions(): RemoteSession[] {
   return usePausableRemoteSessionStoreSnapshot('sessions', remoteSessionStore.getVisibleSessions);
+}
+
+/** Link chips observe only their visible targets, not every task's activity. */
+export function useRemoteSessionTitles(ids: readonly string[]): Record<string, string> | undefined {
+  const read = useCallback(() => {
+    if (ids.length === 0) return undefined;
+    const sessions = remoteSessionStore.getVisibleSessions();
+    const titles: Record<string, string> = {};
+    for (const id of ids) {
+      const title = sessions.find((session) => session.id === id)?.title?.trim();
+      if (title) titles[id] = title;
+    }
+    return Object.keys(titles).length > 0 ? JSON.stringify(titles) : undefined;
+  }, [ids]);
+  // A primitive snapshot stays equal on unrelated pushes. Reuse the route's
+  // subscription gate so covered conversations remain frozen until resumed.
+  const json = usePausableRemoteSessionStoreSnapshot(
+    read, read, ids.length > 0 ? remoteSessionStore.subscribe : NOOP_SUBSCRIBE,
+  );
+  return useMemo(() => json === undefined ? undefined : JSON.parse(json) as Record<string, string>, [json]);
 }
 
 /** A hidden child can be opened without making it an ordinary Home list row. */

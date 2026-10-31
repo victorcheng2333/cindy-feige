@@ -174,6 +174,45 @@ describe('closeRejectedRuntimeAndRestoreControlStores', () => {
 });
 
 describe('applyRuntimeSetModelChange', () => {
+  // The native preflight is the observable acceptance boundary for account
+  // changes; failed and deferred choices must not publish the target route.
+  it.each(['idle', 'cold', 'busy'] as const)('verifies a Claude account before publishing from %s state', async state => {
+    const id = rememberSession(`claude-preflight-${state}`);
+    setSessionProvider(id, 'claude-a');
+    const order: string[] = [];
+    const session = { id, agentKind: 'claude-code' as const, model: 'claude-sonnet-4',
+      isTurnRunning: () => state === 'busy', setModel: vi.fn() };
+    const prepare = vi.fn(async () => { order.push('prepare'); expect(getSessionProvider(id)).toBe('claude-a'); throw new Error('resume rejected'); });
+    const pending = vi.fn();
+    const operation = applyRuntimeSetModelChange({
+      maker: { getSession: () => state === 'cold' ? undefined : session,
+        listActiveSessions: () => state === 'cold' ? [] : [session],
+        closeSession: async () => { order.push('close'); } },
+      sessionId: id, model: 'claude-sonnet-4', providerId: 'claude-b',
+      prepareNativeResume: prepare, registerPendingCredentialSwitch: pending,
+    });
+    if (state === 'busy') {
+      expect(await operation).toEqual({ status: 'deferred' });
+      expect(prepare).not.toHaveBeenCalled(); expect(pending).toHaveBeenCalledOnce();
+    } else {
+      await expect(operation).rejects.toThrow('resume rejected');
+      expect(order).toEqual(state === 'idle' ? ['close', 'prepare'] : ['prepare']);
+    }
+    expect(getSessionProvider(id)).toBe('claude-a');
+    expect(session.setModel).not.toHaveBeenCalled();
+  });
+
+  it('publishes the target and wakes input only after native resume verification', async () => {
+    const id = rememberSession('claude-preflight-ok'); setSessionProvider(id, 'claude-a');
+    const order: string[] = [];
+    const session = { id, agentKind: 'claude-code' as const, model: 'claude-sonnet-4', setModel: vi.fn(), isTurnRunning: () => false };
+    await applyRuntimeSetModelChange({ sessionId: id, model: 'claude-sonnet-4', providerId: 'claude-b',
+      maker: { getSession: () => session, listActiveSessions: () => [session], closeSession: async () => { order.push('close'); } },
+      prepareNativeResume: async () => { expect(getSessionProvider(id)).toBe('claude-a'); order.push('verified'); },
+      wakeSessionInputQueue: () => { expect(getSessionProvider(id)).toBe('claude-b'); order.push('wake'); },
+    });
+    expect(order).toEqual(['close', 'verified', 'wake']);
+  });
   async function applyImageGenerationRouteChange(input: {
     testId: string;
     currentThreadModelProviderId: string;
@@ -1354,6 +1393,46 @@ describe('applyRuntimeSetModelChange', () => {
       expect(getSessionProvider(sessionId)).toBe(toProvider);
     },
   );
+
+  it('passes the target budget to the Pi preview, same as the setModel call', async () => {
+    // 预演决定要不要重建，而 switchModel 会先把预算写成新值再预演。外层预演拿旧预算
+    // 就会判「可热切」，内层按新预算发现保留量不匹配便抛错 —— 首次发送必失败。
+    const sessionId = rememberSession('runtime-set-model-pi-preview-budget');
+    setSessionProvider(sessionId, 'xai');
+    const previewModelSwitch = vi.fn(async () => ({ action: 'hot' as const,
+      targetContextWindow: 1_000_000, windowVerified: true }));
+    const setModel = vi.fn(async () => {});
+    const maker: RuntimeSetModelMaker = {
+      getSession: () => ({
+        agentKind: 'pi',
+        remoteHostId: null,
+        model: 'grok-4.6',
+        setModel,
+        previewModelSwitch,
+      }),
+      listActiveSessions: () => [
+        { id: sessionId, agentKind: 'pi', remoteHostId: null, isTurnRunning: () => false },
+      ],
+      closeSession: vi.fn(async () => {}),
+    };
+
+    await applyRuntimeSetModelChange({
+      maker,
+      sessionId,
+      model: 'grok-4.5',
+      providerId: 'xai',
+      contextWindowBudget: 500_000,
+    });
+
+    expect(previewModelSwitch).toHaveBeenCalledWith('grok-4.5', {
+      providerId: 'xai',
+      contextWindowBudget: 500_000,
+    });
+    expect(setModel).toHaveBeenCalledWith('grok-4.5', {
+      providerId: 'xai',
+      contextWindowBudget: 500_000,
+    });
+  });
 
   it('hot-switches idle Pi inside the same proxy identity without closing', async () => {
     const sessionId = rememberSession('runtime-set-model-pi-same-xai');

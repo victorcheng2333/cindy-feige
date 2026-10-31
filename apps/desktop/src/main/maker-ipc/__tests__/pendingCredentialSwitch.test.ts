@@ -36,6 +36,7 @@ function createHarness(
   sessions: HarnessSession[],
   opts?: { retryDelayMs?: number; resolveRoute?: PendingCredentialSwitchDeps['resolveRoute'];
     applyPiPending?: PendingCredentialSwitchDeps['applyPiPending'];
+    applyClaudePending?: PendingCredentialSwitchDeps['applyClaudePending'];
     isPiOwnerCurrent?: PendingCredentialSwitchDeps['isPiOwnerCurrent'] },
 ) {
   const closeSession = vi.fn(async (_sessionId: string) => {});
@@ -54,6 +55,7 @@ function createHarness(
     broadcastFailed,
     onApplied,
     ...(opts?.applyPiPending ? { applyPiPending: opts.applyPiPending } : {}),
+    ...(opts?.applyClaudePending ? { applyClaudePending: opts.applyClaudePending } : {}),
     ...(opts?.isPiOwnerCurrent ? { isPiOwnerCurrent: opts.isPiOwnerCurrent } : {}),
     persistRoute,
     ...(opts?.resolveRoute ? { resolveRoute: opts.resolveRoute } : {}),
@@ -88,13 +90,14 @@ describe('PendingCredentialSwitchService', () => {
     expect(getSessionProvider(sessionId)).toBe('old-source');
   });
 
-  it('rolls back a failed Pi selection once and reports the failure', async () => {
-    const sessionId = rememberSession('pi-pending-rollback');
+  it.each(['pi', 'claude-code'] as const)('rolls back a failed %s selection once and reports the failure', async agentKind => {
+    const sessionId = rememberSession(`${agentKind}-pending-rollback`);
     setSessionProvider(sessionId, 'old-source');
     const applyPiPending = vi.fn<NonNullable<PendingCredentialSwitchDeps['applyPiPending']>>(async () => {
       throw new Error('native model refresh unsupported');
     });
-    const h = createHarness([{ id: sessionId, agentKind: 'pi', isTurnRunning: () => false }], { applyPiPending });
+    const h = createHarness([{ id: sessionId, agentKind, isTurnRunning: () => false }],
+      agentKind === 'pi' ? { applyPiPending } : { applyClaudePending: applyPiPending });
     h.service.register(sessionId, { model: 'new-model', providerId: 'new-source',
       previousRoute: { model: 'old-model', providerId: 'old-source' } });
     await h.service.onTurnSettled(sessionId);
@@ -110,11 +113,11 @@ describe('PendingCredentialSwitchService', () => {
     expect(applyPiPending).toHaveBeenCalledTimes(1);
   });
 
-  it('runs a cold Pi pending choice through the same window-aware host callback after its runtime exits', async () => {
-    const sessionId = rememberSession('pi-pending-cold');
+  it.each(['pi', 'claude-code'] as const)('runs a cold %s pending choice through the host callback after its runtime exits', async agentKind => {
+    const sessionId = rememberSession(`${agentKind}-pending-cold`);
     const applyPiPending = vi.fn<NonNullable<PendingCredentialSwitchDeps['applyPiPending']>>(async () => 'applied');
-    const h = createHarness([], { applyPiPending });
-    h.service.register(sessionId, { agentKind: 'pi', model: 'small-model', providerId: 'new-source',
+    const h = createHarness([], agentKind === 'pi' ? { applyPiPending } : { applyClaudePending: applyPiPending });
+    h.service.register(sessionId, { agentKind, model: 'small-model', providerId: 'new-source',
       previousRoute: { model: 'large-model', providerId: 'old-source' } });
     h.service.onSessionClosed(sessionId);
     await vi.waitFor(() => expect(applyPiPending).toHaveBeenCalledExactlyOnceWith(

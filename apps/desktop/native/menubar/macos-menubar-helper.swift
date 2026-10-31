@@ -21,9 +21,20 @@ struct MBSettings: Codable, Equatable {
   var hidden: [String]
   var shown: [String]
   var statusText: String
+  var pinnedSourceId: String?
   var lowAlert: Bool
   var privacy: Bool
   var scope: String
+}
+
+struct MBQuotaWindow: Decodable, Identifiable, Equatable {
+  let id: String
+  let label: String
+  let value: String
+  let fill: Double
+  let level: String
+  let reserve: Bool
+  let when: String
 }
 
 struct MBCell: Decodable, Identifiable, Equatable {
@@ -34,6 +45,9 @@ struct MBCell: Decodable, Identifiable, Equatable {
   let value: String?
   let valueUnit: String?
   let valueLabel: String?
+  /// Absent in older main snapshots and for sources without a subscription window.
+  let periodLabel: String?
+  let periods: [MBQuotaWindow]?
   let level: String
   let fill: Double?
   let reserve: Bool
@@ -106,6 +120,20 @@ struct MBModelUsage: Decodable, Equatable {
   let tokens: Double
 }
 
+struct MBActivity: Decodable, Identifiable, Equatable {
+  var id: String { sessionId }
+  let sessionId: String
+  let title: String
+  let logoSvg: String
+  let companion: Bool
+  let attention: Bool
+  let phase: String
+  let preview: String
+  let status: String
+  let startedAtMs: Double?
+  let lastActivityAtMs: Double
+}
+
 struct MBDaily: Decodable, Equatable {
   let money: [Double]
   let paid: Double
@@ -137,6 +165,10 @@ struct MBView: Decodable, Equatable {
   let moneySymbol: String
   let strings: [String: String]
   let statusTextByMode: [String: String?]
+  let attentionCount: Int?
+  let activities: [MBActivity]?
+  let remotelyControlled: Bool?
+  let remoteControllerNames: [String]?
   let updatedAtMs: Double?
   let headlinePrimary: String
   let headlineSecondary: String?
@@ -151,6 +183,14 @@ struct MBView: Decodable, Equatable {
   let settings: MBSettings
   /// "sign-in" until the user signs in or skips sign-in; nothing was read.
   let gate: String?
+
+  /// The real item and its settings preview always use the same text.
+  var statusTitle: String {
+    guard gate == nil else { return "" }
+    let usage = (statusTextByMode[settings.statusText] ?? nil) ?? ""
+    guard let count = attentionCount, count > 0 else { return usage }
+    return usage.isEmpty ? String(count) : "\(count) · \(usage)"
+  }
 }
 
 struct MBIncoming: Decodable {
@@ -237,8 +277,13 @@ enum Palette {
   static let wellShade = dynamic(NSColor(white: 0, alpha: 0.08), NSColor(white: 0, alpha: 0.5))
   /// Red of the Cindy logo's ">" mark (the logo red, not a state color).
   static let brand = Color(nsColor: hex(0xF70121))
-  static let warn = Color(nsColor: hex(0xEA6B17))
-  static let error = Color(nsColor: hex(0xD91F37))
+  /// Quota yellow (30% or less left, `@cindy/maker-shared/quota-level`); `error` is 10% or less.
+  static let warn = Color(nsColor: hex(0xF3A115))
+  /// Shared by the menu-bar dot and its explanation inside the panel.
+  private static let remoteControlValue: UInt32 = 0xFF9F0A
+  static let remoteControlHex = String(format: "#%06X", remoteControlValue)
+  static let remoteControl = Color(nsColor: hex(remoteControlValue))
+  static let error = Color(nsColor: hex(0xEF4444))
   static let focus = Color(nsColor: hex(0x417CDD))
   static let claude = Color(nsColor: hex(0xD97757))
   static let claude2 = Color(nsColor: hex(0xE8A184))
@@ -390,7 +435,7 @@ enum Logos {
   /// Opaque silhouette with tonal, tapered strands and a larger, left-shifted earring.
   /// Fit the mark to the 18pt status canvas; other brand surfaces keep their original mark.
   static func statusIcon(dark: Bool) -> NSImage? {
-    dark ? darkStatusIcon : lightStatusIcon
+    return dark ? darkStatusIcon : lightStatusIcon
   }
 
   private static let lightStatusIcon = makeStatusIcon(dark: false)
@@ -459,6 +504,7 @@ enum Logos {
     L 17.346,7.646 L 17.475,7.644 L 17.604,7.649 L 17.735,7.660 L 17.866,7.678 L 18.000,7.700 Z
     "/>
     """
+    // Remote-control state is explained in the panel, without a status-icon dot.
     let svg = """
     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
       <g transform="translate(-0.765 -0.445) scale(0.8157)">
@@ -509,6 +555,10 @@ enum UsageList: String {
   case tasks
 }
 
+enum TaskTab: String, CaseIterable {
+  case unread, ongoing, usage
+}
+
 @MainActor
 final class MenubarStore: ObservableObject {
   @Published var view: MBView?
@@ -518,6 +568,10 @@ final class MenubarStore: ObservableObject {
   @Published var refreshing = false
   @Published var usageRange = 30
   @Published var usageList: UsageList = .models
+  @Published var taskTab: TaskTab = .ongoing
+  @Published var tasksExpanded = false
+  /// Manual non-unread choice survives panel closes; automatic unread selection never overwrites it.
+  private var preferredTaskTab: TaskTab?
   /// Manage list order while the user drags, before main echoes the saved settings back.
   @Published var draftOrder: [String]?
   @Published var mainContentHeight: CGFloat = 0
@@ -554,6 +608,19 @@ final class MenubarStore: ObservableObject {
   }
 
   var locale: String { view?.locale ?? "en" }
+
+  func openTaskTab() {
+    tasksExpanded = false
+    if (view?.attentionCount ?? 0) > 0 { taskTab = .unread }
+    else if let preferredTaskTab { taskTab = preferredTaskTab }
+    else { taskTab = (view?.activities ?? []).contains { $0.phase == "running" || $0.phase == "needs-interaction" } ? .ongoing : .usage }
+  }
+
+  func selectTaskTab(_ tab: TaskTab) {
+    taskTab = tab
+    tasksExpanded = false
+    if tab != .unread { preferredTaskTab = tab }
+  }
 
   func apply(_ next: MBView) {
     Fmt.symbol = next.moneySymbol
@@ -722,10 +789,9 @@ final class StatusController: NSObject, NSWindowDelegate {
     super.init()
     if let button = statusItem.button {
       // Wallpaper can give the menu bar a different appearance from the app.
-      statusAppearanceObservation = button.observe(\.effectiveAppearance, options: [.initial, .new]) { button, _ in
+      statusAppearanceObservation = button.observe(\.effectiveAppearance, options: [.initial, .new]) { [weak self] _, _ in
         MainActor.assumeIsolated {
-          let dark = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-          button.image = Logos.statusIcon(dark: dark)
+          self?.updateStatusIcon()
         }
       }
       button.imagePosition = .imageLeading
@@ -788,17 +854,17 @@ final class StatusController: NSObject, NSWindowDelegate {
 
   private func updateStatusTitle() {
     guard let button = statusItem.button else { return }
-    let mode = store.view?.settings.statusText ?? "icon"
-    let text = (store.view?.statusTextByMode[mode] ?? nil) ?? ""
+    updateStatusIcon()
+    let text = store.view?.statusTitle ?? ""
     if text.isEmpty {
       button.attributedTitle = NSAttributedString(string: "")
       button.imagePosition = .imageOnly
     } else {
       button.imagePosition = .imageLeading
       button.attributedTitle = NSAttributedString(
-        string: " " + text,
+        string: "\u{2009}" + text,
         attributes: [
-          .font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold),
+          .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular),
           .baselineOffset: 0,
         ]
       )
@@ -807,6 +873,12 @@ final class StatusController: NSObject, NSWindowDelegate {
       button.setAccessibilityLabel(text.isEmpty ? "Cindy" : "Cindy, \(text)")
       button.toolTip = view.headlinePrimary
     }
+  }
+
+  private func updateStatusIcon() {
+    guard let button = statusItem.button else { return }
+    let dark = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    button.image = Logos.statusIcon(dark: dark)
   }
 
   @objc func toggle() {
@@ -835,6 +907,7 @@ final class StatusController: NSObject, NSWindowDelegate {
     let short = forceShort || (screen.map { $0.visibleFrame.height < Self.shortScreenHeight } ?? false)
     if store.short != short { store.short = short }
     store.page = .main
+    store.openTaskTab()
     store.fillToken += 1
     layoutPanel(for: .main, animated: false)
     let target = panel.frame
@@ -1684,6 +1757,60 @@ struct HatchPattern: Shape {
 
 // MARK: - Main page
 
+/// A quiet status strip, tied to the same state and color as the menu-bar dot.
+struct RemoteControlStatus: View {
+  let title: String
+  let detail: String
+  let names: [String]
+  let actionLabel: String
+  let action: () -> Void
+  @State private var hovering = false
+
+  private var description: String { names.isEmpty ? detail : names.joined(separator: " · ") }
+
+  var body: some View {
+    Button(action: action) {
+      HStack(alignment: .center, spacing: 10) {
+        Image(systemName: "desktopcomputer")
+          .font(.system(size: 16, weight: .regular))
+          .foregroundStyle(Palette.ink2)
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(Palette.ink5))
+          .overlay(alignment: .topTrailing) {
+            Circle().fill(Palette.remoteControl)
+              .frame(width: 6, height: 6)
+              .offset(x: -1, y: 1)
+          }
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(title)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(Palette.ink)
+          Text(description)
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.ink2)
+            .lineSpacing(2)
+            .lineLimit(2)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Image(systemName: "chevron.right")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(hovering ? Palette.ink2 : Palette.ink3)
+          .accessibilityHidden(true)
+      }
+      .padding(10)
+      .background(RoundedRectangle(cornerRadius: 14, style: .circular).fill(hovering ? Palette.ink5 : .clear))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(PressScaleStyle())
+    .onHover { value in withAnimation(Motion.quick) { hovering = value } }
+    .help(description + "\n" + actionLabel)
+    .accessibilityLabel(title + ", " + description)
+    .accessibilityHint(actionLabel)
+  }
+}
+
 struct MainPage: View {
   @ObservedObject var store: MenubarStore
   let view: MBView
@@ -1719,19 +1846,29 @@ struct MainPage: View {
   }
 
   private var topBar: some View {
-    HStack(spacing: 0) {
-      Wordmark().frame(height: 13)
-      TimelineView(.periodic(from: .now, by: 15)) { context in
-        Text(updatedText(now: context.date))
-          .font(.system(size: 11))
-          .foregroundStyle(Palette.ink3)
-          .lineLimit(1)
-          .padding(.leading, 8)
+    VStack(spacing: 0) {
+      HStack(spacing: 0) {
+        Wordmark().frame(height: 13)
+        TimelineView(.periodic(from: .now, by: 15)) { context in
+          Text(updatedText(now: context.date))
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.ink3)
+            .lineLimit(1)
+            .padding(.leading, 8)
+        }
+        Spacer(minLength: 0)
+        RefreshButton(store: store)
       }
-      Spacer(minLength: 0)
-      RefreshButton(store: store)
+      .padding(EdgeInsets(top: 14, leading: 18, bottom: 4, trailing: 12))
+      if view.remotelyControlled == true {
+        RemoteControlStatus(
+          title: store.s("remoteControlTitle"), detail: store.s("remoteControlBody"),
+          names: view.remoteControllerNames ?? [], actionLabel: store.s("settings")
+        ) { controller.emitAndClose(["type": "open-remote-control-settings"]) }
+          .padding(EdgeInsets(top: 0, leading: 8, bottom: 4, trailing: 8))
+        Hairline().padding(.horizontal, 18)
+      }
     }
-    .padding(EdgeInsets(top: 14, leading: 18, bottom: 4, trailing: 12))
   }
 
   private func updatedText(now: Date) -> String {
@@ -1768,13 +1905,8 @@ struct MainPage: View {
           .padding(.top, measured.isEmpty ? 12 : 4)
       }
 
-      Caption(title: store.s("tasks"), detail: view.taskSummary) {
-        TaskTotal(tasks: view.tasks, tokenUnit: store.s("tokenUnit"), showsTokens: store.narrowWidth >= 350, replayToken: store.fillToken)
-      }
-      .padding(EdgeInsets(top: store.short ? 14 : 18, leading: 20, bottom: 6, trailing: 20))
-
-      TaskList(store: store, tasks: view.tasks, controller: controller)
-        .padding(.horizontal, 10)
+      TaskOverview(store: store, view: view, controller: controller)
+        .padding(.top, store.short ? 12 : 16)
 
       MonthCard(store: store, view: view)
         .padding(EdgeInsets(top: 8, leading: 12, bottom: 12, trailing: 12))
@@ -1804,6 +1936,15 @@ struct GatePage: View {
     VStack(alignment: .leading, spacing: 0) {
       Wordmark().frame(height: 13)
         .padding(EdgeInsets(top: 18, leading: 18, bottom: 0, trailing: 18))
+
+      if store.view?.remotelyControlled == true {
+        RemoteControlStatus(
+          title: store.s("remoteControlTitle"), detail: store.s("remoteControlBody"),
+          names: store.view?.remoteControllerNames ?? [], actionLabel: store.s("settings")
+        ) { controller.emitAndClose(["type": "open-remote-control-settings"]) }
+          .padding(EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8))
+        Hairline().padding(.horizontal, 18)
+      }
 
       Image(systemName: "person.crop.circle")
         .font(.system(size: 26, weight: .regular))
@@ -2003,11 +2144,63 @@ struct Cells: View {
   var body: some View {
     HStack(alignment: .top, spacing: cells.count > 6 ? 4 : 8) {
       ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
-        CellView(cell: cell, index: index, fillToken: store.fillToken, tubeHeight: store.short ? 82 : 104) {
-          store.go(.detail(cell.id))
+        if let periods = cell.periods, !periods.isEmpty {
+          SubscriptionCellView(cell: cell, periods: periods, index: index, fillToken: store.fillToken, short: store.short) {
+            store.go(.detail(cell.id))
+          }
+        } else {
+          CellView(cell: cell, index: index, fillToken: store.fillToken, tubeHeight: store.short ? 82 : 104) {
+            store.go(.detail(cell.id))
+          }
         }
       }
     }
+  }
+}
+
+/// Each account has one column; short and weekly limits retain independent scales and clocks.
+struct SubscriptionCellView: View {
+  let cell: MBCell
+  let periods: [MBQuotaWindow]
+  let index: Int
+  let fillToken: Int
+  let short: Bool
+  let action: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 12) {
+        VStack(spacing: 4) {
+          LogoView(svg: cell.logoSvg, size: 12)
+          Text(cell.name).font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
+        }
+        ForEach(periods) { period in
+          VStack(spacing: 4) {
+            Text(period.label).font(.system(size: 10, weight: .medium))
+              .foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+              CountUpText(text: period.value, font: NumFont.font(18), replayToken: fillToken, delay: Double(index) * 0.06)
+              Text("%").font(NumFont.font(11)).foregroundStyle(Palette.ink3)
+            }
+            .foregroundStyle(Palette.level(period.level) ?? Palette.ink)
+            TubeView(fill: period.fill, level: period.level, reserve: period.reserve,
+              emphasized: false, active: cell.active == true, hovered: hovering,
+              index: index, fillToken: fillToken, height: short ? 48 : 60)
+            Text(period.when).font(.system(size: 10, weight: .medium)).monospacedDigit()
+              .foregroundStyle(Palette.level(period.level) ?? Palette.ink2)
+              .lineLimit(1).minimumScaleFactor(0.8).frame(height: 15)
+          }
+        }
+      }
+      .padding(.top, 4).padding(.bottom, 2)
+      .frame(maxWidth: .infinity, alignment: .top)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(CellPressStyle())
+    .onHover { hovering = $0 }
+    .accessibilityLabel(cell.accessibilityLabel)
   }
 }
 
@@ -2078,6 +2271,13 @@ struct CellView: View {
     Button(action: action) {
       VStack(spacing: 7) {
         valueLabel.frame(height: 22, alignment: .bottom)
+        Text(cell.periodLabel ?? "")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(Palette.ink2)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .frame(height: 13)
+          .padding(.top, -5)
         TubeView(
           fill: cell.kind == "payg" ? nil : cell.fill,
           level: cell.level,
@@ -2130,7 +2330,8 @@ struct CellView: View {
         }
       }
       .monospacedDigit()
-      .foregroundStyle(Palette.level(cell.level) ?? Palette.ink)
+      // The number keeps its ink; the liquid and its glow carry the quota color.
+      .foregroundStyle(Palette.ink)
       .animation(Motion.quick, value: value)
     } else if let label = cell.valueLabel {
       Text(label)
@@ -2251,6 +2452,150 @@ struct CellPressStyle: ButtonStyle {
 }
 
 // MARK: - Tasks
+
+struct TaskOverview: View {
+  @ObservedObject var store: MenubarStore
+  let view: MBView
+  let controller: StatusController
+
+  private var activities: [MBActivity] { view.activities ?? [] }
+  private var ongoing: [MBActivity] { activities.filter { $0.phase == "running" || $0.phase == "needs-interaction" } }
+  private var unread: [MBActivity] { activities.filter(\.attention) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 16) {
+        taskTab(.unread, title: store.s("tabUnread"), count: unread.count)
+        taskTab(.ongoing, title: store.s("tabOngoing"), count: ongoing.count)
+        taskTab(.usage, title: store.s("tabUsage"))
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 20)
+
+      if store.taskTab == .usage {
+        Caption(title: store.s("tasks"), detail: view.taskSummary) {
+          TaskTotal(tasks: view.tasks, tokenUnit: store.s("tokenUnit"), showsTokens: store.narrowWidth >= 350, replayToken: store.fillToken)
+        }
+        .padding(.horizontal, 20)
+        TaskList(store: store, tasks: view.tasks, controller: controller)
+          .padding(.horizontal, 10)
+      } else {
+        let rows = store.taskTab == .unread ? unread : ongoing
+        let limit = store.short ? 2 : 3
+        let shown = store.tasksExpanded ? rows : Array(rows.prefix(limit))
+        VStack(spacing: 0) {
+          if rows.isEmpty {
+            Text(store.s(store.taskTab == .unread ? "noUnread" : "noOngoing"))
+              .font(.system(size: 12))
+              .foregroundStyle(Palette.ink3)
+              .padding(.vertical, 16)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.horizontal, 10)
+          }
+          ForEach(shown) { row in
+            ActivityRow(store: store, activity: row) {
+              controller.emitAndClose(["type": "open-session", "sessionId": row.sessionId])
+            }
+          }
+          if rows.count > limit {
+            MoreRow(label: store.s(store.tasksExpanded ? "collapseTasks" : "allTasks"), value: String(rows.count)) {
+              store.tasksExpanded.toggle()
+            }
+            .padding(.horizontal, 10)
+          }
+        }
+        .padding(.horizontal, 10)
+      }
+    }
+  }
+
+  private func taskTab(_ tab: TaskTab, title: String, count: Int = 0) -> some View {
+    let selected = store.taskTab == tab
+    return Button { store.selectTaskTab(tab) } label: {
+      HStack(spacing: 4) {
+        Text(title)
+          .foregroundStyle(selected ? Palette.ink : Palette.ink3)
+        if count > 0 {
+          Text(String(count))
+            .foregroundStyle(Palette.ink3)
+            .monospacedDigit()
+        }
+      }
+      .font(.system(size: 12, weight: .medium))
+      .lineLimit(1)
+      .fixedSize()
+      .frame(minHeight: 28)
+      .overlay(alignment: .bottomLeading) {
+        Capsule().fill(selected ? Palette.ink2 : .clear).frame(width: 12, height: 1.5)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+}
+
+struct ActivityRow: View {
+  @ObservedObject var store: MenubarStore
+  let activity: MBActivity
+  let action: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 10) {
+        if activity.companion {
+          Image(systemName: "bubble.left.and.bubble.right")
+            .font(.system(size: 15))
+            .foregroundStyle(Palette.ink2)
+            .frame(width: 28, height: 28)
+        } else {
+          TaskIcon(svg: activity.logoSvg, running: activity.phase == "running")
+        }
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(activity.title)
+              .font(.system(size: 12.5, weight: .semibold))
+              .foregroundStyle(Palette.ink)
+              .lineLimit(1)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            TimelineView(.periodic(from: .now, by: activity.phase == "running" ? 1 : 60)) { context in
+              Text(timeLabel(now: context.date))
+                .font(.system(size: 10.5))
+                .foregroundStyle(Palette.ink3)
+                .monospacedDigit()
+            }
+            .fixedSize()
+          }
+          Text(activity.phase == "needs-interaction" || activity.phase == "error"
+               ? (activity.preview == activity.status ? activity.status : activity.status + " · " + activity.preview)
+               : activity.preview)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Palette.ink2)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(hovering ? Palette.ink5 : .clear))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering = $0 }
+  }
+
+  private func timeLabel(now: Date) -> String {
+    if activity.phase == "running", let started = activity.startedAtMs {
+      return Fmt.clock(max(0, now.timeIntervalSince1970 - started / 1000))
+    }
+    let minutes = max(0, Int((now.timeIntervalSince1970 - activity.lastActivityAtMs / 1000) / 60))
+    if minutes < 1 { return store.s("activityNow") }
+    if minutes < 60 { return store.s("activityMinutes", ["n": String(minutes)]) }
+    if minutes < 1440 { return store.s("activityHours", ["n": String(minutes / 60)]) }
+    return store.s("activityDays", ["n": String(minutes / 1440)])
+  }
+}
 
 struct TaskTotal: View {
   let tasks: [MBTask]
@@ -3272,10 +3617,24 @@ struct ManagePage: View {
       // Four labels never fit one segmented row in every language; two columns always do.
       ChoiceGrid(
         label: store.s("statusIcon"),
-        options: ["icon", "lowest", "today", "task"].map { ($0, store.s("statusIconMode." + $0)) },
+        options: ["icon", "lowest", "today", "task", "account"].map { ($0, store.s("statusIconMode." + $0)) },
         selected: view.settings.statusText
       ) { Bridge.emitSettings(["statusText": $0]) }
       .padding(EdgeInsets(top: 8, leading: 12, bottom: 0, trailing: 12))
+
+      if view.settings.statusText == "account" {
+        Picker(store.s("statusIconMode.account"), selection: Binding(
+          get: { view.settings.pinnedSourceId ?? "" },
+          set: { Bridge.emitSettings(["pinnedSourceId": $0]) }
+        )) {
+          Text("—").tag("")
+          ForEach(view.manage.filter { row in view.sources.contains { $0.id == row.id && $0.kind == "subscription" } }) { row in
+            Text(row.title).tag(row.id)
+          }
+        }
+        .pickerStyle(.menu)
+        .padding(.horizontal, 12)
+      }
 
       section(store.s("other"), nil)
       Tile {
@@ -3535,7 +3894,7 @@ struct StatusPreview: View {
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    let text = (view.statusTextByMode[view.settings.statusText] ?? nil) ?? ""
+    let text = view.statusTitle
     let dark = colorScheme == .dark
     ZStack(alignment: .topLeading) {
       wallpaper(dark: dark)
@@ -3544,10 +3903,10 @@ struct StatusPreview: View {
         Image(systemName: "wifi").font(.system(size: 12, weight: .semibold)).opacity(0.5).padding(.horizontal, 6)
         HStack(spacing: 5) {
           if let icon = Logos.statusIcon(dark: dark) {
-            Image(nsImage: icon).renderingMode(.original).resizable().frame(width: 16, height: 16)
+            Image(nsImage: icon).renderingMode(.original).resizable().frame(width: 18, height: 18)
           }
           if !text.isEmpty {
-            Text(text).font(.system(size: 12, weight: .semibold)).monospacedDigit().lineLimit(1).fixedSize()
+            Text(text).font(.system(size: 13, weight: .regular)).monospacedDigit().lineLimit(1).fixedSize()
           }
         }
         .padding(.horizontal, 7)

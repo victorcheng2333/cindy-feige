@@ -11,6 +11,14 @@
  */
 
 import {
+  QUOTA_CRIT_REMAINING_PERCENT,
+  QUOTA_WARN_REMAINING_PERCENT,
+  quotaLevelFromRemaining,
+  resetTimeLevel,
+  willLeaveQuotaUnused,
+  type QuotaLevel,
+} from '@cindy/maker-shared/quota-level';
+import {
   type MenubarColor,
   type MenubarDetail,
   type MenubarDetailAction,
@@ -31,10 +39,10 @@ import {
 } from '../../shared/menubarQuota.js';
 
 export type MenubarHarness = 'claude-code' | 'codex' | 'pi';
-export type MenubarFamily = 'claude' | 'codex' | 'grok';
+export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi';
 
 export interface MenubarWindowInput {
-  kind: 'session' | 'week' | 'scoped';
+  kind: 'session' | 'week' | 'scoped' | 'period';
   /** Model name for scoped windows ("Fable"). */
   label?: string | null;
   /** 0...100 used. */
@@ -53,6 +61,7 @@ export interface MenubarSubscriptionInput {
   brand: string;
   /** Account email when the provider exposes one (Codex accounts). */
   account: string | null;
+  displayName?: string;
   plan: string | null;
   /** Empty while the first read is still pending. */
   windows: MenubarWindowInput[];
@@ -70,6 +79,8 @@ export interface MenubarSubscriptionInput {
   device?: MenubarRemoteDevice | null;
   /** Codex rate-limit resets the user can redeem. */
   resetCredits?: MenubarResetCredits | null;
+  /** Set when the other computer cannot be reached now: the reading is from this time. */
+  lastSeenAtMs?: number | null;
 }
 
 export interface MenubarRemoteDevice {
@@ -163,6 +174,17 @@ export interface MenubarUsageScopeInput {
   daily: MenubarUsageScopeData['daily'];
   models: MenubarUsageScopeData['models'];
   devices: MenubarUsageDeviceInput[];
+  /** Daily value split by model for the iPhone widgets; not sent to the menu bar helper. */
+  modelSeries?: MenubarModelSeries;
+}
+
+/** The models with the most tokens in the last 30 days; each day lists theirs, then everything else. */
+export interface MenubarModelSeries {
+  models: { name: string; harness: MenubarHarness }[];
+  /** Value per day, aligned with `MenubarUsageInput.days`; `models.length + 1` entries, the rest last. */
+  daily: number[][];
+  /** Tokens per day, same shape as `daily`. */
+  tokens: number[][];
 }
 
 export interface MenubarUsageInput {
@@ -192,7 +214,6 @@ export interface MenubarBuildInput {
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-const WARN_REMAINING = 15;
 const SOON_MS = 12 * HOUR_MS;
 const RESTORE_GROUP_MS = 6 * HOUR_MS;
 const RESTORE_HORIZON_MS = 7 * DAY_MS;
@@ -201,11 +222,12 @@ const MIN_PACE_ELAPSED = 0.03;
 const ROOMY_CELL_LIMIT = 4;
 /** Settings' soft daily limit for a period quota: period total / 30 × 4.5 (a display hint, not a cap). */
 const DAILY_SOFT_LIMIT_FACTOR = 4.5;
-const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2 };
+const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3 };
 const FAMILY_COLORS: Record<MenubarFamily, MenubarColor[]> = {
   claude: ['claude', 'claude2', 'claude3'],
   codex: ['codex'],
   grok: ['fill'],
+  kimi: ['fill'],
 };
 const HARNESS_ORDER: MenubarHarness[] = ['claude-code', 'codex', 'pi'];
 
@@ -223,9 +245,11 @@ interface WindowState {
 
 interface SubscriptionState {
   windows: WindowState[];
-  /** The tightest window that limits the whole account (scoped windows excluded). */
+  /** The window the tube and headline read: the weekly one, else the tightest (scoped windows excluded). */
   limit: WindowState | null;
   remaining: number | null;
+  /** The tightest window that actually limits the account; the detail page reports on it. */
+  tightest: WindowState | null;
 }
 
 function windowState(window: MenubarWindowInput, nowMs: number): WindowState {
@@ -243,7 +267,7 @@ function windowState(window: MenubarWindowInput, nowMs: number): WindowState {
     pace: null,
     etaMs: null,
   };
-  if (elapsed >= MIN_PACE_ELAPSED && remaining > 0) {
+  if (window.windowMinutes > 0 && elapsed >= MIN_PACE_ELAPSED && remaining > 0) {
     state.pace = used - state.expected;
     if (used > 0) {
       const etaMs = remaining / (used / (elapsed * span));
@@ -253,24 +277,43 @@ function windowState(window: MenubarWindowInput, nowMs: number): WindowState {
   return state;
 }
 
+/**
+ * Every account reads on its weekly window, so the tubes compare like with like and a short
+ * window that has not started (no reset time yet) never blanks the countdown. Accounts without
+ * a weekly window fall back to their tightest one.
+ */
 function subscriptionState(source: MenubarSubscriptionInput, nowMs: number): SubscriptionState {
   const windows = source.windows.map((window) => windowState(window, nowMs));
   const limits = windows.filter((state) => state.window.kind !== 'scoped');
-  const limit = limits.reduce<WindowState | null>(
-    (tightest, state) => (!tightest || state.remaining < tightest.remaining ? state : tightest),
-    null,
-  );
-  return { windows, limit, remaining: limit ? limit.remaining : null };
+  const weekly = limits.filter((state) => state.window.kind === 'week');
+  const tightestOf = (candidates: WindowState[]) =>
+    candidates.reduce<WindowState | null>(
+      (tightest, state) => (!tightest || state.remaining < tightest.remaining ? state : tightest),
+      null,
+    );
+  const tightest = tightestOf(limits);
+  const limit = tightestOf(weekly.length > 0 ? weekly : limits);
+  return { windows, limit, remaining: limit ? limit.remaining : null, tightest };
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** The shared quota rule (`@cindy/maker-shared/quota-level`) in the panel's level names. */
 function levelOf(remaining: number): MenubarLevel {
-  if (remaining <= 0) return 'error';
-  if (remaining <= WARN_REMAINING) return 'warn';
-  return 'normal';
+  const level = quotaLevelFromRemaining(remaining);
+  return level === 'crit' ? 'error' : level;
+}
+
+function panelLevel(level: QuotaLevel): MenubarLevel {
+  return level === 'crit' ? 'error' : level;
+}
+
+/** Share of a balance left, judged like a subscription window; empty is always red. */
+function balanceLevel(source: MenubarBalanceInput): MenubarLevel {
+  if (!(source.available > 0)) return 'error';
+  return source.fullAmount && source.fullAmount > 0 ? levelOf((source.available / source.fullAmount) * 100) : 'normal';
 }
 
 function levelColor(level: MenubarLevel): MenubarColor | null {
@@ -422,14 +465,22 @@ class Builder {
   }
 
   private windowLabel(window: MenubarWindowInput): string {
+    if (window.kind === 'period') return this.t(window.label === 'limit_month_code' ? 'window.kimiMonthCode' : 'window.kimiMonthTotal');
     if (window.kind === 'session') return this.t('window.session', { hours: Math.round(window.windowMinutes / 60) });
     if (window.kind === 'scoped') return this.t('window.scoped', { model: window.label ?? '' });
     return this.t('window.week');
   }
 
+  private quotaPeriodLabel(window: MenubarWindowInput): string {
+    return window.kind === 'session'
+      ? this.t('cell.sessionLimit', { hours: Math.round(window.windowMinutes / 60) })
+      : this.t('cell.weekLimit');
+  }
+
   // ── Identity ──────────────────────────────────────────────────────────────
 
   private handle(source: MenubarSubscriptionInput): string | null {
+    if (source.displayName && !this.input.settings.privacy) return source.displayName;
     if (!source.account) return null;
     const [local] = source.account.split('@');
     if (!local) return null;
@@ -467,10 +518,16 @@ class Builder {
     return this.state(source).remaining;
   }
 
+  /** Remaining quota that can be used from here: an offline computer's last reading cannot. */
+  private usableRemaining(source: MenubarSubscriptionInput): number | null {
+    return source.lastSeenAtMs ? null : this.remaining(source);
+  }
+
   /** The subscription with the most room left, else a balance with money on it. */
   private recommended(): MenubarSourceInput | null {
+    // An offline computer's account cannot be used from here until it is back.
     const subscriptions = this.visibleSubscriptions()
-      .filter((source) => (this.remaining(source) ?? 0) > 0)
+      .filter((source) => (this.usableRemaining(source) ?? 0) > 0)
       .sort(
         (a, b) =>
           (this.remaining(b) ?? 0) - (this.remaining(a) ?? 0)
@@ -484,7 +541,7 @@ class Builder {
   private tightest(): MenubarSubscriptionInput | null {
     return (
       this.visibleSubscriptions()
-        .filter((source) => (this.remaining(source) ?? 0) > 0)
+        .filter((source) => (this.usableRemaining(source) ?? 0) > 0)
         .sort((a, b) => (this.remaining(a) ?? 0) - (this.remaining(b) ?? 0))[0] ?? null
     );
   }
@@ -493,23 +550,24 @@ class Builder {
    * When nearly-empty sources get their limiting window back, within a week, grouped when the
    * same family resets within 6 hours. Sources with plenty left are not worth a headline.
    */
-  private restores(): { atMs: number; sources: MenubarSubscriptionInput[] }[] {
-    const events: { atMs: number; source: MenubarSubscriptionInput }[] = [];
+  private restores(): { atMs: number; sources: MenubarSubscriptionInput[]; window: MenubarWindowInput }[] {
+    const events: { atMs: number; source: MenubarSubscriptionInput; window: MenubarWindowInput }[] = [];
     for (const source of this.visibleSubscriptions()) {
       const { limit, remaining } = this.state(source);
       const atMs = limit?.window.resetsAtMs ?? null;
-      if (remaining === null || remaining > WARN_REMAINING || atMs === null) continue;
+      if (remaining === null || remaining > QUOTA_WARN_REMAINING_PERCENT || atMs === null) continue;
       if (atMs - this.input.nowMs > RESTORE_HORIZON_MS) continue;
-      events.push({ atMs, source });
+      if (limit) events.push({ atMs, source, window: limit.window });
     }
     events.sort((a, b) => a.atMs - b.atMs);
-    const groups: { atMs: number; sources: MenubarSubscriptionInput[] }[] = [];
+    const groups: { atMs: number; sources: MenubarSubscriptionInput[]; window: MenubarWindowInput }[] = [];
     for (const event of events) {
       const last = groups[groups.length - 1];
-      if (last && event.atMs - last.atMs < RESTORE_GROUP_MS && last.sources[0]?.family === event.source.family) {
+      if (last && event.atMs - last.atMs < RESTORE_GROUP_MS && last.sources[0]?.family === event.source.family
+        && last.window.kind === event.window.kind && last.window.windowMinutes === event.window.windowMinutes) {
         if (!last.sources.includes(event.source)) last.sources.push(event.source);
       } else {
-        groups.push({ atMs: event.atMs, sources: [event.source] });
+        groups.push({ atMs: event.atMs, sources: [event.source], window: event.window });
       }
     }
     return groups;
@@ -519,25 +577,30 @@ class Builder {
     const recommended = this.recommended();
     const groups = this.restores();
     const soon = this.visibleSubscriptions()
-      .map((source) => ({ source, eta: this.state(source).limit?.etaMs ?? null }))
-      .filter((entry): entry is { source: MenubarSubscriptionInput; eta: number } => entry.eta !== null && entry.eta < SOON_MS)
+      .filter((source) => !source.lastSeenAtMs)
+      .flatMap((source) => this.state(source).windows
+        .filter((state) => state.window.kind !== 'scoped')
+        .map((state) => ({ source, window: state.window, eta: state.etaMs })))
+      .filter((entry): entry is { source: MenubarSubscriptionInput; window: MenubarWindowInput; eta: number } => entry.eta !== null && entry.eta < SOON_MS)
       .sort((a, b) => a.eta - b.eta)[0];
     const big = groups.find((group) => group.sources.length > 1) ?? groups[0];
     const parts: string[] = [];
     if (big) {
       const first = big.sources[0]!;
       const name = big.sources.length > 1 ? first.brand : this.who(first);
-      parts.push(this.t('headline.restore', { name, duration: this.duration(big.atMs - this.input.nowMs) }));
+      parts.push(this.t('headline.restore', { name, window: this.quotaPeriodLabel(big.window), duration: this.duration(big.atMs - this.input.nowMs) }));
     }
-    // A source already named for its reset does not also need "running low".
-    if (soon && !big?.sources.includes(soon.source)) parts.push(this.t('headline.soon', { name: this.who(soon.source) }));
+    // Each estimate names its own period; it is not an account-wide remaining balance.
+    if (soon && !(big?.sources.includes(soon.source) && big.window.kind === soon.window.kind)) {
+      parts.push(this.t('headline.soon', { name: this.who(soon.source), window: this.quotaPeriodLabel(soon.window), duration: this.duration(soon.eta) }));
+    }
     const sentence = (items: string[]): string | null =>
       items.length ? this.t('headline.sentence', { text: items.join(this.t('headline.joiner')) }) : null;
     if (!recommended) {
       // "Used up" is only true when something was actually measured empty.
       const measured =
         this.visible.some((source) => source.kind === 'balance')
-        || this.visibleSubscriptions().some((source) => this.remaining(source) !== null);
+        || this.visibleSubscriptions().some((source) => this.usableRemaining(source) !== null);
       if (!measured) {
         const unread = this.visibleSubscriptions().length > 0;
         return unread
@@ -545,7 +608,7 @@ class Builder {
           : { primary: this.t('headline.empty'), secondary: this.t('headline.emptyHint'), alert: false };
       }
       return {
-        primary: this.t('headline.none'),
+        primary: this.t('headline.quotaByPeriod'),
         secondary: sentence(parts.length ? [parts[0]!] : [this.t('headline.waitReset')]),
         alert: true,
       };
@@ -559,7 +622,7 @@ class Builder {
       };
     }
     return {
-      primary: this.t('headline.recommend', { name: this.who(recommended) }),
+      primary: this.t('headline.quotaByPeriod'),
       secondary: sentence(parts),
       alert: parts.length > 0,
     };
@@ -570,15 +633,15 @@ class Builder {
   private cells(): MenubarSourceCell[] {
     const recommended = this.recommended();
     const roomy = this.visible.length <= ROOMY_CELL_LIMIT;
-    return this.visible.map((source) => this.cell(source, source === recommended, roomy));
+    return this.visible.map((source) => this.cell(source, source.kind === 'balance' && source === recommended, roomy));
   }
 
   /** A quota counts down to its reset like a subscription; a wallet says how long it lasts. */
   private balanceWhen(source: MenubarBalanceInput, days: number | null, roomy: boolean): string {
     const resetsAtMs = source.quota?.resetsAtMs ?? null;
     if (resetsAtMs !== null) {
-      const duration = this.shortDuration(resetsAtMs - this.input.nowMs);
-      return roomy ? this.t('cell.resetsIn', { duration }) : duration;
+      // Just the duration under a tube, as on the iPhone widgets (owner decision 2026-10-31).
+      return this.shortDuration(resetsAtMs - this.input.nowMs);
     }
     return days === null ? '' : this.t(roomy ? 'cell.lastsDays' : 'cell.lastsDaysShort', { n: days });
   }
@@ -612,11 +675,13 @@ class Builder {
         value: amount,
         valueUnit: null,
         valueLabel: null,
-        level: source.available > 0 ? 'normal' : 'error',
+        level: balanceLevel(source),
         fill,
         reserve: false,
         when: this.balanceWhen(source, days, roomy),
+        // A Cindy period quota is a budget, not a subscription to use up: no "use it" reminder.
         whenLevel: 'normal',
+        resetsAtMs: source.quota?.resetsAtMs ?? null,
         accessibilityLabel: source.quota
           ? this.t('a11y.quota', { amount })
           : days === null
@@ -646,27 +711,56 @@ class Builder {
     const level = levelOf(remaining);
     const reserve = remaining <= 0 && (source.creditsUnlimited || (source.credits ?? 0) > 0);
     const limit = state.limit;
+    const periodLabel = this.quotaPeriodLabel(limit.window);
+    const periods = state.windows
+      .filter((entry) => entry.window.kind !== 'scoped')
+      .sort((a, b) => a.window.windowMinutes - b.window.windowMinutes)
+      .map((entry, index) => ({
+        id: `${entry.window.kind}:${index}`,
+        label: this.quotaPeriodLabel(entry.window),
+        value: String(Math.round(entry.remaining)),
+        fill: clamp(entry.remaining / 100, 0, 1),
+        level: levelOf(entry.remaining),
+        reserve: entry.remaining <= 0 && (source.creditsUnlimited || (source.credits ?? 0) > 0),
+        when: entry.window.resetsAtMs === null ? '' : this.t('cell.resetsIn', {
+          duration: this.shortDuration(entry.window.resetsAtMs - this.input.nowMs),
+        }),
+      }));
     // Read together with the percentage above: "90% · resets in 6d 7h", for the window shown.
+    // An unreachable computer's reading says how old it is instead of a countdown.
+    const seenAtMs = source.lastSeenAtMs ?? null;
     let when = '';
-    if (limit.window.resetsAtMs !== null) {
-      const duration = this.shortDuration(limit.window.resetsAtMs - this.input.nowMs);
-      when = roomy ? this.t('cell.resetsIn', { duration }) : duration;
+    if (seenAtMs !== null) {
+      when = this.ago(seenAtMs);
+    } else if (limit.window.resetsAtMs !== null) {
+      when = this.shortDuration(limit.window.resetsAtMs - this.input.nowMs);
     }
-    const whenLevel: MenubarLevel = level;
+    // The number keeps its ink (the liquid shows how much is left); the reset time colors only
+    // when a long window will reset with quota still unused at the current pace (2026-10-31).
+    const unusedAtReset = seenAtMs === null && limit.window.resetsAtMs !== null
+      && willLeaveQuotaUnused({ usedPercent: 100 - remaining, windowMs: limit.window.windowMinutes * 60_000, leftMs: limit.leftMs });
+    const whenLevel = panelLevel(resetTimeLevel(limit.leftMs, unusedAtReset));
     return {
       ...base,
       name,
       value: reserve ? null : String(Math.round(remaining)),
       valueUnit: reserve ? null : '%',
+      periodLabel,
+      periods,
       valueLabel: reserve ? this.t('cell.credits') : null,
       level,
       fill: clamp(remaining / 100, 0, 1),
       reserve,
       when,
       whenLevel,
+      resetsAtMs: seenAtMs !== null ? null : limit.window.resetsAtMs,
+      ...(unusedAtReset ? { unusedAtReset: true } : {}),
+      ...(seenAtMs !== null ? { stale: true } : {}),
       accessibilityLabel: reserve
         ? this.t('a11y.reserve', { name: `${source.brand} ${name}` })
-        : this.t('a11y.remaining', { name: source.brand === name ? name : `${source.brand} ${name}`, n: Math.round(remaining) }),
+        : periods.map((period) => this.t('a11y.remaining', {
+          name: source.brand === name ? name : `${source.brand} ${name}`, window: period.label, n: period.value,
+        }) + (period.when ? `, ${period.when}` : '')).join('; '),
     };
   }
 
@@ -766,7 +860,7 @@ class Builder {
       rings: [{ fraction, color: 'ink' }],
       bigValue: this.balanceMoney(source.available, source.currency),
       bigUnit: null,
-      bigColor: source.available > 0 ? null : 'error',
+      bigColor: null,
       bigCompact: true,
       bigCaption: this.t(quota ? 'detail.quotaCaption' : 'detail.balanceCaption'),
       legend: [],
@@ -813,7 +907,8 @@ class Builder {
 
   private subscriptionDetail(source: MenubarSubscriptionInput): MenubarDetail {
     const state = this.state(source);
-    const limit = state.limit;
+    // The detail page is about what actually limits the account, not the tube's weekly view.
+    const limit = state.tightest;
     const handle = this.handle(source);
     const resets = source.resetCredits?.count ?? 0;
     // An account on another computer runs there; this computer cannot start a task on it directly.
@@ -823,7 +918,7 @@ class Builder {
     let action: MenubarDetailAction = source.device
       ? { kind: 'open-app' }
       : { kind: 'new-task', providerId: source.providerId };
-    if (!limit || state.remaining === null) {
+    if (!limit) {
       return {
         id: source.id,
         logoSvg: source.logoSvg,
@@ -843,7 +938,7 @@ class Builder {
         action,
       };
     }
-    const remaining = state.remaining;
+    const remaining = limit.remaining;
     const level = levelOf(remaining);
     const colors = FAMILY_COLORS[source.family];
     const multi = state.windows.length > 1;
@@ -950,7 +1045,7 @@ class Builder {
       rings,
       bigValue: String(Math.round(remaining)),
       bigUnit: '%',
-      bigColor: levelColor(level),
+      bigColor: null,
       bigCompact: multi,
       bigCaption: this.t('detail.windowLeft', { window: this.windowLabel(limit.window) }),
       legend: multi
@@ -1075,11 +1170,15 @@ class Builder {
 
   private statusTexts(): Record<MenubarStatusTextMode, string | null> {
     const tightest = this.tightest();
-    const hasSubscriptions = this.visibleSubscriptions().some((source) => this.remaining(source) !== null);
+    const hasSubscriptions = this.visibleSubscriptions().some((source) => this.usableRemaining(source) !== null);
     const scope = this.input.usage.scopes[this.input.settings.scope];
     const today = scope.daily[scope.daily.length - 1];
     const running = this.input.tasks.filter((task) => task.running);
+    const pinned = this.visibleSubscriptions().find(source => source.id === this.input.settings.pinnedSourceId);
+    const week = pinned?.windows.find(window => window.kind === 'week' &&
+      window.resetsAtMs !== null && window.resetsAtMs > this.input.nowMs);
     return {
+      account: pinned ? `${Array.from(this.who(pinned)).slice(0, 10).join('')}${Array.from(this.who(pinned)).length > 10 ? '…' : ''} ${week ? `${Math.round(100 - week.usedPercent)}%` : '—'}` : '—',
       icon: null,
       lowest: tightest ? `${Math.round(this.remaining(tightest) ?? 0)}%` : hasSubscriptions ? '0%' : null,
       today: today ? this.money(today.money.reduce((sum, value) => sum + value, 0)) : null,
@@ -1094,7 +1193,7 @@ class Builder {
       locale: this.input.locale,
       moneySymbol: this.input.moneySymbol,
       strings: this.input.uiStrings,
-      statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null } : this.statusTexts(),
+      statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(),
       updatedAtMs: this.input.updatedAtMs,
       headlinePrimary: headline.primary,
       headlineSecondary: headline.secondary,
@@ -1123,10 +1222,10 @@ class Builder {
         continue;
       }
       if (source.kind !== 'subscription') continue;
-      const remaining = this.remaining(source);
+      const remaining = this.usableRemaining(source);
       if (remaining === null) continue;
       known += 1;
-      if (remaining > WARN_REMAINING) return false;
+      if (remaining > QUOTA_CRIT_REMAINING_PERCENT) return false;
     }
     return known > 0;
   }

@@ -1,3 +1,4 @@
+import { claudeHistoryHomeCandidates } from '../maker-host/claude-history-home.js';
 /**
  * 会话分享导出编排:把一个本机会话(cc / codex / pi)打成 .xdtshare 文件。
  *
@@ -359,10 +360,8 @@ async function collectSessionPhaseA(
     // 与 loadClaudeTranscriptAnchorIndex 同口径:遍历全部候选目录
     // (CLAUDE_CONFIG_DIR → ~/.claude → 旧版 dev 的 XDT_USER_DATA_DIR/claude-home),
     // 只查第一个会把落在后续候选的 jsonl 误记缺失(review bot P1)。
-    const projectsRoots = defaultClaudeConfigDirCandidates().map((dir) =>
-      path.join(dir, 'projects'),
-    );
     for (const sid of sdkSessionIds) {
+      const projectsRoots = claudeHistoryHomeCandidates(sid).map(dir => path.join(dir, 'projects'));
       let jsonl: string | null = null;
       for (const projectsRoot of projectsRoots) {
         jsonl = await findClaudeSessionJsonl(sid, session.workingDir ?? undefined, projectsRoot);

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<title>Usage Remote — quota cat</title>
+<rect width="1024" height="1024" fill="#f9f9f6"/>
+<path d="M272 411V223Q272 190 300 208L413 283Q512 256 611 283L724 208Q752 190 752 223V411Q783 456 783 521Q783 677 512 677Q241 677 241 521Q241 456 272 411Z" fill="#20201e"/>
+<path d="M369 463Q399 438 429 463M595 463Q625 438 655 463" fill="none" stroke="#f9f9f6" stroke-width="26" stroke-linecap="round"/>
+<path d="M492 519H532L512 539Z" fill="#d97757"/>
+<path d="M512 539V557Q484 584 458 558M512 557Q540 584 566 558" fill="none" stroke="#f9f9f6" stroke-width="16" stroke-linecap="round"/>
+<rect x="394" y="748" width="90" height="100" rx="20" fill="#d97757"/>
+<rect x="540" y="709" width="90" height="139" rx="20" fill="#20201e"/>
+</svg>

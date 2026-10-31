@@ -1,6 +1,6 @@
 import {
   nextHistoryCacheReceipt, type HistoryCacheReceipt,
-  readHistoryWorkDetails, retainHistoryViewPrefix, isHistoryViewUnavailable, historyWorkSummaries, historyViewLeaves, type HistoryDetailPage, type HistoryMessageSource,
+  readHistoryWorkDetails, readContinuousHistoryPage, retainHistoryViewPrefix, isHistoryViewUnavailable, historyWorkSummaries, historyViewLeaves, type HistoryDetailPage, type HistoryMessageSource,
   type HistoryViewItem, type HistoryViewPage, type HistoryWorkPatch, type HistoryWorkSummary,
 } from './historyView.js';
 
@@ -66,6 +66,7 @@ export class HistoryViewController<T extends HistoryMessageSource> {
   // Transport changes invalidate remote reads, not local disk restoration.
   private cacheGeneration = 0;
   private detailRuns = new Map<string, { promise: Promise<void> }>();
+  private expandedHolds = new Map<string, number>();
   private active = true;
   private networkAvailable = true;
   private pagePromise: Promise<void> | null = null;
@@ -210,7 +211,10 @@ export class HistoryViewController<T extends HistoryMessageSource> {
       const page = await this.transport.page(before);
       if (page == null) throw new Error('[CHANNEL_NOT_ALLOWED] History view is unavailable');
       if (!this.active || generation !== this.generation) return;
-      const retained = older ? page : retainHistoryViewPrefix(page, this.state);
+      const continuous = older ? page : await readContinuousHistoryPage(page, this.state,
+        (cursor) => this.transport.page(cursor), () => this.active && generation === this.generation);
+      if (!continuous) return;
+      const retained = older ? continuous : retainHistoryViewPrefix(continuous, this.state);
       let items = retained.items;
       if (older) {
         const keys = new Set(items.map((item) => item.key));
@@ -259,6 +263,31 @@ export class HistoryViewController<T extends HistoryMessageSource> {
     this.sendIntent();
     const summary = historyWorkSummaries(this.state.items).find((value) => value.key === key);
     if (expanded && summary) void this.loadDetails(summary);
+  }
+
+  /**
+   * Mounted surfaces hold ranges open until the last one releases. Groups split
+   * from one range share keys, so one unmount must not collapse the others.
+   */
+  retainExpanded(keys: readonly string[]): () => void {
+    for (const key of keys) {
+      this.expandedHolds.set(key, (this.expandedHolds.get(key) ?? 0) + 1);
+      this.setExpanded(key, true);
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      for (const key of keys) {
+        const holds = (this.expandedHolds.get(key) ?? 1) - 1;
+        if (holds > 0) {
+          this.expandedHolds.set(key, holds);
+          continue;
+        }
+        this.expandedHolds.delete(key);
+        this.setExpanded(key, false);
+      }
+    };
   }
 
   private sendIntent(): void {

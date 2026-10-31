@@ -97,6 +97,7 @@ describe('cc routingTransform — xAI 会话的辅助请求回落默认路由 (i
   });
 
   afterEach(() => {
+    setCustomProviders([]);
     clearSessionProvider('sess-grok');
     setPendingCredentialSwitchReader(() => undefined);
     setClaudeProxyOwnerBoundaryPendingChecker(() => false);
@@ -187,8 +188,11 @@ describe('cc routingTransform — xAI 会话的辅助请求回落默认路由 (i
     });
   });
 
-  it('显式 Claude 订阅会话的请求到了 proxy 也本地拒绝(订阅只由 CLI 直连)', async () => {
-    setSessionProvider('sess-grok', 'anthropic');
+  it.each(['anthropic', 'claude-second'])('显式 Claude 订阅 %s 的请求到了 proxy 也本地拒绝', async providerId => {
+    if (providerId !== 'anthropic') setCustomProviders([buildUserProvider({
+      id: providerId, name: 'Other Claude', auth: { method: 'oauth', native: 'claude' }, runtimes: {},
+    })]);
+    setSessionProvider('sess-grok', providerId);
     const transform = createModelRoutingTransform();
     const decision = await Promise.resolve(transform(
       { model: 'claude-opus-4-8' },

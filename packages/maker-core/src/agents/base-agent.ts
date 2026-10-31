@@ -418,6 +418,8 @@ export interface CodexExtraSpawnConfig {
     session?: CodexSessionMcpConfigInput,
   ) => Record<string, unknown>;
   codexProxyActive?: boolean;
+  /** Default native identity for ordinary models routed through the local proxy. */
+  codexDefaultModelProviderId?: string;
   /**
    * ChatGPT 订阅直连的内部 OpenAI transport identity，仅 oauth-bearer spawn 下发。
    */
@@ -916,11 +918,10 @@ export interface AgentDeps {
     context?: { remote: boolean; runtimeBinaryPath?: string },
   ) => PiGatewayModelSpec | null | undefined;
 
-  /**
-   * Pi-only：host 已学到（自愈写入）的 per-model compat 覆盖。写 models.json 时
-   * 合并进该原生 provider 模型的 compat；undefined = 无覆盖。不改变路由与凭证，
-   * 只关掉上游已明确拒收的可选字段（如 supportsLongCacheRetention: false）。
-   */
+  /** Execution-local cache compatibility store; never copy local records to SSH. */
+  resolvePiNativeCompatStorePath?: (remoteHostId?: string | null) => string;
+
+  /** Legacy host recovery snapshot; native Pi applies learning at final payload time. */
   resolvePiNativeCompatOverride?: (
     providerId: string,
     modelId: string,
@@ -979,6 +980,12 @@ export interface AgentDeps {
   /** Host working budget for this route (user override, optionally catalog default).
    * Missing means the adapter uses its route/native defaults. */
   resolveModelContextLimit?: (
+    providerId: string | null | undefined,
+    modelId: string,
+  ) => number | null;
+
+  /** Host-resolved model percentage. Hosts without a policy retain their runtime defaults. */
+  resolveModelCompactionPct?: (
     providerId: string | null | undefined,
     modelId: string,
   ) => number | null;
@@ -1167,7 +1174,7 @@ export interface AgentDeps {
 
   /**
    * Claude Code 工具循环疑似命中时的辅助模型复核入口(与 MakerDeps.toolLoopReviewer
-   * 同一实现)。缺省 = 疑似即中断。
+   * 同一实现)。缺省放行疑似,保留最终上限。
    */
   toolLoopReviewer?: import('./shared/tool-loop-review.js').ToolLoopReviewer;
 
@@ -1184,6 +1191,10 @@ export interface AgentDeps {
   /** Synchronous local policy registration; no RPC or IO on a send. Returns owner-scoped cleanup. */
   registerCodexTextOnlyPolicy?: (threadId: string, disabled: () => boolean) => () => void;
   registerCodexMcpThreadContext?: (args: CodexMcpThreadContextArgs) => void;
+  /** Snapshot App tools before user interrupt; invoke only after upstream ACK. Local, nonblocking. */
+  prepareCodexMcpToolCancellation?: (
+    args: Pick<CodexMcpThreadContextArgs, 'sessionId' | 'threadId'> & { sessionInstanceId: string },
+  ) => () => void;
   unregisterCodexMcpThreadContext?: (
     threadId: string,
     expectedSessionInstanceId?: string,
@@ -1728,7 +1739,7 @@ export interface BotRuntimeSkillPolicy {
 
 export interface BotRuntimeMcpEntry {
   name: string;
-  source: 'builtin' | 'custom';
+  source: 'builtin' | 'custom' | 'harness';
   available?: boolean;
 }
 
@@ -1883,6 +1894,10 @@ export const DEVICE_HOSTED_GUEST_ROUTE_HEADER = 'x-cindy-guest-route';
 export const LOCAL_AGENT_CLIENT = Symbol('local-agent-client');
 
 export interface LocalAgentClient {
+  /** Main-resolved remote supplier; never accepted from a client request. */
+  agentDeviceId?: string;
+  /** Main has already selected a member of the application's provider group. */
+  groupAssigned?: boolean;
   url: string;
   token: string;
   hostToolsOnly: boolean;
@@ -1918,6 +1933,8 @@ export interface StartSessionOptions {
    * app-managed cwd, but must stay out of project grouping when persisted.
    */
   workspaceKind?: WorkspaceKind;
+  /** Product project membership; does not change filesystem permissions or cwd. */
+  projectDir?: string | null;
   /**
    * 远端目标 host id (`@cindy/maker-remote-ssh` ConnectionPool 里的 host alias)。
    * 设置后, agent 不在本机 spawn 进程, 改成通过 deps.getRemoteCodexTransport(id) 拿到
@@ -1936,6 +1953,12 @@ export interface StartSessionOptions {
    */
   deviceHosted?: DeviceHostedSession;
   model: string;
+  /**
+   * 本任务级工作上下文预算（tokens）。host 已按目录 `contextWindowMax` 与用户在同一
+   * 路由上设过的模型级上限收敛，引擎只需直接采用；缺席 = 跟随 `resolveModelContextLimit`
+   * / 目录默认（旧行为零变化）。
+   */
+  contextWindowBudget?: number;
   /**
    * 本次会话显式选择的供应商来源。maker-core 只用它推导子进程凭证形态;
    * 具体上游路由仍由 host 的 proxy / provider catalog 负责。
@@ -2473,6 +2496,13 @@ export interface AgentSessionHandle {
   countPendingWakeContinuations?(): number;
 
   /**
+   * 宿主发起的独占 RPC 操作(手动压缩 / rewind fork / 切模等)是否在途。
+   * 这类操作不预约 turn、也不置 isStreaming；运行时回收必须能看见它们，
+   * 不能把进程关在操作中间。不支持的 agent 留空(Session 层回退 false)。
+   */
+  hasPendingHostOperation?(): boolean;
+
+  /**
    * Resolve the provider claim attached atomically to a specific `done` event.
    * Returns null when that event has no matching continuation boundary.
    */
@@ -2517,13 +2547,27 @@ export interface AgentSessionHandle {
   /** Actual runtime reviewer, not subscription availability. Only applies to harness-dispatched tools. */
   getAutoReviewOwner?(): 'native' | 'cindy';
 
-  /** 运行时切换模型 —— 不支持时抛 NotSupportedError。thinkingEnabled = 目标模型的思考开关意图（Pi 用它收敛切模后的 thinking level）。 */
-  setModel?(model: string, opts?: { providerId?: string | null; effort?: Effort; thinkingEnabled?: boolean }): Promise<void>;
+  /** 运行时切换模型 —— 不支持时抛 NotSupportedError。
+   * thinkingEnabled = 目标模型的思考开关意图（Pi 用它收敛切模后的 thinking level）。 */
+  setModel?(
+    model: string,
+    opts?: {
+      providerId?: string | null;
+      effort?: Effort;
+      thinkingEnabled?: boolean;
+      /**
+       * 本任务级工作上下文预算（tokens）；host 已按目标路由的目录上限与模型级上限
+       * 收敛。显式传 null / undefined 时保持当前预算不变（host 在预算变化时直接
+       * 触发重建，不走热切）。
+       */
+      contextWindowBudget?: number | null;
+    },
+  ): Promise<void>;
 
   /** Read-only Pi preflight before the host changes its persisted route or context. */
   previewModelSwitch?(
     model: string,
-    opts?: { providerId?: string | null },
+    opts?: { providerId?: string | null; contextWindowBudget?: number | null },
   ): Promise<PiModelSwitchPreview>;
 
   /**
@@ -2857,6 +2901,14 @@ export abstract class BaseAgent {
   async forkSdkSession(opts: ForkSdkSessionOptions): Promise<ForkSdkSessionResult> {
     void opts;
     return this.throwNotSupported('forkSdkSession', 'sdk-missing');
+  }
+
+  /** Preflight a local subscription-account switch without accepting any user input. */
+  async prepareClaudeAccountResume(opts: {
+    nativeId: string; workingDir: string; model: string; providerId: string;
+  }): Promise<{ assertCurrent(): void }> {
+    void opts;
+    return this.throwNotSupported('prepareClaudeAccountResume', 'sdk-missing');
   }
 
   async requiresCodexThreadHostTransfer(

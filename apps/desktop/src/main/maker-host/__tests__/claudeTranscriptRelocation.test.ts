@@ -23,7 +23,9 @@ const h = vi.hoisted(() => ({
   query: vi.fn(),
   exec: vi.fn(),
   warn: vi.fn(),
+  historyHome: vi.fn(),
 }));
+vi.mock('../claude-history-home.js', () => ({ readClaudeHistoryHome: h.historyHome }));
 
 vi.mock('@cindy/maker-core', () => ({
   relocateClaudeSessionTranscripts: h.relocate,
@@ -46,6 +48,7 @@ const META_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.historyHome.mockReset();
   setLiveCcSessionBridge(null);
   h.relocate.mockResolvedValue({
     copied: ['x'],
@@ -58,6 +61,17 @@ beforeEach(() => {
 });
 
 describe('relocateClaudeTranscriptsForSessionMove', () => {
+  // Native history ownership, not the currently selected connection, determines the move.
+  it('moves forks in their individual account homes', async () => {
+    h.queryOne.mockResolvedValue({ sdkSessionId: DB_ID });
+    h.query.mockResolvedValue([{ sid: META_ID }]);
+    h.historyHome.mockImplementation(id => path.join(os.tmpdir(), id === DB_ID ? 'account-a' : 'account-b'));
+    await relocateClaudeTranscriptsForSessionMove('s1', '/old/dir', '/new/dir');
+    expect(h.relocate.mock.calls.map(([options]) => [options.sdkSessionIds, options.projectsRoot])).toEqual([
+      [[DB_ID], path.join(os.tmpdir(), 'account-a', 'projects')],
+      [[META_ID], path.join(os.tmpdir(), 'account-b', 'projects')],
+    ]);
+  });
   it('uses the captured database throughout a scoped move', async () => {
     const client = { queryOne: vi.fn(async () => ({ sdkSessionId: DB_ID })), query: vi.fn(async () => [{ sid: META_ID }]), exec: vi.fn(async () => ({ changes: 1 })) };
     setLiveCcSessionBridge({ resolveSdkSessionId: () => LIVE_ID, closeSession: vi.fn(async () => undefined) });

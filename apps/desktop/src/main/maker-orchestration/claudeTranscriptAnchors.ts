@@ -1,3 +1,4 @@
+import { claudeHistoryHomeCandidates } from '../maker-host/claude-history-home.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -211,7 +212,7 @@ export async function loadClaudeTranscriptAnchorIndex(
   if (!options.sdkSessionId) return null;
   const claudeConfigDirs = options.claudeConfigDir
     ? [options.claudeConfigDir]
-    : defaultClaudeConfigDirCandidates();
+    : claudeHistoryHomeCandidates(options.sdkSessionId);
   let filePath: string | null = null;
   for (const claudeConfigDir of claudeConfigDirs) {
     filePath = await findClaudeSessionJsonl(

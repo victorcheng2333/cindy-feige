@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLED_CATALOG } from '@cindy/model-providers';
-import { subscriptionDirectPriceQuote } from '../../../shared/modelPriceQuote';
+import { modelPricingKey, subscriptionDirectPriceQuote } from '../../../shared/modelPriceQuote';
 
 import type { ModelUsageDeltaEntry } from '../modelUsageDelta';
 import { __resetActiveLedgerCurrencyForTesting, setActiveLedgerCurrency } from '../ledgerCurrency';
@@ -45,6 +45,36 @@ const SUBSCRIPTION: TurnPricingContext = {
   billingRoute: 'subscription',
   region: 'global',
 };
+
+describe('engine-scoped provider quotes', () => {
+  const model = 'gemini-4-argon';
+  const providerId = 'vertex-account';
+  const tokens = { inputTokens: 100, outputTokens: 20, cacheReadTokens: 10, cacheCreateTokens: 0 };
+  const piQuote = quote(model, 2, 10, {
+    providerId, source: 'provider-reference', approximate: true, cacheReadPerMtok: 0.1,
+  });
+  const pricing = { [providerId]: { [modelPricingKey(model, 'pi')]: piQuote } };
+
+  it('uses the Pi-only quote including cached input', () => {
+    const result = resolveTurnCost({ rawModel: model, tokens, pricing, segments: [tokens],
+      context: { ...PROVIDER_API, providerId, agent: 'pi' } });
+    expect(result.source).toBe('reference');
+    expect(result.money?.kind).toBe('value-estimate');
+    expect(result.money?.amount).toBeCloseTo(0.000401, 9);
+  });
+
+  it('preserves the Claude Code default without borrowing Pi prices', () => {
+    expect(resolveTurnCost({ rawModel: model, tokens, pricing,
+      context: { ...PROVIDER_API, providerId } }).money).toBeNull();
+    const both = { [providerId]: { ...pricing[providerId],
+      [modelPricingKey(model, 'claude-code')]: { ...piQuote, inputPerMtok: 20 },
+    } };
+    expect(resolveTurnCost({ rawModel: model, tokens, pricing: both,
+      context: { ...PROVIDER_API, providerId } }).money?.amount).toBeCloseTo(0.002201, 9);
+    expect(resolveTurnCost({ rawModel: model, tokens, pricing: both,
+      context: { ...PROVIDER_API, providerId, agent: 'pi' } }).money?.amount).toBeCloseTo(0.000401, 9);
+  });
+});
 
 describe('Astra subscription reference estimates', () => {
   const astra = subscriptionDirectPriceQuote(
@@ -1082,8 +1112,8 @@ describe('subscription value and usage details', () => {
       models: ['claude-opus-4-8', 'claude-haiku-4-5'],
     });
     expect(details?.perModelCost).toEqual([
-      { model: 'claude-opus-4-8', money: usdMoney(0.94) },
-      { model: 'claude-haiku-4-5', money: usdMoney(0.8) },
+      { model: 'claude-opus-4-8', money: usdMoney(0.94), billingSource: 'subscription' },
+      { model: 'claude-haiku-4-5', money: usdMoney(0.8), billingSource: 'subscription' },
     ]);
   });
 

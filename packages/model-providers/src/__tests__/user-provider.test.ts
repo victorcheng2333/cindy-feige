@@ -26,7 +26,7 @@ import { BUNDLED_CATALOG } from "../catalog.js";
 import { providerCatalogId } from "../provider-identity.js";
 
 describe('native subscription instances', () => {
-  it('retired independent Claude accounts stay listed but serve no agent', () => {
+  it('independent Claude accounts declare only the native CLI harness without granting models', () => {
     const account = buildUserProvider({
       id: 'anthropic-a',
       name: 'anthropic',
@@ -35,7 +35,9 @@ describe('native subscription instances', () => {
     });
     expect(providerCatalogId(account)).toBe('anthropic');
     expect(account.auth.native).toBe('claude');
-    expect(account.agents).toEqual([]);
+    expect(account.agents).toEqual(['claude-code']);
+    expect(account.models['claude-code'] ?? []).toEqual([]);
+    expect(account.routing['claude-code']?.authStrategy).toBe('oauth-passthrough');
     expect(Object.keys(account.routing)).toEqual(['claude-code']);
   });
 
@@ -302,7 +304,8 @@ describe("buildUserProvider (per-runtime)", () => {
       efforts: [],
       defaultEffort: null,
       group: "custom:openrouter",
-      defaultEnabled: false,
+      // Codex sends Responses to the supplier's own endpoint: enabled without local conversion.
+      defaultEnabled: true,
     });
   });
 
@@ -1770,11 +1773,13 @@ describe('imported model native engine defaults', () => {
   });
 
   it.each([
-    [null, 'openai-responses', null, [false, false, true]],
-    ['anthropic-messages', 'openai-responses', 'anthropic-messages', [true, false, true]],
-    ['openai-responses', 'anthropic-messages', 'openai-responses', [false, true, true]],
-    [undefined, 'anthropic-messages', 'anthropic-messages', [true, false, true]],
-    [undefined, undefined, 'openai-responses', [false, true, true]],
+    // Each engine already sends its own API to this endpoint, so all three stay enabled
+    // whatever the manufacturer declaration says (Chris 2026-10-30).
+    [null, 'openai-responses', null, [true, true, true]],
+    ['anthropic-messages', 'openai-responses', 'anthropic-messages', [true, true, true]],
+    ['openai-responses', 'anthropic-messages', 'openai-responses', [true, true, true]],
+    [undefined, 'anthropic-messages', 'anthropic-messages', [true, true, true]],
+    [undefined, undefined, 'openai-responses', [true, true, true]],
   ] as const)('applies current native declaration %s ahead of live %s and bundled fallback',
     (declaration, live, expectedApi, expectedEnabled) => {
       const agents = ['claude-code', 'codex', 'pi'] as const;

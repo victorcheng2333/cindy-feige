@@ -17,25 +17,31 @@ export interface ClaudeCliLoginStatus {
   authMethod?: string;
   subscriptionType?: string;
   email?: string;
+  orgId?: string;
+  orgName?: string;
 }
 
-let cachedStatus: ClaudeCliLoginStatus | null = null;
-let cachedAt = 0;
-const statusListeners = new Set<(status: ClaudeCliLoginStatus) => void>();
+let revision = 0;
+const revisions = new Map<string, number>();
+export function claudeCliLoginRevision(configDir?: string): number { return revisions.get(configDir ?? '') ?? 0; }
+
+const statuses = new Map<string, { status: ClaudeCliLoginStatus; at: number }>();
+const statusListeners = new Set<(status: ClaudeCliLoginStatus, configDir?: string) => void>();
 let onListenerError: (error: unknown) => void = () => {};
 
 /** 最近一次读到的 CLI 登录态;尚未读过时为 null(调用方按未登录处理)。 */
-export function peekClaudeCliLoginStatus(): ClaudeCliLoginStatus | null {
-  return cachedStatus;
+export function peekClaudeCliLoginStatus(configDir?: string): ClaudeCliLoginStatus | null {
+  return statuses.get(configDir ?? '')?.status ?? null;
 }
 
 /** 缓存是否不超过 maxAgeMs(从未读到过 = 不新鲜)。 */
-export function isClaudeCliLoginStatusFresh(maxAgeMs: number): boolean {
-  return cachedStatus !== null && Date.now() - cachedAt <= maxAgeMs;
+export function isClaudeCliLoginStatusFresh(maxAgeMs: number, configDir?: string): boolean {
+  const cached = statuses.get(configDir ?? '');
+  return !!cached && Date.now() - cached.at <= maxAgeMs;
 }
 
 /** 登录态变化(含首次读到)时回调;返回取消订阅函数。 */
-export function onClaudeCliLoginStatusChange(listener: (status: ClaudeCliLoginStatus) => void): () => void {
+export function onClaudeCliLoginStatusChange(listener: (status: ClaudeCliLoginStatus, configDir?: string) => void): () => void {
   statusListeners.add(listener);
   return () => statusListeners.delete(listener);
 }
@@ -51,20 +57,25 @@ function sameStatus(a: ClaudeCliLoginStatus | null, b: ClaudeCliLoginStatus): bo
     a.loggedIn === b.loggedIn &&
     a.notSubscription === b.notSubscription &&
     a.email === b.email &&
+    a.orgId === b.orgId &&
+    a.orgName === b.orgName &&
     a.subscriptionType === b.subscriptionType &&
     a.authMethod === b.authMethod
   );
 }
 
 /** @internal 由 claude-native-cli 写入最新读取结果;变化时通知监听器。 */
-export function publishClaudeCliLoginStatus(status: ClaudeCliLoginStatus): void {
-  const changed = !sameStatus(cachedStatus, status);
-  cachedStatus = status;
-  cachedAt = Date.now();
+export function publishClaudeCliLoginStatus(status: ClaudeCliLoginStatus, configDir?: string): void {
+  const previous = peekClaudeCliLoginStatus(configDir);
+  const changed = !sameStatus(previous, status);
+  statuses.set(configDir ?? '', { status, at: Date.now() });
   if (!changed) return;
+  if (!previous || previous.loggedIn !== status.loggedIn || previous.email !== status.email ||
+      previous.orgId !== status.orgId || previous.authMethod !== status.authMethod)
+    revisions.set(configDir ?? '', ++revision);
   for (const listener of statusListeners) {
     try {
-      listener(status);
+      listener(status, configDir);
     } catch (err) {
       onListenerError(err);
     }
@@ -73,7 +84,8 @@ export function publishClaudeCliLoginStatus(status: ClaudeCliLoginStatus): void 
 
 /** @internal 单测用。 */
 export function resetClaudeCliLoginStatusForTest(): void {
-  cachedStatus = null;
-  cachedAt = 0;
+  statuses.clear();
+  revisions.clear();
+  revision++;
   statusListeners.clear();
 }

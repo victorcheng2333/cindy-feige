@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotGroupOpenPlanSummary, BotGroupSummary } from '../../../../shared/botGroupChat';
-import { sidebarOwnerStorageKey } from '@/lib/sidebarOwnerStorage';
 import { botGroupReadKey, markBotRead, resetBotReadStateForTests } from '../botReadState';
 
 vi.mock('@/hooks/useProviderOnboarding', () => ({
@@ -149,8 +148,6 @@ async function renderSidebar() {
 }
 
 beforeEach(() => {
-  // These tests are about the menu's own entries; the new-entry hint has its own test file.
-  window.localStorage.setItem(sidebarOwnerStorageKey('sidebar.botMarketEntryHint.v1', 'owner'), 'seen');
   mocks.navigate.mockReset();
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.manage.mockReset().mockResolvedValue({ ok: true });
@@ -533,3 +530,31 @@ it.each([[false, 'bots.groupChat.sidebar.sharedReply:{"name":"Alice"}'], [true, 
     expect(screen.getByText(label)).toBeTruthy();
     expect(screen.queryByText(/冒充|卡片文字/)).toBeNull();
   });
+
+// #8047: list summaries carry the execution snapshot, even before a lane starts.
+it.each(['reply', 'step'] as const)('shows a queued %s in the sidebar without stale generation activity', async activity => {
+  mocks.groups = [group({ speakingBotIds: ['mimi'],
+    ...(activity === 'step' ? { openPlan: openPlan({ status: 'running', currentStepStatus: 'running' }) } : {}),
+    round: { status: 'running', canContinue: false, speakers: [{ botId: 'mimi', activity,
+      executionId: 'queued', executionStatus: 'queued', sessionId: null }] },
+  })];
+  mocks.islandActivity = new Map([['lane-mimi', { sessionId: 'lane-mimi', phase: 'running', workingPhase: 'searching' }]]);
+  await renderSidebar();
+  expect(screen.getByTestId('bot-group-running').textContent).toBe('bots.groupChat.header.queued:{"name":"咪咪"}');
+  expect(screen.queryByText('generation:lane-mimi')).toBeNull();
+});
+
+it.each([false, true])('shows the executing teammate rather than a queued teammate in the sidebar (plan: %s)', async hasPlan => {
+  mocks.groups = [group({ speakingBotIds: ['mimi', 'xiaoman'],
+    ...(hasPlan ? { openPlan: openPlan({ status: 'running', currentStepStatus: 'running' }) } : {}),
+    round: { status: 'running', canContinue: false, speakers: [
+      { botId: 'mimi', activity: hasPlan ? 'step' : 'reply', executionStatus: 'queued', sessionId: null },
+      { botId: 'xiaoman', activity: 'reply', executionStatus: 'running', sessionId: 'lane-xiaoman' },
+    ] },
+  })];
+  await renderSidebar();
+  const row = screen.getByTestId('bot-group-running');
+  expect(row.textContent).toContain('小满');
+  expect(row.textContent).not.toContain('咪咪');
+  expect(row.textContent).not.toContain('bots.groupChat.header.queued');
+});

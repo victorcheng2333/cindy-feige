@@ -102,6 +102,34 @@ afterEach(async () => {
 });
 
 describe('ClaudeCodeAgent.forkSdkSession', () => {
+  // Unit: exercise the installed SDK's explicit store API with a bound account
+  // home. The previous mocks could not detect an incompatible SDK store contract.
+  it('forks the bound home through the real SDK without changing global configuration', async () => {
+    const root = await makeTempDir();
+    const cwd = await fs.realpath(root);
+    const home = path.join(root, 'account-home');
+    const dir = path.join(home, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+    await fs.mkdir(dir, { recursive: true });
+    const source = '10000000-0000-4000-8000-000000000001';
+    const message = '20000000-0000-4000-8000-000000000001';
+    const sourcePath = path.join(dir, `${source}.jsonl`);
+    await fs.writeFile(sourcePath, line({ type: 'user', uuid: message, parentUuid: null,
+      sessionId: source, cwd, timestamp: '2026-10-30T00:00:00Z',
+      message: { role: 'user', content: 'test history' },
+    }) + '\n');
+    const deps = createDeps();
+    deps.auth.getClaudeHistoryHome = () => home;
+    deps.auth.inheritClaudeHistoryHome = vi.fn();
+    const native = await vi.importActual<typeof import('@anthropic-ai/claude-agent-sdk')>('@anthropic-ai/claude-agent-sdk');
+    sdkMock.forkSession.mockImplementation(native.forkSession);
+    const environmentBefore = process.env.CLAUDE_CONFIG_DIR;
+    const result = await new ClaudeCodeAgent(deps).forkSdkSession({ sourceSdkSessionId: source, workingDir: cwd, upToMessageId: message });
+    expect(process.env.CLAUDE_CONFIG_DIR).toBe(environmentBefore);
+    expect(result.newSdkSessionId).not.toBe(source);
+    expect(await fs.readFile(path.join(dir, `${result.newSdkSessionId}.jsonl`), 'utf8')).toContain('test history');
+    expect(await fs.readFile(sourcePath, 'utf8')).toContain(source);
+    expect(deps.auth.inheritClaudeHistoryHome).toHaveBeenCalledWith(source, result.newSdkSessionId, undefined);
+  });
   it('clears dangling source compact metadata before SDK fork', async () => {
     const configDir = await makeTempDir();
     process.env.CLAUDE_CONFIG_DIR = configDir;

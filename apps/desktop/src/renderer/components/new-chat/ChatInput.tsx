@@ -1,3 +1,4 @@
+import { deviceDisplayName } from '@/lib/deviceName';
 import {
   useCallback,
   useEffect,
@@ -22,6 +23,7 @@ import { CINDY_MAKE_ENABLED } from '@cindy/maker-shared/cindy-make-feature';
 import { requiresFullAccessConfirmation } from '@cindy/maker-shared/permission-mode';
 import { isAnnotationBurnInError } from '@/lib/annotationBurnIn';
 import { AttachmentRejectionStrip, ThumbnailStrip } from './ComposerAttachments';
+import { ComposerCard, COMPOSER_CONTENT_CLASS } from './ComposerCard';
 import { ComposerFolderTransfers, useComposerFolderTransfers } from './ComposerFolderTransfers';
 import type { PendingFolder } from '@/hooks/useAttachments';
 import { FullAccessConfirmContent } from './FullAccessConfirmContent';
@@ -41,7 +43,7 @@ import {
   ComposerListItem,
   ComposerOrderedList,
   handleStructuredListBackspace,
-  handleStructuredListBreak,
+  handleComposerListEnter,
   hasTrailingPlainListParagraph,
   isTopLevelBlockSelection,
   isTrailingEmptyTopLevelParagraph,
@@ -118,9 +120,12 @@ import {
 } from '@/contexts/dataOwnerGeneration';
 import {
   insertPromptIntoEditor,
+  peekComposerSubmitRequest,
+  subscribeComposerSubmitRequest,
   subscribePromptInsert,
   subscribeSessionLinkInsert,
   subscribeTodoReferenceInsert,
+  takeComposerSubmitRequest,
 } from '@/lib/composerActionsBus';
 import { resolveComposerModelSelection } from './composerModelSelection';
 import type { SessionRuntimeProfileProjection, SessionRuntimePendingProjection } from '@/lib/ccAgent.types';
@@ -299,7 +304,7 @@ import {
   type ComposerSuggestionEntry,
 } from '@/lib/composerSuggestion';
 import { countUserExtraDirs, MAX_EXTRA_DIRS, pickAndAddExtraDir } from './extraDirsActions';
-import { applyListBackspace, applyListContinuation } from '@/lib/composerListContinuation';
+import { applyListBackspace } from '@/lib/composerListContinuation';
 import type { Effort, PermissionMode } from '@/lib/userPreferences.types';
 import { getAppShortcutCombos } from '@/lib/appShortcutStore';
 import { getNextPermissionMode } from '@/lib/permissionModeCycle';
@@ -376,6 +381,7 @@ import {
 } from '@/state/agentDeviceModelMemory';
 import { useOptionalAuthDeviceId } from '@/contexts/AuthContext';
 import { controlledTaskAgentLocationReadable } from '@/lib/controlledTaskAgentLocation';
+import { modelCatalogKey } from '../../../shared/controlledModelCatalog';
 import {
   setSessionFavoriteAnchor as setSessionFavoriteAnchorMemory,
   useSessionFavoriteAnchor,
@@ -420,6 +426,7 @@ import {
 import { VoiceInputPointerHintLayer } from '@/voice-input/VoiceInputPointerHintLayer';
 import {
   createComposerLongPressVoiceGesture,
+  isComposerLongPressVoiceReady,
   type ComposerLongPressVoiceGesture,
 } from '@/voice-input/composerLongPressGesture';
 import { requestRendererMicrophonePermission } from '@/voice-input/startGuards';
@@ -503,6 +510,7 @@ interface ChatInputProps {
       deliveryMode?: MessageDeliveryMode;
       builtInSkillIntent?: BuiltInSkillDraftIntent;
       providerId?: string | null;
+      baselineRecovery?: boolean;
       /** chat-text-quote:message 开头的 blockquote 为引用功能拼接产出。 */
       quotesEncoded?: boolean;
       /** Ordered semantic projection metadata for session/project/message chips. */
@@ -546,6 +554,8 @@ interface ChatInputProps {
   runtimeAgentKind?: AgentKind | null;
   runtimeEffective?: SessionRuntimeProfileProjection;
   runtimePending?: SessionRuntimePendingProjection | null;
+  /** Host offers a baseline restoration attempt for this companion, not a connected source. */
+  allowBaselineRecovery?: boolean;
   /**
    * 会话的 Orca 角色(lead / worker;null = 已确认非协同;undefined = 元数据未加载)。
    * Orca Lead/Worker 复用统一的延迟交接切换事务；该字段仍用于协同面板与身份展示。
@@ -585,6 +595,7 @@ interface ChatInputProps {
    * 被控电脑的草稿)只在那台支持远程 Agent 时传;SSH 任务不传。
    */
   remoteAgentDevices?: readonly { deviceId: string; name: string }[];
+  catalogHostDeviceId?: string;
   /**
    * device-link「纯显示镜像」记忆 override:非空时优先于本机全局模型预设注入 ModelSelector,
    * 用于远程草稿 / 远程会话——非选中行读被控端镜像、改动经隧道写穿被控端,绝不碰控制端本地记忆
@@ -624,6 +635,8 @@ interface ChatInputProps {
   onWorkingDirChange?: (dir: string | null) => void;
   /** When true, the input is disabled (e.g. during streaming). */
   disabled?: boolean;
+  /** Block submissions while a draft-local picker is open, without locking typing. */
+  sendBlocked?: boolean;
   /** Freeze model/provider/effort/permission controls for audit-only tasks. */
   settingsLocked?: boolean;
   /** When true, shows Stop button instead of Send button. */
@@ -803,6 +816,11 @@ interface ChatInputProps {
    * 嵌入式 rail / split pane 保持 false,避免抢走当前页面快捷键或其它 pane 的焦点。
    */
   focusOnStorageKeyChange?: boolean;
+  /**
+   * Each new non-null value (after mount) brings the caret back into the editor, e.g. picking
+   * 「回复」 on a companion message puts its quote above this composer, ready to type the reply.
+   */
+  focusRequest?: unknown;
   /**
    * Whether this composer should consume hardware send / voice / text commands.
    * Split panes keep every ChatInput mounted; only the focused owner may act.
@@ -1238,6 +1256,7 @@ export function ChatInput({
   runtimeAgentKind,
   runtimeEffective,
   runtimePending,
+  allowBaselineRecovery = false,
   sessionOrcaRole,
   sessionOrcaRemoteWorker,
   initialWorkingDir,
@@ -1247,6 +1266,7 @@ export function ChatInput({
   agentDeviceId: _agentDeviceId,
   agentDeviceName = null,
   remoteAgentDevices,
+  catalogHostDeviceId,
   modelMemoryOverride,
   initialModel,
   initialEffort,
@@ -1259,6 +1279,7 @@ export function ChatInput({
   onFastModeChange,
   onWorkingDirChange,
   disabled: disabledProp,
+  sendBlocked = false,
   settingsLocked: settingsLockedProp = false,
   isStreaming = false,
   isAgentBusy,
@@ -1302,6 +1323,7 @@ export function ChatInput({
   draftKey,
   disableAutofocus = false,
   focusOnStorageKeyChange = false,
+  focusRequest,
   ownsHardwareComposerActions = true,
   extraDirs,
   writableDirs,
@@ -1347,7 +1369,7 @@ export function ChatInput({
     !remoteHostId &&
     !sharedGuest &&
     remoteAgentDevices !== undefined &&
-    (!sessionId ||
+    (!sessionId || !!catalogHostDeviceId ||
       controlledTaskAgentLocationReadable({
         agentDeviceId: _agentDeviceId,
         pendingAgentDeviceId: makerChatStore.getAgentSwitchIntent(sessionId)?.agentDeviceId,
@@ -1375,7 +1397,7 @@ export function ChatInput({
     [sessionId, messages],
   );
   /** 模型目录所在的电脑:Agent 在另一台电脑运行时是那台;否则远程任务在被控电脑,本机任务在本机。 */
-  const catalogDeviceId = effectiveAgentDeviceId ?? deviceLinkDeviceId ?? undefined;
+  const catalogDeviceId = modelCatalogKey(effectiveAgentDeviceId ?? deviceLinkDeviceId ?? undefined, catalogHostDeviceId);
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { preference: composerSendShortcutPreference } = useComposerSendShortcutPreference();
@@ -1707,11 +1729,16 @@ export function ChatInput({
   // 吞掉「+」激活前就存在于锚点后的连续文本。
   const syntheticAtRangeEndRef = useRef<number | null>(null);
   const [syntheticAtAnchor, setSyntheticAtAnchorState] = useState<number | null>(null);
+  // 合成「+」面板自带搜索框（「+」面板浮在输入框上方、盖住了输入框,在看不见的
+  // 输入框里盲打是死路）。面板形态下查询词只认这个框。
+  const [atPanelSearch, setAtPanelSearch] = useState('');
   const setSyntheticAtAnchor = useCallback((next: number | null) => {
     const previous = syntheticAtAnchorRef.current;
     syntheticAtAnchorRef.current = next;
     if (next === null) {
       syntheticAtRangeEndRef.current = null;
+      // 面板一关,搜索词清空(下次打开从空查询开始)。
+      setAtPanelSearch('');
     } else if (previous !== next || syntheticAtRangeEndRef.current === null) {
       syntheticAtRangeEndRef.current = next;
     }
@@ -2170,6 +2197,13 @@ export function ChatInput({
       providersLoading,
     });
 
+  // Only the unchanged host-projected selection may enter recovery. A new user
+  // selection must pass the normal source checks, including optimistic switches.
+  const canAttemptBaselineRecovery = !!sessionId && allowBaselineRecovery &&
+    !!runtimeEffective && !composerSelection.pending && !agentSwitchIntent && !pendingRemoteSwitch &&
+    activeModel === runtimeEffective.model && currentModelAgentKind === runtimeEffective.agentKind &&
+    (activeProviderId ?? null) === (runtimeEffective.providerId ?? null);
+
   // 当前**生效来源 id**(= ModelSelector 高亮的 activeSourceId 同口径):显式选中且仍可连、
   // 且提供当前模型 → 用它;否则只在“提供当前模型”的来源里取原生默认。providerModelMemory
   // 按 (agent, 来源) 分槽记 (model, effort),写入 / 恢复都以这个 id 为 key,保证对称。
@@ -2223,6 +2257,7 @@ export function ChatInput({
       remoteAgentDevices.length > 0
         ? {
             devices: remoteAgentDevices,
+            catalogHostDeviceId,
             selectedDeviceId: agentDeviceId,
             ...(deviceLinkDeviceId ? { homeDeviceId: deviceLinkDeviceId } : {}),
             ...(taskComputerModelMemory ? { localModelMemory: taskComputerModelMemory } : {}),
@@ -2236,6 +2271,7 @@ export function ChatInput({
       taskComputerModelMemory,
       remoteHostId,
       remoteAgentDevices,
+      catalogHostDeviceId,
       agentDeviceId,
     ],
   );
@@ -2838,21 +2874,11 @@ export function ChatInput({
           return true;
         }
 
-        // Shift/Alt+Enter — split or exit a structured item. The plain-text
-        // fallback remains for old drafts and pasted Markdown that has not
-        // gone through an input rule.
-        if (
-          event.key === 'Enter' &&
-          (event.shiftKey || event.altKey) &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.isComposing
-        ) {
-          if (handleStructuredListBreak(view) || applyListContinuation(view)) {
-            event.preventDefault();
-            return true;
-          }
-          return false;
+        // Newline keys follow the send preference for both structured lists
+        // and plain Markdown restored from old drafts or pasted text.
+        if (handleComposerListEnter(view, event, getComposerSendShortcutPreference())) {
+          event.preventDefault();
+          return true;
         }
 
         // Resolve the configurable send shortcut after structured list handling.
@@ -3015,6 +3041,10 @@ export function ChatInput({
       // blur. We defer by a microtask so mouse-click selections on the
       // palette (which also blur the editor momentarily) still register.
       setTimeout(() => {
+        // 焦点落进面板自己的搜索框时不算离开:「+」面板盖住输入框,点搜索框必然
+        // 先让编辑器失焦,按旧口径会把刚打开的面板立刻关掉。
+        const active = document.activeElement;
+        if (active instanceof Element && active.closest('[data-composer-suggestion-search]')) return;
         if (!panelHoverRef.current) {
           // Close both palettes by suppressing the current trigger position.
           // The triggerState recomputes on next tick — if it is still
@@ -3460,6 +3490,7 @@ export function ChatInput({
   const voiceShortcutRef = useRef(voiceInputSettings.shortcut);
   const voiceInputStateRef = useRef(voiceInput.state);
   const voiceInputGetStateRef = useRef(voiceInput.getState);
+  const voiceInputPrepareRef = useRef(voiceInput.prepare);
   const voiceInputStopRef = useRef(handleVoiceInputStopWithRefinement);
   voiceInputBusyRef.current = voiceInput.isBusy;
   voiceDraftTextRef.current = voiceInput.draftText;
@@ -3467,6 +3498,7 @@ export function ChatInput({
   const voiceInputStopAndSendRef = useRef<
     (deliveryMode?: MessageDeliveryMode) => void | Promise<void>
   >(() => {});
+  const composerSubmitRequestSendRef = useRef<(() => void | Promise<void>) | null>(null);
   const voiceInputCanStopAndSendRef = useRef(false);
   const composerCanSubmitRef = useRef(false);
   const handleVoiceInputStartRef = useRef(handleVoiceInputStart);
@@ -3506,6 +3538,7 @@ export function ChatInput({
   useEffect(() => {
     voiceInputStateRef.current = voiceInput.state;
     voiceInputGetStateRef.current = voiceInput.getState;
+    voiceInputPrepareRef.current = voiceInput.prepare;
     voiceInputStopRef.current = handleVoiceInputStopWithRefinement;
     voiceInputCancelRef.current = voiceInput.cancel;
     handleVoiceInputStartRef.current = handleVoiceInputStart;
@@ -3520,6 +3553,7 @@ export function ChatInput({
     handleVoiceInputStopWithRefinement,
     voiceInput.cancel,
     voiceInput.getState,
+    voiceInput.prepare,
     voiceInput.state,
   ]);
 
@@ -3717,11 +3751,21 @@ export function ChatInput({
     };
   }, []);
 
-  // 长按输入框语音输入(语音设置里打开,默认关闭):输入框不加任何提示,按住鼠标
+  // 长按输入框语音输入默认开启，手动配置可关闭；麦克风未授权时长按与提示都不生效。按住鼠标
   // 左键不动片刻即开始录音,松开结束。按下由输入框的 onMouseDown 接入(要读
   // detail 才能排除双击);移动/松开挂在 window 上。真正开始录音后再指针捕获,
   // 拖出窗口松开也能停;等待期间不捕获,免得打断选字。
   const composerLongPressVoiceInputEnabled = voiceInputSettings.composerLongPressEnabled;
+  const [composerVoiceHovered, setComposerVoiceHovered] = useState(false);
+  const [composerVoiceHoverHintReady, setComposerVoiceHoverHintReady] = useState(false);
+  useEffect(() => {
+    setComposerVoiceHoverHintReady(false);
+    if (!composerVoiceHovered) return;
+    const timer = setTimeout(() => setComposerVoiceHoverHintReady(isComposerLongPressVoiceReady()), 500);
+    return () => clearTimeout(timer);
+  }, [composerVoiceHovered]);
+  const [composerVoiceHolding, setComposerVoiceHolding] = useState(false);
+  const [voiceButtonHolding, setVoiceButtonHolding] = useState(false);
   const composerLongPressGestureRef = useRef<ComposerLongPressVoiceGesture | null>(null);
   const armComposerLongPressCaptureRef = useRef<((pointerId: number, target: Element) => void) | null>(
     null,
@@ -3729,6 +3773,26 @@ export function ChatInput({
   useEffect(() => {
     if (!composerLongPressVoiceInputEnabled) return;
     let capture: { pointerId: number; target: Element } | null = null;
+    let selectionLockTarget: HTMLElement | null = null;
+    const clearSelectionLock = () => {
+      selectionLockTarget?.removeAttribute('data-voice-holding');
+      selectionLockTarget = null;
+    };
+    // pointerup is followed by mouseup/click and asynchronous selectionchange.
+    // Keep protecting this gesture until the next user input, not a timeout
+    // that could expire before Chromium finishes dispatching those events.
+    const handleNextInput = () => {
+      if (!gesture.isHolding()) clearSelectionLock();
+    };
+    const preventReleaseClick = (event: MouseEvent) => {
+      if (!selectionLockTarget || gesture.isHolding()) return;
+      if (event.detail === 0) {
+        clearSelectionLock();
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
 
     const handleLostPointerCapture = (event: Event) => {
       if (!(event instanceof PointerEvent)) return;
@@ -3752,9 +3816,13 @@ export function ChatInput({
 
     const gesture = createComposerLongPressVoiceGesture({
       getState: () => voiceInputGetStateRef.current(),
+      prepare: () => voiceInputPrepareRef.current?.(),
       start: () => handleVoiceInputStartRef.current(),
       stop: () => voiceInputStopRef.current(),
       onHoldStart: () => {
+        setComposerVoiceHolding(true);
+        selectionLockTarget = editorRef.current?.view.dom ?? null;
+        selectionLockTarget?.setAttribute('data-voice-holding', 'true');
         if (!capture) return;
         try {
           capture.target.setPointerCapture(capture.pointerId);
@@ -3763,7 +3831,13 @@ export function ChatInput({
           capture = null;
         }
       },
-      onHoldEnd: releaseCapture,
+      onHoldEnd: () => {
+        setComposerVoiceHolding(false);
+        // Restore hit-testing for the next press immediately; only the
+        // selectionchange/click guard needs to outlive this release.
+        selectionLockTarget?.removeAttribute('data-voice-holding');
+        releaseCapture();
+      },
     });
     composerLongPressGestureRef.current = gesture;
     armComposerLongPressCaptureRef.current = (pointerId, target) => {
@@ -3781,6 +3855,7 @@ export function ChatInput({
     };
     const handleLeftButtonRelease = (event: PointerEvent | MouseEvent) => {
       if (event.button !== 0) return;
+      if (selectionLockTarget) event.preventDefault();
       gesture.release();
       // 没到时长就松开时不会走 onHoldEnd，但仍要清掉按下时记下的 pointerId。
       releaseCapture();
@@ -3788,13 +3863,50 @@ export function ChatInput({
     const handleAbort = () => {
       gesture.release();
       releaseCapture();
+      clearSelectionLock();
+    };
+    // pointermove.preventDefault() does not suppress Chromium's compatibility
+    // mouse events or native selection/drag defaults after mousedown.
+    const preventHeldSelection = (event: Event) => {
+      if (selectionLockTarget) event.preventDefault();
+    };
+    // mousedown has already started Chromium's selection gesture before the
+    // hold timer fires. Cancelling later move/selectstart events alone cannot
+    // guarantee it stops. Keep the DOM selection at the editor's current
+    // insertion range before ProseMirror observes native selection changes.
+    // Read the current state each time so streamed dictation can move it.
+    const preserveHeldSelection = (event: Event) => {
+      if (!selectionLockTarget) return;
+      const current = editorRef.current;
+      if (!current || current.isDestroyed) return;
+      const selection = current.view.dom.ownerDocument.getSelection();
+      if (!selection?.anchorNode || !current.view.dom.contains(selection.anchorNode)) return;
+      const anchor = current.view.domAtPos(current.state.selection.anchor);
+      const head = current.view.domAtPos(current.state.selection.head);
+      if (
+        selection.anchorNode === anchor.node && selection.anchorOffset === anchor.offset &&
+        selection.focusNode === head.node && selection.focusOffset === head.offset
+      ) return;
+      event.stopImmediatePropagation();
+      selection.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
+    };
+    const handleDragStart = (event: Event) => {
+      if (gesture.isHolding()) event.preventDefault();
+      else handleAbort();
     };
     window.addEventListener('pointermove', handlePointerMove, true);
+    window.addEventListener('pointerdown', handleNextInput, true);
+    window.addEventListener('mousedown', handleNextInput, true);
+    window.addEventListener('keydown', handleNextInput, true);
+    window.addEventListener('click', preventReleaseClick, true);
+    window.addEventListener('mousemove', preventHeldSelection, true);
+    window.addEventListener('selectstart', preventHeldSelection, true);
+    document.addEventListener('selectionchange', preserveHeldSelection, true);
     window.addEventListener('pointerup', handleLeftButtonRelease, true);
     window.addEventListener('mouseup', handleLeftButtonRelease, true);
     window.addEventListener('pointercancel', handleAbort, true);
     // 按在已选中的文字上会进入原生拖拽,之后不再有 move / up。
-    window.addEventListener('dragstart', handleAbort, true);
+    window.addEventListener('dragstart', handleDragStart, true);
     window.addEventListener('blur', handleAbort);
     return () => {
       armComposerLongPressCaptureRef.current = null;
@@ -3803,17 +3915,31 @@ export function ChatInput({
       }
       gesture.dispose();
       releaseCapture();
+      clearSelectionLock();
       window.removeEventListener('pointermove', handlePointerMove, true);
+      window.removeEventListener('pointerdown', handleNextInput, true);
+      window.removeEventListener('mousedown', handleNextInput, true);
+      window.removeEventListener('keydown', handleNextInput, true);
+      window.removeEventListener('click', preventReleaseClick, true);
+      window.removeEventListener('mousemove', preventHeldSelection, true);
+      window.removeEventListener('selectstart', preventHeldSelection, true);
+      document.removeEventListener('selectionchange', preserveHeldSelection, true);
       window.removeEventListener('pointerup', handleLeftButtonRelease, true);
       window.removeEventListener('mouseup', handleLeftButtonRelease, true);
       window.removeEventListener('pointercancel', handleAbort, true);
-      window.removeEventListener('dragstart', handleAbort, true);
+      window.removeEventListener('dragstart', handleDragStart, true);
       window.removeEventListener('blur', handleAbort);
     };
-  }, [composerLongPressVoiceInputEnabled]);
+  }, [composerLongPressVoiceInputEnabled, storageKey]);
 
   const handleComposerLongPressPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+    const current = editorRef.current;
+    if (!current || current.isDestroyed || !(event.target instanceof Element)) return;
+    if (
+      !current.view.dom.contains(event.target) &&
+      !isComposerBlankPointerTarget(event.target, event.currentTarget, current.view.dom, event)
+    ) return;
     armComposerLongPressCaptureRef.current?.(event.pointerId, event.currentTarget);
   }, []);
 
@@ -3828,10 +3954,15 @@ export function ChatInput({
     if (!editorInstance || editorInstance.isDestroyed) return;
     const editorElement = editorInstance.view.dom;
     const target = event.target;
-    if (!(target instanceof Element) || !editorElement.contains(target)) return;
+    if (!(target instanceof Element)) return;
+    if (
+      !editorElement.contains(target) &&
+      !isComposerBlankPointerTarget(target, event.currentTarget, editorElement, event)
+    ) return;
     // 提及 / 粘贴文本 / 引用这类 chip 自带点击与拖拽行为,不在上面起手。
     const atom = target.closest('[contenteditable="false"]');
     if (atom && atom !== editorElement && editorElement.contains(atom)) return;
+    if (!isComposerLongPressVoiceReady()) return;
     gesture.press({ x: event.clientX, y: event.clientY });
   }, []);
 
@@ -4208,6 +4339,16 @@ export function ChatInput({
       })();
     }
   }, [editor, storageKey]);
+
+  // A focus request from the owner (see the `focusRequest` prop). The caret goes back to where
+  // it was; an editor that already has focus (mid IME composition included) is left alone.
+  const focusRequestRef = useRef(focusRequest);
+  useEffect(() => {
+    if (focusRequestRef.current === focusRequest) return;
+    focusRequestRef.current = focusRequest;
+    if (focusRequest == null || !editor || editor.isDestroyed || !editor.isEditable || editor.isFocused) return;
+    editor.commands.focus();
+  }, [editor, focusRequest]);
 
   // ── External draft writes for the CURRENT session (e.g. rewind / fork
   // pre-fill called saveComposerDraft from outside) ──
@@ -4718,7 +4859,10 @@ export function ChatInput({
     syntheticAnchor: syntheticAtAnchor,
     syntheticQuery: syntheticAtQuery,
   });
-  const atQuery = effectiveAt?.query ?? '';
+  // 合成「+」形态:查询词只认面板自己的搜索框(编辑器被面板盖住,那条路走不通);
+  // 输入 @ 的形态仍以输入框里的文字为准。
+  const atQuery =
+    effectiveAt?.activation === 'synthetic' ? atPanelSearch : (effectiveAt?.query ?? '');
 
   const runNewGoalAction = useCallback(() => {
     const activeEditor = editorRef.current;
@@ -5069,7 +5213,9 @@ export function ChatInput({
             }
             return false;
           case 'Backspace':
-            if (syntheticAtOpen && !atQuery) {
+            // 判据用编辑器自己的查询词,不用 atQuery:atQuery 现在可能是面板搜索框的词,
+            // 用它会让「按退格收面板」失效,退格转而删掉被面板盖住的正文(看不见的删除)。
+            if (syntheticAtOpen && !syntheticAtQuery) {
               closeAtPanel();
               return true;
             }
@@ -5237,6 +5383,14 @@ export function ChatInput({
       }
       const directoryQuery = getAtDirectoryCompletionQuery(selectedItem);
       if (directoryQuery) {
+        // 合成「+」形态:查询词在面板搜索框里 —— 钻取改搜索框就行,不往编辑器正文塞
+        // 路径文本(那会在选完文件后残留一段没人要的字);也不要把焦点从搜索框抢走,
+        // 抢走会让 MorphPopover 认定焦点出了本层,直接把面板关掉。
+        if (effectiveAt.activation === 'synthetic') {
+          setAtPanelSearch(directoryQuery);
+          setAtFocus(0);
+          return;
+        }
         editor
           .chain()
           .focus()
@@ -5244,14 +5398,11 @@ export function ChatInput({
             tr.replaceWith(
               from,
               to,
-              editor.schema.text(
-                effectiveAt.activation === 'typed' ? `@${directoryQuery}` : directoryQuery,
-              ),
+              editor.schema.text(`@${directoryQuery}`),
             );
             return true;
           })
           .run();
-        if (effectiveAt.activation === 'synthetic') setSyntheticAtAnchor(from);
         setAtFocus(0);
         return;
       }
@@ -5317,10 +5468,24 @@ export function ChatInput({
     [closeAtPanel, editor, insertAtResource, resolveEffectiveAtRange],
   );
 
+  // 合成「+」面板的统一关闭:收面板 + 按焦点位置决定是否把焦点交还编辑器。
+  // 面板内收起(搜索框空框退格 / Esc)时焦点还在面板里:立刻接管回编辑器,否则
+  // MorphPopover 的收合快照会判定「键盘关闭」,动画结束把焦点还给「+」按钮,
+  // 用户接着打的字被按钮吃掉。焦点已被用户挪到面板外(Tab 出去 / 点了其他
+  // 控件)则不抢,否则就是偷走用户刚聚焦的控件。搜索框退格走的 onClose 不经过
+  // MorphPopover 的 onOpenChange,所以面板的 onClose 也必须接到这里。
+  const closeComposerSuggestionPanel = useCallback(() => {
+    setSyntheticAtAnchor(null);
+    const active = document.activeElement;
+    if (active instanceof Element && active.closest('[data-composer-suggestion-panel]')) {
+      editorRef.current?.commands.focus();
+    }
+  }, [setSyntheticAtAnchor]);
+
   const handleComposerSuggestionOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
-        setSyntheticAtAnchor(null);
+        closeComposerSuggestionPanel();
         return;
       }
       if (!editor || editor.isDestroyed || composerMutationLocked) return;
@@ -5331,9 +5496,10 @@ export function ChatInput({
       }
       setSyntheticAtAnchor(editor.state.selection.from);
       setAtFocus(0);
-      editor.commands.focus();
+      // 不在这里抢编辑器焦点:面板的搜索框自己会拿焦点(面板浮在编辑器上方,
+      // 焦点留在编辑器等于让人对着看不见的输入框打字)。
     },
-    [composerMutationLocked, editor, setSyntheticAtAnchor, trigger],
+    [closeComposerSuggestionPanel, composerMutationLocked, editor, trigger],
   );
   const composerSuggestionFocusTarget = useCallback(() => {
     if (!editor || editor.isDestroyed) return null;
@@ -5349,7 +5515,7 @@ export function ChatInput({
   const dispatchSend = useCallback(
     async (deliveryMode: MessageDeliveryMode = 'queue') => {
       if (!editor) return;
-      if (disabled || sessionModelLoading) return;
+      if (disabled || sendBlocked || sessionModelLoading) return;
       if ((folderTransfers.hasPending || waitingForFoldersRef.current) &&
           (!(await waitForFolders()) || editor.isDestroyed)) return;
       // React 的 disabled 状态可能尚未完成下一帧渲染；同步读协调器兜住点击、快捷键、
@@ -5666,7 +5832,7 @@ export function ChatInput({
         // 直接 LAZY_CREATE_FAILED(renderer 的 sendProviderId=null 救不了已建会话),所以这里
         // 弹窗给出明确原因 + 去设置入口,而不是让请求出去撞一个原始错误码。
         // Send 按钮已被 selectedSourceDisconnected 禁用,此 guard 兜底覆盖间接派发路径。
-        if (selectedSourceDisconnected) {
+        if (selectedSourceDisconnected && !canAttemptBaselineRecovery) {
           const goConnect = await confirmDialog({
             title: t('newChat.sourceDisconnected.title'),
             description: t('newChat.sourceDisconnected.description'),
@@ -5688,7 +5854,7 @@ export function ChatInput({
         // 处理,不误伤。用 chatEligibleSourcesForModel 而非裸 sourcesForModel:
         // 非聊天来源不该被当成"可以发"放行(issue #882 第 3 点,2026-07 review)。
         if (
-          enforceConnectedSourceGate &&
+          enforceConnectedSourceGate && !canAttemptBaselineRecovery &&
           currentModelAgentKind &&
           // 旧被控端明确不支持 provider:list 时，控制端没有可检查的来源镜像；
           // 与模型列表一致交给 capabilities + 被控端发送链路做兼容回退。
@@ -6163,6 +6329,7 @@ export function ChatInput({
             {
               deliveryMode,
               providerId: sendProviderId,
+              ...(canAttemptBaselineRecovery ? { baselineRecovery: true } : {}),
               ...(builtInSkillIntent
                 ? {
                     builtInSkillIntent: {
@@ -6206,6 +6373,7 @@ export function ChatInput({
     [
       editor,
       disabled,
+      sendBlocked,
       sessionModelLoading,
       waitForFolders,
       folderTransfers.hasPending,
@@ -6216,6 +6384,7 @@ export function ChatInput({
       activePermissionMode,
       sendProviderId,
       selectedSourceDisconnected,
+      canAttemptBaselineRecovery,
       fastMode,
       hasAttachments,
       attachments,
@@ -6393,7 +6562,41 @@ export function ChatInput({
   );
   useEffect(() => {
     voiceInputStopAndSendRef.current = handleClickSend;
+    composerSubmitRequestSendRef.current = handleClickSend;
   }, [handleClickSend]);
+
+  // 别处的一键动作 (截图「翻译」等) 已把草稿写好并请求发送: 等编辑器与附件同步到位,
+  // 按普通发送键同一路径发一次; 发送中 / 语音占用时与键盘输入同锁, 稍后再试直到过期。
+  useEffect(() => {
+    if (!editor || !storageKey) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = () => {
+      timer = null;
+      const request = peekComposerSubmitRequest(storageKey);
+      if (!request || editor.isDestroyed) return;
+      const ready =
+        composerCanSubmitRef.current &&
+        !!composerSubmitRequestSendRef.current &&
+        !(sessionId && hasPendingAgentSendDispatch(sessionId)) &&
+        !composerMutationLockedRef.current &&
+        !isEditorEmpty(editor) &&
+        latestAttachmentsRef.current.some((file) => file.url === request.attachmentUrl);
+      if (ready) {
+        takeComposerSubmitRequest(storageKey);
+        void composerSubmitRequestSendRef.current?.();
+        return;
+      }
+      timer = setTimeout(attempt, 100);
+    };
+    const off = subscribeComposerSubmitRequest(storageKey, () => {
+      if (timer) clearTimeout(timer);
+      attempt();
+    });
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor, storageKey, sessionId]);
 
   // ── Model / effort / permission / folder callbacks (unchanged) ─────
   // ---------------------------------------------------------------------------
@@ -7541,7 +7744,7 @@ export function ChatInput({
             ? t('newChat.chatInput.agentRelocation.titleOther', { device: target.name })
             : deviceLinkDeviceId
               ? t('newChat.chatInput.agentRelocation.titleOther', {
-                  device: deviceLinkDeviceName || deviceLinkDeviceId,
+                  device: deviceDisplayName(deviceLinkDeviceId, deviceLinkDeviceName),
                 })
               : t('newChat.chatInput.agentRelocation.titleLocal'),
           description: t('newChat.chatInput.agentRelocation.description'),
@@ -7563,6 +7766,7 @@ export function ChatInput({
     }
     return {
       devices: remoteAgentDevices,
+      catalogHostDeviceId,
       selectedDeviceId: effectiveAgentDeviceId,
       // 被控电脑上的任务:没在浏览其他电脑时列被控电脑自己的目录与它的镜像记忆。
       ...(deviceLinkDeviceId ? { homeDeviceId: deviceLinkDeviceId } : {}),
@@ -7596,6 +7800,7 @@ export function ChatInput({
     sessionOrcaRole,
     sessionOrcaRemoteWorker,
     remoteAgentDevices,
+    catalogHostDeviceId,
     effectiveAgentDeviceId,
     intentAgentDeviceId,
     confirmAgentRelocation,
@@ -8912,6 +9117,25 @@ export function ChatInput({
   if (!previewPrompt && dismissedPreviewPrompt !== null) setDismissedPreviewPrompt(null);
   const showPromptPreview =
     !!previewPrompt && previewPrompt !== dismissedPreviewPrompt && !composerMutationLocked;
+  const voiceHintEmpty =
+    !!editor && !editor.isDestroyed && composerDocIsEmpty(editor.state.doc) && !hasVoiceDraftText;
+  // 已有推荐或建议预览优先于语音入门提示；实际录音仍由输入框锁定状态切换为录音指引。
+  const voiceHint = voiceHintEmpty
+    ? voiceBusyOnCurrentComposer && voiceInput.state === 'listening'
+      ? t(
+          composerVoiceHolding || voiceButtonHolding
+            ? 'newChat.chatInput.voiceInput.speakRelease'
+            : 'newChat.chatInput.voiceInput.speakPressAgain',
+        )
+      : !showRecommendationOverlay &&
+          !showPromptPreview &&
+          composerVoiceHovered &&
+          composerVoiceHoverHintReady &&
+          composerLongPressVoiceInputEnabled &&
+          !composerTypingLocked
+        ? t('newChat.chatInput.voiceInput.holdComposer')
+        : null
+    : null;
   promptPreviewInputGuardRef.current = () => {
     if (!showPromptPreview) return false;
     setDismissedPreviewPrompt(previewPrompt ?? null);
@@ -8967,17 +9191,17 @@ export function ChatInput({
   const [voiceReleaseToSendActive, setVoiceReleaseToSendActive] = useState(false);
   const sendButtonDisabled = queueEditActive
     ? Boolean(
-        disabled || waitingForFolders ||
+        disabled || sendBlocked || waitingForFolders ||
           sendDispatchInFlight ||
           voiceBusyOnCurrentComposer ||
           (!hasMessage && !hasPreparedOrPendingAttachments),
       )
     : Boolean(
-    disabled || sessionModelLoading || waitingForFolders ||
+    disabled || sendBlocked || sessionModelLoading || waitingForFolders ||
     // 空態:当前 agent 无已连接来源 → Send 禁用(设计 Q7NYAD「send 置灰」),引导用户先去连接来源。
-    (!makeNeedsNoModel && noConnectedSource) ||
+    (!makeNeedsNoModel && !canAttemptBaselineRecovery && noConnectedSource) ||
     // 会话显式选中的来源已断开 → Send 禁用(trigger 同步显示「已断开」错误态说明原因)。
-    (!makeNeedsNoModel && selectedSourceDisconnected) ||
+    (!makeNeedsNoModel && !canAttemptBaselineRecovery && selectedSourceDisconnected) ||
     // device-link 模型目录仍在读取或真实失败 → 禁止旧快照继续发送；旧端明确
     // unsupported 已由 remoteModelListStatus 归并为 ready，不会误伤兼容回退。
     remoteModelListBlocked ||
@@ -9020,17 +9244,21 @@ export function ChatInput({
     showStopButton && (canSend || voiceBusyOnCurrentComposer) && !sendDispatchInFlight;
   // Companion-only idle action: keep the existing send/stop slots and voice-release
   // target. Recording/refinement and queue editing must never become "start call".
+  // A recommendation is still a suggestion: keep the call available until the
+  // user accepts it into the draft. Its Tab/click acceptance and Enter send remain available.
   const mainSlotIsVoice = Boolean(
     onStartVoiceConversation &&
       !queueEditActive &&
       !mainSlotIsStop &&
-      !canSend &&
+      !hasComposerPayload &&
       !hasVoiceDraftText &&
       !voiceBusyOnCurrentComposer,
   );
+  // Automatic actions must observe the same gates as the current Send button
+  // before consuming their one-shot request, including during subscription effects.
+  composerCanSubmitRef.current = !queueEditActive && !sendButtonDisabled;
   useEffect(() => {
     voiceInputCanStopAndSendRef.current = !queueEditActive && !sendButtonDisabled;
-    composerCanSubmitRef.current = !sendButtonDisabled;
   }, [queueEditActive, sendButtonDisabled]);
   const canReleaseVoiceToSend = Boolean(
     !disabled && (voiceInput.isListening || canSend || hasVoiceDraftText),
@@ -9111,22 +9339,10 @@ export function ChatInput({
           as the outside-click boundary for collapsing the expanded queue tail
           (see paletteAnchorRef) — palette clicks are "inside". */}
       <div ref={paletteAnchorRef} className="relative w-full">
-        <div
+        <ComposerCard
           ref={mergedCardRef}
-          className={cn(
-            'flex w-full flex-col gap-0',
-            showFusedWrapper && [
-              'overflow-hidden border transition-colors',
-              // 输入框卡片圆角与对话页统一为 12px(用户定稿 2026-07-22);create-agent
-              // 不再用 Figma 的 6px,避免新建/对话两个框圆角不一致。
-              'rounded-[12px]',
-              'bg-[var(--chat-input-bg)]',
-              'border-[var(--chat-input-border)]',
-              isCreateAgentVariant
-                ? 'focus-within:border-[var(--chat-input-border-focus)]' // 聚焦描边走 30% 弱化 token;focus-ring 专供键盘 focus-visible(PR#174 review 拆分)
-                : 'focus-within:border-[var(--chat-input-border-focus)]',
-            ],
-          )}
+          framed={showFusedWrapper}
+          className={cn('flex w-full flex-col gap-0', showFusedWrapper && 'overflow-hidden')}
         >
           {queuePanelState && (
             <PendingQueuePanel
@@ -9154,34 +9370,31 @@ export function ChatInput({
             </div>
           )}
           {/* biome-ignore lint/a11y/noStaticElementInteractions: this area handles drag/drop; keyboard attachment flow uses the picker controls. */}
-          <div
+          <ComposerCard
+            framed={!showFusedWrapper}
             className={cn(
-              'relative flex max-h-[300px] w-full flex-col justify-between px-[11px] pt-[11px] pb-[6px]',
+              COMPOSER_CONTENT_CLASS,
+              'max-h-[300px]',
               // 新建对话框内容列变宽后适当加高编辑区,让整框比例更舒展(用户改稿 2026-07-22)。
-              isCreateAgentVariant ? 'min-h-[140px]' : 'min-h-[86px]',
-              // Standalone mode: own border + bg + focus-within. Fused mode:
-              // outer wrapper handles all of that, we render flat.
-              showFusedWrapper
-                ? null
-                : [
-                    'border transition-colors',
-                    // 输入框卡片圆角与对话页统一为 12px(用户定稿 2026-07-22);create-agent
-                    // 不再用 Figma 的 6px,避免新建/对话两个框圆角不一致。
-                    'rounded-[12px]',
-                    'bg-[var(--chat-input-bg)]',
-                    'border-[var(--chat-input-border)]',
-                    isCreateAgentVariant
-                      ? 'focus-within:border-[var(--chat-input-border-focus)]' // 聚焦描边走 30% 弱化 token;focus-ring 专供键盘 focus-visible(PR#174 review 拆分)
-                      : 'focus-within:border-[var(--chat-input-border-focus)]',
-                  ],
+              isCreateAgentVariant && 'min-h-[140px]',
             )}
             data-split-group-composer-drop-target
+            onPointerDown={handleComposerLongPressPointerDown}
+            onPointerOver={(event) => {
+              const editorDom = editor && !editor.isDestroyed ? editor.view.dom : null;
+              setComposerVoiceHovered(
+                (event.target instanceof Element && !!editorDom?.contains(event.target)) ||
+                isComposerBlankPointerTarget(event.target, event.currentTarget, editorDom, event),
+              );
+            }}
+            onPointerLeave={() => setComposerVoiceHovered(false)}
             // 卡片里的空白(文字行下方的空隙、工具栏两组按钮之间的空档、四周
             // padding)没有元素承接点击:浏览器默认会把焦点从 contenteditable 撤到
             // <body>,正在输入的光标凭空消失;而点空白又该能进入输入态。所以先
             // preventDefault 掉这次默认的焦点转移,再按需补一次不带坐标的 focus ——
             // 「进入输入态」归空白区,「定位插入点」只归点击文字那一行。
             onMouseDown={(event) => {
+              handleComposerLongPressMouseDown(event);
               if (event.button !== 0) return;
               if (
                 !isComposerBlankPointerTarget(
@@ -9435,10 +9648,9 @@ export function ChatInput({
                 className="relative w-full"
                 // 推荐词生效时由 CSS 关掉原生 placeholder,避免两行字叠在一起。
                 data-recommendation-active={showRecommendationOverlay ? 'true' : undefined}
+                data-voice-hint-active={voiceHint ? 'true' : undefined}
                 // 建议预览生效时由 CSS 隐去编辑器正文。
                 data-prompt-preview-active={showPromptPreview ? 'true' : undefined}
-                onPointerDown={handleComposerLongPressPointerDown}
-                onMouseDown={handleComposerLongPressMouseDown}
               >
                 <EditorContent
                   editor={editor}
@@ -9452,6 +9664,14 @@ export function ChatInput({
                     voiceBusyOnCurrentComposer && voiceInput.draftText ? 'true' : undefined
                   }
                 />
+                {voiceHint && (
+                  <div
+                    data-testid="composer-voice-hint"
+                    className="pointer-events-none absolute inset-x-0 top-0 py-[3px] pr-[11px] text-15 leading-[1.467] font-normal text-[var(--chat-input-placeholder-subtle)]"
+                  >
+                    {voiceHint}
+                  </div>
+                )}
                 {/* 建议预览:排版与原生 placeholder 对齐,py-[3px] 同下方推荐词 overlay 的说明。 */}
                 {showPromptPreview && (
                   <div
@@ -9579,17 +9799,18 @@ export function ChatInput({
                   }
                   open={syntheticAtOpen}
                   onOpenChange={handleComposerSuggestionOpenChange}
-                  autoFocusTarget={composerSuggestionFocusTarget}
                   panel={
                     <AtMentionPanel
                       embedded
+                      searchValue={atPanelSearch}
+                      onSearchChange={setAtPanelSearch}
                       query={atQuery}
                       state={atState}
                       entries={filteredAt}
                       focusedIndex={atFocus}
                       onFocusedIndexChange={setAtFocus}
                       onSelect={handleComposerSuggestionSelect}
-                      onClose={closeAtPanel}
+                      onClose={closeComposerSuggestionPanel}
                       onRetry={() => runAtScan(atQuery)}
                       referenceDirs={
                         !settingsLocked && onExtraDirsChange
@@ -9927,6 +10148,8 @@ export function ChatInput({
                       }
                       shortcutLabel={voiceInputShortcutLabel}
                       onStart={handleVoiceInputStart}
+                      onHoldChange={setVoiceButtonHolding}
+                      emptyComposer={voiceHintEmpty}
                       onStop={handleVoiceInputPlainStop}
                       onStopAndSend={handleClickSend}
                       sendTargetRef={sendButtonRef}
@@ -10030,8 +10253,8 @@ export function ChatInput({
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </ComposerCard>
+        </ComposerCard>
 
         {/* Palette host — tracks mouseover to prevent blur-close races.
            Palettes use `absolute bottom-full` referencing the palette anchor
@@ -10169,6 +10392,8 @@ export function ChatInput({
 
 function VoiceInputButton({
   state,
+  onHoldChange,
+  emptyComposer,
   disabled,
   shortcutLabel,
   onStart,
@@ -10181,6 +10406,8 @@ function VoiceInputButton({
   className,
 }: {
   state: import('@cindy/voice-input-core').VoiceInputState;
+  onHoldChange: (holding: boolean) => void;
+  emptyComposer: boolean;
   disabled: boolean;
   shortcutLabel: string;
   onStart: () => boolean | Promise<boolean | void>;
@@ -10195,6 +10422,10 @@ function VoiceInputButton({
 }) {
   const { t } = useTranslation();
   const [longPressActive, setLongPressActive] = useState(false);
+  useEffect(() => {
+    onHoldChange(longPressActive);
+    return () => onHoldChange(false);
+  }, [longPressActive, onHoldChange]);
   const timerRef = useRef<number | null>(null);
   const pointerIdRef = useRef<number | null>(null);
   const lastPointerPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
@@ -10259,8 +10490,16 @@ function VoiceInputButton({
   } else if (activeRecording) {
     label = t('newChat.chatInput.voiceInput.stop');
   }
+  const hintLabel =
+    emptyComposer && activeRecording
+      ? t(
+          longPressActive
+            ? 'newChat.chatInput.voiceInput.speakRelease'
+            : 'newChat.chatInput.voiceInput.speakPressAgain',
+        )
+      : label;
   const tooltipText =
-    shortcutLabel && !longPressActive && !busy ? `${label} · ${shortcutLabel}` : label;
+    shortcutLabel && !activeRecording && !busy ? `${hintLabel} · ${shortcutLabel}` : hintLabel;
   const controlledTooltipOpen = busy
     ? showProcessing
     : longPressActive
@@ -10388,6 +10627,9 @@ function VoiceInputButton({
         aria-pressed={activeRecording}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
+          // A fresh press is never the synthetic click from the previous hold.
+          // Chromium may omit that click when the recording pill changes size.
+          clearSuppressNextClick();
           event.preventDefault();
           event.currentTarget.blur();
           if (disabledOrBusy || listening) return;

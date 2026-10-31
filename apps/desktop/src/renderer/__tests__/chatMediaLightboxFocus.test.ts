@@ -33,27 +33,6 @@ import { toast } from '@/lib/toast';
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () => {
-  // ModelLightbox's 2026-06 scheme regression: the custom element reports a
-  // parse/load error, but its poster must stay usable and the user gets a
-  // toast. Existing focus tests never dispatch that event. Reuse the real
-  // lightbox unit harness, with fake time to detect delayed unwanted closure.
-  it('reports a model load error and keeps the preview open', async () => {
-    vi.useFakeTimers();
-    const onClose = vi.fn();
-    const url = 'cindy-media://blobs/' + 'f'.repeat(64) + '.glb';
-    render(React.createElement(ModelLightbox, { source: { kind: 'blob', url }, onClose }));
-    const viewer = document.body.querySelector('model-viewer')!;
-    expect(viewer).not.toBeNull();
-    await act(async () => {
-      fireEvent.error(viewer);
-      await vi.advanceTimersByTimeAsync(300);
-    });
-    expect(toast.error).toHaveBeenCalledExactlyOnceWith('Failed to load 3D model');
-    expect(onClose).not.toHaveBeenCalled();
-    expect(viewer.isConnected).toBe(true);
-    expect(viewer.getAttribute('src')).toBe(url);
-  });
-
   it('Enter 打开图片预览:焦点进入 lightbox,Esc 延迟关闭后回到触发器', async () => {
     render(
       React.createElement(ChatImageView, {
@@ -127,5 +106,27 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
     await waitFor(() => expect(document.activeElement).toBe(trigger));
     expect(document.body.querySelector('model-viewer')).toBeNull();
     expect(screen.getByRole('button', { name: 'model-preview.png' })).toBeTruthy();
+  });
+
+  // Keep the first lazy module registration in the keyboard test above; imports are cached.
+  // ModelLightbox's 2026-06 scheme regression: the custom element reports a
+  // parse/load error, but its poster must stay usable and the user gets a
+  // toast. Existing focus tests never dispatch that event. Reuse the real
+  // lightbox unit harness, with fake time to detect delayed unwanted closure.
+  it('reports a model load error and keeps the preview open', async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const url = 'cindy-media://blobs/' + 'f'.repeat(64) + '.glb';
+    render(React.createElement(ModelLightbox, { source: { kind: 'blob', url }, onClose }));
+    const viewer = document.body.querySelector('model-viewer')!;
+    expect(viewer).not.toBeNull();
+    await act(async () => {
+      fireEvent.error(viewer);
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith('Failed to load 3D model');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(viewer.isConnected).toBe(true);
+    expect(viewer.getAttribute('src')).toBe(url);
   });
 });

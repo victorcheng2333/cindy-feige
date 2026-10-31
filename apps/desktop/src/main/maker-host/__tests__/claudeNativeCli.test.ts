@@ -16,7 +16,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp/cindy-test-user-data' } }));
-vi.mock('@cindy/maker-core', () => ({ cleanProcessEnv: () => ({ PATH: '/usr/bin' }) }));
+vi.mock('@cindy/maker-core', () => ({ cleanProcessEnv: () => ({ PATH: '/usr/bin' }), findSettingsFileOverride: async () => null }));
 vi.mock('../../agent-binaries/index.js', () => ({ getReadyBinaryPath: () => h.binary }));
 vi.mock('../../logger.js', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -44,7 +44,12 @@ import {
   refreshClaudeCliLoginStatus,
   resetClaudeNativeCliForTest,
   runClaudeCliLogin,
+  beginClaudeCliLogin,
+  cancelClaudeCliLogin,
+  invalidateClaudeCliLoginStatus,
 } from '../claude-native-cli.js';
+import path from 'node:path';
+import { claudeCliLoginRevision, publishClaudeCliLoginStatus } from '../claude-native-cli-status.js';
 
 type FakeChild = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: ReturnType<typeof vi.fn> };
 
@@ -167,6 +172,72 @@ describe('claudeCliNetworkEnv', () => {
 });
 
 describe('登录态读取', () => {
+  // Per-home reads must stay bounded, and revocation while queued must not start
+  // a stale process. Existing concurrency tests only covered two active homes.
+  it('limits background reads and discards a queued home invalidated before launch', async () => {
+    const children: FakeChild[] = [];
+    h.spawn.mockImplementation(() => { const child = fakeChild('hang'); children.push(child); return child; });
+    const homes = ['a', 'b', 'c'].map(id => path.resolve('/tmp', `test-claude-${id}`));
+    const pending = homes.map(configDir => refreshClaudeCliLoginStatus({ configDir }));
+    await vi.waitFor(() => expect(children).toHaveLength(2));
+    invalidateClaudeCliLoginStatus(homes[2]);
+    for (const child of children) { child.stdout.emit('data', Buffer.from(SUBSCRIPTION)); child.emit('close', 0); }
+    expect((await Promise.all(pending)).map(status => status.loggedIn)).toEqual([true, true, false]);
+    expect(children).toHaveLength(2);
+  });
+
+  it('keeps the login generation for a plan change but revokes it for a changed organization', () => {
+    const status = { loggedIn: true, email: 'sample@example.com', orgId: 'one', subscriptionType: 'pro' };
+    publishClaudeCliLoginStatus(status);
+    const before = claudeCliLoginRevision();
+    publishClaudeCliLoginStatus({ ...status, subscriptionType: 'max' });
+    expect(claudeCliLoginRevision()).toBe(before);
+    publishClaudeCliLoginStatus({ ...status, orgId: 'two' });
+    expect(claudeCliLoginRevision()).not.toBe(before);
+  });
+  // Value: production CLI reads must not attribute A's late response to B or revive
+  // a disconnected home. Existing tests only exercised the default home. Tier: unit.
+  it('isolates simultaneous homes, preserves organization identity and discards a revoked read', async () => {
+    const a = path.resolve('fake-claude-a');
+    const b = path.resolve('fake-claude-b');
+    const children = new Map<string, FakeChild>();
+    h.spawn.mockImplementation((_bin, _args, options) => {
+      const child = fakeChild('hang');
+      children.set(options.env.CLAUDE_CONFIG_DIR, child);
+      return child;
+    });
+    const left = refreshClaudeCliLoginStatus({ configDir: a });
+    const right = refreshClaudeCliLoginStatus({ configDir: b });
+    await vi.waitFor(() => expect(children.size).toBe(2));
+    const finish = (dir: string, email: string) => {
+      const child = children.get(dir)!;
+      child.stdout.emit('data', Buffer.from(JSON.stringify({
+        loggedIn: true, authMethod: 'claude.ai', email, orgId: dir === a ? 'org-a' : 'org-b',
+      })));
+      child.emit('close', 0);
+    };
+    finish(b, 'b@example.com');
+    await expect(right).resolves.toMatchObject({ email: 'b@example.com', orgId: 'org-b' });
+    invalidateClaudeCliLoginStatus(a);
+    finish(a, 'a@example.com');
+    await expect(left).resolves.toEqual({ loggedIn: false });
+    expect(peekClaudeCliLoginStatus(a)).toEqual({ loggedIn: false });
+    expect(peekClaudeCliLoginStatus(b)?.email).toBe('b@example.com');
+    expect(peekClaudeCliLoginStatus()).toBeNull();
+  });
+
+  it('cancelling one login leaves another account and the system login intact', () => {
+    const a = path.resolve('fake-claude-a');
+    const b = path.resolve('fake-claude-b');
+    const system = beginClaudeCliLogin('system');
+    const left = beginClaudeCliLogin('a', a);
+    const right = beginClaudeCliLogin('b', b);
+    cancelClaudeCliLogin('a', a);
+    expect(left.aborted).toBe(true);
+    expect(right.aborted).toBe(false);
+    expect(system.aborted).toBe(false);
+  });
+
   it('读失败后退避,期间不再反复拉起 CLI;force 绕过退避', async () => {
     h.spawn.mockImplementation(() => fakeChild({ error: new Error('ENOENT') }));
     await expect(refreshClaudeCliLoginStatus()).resolves.toEqual({ loggedIn: false });

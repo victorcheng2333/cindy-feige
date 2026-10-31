@@ -8,6 +8,7 @@
 
 import { app } from 'electron';
 import path from 'node:path';
+import { activeOwnerScopeKey, ownerScopedUserDataPath } from '../appSessionState.js';
 
 import {
   DEFAULT_MENUBAR_SETTINGS,
@@ -45,6 +46,7 @@ export function normalizeMenubarSettings(raw: unknown): MenubarSettings {
     statusText: MENUBAR_STATUS_TEXT_MODES.includes(r.statusText as never)
       ? (r.statusText as MenubarSettings['statusText'])
       : d.statusText,
+    pinnedSourceId: typeof r.pinnedSourceId === 'string' && r.pinnedSourceId.length <= MAX_ID_LENGTH ? r.pinnedSourceId : null,
     lowAlert: typeof r.lowAlert === 'boolean' ? r.lowAlert : d.lowAlert,
     privacy: typeof r.privacy === 'boolean' ? r.privacy : d.privacy,
     scope: MENUBAR_USAGE_SCOPES.includes(r.scope as never) ? (r.scope as MenubarSettings['scope']) : d.scope,
@@ -60,6 +62,7 @@ export function sanitizeMenubarSettingsPatch(raw: unknown): MenubarSettingsPatch
   for (const key of Object.keys(DEFAULT_MENUBAR_SETTINGS) as (keyof MenubarSettings)[]) {
     if (!(key in r)) continue;
     const valid =
+      key === 'pinnedSourceId' ? r[key] === null || (typeof r[key] === 'string' && r[key].length <= MAX_ID_LENGTH) :
       key === 'order' || key === 'hidden' || key === 'shown'
         ? Array.isArray(r[key])
         : key === 'statusText'
@@ -81,11 +84,27 @@ const store = createOverrideSettingsFile<MenubarSettings>({
 });
 
 export function readMenubarSettings(): MenubarSettings {
-  return store.read();
+  return { ...store.read(), pinnedSourceId: pinStore.read().sourceId };
 }
 
 export function writeMenubarSettings(patch: MenubarSettingsPatch): MenubarSettings {
   const clean = sanitizeMenubarSettingsPatch(patch);
+  if ('pinnedSourceId' in clean) {
+    pinStore.writePatch({ sourceId: clean.pinnedSourceId ?? null });
+    delete clean.pinnedSourceId;
+  }
   if (Object.keys(clean).length > 0) store.writePatch(clean);
-  return store.read();
+  return readMenubarSettings();
 }
+
+/** A pinned credential connection belongs to the current Cindy owner, unlike visual preferences. */
+const pinStore = createOverrideSettingsFile<{ sourceId: string | null }>({
+  filePath: () => ownerScopedUserDataPath('menubar-source.json'),
+  defaults: { sourceId: null },
+  normalize: raw => {
+    const value = raw && typeof raw === 'object' ? (raw as { sourceId?: unknown }).sourceId : null;
+    return { sourceId: typeof value === 'string' && value.length <= MAX_ID_LENGTH ? value : null };
+  },
+  scopeKey: activeOwnerScopeKey,
+  log, label: 'menubar source', logLoadedValue: false,
+});

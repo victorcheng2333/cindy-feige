@@ -1,5 +1,10 @@
+import { useBotProfiles } from './botStore';
+import type { BotModelRoute } from '../../../shared/botModelChain';
+import { useNavigate } from 'react-router-dom';
+import { standardSessionRoute } from '@/lib/orcaSessionIdentity';
+import { BotTaskModelEditor } from './BotTaskModelEditor';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Clock3, Check, ChevronRight, CircleAlert, Moon, Pause, Plus } from 'lucide-react';
+import { Clock3, Check, ChevronRight, CircleAlert, Pause, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cronToHuman } from '@/features/scheduler/lib/cronToHuman';
 import { configToCron, cronToConfig } from '@/features/scheduler/lib/cronCodexPreset';
@@ -9,12 +14,16 @@ import type {
   RoutineRun,
   RoutineSource,
   RoutineTrigger,
+  RoutineDeliveryTarget,
 } from '@cindy/maker-scheduler';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { Spinner } from '@/components/ui/spinner';
+import { useBotSettingsTarget } from './useBotSettingsTarget';
+import { toast } from '@/lib/toast';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -25,6 +34,7 @@ import {
   DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import type { NightlyLearningView } from '../../../shared/botNightlyLearning';
+import { TODO_CHECK_ROUTINE_PREFIX } from '../../../shared/botAutonomy';
 import { BotNightlyLearning, useNightlyLearningView } from './BotNightlyLearning';
 
 const menuClass = 'p-2';
@@ -38,8 +48,10 @@ export function BotRoutines({
   backRef,
   embedded = false,
   header,
+  inheritedRoute,
 }: {
   embedded?: boolean;
+  inheritedRoute?: BotModelRoute;
   /** Settings shown above the list (not inside the editor), e.g. the teammate's follow-up switches. */
   header?: ReactNode;
   botId: string;
@@ -48,6 +60,16 @@ export function BotRoutines({
   backRef?: { current: (() => Promise<boolean>) | null };
 }) {
   const { confirm } = useConfirmDialog();
+  const settingsTarget = useBotSettingsTarget();
+  const localBots = useBotProfiles();
+  const primaryRoute = inheritedRoute ?? (settingsTarget.kind === 'local'
+    ? localBots.find((bot) => bot.id === botId)?.capabilities.modelChain[0] : undefined);
+  const routinesApi = settingsTarget.routines;
+  const navigate = useNavigate();
+  const supportsModels = settingsTarget.kind === 'local' || settingsTarget.routineModels === true;
+  const supportsDelivery = settingsTarget.kind === 'local' || settingsTarget.routineDelivery === true;
+  const [deliveryTargets, setDeliveryTargets] = useState<RoutineDeliveryTarget[]>([]);
+  const supportsSessionModes = settingsTarget.kind === 'local' || settingsTarget.routineSessionModes === true;
   const inFlight = useRef(false);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
@@ -61,12 +83,14 @@ export function BotRoutines({
   const [error, setError] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [nightlyOpen, setNightlyOpen] = useState(false);
-  const nightly = useNightlyLearningView(botId);
+  // The nightly review is read and run on this computer; a remote teammate's lives on its own one.
+  const nightlyLocal = settingsTarget.kind === 'local';
+  const nightly = useNightlyLearningView(botId, nightlyLocal);
   useEffect(() => setNightlyOpen(false), [botId]);
   const refresh = useCallback(async () => {
     const [items, available] = await Promise.all([
-      window.electronAPI.routines.list(botId),
-      window.electronAPI.routines.sources(),
+      routinesApi.list(botId),
+      routinesApi.sources(),
     ]);
     setRoutines(items);
     setSources(available);
@@ -77,8 +101,8 @@ export function BotRoutines({
     const load = () => {
       const current = ++request;
       void Promise.all([
-        window.electronAPI.routines.list(botId),
-        window.electronAPI.routines.sources(),
+        routinesApi.list(botId),
+        routinesApi.sources(),
       ])
         .then(([items, available]) => {
           if (alive && current === request) {
@@ -97,7 +121,7 @@ export function BotRoutines({
     };
     setLoading(true);
     load();
-    const unsubscribe = window.electronAPI.routines.onChanged(load);
+    const unsubscribe = routinesApi.onChanged(load);
     return () => {
       alive = false;
       unsubscribe();
@@ -110,7 +134,7 @@ export function BotRoutines({
       return;
     }
     const load = () => {
-      void window.electronAPI.routines
+      void routinesApi
         .history(botId, selected)
         .then((runs) => {
           if (alive) setHistory(runs);
@@ -120,12 +144,20 @@ export function BotRoutines({
         });
     };
     load();
-    const unsubscribe = window.electronAPI.routines.onChanged(load);
+    const unsubscribe = routinesApi.onChanged(load);
     return () => {
       alive = false;
       unsubscribe();
     };
   }, [botId, selected, reload]);
+  useEffect(() => {
+    let alive = true;
+    if (!draft || !supportsDelivery) return;
+    void routinesApi.deliveryTargets?.(botId).then(targets => {
+      if (alive) setDeliveryTargets(targets);
+    }).catch(() => { if (alive) setError(true); });
+    return () => { alive = false; };
+  }, [botId, selected, supportsDelivery, routinesApi]);
   const editable = (value: RoutineInput) =>
     JSON.stringify({
       name: value.name,
@@ -134,8 +166,12 @@ export function BotRoutines({
       triggers: value.triggers,
       silentWhenIdle: value.silentWhenIdle ?? true,
       preRunHook: value.preRunHook ?? null,
+      modelOverride: value.modelOverride ?? null,
+      sessionMode: value.sessionMode ?? 'persistent',
+      delivery: value.delivery ?? { kind: 'companion', mode: 'direct' },
     });
   const saved = routines.find((item) => item.id === selected);
+  const missingRecipient = draft?.delivery?.kind === 'im' && !draft.delivery.targetId;
   const dirty =
     draft !== null &&
     (saved
@@ -214,10 +250,10 @@ export function BotRoutines({
     if (trigger.kind === 'interval')
       return t('routines.everyMinutes', { count: trigger.intervalMs / 60_000 });
     if (trigger.kind === 'cron')
-      return `${trigger.expression === '0 * * * *' ? t('routines.hourly') : cronToHuman(trigger.expression, t, i18n.language)} · ${trigger.timezone}`;
+      return `${cronToHuman(trigger.expression, t, i18n.language)} · ${trigger.timezone}`;
     const source = sources.find((item) => item.id === trigger.sourceId);
     const event = source?.events.find((item) => item.type === trigger.eventType);
-    return `${source?.name ?? trigger.sourceId} · ${event?.name ?? trigger.eventType}`;
+    return t('routines.onEvent', { source: source?.name ?? trigger.sourceId, event: event?.name ?? trigger.eventType });
   };
   const running = history.some((run) => run.status === 'running' || run.status === 'queued');
   if (nightlyOpen && !draft) {
@@ -257,7 +293,7 @@ export function BotRoutines({
               variant="secondary"
               onClick={() => {
                 setSelected('new');
-                setDraft({ name: '', prompt: '', enabled: true, triggers: [], silentWhenIdle: false });
+                setDraft({ name: '', prompt: '', enabled: true, triggers: [], silentWhenIdle: false, sessionMode: 'persistent' });
               }}
             >
               <Plus size={14} />
@@ -293,44 +329,52 @@ export function BotRoutines({
               key={routine.id}
               routine={routine}
               disabled={busy}
+              onOpen={supportsModels && routine.builtin !== 'nightly-learning' ? () => {
+                setSelected(routine.id);
+                setDraft(structuredClone(routine));
+              } : undefined}
               hint={routine.builtin === 'nightly-learning' && nightly.view?.frequency === 'weekly'
                 ? t('routines.builtinNightlyLearning.hintWeekly') : undefined}
-              extra={routine.builtin === 'nightly-learning'
+              extra={routine.builtin === 'nightly-learning' && nightlyLocal
                 ? <NightlyLearningStatus routine={routine} view={nightly.view} onOpen={() => setNightlyOpen(true)} />
                 : null}
               onEnabledChange={(enabled) =>
-                void act(() =>
-                  // 每天查待办与近况开关同一个入口：恢复时按当前模板重建，并通知近况。
-                  routine.builtin === 'todo-check'
-                    ? window.electronAPI.localDb.bots.todos.dailyCheck(botId, enabled)
-                    : window.electronAPI.routines.save(botId, routineInput({ ...routine, enabled }), routine.id),
-                )
+                void act(() => routinesApi.save(botId, routineInput({ ...routine, enabled }), routine.id))
               }
             />
           ) : (
-            <button
-              key={routine.id}
-              type="button"
-              className="flex min-h-12 w-full items-start gap-3 rounded-lg px-3 py-3 text-left hover:bg-[var(--surface-hover)]"
-              onClick={() => {
-                setSelected(routine.id);
-                setDraft(structuredClone(routine));
-              }}
-            >
-              {routine.activity ? (
-                <Spinner size={16} className="mt-1 shrink-0" />
-              ) : routine.enabled ? (
-                <Clock3 size={16} className="mt-1 shrink-0" />
-              ) : (
-                <Pause size={16} className="mt-1 shrink-0" />
-              )}
-              <span className="min-w-0">
-                <span className="block truncate">{routine.name}</span>
-                <span className="block truncate text-12 text-[var(--text-secondary)]">
-                  {routine.triggers.map(triggerSummary).join(' · ')}
-                </span>
-              </span>
-            </button>
+            <div key={routine.id} className="border-b border-[var(--border-default)] py-4 last:border-b-0">
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  className="min-h-6 min-w-0 flex-1 rounded-lg text-left outline-none hover:text-[var(--text-secondary)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                  onClick={() => {
+                    setSelected(routine.id);
+                    setDraft(structuredClone(routine));
+                  }}
+                >
+                  <span className="flex items-start gap-2 text-13 font-medium leading-5">
+                    <span className="min-w-0 break-words">{routine.name}</span>
+                    <ChevronRight size={14} className="mt-1 shrink-0" aria-hidden="true" />
+                  </span>
+                </button>
+                <Switch
+                  aria-label={routine.name}
+                  className="mt-0.5 shrink-0"
+                  checked={routine.enabled}
+                  disabled={busy}
+                  onCheckedChange={(enabled) => void act(() =>
+                    // 每天查待办与近况开关走同一个入口，切换后近况跟着刷新。
+                    // 远程伙伴没有这个入口，按普通例行任务在伙伴所在的电脑上切换。
+                    routine.id.startsWith(TODO_CHECK_ROUTINE_PREFIX) && settingsTarget.kind === 'local'
+                      ? window.electronAPI.localDb.bots.todos.dailyCheck(botId, enabled)
+                      : routinesApi.save(botId, routineInput({ ...routine, enabled }), routine.id),
+                  )}
+                />
+              </div>
+              <RoutineState routine={routine} />
+              <RoutineSchedule summaries={routine.triggers.map(triggerSummary)} />
+            </div>
           ))}
         </div>
       ) : null}
@@ -350,6 +394,7 @@ export function BotRoutines({
                 disabled={
                   busy ||
                   running ||
+                  missingRecipient ||
                   !draft.name.trim() ||
                   !draft.prompt.trim() ||
                   !draft.triggers.length
@@ -357,9 +402,9 @@ export function BotRoutines({
                 onClick={() => {
                   if (revealInvalidField()) return;
                   void act(async () => {
-                    const saved = await window.electronAPI.routines.save(botId, draft, selected!);
+                    const saved = await routinesApi.save(botId, draft, selected!);
                     setDraft(structuredClone(saved));
-                    await window.electronAPI.routines.runNow(botId, saved.id);
+                    await routinesApi.runNow(botId, saved.id);
                   });
                 }}
               >
@@ -370,6 +415,7 @@ export function BotRoutines({
           <label className="block space-y-2">
             <span className="text-[var(--text-secondary)]">{t('routines.name')}</span>
             <Input
+              disabled={!!saved?.builtin}
               autoFocus={selected === 'new'}
               value={draft.name}
               onChange={(name) => setDraft({ ...draft, name })}
@@ -378,11 +424,70 @@ export function BotRoutines({
           <label className="block space-y-2">
             <span className="text-[var(--text-secondary)]">{t('routines.instructions')}</span>
             <Textarea
+              disabled={!!saved?.builtin}
               rows={8}
               value={draft.prompt}
               onChange={(prompt) => setDraft({ ...draft, prompt })}
             />
           </label>
+          {supportsModels && <BotTaskModelEditor inheritedRoute={primaryRoute} inheritanceHint={t('bots.model.inheritPrimary')}
+            value={draft.modelOverride ? {
+              harness: draft.modelOverride.agentKind === 'claude-code' ? 'claude' : draft.modelOverride.agentKind,
+              model: draft.modelOverride.model, providerId: draft.modelOverride.providerId ?? null,
+              effort: draft.modelOverride.effort ?? '', fastMode: draft.modelOverride.fastMode ?? false,
+              agentDeviceId: draft.modelOverride.agentDeviceId ?? null,
+            } : null}
+            disabled={busy} deviceId={settingsTarget.deviceId}
+            onChange={(route) => setDraft({ ...draft, modelOverride: route ? {
+              agentKind: route.harness === 'claude' ? 'claude-code' : route.harness,
+              model: route.model, providerId: route.providerId, effort: route.effort,
+              fastMode: route.fastMode, agentDeviceId: route.agentDeviceId ?? null,
+            } : null })}
+          />}
+          {supportsSessionModes && <div className="space-y-2">
+            <span aria-hidden className={fieldLabelClass}>{t('routines.sessionMode')}</span>
+            <Select
+              label={t('routines.sessionMode')}
+              className="w-full"
+              disabled={busy || saved?.builtin === 'nightly-learning'}
+              value={draft.sessionMode ?? 'persistent'}
+              options={[
+                { value: 'persistent', label: t('routines.sessionModePersistent') },
+                { value: 'fresh', label: t('routines.sessionModeFresh') },
+              ]}
+              onValueChange={(value) => setDraft({ ...draft, sessionMode: value as 'persistent' | 'fresh' })}
+              aria-describedby="routine-session-mode-hint"
+            />
+            <p id="routine-session-mode-hint" className="text-12 text-[var(--text-secondary)]">{t('routines.sessionModeHint')}</p>
+          </div>}
+          {supportsDelivery && !saved?.builtin && <div className="space-y-2">
+            <span aria-hidden className={fieldLabelClass}>{t('routines.deliveryLabel')}</span>
+            <Select label={t('routines.deliveryLabel')} className="w-full" disabled={busy}
+              value={draft.delivery?.kind === 'im' ? 'im' : draft.delivery?.kind === 'none' ? 'none' : draft.delivery?.mode ?? 'direct'}
+              options={[
+                { value: 'direct', label: t('routines.deliveryDirect') },
+                { value: 'process', label: t('routines.deliveryProcess') },
+                { value: 'im', label: t('routines.deliveryIm') },
+                { value: 'none', label: t('routines.deliveryNone') },
+              ]}
+              onValueChange={(value) => setDraft({ ...draft, delivery: value === 'im'
+                ? { kind: 'im', targetId: deliveryTargets[0]?.id ?? '' }
+                : value === 'none' ? { kind: 'none' } : { kind: 'companion', mode: value as 'direct' | 'process' } })}
+            />
+            <p className="text-12 text-[var(--text-secondary)]">{t('routines.deliveryHint')}</p>
+            {draft.delivery?.kind === 'im' && <>
+              <Select label={t('routines.deliveryRecipient')} className="w-full" disabled={busy}
+                value={draft.delivery.targetId} options={[
+                  ...(!deliveryTargets.some(target => target.id === (draft.delivery?.kind === 'im' ? draft.delivery.targetId : ''))
+                    ? [{ value: draft.delivery.targetId, label: t('routines.deliveryUnavailable') }] : []),
+                  ...deliveryTargets.map(target => ({ value: target.id, label: `${target.name} · ${target.recipient}` })),
+                ]}
+                onValueChange={(targetId) => setDraft({ ...draft, delivery: { kind: 'im', targetId } })}
+              />
+              {!deliveryTargets.length && <p className="text-12 text-[var(--text-secondary)]">{t('routines.deliveryNoRecipients')}</p>}
+            </>}
+          </div>}
+          <fieldset disabled={!!saved?.builtin} className="min-w-0 space-y-5">
           <details className="space-y-3">
             <summary className="min-h-8 cursor-pointer rounded-full py-2 focus-visible:outline focus-visible:outline-[var(--focus-ring)]">{t('routines.advancedSettings')}</summary>
             <label className="flex min-h-8 items-center gap-2">
@@ -512,8 +617,9 @@ export function BotRoutines({
               </DropdownMenu>
             </div>
           </div>
+          </fieldset>
           <div className="flex flex-wrap justify-end gap-2">
-            {selected !== 'new' && (
+            {selected !== 'new' && !saved?.builtin && (
               <Button variant="secondary" disabled={busy} onClick={() => setDeletePending(true)}>
                 {t('routines.delete')}
               </Button>
@@ -521,18 +627,19 @@ export function BotRoutines({
             <Button
               variant="cta"
               disabled={
-                busy || !draft.name.trim() || !draft.prompt.trim() || !draft.triggers.length
+                busy || missingRecipient || !draft.name.trim() || !draft.prompt.trim() || !draft.triggers.length
               }
               onClick={() => {
                 if (revealInvalidField()) return;
                 void act(async () => {
-                  const saved = await window.electronAPI.routines.save(
+                  const saved = await routinesApi.save(
                     botId,
                     draft,
                     selected === 'new' ? undefined : selected!,
                   );
                   setSelected(saved.id);
                   setDraft(saved);
+                  toast.success(t('routines.saved'));
                 });
               }}
             >
@@ -550,7 +657,7 @@ export function BotRoutines({
                   disabled={busy}
                   onClick={() =>
                     void act(async () => {
-                      await window.electronAPI.routines.remove(botId, selected!);
+                      await routinesApi.remove(botId, selected!);
                       setDraft(null);
                       setSelected(null);
                       setDeletePending(false);
@@ -573,9 +680,11 @@ export function BotRoutines({
                   <time dateTime={new Date(run.createdAt).toISOString()}>
                     {new Date(run.createdAt).toLocaleString(i18n.language)}
                   </time>
-                  <span aria-label={t(`routines.status.${run.status}`)}>
+                  <span className={`inline-flex shrink-0 items-center gap-2 ${run.delivery?.status === 'failed' || run.status === 'failed' || run.status === 'interrupted' ? 'text-[var(--text-danger)]' : 'text-[var(--text-secondary)]'}`}>
                     {run.status === 'running' || run.status === 'queued' ? (
                       <Spinner size={15} />
+                    ) : run.delivery?.status === 'failed' ? (
+                      <CircleAlert size={15} />
                     ) : run.status === 'success' || run.status === 'skipped' ? (
                       <Check size={15} />
                     ) : run.status === 'failed' || run.status === 'interrupted' ? (
@@ -583,16 +692,19 @@ export function BotRoutines({
                     ) : (
                       <Pause size={15} />
                     )}
+                    {run.delivery?.status === 'failed' ? t('routines.deliveryFailed') : t(`routines.status.${run.status}`)}
                   </span>
                 </summary>
-                <p className="mt-2 text-[var(--text-secondary)]">
-                  {t(`routines.status.${run.status}`)}
-                </p>
+                {run.sessionId && <Button variant="secondary" size="sm" onClick={() => navigate(standardSessionRoute(run.sessionId!, settingsTarget.deviceId))}>
+                  {t('routines.openTask')}
+                </Button>}
                 {run.resultText && (
                   <p className="whitespace-pre-wrap break-words text-[var(--text-secondary)]">
                     {run.resultText}
                   </p>
                 )}
+                {run.delivery?.status === 'failed' && <p className="break-words text-[var(--text-danger)]">{t('routines.deliveryFailedHint')}</p>}
+                {run.delivery?.status === 'delivered' && <p className="text-12 text-[var(--text-secondary)]">{t('routines.deliveryDelivered')}</p>}
                 {run.error && <p className="break-words text-[var(--text-danger)]">{run.error}</p>}
                 {run.events.map(({ sourceId, event }) => (
                   <p
@@ -887,18 +999,20 @@ function routineInput(routine: Routine): RoutineInput {
     triggers: routine.triggers,
     ...(routine.silentWhenIdle !== undefined ? { silentWhenIdle: routine.silentWhenIdle } : {}),
     ...(routine.preRunHook !== undefined ? { preRunHook: routine.preRunHook } : {}),
+    ...(routine.modelOverride !== undefined ? { modelOverride: routine.modelOverride } : {}),
+    ...(routine.delivery !== undefined ? { delivery: routine.delivery } : {}),
+    ...(routine.sessionMode !== undefined ? { sessionMode: routine.sessionMode } : {}),
   };
 }
 
 /**
- * 宿主内置的「跟进」：指令与触发条件由宿主维护，这里不进编辑器、不能删，只能暂停或恢复。
+ * 宿主内置规则保留指令与触发条件；普通 Agent 规则允许暂停或单独配置模型。
  */
-/** 内置例行任务（跟进、每天查待办、夜间学习）的文案键；名称与说明随界面语言，不用宿主存的名字。 */
-const BUILTIN_COPY = {
+/** 内置例行任务（跟进、夜间学习）的文案键；名称与说明随界面语言，不用宿主存的名字。 */
+const BUILTIN_COPY: Record<string, string | undefined> = {
   'follow-up': 'routines.builtinFollowUp',
-  'todo-check': 'routines.builtinTodoCheck',
   'nightly-learning': 'routines.builtinNightlyLearning',
-} as const;
+};
 
 /** 夜间学习行下方的两行状态（待整理、上次结果）与进入学习记录的入口。 */
 function NightlyLearningStatus({
@@ -959,35 +1073,32 @@ function BuiltinRoutineRow({
   routine,
   disabled,
   onEnabledChange,
+  onOpen,
   hint,
   extra,
 }: {
   routine: Routine;
   disabled: boolean;
   onEnabledChange: (enabled: boolean) => void;
+  onOpen?: () => void;
   hint?: string;
   extra?: ReactNode;
 }) {
   const { t } = useTranslation();
+  // 旧版电脑上的「每天查待办」仍是内置规则，远程查看时没有对应说明，只显示名称。
   const copy = BUILTIN_COPY[routine.builtin ?? 'follow-up'];
-  const name = t(`${copy}.name`);
+  const name = copy ? t(`${copy}.name`) : t('routines.todoCheck.name');
   return (
-    <div className="flex min-h-12 w-full items-start gap-3 rounded-lg px-3 py-3">
-      {routine.activity ? (
-        <Spinner size={16} className="mt-1 shrink-0" />
-      ) : routine.enabled ? (
-        routine.builtin === 'nightly-learning'
-          ? <Moon size={16} className="mt-1 shrink-0" />
-          : <Clock3 size={16} className="mt-1 shrink-0" />
-      ) : (
-        <Pause size={16} className="mt-1 shrink-0" />
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{name}</span>
-        {/* 触发条件由宿主维护、条数多且来源重复，这里只写一句白话，不逐条列出。 */}
-        <span className="block text-12 text-[var(--text-secondary)]">{hint ?? t(`${copy}.hint`)}</span>
+    <div className="flex w-full items-start gap-3 border-b border-[var(--border-default)] py-4 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        {onOpen ? <button type="button" disabled={disabled} onClick={onOpen}
+          className="flex min-h-6 items-start gap-2 rounded-lg text-left text-13 font-medium leading-5 outline-none hover:text-[var(--text-secondary)] focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
+          <span className="break-words">{name}</span><ChevronRight size={14} className="mt-1 shrink-0" aria-hidden="true" />
+        </button> : <p className="break-words text-13 font-medium leading-5">{name}</p>}
+        <RoutineState routine={routine} />
+        {hint || copy ? <p className="mt-1 text-12 leading-5 text-[var(--text-secondary)]">{hint ?? t(`${copy}.hint`)}</p> : null}
         {extra}
-      </span>
+      </div>
       <Switch
         aria-label={name}
         className="mt-0.5 shrink-0"
@@ -996,5 +1107,32 @@ function BuiltinRoutineRow({
         onCheckedChange={(enabled) => onEnabledChange(enabled === true)}
       />
     </div>
+  );
+}
+
+/** Enabling a rule and a run being active are separate facts. */
+function RoutineState({ routine }: { routine: Routine }) {
+  const { t } = useTranslation();
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-12 leading-5 text-[var(--text-secondary)]">
+      <span>{t(routine.enabled ? 'routines.enabled' : 'routines.paused')}</span>
+      {routine.activity ? <span className="inline-flex items-center gap-1.5"><Spinner size={12} />{t(`routines.status.${routine.activity}`)}</span> : null}
+    </p>
+  );
+}
+
+function RoutineSchedule({ summaries }: { summaries: string[] }) {
+  const { t } = useTranslation();
+  if (!summaries.length) return <p className="mt-1 text-12 leading-5 text-[var(--text-secondary)]">{t('routines.noTriggers')}</p>;
+  if (summaries.length === 1 && summaries[0].length <= 90) {
+    return <p className="mt-1 break-words text-12 leading-5 text-[var(--text-secondary)]">{summaries[0]}</p>;
+  }
+  return (
+    <details className="mt-1 text-12 leading-5 text-[var(--text-secondary)]">
+      <summary className="min-h-6 cursor-pointer rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">{t('routines.triggerDetails', { count: summaries.length })}</summary>
+      <ul className="mt-1 space-y-1">
+        {summaries.map((text, index) => <li key={index} className="break-words">{text}</li>)}
+      </ul>
+    </details>
   );
 }

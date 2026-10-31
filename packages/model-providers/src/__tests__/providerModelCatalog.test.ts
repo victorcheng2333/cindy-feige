@@ -6,6 +6,47 @@ import {
 import { buildUserProvider } from "../user-provider.js";
 import { BUNDLED_CATALOG } from '../builtin.js';
 import { modelProtocolComparison } from '../modelProtocol.js';
+import type { CustomProviderRuntimeConfig, ProviderRuntimeModelConfig } from '../types.js';
+
+describe('Vertex exact-model pricing', () => {
+  const runtime = {
+    baseUrl: 'https://aiplatform.googleapis.com',
+    wireProtocol: 'google-generative-ai',
+    catalogPresetId: 'google-vertex',
+    models: [{ id: 'gemini-4-argon', name: 'gemini-4-argon', piApi: 'google-vertex' }],
+  } satisfies CustomProviderRuntimeConfig;
+
+  it.each(['piApi', 'api', 'implicit'] as const)('retains exact prices with %s and a stale preset model list', (field) => {
+    const preset = BUNDLED_CATALOG.presets!.find(p => p.id === 'google-vertex')!;
+    for (const empty of [false, true]) {
+      const models = empty ? [] : preset.runtimes.pi!.models.filter(m => m.id !== 'gemini-4-argon');
+      // An empty list has no implicit API evidence; saved explicit APIs still suffice.
+      if (empty && field === 'implicit') continue;
+      const model: ProviderRuntimeModelConfig = { id: 'gemini-4-argon', name: 'gemini-4-argon',
+        ...(field === 'implicit' ? {} : { [field]: 'google-vertex' }) };
+      const provider = buildUserProvider({ id: 'vertex-account', name: 'Vertex', runtimes: {
+        pi: { ...runtime, models: [model] },
+      } }, { presets: [{ ...preset, runtimes: { ...preset.runtimes, pi: { ...preset.runtimes.pi!, models } } }] });
+      expect(provider.models.pi?.[0]).toMatchObject({
+        name: 'gemini-4-argon', cost: { input: 2, output: 10, cacheRead: 0.1 },
+      });
+    }
+  });
+
+  it.each([
+    { baseUrl: 'https://proxy.example' },
+    { requestPath: '/custom' },
+    { models: [{ ...runtime.models[0], route: { baseUrl: 'https://proxy.example', wireProtocol: 'google-generative-ai' as const } }] },
+    { models: [{ ...runtime.models[0], route: { baseUrl: runtime.baseUrl, wireProtocol: 'google-generative-ai' as const, requestPath: '/custom' } }] },
+    { models: [{ ...runtime.models[0], piApi: 'openai-responses' as const }] },
+    { models: [{ ...runtime.models[0], id: 'gemini-5-argon' }] },
+  ])('does not lend prices to an altered route/API or an unknown generation: %j', (override) => {
+    const provider = buildUserProvider({ id: 'vertex-account', name: 'Vertex', runtimes: {
+      pi: { ...runtime, ...override },
+    } }, { presets: BUNDLED_CATALOG.presets });
+    expect(provider.models.pi?.[0]?.cost).toBeUndefined();
+  });
+});
 
 describe("standard provider catalog", () => {
   it('carries Cindy canonical model declarations into imported connection details', () => {

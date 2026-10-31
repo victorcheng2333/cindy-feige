@@ -1,3 +1,5 @@
+import { PluginUiEnablePrompt } from '@/plugins/PluginUiEnablePrompt';
+import { deviceDisplayName } from '@/device-link/deviceName';
 import {
   reconcileNewSessionCatalogDraft,
   reconcileNewSessionSubmitDraft,
@@ -29,6 +31,7 @@ import {
   useNewSessionWorkspaceActions,
   useNewSessionInitialWorkspace,
 } from '@/session/useNewSessionWorkspace';
+import { useRemoteProjectAliases } from '@/session/useRemoteProjectAliases';
 import { useIncomingShareComposer } from '@/session/useIncomingShareComposer';
 import { ModelSpeedIcon } from '@/session/ModelSpeedIcon';
 import { useNewSessionHostDefaults } from '@/session/useNewSessionHostDefaults';
@@ -51,6 +54,10 @@ import { Stack, useIsFocused, useLocalSearchParams, useNavigation, useRouter } f
 import { NewTaskSelectionSheet } from '@/session/NewTaskSelectionSheet';
 import { resolveWorkspacePickerFrame, type WorkspacePickerFrame } from '@/session/workspacePickerPlacement';
 import { simpleScreenSafeAreaEdges } from '@/platform/chrome/SimpleStackHeader';
+import { NativeChromeBackButton } from '@/platform/chrome/NativeChromeBackButton';
+import { SystemNavigationBack, useSystemNavigationBack } from '@/platform/chrome/SystemNavigationBack';
+import { NewSessionLayout } from '@/session/NewSessionLayout';
+import { useSessionPaneLayout } from '@/session/ResidentHomeList';
 import { readComposerEntry, useComposerDock } from '@/session/composerMorph';
 import { useComposerPillOpen } from '@/session/useComposerPillOpen';
 import { useComposerImageExpansion } from '@/session/useComposerImageExpansion';
@@ -334,7 +341,6 @@ import {
 } from '@/session/composerTextPlatformMetrics';
 import {
   isMobileRealtimeAudioAvailable,
-  prewarmMobileRealtimeAudio,
   shouldShowMobileVoiceUi,
 } from '@/session/mobileRealtimeAudio';
 import {
@@ -471,9 +477,17 @@ interface WorktreeBranchCompatibilitySelection {
 }
 
 export default function NewRemoteSessionScreen() {
+  const creatingRef = useRef(false);
+  return <NewSessionLayout creatingRef={creatingRef}><NewRemoteSessionContent creatingRef={creatingRef} /></NewSessionLayout>;
+}
+
+function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: boolean } }) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const { t, i18n: i18nInstance } = useTranslation();
+  const paneLayout = useSessionPaneLayout();
+  const systemBack = useSystemNavigationBack();
+  const paneHeader = Platform.OS === 'ios' && paneLayout.persistent && !systemBack;
   // Dev-only:把构建信息从全局浮层挪到这里的顶部展示(试 Fast Refresh)。
   const buildLabel = __DEV__
     ? formatMobileBuildLabel(normalizeBuildInfo({
@@ -501,7 +515,7 @@ export default function NewRemoteSessionScreen() {
     creationError?: string;
   }>();
   const routeDeviceId = String(params.deviceId ?? '');
-  const routeDeviceName = String(params.deviceName ?? routeDeviceId);
+  const routeDeviceName = deviceDisplayName(routeDeviceId, typeof params.deviceName === 'string' ? params.deviceName : undefined);
   const initialWorkingDir = readRouteString(params.workingDir);
   const visualFocusComposer = MOBILE_VISUAL_MOCK_ENABLED && readRouteString(params.visualFocusComposer) === '1';
   // The home action lands in the compact pill; only a user's tap opens the card and keyboard.
@@ -537,7 +551,7 @@ export default function NewRemoteSessionScreen() {
   const deviceLinkStatusRef = useRef(deviceLinkStatus);
   deviceLinkStatusRef.current = deviceLinkStatus;
   const routeDeviceFallback = useMemo<NewSessionDeviceOption | null>(
-    () => routeDeviceId ? { deviceId: routeDeviceId, name: routeDeviceName || routeDeviceId } : null,
+    () => routeDeviceId ? { deviceId: routeDeviceId, name: deviceDisplayName(routeDeviceId, routeDeviceName) } : null,
     [routeDeviceId, routeDeviceName],
   );
   const deviceOptions = useMemo(
@@ -567,15 +581,18 @@ export default function NewRemoteSessionScreen() {
     () => deviceOptions.find((option) => option.deviceId === selectedDeviceId) ?? routeDeviceFallback,
     [deviceOptions, routeDeviceFallback, selectedDeviceId],
   );
-  const selectedDeviceLabel = selectedDeviceOption?.name || selectedDeviceName || selectedDeviceId || t('session.new.selectDevice');
+  const selectedDeviceLabel = selectedDeviceId ? deviceDisplayName(selectedDeviceId, selectedDeviceOption?.name || selectedDeviceName, deviceOptions) : t('session.new.selectDevice');
   const maker = useMobileMakerTransport(selectedDeviceId);
   const sessions = useRemoteSessions();
+  const projectAliases = useRemoteProjectAliases([selectedDeviceId]);
   const recentWorkspaces = useMemo(
     () => buildRecentWorkspaceOptions(
       sessions.filter((session) => session.deviceLinkDeviceId === selectedDeviceId),
       selectedDeviceId,
+      6,
+      projectAliases,
     ),
-    [selectedDeviceId, sessions],
+    [selectedDeviceId, sessions, projectAliases],
   );
   const [draft, setDraft] = useState<NewSessionDraft>(() => createInitialNewSessionDraft({
     initialWorkingDir, visualInitialDraft, routeDraft: params.draft, suggestion: params.suggestion, t,
@@ -986,7 +1003,6 @@ export default function NewRemoteSessionScreen() {
   const voiceStartupSeqRef = useRef(0);
   const voiceControllerSessionRef = useRef<MobileVoiceControllerSession | null>(null);
   const voiceDictionaryLearningTrackerRef = useRef<MobileVoiceDictionaryLearningTracker | null>(null);
-  const creatingRef = useRef(false);
   const [firstMessageInputContentHeight, setFirstMessageInputContentHeight] = useState(MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT);
   const [firstMessageInputFocused, setFirstMessageInputFocused] = useState(visualFocusComposer);
   const [voiceDraftCaretFrame, setVoiceDraftCaretFrame] = useState({ left: 0, top: 0 });
@@ -1597,12 +1613,22 @@ export default function NewRemoteSessionScreen() {
     setComposerVoiceHoldArmed(false);
     firstMessageInputRef.current?.blur();
   }, [collapseComposerImages]);
+  const [composerAttachmentTrayHeight, setComposerAttachmentTrayHeight] = useState(0);
+  const composerCardMaxHeight = Math.max(COMPOSER_CARD_CHROME_HEIGHT + MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT, windowDimensions.height
+    - (keyboardState.visible ? keyboardState.height : safeAreaInsets.bottom)
+    - safeAreaInsets.top - navigationChrome.target - spacing.xl);
+  // 附件托盘与文字同在卡片里:计入 chrome,文字超出时由输入框自己滚、裁掉上方文字。
+  const composerChromeHeight = (composerCardActive ? COMPOSER_CARD_CHROME_HEIGHT : COMPOSER_RESIZE_CHROME_HEIGHT)
+    + composerAttachmentTrayHeight;
   const composerResize = useComposerResize({
-    autoMaxContentHeight: MOBILE_COMPOSER_INPUT_MAX_HEIGHT,
+    autoMaxContentHeight: Math.max(
+      MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT,
+      Math.min(MOBILE_COMPOSER_INPUT_MAX_HEIGHT, composerCardMaxHeight - composerChromeHeight),
+    ),
     // 简洁态一律收到单行(下拉收起和点别处收键盘的结果一致);
     // auto / manual 记忆保留,重新聚焦后恢复。
     collapsed: !composerCardActive,
-    composerChromeHeight: composerCardActive ? COMPOSER_CARD_CHROME_HEIGHT : COMPOSER_RESIZE_CHROME_HEIGHT,
+    composerChromeHeight,
     contentHeight: composerInputContentHeight,
     keyboardHeight: keyboardState.visible ? keyboardState.height : 0,
     onSnapToAuto: handleComposerSnapToAuto,
@@ -1802,11 +1828,11 @@ export default function NewRemoteSessionScreen() {
     const previousDeviceId = selectedDeviceIdRef.current;
     selectedDeviceIdRef.current = option.deviceId;
     setSelectedDeviceId(option.deviceId);
-    setSelectedDeviceName(option.name || option.deviceId);
+    setSelectedDeviceName(deviceDisplayName(option.deviceId, option.name));
     void saveNewSessionPreferences({
       device: {
         deviceId: option.deviceId,
-        name: option.name || option.deviceId,
+        name: deviceDisplayName(option.deviceId, option.name),
       },
     });
     setDevicePickerOpen(false);
@@ -2972,6 +2998,7 @@ export default function NewRemoteSessionScreen() {
   };
 
   const startVoiceRecording = useCallback(async () => {
+    const requestedAt = Date.now();
     if (
       voicePermissionRequestInFlightRef.current
       || voiceStartupInFlightRef.current
@@ -3083,7 +3110,7 @@ export default function NewRemoteSessionScreen() {
           credential.settings?.language,
           CINDY_MANAGED_REFINER_PROVIDER,
         );
-      const audioGate = await createMobileSpeakerGate();
+      const audioGate = createMobileSpeakerGate();
       if (voiceStartupSeqRef.current !== startupSeq) {
         // This run never opened the microphone; release only its claimed ASR.
         void prewarmedVoice?.asr.stop().catch(() => undefined);
@@ -3098,6 +3125,7 @@ export default function NewRemoteSessionScreen() {
         credential,
         // "Recognize my voice": undefined unless enabled, enrolled and the models are on disk.
         audioGate,
+        requestedAt,
         ...(prewarmedVoice ? { asr: prewarmedVoice.asr } : {}),
         connectionProvider: (providerId: string) => voiceContext.createAsrConnection(providerId),
         refinerTargetProvider: (providerId: string, options?: { refreshAccessToken?: boolean }) =>
@@ -3217,9 +3245,6 @@ export default function NewRemoteSessionScreen() {
     if (creating || voiceIsProcessing) return;
     if (voiceRecordingActiveRef.current || voiceState === 'listening') return;
     if (!selectedDeviceId || !isMobileRealtimeAudioAvailable()) return;
-    // Keep the native audio-session warmup on the synchronous press-down path
-    // (prewarmMobileVoiceStart re-runs it idempotently below).
-    prewarmMobileRealtimeAudio();
     warmMobileSpeakerFilter();
     // 托管预热:凭登录态提前拿 voice-server 票据并开 ASR WebSocket。
     prewarmMobileVoiceStart(selectedDeviceId, {
@@ -3971,7 +3996,7 @@ export default function NewRemoteSessionScreen() {
         workspaceKind: effectiveDraft.workspaceKind,
         device: {
           deviceId: selectedDeviceId,
-          name: selectedDeviceName || selectedDeviceId,
+          name: deviceDisplayName(selectedDeviceId, selectedDeviceName),
         },
       });
       const creatingWorktree = worktreeIntent.applicable
@@ -4543,7 +4568,7 @@ export default function NewRemoteSessionScreen() {
         workspaceKind: draft.workspaceKind,
         device: {
           deviceId: selectedDeviceId,
-          name: selectedDeviceName || selectedDeviceId,
+          name: deviceDisplayName(selectedDeviceId, selectedDeviceName),
         },
       });
       // 提交点联合终检(同 create(),代际安全版独立 review P1-1/P1-2):唯一数据源 =
@@ -5037,8 +5062,12 @@ export default function NewRemoteSessionScreen() {
     : draft.firstMessage.trim();
 
   return (
-    <SafeAreaView edges={composerDock.enabled ? ['left', 'right'] : simpleScreenSafeAreaEdges()} style={styles.safeArea} testID="newSession.screen">
-      {Platform.OS === 'ios' ? (
+    <SafeAreaView edges={paneLayout.persistent
+      ? (composerDock.enabled ? ['top'] : ['top', 'bottom'])
+      : composerDock.enabled ? ['left', 'right'] : simpleScreenSafeAreaEdges()} style={styles.safeArea} testID="newSession.screen">
+      {Platform.OS === 'ios' && paneLayout.persistent ? (
+        <SystemNavigationBack label={t('shared.back')} onPress={handleBack} />
+      ) : Platform.OS === 'ios' ? (
         <>
           <Stack.Screen options={{ headerShown: true, headerBackVisible: false, headerShadowVisible: false, title: '', headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.textPrimary }} />
           <Stack.Toolbar placement="left">
@@ -5056,9 +5085,11 @@ export default function NewRemoteSessionScreen() {
         )}
         style={styles.keyboard}
       >
-        <View style={[styles.screen, composerDock.enabled && { paddingHorizontal: composerGeometry.horizontalInset }]}>
-          {Platform.OS !== 'ios' || buildLabel || creating ? <View style={styles.topBar}>
-            {Platform.OS !== 'ios' ? <ScreenBackButton
+        <View style={[styles.screen, paneHeader && styles.paneScreen, composerDock.enabled && { paddingHorizontal: composerGeometry.horizontalInset }]}>
+          {Platform.OS !== 'ios' || paneHeader || buildLabel || creating ? <View style={[styles.topBar, paneHeader && styles.paneTopBar]}>
+            {paneHeader ? <NativeChromeBackButton
+              label={t('shared.back')} onPress={handleBack} testID="newSession.backButton"
+            /> : Platform.OS !== 'ios' ? <ScreenBackButton
               hitSlop={12}
               onPress={handleBack}
               style={styles.backButton}
@@ -5105,7 +5136,7 @@ export default function NewRemoteSessionScreen() {
                     const selected = option.deviceId === selectedDeviceId;
                     return (
                       <Pressable
-                        accessibilityLabel={t('session.new.selectDeviceNamed', { name: option.name || option.deviceId })}
+                        accessibilityLabel={t('session.new.selectDeviceNamed', { name: deviceDisplayName(option.deviceId, option.name, deviceOptions) })}
                         accessibilityRole="button"
                         key={option.deviceId}
                         onPress={() => selectDevice(option)}
@@ -5118,7 +5149,7 @@ export default function NewRemoteSessionScreen() {
                           strokeWidth={iconStroke.thin}
                         />
                         <Text style={styles.deviceOptionText} numberOfLines={1}>
-                          {option.name || option.deviceId}
+                          {deviceDisplayName(option.deviceId, option.name, deviceOptions)}
                         </Text>
                         {selected ? (
                           <Check color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.medium} />
@@ -5445,11 +5476,12 @@ export default function NewRemoteSessionScreen() {
 
           </ScrollView>
             <View style={[styles.composerCard, {
-              maxHeight: Math.max(COMPOSER_CARD_CHROME_HEIGHT + MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT, windowDimensions.height
-                - (keyboardState.visible ? keyboardState.height : safeAreaInsets.bottom)
-                - safeAreaInsets.top - navigationChrome.target - spacing.xl),
+              maxHeight: composerCardMaxHeight,
               paddingBottom: composerDock.enabled ? 0 : spacing.md,
             }]} testID="newSession.composer">
+              <PluginUiEnablePrompt deviceId={selectedDeviceId || undefined} deviceName={selectedDeviceLabel}
+                online={deviceLinkStatus === 'online' && !!selectedDeviceId && getPresenceAvailability(selectedDeviceId) !== false}
+                active={isShareTargetFocused && !creating} />
               <ComposerPluginPalette
                 deviceId={selectedDeviceId || undefined}
                 workingDir={draft.workspaceKind === 'project' ? draft.workingDir.trim() : undefined}
@@ -5531,6 +5563,7 @@ export default function NewRemoteSessionScreen() {
                   bodyScrollGesture={composerResize.scrollGesture}
                   bodyScrollEnabled={!composerResize.dragging}
                   accessoryAbove={attachments.length > 0 || pendingUploads.length > 0 || pastePlaceholderCount > 0 ? renderComposerAttachmentTray() : null}
+                  onAccessoryAboveHeightChange={setComposerAttachmentTrayHeight}
                   autoFocus={visualFocusComposer}
                   entryTransitionId={entryMorph?.id}
                   collapsedHeight={composerDock.enabled ? composerDock.pillHeight : undefined}
@@ -6193,6 +6226,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     minHeight: 62,
+  },
+  // Match the embedded Home header: safe area + lg, then a 44pt button and md below.
+  paneScreen: {
+    paddingTop: spacing.lg,
+  },
+  paneTopBar: {
+    minHeight: navigationChrome.target + spacing.md,
+    paddingBottom: spacing.md,
   },
   buildLabel: {
     color: colors.textTertiary,

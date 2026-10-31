@@ -1,4 +1,4 @@
-import { captureTurnUsageContext, type TurnUsageContext } from './turnUsageContext.js';
+import { captureTurnUsageContext, turnBillingSource, type TurnUsageContext } from './turnUsageContext.js';
 import { isOpenAiSubscriptionProviderId } from '../maker-host/codex-account-auth.js';
 import { isClaudeSubscriptionProviderId, isXaiSubscriptionProviderId } from '../maker-host/subscription-account-auth.js';
 import type { AgentEvent, Session } from '@cindy/maker-core';
@@ -177,6 +177,7 @@ export function recordSessionPiTurnUsage(
             ? (rawUsage as { turnDurationMs: number }).turnDurationMs
             : undefined;
         const usageOnlyDetails = buildTurnUsageDetails({
+          ...turnBillingSource(turnContext, billingRoute),
           ...tokens,
           model: groupedSegments.size === 1 ? [...groupedSegments.keys()][0] : undefined,
           models: [...groupedSegments.keys()],
@@ -215,6 +216,7 @@ export function recordSessionPiTurnUsage(
             } else {
               money = resolveTurnCost({
                 rawModel: model,
+                agent: 'pi',
                 tokens: group.tokens,
                 // Pi computes usage.cost from its local model catalog. For
                 // BYOM/provider-api routes that is a reference estimate,
@@ -223,6 +225,7 @@ export function recordSessionPiTurnUsage(
                 sdkCostDelta: billingRoute === 'provider-api' ? undefined : group.sdkCostUsd,
                 pricing,
                 context: {
+                  agent: 'pi',
                   providerId: sessionProvider,
                   billingRoute,
                   region: CURRENT_CINDY_REGION,
@@ -267,6 +270,7 @@ export function recordSessionPiTurnUsage(
             estimatedMonies.length > 0 ? addRegionalMoney(estimatedMonies) : null;
           const messageMoney = actualMoney ?? estimatedMoney;
           const turnUsageDetails = buildTurnUsageDetails({
+            ...turnBillingSource(turnContext, billingRoute),
             ...tokens,
             model: groupedSegments.size === 1 ? [...groupedSegments.keys()][0] : undefined,
             models: [...groupedSegments.keys()],

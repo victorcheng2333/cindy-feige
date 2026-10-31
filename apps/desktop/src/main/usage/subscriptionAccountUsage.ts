@@ -1,3 +1,4 @@
+import { readManagedClaudeUsage, triggerManagedClaudeUsage, syncManagedClaudeUsage, setManagedClaudeUsageBroadcaster } from './claudeManagedAccountUsage.js';
 import { addProviderSecretsClearedListener } from '../secrets/providerSecretStore.js';
 import { activeOwnerScopeKey, isAppSessionBoundaryPending } from '../appSessionState.js';
 import { subscriptionAccountKind } from '../maker-host/subscription-account-auth.js';
@@ -21,6 +22,7 @@ export function setSubscriptionAccountUsageBroadcaster(
   clear?: typeof clearInstantUsage,
 ): void {
   broadcast = handler;
+  setManagedClaudeUsageBroadcaster(handler);
   clearInstantUsage = clear ?? (() => {});
 }
 
@@ -64,7 +66,7 @@ function createReader(providerId: string) {
   });
 }
 function reader(providerId: string) {
-  // 独立 Claude 账号已停用:没有凭证可用,也就没有余量可查。
+  // Claude uses the separate CLI-backed reader; xAI retains its existing reader.
   if (subscriptionAccountKind(providerId) !== 'xai') return null;
   const key = `${activeOwnerScopeKey()}:${providerId}`;
   let value = readers.get(key);
@@ -74,15 +76,21 @@ function reader(providerId: string) {
   }
   return value;
 }
-export function readSubscriptionAccountUsage(providerId: string) {
+export function readSubscriptionAccountUsage(providerId: string, options?: { fresh?: boolean }) {
   if (isProviderRouteMutationInProgress(providerId))
     throw new Error('Provider credentials are being updated');
+  if (subscriptionAccountKind(providerId) === 'claude') return readManagedClaudeUsage(providerId, options);
   return reader(providerId)?.read() ?? Promise.resolve(null);
 }
 export function triggerSubscriptionAccountUsage(providerId: string): void {
+  if (subscriptionAccountKind(providerId) === 'claude') {
+    if (!isProviderRouteMutationInProgress(providerId)) triggerManagedClaudeUsage(providerId);
+    return;
+  }
   if (!isProviderRouteMutationInProgress(providerId)) reader(providerId)?.triggerRefresh();
 }
 export async function syncSubscriptionAccountUsage(providerId: string): Promise<void> {
+  if (subscriptionAccountKind(providerId) === 'claude') return syncManagedClaudeUsage(providerId);
   if (subscriptionAccountKind(providerId) === 'xai') clearInstantUsage(providerId);
   await reader(providerId)?.syncForCredentialChange();
 }

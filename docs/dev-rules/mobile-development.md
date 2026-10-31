@@ -14,6 +14,10 @@ pnpm mobile:sim:start
 pnpm mobile:sim:whoami
 ```
 
+只看界面时加 `--mock`（`pnpm mobile:sim:start -- --mock`）：App 不登录、不连电脑，直接显示
+与 Desktop 共用的模拟任务；`whoami`、`rebuild` 也要带同一个开关，见
+[UI 模拟数据](ui-mock-data.md)。
+
 iOS 模拟器不在仓库里固定：`whoami`、`rebuild`、`open` 默认先用 Cindy 模拟器（官方 Baguette
 插件的独立设备目录）中已启动的设备，没有或插件关闭运行时用系统（Xcode）模拟器；个人选择用
 仓库外的 `CINDY_MOBILE_SIMULATOR=auto|cindy|system|<设备目录绝对路径>`，细节见
@@ -43,9 +47,15 @@ pnpm mobile:sim:start:cn
 
 修改原生依赖、Expo 原生配置，或切换到尚未安装对应开发包的区域时，重新构建：
 
+这里的 `rebuild` 是“准备兼容原生包”的入口：先复用匹配缓存，未命中才完整编译。
+未安装 App 不等于必须编译；纯 JS/TS 改动且 `native-matched` 时直接复用已安装包。
+截图和交付测试的完整流程见 [截图与当前版本测试](../../apps/mobile/docs/simulator-debugging.md#截图与当前版本测试)，
+缺少工具时见 [iOS 工具链](environment-setup.md#macosios-模拟器构建工具链)。
+
 `whoami` 还会比较已安装 `.app/EXUpdates.bundle/fingerprint` 与当前 worktree 的
 Expo Updates 开发指纹。`native-mismatch` 或 `native-unknown` 不能作为可测试状态，
-即使版本号、Metro 和页面都正常也要先普通重建。重建入口同样检查缓存、构建产物和安装后
+即使版本号、Metro 和页面都正常也不能交付。若未知源于工具探测或指纹计算失败，先修复检查；
+确认包缺失、不匹配或缺少兼容性证据时走普通重建。重建入口同样检查缓存、构建产物和安装后
 的真实指纹，避免跨 worktree 复用不兼容的原生包；不匹配的缓存会跳过。不要通过临时修改
 JS 参数协议来适配另一版本原生依赖。此检查不修改 App 配置或发布指纹。
 
@@ -82,10 +92,25 @@ JSON 已包含 `worktree` / `expectedSource`、`region` / `bundleId`、目标设
 `pageVerified: false` 明确保留这个边界。页面／bundle 验证与截图按模拟器调试手册另外完成，
 证据放在同一任务目录。
 
+### 仓库与个人配置的边界
+
+- 仓库维护工具要求、脚本参数、缓存与身份校验、mock 场景和验收合同；个人 Skill 调用这些入口，
+  不再实现第二套指纹、bundle ID 或缓存解析。
+- 默认区域、设备偏好、模拟器后端、接管时机与工具管理方式属于开发者的本地 profile/工作流。
+  本次明确指定的设备或区域高于个人默认；本次覆盖不自动写回 profile。
+- 自定义 bundle ID、签名团队与私有端点留在本地配置；仓库提供模板和校验，凭证进入凭证存储。
+- 设备在线状态、已安装包、Metro 占用、工具位置和缓存命中是现场事实，每次探测，不作为长期偏好。
+
 不要用临时 Metro、端口探测或手工修改 `.env` 代替这些脚本。多 worktree、原生构建、
 登录态和日志排查见 `apps/mobile/docs/simulator-debugging.md`。
 
 ## 分层验证
+
+Release 构建必须使用 `NODE_ENV=production BABEL_ENV=production`，包括手动调用
+`xcodebuild`、Gradle 或 `expo export:embed --dev false`。Expo 会保留父进程的环境变量，
+因此 `__DEV__=false` 或 Xcode 的 Release 配置本身不能证明 Worklets 已按生产模式编译。
+仓库 iOS/Android 构建脚本会固定这两个变量；Metro 的 Babel transformer 另按每次请求的
+`dev` 标志统一编译模式，防止外部开发环境把动画调试堆栈编进 Release 包，同时保留开发包调试能力。
 
 ```bash
 pnpm --filter mobile typecheck
@@ -102,6 +127,24 @@ pnpm --filter mobile test:smoke
 - 记录实际执行和结果；未执行的高相关检查必须说明原因。
 
 ## 专项入口
+
+### Android 组字与发送快照
+
+WebView 输入框把屏幕可见的组字文本同步为草稿；React Native 接受本地编辑的回传时不重写
+DOM，保留输入法组字与光标。点击发送后，在发送防重锁内等待编辑器返回当前完整
+`ComposerDocument`，再做空内容判断、命令解析和入队，不依赖失焦或 `compositionend` 的顺序。
+等待期间账号、设备、任务、编辑器或排队编辑目标变化时取消本次提交；读取失败、超时或
+粘贴尚未替换完成时保留输入并提示重试，不回退到旧草稿发送。语音结果、独立快捷发送和
+显式传入的文档保持各自的快照来源，iOS 原生编辑器保留现有原生路径。
+快照回包在写回编辑器状态或草稿之前核对调用方作用域；不能只在 `await` 返回后检查，
+否则取消排队编辑与下一帧渲染之间到达的旧快照会覆盖已恢复的原草稿。
+取消排队编辑时同步向编辑器应用暂存的个人草稿，立即轮换文档标识；不能只等待下一帧
+传入新 props，否则迟到的普通 `change` 消息也可能写回旧内容。恢复不主动聚焦或弹出键盘。
+
+实现：`ComposerRichInput.tsx`、`composerRichInputHtml.ts` 与 `app/sessions/[sessionId].tsx`；
+回归：`composerRichInputLifecycle.test.tsx`、`composerRichInputHtml.test.ts`。Android 模拟器
+可用 mock 模式配合 CDP `Input.imeSetComposition` 检查点击原生发送按钮后的完整文本；
+它不替代三星真机键盘或真实跨设备送达验收。
 
 ### 相册选图与 iCloud 原图
 
@@ -330,11 +373,22 @@ SDK 规则随依赖一起进入应用的最终 R8 配置，不在应用侧重复
 
 `plugins/with-communication-notifications.js` 为当前 bundle identity 生成
 `CindyNotificationService` 扩展，启用 Communication Notifications，并向 EAS 登记扩展签名。
-扩展仅消费伙伴回复的可选 `sender` 数据；保留正文、深链和系统隐私设置，任何处理失败或
+扩展消费伙伴回复与群消息的可选 `sender` 数据；保留正文、深链和系统隐私设置，任何处理失败或
 系统超时都回退原通知，且只交付一次。头像不发起网络请求、不读取用户账号存储。
 Swift 源码和打包头像显式进入 fingerprint。首次发布需要原生新包和重新生成的签名配置；
 服务端须先支持可选发送者透传和 `aps.mutable-content = 1`，未升级双方保持普通推送。
 这不是 OTA 可独立交付的功能，仍受下述冷更审核门约束。
+
+### iOS 桌面小组件
+
+`plugins/with-usage-widgets.js` 生成 `CindyHomeWidgets` WidgetKit 扩展（订阅余量、每日用量，iOS 17+），
+与 expo-sharing 共用 `group.<bundle id>` App Group，并向 EAS 登记扩展签名。App 内
+`src/widgets/UsageWidgetBridge.tsx` 在前台且已连接时约每 5 分钟经
+`device-link:usage-widget:snapshot:v1` 读取电脑快照，由本地模块 `cindy-usage-widgets` 写入 App Group 并刷新组件；
+App Group 里存每台电脑最近一次的快照和「自动」所选电脑（优先上次回应的那台）。组件「编辑小组件」里的
+「数据来源电脑」可选自动或某台电脑；组件绘制时把所选电脑记进 App Group，App 每次刷新也会读取这些电脑。
+切换或退出账号时清空。组件只读快照，回满倒计时按 `resetsAtMs` 在本机推进。Swift 源码、图标资源与数字字体
+显式进入 fingerprint；旧包没有该原生模块时 JS 侧静默跳过。真机测试包若签名缺少 App Group，组件只会显示空状态。
 
 Mobile 用 `runtimeVersion.policy: "fingerprint"`:OTA 热更只在**指纹一致**的装机上生效,
 指纹一旦变化就必须**冷更出包**(新商店包 / 自建重装),存量装机拿不到该次热更。
@@ -355,8 +409,9 @@ Mobile 用 `runtimeVersion.policy: "fingerprint"`:OTA 热更只在**指纹一致
 - **审查标准:会触发冷更的 PR 与技术框架变动同级,必须由仓库指定的把关人针对冷更明确
   确认后才能合并。** 不看改动大小,也不看谁提的——提交者是不是维护者、有没有拿到普通
   Approve、有没有被标回 Ready 都不构成例外;把关人自己提的 PR 同样要留下一条显式的冷更
-  确认。未确认前不进入自动审查与自动合并路径;判定、hold 与放行走与技术架构变更门同一套
-  机制(讨论 issue + 转 draft + 确认后放行),名单与细则属维护者内部 gate。
+  确认。冷更 PR 可以保持 Ready 并正常进入自动审查,不因冷更要求新建讨论 issue 或转为
+  draft;冷更确认可直接留在 PR 中。未确认前不得合并(包括自动合并),把关人名单与确认
+  判定细则属维护者内部 gate。若同时命中其他独立的讨论或草稿门禁,仍按对应规则处理。
 - 提交前自查:在改动前后各跑一次
   `node apps/mobile/scripts/ci-fingerprint.mjs compute --output <file>` 并比对 hash。PR 上
   出现 fingerprint guard 的 sticky comment 时,以它给出的 base(main) vs 合并结果对比为准。
@@ -447,3 +502,21 @@ JS OTA 仍按现有通道检查，设置页手动检查只报告内容更新。�
 定向测试为对应的 `androidInstallController.test.ts` 与 `androidInstaller.test.ts`，构建配置
 边界由 `src/__tests__/nativeAppConfig.test.ts` 验证。原生验证还应检查授权/拒绝返回、系统
 安装取消、签名不匹配拒绝与同签名覆盖安装；不能把 JS 单测当作这些原生路径的实测。
+
+### 群消息通知与 Android 后台连接
+
+`CINDY_ANDROID_GOOGLE_SERVICES_FILE` 可指向仓库外的 `google-services.json`；未配置仍可构建，
+通知设置会说明 Google 推送不可用。服务端 Chat Server 和 device-link 分别配置同一 Firebase 项目的
+`FCM_PROJECT_ID` 与 ADC（例如仓库外 `GOOGLE_APPLICATION_CREDENTIALS`）。不要把密钥提交到仓库。
+
+`cindy-chat-notifications` 是 Android Expo 本地模块，复用 Expo 的 token、通知点击和冷启动响应；
+FCM data 消息与显式开启的前台服务都通过同一通知入口，按账号／消息去重。预览关闭时本机再次去除内容与
+发送者头像。群通知使用 MessagingStyle；伙伴回复有发送者时也使用 Person。普通任务仍沿用原通知。
+
+后台连接声明 `specialUse` 前台服务，持续显示运行通知和停止按钮；没有开机启动、隐藏重启或凭证落盘。
+发行到 Play 前须完成对应前台服务用途申报。Doze、厂商电池策略和强行停止可能中断连接；FCM 也需要 Google
+服务及有效项目配置，不能承诺所有设备强杀后送达。
+
+本次 Swift 扩展、Android 原生模块和头像资源都需要新原生包，不能只发 OTA；按冷更门由指定把关人明确
+批准。上线顺序为服务端兼容接口／通道配置、各端原生包，再验证 token 注册、前后台、拒绝权限、预览关闭、
+停止后台连接、断网重连、通知点击定位及人／伙伴头像。旧服务端没有 chat push API 时手机保留已有任务通知。
