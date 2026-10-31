@@ -215,8 +215,8 @@ describe('buildMenubarView', () => {
     expect(view.sources.find((s) => s.id === offline.id)).toMatchObject({
       value: '90', when: '3 hr ago', stale: true, resetsAtMs: null, emphasized: false,
     });
-    // Subscription tubes carry no recommended-account outline in this fork (2026-10-30).
-    expect(view.sources.find((s) => s.id === 'beta')?.emphasized).toBe(false);
+    // The restored overview recommends the online account, never the stale one.
+    expect(view.sources.find((s) => s.id === 'beta')?.emphasized).toBe(true);
   });
 
   it('does not call a positive offline reading "used up" when it is the only one', () => {
