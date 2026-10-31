@@ -2210,10 +2210,12 @@ Codex 原生图片恢复（#6412）在既有 `maker:remote-agent:v1` 上追加�
   读取被控电脑收到的分享及其目录；旧版电脑回 `CHANNEL_NOT_ALLOWED`，手机按没有分享处理。跨区域(P3)经服务端开关开放，
   受邀者用第二条 relay 连接(`ProviderShareGuest` 认证)，见契约 §6。
 - **分叉**：通过 `nativeFork` 能力协商在原运行端执行，见本节开头的分叉协议；旧运行端提示升级。
-- **Claude 分享的本机工具审批**（2026-10-31）：仅跨账号 Claude 控制端启用，复用既有 `open`／
+- **远程 Claude 的本机工具审批**（2026-10-31）：同账号远程和跨账号分享的 Claude 控制端启用，复用既有 `open`／
   `setPermissionMode` 的 `default`、权限回调与反向 MCP HTTP，不新增 wire 字段、能力或 channel。
   实际权限档与 `turnPermissionPolicy` 留在任务电脑；远端允许回包不作为执行授权，`tools/call`（含批量）
   与 `resources/read` 到达本机后再审批，此路径拒绝绕过 MCP 的原始 `/exec` 调用。
+  同账号原生 WebFetch 仍在 Agent 电脑执行，不冒充本机 MCP 工具跳过权限回调；跨账号独立凭证确认
+  与本机 WebFetch 替代工具仍只在原来的分享范围启用。Codex、Pi、SSH 路径不变。
   闲置回收后仍以 `default` 重开，保留本机权限设置；断链、停止、权限与目录变化作废旧审批，不重放工具。
   故障范围限于该任务，不重置共享 peer；审核不可用转人工确认。旧分享端沿现有协议即可工作，
   自建 relay 透明转发的载荷不变，无服务端同步修改；真实双机与自建中转互通仍需发布前实测。

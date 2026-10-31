@@ -44,6 +44,7 @@ function fixture(mode = 'auto', verdict: AutoReviewDecision['verdict'] = 'allow'
     sessionId: 'local-task', workspace, cwd: () => executor.executionCwd, scope: () => scope,
     isReadOnlyPath: target => workspace.contains(target) && !writable.contains(target),
     servers: () => new Set(['cindy_exec', 'custom']), review, mcpPolicy: policy, readOnlyTools: [],
+    localTools: new Set(executor.toolDefinitions().map(tool => tool.name)),
     ask, grant: action => executor.grantReviewedAction(action), newId: () => 'local-confirmation', notice,
     cancelPendingConfirmations: () => executor.cancelPendingConfirmations(),
   });

@@ -629,11 +629,14 @@ Claude 订阅的本地会话即使挂了 Host MCP 也保持原生 Auto：原生�
 Codex 的 IM 轮次继续由 Cindy 审核（策略轮次需要 Host 观察每次执行）。
 原生明确拒绝不触发第二次模型判断。独立 Host 操作继续使用自身审批入口。
 
-跨账号分享的 Claude 从 2026-10-31 起由任务电脑的 `remote-agent/controller/claudeToolApproval.ts`
+设备互联的 Claude（同账号远程电脑和跨账号分享）从 2026-10-31 起由任务电脑的 `remote-agent/controller/claudeToolApproval.ts`
 在本机 MCP 执行入口统一判断：远端使用 `default`，权限回调只放行到本机审批入口，避免远端重复模型审核。
 本机保留真实权限档与本轮策略，复用 Desktop 的审核模型、可信工具策略和用户意图；审核故障转本机确认。
 结构化写入绑定规范化真实路径，可读参考目录不自动成为可写目录；工具审批不能代替分享凭证确认。
-停止、断链与权限范围变化作废待决审批，分享端不新增审核接口。同账号设备托管与 SSH 保持原行为。
+停止、断链与权限范围变化作废待决审批，运行 Agent 的电脑不新增审核接口。SSH 保持原行为。
+同账号路径必须通过 `createDeviceAgentStarter` 接入，不能仅在 `shared` 时注入审批，否则远端 Auto
+放行后，本机执行器仍可能因没有人工批准记录而静默拒绝。工具权限回调只对实际由本机提供的工具
+放行到 MCP 入口；同账号的原生 WebFetch 不在该名单内，仍须审批，不能借用跨账号替代工具的同名豁免。
 
 Browser 的 `action=recipe` 调用复用现有逐次会话审批，不继承整个第一方 server 的静默放行；
 Full Access、Auto、Ask 的含义保持不变。不以配方自报的 read/write 分类免审，用户覆盖层

@@ -25,7 +25,7 @@ export interface LocalMcpTarget {
 export interface ReverseHttpRouterDeps {
   /** The caller granted its own tools only, not access to native file/shell tools. */
   hostToolsOnly?: boolean;
-  /** Runs on the task computer immediately before a shared Claude tool executes. */
+  /** Runs on the task computer immediately before a device-hosted Claude tool executes. */
   approve?<T>(name: string, input: Record<string, unknown>, execute: (approved: Record<string, unknown>) => Promise<T>, signal?: AbortSignal): Promise<T>;
   executor: RemoteExecutor;
   /** 本任务可用的本机 MCP 服务，按名字查。 */
@@ -176,7 +176,7 @@ export function createReverseHttpRouter(deps: ReverseHttpRouterDeps) {
     const body = request.body ? Buffer.from(request.body, 'base64') : undefined;
     const execMatch = /^\/exec\/([a-z]+\.[a-z]+)$/.exec(url.pathname);
     if (execMatch) {
-      if (deps.approve) return json(403, { error: { code: 'EACCES', message: 'Shared Claude execution must use the approved MCP tool path.' } });
+      if (deps.approve) return json(403, { error: { code: 'EACCES', message: 'Remote Claude execution must use the approved MCP tool path.' } });
       if (request.method !== 'POST') return json(405, { error: { code: 'INVALID', message: 'POST only' } });
       let parsed: unknown;
       try {
