@@ -29,7 +29,11 @@ function fixture(mode = 'auto', verdict: AutoReviewDecision['verdict'] = 'allow'
   const gate = new ExecutorGate(workspace, mode === 'bypassPermissions' ? 'full' : 'normal', Date.now,
     { writableWorkspace: writable, confirmCredentials: true });
   const credential = vi.fn<() => Promise<boolean>>(async () => false);
-  const executor = new RemoteExecutor({ workspace, gate, rgPath: '', tempDir: path.join(root, 'tmp'), confirm: credential });
+  const webFetch = vi.fn(async () => ({
+    response: new Response('<html><body>fixture page</body></html>', { headers: { 'content-type': 'text/html' } }),
+    release: async () => {},
+  }));
+  const executor = new RemoteExecutor({ workspace, gate, rgPath: '', tempDir: path.join(root, 'tmp'), confirm: credential, webFetch });
   executors.push(executor);
   const scope = { permissionMode: mode, extraDirs: [] as string[], writableDirs: [] as string[], model: 'shared-model' };
   const review = vi.fn<(request: AutoReviewRequest) => Promise<AutoReviewDecision>>(async () => ({ verdict, reason: 'fixture decision' }));
@@ -53,7 +57,7 @@ function fixture(mode = 'auto', verdict: AutoReviewDecision['verdict'] = 'allow'
     return { status: response.status, body: response.body ? JSON.parse(Buffer.from(response.body, 'base64').toString()) : undefined };
   };
   const call = (name: string, args: object, route?: string) => request({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, route);
-  return { project, reference, workspace, writable, executor, scope, approval, review, ask, credential, fetch, request, call, notice };
+  return { project, reference, workspace, writable, executor, scope, approval, review, ask, credential, fetch, webFetch, request, call, notice };
 }
 
 it('Auto writes an ordinary project file locally without asking or calling a reviewer', async () => {
@@ -213,4 +217,20 @@ it('cancels a pending credential confirmation when the local directory scope cha
   expect((await pending).body.result.isError).toBe(true);
   finish(true);
   expect(fs.existsSync(file)).toBe(false);
+});
+
+// provider-sharing.md §9.5: model approval cannot stand in for the user's
+// explicit private-network permission. Verify whether a request is actually sent.
+it('requires local human confirmation before an Auto-approved private WebFetch', async () => {
+  const f = fixture('auto', 'allow');
+  const args = { url: 'http://127.0.0.1/private' };
+  expect((await f.call('WebFetch', args)).body.result.isError).toBe(true);
+  expect(f.review).toHaveBeenCalledOnce();
+  expect(f.ask).toHaveBeenCalledOnce();
+  expect(f.webFetch).not.toHaveBeenCalled();
+  f.ask.mockResolvedValue({ kind: 'permission', behavior: 'allow' });
+  const approved = await f.call('WebFetch', args);
+  expect(approved.body.result.isError, JSON.stringify(approved.body)).not.toBe(true);
+  expect(f.ask).toHaveBeenCalledTimes(2);
+  expect(f.webFetch).toHaveBeenCalledOnce();
 });

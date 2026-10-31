@@ -208,8 +208,13 @@ export class ClaudeToolApproval {
       if (signal!.aborted) abort();
     });
     try {
-      const decision = await Promise.race([pending, cancelled]);
+      let decision = await Promise.race([pending, cancelled]);
       if (!this.current(epoch, signal) || this.deps.cwd() !== cwd) throw new ToolPermissionDenied('Task authorization or execution directory changed; retry the operation.');
+      // In ordinary modes the executor's private-network override belongs to
+      // the local user, not the Auto model. Preserve an explicit model denial.
+      if (grant?.kind === 'fetch' && this.deps.scope().permissionMode !== 'bypassPermissions' && decision.verdict === 'allow') {
+        decision = { verdict: 'ask' };
+      }
       this.actions.record(action, decision);
       if (decision.verdict === 'block') throw new ToolPermissionDenied(formatPermissionDenial('auto', decision.reason));
       if (decision.verdict === 'ask') {
