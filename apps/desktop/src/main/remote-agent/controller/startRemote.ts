@@ -23,7 +23,7 @@ import {
   type RemoteAgentReverseRequest,
   type RemoteAgentStreamItem,
 } from '@cindy/device-link';
-import type { AgentEvent, AgentSessionHandle, Effort, StartSessionOptions } from '@cindy/maker-core';
+import type { AgentDeps, AgentEvent, AgentSessionHandle, Effort, StartSessionOptions } from '@cindy/maker-core';
 import { LOCAL_AGENT_CLIENT } from '@cindy/maker-core';
 import { withTransientRemoteRetry } from '@cindy/maker-shared/device-link-contract';
 
@@ -58,6 +58,7 @@ import {
 import { ExecServerRelay } from './execServerRelay';
 import { createReverseHttpRouter, type LocalMcpTarget } from './router';
 import { RemoteAgentPoller, RemoteAgentRunClient, type RemoteAgentInvoke } from './runClient';
+import { ClaudeToolApproval } from './claudeToolApproval';
 
 export interface PreparedRemoteMcp {
   /** 本任务可用的本机 MCP 服务(名字 → 带本任务身份的地址与请求头)。 */
@@ -66,6 +67,12 @@ export interface PreparedRemoteMcp {
 }
 
 export interface StartRemoteAgentDeps {
+  /** Only cross-account Claude shares: local approval through existing SDK permission callbacks and MCP. */
+  claudeApproval?: {
+    review: NonNullable<AgentDeps['reviewAutoPermissionAction']>;
+    mcpPolicy: NonNullable<AgentDeps['getMcpToolApprovalPolicy']>;
+    readOnlyTools: readonly string[];
+  };
   /** Cancellation for this startup attempt only; never cancels other starts of the task. */
   startupSignal?: AbortSignal;
   /** A direct share must renew the original executor's grant before reopening. */
@@ -386,11 +393,16 @@ async function prepareAndStartRemoteAgentSession(
    */
   const openedDirs = { extraDirs: [...(opts.extraDirs ?? [])], writableDirs: [...(opts.writableDirs ?? [])] };
   const workspace = new ExecutorWorkspace({ workingDir: opts.workingDir, extraDirs: [...extraDirs, ...writableDirs] });
-  const applyDirs = () => workspace.setExtraDirs([...new Set([...extraDirs, ...writableDirs])]);
+  const writableWorkspace = new ExecutorWorkspace({ workingDir: opts.workingDir, extraDirs: writableDirs });
+  const applyDirs = () => {
+    workspace.setExtraDirs([...new Set([...extraDirs, ...writableDirs])]);
+    writableWorkspace.setExtraDirs(writableDirs);
+  };
   let permissionMode = opts.permissionMode;
   let planMode = opts.planMode === true;
   const credentialConsent = deps.credentialConsent;
   const gate = new ExecutorGate(workspace, executorGateModeFor(permissionMode, planMode), Date.now, {
+    writableWorkspace,
     confirmCredentials: credentialConsent ? () => credentialConsent.skip?.() !== true : false,
   });
   // 同一任务、同一分享、原始权限档未变时恢复之前的「本任务总是允许」(Orca Worker 等会在两轮之间被回收重建)。
@@ -453,7 +465,6 @@ async function prepareAndStartRemoteAgentSession(
   } finally {
     signal.removeEventListener('abort', cancelPreparation);
   }
-  const router = createReverseHttpRouter({ executor, mcpTarget: (name) => mcp.servers.get(name), hostToolsOnly });
 
   // 连回对方时按最新值打开(换模型、推理强度等在已让出名额时只记在这里)。
   let model = opts.model;
@@ -461,6 +472,20 @@ async function prepareAndStartRemoteAgentSession(
   let effort = opts.effort;
   let fastMode = opts.fastMode;
   let thinkingEnabled = opts.thinkingEnabled;
+  const toolApproval = kind === 'claude-code' && deps.claudeApproval ? new ClaudeToolApproval({
+    ...deps.claudeApproval,
+    sessionId: opts.sessionId, workspace,
+    cwd: () => executor.executionCwd,
+    scope: () => ({ permissionMode, extraDirs, writableDirs, model, providerId }),
+    isReadOnlyPath: target => workspace.contains(target) && !writableWorkspace.contains(target),
+    servers: () => new Set(['cindy_exec', ...mcp.servers.keys()]),
+    ask: (request, signal) => controller?.decide(request, signal) ?? Promise.resolve({ kind: 'permission', behavior: 'deny', reason: 'interaction_unavailable' }),
+    grant: action => executor.grantReviewedAction(action), newId: deps.newId,
+    cancelPendingConfirmations: () => executor.cancelPendingConfirmations(),
+    notice: message => controller?.onEvent({ type: 'error', source: 'claude-code', data: { message, isTerminal: false } }),
+  }) : undefined;
+  const router = createReverseHttpRouter({ executor, mcpTarget: name => mcp.servers.get(name), hostToolsOnly,
+    ...(toolApproval ? { approve: toolApproval.run.bind(toolApproval) } : {}) });
   let libraryRoot: string | null | undefined;
   let autoReviewFallback = false;
   /** setVendorOptions 改过的内容：对方进程里的状态，连回后再告诉它一次。 */
@@ -574,6 +599,7 @@ async function prepareAndStartRemoteAgentSession(
 
   let localDisposal: Promise<void> | null = null;
   const disposeLocal = (): Promise<void> => {
+    toolApproval?.invalidate(true);
     if (localDisposal) return localDisposal;
     linkState = 'closed';
     // Attempt every cleanup even if one fails. Preserve the settled result so
@@ -770,7 +796,7 @@ async function prepareAndStartRemoteAgentSession(
 
   /** 打开时带的启动选项：第一次就是 Maker 给的；连回时换成最新的设置，并接回同一个会话。 */
   function openOptions(reconnect: boolean): StartSessionOptions {
-    if (!reconnect || !controller) return opts;
+    if (!reconnect || !controller) return toolApproval ? { ...opts, permissionMode: 'default' } : opts;
     const state = controller.readState();
     const resumeId = hasHistory && isNativeSessionId(controller.handle.id) ? controller.handle.id : undefined;
     const vendor = { ...vendorOptions };
@@ -789,7 +815,7 @@ async function prepareAndStartRemoteAgentSession(
       effort: typeof state.effort === 'string' ? state.effort as Effort : effort,
       fastMode: (typeof state.fastMode === 'boolean' || state.fastMode === 'ultrafast') ? state.fastMode : fastMode,
       thinkingEnabled,
-      permissionMode,
+      permissionMode: toolApproval ? 'default' : permissionMode,
       planMode: typeof state.planMode === 'boolean' ? state.planMode : planMode,
       ...openedDirs,
       vendorOptions: vendor,
@@ -1075,8 +1101,10 @@ async function prepareAndStartRemoteAgentSession(
         link,
         started,
         workspace,
+        toolApproval,
+        configuredPlan: () => planMode,
         recordApproval: (action) => executor.recordApproval(action),
-        cancelPendingConfirmations: () => executor.cancelPendingConfirmations(),
+        cancelPendingConfirmations: () => { toolApproval?.invalidate(true); executor.cancelPendingConfirmations(); },
         onInvalidResumeSession: opts.onInvalidResumeSession,
         mapEvent: deps.mapEvent?.(kind),
         newId: deps.newId,

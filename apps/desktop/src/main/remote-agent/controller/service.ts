@@ -43,10 +43,11 @@ import {
 } from './projectFiles';
 import type { LocalMcpTarget } from './router';
 import { RemoteAgentPoller, RemoteAgentRunClient, remoteAgentInvoker } from './runClient';
-import { registerPendingRemoteStart, startRemoteAgentSession, type PreparedRemoteMcp } from './startRemote';
+import { registerPendingRemoteStart, startRemoteAgentSession, type PreparedRemoteMcp, type StartRemoteAgentDeps } from './startRemote';
 import { authorizeSharedTaskHistory, sharedTaskLeaseDeadline, trackLiveSharedTaskTarget } from './providerShareTaskLocation.js';
 
 export interface DeviceAgentServiceDeps {
+  claudeApproval?: StartRemoteAgentDeps['claudeApproval'];
   readImageDeliveryEpoch?(sessionId: string): Promise<number>;
   remoteInvoke(deviceId: string, channel: string, args: unknown[]): Promise<{ ok: boolean; result?: unknown; error?: { code?: string; message?: string } }>;
   /** Re-open the authenticated share link after a successful lease renewal. */
@@ -394,6 +395,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       poller,
       pool: poolFor(target),
       rgPath: deps.rgPath(),
+      ...(shared && input.agentKind === 'claude-code' && deps.claudeApproval ? { claudeApproval: deps.claudeApproval } : {}),
       codexPath: () => deps.codexPath?.(),
       ...(target !== input.deviceId || opts[LOCAL_AGENT_CLIENT]?.groupAssigned || (sessionId && deps.isGroupAssigned?.(sessionId))
         ? { groupAssigned: true } : {}),

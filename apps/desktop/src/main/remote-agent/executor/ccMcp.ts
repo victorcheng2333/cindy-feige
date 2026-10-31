@@ -37,6 +37,7 @@ async function handleOne(
   executor: RemoteExecutor,
   request: JsonRpcRequest,
   signal?: AbortSignal,
+  localArguments = false,
 ): Promise<Record<string, unknown> | null> {
   const isNotification = request.id === undefined;
   if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
@@ -76,7 +77,7 @@ async function handleOne(
     case 'tools/call': {
       const name = request.params?.name;
       if (typeof name !== 'string') return rpcError(request.id, -32602, 'tool name is required');
-      const result = await executor.callTool(name, request.params?.arguments ?? {}, signal);
+      const result = await executor.callTool(name, request.params?.arguments ?? {}, signal, localArguments);
       return { jsonrpc: '2.0', id: request.id, result };
     }
     default:
@@ -90,6 +91,7 @@ export async function handleExecMcpRequest(
   method: string,
   body: Buffer | undefined,
   signal?: AbortSignal,
+  localArguments = false,
 ): Promise<McpHttpResponse> {
   if (method === 'GET') return { status: 405, headers: [['allow', 'POST']] };
   if (method === 'DELETE') return { status: 200, headers: [] };
@@ -103,10 +105,10 @@ export async function handleExecMcpRequest(
   if (Array.isArray(parsed)) {
     if (parsed.length === 0 || parsed.length > MAX_BATCH) return json(400, rpcError(null, -32600, 'Invalid Request'));
     const responses = (await Promise.all(parsed.map((item) =>
-      handleOne(executor, (item ?? {}) as JsonRpcRequest, signal)))).filter((item) => item !== null);
+      handleOne(executor, (item ?? {}) as JsonRpcRequest, signal, localArguments)))).filter((item) => item !== null);
     return responses.length ? json(200, responses) : { status: 202, headers: [] };
   }
   if (!parsed || typeof parsed !== 'object') return json(400, rpcError(null, -32600, 'Invalid Request'));
-  const response = await handleOne(executor, parsed as JsonRpcRequest, signal);
+  const response = await handleOne(executor, parsed as JsonRpcRequest, signal, localArguments);
   return response ? json(200, response) : { status: 202, headers: [] };
 }
