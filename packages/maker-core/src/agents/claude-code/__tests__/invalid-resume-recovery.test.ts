@@ -2,6 +2,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,6 +13,11 @@ import type { Logger } from '../../../interfaces/logger.js';
 import { sanitizeClaudeProjectKey } from '../claude-projects-fs.js';
 
 const sdkMock = vi.hoisted(() => ({ query: vi.fn(), forkSession: vi.fn() }));
+const processMock = vi.hoisted(() => ({ spawn: vi.fn() }));
+vi.mock('../local-process-spawn.js', async (original) => ({
+  ...await original<typeof import('../local-process-spawn.js')>(),
+  spawnObservedClaudeProcess: processMock.spawn,
+}));
 
 const imageResizerMock = vi.hoisted(() => ({
   process: vi.fn(async (p: string) => p),
@@ -269,6 +275,34 @@ describe('Claude account memory', () => {
 });
 
 describe('Claude invalid-resume recovery', () => {
+  // Unit regression: account transfer awaits handle.close before copying history.
+  // Existing SDK mocks end the event stream immediately and hide delayed process exit.
+  it('keeps close pending until the local history writer has actually exited', async () => {
+    const workingDir = await makeTempDir();
+    const child = Object.assign(new EventEmitter(), { pid: 123, exitCode: null, signalCode: null });
+    processMock.spawn.mockReturnValue(child);
+    const stream = createControlledStream();
+    sdkMock.query.mockImplementation(({ options }) => {
+      options.spawnClaudeCodeProcess({});
+      options.abortController.signal.addEventListener('abort', () => stream.end());
+      return createFakeQuery(stream);
+    });
+    const handle = await new ClaudeCodeAgent(createDeps({ registerLocalAgentProcess: () => {} }))
+      .startSession({ workingDir, model: 'claude-sonnet-4', providerId: 'anthropic' });
+    let finished = false;
+    const closing = handle.close().then(() => { finished = true; });
+    try {
+      await Promise.resolve(); await Promise.resolve();
+      expect(finished).toBe(false);
+      child.emit('error', new Error('abort requested, process still running'));
+      await Promise.resolve();
+      expect(finished).toBe(false);
+    } finally {
+      child.emit('exit', 0, null);
+      await closing;
+    }
+    expect(finished).toBe(true);
+  });
   it('blocks a managed home authentication override introduced while a native task is live', async () => {
     const root = await makeTempDir(); const home = path.join(root, 'account');
     await fs.mkdir(home);
@@ -287,6 +321,32 @@ describe('Claude invalid-resume recovery', () => {
   });
   // Account selection is verified before the host persists its route; this probe
   // must not publish a new history owner or send a user turn. Tier: unit.
+  it('does not accept the account until the resume probe process exits', async () => {
+    const root = await makeTempDir();
+    const sourceHome = path.join(root, 'source'), targetHome = path.join(root, 'target');
+    const cwd = path.join(root, 'workspace'); await fs.mkdir(cwd);
+    const nativeId = '30000000-0000-4000-8000-000000000001';
+    await seedTranscript(sourceHome, cwd, nativeId);
+    const child = Object.assign(new EventEmitter(), { pid: 124, exitCode: null, signalCode: null });
+    processMock.spawn.mockReturnValue(child);
+    const close = vi.fn();
+    sdkMock.query.mockImplementation(({ options }) => {
+      options.spawnClaudeCodeProcess({});
+      return { close, initializationResult: async () => ({}) };
+    });
+    const deps = createDeps();
+    deps.auth.getClaudeRuntimeContext = async () => ({ configDir: targetHome, scopeKey: 'owner', revision: 'login' });
+    deps.auth.getClaudeHistoryHome = () => sourceHome;
+    let accepted = false;
+    const pending = new ClaudeCodeAgent(deps).prepareClaudeAccountResume({ nativeId, workingDir: cwd,
+      model: 'claude-sonnet-4', providerId: 'claude-b' }).then(() => { accepted = true; });
+    try {
+      await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+      expect(accepted).toBe(false);
+    } finally { child.emit('exit', 0, null); await pending; }
+    expect(accepted).toBe(true);
+  });
+
   it.each(['accepted', 'rejected', 'owner-changed'] as const)('preflights an account resume without a turn when %s', async outcome => {
     const root = await makeTempDir();
     const sourceHome = path.join(root, 'source'); const targetHome = path.join(root, 'target');

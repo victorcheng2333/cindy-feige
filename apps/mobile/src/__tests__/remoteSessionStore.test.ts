@@ -3600,7 +3600,7 @@ describe('remoteSessionStore', () => {
     });
   });
 
-  it('projects terminal 429 retries as rate-limit attempts only with their reason', () => {
+  it.each(['terminal-rate-limit-retry', 'upstream-rate-limit-retry'])('projects 429 retries as rate-limit attempts only with their reason: %s', (reason) => {
     const message =
       'exceeded retry limit, last status: 429 Too Many Requests (rate-limit-retry 1/2)';
     remoteSessionStore.applyRemotePush('dev-1', 'maker:event', {
@@ -3609,7 +3609,7 @@ describe('remoteSessionStore', () => {
         type: 'error',
         data: {
           message,
-          reason: 'terminal-rate-limit-retry',
+          reason,
           isTerminal: false,
           willRetry: true,
         },

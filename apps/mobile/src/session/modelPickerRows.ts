@@ -52,8 +52,8 @@ export function formatContextWindow(tokens: number): string {
   return String(tokens);
 }
 
-// 供应商完整展示名:三个内置 id 对齐桌面 zh-CN settings.providers.<id>.title,
-// 自定义供应商回退目录里的 provider.name(桌面 providerDisplayName 同序)。
+// 对齐桌面 providerDisplayName:可改名连接优先用主机名称,仅 Cindy AI 保留产品名。
+// 缺少名称时才回退品牌名或连接 ID。
 const PROVIDER_TITLE: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
@@ -61,7 +61,7 @@ const PROVIDER_TITLE: Record<string, string> = {
 };
 
 export function providerDisplayTitle(p: Pick<ProviderView, 'id' | 'name'>): string {
-  return PROVIDER_TITLE[p.id] ?? p.name;
+  return p.id === 'xd' ? PROVIDER_TITLE.xd : p.name || PROVIDER_TITLE[p.id] || p.id;
 }
 
 function isNonNegativeFinite(value: unknown): value is number {
