@@ -2,10 +2,12 @@ import { Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { openPerformanceTrace } from '@/components/performance-trace/PerformanceTrace';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useMacFullscreen } from '@/hooks/useMacFullscreen';
 import { checkForUpdateWithToast } from '@/lib/checkForUpdateWithToast';
 import { createLogger } from '@/lib/logger';
+import { isSecondaryWindow } from '@/lib/secondaryWindow';
 
 const log = createLogger('ApplicationMenuItems');
 
@@ -46,6 +48,9 @@ export function ApplicationMenuItems() {
       >
         {t('titleBar.menuItems.resourceUsage')}
       </DropdownMenuItem>
+      {!isSecondaryWindow() && <DropdownMenuItem onSelect={openPerformanceTrace}>
+        {t('performanceTrace.title')}
+      </DropdownMenuItem>}
       <DropdownMenuItem
         onSelect={() => {
           log.info('Help clicked');

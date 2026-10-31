@@ -174,6 +174,7 @@ export function SplashScreen() {
       : realPhase;
 
   const {
+    isReturningSession,
     isDownloading: realIsDownloading,
     downloadProgress,
     downloadInfo,
@@ -352,7 +353,9 @@ export function SplashScreen() {
         {
           // 根透明:不透明白底全盖由 LoginBrandStage 背景子层(var(--surface))承载,
           // 品牌五要素从下层透出——本层只叠状态面板与窗口 chrome。
-          transition: 'opacity var(--splash-fade-duration) var(--splash-fade-easing)',
+          transition: `opacity ${
+            isReturningSession ? 'var(--motion-enter)' : 'var(--splash-fade-duration)'
+          } var(--splash-fade-easing)`,
           WebkitAppRegion: 'drag',
         } as React.CSSProperties
       }

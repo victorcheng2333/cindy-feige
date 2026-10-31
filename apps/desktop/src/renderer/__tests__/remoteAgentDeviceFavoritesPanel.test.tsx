@@ -20,7 +20,7 @@ import {
 } from '@cindy/device-link';
 
 // The shared-quota rail observes auth; this component fixture has no auth host.
-vi.mock('@/contexts/AuthContext', () => ({ useOptionalAuthUser: () => null }));
+vi.mock('@/contexts/AuthContext', () => ({ useOptionalAuthUser: () => null, useOptionalAuthDeviceId: () => null }));
 
 vi.mock('react-i18next', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-i18next')>()),
@@ -697,6 +697,7 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
   it('直接打开分享的目录(不经远程 Agent)时，分享的 Cindy AI 同样带来源', async () => {
     render(
       React.createElement(ModelSelectorContent, {
+        unifiedPanel: true,
         modelId: 'qwen3.8-flash',
         effort: 'high',
         onModelChange: vi.fn(),
@@ -704,7 +705,6 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
         currentProviderId: 'xd',
         onProviderChange: vi.fn(),
         vendorKey: 'cc',
-        unifiedPanel: true,
         deviceId: 'share:magi',
       }),
     );
@@ -718,6 +718,7 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
     catalogs.byDevice['device-b'] = [xdProvider([['glm-5.3-flash', LOCAL]])];
     render(
       React.createElement(ModelSelectorContent, {
+        unifiedPanel: true,
         modelId: 'glm-5.3-flash',
         effort: 'high',
         onModelChange: vi.fn(),
@@ -725,7 +726,6 @@ describe('Cindy AI(xd)来源行：只有本机自己的 Cindy AI 保留简介(#6
         currentProviderId: 'xd',
         onProviderChange: vi.fn(),
         vendorKey: 'cc',
-        unifiedPanel: true,
         deviceId: 'device-b',
       }),
     );

@@ -3,6 +3,8 @@ export * from './base-agent.js';
 // (claude-haiku-4-5 → claude-haiku-4-5-20251001),复用 SSoT 映射,避免在 host 硬编码 dated id。
 export {
   ClaudeCodeAgent,
+  resolveClaudeFileWriteTarget,
+  resolveClaudeWritableRoots,
   toSdkModelString,
   setClaudeSupportedModelsListener,
   setClaudeRateLimitInfoListener,
@@ -82,7 +84,7 @@ export {
   CONTEXT_OVERFLOW_REASON,
   isContextOverflowErrorMessage,
 } from './shared/context-overflow-error.js';
-export { isRemoteCompactEncryptedContentError } from './shared/remote-compact-encrypted-error.js';
+export { isRemoteCompactEncryptedContentError, REMOTE_COMPACT_ENCRYPTED_CONTENT_REASON } from './shared/remote-compact-encrypted-error.js';
 export { isDeterministicHostCompactFailure } from './shared/auto-compact-controller.js';
 // ErrorBanner 用人话替换 LiteLLM / Responses 空壳流中断,不驱动自动续跑。
 export {
@@ -112,6 +114,12 @@ export {
   DEFAULT_AUTO_REVIEW_TIMEOUT_POLICY,
   extractAutoReviewUserIntent,
   resolveAutoReviewDecision,
+  withAutoReviewContext,
+  createAutoReviewActionContext,
+  createAutoReviewUnavailableNotice,
+  composeAutoReviewIntentWithApprovedPlan,
+  composeAutoReviewIntentWithClarification,
+  formatPermissionDenial,
   annotatePermissionRequestForUnavailableReview,
   annotatePermissionRequestForAutoReview,
   AUTO_REVIEW_REASON_METADATA_KEY,
@@ -133,6 +141,8 @@ export {
   type AutoReviewTimeoutPolicy,
 } from './shared/auto-review-decision.js';
 export { toolAutoReviewAction } from './shared/auto-review-decision.js';
+export { normalizeBuiltinToolForAutoReview } from './claude-code/auto-review-policy.js';
+export { resolveMcpToolTarget } from './shared/mcp-tool-target.js';
 export { AUTO_REVIEW_CONTINUATION_POLICY } from './shared/continuation-policy.js';
 export type { CredentialCommandOptions, GitRead, ReviewableAction } from './shared/auto-review.js';
 export { classifyShellCommand, reviewAction, shellCommandReadsCredentials } from './shared/auto-review.js';

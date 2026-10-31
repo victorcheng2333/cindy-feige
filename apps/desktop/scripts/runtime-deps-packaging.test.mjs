@@ -7,6 +7,23 @@ import { copyRuntimeDependencyTrees } from '../forge-runtime-deps';
 import { prunePackagedMigrationSnapshots } from '../forge-prune-runtime';
 import { createMigrationRuntimeManifest } from '../src/main/localDb/migrationRunner';
 
+it('ships the DOM parser required by bundled browser recipes outside the workspace', () => {
+  const config = fs.readFileSync(path.resolve('forge.config.ts'), 'utf8');
+  const deps = config.match(/const NATIVE_RUNTIME_DEPS = \[([\s\S]*?)\];/)?.[1];
+  expect(deps).toContain("'@mixmark-io/domino'");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-recipe-runtime-'));
+  try {
+    const sourceRequire = createRequire(path.resolve('package.json'));
+    copyRuntimeDependencyTrees(['@mixmark-io/domino'], path.join(root, 'node_modules'),
+      (name) => path.dirname(sourceRequire.resolve(`${name}/package.json`)));
+    const isolatedRequire = createRequire(path.join(root, 'browser-recipes.cjs'));
+    const document = isolatedRequire('@mixmark-io/domino').createDocument('<p>Recipe content</p>');
+    expect(document.querySelector('p').textContent).toBe('Recipe content');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 it('reuses exact visible packages, preserves shadowed versions and terminates cycles', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-dependency-layout-'));
   try {

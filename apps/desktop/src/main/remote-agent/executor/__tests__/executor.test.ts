@@ -130,6 +130,37 @@ describe('workspace', () => {
 });
 
 describe('permission ceiling', () => {
+  // Production executor (unit): reference-directory expansion must not authorize
+  // writes, even if native review finished before the change. Existing tests had
+  // no separate readable/writable roots. Verify actual file effects and revocation.
+  it('keeps reference directories read-only through live writable grants and revocation', async () => {
+    const workspace = new ExecutorWorkspace({ workingDir: project });
+    const writableWorkspace = new ExecutorWorkspace({ workingDir: project });
+    const gate = new ExecutorGate(workspace, 'normal', Date.now, { writableWorkspace });
+    const executor = new RemoteExecutor({ workspace, gate, rgPath: RG, tempDir: path.join(root, 'tmp') });
+    const file = path.join(outside, 'reference.txt');
+    fs.writeFileSync(file, 'original');
+    try {
+      workspace.setExtraDirs([outside]);
+      expect(text(await executor.callTool('Read', { file_path: file }))).toContain('original');
+      expect((await executor.callTool('Write', { file_path: file, content: 'denied' })).isError).toBe(true);
+      expect(fs.readFileSync(file, 'utf8')).toBe('original');
+      writableWorkspace.setExtraDirs([outside]);
+      expect((await executor.callTool('Write', { file_path: file, content: 'granted' })).isError).not.toBe(true);
+      expect(fs.readFileSync(file, 'utf8')).toBe('granted');
+      writableWorkspace.setExtraDirs([]);
+      expect((await executor.callTool('Write', { file_path: file, content: 'revoked' })).isError).toBe(true);
+      expect(fs.readFileSync(file, 'utf8')).toBe('granted');
+      // A path inside the project must not borrow write access via a link to a reference root.
+      fs.symlinkSync(outside, path.join(project, 'reference'), process.platform === 'win32' ? 'junction' : 'dir');
+      expect((await executor.callTool('Write', { file_path: path.join(project, 'reference', 'reference.txt'), content: 'escaped' })).isError).toBe(true);
+      expect(fs.readFileSync(file, 'utf8')).toBe('granted');
+      gate.recordApproval({ kind: 'write', path: file });
+      expect((await executor.callTool('Write', { file_path: file, content: 'confirmed' })).isError).not.toBe(true);
+      expect(fs.readFileSync(file, 'utf8')).toBe('confirmed');
+    } finally { await executor.close(); }
+  });
+
   it('lets ordinary work through and holds red lines until the user confirms on this computer', () => {
     let now = 1_000;
     const workspace = new ExecutorWorkspace({ workingDir: project });

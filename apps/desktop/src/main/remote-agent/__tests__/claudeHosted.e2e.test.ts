@@ -161,14 +161,16 @@ describe.skipIf(!available)('remote agent with a real Claude Code', () => {
         logout: async () => {},
         getAuthEnv: async () => ({ ANTHROPIC_API_KEY: 'fake-test-key' }),
       },
-      runtimeConfig: { endpoint: proxyEndpoint },
+      // This scripted gateway chooses tool calls directly; it does not implement
+      // Claude's deferred-tool discovery. Keep the real MCP execution path eager.
+      runtimeConfig: { endpoint: proxyEndpoint, behaviorFlags: { ENABLE_TOOL_SEARCH: 'false' } },
       binaryPath: CLAUDE,
       logger: noopLogger,
     };
   }
 
   async function run(
-    permissionMode: 'bypassPermissions' | 'default',
+    permissionMode: 'bypassPermissions' | 'default' | 'auto',
     resolve?: (request: InteractionRequest) => boolean,
     route?: { endpoint: string; model: string; providerId: string; resolveHostedId?: boolean },
     initialPermissionMode = permissionMode,
@@ -211,6 +213,11 @@ describe.skipIf(!available)('remote agent with a real Claude Code', () => {
       invoke: async (args) => JSON.parse(JSON.stringify(await host.handle('controller-1', JSON.parse(JSON.stringify(args[0]))) ?? null)),
       rgPath: RG,
       prepareMcp: async () => ({ servers: new Map(), dispose() {} }),
+      ...(permissionMode === 'auto' ? { claudeApproval: {
+        review: async () => ({ verdict: 'block' as const, reason: 'Blocked by the controller fixture.' }),
+        mcpPolicy: () => 'prompt' as const,
+        readOnlyTools: [],
+      } } : {}),
       ...(credentialConsent ? { credentialConsent: { description: 'Fixture credential confirmation' } } : {}),
       capture: () => ({
         beforeWrite: async (file) => {
@@ -252,6 +259,23 @@ describe.skipIf(!available)('remote agent with a real Claude Code', () => {
     }
     return { project, hostRoot, events, asked, captured };
   }
+
+  // Real CLI + existing remote protocol: supplier permission callbacks are transport
+  // only; local Auto silently writes a normal file and blocks a denied command.
+  it.skipIf(process.platform === 'win32')('lets the controller alone approve shared Claude tool execution', { timeout: 120_000 }, async () => {
+    const projectPath = path.join(root, 'project-auto');
+    steps = [
+      { name: 'mcp__cindy_exec__Write', input: { file_path: path.join(projectPath, 'auto.txt'), content: 'approved locally' } },
+      { name: 'mcp__cindy_exec__Bash', input: { command: 'touch blocked.txt' } },
+    ];
+    requests.length = 0;
+    const { project, asked } = await run('auto');
+    expect(requests.length).toBeGreaterThan(0);
+    expect(asked).toEqual([]);
+    expect(fs.readFileSync(path.join(project, 'auto.txt'), 'utf8')).toBe('approved locally');
+    expect(fs.existsSync(path.join(project, 'blocked.txt'))).toBe(false);
+    expect(requests.at(-1)?.results[1]).toMatchObject({ isError: true });
+  });
 
   it.skipIf(process.platform === 'win32')('replaces the built-in file and shell tools and runs every step on the controller', { timeout: 120_000 }, async () => {
     const projectPath = path.join(root, 'project-bypassPermissions');
@@ -301,9 +325,10 @@ describe.skipIf(!available)('remote agent with a real Claude Code', () => {
   });
 
   it.skipIf(process.platform === 'win32')('asks on this computer for commands that change things, but not for reads and read-only commands', { timeout: 120_000 }, async () => {
-    const projectPath = path.join(root, 'project-default');
     steps = [
-      { name: 'mcp__cindy_exec__Read', input: { file_path: path.join(projectPath, 'hello.txt') } },
+      // The model sees the hosted workspace, not the controller's private root.
+      // A relative path exercises an in-workspace read on both computers.
+      { name: 'mcp__cindy_exec__Read', input: { file_path: 'hello.txt' } },
       { name: 'mcp__cindy_exec__Bash', input: { command: 'ls', description: 'List files' } },
       { name: 'mcp__cindy_exec__Bash', input: { command: 'touch approved.txt', description: 'Create file' } },
       { name: 'mcp__cindy_exec__Bash', input: { command: 'touch denied.txt', description: 'Create file' } },

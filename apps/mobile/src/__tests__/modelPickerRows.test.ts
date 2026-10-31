@@ -73,6 +73,15 @@ describe('providerDisplayTitle / formatPriceLine / buildRowMetaLine', () => {
     })).toBe('Work Claude');
   });
 
+  it.each(['Cindy AI · 个人', 'Cindy AI · 心动', 'Cindy AI · Example Studio'])(
+    'uses the source computer identity %s in model rows', (name) => {
+      const provider = { id: 'xd', name };
+      expect(providerDisplayTitle(provider)).toBe(name);
+      expect(buildRowMetaLine({ provider, model: { id: 'auto', contextWindow: 272_000 } }))
+        .toBe(`${name} · 272K 上下文`);
+    },
+  );
+
   it('价格行对齐桌面 priceTip 文案;无价 null', () => {
     expect(formatPriceLine({ inputUsdPerMtok: 3, outputUsdPerMtok: 15 })).toBe(
       '输入 $3 · 输出 $15 / 百万 token',

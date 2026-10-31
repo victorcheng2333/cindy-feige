@@ -86,6 +86,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it.each(['audio_transcription', 'embedding', 'image_generation', 'other'])(
+  'clears mixed chat/%s rows and keeps their switch consistent after refresh',
+  async (mode) => {
+    const chat = { ...models[0], id: 'mixed-model', name: 'Mixed model', mode: 'chat', defaultEnabled: true };
+    const media = { ...chat, mode };
+    const mixed: ProviderView = {
+      ...provider, id: 'custom:mixed', source: 'user', agents: ['claude-code', 'pi'],
+      models: { 'claude-code': [chat], pi: [media] },
+    };
+    await setModelVisibility('claude-code', mixed.id, chat.id, true);
+    await setModelVisibility('pi', mixed.id, media.id, true);
+    const { rerender } = render(<UnifiedModelList provider={mixed} />);
+    const toggle = () => screen.getByRole('switch', { name: chat.name });
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    await command('hideAll');
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+    expect(isModelEnabled('claude-code', mixed.id, chat)).toBe(false);
+    // A non-chat route must neither keep the chat switch on nor be rewritten by it.
+    expect(isModelEnabled('pi', mixed.id, media)).toBe(true);
+    rerender(<UnifiedModelList provider={{ ...mixed, models: { ...mixed.models } }} />);
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+    await act(async () => { fireEvent.click(toggle()); });
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    await act(async () => { fireEvent.click(toggle()); });
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+  },
+);
+
 it('all selection enables one recommended harness, clear always closes it, and repeat works', async () => {
   render(<UnifiedModelList provider={provider} />);
   await command('showAll');

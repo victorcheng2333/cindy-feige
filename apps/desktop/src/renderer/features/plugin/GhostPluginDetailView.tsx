@@ -1,3 +1,5 @@
+import { getPluginToolUi } from '@cindy/plugin-protocol';
+import { pluginHasToolUi } from '@cindy/plugin-protocol';
 import type { PreparedPluginContribution } from '../../../shared/pluginContributions';
 import { PluginShareButton } from './PluginShareButton';
 import { Button } from '@/components/ui/button';
@@ -203,6 +205,9 @@ export function GhostPluginDetailView({
     ? remoteFileUpdate && !isUserInstallReservedGhostId(detail.ghostId)
     : import.meta.env.DEV || !isUserInstallReservedGhostId(detail.ghostId);
   const hasAdditionalActions = localUpdateAvailable || onExport !== undefined;
+  const localShareAvailable = !remote && ghost?.publishingSource?.kind === 'local' &&
+    ghost.approval.state === 'approved' && ghost.namespaceState === 'confirmed' && ghost.namespace === null &&
+    !ghost.builtin && !isUserInstallReservedGhostId(ghost.manifest.id);
 
   return (
     <main
@@ -213,7 +218,7 @@ export function GhostPluginDetailView({
         label={t('settings.ghosts.detail.backToList')}
         onBack={onBack}
         scrolled={scrolled}
-        actions={sharePluginId ? <PluginShareButton pluginId={sharePluginId} /> : undefined}
+        actions={sharePluginId ? <PluginShareButton pluginId={sharePluginId} /> : localShareAvailable && ghost ? <PluginShareButton ghost={ghost} /> : undefined}
       />
       <article className="plugin-detail-frame mx-auto w-full max-w-[824px] px-8 pb-16 pt-5 max-[760px]:px-6">
         <PluginDetailHeader
@@ -512,6 +517,20 @@ export function GhostPluginDetailView({
         {detail.tools.length > 0 ? <ToolsSection tools={detail.tools} /> : null}
 
         {detail.permissions.length > 0 ? <PermissionSummary items={detail.permissions} /> : null}
+        {ghost && pluginHasToolUi(ghost.manifest) && <section className="mt-4 space-y-3">
+          <h3 className="text-14 font-medium text-[var(--text-primary)]">{t('settings.ghosts.perm.mcpUi')}</h3>
+          {ghost.manifest.tools?.filter(tool => getPluginToolUi(ghost.manifest)?.tools[tool.name]).map(tool => <div key={tool.name} className="text-13 text-[var(--text-secondary)]">
+            <p>{tool.name}</p>
+            <p className="break-all text-12">{getPluginToolUi(ghost.manifest)?.tools[tool.name].visibility && !getPluginToolUi(ghost.manifest)?.tools[tool.name].visibility!.includes('model') ? t('settings.ghosts.perm.mcpAppOnly') : `ghost_call: ${tool.name}`}</p>
+          </div>)}
+          {!remote && enabled && ghost.uiCapabilityApproved !== true && <Button variant="secondary" size="sm" disabled={taskApprovalPending} onClick={async () => {
+            setTaskApprovalPending(true);
+            try { await window.electronAPI.ghosts.requestUiApproval(detail.id); }
+            catch { toast.error(t('settings.ghosts.errors.generic')); }
+            finally { setTaskApprovalPending(false); }
+          }}>{t('settings.ghosts.installConsent.updateNeedsConsent')}</Button>}
+        </section>}
+
         {!remote && enabled && ghost?.manifest.agent?.tasks === true && ghost.taskCapabilityApproved !== true ? (
           <Button variant="secondary" size="sm" className="mt-4" disabled={taskApprovalPending} onClick={async () => {
             setTaskApprovalPending(true);

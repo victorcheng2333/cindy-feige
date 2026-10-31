@@ -93,6 +93,8 @@ function approvalOf(action: ExecutorAction): { kind: Approval['kind']; key: stri
 }
 
 export interface ExecutorGateOptions {
+  /** Actual writable roots, separate from the workspace's readable reference directories. */
+  writableWorkspace?: ExecutorWorkspace;
   /**
    * 供应商分享的受邀者任务：凭证类操作不论权限档都要本机用户确认。传函数时每次操作都重新问一遍
    * (受邀者在设置里把这个分享切成「信任 {分享者}」后，运行中的任务下一步就不再问)。
@@ -154,6 +156,13 @@ export class ExecutorGate {
       credential: this.isCredentialAction(action),
     });
     if (this.approvals.length > MAX_APPROVALS) this.approvals.splice(0, this.approvals.length - MAX_APPROVALS);
+  }
+
+  /** One local tool decision; never substitutes for the share's credential consent. */
+  grantReviewedAction(action: ExecutorAction): () => void {
+    const approval: Approval = { ...approvalOf(action), expiresAt: this.now() + EXECUTOR_APPROVAL_TTL_MS, credential: false };
+    this.approvals.push(approval);
+    return () => { this.approvals = this.approvals.filter(item => item !== approval); };
   }
 
   recordCredentialExemption(action: ExecutorAction): void {
@@ -241,7 +250,7 @@ export class ExecutorGate {
       // 本机任务里「可写根外的写必问用户」(auto-review 对区外写返回 prompt)：反向请求不能
       // 只信发起方(同账号电脑也可能被攻破)的权限逻辑代答，区外写只认本机用户刚批准过的同一
       // 操作，否则对方可在 Ask / Auto / accept-edits 下覆盖本机任意非凭证路径。
-      return this.mode === 'plan' || !this.workspace.contains(action.path);
+      return this.mode === 'plan' || !(this.options.writableWorkspace ?? this.workspace).contains(action.path);
     }
     // 目录级递归读(搜索 / 列举)的根在工作区外 → 能遍历到区外的凭证子路径(如在 ~ 上 grep
     // 密钥)，与本机任务同样升级为必问；单文件读仍按本机语义放行。

@@ -48,7 +48,9 @@ export default {
       const grip = await handle.boundingBox();
       // Longer translations have less free space. Exercise an unconstrained
       // move first; the following drags independently verify both screen edges.
-      const distance = Math.min(100, (page.viewportSize().width - initial.width) / 4);
+      // Native Electron pages have no Playwright viewport override until a
+      // scenario installs one. Use the verified harness size, not another case's cache.
+      const distance = Math.min(100, (ui.viewport.width - initial.width) / 4);
       assert.ok(distance > 0);
       await move(grip.x + grip.width / 2 + distance, grip.y + 150);
       let bounds = await bar.boundingBox();
@@ -265,13 +267,19 @@ export default {
       await (await button('remoteDesktop.actualSize')).click();
       // The idle case produces a short image. Give it a smaller editing window
       // so a wheel gesture has real overflow to scroll, just as with a long capture.
-      if (ui.case === 'idle') await page.setViewportSize({ width: 900, height: 400 });
-      const review = page.locator('[tabindex="0"]');
-      assert.ok(await review.evaluate(el => el.scrollHeight > el.clientHeight), 'the editor has overflow to review');
-      await review.evaluate(el => { el.scrollTop = 0; });
-      await review.hover(); await page.mouse.wheel(0, 300);
-      await page.waitForFunction(() => document.querySelector('[tabindex="0"]').scrollTop > 0);
-      assert.deepEqual(await page.locator('canvas').first().evaluate(el => [el.width, el.height]), dimensions, 'zoom and scrolling do not resample the source');
+      try {
+        if (ui.case === 'idle') await page.setViewportSize({ width: 900, height: 400 });
+        const review = page.locator('[tabindex="0"]');
+        assert.ok(await review.evaluate(el => el.scrollHeight > el.clientHeight), 'the editor has overflow to review');
+        await review.evaluate(el => { el.scrollTop = 0; });
+        await review.hover(); await page.mouse.wheel(0, 300);
+        await page.waitForFunction(() => document.querySelector('[tabindex="0"]').scrollTop > 0);
+        assert.deepEqual(await page.locator('canvas').first().evaluate(el => [el.width, el.height]), dimensions, 'zoom and scrolling do not resample the source');
+      } finally {
+        // Restore the editor size for this scenario's remaining checks/captures.
+        // The runner also isolates subsequent scenarios in fresh windows.
+        if (ui.case === 'idle') await page.setViewportSize({ width: 900, height: 700 });
+      }
       // The shortcut hint follows the host platform: "(Ctrl+S)" on Windows, "(⌘S)" on macOS.
       const save = (await ui.t('regionScreenshot.save')).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       await page.getByRole('button', { name: new RegExp(`^${save} \\((Ctrl\\+|⌘)S\\)$`) }).click();
@@ -316,10 +324,10 @@ export default {
       await (await button('regionScreenshot.save')).click();
       await page.waitForFunction(() => window.captureQa.saved?.length > 0);
       const clip = await page.evaluate(() => ({ saved: Array.from(window.captureQa.saved), format: window.captureQa.format }));
-      // Decode the exported bytes independently from the preview window.
-      const playback = await page.context().newPage();
-      let decoded;
-      try { decoded = await playback.evaluate(async ({ saved, format }) => {
+      // Decode the saved bytes with a fresh image/video element and Blob URL,
+      // independently of the preview's URL, element and decoded state. Electron
+      // contexts cannot create browser tabs through Target.createTarget.
+      const decoded = await page.evaluate(async ({ saved, format }) => {
         saved = new Uint8Array(saved);
         const url = URL.createObjectURL(new Blob([saved], { type: format === 'gif' ? 'image/gif' : 'video/webm' }));
         try {
@@ -334,7 +342,7 @@ export default {
           video.removeAttribute('src'); video.load();
           return size;
         } finally { URL.revokeObjectURL(url); }
-      }, clip); } finally { await playback.close(); }
+      }, clip);
       assert.deepEqual(decoded, { width: 480, height: 240 });
     }
   },
