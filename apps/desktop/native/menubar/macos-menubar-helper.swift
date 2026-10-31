@@ -27,16 +27,6 @@ struct MBSettings: Codable, Equatable {
   var scope: String
 }
 
-struct MBQuotaWindow: Decodable, Identifiable, Equatable {
-  let id: String
-  let label: String
-  let value: String
-  let fill: Double
-  let level: String
-  let reserve: Bool
-  let when: String
-}
-
 struct MBCell: Decodable, Identifiable, Equatable {
   let id: String
   let kind: String
@@ -45,9 +35,6 @@ struct MBCell: Decodable, Identifiable, Equatable {
   let value: String?
   let valueUnit: String?
   let valueLabel: String?
-  /// Absent in older main snapshots and for sources without a subscription window.
-  let periodLabel: String?
-  let periods: [MBQuotaWindow]?
   let level: String
   let fill: Double?
   let reserve: Bool
@@ -2143,63 +2130,11 @@ struct Cells: View {
   var body: some View {
     HStack(alignment: .top, spacing: cells.count > 6 ? 4 : 8) {
       ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
-        if let periods = cell.periods, !periods.isEmpty {
-          SubscriptionCellView(cell: cell, periods: periods, index: index, fillToken: store.fillToken, short: store.short) {
-            store.go(.detail(cell.id))
-          }
-        } else {
-          CellView(cell: cell, index: index, fillToken: store.fillToken, tubeHeight: store.short ? 82 : 104) {
-            store.go(.detail(cell.id))
-          }
+        CellView(cell: cell, index: index, fillToken: store.fillToken, tubeHeight: store.short ? 82 : 104) {
+          store.go(.detail(cell.id))
         }
       }
     }
-  }
-}
-
-/// Each account has one column; short and weekly limits retain independent scales and clocks.
-struct SubscriptionCellView: View {
-  let cell: MBCell
-  let periods: [MBQuotaWindow]
-  let index: Int
-  let fillToken: Int
-  let short: Bool
-  let action: () -> Void
-  @State private var hovering = false
-
-  var body: some View {
-    Button(action: action) {
-      VStack(spacing: 12) {
-        VStack(spacing: 4) {
-          LogoView(svg: cell.logoSvg, size: 12)
-          Text(cell.name).font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(Palette.ink2).lineLimit(1).truncationMode(.tail)
-        }
-        ForEach(periods) { period in
-          VStack(spacing: 4) {
-            Text(period.label).font(.system(size: 10, weight: .medium))
-              .foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-              CountUpText(text: period.value, font: NumFont.font(18), replayToken: fillToken, delay: Double(index) * 0.06)
-              Text("%").font(NumFont.font(11)).foregroundStyle(Palette.ink3)
-            }
-            .foregroundStyle(Palette.level(period.level) ?? Palette.ink)
-            TubeView(fill: period.fill, level: period.level, reserve: period.reserve,
-              emphasized: false, active: cell.active == true, hovered: hovering,
-              index: index, fillToken: fillToken, height: short ? 48 : 60)
-            Text(period.when).font(.system(size: 10, weight: .medium)).monospacedDigit()
-              .foregroundStyle(Palette.level(period.level) ?? Palette.ink2)
-              .lineLimit(1).minimumScaleFactor(0.8).frame(height: 15)
-          }
-        }
-      }
-      .padding(.top, 4).padding(.bottom, 2)
-      .frame(maxWidth: .infinity, alignment: .top)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(CellPressStyle())
-    .onHover { hovering = $0 }
-    .accessibilityLabel(cell.accessibilityLabel)
   }
 }
 
@@ -2270,13 +2205,6 @@ struct CellView: View {
     Button(action: action) {
       VStack(spacing: 7) {
         valueLabel.frame(height: 22, alignment: .bottom)
-        Text(cell.periodLabel ?? "")
-          .font(.system(size: 10, weight: .medium))
-          .foregroundStyle(Palette.ink2)
-          .lineLimit(1)
-          .minimumScaleFactor(0.8)
-          .frame(height: 13)
-          .padding(.top, -5)
         TubeView(
           fill: cell.kind == "payg" ? nil : cell.fill,
           level: cell.level,
