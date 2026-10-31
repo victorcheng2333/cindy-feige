@@ -253,3 +253,70 @@ it("blocks a new refresh while keychain deletion is pending so logout cannot res
   await restarted.restoreSession();
   expect(restarted.tokens).toBeNull();
 });
+
+// Unit regression for the user's screenshot: the Mac viewer appeared as a computer.
+// The existing account-query cases never exercise the device directory. A viewer ID
+// plus a real offline/disabled host is the minimum distinction; no real network.
+it("hides Mac quota viewers by device identity while keeping real offline and disabled computers", async () => {
+  const remote = new Remote({} as CindyAuthClient);
+  await remote.saveSession(tokens);
+  const device = (deviceId: string) => ({ deviceId, name: "Mac", platform: "darwin", online: true, remoteControlEnabled: true });
+  const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ devices: [
+    { ...device("quota-cat-a"), name: "猫猫 Mac", remoteControlEnabled: false },
+    { ...device("quota-cat-b"), name: "Renamed viewer", online: false },
+    { ...device("real-disabled"), name: "猫猫 Mac", remoteControlEnabled: false },
+    { ...device("real-offline"), online: false },
+    { ...device("phone"), platform: "ios" },
+  ] }) }));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    const devices = await remote.devices();
+    expect(devices.map(d => d.deviceId)).toEqual(["real-disabled", "real-offline"]);
+    expect(devices[0].remoteControlEnabled).toBe(false);
+    expect(devices[1].online).toBe(false);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+// New preference persistence: only the device ID and its owner are stored. Existing
+// login tests do not cover the route restored after cold launch. Tier: unit, fake vault.
+it("restores the last device across instances and remembers an explicit return to Home", async () => {
+  const remote = new Remote({} as CindyAuthClient);
+  await remote.saveSession(tokens);
+  await remote.rememberDevice("my-mac");
+  const restarted = new Remote({} as CindyAuthClient);
+  await restarted.restoreSession();
+  expect(await restarted.readLastDevice()).toBe("my-mac");
+  await restarted.rememberDevice(null);
+  const home = new Remote({} as CindyAuthClient);
+  await home.restoreSession();
+  expect(await home.readLastDevice()).toBeNull();
+});
+
+it("does not restore another account's device and clears the record on logout", async () => {
+  const remote = new Remote({} as CindyAuthClient);
+  await remote.saveSession(tokens);
+  await remote.rememberDevice("my-mac");
+  await remote.saveSession({ ...tokens, membership: { ...tokens.membership, id: "other" } });
+  expect(await remote.readLastDevice()).toBeNull();
+  await remote.logout();
+  await remote.saveSession(tokens);
+  expect(await remote.readLastDevice()).toBeNull();
+});
+
+it("ignores corrupt route data without discarding the saved login", async () => {
+  const remote = new Remote({} as CindyAuthClient);
+  await remote.saveSession(tokens);
+  vault.set("usage-cn-last-device-v1", "invalid-json");
+  expect(await remote.readLastDevice()).toBeNull();
+  expect(remote.tokens).toEqual(tokens);
+});
+
+it("does not allow a queued route write to survive logout", async () => {
+  const remote = new Remote({} as CindyAuthClient);
+  await remote.saveSession(tokens);
+  const pending = remote.rememberDevice("my-mac");
+  const rejected = expect(pending).rejects.toThrow("连接已结束");
+  await remote.logout(); await rejected;
+  await remote.saveSession(tokens);
+  expect(await remote.readLastDevice()).toBeNull();
+});

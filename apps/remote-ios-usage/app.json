@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Usage Remote",
+    "name": "猫猫",
     "slug": "remote-ios-usage",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -8,7 +8,7 @@
     "ios": {
       "bundleIdentifier": "com.chengfei.remoteiosusage",
       "supportsTablet": true,
-      "buildNumber": "6"
+      "buildNumber": "8"
     },
     "plugins": [
       "expo-secure-store",

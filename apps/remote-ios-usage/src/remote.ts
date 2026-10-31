@@ -13,6 +13,7 @@ import endpoints from "../../../config/endpoint.json";
 import { createRnWebSocket } from "./socket";
 import { selectCodexUsageForModel } from "../../../packages/maker-shared/src/codexUsageBuckets";
 const SESSION_KEY = "usage-cn-session";
+const LAST_DEVICE_KEY = "usage-cn-last-device-v1";
 let storageQueue: Promise<unknown> = Promise.resolve();
 function store(action: () => Promise<void>) {
   const result = storageQueue.catch(() => {}).then(action);
@@ -49,6 +50,30 @@ export class Remote {
   private loggingOut = false;
   private refreshing: Promise<string> | null = null;
   constructor(readonly auth: CindyAuthClient) {}
+  async rememberDevice(deviceId: string | null) {
+    const ownerId = this.tokens?.membership.id, generation = this.generation;
+    if (!ownerId || this.loggingOut) throw Error("请先登录");
+    await store(async () => {
+      if (this.loggingOut || generation !== this.generation || this.tokens?.membership.id !== ownerId)
+        throw Error("连接已结束");
+      await SecureStore.setItemAsync(LAST_DEVICE_KEY, JSON.stringify({ ownerId, deviceId }), {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+      });
+    });
+    if (generation !== this.generation) throw Error("连接已结束");
+  }
+  async readLastDevice(): Promise<string | null> {
+    const ownerId = this.tokens?.membership.id, generation = this.generation;
+    if (!ownerId || this.loggingOut) return null;
+    await storageQueue.catch(() => {});
+    const saved = await SecureStore.getItemAsync(LAST_DEVICE_KEY);
+    if (!saved || generation !== this.generation || this.tokens?.membership.id !== ownerId || this.loggingOut) return null;
+    try {
+      const value = JSON.parse(saved);
+      return value?.ownerId === ownerId && typeof value.deviceId === "string" && value.deviceId.length > 0 && value.deviceId.length <= 256
+        ? value.deviceId : null;
+    } catch { return null; }
+  }
   async saveSession(tokens: AuthTokenPair, generation = this.generation) {
     if (this.loggingOut) throw Error("正在退出登录，请稍后");
     if (generation !== this.generation) throw Error("登录已取消");
@@ -133,7 +158,10 @@ export class Remote {
     this.link?.stop();
     this.link = null;
     try {
-      await store(() => SecureStore.deleteItemAsync(SESSION_KEY));
+      await store(async () => {
+        await SecureStore.deleteItemAsync(LAST_DEVICE_KEY);
+        await SecureStore.deleteItemAsync(SESSION_KEY);
+      });
       this.tokens = null;
       this.refreshedAt = 0;
     } catch {
@@ -156,7 +184,13 @@ export class Remote {
         response.status === 401 ? "登录已过期，请重新登录" : "设备列表读取失败",
       );
     return (await response.json()).devices.filter(
-      (d: Device) => !["ios", "android"].includes(d.platform),
+      // Quota Cat's persistent device-id namespace identifies viewer clients.
+      // Keep actual computers even when offline or remote control is disabled;
+      // display names are user-editable and must not decide device identity.
+      (d: Device) =>
+        !["ios", "android"].includes(d.platform) &&
+        typeof d.deviceId === "string" &&
+        !d.deviceId.startsWith("quota-cat-"),
     );
   }
   async connect() {
@@ -168,7 +202,7 @@ export class Remote {
           "/api/device-link/ws",
         getToken: async () => (this.tokens ? this.accessToken() : null),
         getHello: () => ({
-          deviceName: "Usage Remote",
+          deviceName: "猫猫 iOS",
           platform: "ios",
           appVersion: "0.1.0",
           remoteControlEnabled: false,
@@ -187,7 +221,7 @@ export class Remote {
     await link.openLink(
       device,
       {
-        controllerName: "Usage Remote",
+        controllerName: "猫猫 iOS",
         protocolVersion: PROTOCOL_VERSION,
         appVersion: "0.1.0",
       },
