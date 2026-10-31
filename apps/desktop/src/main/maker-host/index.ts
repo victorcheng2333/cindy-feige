@@ -2937,6 +2937,11 @@ export function getMaker(): Maker {
       logger: desktopMakerLogger,
       // Agent 在同账号另一台电脑上运行、任务与文件留在本机(见 remote-agent/)。
       startDeviceAgentSession: createDeviceAgentStarter({
+        claudeApproval: {
+          review: reviewAutoPermissionAction,
+          mcpPolicy: getDesktopMcpToolApprovalPolicy,
+          readOnlyTools: getDesktopClaudeReadOnlyAllowedTools(),
+        },
         readImageDeliveryEpoch: readGeneratedImageEpoch,
         remoteInvoke: remoteBackgroundInvoke,
         renewSharedProviderLink: (peer) => isCrossRegionProviderShareTarget(peer)

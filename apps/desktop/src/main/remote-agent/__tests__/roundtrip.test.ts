@@ -256,6 +256,90 @@ function createHost(
 }
 
 describe('remote agent round trip', () => {
+  // Existing wire only: an unchanged supplier uses default permission callbacks;
+  // Auto/Ask/Full remain local and native permission replies cannot grant execution.
+  it('keeps shared Claude approval local across input and permission changes', async () => {
+    const remoteModes: string[] = [];
+    const review = vi.fn(async () => ({ verdict: 'block' as const, reason: 'Do not send messages.' }));
+    const host = createHost(undefined, undefined, input => ({
+      ...fakeHostedAgent(input),
+      async send(message, opts) { hostSends.push({ message, opts: opts ?? {} }); },
+      async setPermissionMode(mode) { remoteModes.push(mode); },
+    }));
+    let handle: AgentSessionHandle | undefined;
+    try {
+      handle = await startRemoteAgentSession('claude-code', {
+        sessionId: 'local-approval', workingDir: project, model: 'm', permissionMode: 'auto',
+      }, { ...makeDeps(host), claudeApproval: { review, mcpPolicy: () => 'prompt', readOnlyTools: [] } });
+      const asks: InteractionRequest[] = [];
+      handle.setInteractionResolver(async request => { asks.push(request); return { kind: 'permission', behavior: 'deny' }; });
+      expect(hostInputs[0].options.permissionMode).toBe('default');
+      await handle.send({ type: 'user', content: 'Edit local files.' }, {
+        turnPermissionPolicy: { origin: { kind: 'im', channel: 'telegram', taskId: 'message' },
+          confirmationSurface: 'channel', forceConfirmToolCall: () => false },
+      });
+      expect(hostSends[0].opts.turnPermissionPolicy).toBeUndefined();
+      const input = hostInputs[0];
+      const write = async (file: string) => {
+        const response = await fetch(`${input.tunnel.url}/mcp/cindy_exec`, {
+          method: 'POST', headers: { authorization: `Bearer ${input.tunnel.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'Write', arguments: { file_path: file, content: 'content' } } }),
+        });
+        return await response.json() as { result: { isError?: boolean } };
+      };
+      expect((await write(path.join(project, 'auto.txt'))).result.isError).not.toBe(true);
+      expect(asks).toEqual([]);
+      await handle.setPermissionMode?.('ask');
+      expect(remoteModes).toEqual(['default']);
+      expect((await write(path.join(project, 'ask.txt'))).result.isError).toBe(true);
+      expect(fs.existsSync(path.join(project, 'ask.txt'))).toBe(false);
+      expect(asks).toHaveLength(1);
+      await handle.setPermissionMode?.('bypassPermissions');
+      expect(remoteModes).toEqual(['default', 'default']);
+      expect((await write(path.join(project, 'full.txt'))).result.isError).not.toBe(true);
+      await handle.abort();
+      expect((await write(path.join(project, 'stopped.txt'))).result.isError).toBe(true);
+      expect(fs.existsSync(path.join(project, 'stopped.txt'))).toBe(false);
+    } finally { await handle?.close(); await host.dispose(); }
+  });
+
+  // Existing loopback round-trip harness: verify startRemoteAgentSession wires
+  // read/write roots separately, not just ExecutorGate in isolation. A remote
+  // approval must not turn a newly added reference directory into writable scope.
+  it('enforces read-only reference roots at execution after live directory changes', async () => {
+    const reference = path.join(root, 'reference');
+    fs.mkdirSync(reference);
+    const file = path.join(reference, 'spec.txt');
+    fs.writeFileSync(file, 'original');
+    const host = createHost(undefined, undefined, input => ({
+      ...fakeHostedAgent(input), async setExtraDirs() {}, async setWritableDirs() {},
+    }));
+    let handle: AgentSessionHandle | undefined;
+    try {
+      handle = await startRemoteAgentSession('claude-code', {
+        sessionId: 'native-auto-roots', workingDir: project, model: 'm', permissionMode: 'auto',
+      }, makeDeps(host));
+      const input = hostInputs[0];
+      const request = async (op: string, data?: string) => {
+        const response = await fetch(`${input.tunnel.url}/exec/${op}`, {
+          method: 'POST', headers: { authorization: `Bearer ${input.tunnel.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ path: file, ...(data === undefined ? {} : { data: Buffer.from(data).toString('base64') }) }),
+        });
+        await response.arrayBuffer();
+        return response.status;
+      };
+      await handle.setExtraDirs?.([reference]);
+      expect(await request('fs.read')).toBe(200);
+      expect(await request('fs.write', 'denied')).toBe(403);
+      expect(fs.readFileSync(file, 'utf8')).toBe('original');
+      await handle.setWritableDirs?.([reference]);
+      expect(await request('fs.write', 'granted')).toBe(200);
+      await handle.setWritableDirs?.([]);
+      expect(await request('fs.write', 'revoked')).toBe(403);
+      expect(fs.readFileSync(file, 'utf8')).toBe('granted');
+    } finally { await handle?.close(); await host.dispose(); }
+  });
+
   // External application's only MCP traverses the real controller/router/tunnel;
   // host-only access must reject native tools even if a peer forges a request.
   it.each(['codex', 'pi', 'claude-code'] as const)('preserves application tools and isolation through %s remote execution', async kind => {

@@ -1068,6 +1068,36 @@ describe('remote connection pool with a real host', () => {
     expect(scenario.calls.filter((call) => call.method === 'setExtraDirs').map((call) => (call.args[0] as string[]).length)).toEqual([1]);
   });
 
+  // Shared Claude must retain the local mode while an unchanged host always sees
+  // default. Exercise actual reconnect and a denied write, not just the open payload.
+  it('retains local Claude approval after idle release and a permission change', async () => {
+    const pool = newPool();
+    const a = await startRemoteAgentSession('claude-code', {
+      sessionId: randomUUID(), workingDir: project, model: 'm1', permissionMode: 'auto',
+    }, { ...deps(pool), claudeApproval: { review: async () => ({ verdict: 'allow' }), mcpPolicy: () => 'prompt', readOnlyTools: [] } });
+    opened.push(a);
+    const confirm = vi.fn(async () => ({ kind: 'permission' as const, behavior: 'deny' as const }));
+    a.setInteractionResolver(confirm);
+    const events = watch(a);
+    await ask(a, events, 'hello');
+    await sleep(5);
+    await start(pool);
+    await a.setPermissionMode!('ask');
+    await sleep(5);
+    await ask(a, events, 'again');
+    expect(scenario.started[0].options.permissionMode).toBe('default');
+    const reopened = scenario.started[2];
+    expect(reopened.options).toMatchObject({ permissionMode: 'default', resumeSessionId: a.id });
+    const file = path.join(project, 'after-reconnect.txt');
+    const response = await fetch(`${reopened.tunnel.url}/mcp/cindy_exec`, {
+      method: 'POST', headers: { authorization: `Bearer ${reopened.tunnel.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'Write', arguments: { file_path: file, content: 'denied' } } }),
+    });
+    expect(await response.json()).toMatchObject({ result: { isError: true } });
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
   it('does not reapply one-shot rewind or fork options when reconnecting', async () => {
     const pool = newPool();
     const a = await start(pool, { vendorOptions: { source: 's', resumeSessionAt: 'msg-1', forkSession: true } } as Partial<StartSessionOptions>);

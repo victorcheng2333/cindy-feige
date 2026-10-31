@@ -367,7 +367,7 @@ function hostOfUrl(url: string | undefined): string | undefined {
  * inside an authorized root cannot hide an out-of-root target. A lexically existing
  * but unresolvable ancestor is evidence failure, not permission to skip upward.
  */
-async function resolveClaudeFileWriteTarget(
+export async function resolveClaudeFileWriteTarget(
   workingDir: string,
   targetPath: string | undefined,
 ): Promise<string | null> {
@@ -404,7 +404,7 @@ async function resolveClaudeFileWriteTarget(
   }
 }
 
-async function resolveClaudeWritableRoots(roots: readonly string[]): Promise<string[]> {
+export async function resolveClaudeWritableRoots(roots: readonly string[]): Promise<string[]> {
   const resolved = await Promise.all(roots.map(async (root) => {
     try {
       return await fs.realpath(path.resolve(root));

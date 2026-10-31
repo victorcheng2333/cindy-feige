@@ -35,6 +35,7 @@ import { isProviderShareCredentialSessionApproval } from '../../../shared/provid
 import { encodeSendOptions, encodeUserMessage } from '../wire';
 import { RemoteAgentRemoteError, type RemoteAgentRunClient } from './runClient';
 import { localPlanReview, RemoteEventProjection } from './eventProjection';
+import type { ClaudeToolApproval } from './claudeToolApproval';
 
 const MAX_REMEMBERED_SEND_CALLBACKS = 64;
 
@@ -204,6 +205,8 @@ export function fixedRemoteAgentLink(client: RemoteAgentRunClient): RemoteAgentL
 }
 
 export interface RemoteHandleDeps {
+  toolApproval?: ClaudeToolApproval;
+  configuredPlan?: () => boolean;
   /** 缺省时用 `client` 作为固定连接。 */
   link?: RemoteAgentLink;
   client?: RemoteAgentRunClient;
@@ -257,6 +260,8 @@ export interface RemoteAgentHandleController {
    * 处理。只有本机提供了凭证授权建议的确认卡能返回会话级允许；交互还没接上或任务已结束时按拒绝处理。
    */
   confirm(request: LocalConfirmation, signal?: AbortSignal): Promise<ExecutorConfirmation>;
+  /** Local tool approval must not accept a supplier's approval receipt as authorization. */
+  decide(request: InteractionRequest, signal?: AbortSignal): Promise<InteractionDecision>;
   /** 当前的状态镜像(只读)。 */
   readState(): Readonly<Record<string, unknown>>;
   /**
@@ -297,6 +302,7 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
 
   const dispose = (): Promise<void> => {
     if (disposal) return disposal;
+    deps.toolApproval?.invalidate(true);
     disposed = true;
     activeTurn = false;
     state = { ...state, turnRunning: false, preparing: false };
@@ -364,7 +370,10 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
   };
 
   async function sendLike(method: 'send' | 'steer', message: UserMessage, opts?: SendOptions): Promise<void> {
-    const encoded = await encodeSendOptions(opts, readImage);
+    // Requester identity is enforced by the local execution gate. Don't install
+    // a second channel approval policy on the supplier's runtime.
+    const remoteOpts = deps.toolApproval && opts ? { ...opts, turnPermissionPolicy: undefined } : opts;
+    const encoded = await encodeSendOptions(remoteOpts, readImage);
     const wireMessage = await encodeUserMessage(message, readImage);
     const projectMessage = (wire: typeof wireMessage) => {
       if (typeof wire.content === 'string') wire.content = deps.workspace.mapTextForAgent(wire.content);
@@ -396,8 +405,10 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
       activeTurn = true;
     }
     try {
+      deps.toolApproval?.input(message, opts, (deps.configuredPlan?.() ?? false) || state.executionPlanMode === true, method === 'steer');
       await client.callWithId(callId, method, [wireMessage, encoded.wire]);
     } catch (error) {
+      deps.toolApproval?.invalidate(true);
       // The ordered error/done below already settles this send. Do not race it with
       // a second send rejection that can replace the host-owned recovery receipt.
       if (method !== 'send' || beforeInterruption === interruption) {
@@ -427,6 +438,10 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
       return typeof state.requestSessionId === 'string' ? state.requestSessionId : started.requestSessionId;
     },
     agentKind: started.agentKind,
+    ...(deps.toolApproval ? {
+      getAutoReviewOwner: () => 'cindy' as const,
+      reviewAutoPermissionAction: deps.toolApproval.reviewAction.bind(deps.toolApproval),
+    } : {}),
     get model() {
       return typeof state.model === 'string' ? state.model : started.model;
     },
@@ -473,6 +488,7 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
     listBackgroundTasks: () => (Array.isArray(state.backgroundTasks) ? state.backgroundTasks as BackgroundTaskSnapshot[] : []),
     countPendingWakeContinuations: () => (typeof state.pendingWake === 'number' ? state.pendingWake : 0),
     ...optional('requestGracefulStop', async () => {
+      deps.toolApproval?.invalidate(true);
       await callIfLive('requestGracefulStop');
     }),
     ...optional('setModel', async (model: string, opts?: { providerId?: string | null; effort?: Effort }) => {
@@ -494,8 +510,11 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
     ...optional('previewModelSwitch', (async (model: string, opts?: { providerId?: string | null }) =>
       call('previewModelSwitch', model, opts)) as AgentSessionHandle['previewModelSwitch']),
     ...optional('setPermissionMode', async (mode: string) => {
-      await callIfLive('setPermissionMode', mode);
-      deps.onPermissionMode?.(mode);
+      const change = async () => {
+        await callIfLive('setPermissionMode', deps.toolApproval ? 'default' : mode);
+        deps.onPermissionMode?.(mode);
+      };
+      if (deps.toolApproval) await deps.toolApproval.change(change); else await change();
     }),
     ...optional('setEffort', async (effort: Effort) => {
       if (!await callIfLive('setEffort', effort)) state = { ...state, effort };
@@ -506,22 +525,31 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
       deps.onFastMode?.(enabled);
     }),
     ...optional('setPlanMode', async (enabled: boolean) => {
-      if (!await callIfLive('setPlanMode', enabled)) state = { ...state, planMode: enabled };
-      deps.onPlanMode?.(enabled);
+      const change = async () => {
+        if (!await callIfLive('setPlanMode', enabled)) state = { ...state, planMode: enabled };
+        deps.onPlanMode?.(enabled);
+        deps.toolApproval?.setPlan(enabled);
+      };
+      if (deps.toolApproval) await deps.toolApproval.change(change); else await change();
     }),
     ...optional('setThinkingEnabled', async (enabled: boolean) => {
       await callIfLive('setThinkingEnabled', enabled);
       deps.onThinkingEnabled?.(enabled);
     }),
     ...optional('setExtraDirs', async (dirs: string[], libraryRoot?: string | null) => {
-      deps.onExtraDirs?.(dirs, libraryRoot);
-      await callIfLive('setExtraDirs', deps.workspace.virtualizeDirs(dirs), libraryRoot ? deps.workspace.virtualizeDirs([libraryRoot])[0] : null);
+      const change = async () => {
+        deps.onExtraDirs?.(dirs, libraryRoot);
+        await callIfLive('setExtraDirs', deps.workspace.virtualizeDirs(dirs), libraryRoot ? deps.workspace.virtualizeDirs([libraryRoot])[0] : null);
+      };
+      if (deps.toolApproval) await deps.toolApproval.change(change); else await change();
     }),
     ...optional('setWritableDirs', async (dirs: string[]) => {
-      await callIfLive('setWritableDirs', deps.workspace.virtualizeDirs(dirs));
-      // 对方成功后才更新本机执行器的根目录：新建的可写目录在本机也能过 root 判定，
-      // 撤掉的不再被本机上限当可信根；失败时两边都保持原状。
-      deps.onWritableDirs?.(dirs);
+      const change = async () => {
+        await callIfLive('setWritableDirs', deps.workspace.virtualizeDirs(dirs));
+        // 对方成功后才更新本机执行器的根目录；失败时两边保持原状。
+        deps.onWritableDirs?.(dirs);
+      };
+      if (deps.toolApproval) await deps.toolApproval.change(change); else await change();
     }),
     // 本机 MCP 身份(协同等工具)必须立即看到改动；对方不支持时也照样更新本机这一份。
     setVendorOptions: async (patch: Record<string, unknown>) => {
@@ -547,6 +575,7 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
     ...optional('previewRewindFiles', (async (userUuid: string) =>
       call('previewRewindFiles', userUuid)) as AgentSessionHandle['previewRewindFiles']),
     ...optional('commitRewindFiles', (async (userUuid: string, priorAssistantUuid: string, opts?: unknown) => {
+      deps.toolApproval?.invalidate(true);
       const result = await call('commitRewindFiles', userUuid, priorAssistantUuid, opts ?? null);
       rewindPending = true;
       return result;
@@ -554,6 +583,21 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
   };
 
   async function answerInteraction(request: InteractionRequest): Promise<RemoteAgentReply> {
+    if (deps.toolApproval && request.kind === 'permission') {
+      if (deps.toolApproval.isLocalTool(request.toolName)) {
+        // Permission to reach the local gate, not permission to execute. The
+        // actual MCP request is checked with current local inputs and authority.
+        return { type: 'interaction', result: { kind: 'permission', behavior: 'allow', updatedInput: request.input } };
+      }
+      try {
+        const result = await deps.toolApproval.run(request.toolName, request.input,
+          async input => ({ kind: 'permission' as const, behavior: 'allow' as const, updatedInput: input }));
+        return { type: 'interaction', result };
+      } catch (error) {
+        return { type: 'interaction', result: { kind: 'permission', behavior: 'deny',
+          reason: error instanceof Error ? error.message : 'Local approval was not completed.' } };
+      }
+    }
     if (!resolver) {
       // 本机还没接上交互回调：按系统性拒绝处理，不替用户允许。
       const decision: InteractionDecision = request.kind === 'ask_user_question'
@@ -563,7 +607,10 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
           : { kind: 'permission', behavior: 'deny', reason: 'interaction_unavailable' };
       return { type: 'interaction', result: decision };
     }
-    let decision = await resolver(localPlanReview(request, deps.workspace));
+    const localRequest = localPlanReview(request, deps.workspace);
+    const finish = deps.toolApproval?.interaction(localRequest);
+    let decision = await resolver(localRequest);
+    finish?.(decision);
     if (decision.kind === 'permission' && decision.behavior === 'allow') {
       const effective = decision.updatedInput ? { ...request, input: decision.updatedInput } : request;
       for (const action of approvalActionsFor(effective, deps.workspace)) deps.recordApproval(action);
@@ -590,9 +637,11 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
       }
       if (typed.turnScope !== 'background' && (typed.type === 'done' || isTerminalAgentErrorEvent(typed))) activeTurn = false;
       if (typed.type === 'done') rewindPending = false;
+      if (typed.type === 'done' && typed.turnScope !== 'background') deps.toolApproval?.done();
       for (const projected of projection.project(deps.mapEvent ? deps.mapEvent(typed) : typed)) queue.push(projected);
     },
     onState(next) {
+      if (next.executionPlanMode === true && state.executionPlanMode !== true) deps.toolApproval?.enterRemotePlan();
       state = { ...state, ...next };
       // An idle state can precede the terminal event; only that event settles the turn.
       if (next.turnRunning === true) activeTurn = true;
@@ -662,8 +711,13 @@ export function createRemoteAgentHandle(deps: RemoteHandleDeps): RemoteAgentHand
         && isProviderShareCredentialSessionApproval(decision.permissionUpdates)) return 'session';
       return true;
     },
+    async decide(request, signal) {
+      if (!resolver || disposed || signal?.aborted) return { kind: 'permission', behavior: 'deny', reason: 'interaction_unavailable' };
+      return resolver(request, signal);
+    },
     hasActiveTurn: () => activeTurn,
     onInterrupted() {
+      deps.toolApproval?.invalidate(true);
       if (disposed || terminalErrorDelivered) return;
       const running = activeTurn;
       activeTurn = false;

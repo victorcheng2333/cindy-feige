@@ -171,6 +171,11 @@ export class RemoteExecutor {
     previous.abort();
   }
 
+  /** Local approval must use the shell's current execution directory. */
+  get executionCwd(): string { return this.shell.getCwd(); }
+
+  grantReviewedAction(action: ExecutorAction): () => void { return this.gate.grantReviewedAction(action); }
+
   /** 本机用户在确认卡上允许了一个操作。 */
   recordApproval(action: ExecutorAction): void {
     this.gate.recordApproval(action);
@@ -394,7 +399,7 @@ export class RemoteExecutor {
 
   // ─── Claude Code 风格工具 ──────────────────────────────────────
 
-  async callTool(name: string, rawArgs: unknown, signal?: AbortSignal): Promise<ToolResult> {
+  async callTool(name: string, rawArgs: unknown, signal?: AbortSignal, localArguments = false): Promise<ToolResult> {
     this.workspace.virtualizeDirs([this.shell.getTempDir()]);
     if (this.closed) return textResult('The task has ended on the computer where it runs.', true);
     let args: Record<string, unknown>;
@@ -406,7 +411,7 @@ export class RemoteExecutor {
     try {
       switch (name as ExecutorCcToolName) {
         case 'Bash':
-          return await this.bash(args, signal);
+          return await this.bash(args, signal, localArguments);
         case 'BashOutput': {
           const id = optionalString(args, 'bash_id') ?? optionalString(args, 'task_id') ?? optionalString(args, 'shell_id');
           if (!id) return textResult('bash_id is required.', true);
@@ -420,7 +425,7 @@ export class RemoteExecutor {
           return textResult(this.workspace.mapTextForAgent(result.text), result.isError);
         }
         case 'Read': {
-          const target = this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
+          const target = localArguments ? path.resolve(this.shell.getCwd(), str(args, 'file_path')) : this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
           await this.authorizeTool({ kind: 'read', path: target }, signal);
           return this.mapToolResult(await ccRead(target, {
             file_path: target,
@@ -430,7 +435,7 @@ export class RemoteExecutor {
           }, this.readState, this.workspace.toAgentPath(this.workspace.workingDir), this.opts.extractPdfText, this.workspace.toAgentPath(target)));
         }
         case 'Write': {
-          const target = this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
+          const target = localArguments ? path.resolve(this.shell.getCwd(), str(args, 'file_path')) : this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
           const content = args.content;
           if (typeof content !== 'string') return textResult('content must be a string.', true);
           await this.authorizeTool({ kind: 'write', path: target }, signal);
@@ -438,7 +443,7 @@ export class RemoteExecutor {
           return this.mapToolResult(await ccWrite(target, local, this.readState, this.writeHooks, this.workspace.toAgentPath(target)));
         }
         case 'Edit': {
-          const target = this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
+          const target = localArguments ? path.resolve(this.shell.getCwd(), str(args, 'file_path')) : this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
           if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string') {
             return textResult('old_string and new_string must be strings.', true);
           }
@@ -451,7 +456,7 @@ export class RemoteExecutor {
           (oldString, newString, original) => this.workspace.mapEditFromAgent(oldString, newString, original)));
         }
         case 'NotebookEdit': {
-          const target = this.resolvePath(str(args, 'notebook_path'), this.shell.getCwd());
+          const target = localArguments ? path.resolve(this.shell.getCwd(), str(args, 'notebook_path')) : this.resolvePath(str(args, 'notebook_path'), this.shell.getCwd());
           if (typeof args.new_source !== 'string') return textResult('new_source must be a string.', true);
           const cellType = args.cell_type === 'markdown' || args.cell_type === 'code' ? args.cell_type : undefined;
           const editMode = args.edit_mode === 'insert' || args.edit_mode === 'delete' || args.edit_mode === 'replace'
@@ -510,10 +515,10 @@ export class RemoteExecutor {
     return fetchWebPage(fetchImpl, { url, startIndex, allowPrivateNetwork: decision.elevated === true, signal });
   }
 
-  private async bash(args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
+  private async bash(args: Record<string, unknown>, signal?: AbortSignal, localArguments = false): Promise<ToolResult> {
     const rawCommand = args.command;
     if (typeof rawCommand !== 'string' || !rawCommand.trim()) return textResult('command is required.', true);
-    const command = this.workspace.mapCommand(rawCommand, resolveExecutorShell().dialect);
+    const command = localArguments ? rawCommand : this.workspace.mapCommand(rawCommand, resolveExecutorShell().dialect);
     await this.authorizeTool({ kind: 'exec', command, cwd: this.shell.getCwd() }, signal);
     const timeout = optionalNumber(args, 'timeout');
     try {
