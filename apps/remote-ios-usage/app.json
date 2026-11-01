@@ -8,7 +8,7 @@
     "ios": {
       "bundleIdentifier": "com.chengfei.remoteiosusage",
       "supportsTablet": true,
-      "buildNumber": "8"
+      "buildNumber": "10"
     },
     "plugins": [
       "expo-secure-store",

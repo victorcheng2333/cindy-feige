@@ -3,6 +3,7 @@ import {
   AppState,
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -91,6 +92,8 @@ function UsageApp() {
     [error, setError] = useState(""),
     [outcome, setOutcome] = useState<LoginOutcome | null>(null);
   const [restoring, setRestoring] = useState(true);
+  const [pulling, setPulling] = useState(false);
+  useEffect(() => setPulling(false), [device, selected, signed]);
   const [restoreHint, setRestoreHint] = useState("正在恢复登录");
   const [restoreNotice, setRestoreNotice] = useState("");
   const [org, setOrg] = useState("xd");
@@ -325,6 +328,14 @@ function UsageApp() {
           ) : null}
         </View>
         {txt("剩余配额", { fontSize: 12, color: c.muted })}
+        {txt(
+          !q ? "暂无额度数据" : q.reset
+            ? `${new Date(q.reset * 1000).toLocaleString("zh-CN", {
+                month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+              })} 重置${valid(q) ? "" : " · 等待刷新"}`
+            : "重置时间未知",
+          { fontSize: 12, color: c.muted },
+        )}
       </View>
     );
   };
@@ -353,6 +364,22 @@ function UsageApp() {
         <ScrollView
           contentContainerStyle={styles.page}
           keyboardShouldPersistTaps="handled"
+          alwaysBounceVertical={!!device}
+          refreshControl={device && !demo ? (
+            <RefreshControl
+              refreshing={pulling}
+              tintColor={c.muted}
+              colors={[c.muted]}
+              onRefresh={() => {
+                if (busy || reading.current === epoch.current) return;
+                const generation = epoch.current;
+                setPulling(true);
+                void refresh().finally(() => {
+                  if (generation === epoch.current) setPulling(false);
+                });
+              }}
+            />
+          ) : undefined}
         >
           <View style={styles.nav}>
             {device || selected
@@ -394,7 +421,7 @@ function UsageApp() {
             { fontSize: 15, color: c.muted },
           )}
           {error || restoreNotice ? txt(error || restoreNotice, { fontSize: 13, color: c.accent }) : null}
-          {busy ? <ActivityIndicator color={c.muted} /> : null}
+          {busy && !pulling ? <ActivityIndicator color={c.muted} /> : null}
           {!signed && !demo ? (
             <View style={{ gap: 14, marginTop: 18 }}>
               {!outcome ? (

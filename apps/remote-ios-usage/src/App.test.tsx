@@ -43,7 +43,8 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Text: ({ children }: any) => <span>{children}</span>,
   View: ({ children }: any) => <div>{children}</div>,
-  ScrollView: ({ children }: any) => <div>{children}</div>,
+  ScrollView: ({ children, refreshControl }: any) => <div>{refreshControl}{children}</div>,
+  RefreshControl: ({ onRefresh, refreshing }: any) => <button data-refreshing={refreshing} onClick={onRefresh}>测试下拉</button>,
   TextInput: () => null,
   Pressable: ({ children, onPress, disabled }: any) => (
     <button disabled={disabled} onClick={onPress}>
@@ -146,7 +147,7 @@ it("pops one level only after a qualifying left-edge rightward swipe", async () 
     fake.gesture.onPanResponderGrant();
     fake.gesture.onPanResponderRelease(null, { ...gesture, dx: 25, vx: 0.1 });
   });
-  expect(host.querySelectorAll("button").length).toBe(2); // detail: Back and Refresh only
+  expect(host.querySelectorAll("button:not([data-refreshing])").length).toBe(2); // detail: Back and Refresh only
   await act(async () => {
     fake.gesture.onPanResponderGrant();
     fake.gesture.onPanResponderMove(null, gesture);
@@ -213,3 +214,52 @@ it("loads the selected device immediately even while an older homepage refresh i
   expect(host.textContent).toContain("Test Claude");
   expect(host.textContent).not.toContain("退出登录");
 });
+
+// Pull-to-refresh must update the currently selected account and stop its spinner
+// on success/failure. Existing navigation tests never triggered RefreshControl.
+it.each([false, true])("refreshes account details and settles the pull indicator (failure=%s)", async (fails) => {
+  await act(async () => root.render(<App />));
+  await click("Test Mac");
+  await click("Test Claude");
+  expect([...host.querySelectorAll('button')].some(b => b.textContent === '刷新')).toBe(true);
+  let finish!: () => void;
+  fake.usage.mockImplementationOnce(() => new Promise((resolve, reject) => {
+    finish = () => fails ? reject(Error('刷新失败')) : resolve([{ id:'account', name:'Updated Claude', service:'Claude', windows:[], failed:false }]);
+  }));
+  await click('测试下拉');
+  expect(host.querySelector('[data-refreshing="true"]')).not.toBeNull();
+  const calls = fake.usage.mock.calls.length;
+  await click('测试下拉');
+  expect(fake.usage).toHaveBeenCalledTimes(calls);
+  await act(async () => finish());
+  expect(host.querySelector('[data-refreshing="true"]')).toBeNull();
+  expect(host.textContent).toContain(fails ? '刷新失败' : 'Updated Claude');
+  expect(host.textContent).toContain('‹ 返回');
+});
+
+// Regression: the device overview omitted reset times although account details
+// had them. Mount the real overview; each window must retain its own reset.
+it('shows both reset times on the device overview without opening account details', async () => {
+  const resets = [Date.now()/1000 + 7200, Date.now()/1000 + 172800];
+  fake.usage.mockResolvedValue([{ id:'account', name:'Test Claude', service:'Claude', failed:false,
+    windows: resets.map((reset, i) => ({ minutes:i ? 10080 : 300, left:70, reset })) }]);
+  await act(async () => root.render(<App />));
+  await click('Test Mac');
+  expect(host.textContent).toContain('Test Mac');
+  for (const reset of resets) expect(host.textContent).toContain(new Date(reset*1000).toLocaleString('zh-CN', {
+    month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,
+  })+' 重置');
+});
+
+it.each(['missing-time', 'missing-window', 'expired'] as const)(
+  'keeps reset status honest on the overview (%s)', async (state) => {
+    fake.usage.mockResolvedValue([{ id:'account', name:'Test Claude', service:'Claude', failed:false,
+      windows: state === 'missing-window' ? [] : [{ minutes:300, left:70,
+        reset:state === 'expired' ? Date.now()/1000 - 60 : null }] }]);
+    await act(async () => root.render(<App />));
+    await click('Test Mac');
+    expect(host.textContent).toContain(state === 'missing-time' ? '重置时间未知'
+      : state === 'missing-window' ? '暂无额度数据' : '等待刷新');
+    if (state === 'expired') expect(host.textContent).not.toContain('70');
+  },
+);
