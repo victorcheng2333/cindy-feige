@@ -13,11 +13,16 @@ const fake = vi.hoisted(() => ({
   usage: vi.fn(),
   readLastDevice: vi.fn(),
   rememberDevice: vi.fn(),
+  impact: vi.fn(),
+}));
+vi.mock("expo-haptics", () => ({
+  impactAsync: fake.impact,
+  ImpactFeedbackStyle: { Light: "light" },
 }));
 vi.mock("./remote", () => ({ Remote: { create: async () => fake } }));
 vi.mock("./sso", () => ({ loginSso: vi.fn() }));
 vi.mock("react-native", () => ({
-  AppState: { currentState: "active" },
+  AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
   Platform: { OS: "ios" },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   AccessibilityInfo: {
@@ -65,6 +70,7 @@ beforeEach(() => {
     fake.tokens = null;
   });
   fake.disconnect.mockReset();
+  fake.impact.mockReset().mockResolvedValue(undefined);
   fake.readLastDevice.mockReset().mockResolvedValue(null);
   fake.rememberDevice.mockReset().mockResolvedValue(undefined);
   fake.devices.mockReset().mockResolvedValue([
@@ -222,6 +228,9 @@ it.each([false, true])("refreshes account details and settles the pull indicator
   await click("Test Mac");
   await click("Test Claude");
   expect([...host.querySelectorAll('button')].some(b => b.textContent === '刷新')).toBe(true);
+  expect(fake.impact).not.toHaveBeenCalled();
+  // Native feedback failure must not prevent refresh or leave its spinner stuck.
+  if (fails) fake.impact.mockRejectedValueOnce(Error('Haptics unavailable'));
   let finish!: () => void;
   fake.usage.mockImplementationOnce(() => new Promise((resolve, reject) => {
     finish = () => fails ? reject(Error('刷新失败')) : resolve([{ id:'account', name:'Updated Claude', service:'Claude', windows:[], failed:false }]);
@@ -231,6 +240,7 @@ it.each([false, true])("refreshes account details and settles the pull indicator
   const calls = fake.usage.mock.calls.length;
   await click('测试下拉');
   expect(fake.usage).toHaveBeenCalledTimes(calls);
+  expect(fake.impact).toHaveBeenCalledExactlyOnceWith('light');
   await act(async () => finish());
   expect(host.querySelector('[data-refreshing="true"]')).toBeNull();
   expect(host.textContent).toContain(fails ? '刷新失败' : 'Updated Claude');
@@ -263,3 +273,30 @@ it.each(['missing-time', 'missing-window', 'expired'] as const)(
     if (state === 'expired') expect(host.textContent).not.toContain('70');
   },
 );
+
+// Countdown is local UI time: expiry must update even when usage requests stall.
+it('updates overview and detail countdowns without waiting for a usage response', async () => {
+  vi.useFakeTimers();
+  try {
+    const now = Date.now();
+    vi.setSystemTime(now);
+    fake.usage.mockResolvedValue([{ id:'account', name:'Test Claude', service:'Claude', failed:false,
+      windows:[{ minutes:300, left:70, reset:(now + 90000)/1000 },
+        { minutes:10080, left:80, reset:(now + 90060000)/1000 }] }]);
+    await act(async () => root.render(<App />));
+    await click('Test Mac');
+    expect(host.textContent).not.toContain('剩余配额');
+    expect(host.textContent).toContain('还剩 2 分钟');
+    expect(host.textContent).toContain('还剩 1 天 1 小时 1 分钟');
+    await click('Test Claude');
+    expect(host.textContent).toContain('还剩 2 分钟');
+    fake.usage.mockImplementation(() => new Promise(() => {}));
+    await act(async () => vi.advanceTimersByTimeAsync(40000));
+    expect(host.textContent).toContain('还剩 不到 1 分钟');
+    await act(async () => vi.advanceTimersByTimeAsync(50000));
+    expect(host.textContent).toContain('等待刷新');
+    expect(host.textContent).not.toContain('还剩 不到 1 分钟');
+  } finally {
+    vi.useRealTimers();
+  }
+});

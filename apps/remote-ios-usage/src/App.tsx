@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
 import {
   AppState,
   ActivityIndicator,
@@ -93,6 +94,18 @@ function UsageApp() {
     [outcome, setOutcome] = useState<LoginOutcome | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [pulling, setPulling] = useState(false);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!device) return;
+    setNow(Date.now());
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") setNow(Date.now());
+    }, 10000);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") setNow(Date.now());
+    });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, [device]);
   useEffect(() => setPulling(false), [device, selected, signed]);
   const [restoreHint, setRestoreHint] = useState("正在恢复登录");
   const [restoreNotice, setRestoreNotice] = useState("");
@@ -270,8 +283,24 @@ function UsageApp() {
     else if (demo) clearLoginView();
   };
   const label = (q: Pick<Quota, "minutes" | "label">) =>
-    `${q.label ? q.label + " · " : ""}${q.minutes === 10080 ? "7 天" : q.minutes === null ? "周期未知" : q.minutes % 60 === 0 ? `${q.minutes / 60} 小时` : `${q.minutes} 分钟`}`;
-  const valid = (q?: Quota) => q && (!q.reset || q.reset * 1000 > Date.now());
+    `${q.label ? q.label + " · " : ""}${q.minutes === 10080 ? "周额度" : q.minutes === 300 ? "5 小时额度" : q.minutes === null ? "周期未知" : q.minutes % 60 === 0 ? `${q.minutes / 60} 小时` : `${q.minutes} 分钟`}`;
+  const valid = (q?: Quota) => q && (!q.reset || q.reset * 1000 > now);
+  const resetText = (q?: Quota) => {
+    if (!q) return "暂无额度数据";
+    if (!q.reset) return "重置时间未知";
+    const at = new Date(q.reset * 1000).toLocaleString("zh-CN", {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    const remaining = q.reset * 1000 - now;
+    if (remaining <= 0) return `${at} 重置 · 等待刷新`;
+    const minutes = Math.ceil(remaining / 60000);
+    const days = Math.floor(minutes / 1440);
+    const hours = Math.floor(minutes % 1440 / 60);
+    const mins = minutes % 60;
+    const duration = remaining < 60000 ? "不到 1 分钟"
+      : [days && `${days} 天`, hours && `${hours} 小时`, mins && `${mins} 分钟`].filter(Boolean).join(" ");
+    return `${at} 重置\n还剩 ${duration}`;
+  };
   const txt = (s: string, style: any = {}) => (
     <Text style={[{ color: c.text, fontSize: 16, lineHeight: 24 }, style]}>
       {s}
@@ -327,15 +356,7 @@ function UsageApp() {
             />
           ) : null}
         </View>
-        {txt("剩余配额", { fontSize: 12, color: c.muted })}
-        {txt(
-          !q ? "暂无额度数据" : q.reset
-            ? `${new Date(q.reset * 1000).toLocaleString("zh-CN", {
-                month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
-              })} 重置${valid(q) ? "" : " · 等待刷新"}`
-            : "重置时间未知",
-          { fontSize: 12, color: c.muted },
-        )}
+        {txt(resetText(q), { fontSize: 12, color: c.muted })}
       </View>
     );
   };
@@ -374,6 +395,8 @@ function UsageApp() {
                 if (busy || reading.current === epoch.current) return;
                 const generation = epoch.current;
                 setPulling(true);
+                // Feedback must never delay or interrupt the refresh request.
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                 void refresh().finally(() => {
                   if (generation === epoch.current) setPulling(false);
                 });
@@ -699,9 +722,7 @@ function UsageApp() {
                     },
                   )}
                   {txt(
-                    q.reset
-                      ? `${new Date(q.reset * 1000).toLocaleString()} 重置`
-                      : "重置时间未知",
+                    resetText(q),
                     { color: c.muted, fontSize: 13 },
                   )}
                 </View>
