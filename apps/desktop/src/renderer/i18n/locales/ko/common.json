@@ -5136,6 +5136,15 @@
         "label": "{{shortcut}}로 보내기",
         "hint": "켜면 {{shortcut}}로 메시지를 보냅니다. 끄면 Enter로 보내고 Shift+Enter로 줄을 바꿉니다.",
         "ariaLabel": "{{shortcut}}로 메시지 보내기"
+      },
+      "runningSend": {
+        "label": "작업 실행 중 새 메시지",
+        "hint": "작업 실행 중 Enter와 전송 버튼으로 보낼 때의 방식입니다. Enter로 보내는 설정에서는 {{shortcut}}로 다른 방식을 사용합니다.",
+        "ariaLabel": "작업 실행 중 새 메시지 전송 방식",
+        "options": {
+          "queue": "대기열에 추가",
+          "steer": "끼어들기"
+        }
       }
     },
     "linkOpen": {
@@ -11787,6 +11796,9 @@
       "queue": "대기열에 추가",
       "queueTooltip": "클릭하면 대기열에 추가됩니다. {{shortcut}} 를 누르면 작업을 중단하지 않고 끼어듭니다",
       "queueTooltipSendMode": "클릭하면 대기열에 추가하고, {{shortcut}}를 누르면 이 메시지를 보냅니다.",
+      "steer": "끼어들기",
+      "steerTooltip": "클릭하면 작업을 중단하지 않고 끼어듭니다. {{shortcut}}를 누르면 대기열에 추가됩니다",
+      "steerTooltipSendMode": "클릭하거나 {{shortcut}}를 누르면 작업을 중단하지 않고 끼어듭니다",
       "stop": "생성 중지"
     },
     "pluginSetup": {

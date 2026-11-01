@@ -133,6 +133,7 @@ describe('useComposerSendShortcutPreference', () => {
       preference: ComposerSendShortcutPreference;
       platform: string;
       turnRunning: boolean;
+      runningDefault?: 'queue' | 'steer';
       event: KeyboardEvent;
       expected: 'queue' | 'steer' | 'native' | 'ignore' | null;
     }> = [
@@ -256,12 +257,48 @@ describe('useComposerSendShortcutPreference', () => {
         event: new KeyboardEvent('keydown', { key: 'Escape' }),
         expected: null,
       },
+      {
+        name: 'steers with plain Enter while running when steer is the default',
+        preference: 'enter',
+        platform: 'darwin',
+        turnRunning: true,
+        runningDefault: 'steer',
+        event: enterEvent(),
+        expected: 'steer',
+      },
+      {
+        name: 'queues with Cmd/Ctrl+Enter while running when steer is the default',
+        preference: 'enter',
+        platform: 'darwin',
+        turnRunning: true,
+        runningDefault: 'steer',
+        event: enterEvent({ metaKey: true }),
+        expected: 'queue',
+      },
+      {
+        name: 'sends normally while idle even when steer is the default',
+        preference: 'enter',
+        platform: 'darwin',
+        turnRunning: false,
+        runningDefault: 'steer',
+        event: enterEvent({ metaKey: true }),
+        expected: 'queue',
+      },
+      {
+        name: 'steers with Cmd+Enter in modifier-enter mode when steer is the default',
+        preference: 'modifier-enter',
+        platform: 'darwin',
+        turnRunning: true,
+        runningDefault: 'steer',
+        event: enterEvent({ metaKey: true }),
+        expected: 'steer',
+      },
     ];
 
-    it.each(cases)('$name', ({ preference, platform, turnRunning, event, expected }) => {
-      expect(resolveComposerEnterIntent(event, preference, { turnRunning, platform })).toBe(
-        expected,
-      );
+    it.each(cases)('$name', ({ preference, platform, turnRunning, runningDefault, event, expected }) => {
+      expect(
+        resolveComposerEnterIntent(event, preference, { turnRunning, platform, runningDefault }),
+      ).toBe(expected);
     });
   });
 });

@@ -316,6 +316,10 @@ import {
   resolveComposerEnterIntent,
   useComposerSendShortcutPreference,
 } from '@/hooks/useComposerSendShortcutPreference';
+import {
+  getComposerRunningSendPreference,
+  useComposerRunningSendPreference,
+} from '@/hooks/useComposerRunningSendPreference';
 import { usePromptRecommendationPreference } from '@/hooks/usePromptRecommendationPreference';
 import { usePromptRecommendationPrediction } from '@/hooks/usePromptRecommendationPrediction';
 import { predictPromptUntilDisabled } from '@/lib/predictPromptUntilDisabled';
@@ -1401,6 +1405,7 @@ export function ChatInput({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { preference: composerSendShortcutPreference } = useComposerSendShortcutPreference();
+  const { preference: composerRunningSendPreference } = useComposerRunningSendPreference();
   // ── 推荐提示词 ────────────────────────────────────────────────────
   // 设置开关:通过 shared hook 订阅,与 TipsSection 同源,切换后立即生效。
   const { enabled: recommendationEnabled } = usePromptRecommendationPreference();
@@ -2888,6 +2893,7 @@ export function ChatInput({
         const enterIntent = resolveComposerEnterIntent(event, getComposerSendShortcutPreference(), {
           turnRunning: showStopButtonRef.current,
           platform: window.electronAPI?.platform,
+          runningDefault: getComposerRunningSendPreference(),
         });
         if (enterIntent === 'native') return false;
         if (enterIntent === 'ignore') {
@@ -3611,6 +3617,7 @@ export function ChatInput({
       const enterIntent = resolveComposerEnterIntent(event, getComposerSendShortcutPreference(), {
         turnRunning: showStopButtonRef.current,
         platform,
+        runningDefault: getComposerRunningSendPreference(),
       });
       const isModifiedEnter = hasComposerModifier(event, platform);
       if (
@@ -6564,6 +6571,11 @@ export function ChatInput({
     voiceInputStopAndSendRef.current = handleClickSend;
     composerSubmitRequestSendRef.current = handleClickSend;
   }, [handleClickSend]);
+  // The send button and the submit command follow the user's running-turn
+  // delivery preference, matching plain Enter.
+  const handlePrimarySend = useCallback(() => {
+    void handleClickSend(showStopButtonRef.current ? getComposerRunningSendPreference() : 'queue');
+  }, [handleClickSend]);
 
   // 别处的一键动作 (截图「翻译」等) 已把草稿写好并请求发送: 等编辑器与附件同步到位,
   // 按普通发送键同一路径发一次; 发送中 / 语音占用时与键盘输入同锁, 稍后再试直到过期。
@@ -8462,7 +8474,7 @@ export function ChatInput({
       if (action.type !== 'command') return false;
       switch (action.commandId) {
         case 'composer.submit':
-          void handleClickSend();
+          handlePrimarySend();
           return true;
         case 'composer.toggleFastMode':
           void handleFastModeChange(!composerSelection.display.fastMode);
@@ -8501,7 +8513,7 @@ export function ChatInput({
     ownsHardwareComposerActions,
     effectiveSourceId,
     composerSelection.display.fastMode,
-    handleClickSend,
+    handlePrimarySend,
     handleEffortChange,
     handleFastModeChange,
     handleVoiceInputPlainStop,
@@ -10199,7 +10211,15 @@ export function ChatInput({
                             : voiceInput.isListening && !sendButtonDisabled
                               ? `${t('newChat.chatInput.voiceInput.finishAndSend')} · ${composerSendShortcutLabel}`
                               : showStopButton
-                                ? composerSendShortcutPreference === 'modifier-enter'
+                                ? composerRunningSendPreference === 'steer'
+                                  ? composerSendShortcutPreference === 'modifier-enter'
+                                    ? t('newChat.sendButton.steerTooltipSendMode', {
+                                        shortcut: composerSendShortcutLabel,
+                                      })
+                                    : t('newChat.sendButton.steerTooltip', {
+                                        shortcut: steerShortcutLabel,
+                                      })
+                                  : composerSendShortcutPreference === 'modifier-enter'
                                   ? t('newChat.sendButton.queueTooltipSendMode', {
                                       shortcut: composerSendShortcutLabel,
                                     })
@@ -10240,12 +10260,14 @@ export function ChatInput({
                                 : queueEditActive
                                 ? t('newChat.pendingQueue.editSaveAria')
                                 : showStopButton
-                                  ? t('newChat.sendButton.queue')
+                                  ? composerRunningSendPreference === 'steer'
+                                    ? t('newChat.sendButton.steer')
+                                    : t('newChat.sendButton.queue')
                                   : t('newChat.sendButton.send')
                             }
                             onClick={() => {
                               if (mainSlotIsVoice) onStartVoiceConversation?.();
-                              else void handleClickSend();
+                              else handlePrimarySend();
                             }}
                           />
                         </span>

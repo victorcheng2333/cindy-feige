@@ -1,7 +1,13 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Switch } from '@/components/ui/switch';
+import {
+  DEFAULT_COMPOSER_RUNNING_SEND,
+  useComposerRunningSendPreference,
+  type ComposerRunningSendPreference,
+} from '@/hooks/useComposerRunningSendPreference';
 import {
   getComposerModifierShortcutLabel,
   useComposerSendShortcutPreference,
@@ -11,10 +17,50 @@ import { DefaultOverrideControls } from './DefaultOverrideControls';
 import {
   SETTINGS_CARD_CLASS,
   SETTINGS_ROW_CLASS,
+  SETTINGS_ROW_DIVIDER_CLASS,
   SETTINGS_ROW_HINT_CLASS,
   SETTINGS_ROW_LABEL_CLASS,
   SETTINGS_SECTION_TITLE_CLASS,
 } from './settingsRowClasses';
+
+const RUNNING_SEND_OPTIONS: readonly ComposerRunningSendPreference[] = ['queue', 'steer'];
+
+function ComposerRunningSendRow() {
+  const { t } = useTranslation();
+  const { preference, isCustomized, setPreference } = useComposerRunningSendPreference();
+  const shortcut = getComposerModifierShortcutLabel(window.electronAPI?.platform);
+
+  const onReset = useCallback(() => {
+    setPreference(DEFAULT_COMPOSER_RUNNING_SEND);
+    toast.success(t('settings.defaults.restored'));
+  }, [setPreference, t]);
+
+  return (
+    <div className="cindy-segmented-row px-4 py-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className={SETTINGS_ROW_LABEL_CLASS} style={{ letterSpacing: '0.12px' }}>
+          {t('settings.composer.runningSend.label')}
+        </p>
+        <p className={SETTINGS_ROW_HINT_CLASS}>
+          {t('settings.composer.runningSend.hint', { shortcut })}
+        </p>
+      </div>
+
+      <div className="cindy-segmented-row-actions">
+        <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
+        <SegmentedControl
+          aria-label={t('settings.composer.runningSend.ariaLabel')}
+          value={preference}
+          onValueChange={setPreference}
+          options={RUNNING_SEND_OPTIONS.map((value) => ({
+            value,
+            label: t(`settings.composer.runningSend.options.${value}`),
+          }))}
+        />
+      </div>
+    </div>
+  );
+}
 
 export function ComposerSendShortcutSection() {
   const { t } = useTranslation();
@@ -55,6 +101,8 @@ export function ComposerSendShortcutSection() {
             />
           </div>
         </div>
+        <div className={SETTINGS_ROW_DIVIDER_CLASS} />
+        <ComposerRunningSendRow />
       </div>
     </div>
   );
