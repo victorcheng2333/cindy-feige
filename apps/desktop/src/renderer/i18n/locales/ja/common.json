@@ -5136,6 +5136,15 @@
         "label": "{{shortcut}}で送信",
         "hint": "オンにすると{{shortcut}}でメッセージを送信します。オフにするとEnterで送信し、Shift+Enterで改行します。",
         "ariaLabel": "{{shortcut}}でメッセージを送信"
+      },
+      "runningSend": {
+        "label": "タスク実行中の新しいメッセージ",
+        "hint": "タスク実行中に Enter と送信ボタンで送るときの方法です。Enter で送信する設定では、{{shortcut}} でもう一方の方法を使えます。",
+        "ariaLabel": "タスク実行中の新しいメッセージの送信方法",
+        "options": {
+          "queue": "キューに追加",
+          "steer": "割り込み"
+        }
       }
     },
     "linkOpen": {
@@ -11787,6 +11796,9 @@
       "queue": "キューに追加",
       "queueTooltip": "クリックでキューに追加。{{shortcut}} でタスクを中断せずに割り込み送信",
       "queueTooltipSendMode": "クリックでキューに追加、{{shortcut}}でこのメッセージを送信",
+      "steer": "割り込み送信",
+      "steerTooltip": "クリックでタスクを中断せずに割り込み送信。{{shortcut}} でキューに追加",
+      "steerTooltipSendMode": "クリックまたは {{shortcut}} でタスクを中断せずに割り込み送信",
       "stop": "生成を停止"
     },
     "pluginSetup": {

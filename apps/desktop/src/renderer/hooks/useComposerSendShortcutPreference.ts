@@ -47,7 +47,15 @@ function parsePreference(raw: string | null): ComposerSendShortcutPreference | n
 export function resolveComposerEnterIntent(
   event: ComposerEnterEvent,
   preference: ComposerSendShortcutPreference,
-  options: { turnRunning: boolean; platform: string | undefined },
+  options: {
+    turnRunning: boolean;
+    platform: string | undefined;
+    /**
+     * Delivery of the primary send key while a turn is running. In Enter mode
+     * the modifier shortcut performs the other delivery. Defaults to queue.
+     */
+    runningDefault?: 'queue' | 'steer';
+  },
 ): ComposerEnterIntent {
   if (event.key !== 'Enter' || event.shiftKey || event.altKey) return null;
   if (event.isComposing) return 'native';
@@ -58,12 +66,13 @@ export function resolveComposerEnterIntent(
     return isSendShortcut ? 'ignore' : 'native';
   }
 
+  const primary = options.turnRunning ? (options.runningDefault ?? 'queue') : 'queue';
   if (preference === 'modifier-enter') {
-    return hasModifier ? 'queue' : 'native';
+    return hasModifier ? primary : 'native';
   }
 
-  if (!hasModifier) return 'queue';
-  return options.turnRunning ? 'steer' : 'queue';
+  if (!hasModifier || !options.turnRunning) return primary;
+  return primary === 'steer' ? 'queue' : 'steer';
 }
 
 /** Module-level memory is the synchronous source of truth for event handlers. */

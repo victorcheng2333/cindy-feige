@@ -5221,6 +5221,15 @@
         "label": "Utiliser {{shortcut}} pour envoyer",
         "hint": "Activé, {{shortcut}} envoie les messages. Désactivé, Enter envoie les messages et Shift+Enter insère un saut de ligne.",
         "ariaLabel": "Utiliser {{shortcut}} pour envoyer les messages"
+      },
+      "runningSend": {
+        "label": "Pendant l'exécution d'une tâche",
+        "hint": "Comment Enter et le bouton d'envoi transmettent les nouveaux messages pendant l'exécution d'une tâche. Si Enter envoie, appuyez sur {{shortcut}} pour l'autre option.",
+        "ariaLabel": "Envoi des nouveaux messages pendant l'exécution d'une tâche",
+        "options": {
+          "queue": "File d'attente",
+          "steer": "Réorienter"
+        }
       }
     },
     "linkOpen": {
@@ -11915,6 +11924,9 @@
       "queue": "Mettre le message en file d'attente",
       "queueTooltip": "Cliquez pour mettre en file d'attente ; appuyez sur {{shortcut}} pour réorienter la tâche sans l'interrompre",
       "queueTooltipSendMode": "Cliquez pour mettre en file d'attente ; appuyez sur {{shortcut}} pour envoyer ce message",
+      "steer": "Réorienter avec le message",
+      "steerTooltip": "Cliquez pour réorienter la tâche sans l'interrompre ; appuyez sur {{shortcut}} pour mettre en file d'attente",
+      "steerTooltipSendMode": "Cliquez ou appuyez sur {{shortcut}} pour réorienter la tâche sans l'interrompre",
       "stop": "Arrêter la génération"
     },
     "pluginSetup": {

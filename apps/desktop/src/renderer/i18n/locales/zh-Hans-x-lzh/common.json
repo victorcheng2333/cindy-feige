@@ -5057,6 +5057,15 @@
         "label": "以 {{shortcut}} 遣之",
         "hint": "启则按 {{shortcut}} 遣讯；阖则按 Enter 遣讯，按 Shift+Enter 换行。",
         "ariaLabel": "以 {{shortcut}} 遣讯"
+      },
+      "runningSend": {
+        "label": "差事行时遣新讯",
+        "hint": "差事行时，Enter 与遣钮默以此法遣之。以 Enter 遣时，按 {{shortcut}} 则易他法。",
+        "ariaLabel": "差事行时新讯之遣法",
+        "options": {
+          "queue": "排队",
+          "steer": "插话"
+        }
       }
     },
     "linkOpen": {
@@ -11772,6 +11781,9 @@
       "queue": "排队遣",
       "queueTooltip": "点之则排队遣；按 {{shortcut}} 插话，不断今之差事",
       "queueTooltipSendMode": "点之则排队；按 {{shortcut}} 遣此讯",
+      "steer": "插话遣",
+      "steerTooltip": "点之则插话，不断今之差事；按 {{shortcut}} 排队遣",
+      "steerTooltipSendMode": "点之或按 {{shortcut}} 插话，不断今之差事",
       "stop": "止生成"
     },
     "pluginSetup": {

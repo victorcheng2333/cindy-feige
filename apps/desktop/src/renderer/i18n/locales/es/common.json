@@ -5221,6 +5221,15 @@
         "label": "Utilice {{shortcut}} para enviar",
         "hint": "Cuando está habilitado, {{shortcut}} envía mensajes. Cuando está deshabilitado, Enter envía mensajes y Shift+Enter inserta una nueva línea.",
         "ariaLabel": "Utilice {{shortcut}} para enviar mensajes"
+      },
+      "runningSend": {
+        "label": "Mientras una tarea está en curso",
+        "hint": "Cómo envían los mensajes nuevos Enter y el botón de enviar mientras una tarea está en curso. Si Enter envía, presiona {{shortcut}} para usar la otra opción.",
+        "ariaLabel": "Envío de mensajes nuevos mientras una tarea está en curso",
+        "options": {
+          "queue": "Poner en cola",
+          "steer": "Orientar"
+        }
       }
     },
     "linkOpen": {
@@ -11915,6 +11924,9 @@
       "queue": "Poner mensaje en cola",
       "queueTooltip": "Haz clic para poner en cola; presiona {{shortcut}} para dar indicaciones sin interrumpir la tarea",
       "queueTooltipSendMode": "Haz clic para poner en cola; presiona {{shortcut}} para enviar este mensaje",
+      "steer": "Orientar con el mensaje",
+      "steerTooltip": "Haz clic para dar indicaciones sin interrumpir la tarea; presiona {{shortcut}} para poner en cola",
+      "steerTooltipSendMode": "Haz clic o presiona {{shortcut}} para dar indicaciones sin interrumpir la tarea",
       "stop": "Detener generación"
     },
     "pluginSetup": {

@@ -5221,6 +5221,15 @@
         "label": "Usar {{shortcut}} para enviar",
         "hint": "Quando ativado, {{shortcut}} envia mensagens. Quando desativado, Enter envia mensagens e Shift+Enter insere uma nova linha.",
         "ariaLabel": "Usar {{shortcut}} para enviar mensagens"
+      },
+      "runningSend": {
+        "label": "Enquanto uma tarefa está em curso",
+        "hint": "Como Enter e o botão de enviar entregam novas mensagens enquanto uma tarefa está em curso. Quando Enter envia, prime {{shortcut}} para a outra opção.",
+        "ariaLabel": "Envio de novas mensagens durante uma tarefa em curso",
+        "options": {
+          "queue": "Colocar em fila",
+          "steer": "Orientar"
+        }
       }
     },
     "linkOpen": {
@@ -11915,6 +11924,9 @@
       "queue": "Colocar mensagem em fila",
       "queueTooltip": "Clica para colocar em fila; prime {{shortcut}} para orientar sem interromper a tarefa",
       "queueTooltipSendMode": "Clica para colocar em fila; prime {{shortcut}} para enviar esta mensagem",
+      "steer": "Orientar com a mensagem",
+      "steerTooltip": "Clica para orientar sem interromper a tarefa; prime {{shortcut}} para colocar em fila",
+      "steerTooltipSendMode": "Clica ou prime {{shortcut}} para orientar sem interromper a tarefa",
       "stop": "Parar geração"
     },
     "pluginSetup": {

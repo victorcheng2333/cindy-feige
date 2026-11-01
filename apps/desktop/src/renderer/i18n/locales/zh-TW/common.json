@@ -5070,6 +5070,15 @@
         "label": "使用 {{shortcut}} 傳送",
         "hint": "開啟後按 {{shortcut}} 傳送訊息；關閉後按 Enter 傳送訊息，按 Shift+Enter 換行。",
         "ariaLabel": "使用 {{shortcut}} 傳送訊息"
+      },
+      "runningSend": {
+        "label": "任務執行時傳送新訊息",
+        "hint": "任務執行時，Enter 和傳送按鈕預設用這種方式傳送。用 Enter 傳送時，按 {{shortcut}} 換另一種。",
+        "ariaLabel": "任務執行時新訊息的傳送方式",
+        "options": {
+          "queue": "排隊",
+          "steer": "插話"
+        }
       }
     },
     "linkOpen": {
@@ -11787,6 +11796,9 @@
       "queue": "排隊傳送",
       "queueTooltip": "點選排隊傳送；按 {{shortcut}} 插話，不打斷當前任務",
       "queueTooltipSendMode": "點選可排隊；按 {{shortcut}} 傳送此訊息",
+      "steer": "插話傳送",
+      "steerTooltip": "點選插話，不打斷當前任務；按 {{shortcut}} 排隊傳送",
+      "steerTooltipSendMode": "點選或按 {{shortcut}} 插話，不打斷當前任務",
       "stop": "停止生成"
     },
     "pluginSetup": {

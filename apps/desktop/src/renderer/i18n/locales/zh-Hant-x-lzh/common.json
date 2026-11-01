@@ -5057,6 +5057,15 @@
         "label": "以 {{shortcut}} 遣之",
         "hint": "啟則按 {{shortcut}} 遣訊；闔則按 Enter 遣訊，按 Shift+Enter 換行。",
         "ariaLabel": "以 {{shortcut}} 遣訊"
+      },
+      "runningSend": {
+        "label": "差事行時遣新訊",
+        "hint": "差事行時，Enter 與遣鈕默以此法遣之。以 Enter 遣時，按 {{shortcut}} 則易他法。",
+        "ariaLabel": "差事行時新訊之遣法",
+        "options": {
+          "queue": "排隊",
+          "steer": "插話"
+        }
       }
     },
     "linkOpen": {
@@ -11772,6 +11781,9 @@
       "queue": "排隊遣",
       "queueTooltip": "點之則排隊遣；按 {{shortcut}} 插話，不斷今之差事",
       "queueTooltipSendMode": "點之則排隊；按 {{shortcut}} 遣此訊",
+      "steer": "插話遣",
+      "steerTooltip": "點之則插話，不斷今之差事；按 {{shortcut}} 排隊遣",
+      "steerTooltipSendMode": "點之或按 {{shortcut}} 插話，不斷今之差事",
       "stop": "止生成"
     },
     "pluginSetup": {

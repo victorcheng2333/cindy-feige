@@ -45,6 +45,39 @@ Developer ID 签名不等于 Apple 公证，也不代表远程控制已经实机
 macOS 为 ZIP（包含 `.app`），Windows 为 Setup.exe，Linux 为 deb。
 只在用户要求安装时替换已安装应用；单纯打包结束后给出产物路径即可。
 
+macOS 打包需要 Node 22（`engines` 要求 ≥22.12）。在 Node 26 下 electron-packager 解压
+Electron 时进程会悄无声息地退出，最终报 `packaged Cindy source metadata missing`；遇到
+时先把 Node 22（如 Homebrew 的 `/opt/homebrew/opt/node@22/bin`）放到 `PATH` 最前面重打。
+
+### 打包并替换本机安装（macOS）
+
+用户明确要求替换本机安装时，在得到 Developer ID 签名 ZIP 之后执行：
+
+```bash
+pnpm package:install -- --region cn          # 国际版用 --region global
+pnpm package:install -- --region cn --dry-run  # 只做预检，不替换
+```
+
+脚本是 `apps/desktop/scripts/install-local-build.mjs`，替换步骤在
+`install-local-build-worker.sh`。它可以在本机 Cindy 的任务里运行：
+
+1. 预检（失败不改任何东西）：把 ZIP 解压到 `~/Library/Caches/cindy-local-install/`，
+   校验 bundle ID、Developer ID 签名、Team ID `KQY8A3BNVG` 与本机架构；已安装 App 的
+   bundle ID 与新包不同（例如中国大陆版换国际版）时拒绝替换。
+2. 交接：把替换脚本包进一个临时小 App，用 `open` 交给 LaunchServices 启动，使它成为
+   launchd 的子进程而不是 Cindy 的。直接从 Cindy 任务里派生的进程（即使 `setsid`
+   脱离会话）会在 Cindy 退出时被一并结束，这是实测结论，不要改回派生。临时 App 随
+   暂存目录删除，不注册任何开机或常驻任务。脚本只用系统自带命令，并记录收到的信号。
+3. 替换：默认等 15 秒（`--delay` 可调），让调用它的 Agent 先回完消息；然后给 Cindy
+   主进程发 SIGTERM（走正常退出流程，不弹确认框），60 秒内没退出就放弃、不做替换；
+   退出后把旧版移到 `backups/`（保留最近两份），放入新版并打开。
+4. 健康检查：新版须在 60 秒内启动并持续运行 10 秒；否则自动恢复旧版并重新打开，
+   失败的新版留在 `failed-<时间>.app`。
+
+进度写在 `~/Library/Caches/cindy-local-install/install.log`，结果在同目录的
+`status.json`（`ok`／`rolled_back`／`failed`）。替换期间本机 Cindy 和远程连接会中断，
+新版启动后需等它重新连上；Agent 回复用户时要说明这一点，重开后可读 `status.json` 核对结果。
+
 需要正式发布产物或完整打包验收时使用原有 `pnpm release:package`，其默认行为保持不变。
 `--local` 不接受 `--version`，避免把未验收的个人包混入版本化发布流程。
 

@@ -5179,6 +5179,15 @@
         "label": "Use {{shortcut}} to send",
         "hint": "When enabled, {{shortcut}} sends messages. When disabled, Enter sends messages and Shift+Enter inserts a new line.",
         "ariaLabel": "Use {{shortcut}} to send messages"
+      },
+      "runningSend": {
+        "label": "While a task is running",
+        "hint": "How Enter and the send button deliver new messages while a task is running. When Enter sends, press {{shortcut}} for the other option.",
+        "ariaLabel": "Delivery for new messages while a task is running",
+        "options": {
+          "queue": "Queue",
+          "steer": "Steer"
+        }
       }
     },
     "linkOpen": {
@@ -11834,6 +11843,9 @@
       "queue": "Queue message",
       "queueTooltip": "Click to queue; press {{shortcut}} to steer without interrupting the task",
       "queueTooltipSendMode": "Click to queue; press {{shortcut}} to send this message",
+      "steer": "Steer message",
+      "steerTooltip": "Click to steer without interrupting the task; press {{shortcut}} to queue",
+      "steerTooltipSendMode": "Click or press {{shortcut}} to steer without interrupting the task",
       "stop": "Stop generating"
     },
     "pluginSetup": {
