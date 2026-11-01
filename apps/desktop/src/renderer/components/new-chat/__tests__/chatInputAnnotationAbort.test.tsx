@@ -47,6 +47,8 @@ const h = vi.hoisted(() => ({ t: (key: string) => key, confirm: vi.fn(), editor:
   realModelSelector: false,
   listAgentSkills: vi.fn(),
   localProviders: [] as ProviderView[],
+  deviceProviders: [] as ProviderView[],
+  switchSessionAgent: vi.fn(),
   uploadChatFolder: vi.fn(),
   cacheImageFromBuffer: vi.fn(),
   atPanelStandin: false,
@@ -110,15 +112,21 @@ vi.mock('@/voice-input/useVoiceInput', () => ({ useVoiceInput: (editor: Editor |
   return { state, prepare: h.prepare, getState: () => h.voiceState ?? (h.listening ? 'listening' : 'idle'), isListening: state === 'listening', isBusy: state === 'listening' || state === 'submitting' || state === 'refining', draftText: h.draftText, draftSource: h.draftSource, draftRange: h.draftRange, start: () => { h.listening = true; return true; }, stop: h.stop, cancel: h.cancel };
 } }));
 vi.mock('@/hooks/useProviders', () => ({ useProviders: () => ({ providers: h.localProviders, providerOrder: [], loading: false }) }));
-vi.mock('@/hooks/useDeviceProviders', () => ({ useDeviceProviders: () => ({ providers: [], loading: false, unsupported: false }) }));
+vi.mock('@/hooks/useDeviceProviders', () => ({ useDeviceProviders: (deviceId?: string) => ({ providers: deviceId ? h.deviceProviders : [], loading: false, unsupported: false }) }));
+vi.mock('@/hooks/useDevicesProviders', () => ({ useDevicesProviders: (ids: readonly string[]) =>
+  new Map(ids.map(id => [id, { providers: h.deviceProviders, loading: false, error: null }])) }));
 vi.mock('@/hooks/useConnectedSource', () => ({ useConnectedSource: () => ({ hasConnectedSource: true, loading: false }) }));
 vi.mock('@/hooks/useAvailableAgents', () => ({ useAvailableAgents: () => ({ agents: [], loading: false }) }));
-vi.mock('@/hooks/useAgentCapabilities', async (original) => ({ ...await original<typeof import('@/hooks/useAgentCapabilities')>(), useAgentCapabilities: () => ({ capabilities: null, loading: false }) }));
+vi.mock('@/hooks/useAgentCapabilities', async (original) => ({ ...await original<typeof import('@/hooks/useAgentCapabilities')>(), useAgentCapabilities: (_agent: unknown, deviceId?: string) => ({
+  capabilities: deviceId === 'share:composer' ? { availableModels: [], effortLevels: [], hasFastMode: false } : null,
+  loading: false,
+}) }));
 
 const noOp = () => {};
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api: any = new Proxy({}, { get: (_obj, key) => {
   if (key === 'setModel') return h.setModel;
+  if (key === 'switchSessionAgent') return h.switchSessionAgent;
   if (key === 'uploadChatFolder') return h.uploadChatFolder;
   if (key === 'cacheImageFromBuffer') return h.cacheImageFromBuffer;
   if (key === 'getFilePath') return () => '/controller/docs';
@@ -153,6 +161,9 @@ beforeEach(() => {
   h.cacheImageFromBuffer.mockReset().mockResolvedValue(undefined);
   h.listAgentSkills.mockReset().mockResolvedValue({ success: true, skills: [] });
   h.localProviders = [];
+  h.deviceProviders = [];
+  h.switchSessionAgent.mockReset().mockResolvedValue({ deferred: true });
+  h.confirm.mockReset().mockResolvedValue(true);
   h.editor = null;
   h.documentChanged.mockClear();
   h.listening = false;
@@ -515,6 +526,53 @@ it('returns focus to the editor after choosing a model from the real selector', 
   await waitFor(() => expect(screen.queryByRole('listbox', { name: 'newChat.modelSelector.modelListAria' })).toBeNull());
   await waitFor(() => expect(onModelDidChange).toHaveBeenCalledExactlyOnceWith('remote-new'));
   await waitFor(() => expect(document.activeElement).toBe(h.editor!.view.dom));
+});
+
+// Regression: ChatInput gated remote catalogs and draft selection on the disabled
+// unified panel. Direct ModelSelector tests supplied those props and missed it.
+// Unit tier: one local source + one share, through the real composer and picker;
+// assert the complete draft route / existing-session handoff sent to the host.
+it.each(['draft', 'session'] as const)('selects a shared provider through the legacy composer (%s)', async kind => {
+  h.realModelSelector = true;
+  supplyRangeGeometry();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  h.localProviders = [sshProvider('local', [sshModel('local-model')], 'claude-code')];
+  h.deviceProviders = [{
+    ...sshProvider('shared-anthropic', [sshModel('shared-model')], 'claude-code'),
+    remoteInvocationEnabled: true,
+  }];
+  const onUnifiedDraftSelect = vi.fn();
+  const sessionId = 'composer-share-regression';
+  renderComposer({
+    ...(kind === 'session' ? { sessionId, runtimeAgentKind: 'claude-code', sessionOrcaRole: null } : {}),
+    vendorKey: 'cc', initialModel: 'local-model', initialProviderId: 'local', initialEffort: 'high',
+    hideRuntimeControls: false,
+    remoteAgentDevices: [{ deviceId: 'share:composer', name: 'Shared source' }],
+    onUnifiedDraftSelect,
+  });
+  await waitFor(() => expect(h.editor).not.toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'newChat.modelSelector.trigger.ariaWithEffort' }));
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.queryByRole('tablist')).toBeNull();
+  expect(screen.queryByRole('textbox', { name: 'newChat.modelSelector.search.placeholderAll' })).toBeNull();
+  expect(screen.getByRole('option', { name: /local-model/ })).toBeTruthy();
+  const sharedModel = screen.getByRole('option', { name: /shared-model/ });
+  expect(sharedModel.getAttribute('aria-disabled')).not.toBe('true');
+  await act(async () => { fireEvent.click(sharedModel); });
+  if (kind === 'draft') {
+    expect(onUnifiedDraftSelect).toHaveBeenCalledWith(expect.objectContaining({
+      vendor: 'cc', providerId: 'shared-anthropic', modelId: 'shared-model',
+      agentDevice: { deviceId: 'share:composer', name: 'Shared source' },
+    }));
+  } else {
+    expect(h.switchSessionAgent).toHaveBeenCalledWith(
+      sessionId, 'claude-code', 'shared-model', 'shared-anthropic', 'high', false,
+      { agentDeviceId: 'share:composer' }, expect.anything(),
+    );
+    expect(makerChatStore.getAgentSwitchIntent(sessionId)).toMatchObject({
+      model: 'shared-model', providerId: 'shared-anthropic', agentDeviceId: 'share:composer',
+    });
+  }
 });
 
 it('defers Escape on top-level surfaces and cancels voice once from the editor', async () => {

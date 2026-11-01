@@ -9992,6 +9992,7 @@ export function ChatInput({
                     // Claude Code 回退冒充);草稿直接取当前引擎。
                     engineMarkVendor={unifiedPanelActive ? composerEngineMarkVendor : null}
                     unifiedPanel={unifiedPanelActive}
+                    compactProviderList
                     // 「最近使用」只记**对话**入口(新任务草稿 / 会话内,本组件就是这两个),且
                     // 远程不记:被控端目录的模型写进本机列表只会得到一行永远不可路由的记录。
                     // deviceLinkDeviceId 为 undefined = 归属尚未解析(冷启动) —— 宁可这一帧
@@ -10005,7 +10006,7 @@ export function ChatInput({
                     sessionEngineFilter={sessionEngineFilter}
                     // 新会话:选中直通,引擎跟着模型一起落进草稿(见 handleUnifiedDraftSelect)。
                     onUnifiedSelect={
-                      !sessionId && unifiedPanelActive && onUnifiedDraftSelect
+                      !sessionId && (unifiedPanelActive || remoteAgentOptions) && onUnifiedDraftSelect
                         ? handleUnifiedDraftSelect
                         : undefined
                     }
@@ -10043,9 +10044,10 @@ export function ChatInput({
                     deviceId={catalogDeviceId}
                     // 远程 Agent:面板同时列出其他电脑上的供应商。草稿选中即换 Agent 落点;已建任务
                     // 选中另一台电脑的模型 = 把 Agent 挪过去(下一条消息生效)。
-                    {...(remoteAgentOptions && unifiedPanelActive && onUnifiedDraftSelect
+                    // 来源与运行位置不依赖面板样式；旧版选择器也需要完整的目录和选择回调。
+                    {...(remoteAgentOptions && onUnifiedDraftSelect
                       ? { remoteAgent: remoteAgentOptions }
-                      : sessionRemoteAgentOptions && unifiedPanelActive
+                      : sessionRemoteAgentOptions
                         ? { remoteAgent: sessionRemoteAgentOptions }
                         : {})}
                     // Agent 在另一台电脑运行(草稿或已建任务;意图期按下一条消息时的位置):

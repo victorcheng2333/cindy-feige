@@ -19,7 +19,7 @@ export function VendorSegmentedSwitcher({
   disabled?: boolean;
   hiddenVendors?: readonly MakerVendor[];
   className?: string;
-  width?: number;
+  width?: number | `${number}%`;
   dense?: boolean;
   ariaLabel?: string;
 }) {

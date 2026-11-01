@@ -139,6 +139,8 @@ interface MorphPopoverProps {
   startRadius?: number;
   /** 面板内容容器 className(padding 等由调用方给)。 */
   panelClassName?: string;
+  /** False when the content owns a nested scroller; keep the shell width stable. */
+  scrollContent?: boolean;
   /** trigger 外层 wrapper className(布局用,如 shrink)。 */
   wrapperClassName?: string;
   /** 面板 aria-label(容器为 group 语义时可选)。 */
@@ -201,6 +203,7 @@ export function MorphPopover({
   endBorderColor = 'var(--cmd-palette-border)',
   startRadius,
   panelClassName,
+  scrollContent = true,
   wrapperClassName,
   panelAriaLabel,
   autoFocusTarget,
@@ -401,7 +404,7 @@ export function MorphPopover({
       const focusDelay = reduced ? 0 : MORPH_MS;
       closeTimerRef.current = setTimeout(() => {
         settledRef.current = true;
-        setContentOverflowY(contentRef.current, 'auto');
+        setContentOverflowY(contentRef.current, scrollContent ? 'auto' : 'hidden');
         // RO 在 opening 期间收到的尺寸变化不会在 settled 后自动重发,这里补量一次
         // (异步 capability / provider 列表在开场动画内返回时防面板卡旧尺寸)。
         syncPanelToContent();
@@ -481,6 +484,7 @@ export function MorphPopover({
   }, [
     mounted,
     open,
+    scrollContent,
     measure,
     applyChipGeometry,
     dockedAnchor,
