@@ -1,5 +1,5 @@
 import { teammateSelectionStyle } from './teammateSelection';
-import { aggregateTeammateStatus, TEAMMATE_AVATAR } from '@cindy/maker-shared/teammate-status';
+import { aggregateTeammateStatus } from '@cindy/maker-shared/teammate-status';
 import { TeammateStatusDot } from './TeammateStatusDot';
 import { localTeammateStatus, remoteTeammateStatus, groupTeammateStatus } from './teammateRosterStatus';
 import { BotGenerationLabel } from './BotGenerationLabel';

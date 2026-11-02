@@ -1,3 +1,6 @@
+import { usePreviewFocusReturn } from './PreviewChrome';
+import { PreviewHeader, PreviewFooter, PreviewButton } from './PreviewChrome';
+import { previewSourceName } from '@cindy/maker-shared/attachment-preview';
 import { shouldShowOpenPathError } from '../../../shared/openPathResult';
 /**
  * ModelLightbox
@@ -28,7 +31,7 @@ import { shouldShowOpenPathError } from '../../../shared/openPathResult';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FocusScope } from '@radix-ui/react-focus-scope';
-import { Box, FolderOpen } from 'lucide-react';
+import { Box, FolderOpen, RotateCcw, Minus, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from '@/lib/toast';
 import { extractIpcError } from '@/utils/ipcError';
@@ -65,11 +68,15 @@ export type ModelLightboxSource =
 interface ModelLightboxProps {
   source: ModelLightboxSource;
   onClose: () => void;
+  filename?: string;
 }
 
-export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
+export function ModelLightbox({ source, onClose, filename }: ModelLightboxProps) {
+  const restorePreviewFocus = usePreviewFocusReturn();
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   const isClosingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -85,6 +92,17 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   // "open" / "reveal" 正在执行时禁用菜单, 避免重复点击。Mirror ChatImageView。
   const [modelPending, setModelPending] = useState<'open' | 'reveal' | null>(null);
+
+  const zoomModel = (factor: number) => {
+    const viewer = modelViewerRef.current as
+      (HTMLElement & { getCameraOrbit?(): { theta: number; phi: number; radius: number } }) | null;
+    const orbit = viewer?.getCameraOrbit?.();
+    if (orbit)
+      viewer!.setAttribute(
+        'camera-orbit',
+        `${orbit.theta}rad ${orbit.phi}rad ${orbit.radius * factor}m`,
+      );
+  };
 
   const poster = source.kind === 'blob' ? source.poster : undefined;
 
@@ -114,7 +132,7 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
   // recently-closed context menu doesn't also dismiss the lightbox.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.defaultPrevented || e.key !== 'Escape' || document.fullscreenElement) return;
       if (performance.now() - lastMenuCloseAt.current < 150) return;
       handleClose();
     };
@@ -142,7 +160,7 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
     if (!el) return;
     let disposed = false;
     const onError = () => {
-      toast.error(t('chat.media.modelLoadFailed', 'Failed to load 3D model'));
+      setFailed(true);
     };
     el.addEventListener('error', onError);
     // Register on demand, after the error listener is attached. Existing custom
@@ -159,7 +177,7 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
       disposed = true;
       el.removeEventListener('error', onError);
     };
-  }, [t]);
+  }, [t, retry]);
 
   async function handleModelAction(action: 'open' | 'reveal'): Promise<void> {
     if (modelPending) return;
@@ -214,6 +232,7 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
     // 里既有的 blur 仍保留——点进模型后 model-viewer shadow DOM 的焦点框
     // 要在淡出前先灭掉。
     <FocusScope
+      onUnmountAutoFocus={restorePreviewFocus}
       asChild
       trapped
       loop
@@ -224,11 +243,12 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
     >
     <div
       ref={overlayRef}
+      data-lightbox-layer
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'var(--overlay-lightbox)',
+        background: 'var(--surface)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -239,8 +259,9 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
     >
       <button
         type="button"
-        aria-label={t('chat.lightbox.close')}
-        style={{
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{
           position: 'absolute',
           inset: 0,
           border: 0,
@@ -253,13 +274,51 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
           handleClose();
         }}
       />
-      {/* The model-viewer takes a fixed viewport-relative box so it has a
+        <PreviewHeader
+          name={
+            filename ??
+            previewSourceName(
+              source.kind === 'local' ? source.absPath : source.url,
+              t('chat.media.modelPreviewAlt'),
+            )
+          }
+          onClose={handleClose}
+          onSave={() => {
+            void window.electronAPI
+              .saveMediaAs({
+                url: source.kind === 'local' ? toLocalFileUrl(source.absPath) : source.url,
+              })
+              .catch(() => toast.error(t('chat.media.saveFailed')));
+          }}
+          onMenuClose={() => {
+            lastMenuCloseAt.current = performance.now();
+          }}
+          menu={
+            <>
+              <DropdownMenuItem
+                disabled={modelPending !== null}
+                onClick={() => void handleModelAction('open')}
+              >
+                <Box className="mr-2 h-4 w-4" />
+                {t('chat.media.openModel')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={modelPending !== null}
+                onClick={() => void handleModelAction('reveal')}
+              >
+                <FolderOpen className="mr-2 h-4 w-4" />
+                {t('chat.media.revealModel')}
+              </DropdownMenuItem>
+            </>
+          }
+        />
+        {/* The model-viewer takes a fixed viewport-relative box so it has a
           stable canvas size to render into. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: right-click opens a pointer context menu for the model canvas. */}
       <div
         style={{
           width: 'min(85vw, 1024px)',
-          height: 'min(85vh, 768px)',
+          height: 'calc(100vh - 160px)',
           position: 'relative',
           zIndex: 1,
         }}
@@ -269,7 +328,8 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
       }}
       >
         <model-viewer
-          ref={modelViewerRef}
+            key={retry}
+            ref={modelViewerRef}
           // The element upgrades when its module loads, then fetches the model
           // through the existing media/local-file protocol.
           {...(modelUrl ? { src: modelUrl } : {})}
@@ -311,6 +371,41 @@ export function ModelLightbox({ source, onClose }: ModelLightboxProps) {
           </div>
         ) : null}
       </div>
+
+        {failed ? (
+          <div className="absolute inset-x-0 top-20 z-10 flex items-center justify-center gap-3 bg-[var(--surface)] p-3 text-sm">
+            <span>{t('chat.media.modelLoadFailed')}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setFailed(false);
+                setRetry((value) => value + 1);
+              }}
+            >
+              {t('attachmentPreview.retry')}
+            </button>
+          </div>
+        ) : null}
+        <PreviewFooter>
+          <PreviewButton label={t('attachmentPreview.zoomOut')} onClick={() => zoomModel(1.25)}>
+            <Minus className="h-4 w-4" />
+          </PreviewButton>
+          <PreviewButton
+            label={t('attachmentPreview.reset')}
+            onClick={() => {
+              const viewer = modelViewerRef.current;
+              if (!viewer) return;
+              viewer.setAttribute('camera-orbit', '0deg 75deg auto');
+              viewer.setAttribute('camera-target', 'auto auto auto');
+              viewer.setAttribute('field-of-view', 'auto');
+            }}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </PreviewButton>
+          <PreviewButton label={t('attachmentPreview.zoomIn')} onClick={() => zoomModel(0.8)}>
+            <Plus className="h-4 w-4" />
+          </PreviewButton>
+        </PreviewFooter>
 
       <DropdownMenu
         open={menuPos !== null}

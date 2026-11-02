@@ -42,11 +42,19 @@ export class ClaudeProcessExitBarrier {
   }
 }
 
+export interface ObservedClaudeProcessExit {
+  pid: number | undefined;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  abortRequested: boolean;
+}
+
 export interface ObservedClaudeProcessOptions {
   spawnOptions: SpawnOptions;
   registerProcess?: (pid: number) => void | (() => void);
   trackDebugFile?: () => () => void;
   onStderr?: (chunk: string) => void;
+  onExit?: (details: ObservedClaudeProcessExit) => void;
 }
 
 /** Mirror the SDK's local spawn while exposing one concrete process generation. */
@@ -86,7 +94,19 @@ export function spawnObservedClaudeProcess(
     disposeDebugFile = undefined;
     disposeRegistration = undefined;
   };
-  child.once('exit', disposeOnce);
+  child.once('exit', (exitCode, signal) => {
+    disposeOnce();
+    try {
+      opts.onExit?.({
+        pid: child.pid,
+        exitCode,
+        signal,
+        abortRequested: opts.spawnOptions.signal?.aborted ?? false,
+      });
+    } catch {
+      // Diagnostics must not turn a child exit into an SDK event-handler failure.
+    }
+  });
   child.once('error', disposeOnce);
   child.stderr.on('data', (chunk: Buffer) => {
     // A custom SDK spawn owns stderr forwarding. Always drain the pipe so verbose

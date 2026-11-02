@@ -101,7 +101,7 @@ Desktop 信任来源已经完成的版本选择，不再按 `minCindyVersion` �
 
 插件语言**只跟随 Cindy 宿主当前语言**。不要读取 `navigator.language`、操作系统语言或
 浏览器偏好，也不要在插件内保存另一份语言选择。宿主当前支持
-`zh-CN / en / ja / ko`；插件没提供宿主当前语言时固定使用英文，因此只要声明
+`zh-CN / zh-TW / en / ja / ko / es / fr / de / pt-PT / pt-BR`；插件没提供宿主当前语言时固定使用英文，因此只要声明
 `locales` 就必须提供 `en`。
 
 locale JSON 覆盖清单中已有的可本地化字段。**翻译是可选项**：提供的条目必须合法，
@@ -340,6 +340,12 @@ node 详单**不接受** `command` / `args` / `shell` / `env` 或其它自造字
   }]
 }
 ```
+
+OAuth 直连模式（未声明 `tokenBroker`）中，若服务商要求 RFC 8707 资源绑定，
+可用 `extraAuthorizeParams.resource` 指定资源的完整 HTTPS 地址。宿主在授权码换令牌时
+携带实际授权 URL 中相同的 `resource`；URL 自带的重复 `resource` 也会保留，
+`extraAuthorizeParams.resource` 则覆盖 URL 中的原值。其他授权参数不会因此转发到令牌端点。
+此行为不扩展 broker 协议；刷新请求仍省略 `resource`，需要服务商沿用原令牌绑定的资源。
 
 **setup 就绪声明**(可选,顶层字段):回答"这个插件**用之前必须配好什么**"。用户在
 插件页点「使用」或 Agent 调用你的工具时,主机按它做前置检查；没配齐就用统一设置卡

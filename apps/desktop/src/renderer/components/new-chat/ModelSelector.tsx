@@ -37,6 +37,7 @@ import {
   CircleAlert,
   Clock3,
   Loader2,
+  Plug,
   PlugZap,
   Plus,
   RefreshCw,
@@ -75,6 +76,7 @@ import {
   type UnifiedModelPanelProps,
   type UnifiedSelectedRow,
 } from './UnifiedModelPanel';
+import { matchPluginModels, PluginModelIcon, PluginModelsSection, type PluginModelsPickerProps } from './PluginModelsSection';
 import { stopWheelPropagation } from '@/lib/stopWheelPropagation';
 import type { ProviderGroupUsageOf, ProviderUsageScope } from './useProviderWeeklyQuota';
 import { ThinkingToggle } from './ThinkingToggle';
@@ -162,6 +164,7 @@ import { applyProviderOrder } from '../../../shared/providerOrder';
 import type { ModelPricingCatalog } from '../../../shared/regionalMoney';
 import { buildProviderSections } from './sourceSwitch';
 import type { ModelPickerPreferenceStore } from './modelPickerPreferences';
+import { mergeSshCodexCatalog, type SshCodexCatalog } from '@/lib/sshCodexCatalog';
 
 // 短刷新（尤其 auto-refresh cooldown 命中）不应让状态行参与 MorphPopover 的首帧量高：
 // 否则它在 220ms 开场内消失后，settle 补量会把面板再缩一次，形成“先变大再变小”。
@@ -215,6 +218,8 @@ export { categorize, CATEGORY_LABEL_KEY, type ModelCategory } from './sourceSwit
  * 首页草稿的 props 则由 NewMakerDraftRoute 从同一份全局预设派生,没有“当前会话保护”。
  */
 export interface ModelMemoryAccessors {
+  /** False for engines without a memory store; edits then use the configuration callback. */
+  supportsAgent?: (agent: AgentKind) => boolean;
   getEffort: (agent: AgentKind, providerId: string, modelId: string) => Effort | undefined;
   setEffort: (agent: AgentKind, providerId: string, modelId: string, effort: Effort) => void;
   /** 真正选中 / 使用模型时同时更新该来源 lastModel;只编辑非选中行不调用。 */
@@ -717,9 +722,16 @@ export interface RemoteAgentSelectorOptions {
 }
 
 interface ModelSelectorProps {
+  /** 语义同 ModelSelectorContentProps.pluginModels。 */
+  pluginModels?: PluginModelsPickerProps;
   /** Authoritative surface-specific allowlist (e.g. one-shot or vision routes). */
   providersOverride?: ProviderView[];
   providersOverrideState?: { status: 'loading' | 'error' | 'ready'; refresh: () => void };
+  /**
+   * SSH project: Codex models come from the host (see mergeSshCodexCatalog), Claude Code
+   * and Pi keep the local catalog. `idle` = not read yet; opening the picker calls refresh.
+   */
+  sshCodex?: SshCodexCatalog;
   currentSelection?: SessionRuntimeProfileProjection;
   /** Open recovery for the selected source; generic Add model navigation stays separate. */
   onReconnectSource?: () => void;
@@ -930,8 +942,11 @@ interface ModelSelectorProps {
 }
 
 interface ModelSelectorContentProps {
+  /** 新任务的「让插件选」；只有草稿传(已有任务、伙伴对话不传)。 */
+  pluginModels?: PluginModelsPickerProps;
   providersOverride?: ProviderView[];
   providersOverrideState?: ModelSelectorProps['providersOverrideState'];
+  sshCodex?: SshCodexCatalog;
   modelId: string;
   effort: Effort;
   onModelChange: (modelId: string) => void | boolean | Promise<void | boolean>;
@@ -1204,6 +1219,9 @@ export function ModelSelectorContent(props: ModelSelectorContentProps) {
   );
 }
 
+/** 「让插件选」生效时不点亮任何模型行(空 modelId 不匹配任何条目)。 */
+const NO_MODEL_SELECTION = { providerId: null, modelId: '' } as const;
+
 type ModelSelectorContentViewProps = ModelSelectorContentProps & {
   gatewayPricing: ModelPricingCatalog | null;
   referencePricing: ModelPricingCatalog | null;
@@ -1218,6 +1236,8 @@ type ModelSelectorContentViewProps = ModelSelectorContentProps & {
 
 function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const {
+    pluginModels,
+    sshCodex,
     providersOverride,
     providersOverrideState,
     modelId,
@@ -1420,12 +1440,22 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
         : remoteProviders.providers,
     [remoteAgentBrowsing, remoteProviders.providers],
   );
-  const providers = deviceId ? remoteCatalogProviders : providersOverride ?? localProviders.providers;
+  const sshCodexProviders = sshCodex?.providers;
+  const sshCatalogProviders = useMemo(
+    () => (sshCodexProviders ? mergeSshCodexCatalog(localProviders.providers, sshCodexProviders) : null),
+    [localProviders.providers, sshCodexProviders],
+  );
+  const providers = deviceId
+    ? remoteCatalogProviders
+    : providersOverride ?? sshCatalogProviders ?? localProviders.providers;
+  // SSH 目录里 Codex 来自远端主机：本机账号用量、本机供应商组都不能代表它。
+  const sshCodexActive = sshCodex !== undefined;
+  const mixedCatalog = !!providersOverride || sshCodexActive;
   // 订阅用量跟随目录归属:本机目录读本机账号,远程目录读被控端镜像(与会话用量 chip 共用缓存);
-  // 外部注入的目录(providersOverride)归属不明,不显示任何账号用量。
+  // 外部注入的目录(providersOverride)与 SSH 混合目录归属不明,不显示任何账号用量。
   const providerUsageScope = useMemo<ProviderUsageScope | null>(
-    () => (deviceId ? { deviceId } : providersOverride ? null : { deviceId: null }),
-    [deviceId, providersOverride],
+    () => (deviceId ? { deviceId } : mixedCatalog ? null : { deviceId: null }),
+    [deviceId, mixedCatalog],
   );
   // Old device-link hosts expose capabilities only. Never substitute local routes.
   const unifiedPanel = useUnifiedPanel && !(deviceId && remoteProviders.unsupported);
@@ -1593,11 +1623,12 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       model: { id: string; defaultEnabled?: boolean },
       agent: AgentKind,
     ): boolean =>
-      providersOverride ? true : deviceId
+      // SSH 的 Codex 行是远端 model/list 已筛过的可选清单，本机可见性偏好不适用。
+      providersOverride || (sshCodexActive && agent === 'codex') ? true : deviceId
         ? isDeviceModelVisible(remoteProviders.modelVisibilityOverrides, agent, providerId, model)
         : isModelEnabled(agent, providerId, model),
     // biome-ignore lint/correctness/useExhaustiveDependencies: visibilityVersion 是本机可见性偏好的外部刷新信号(值本身不进判定)。
-    [providersOverride, deviceId, remoteProviders.modelVisibilityOverrides, visibilityVersion],
+    [providersOverride, sshCodexActive, deviceId, remoteProviders.modelVisibilityOverrides, visibilityVersion],
   );
   const unifiedExcludeProvider = useMemo(
     () =>
@@ -1785,7 +1816,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // 供应商组在分组标题与左栏提示里带上台数(provider-groups.md §10)：「Anthropic · 供应商组 · 2 台电脑」。
   // 只算任务所在电脑就是本机时本机建的组；被控电脑上的任务看那台的目录，不在这里标。远程 Agent 面板正在浏览
   // 另一台电脑的目录时，左栏本机那几格仍是本机的供应商，照样带台数。
-  const localGroupsApply = (remoteAgent ? true : !deviceId) && !homeDeviceId && !providersOverride;
+  const localGroupsApply = (remoteAgent ? true : !deviceId) && !homeDeviceId && !mixedCatalog;
   const withLocalGroupSize = useCallback(
     (providerId: string, label: string): string => {
       const config = localGroupsApply ? localProviderGroups[providerId] : undefined;
@@ -1834,7 +1865,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const selfDeviceId = remoteAgent?.selfDeviceId ?? null;
   const providerGroupUsage = useCallback<ProviderGroupUsageOf>(
     (directoryDeviceId, providerId) => {
-      if (providersOverride) return null;
+      if (mixedCatalog) return null;
       let config: ProviderGroupConfig | undefined;
       if (directoryDeviceId !== null) {
         config = remoteProviderGroups.groups.get(remoteProviderEntryKey(directoryDeviceId, providerId));
@@ -1881,7 +1912,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       };
     },
     [
-      providersOverride,
+      mixedCatalog,
       remoteProviderGroups,
       homeDeviceId,
       remoteAgent,
@@ -1905,7 +1936,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // seedDefaultFavorite 内部保证,这里重复跑只是 no-op。device-link 远程视图不投:
   // 标记来自被控端目录,控制端的本机收藏不该被它污染。
   useEffect(() => {
-    if (!unifiedPanel || deviceId || providersOverride || unifiedSelectionPolicy === 'official') return;
+    if (!unifiedPanel || deviceId || mixedCatalog || unifiedSelectionPolicy === 'official') return;
     const entries = unifiedModelEntries({
       providers,
       ...(unifiedAgents ? { agents: unifiedAgents } : {}),
@@ -1940,7 +1971,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     // biome-ignore lint/correctness/useExhaustiveDependencies: unifiedAgents 以 unifiedAgentsKey 表达身份(数组每次 render 都是新引用)。
   }, [
     providers,
-    providersOverride,
+    mixedCatalog,
     unifiedPanel,
     deviceId,
     unifiedIsVisible,
@@ -3411,6 +3442,15 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   if (providersOverrideState && providersOverrideState.status !== 'ready') {
     return <RemoteModelLoadNotice status={providersOverrideState.status} onRetry={providersOverrideState.refresh} />;
   }
+  const sshCodexPending =
+    sshCodex?.status === 'loading' || sshCodex?.status === 'error' ? sshCodex.status : null;
+  // 兼容列表只列当前引擎：当前是 Codex 时远端清单就是整张列表。统一面板里其余引擎照常可选，
+  // 提示只占列表上方一行。
+  if (sshCodex && sshCodexPending && !unifiedPanel && currentAgentKind === 'codex') {
+    return <RemoteModelLoadNotice status={sshCodexPending} onRetry={sshCodex.refresh} />;
+  }
+  const sshCodexNotice = sshCodex && sshCodexPending
+    ? <RemoteModelLoadNotice compact status={sshCodexPending} onRetry={sshCodex.refresh} /> : null;
 
   const localCatalogNotice = !deviceId && !providersOverride && localProviders.error
     ? <LocalModelCatalogNotice failure={localProviders.error} onRetry={localProviders.refetch} /> : null;
@@ -3634,7 +3674,12 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
             />
           </div>
           {localCatalogNotice && <div className="shrink-0 p-2">{localCatalogNotice}</div>}
+          {sshCodexNotice && <div className="shrink-0 p-2">{sshCodexNotice}</div>}
           <UnifiedModelPanel
+            {...(pluginModels ? {
+              pinnedTop: <PluginModelsSection picker={pluginModels} query={query} onPicked={() => onDismiss?.()} />,
+              pinnedTopHasRows: matchPluginModels(pluginModels.models, query).length > 0,
+            } : {})}
             {...(!remoteAgent && deviceId && (remoteModelListStatus === 'loading' || remoteModelListStatus === 'error')
               ? {
                   catalogNotice: (
@@ -3662,12 +3707,14 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
               excludeSubscriptionDirect ? 1 : 0,
               excludeChatBridgedCodex ? 1 : 0,
               remoteProviders.modelVisibilityOverrides ? 'ov' : 'no-ov',
+              sshCodexActive ? 'ssh' : '',
             ].join('|')}
             query={query}
             // field 形态的面板宽度绑 trigger,定宽 sizer 无用武之地(见该 prop 说明)。
             panelWidthFluid={fluidWidth}
-            selected={panelSelection}
-            selectedFavoriteUid={browsingSelectedCatalog ? selectedFavoriteUid : null}
+            // 选中插件模型时选中的是插件那一行，普通模型行不再同时显示选中底色。
+            selected={pluginModels?.active ? NO_MODEL_SELECTION : panelSelection}
+            selectedFavoriteUid={browsingSelectedCatalog && !pluginModels?.active ? selectedFavoriteUid : null}
             liveAgentKind={
               unifiedSelectionPolicy === 'official' || !browsingLiveCatalog ? null : currentAgentKind
             }
@@ -3740,7 +3787,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
             configurationEnabled={configurationEnabled}
             selectionPolicy={unifiedSelectionPolicy}
             recordRecentUsage={recordRecentModelsOnSelect}
-            isRouteDisabled={(providerId, id, rowAgent) => providersOverride ? false : modelDisabledOf(providers.find((provider) => provider.id === providerId) ?? null, id, rowAgent)}
+            isRouteDisabled={(providerId, id, rowAgent) => providersOverride || (sshCodexActive && rowAgent === 'codex') ? false : modelDisabledOf(providers.find((provider) => provider.id === providerId) ?? null, id, rowAgent)}
             {...(panelSessionEngineFilter ? { sessionEngineFilter: panelSessionEngineFilter } : {})}
             {...(followSession ? { followSession: {
               ...followSession,
@@ -4172,8 +4219,10 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
 }
 
 export function ModelSelector({
+  pluginModels,
   providersOverride,
   providersOverrideState,
+  sshCodex,
   modelId,
   currentSelection,
   onReconnectSource,
@@ -4236,6 +4285,7 @@ export function ModelSelector({
     contentFocusRef.current?.querySelector<HTMLElement>('[data-model-selected="true"]:not([aria-disabled="true"])') ??
     contentFocusRef.current?.querySelector<HTMLElement>('[role="listbox"]') ?? null, []);
   const openRef = useRef(false);
+  const sshCodexRefresh = sshCodex?.refresh;
   const [keepOpenForAgentConfirmation, setKeepOpenForAgentConfirmation] = useState(false);
   useProviderShareQuotaViewing(open || keepOpenForAgentConfirmation);
   // 打开触发的那次模型发现是否仍在途(并发语义与理由见 useModelDiscoveryPending)。
@@ -4287,6 +4337,8 @@ export function ModelSelector({
       if (nextOpen && !wasOpen && providersOverrideState) {
         providersOverrideState.refresh();
       } else if (nextOpen && !wasOpen && !deviceId && !providersOverride) {
+        // SSH:远端 Codex 清单按需读取(首次打开才读),其余引擎照常刷新本机目录。
+        sshCodexRefresh?.();
         discovery.begin(() =>
           window.electronAPI.maker.requestProviderModelsAutoRefresh('model-selector-open'),
         );
@@ -4297,7 +4349,7 @@ export function ModelSelector({
       }
       setOpen(nextOpen);
     },
-    [deviceId, disabled, discovery, resetDiscoveryPresentation, providersOverride, providersOverrideState],
+    [deviceId, disabled, discovery, resetDiscoveryPresentation, providersOverride, providersOverrideState, sshCodexRefresh],
   );
 
   // AlertDialog 打开时会被 Popover 视作外部交互并请求关闭。Agent 分段确认期间
@@ -4377,7 +4429,16 @@ export function ModelSelector({
   // 查不到被控端独有模型 → currentModel undefined → label 退成 "Select model")。
   const localProviders = useProviders();
   const remoteProviders = useDeviceProviders(deviceId);
-  const providers = deviceId ? remoteProviders.providers : providersOverride ?? localProviders.providers;
+  const sshCodexProviders = sshCodex?.providers;
+  const sshCatalogProviders = useMemo(
+    () => (sshCodexProviders ? mergeSshCodexCatalog(localProviders.providers, sshCodexProviders) : null),
+    [localProviders.providers, sshCodexProviders],
+  );
+  const providers = deviceId
+    ? remoteProviders.providers
+    : providersOverride ?? sshCatalogProviders ?? localProviders.providers;
+  // 当前是 SSH Codex 时 trigger 的加载 / 失败 / 来源都以远端清单为准;其余引擎仍看本机目录。
+  const sshCodexCurrent = sshCodex !== undefined && agentKind === 'codex';
   // Old device-link hosts expose capabilities only. Never substitute local routes.
   const unifiedPanel = useUnifiedPanel && !(deviceId && remoteProviders.unsupported);
   const remoteModelListStatus = resolveRemoteModelListStatus({
@@ -4388,9 +4449,11 @@ export function ModelSelector({
     pi,
     providers: remoteProviders,
   });
-  const remoteModelLoading = providersOverrideState?.status === 'loading' || (!!deviceId && remoteModelListStatus === 'loading');
-  const remoteModelLoadFailed = providersOverrideState?.status === 'error' || (!!deviceId && remoteModelListStatus === 'error');
-  const localModelLoading = !deviceId && !providersOverride && !localProviders.loadFailed && (
+  const remoteModelLoading = providersOverrideState?.status === 'loading' ||
+    (sshCodexCurrent && sshCodex?.status === 'loading') || (!!deviceId && remoteModelListStatus === 'loading');
+  const remoteModelLoadFailed = providersOverrideState?.status === 'error' ||
+    (sshCodexCurrent && sshCodex?.status === 'error') || (!!deviceId && remoteModelListStatus === 'error');
+  const localModelLoading = !deviceId && !providersOverride && !sshCodexCurrent && !localProviders.loadFailed && (
     localProviders.loading ||
     (agentKind === 'codex' ? codex.loading : agentKind === 'pi' ? pi.loading : cc.loading)
   );
@@ -4523,8 +4586,10 @@ export function ModelSelector({
   );
   // 草稿没有已连接来源时显示连接 CTA；已建任务保留保存的模型和恢复入口。
   // device-link 远程会话不走此 CTA(控制端无法替被控端连来源;hasConnectedSource 是本机口径)。
+  // SSH Codex 用远端主机自己的登录，本机有没有 Codex 来源与它无关。
   const noSource =
     !providersOverride &&
+    !sshCodexCurrent &&
     !actualRoute &&
     !!onProviderChange &&
     !!onNavigateToProviders &&
@@ -4637,11 +4702,15 @@ export function ModelSelector({
     : null;
   const withAgentDeviceLabel = (label: string): string =>
     agentDeviceLabel ? `${label} · ${agentDeviceLabel}` : label;
-  const triggerTitle = withAgentDeviceLabel(pendingSelectionTitle
+  const activePluginModel = pluginModels?.active ?? null;
+  const triggerTitleBase = withAgentDeviceLabel(pendingSelectionTitle
     ? `${pendingSelectionTitle}${showSourceDisconnected ? ` · ${sourceIssueLabel}` : ''}`
     : showSourceDisconnected ? baseAriaLabel : displayIdentityLabel);
+  const triggerTitle = activePluginModel
+    ? `${activePluginModel.name} · ${activePluginModel.pluginName}`
+    : triggerTitleBase;
   // 多实例同屏(IM 目录偏好)时前置「字段名 · 行别名」,读屏才能区分行与行。
-  const accessibleLabel = pendingSelectionTitle ? triggerTitle : withAgentDeviceLabel(baseAriaLabel);
+  const accessibleLabel = activePluginModel ? triggerTitle : (pendingSelectionTitle ? triggerTitle : withAgentDeviceLabel(baseAriaLabel));
   const ariaLabel = ariaContext ? `${ariaContext}:${accessibleLabel}` : accessibleLabel;
   const isBudget = isCodexGatewayWireModel(modelId);
   const isFieldTrigger = triggerVariant === 'field';
@@ -4769,7 +4838,14 @@ export function ModelSelector({
       {agentIdentity?.state === 'pending' && (
         <Clock3 size={dense ? 11 : 12} data-model-selection-pending aria-hidden className="shrink-0 text-[var(--model-trigger-meta)]" />
       )}
-      {noSource ? (
+      {activePluginModel ? (
+        <>
+          <PluginModelIcon model={activePluginModel} size={14} />
+          <span className={cn('min-w-0 truncate font-medium text-[var(--text-primary)]', dense ? 'text-12' : 'text-13', isUltraCompactToolbar && 'hidden')}>
+            {activePluginModel.name}
+          </span>
+        </>
+      ) : noSource ? (
         <>
           <PlugZap
             size={isCreateAgentVariant ? 11 : 13}
@@ -5052,6 +5128,7 @@ export function ModelSelector({
       fastModeConfigurable={fastModeConfigurable}
       providersOverride={providersOverride}
       providersOverrideState={providersOverrideState}
+      sshCodex={sshCodex}
       unifiedPanel={unifiedPanel}
       sessionEngineFilter={contentSessionEngineFilter}
       unifiedAgents={unifiedAgents}
@@ -5061,6 +5138,7 @@ export function ModelSelector({
       selectedFavoriteUid={selectedFavoriteUid}
       onSessionFavoriteAnchorChange={onSessionFavoriteAnchorChange}
       onUnifiedSelect={onUnifiedSelect}
+      {...(pluginModels ? { pluginModels } : {})}
       reselectEmitsChange={reselectEmitsChange}
       selectedRowClickOpensConfiguration={selectedRowClickOpensConfiguration}
       pointerRevealRequiresIntent={morphEnabled}
