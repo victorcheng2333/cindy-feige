@@ -77,6 +77,16 @@ async function start() {
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.session.on('will-download', event => event.preventDefault());
   window.on('close', event => { if (!quitting) { event.preventDefault(); window?.hide(); } });
+  window.on('blur', () => {
+    // A tray click may blur first; leave that click to toggle the open window.
+    const point = screen.getCursorScreenPoint(), bounds = tray?.getBounds();
+    if (bounds && point.x >= bounds.x && point.x < bounds.x + bounds.width
+      && point.y >= bounds.y && point.y < bounds.y + bounds.height) return;
+    // Let native focus/minimize transitions finish before deciding to hide.
+    setImmediate(() => {
+      if (window && !window.isDestroyed() && !window.isFocused() && !window.isMinimized()) window.hide();
+    });
+  });
   window.on('hide', () => { if (timer) clearInterval(timer); timer = null; });
   window.on('show', () => {
     if (!timer && !demo) timer = setInterval(() => { void service?.refresh(); }, 30_000);
@@ -95,10 +105,10 @@ async function start() {
   const image = nativeImage.createFromPath(join(__dirname, 'trayTemplate.png'));
   image.setTemplateImage(true);
   tray = new Tray(image); tray.setToolTip('猫猫 · 远程订阅额度');
-  // A window behind another app is still "visible" to Electron. Hiding it here
-  // consumed the first click and forced users to click again to actually open it.
+  // Clicking the menu bar can blur the window before this handler runs.
+  // Visibility, rather than focus at click time, determines the toggle.
   tray.on('click', () => {
-    if (window?.isVisible() && window.isFocused() && !window.isMinimized()) window.hide();
+    if (window?.isVisible() && !window.isMinimized()) window.hide();
     else show(true);
   });
   // A rapid second click is a distinct native event on macOS; always finish open.

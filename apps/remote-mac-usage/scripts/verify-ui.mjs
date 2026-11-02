@@ -12,34 +12,33 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.getByRole('heading', { name: '订阅额度', exact: true }).waitFor();
-  // Regression: a visible but unfocused window used to be hidden by the first
-  // tray click. The previous menu-only reopen check never exercised that branch.
-  // Tier: Electron integration; actual production Tray handler and native window.
-  const trayActivation = await electron.evaluate(({ BrowserWindow }) => {
-    const w = BrowserWindow.getAllWindows()[0], id = w.id;
-    w.blur();
-    const before = { visible: w.isVisible(), focused: w.isFocused() };
-    const start = performance.now();
-    globalThis.quotaCatTestTray.emit('click');
-    return { before, visible: w.isVisible(), sameWindow: w.id === id, elapsedMs: performance.now() - start };
+  // Tier: Electron integration. Exercise outside blur and the blur-before-tray
+  // ordering through production handlers; only the cursor position is supplied.
+  const blurToggle = await electron.evaluate(async ({ BrowserWindow, screen }) => {
+    const w = BrowserWindow.getAllWindows()[0], tray = globalThis.quotaCatTestTray;
+    const cursor = screen.getCursorScreenPoint;
+    try {
+      screen.getCursorScreenPoint = () => ({ x: -10000, y: -10000 });
+      w.blur(); w.emit('blur'); await new Promise(resolve => setImmediate(resolve)); const outsideHidden = !w.isVisible();
+      tray.emit('click'); const reopened = w.isVisible();
+      const b = tray.getBounds();
+      screen.getCursorScreenPoint = () => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+      w.emit('blur'); const trayBlurStillVisible = w.isVisible();
+      tray.emit('click'); const trayClickHidden = !w.isVisible();
+      return { outsideHidden, reopened, trayBlurStillVisible, trayClickHidden };
+    } finally { screen.getCursorScreenPoint = cursor; }
   });
-  assert.deepEqual(trayActivation.before, { visible: true, focused: false });
-  assert.equal(trayActivation.visible, true, 'first tray click must raise an unfocused window, not hide it');
-  assert.equal(trayActivation.sameWindow, true);
-  reports.push({ name: 'tray-unfocused-activation', ...trayActivation });
+  assert.deepEqual(blurToggle, { outsideHidden: true, reopened: true, trayBlurStillVisible: true, trayClickHidden: true });
+  reports.push({ name: 'outside-blur-and-tray-toggle', ...blurToggle });
   const trayToggle = await electron.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0], tray = globalThis.quotaCatTestTray;
-    // Automation may run behind the user's foreground app. Supply only the
-    // focused-state predicate for this branch; show/hide stay real native calls.
-    const isFocused = w.isFocused;
-    let hidden;
-    try { w.isFocused = () => true; tray.emit('click'); hidden = !w.isVisible(); }
-    finally { w.isFocused = isFocused; }
+    tray.emit('click'); const reopened = w.isVisible();
+    tray.emit('click'); const hidden = !w.isVisible();
     tray.emit('double-click'); const doubleClickOpen = w.isVisible();
     w.hide(); tray.emit('click');
-    return { hidden, doubleClickOpen, hiddenReopened: w.isVisible() };
+    return { reopened, hidden, doubleClickOpen, hiddenReopened: w.isVisible() };
   });
-  assert.deepEqual(trayToggle, { hidden: true, doubleClickOpen: true, hiddenReopened: true });
+  assert.deepEqual(trayToggle, { reopened: true, hidden: true, doubleClickOpen: true, hiddenReopened: true });
   // Wait for the actual OS minimize transition; no fixed sleep in the test.
   await electron.evaluate(({ BrowserWindow }) => new Promise((resolve, reject) => {
     const w = BrowserWindow.getAllWindows()[0];
