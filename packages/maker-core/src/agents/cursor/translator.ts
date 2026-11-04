@@ -93,6 +93,31 @@ function resultText(tool: NativeTool): string {
   return JSON.stringify(tool.result.value);
 }
 
+/**
+ * Cursor reports one aggregate usage per run: `inputTokens` sums every model call in the
+ * turn and already includes cache reads/writes. Occupancy is the last call's prompt, which
+ * the SDK does not expose. Estimate it from the number of model calls, assuming the prompt
+ * grows roughly linearly from the previous run's occupancy. Never exceed the aggregate.
+ */
+export function estimateCursorContextTokens(input: {
+  inputTokens: number;
+  modelCalls: number;
+  previousContextTokens: number;
+  contextWindow: number;
+}): number {
+  const total = Math.max(0, input.inputTokens);
+  const calls = Math.max(1, Math.floor(input.modelCalls));
+  if (calls === 1) return total;
+  const average = total / calls;
+  const previous = input.previousContextTokens;
+  const estimate =
+    previous > 0 && previous < average ? 2 * average - previous : average;
+  const bounded = Math.min(estimate, total);
+  return Math.round(
+    input.contextWindow > 0 ? Math.min(bounded, input.contextWindow) : bounded,
+  );
+}
+
 /** Per-run translator; only known context occupancy carries across runs. */
 export class CursorTranslator {
   private text = "";
@@ -102,6 +127,11 @@ export class CursorTranslator {
   private completedTools = new Set<string>();
   private emittedTools = new Set<string>();
   private lastUsage?: TokenUsage;
+  /** Usage from `turn-ended`; the fallback when `run.wait()` omits usage. */
+  private turnUsage?: TokenUsage;
+  private readonly previousContextTokens: number;
+  private stepsCompleted = 0;
+  private toolModelCalls = new Set<string>();
   private sawText = false;
   private childText = new Map<string, string>();
   readonly usage: UsageSnapshot = {
@@ -118,6 +148,7 @@ export class CursorTranslator {
   ) {
     // Context occupancy survives turns; per-run output and spend do not.
     this.usage.contextTokens = previousUsage?.contextTokens ?? 0;
+    this.previousContextTokens = this.usage.contextTokens;
     this.usage.contextWindow = contextWindow;
   }
   private push(type: AgentEvent["type"], data: unknown) {
@@ -232,6 +263,7 @@ export class CursorTranslator {
       case "tool-call-completed": {
         this.flushText();
         this.finishThinking();
+        if (update.modelCallId) this.toolModelCalls.add(update.modelCallId);
         if (this.completedTools.has(update.callId)) break;
         const tool = update.toolCall;
         const first = !this.tools.has(update.callId);
@@ -277,6 +309,7 @@ export class CursorTranslator {
         }
         break;
       case "step-completed":
+        this.stepsCompleted += 1;
         this.flushText();
         this.finishThinking();
         break;
@@ -284,10 +317,22 @@ export class CursorTranslator {
         this.flushText();
         this.finishThinking();
         if (update.usage) {
-          this.usage.contextTokens =
-            update.usage.inputTokens +
-            update.usage.cacheReadTokens +
-            update.usage.cacheWriteTokens;
+          const usage = update.usage;
+          this.turnUsage = {
+            ...usage,
+            // SDK totals exclude reasoning (a subset of output); input already includes cache.
+            totalTokens: usage.inputTokens + usage.outputTokens,
+          };
+          this.usage.contextTokens = estimateCursorContextTokens({
+            inputTokens: usage.inputTokens,
+            // Every model call except the final answer issues at least one tool call.
+            modelCalls: Math.max(
+              this.stepsCompleted,
+              this.toolModelCalls.size + 1,
+            ),
+            previousContextTokens: this.previousContextTokens,
+            contextWindow: this.usage.contextWindow,
+          });
         }
         break;
       case "summary-completed":
@@ -353,10 +398,10 @@ export class CursorTranslator {
         isFullText: true,
       });
     }
-    this.lastUsage = result.usage;
-    if (result.usage) {
-      this.usage.tokenUsage = result.usage.totalTokens;
-      this.usage.outputTokens = result.usage.outputTokens;
+    this.lastUsage = result.usage ?? this.turnUsage;
+    if (this.lastUsage) {
+      this.usage.tokenUsage = this.lastUsage.totalTokens;
+      this.usage.outputTokens = this.lastUsage.outputTokens;
     }
     if (result.status === "error") {
       const error = cursorFailure(

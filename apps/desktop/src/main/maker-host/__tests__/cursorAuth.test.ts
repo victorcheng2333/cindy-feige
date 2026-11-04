@@ -236,12 +236,17 @@ describe('Cursor connection', () => {
           finish = resolve;
         }),
     );
+    const generation = cursorAuthAdapter.captureCredentialGeneration?.();
     const pending = cursorAuthAdapter.triggerLogin();
     await vi.waitFor(() => expect(h.login).toHaveBeenCalledOnce());
+    // Review 2026-11-04: authorization in progress must not fence running tasks.
+    expect(cursorAuthAdapter.captureCredentialGeneration?.()).toBe(generation);
     cursorAuthAdapter.cancelLogin?.();
     finish(credentials());
     expect(await pending).toMatchObject({ authenticated: false });
     expect(h.secrets.size).toBe(0);
+    expect(h.stop).not.toHaveBeenCalled();
+    expect(cursorAuthAdapter.captureCredentialGeneration?.()).toBe(generation);
   });
   it('does not move a pending login into a different Cindy owner', async () => {
     let finish!: (value: unknown) => void;

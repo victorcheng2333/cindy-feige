@@ -37,7 +37,7 @@ import { createAsyncQueue } from "../shared/async-queue.js";
 import type { CursorRpc } from "./rpc-client.js";
 import { CursorTranslator } from "./translator.js";
 import { cursorPermissionMode } from "./permission-policy.js";
-import { cursorFailure } from "./errors.js";
+import { cursorErrorReason, cursorFailure } from "./errors.js";
 import type {
   CursorOpenOptions,
   CursorSendOptions,
@@ -318,6 +318,17 @@ export class CursorAgent extends BaseAgent {
         }
         return { text: text.join("\n"), ...(images.length ? { images } : {}) };
       };
+      // The task row keeps the full error for the user; the log keeps a redacted,
+      // bounded diagnostic so failures are traceable without reading the database.
+      const logRunFailure = (error: unknown) => {
+        const failure = cursorFailure(error);
+        this.deps.logger.warn("Cursor run failed", {
+          reason: cursorErrorReason(failure),
+          ...(failure.code ? { code: failure.code } : {}),
+          ...(failure.status ? { status: failure.status } : {}),
+          message: failure.message.slice(0, 300),
+        });
+      };
       const run = async (message: SDKUserMessage, options: SendOptions) => {
         const translator = new CursorTranslator(
           (event) => {
@@ -364,8 +375,11 @@ export class CursorAgent extends BaseAgent {
             },
             0,
           );
+          if (result.status === "error")
+            logRunFailure(result.error ?? { message: "Cursor run failed" });
           translator.finish(result);
         } catch (error) {
+          if (!abortRequested) logRunFailure(error);
           translator.finish({
             id: "",
             status: abortRequested ? "cancelled" : "error",
@@ -374,6 +388,31 @@ export class CursorAgent extends BaseAgent {
         } finally {
           busy = false;
         }
+      };
+      // Policy changes need a native reopen, which the runtime refuses during a run.
+      // Stage them for the next message instead of failing the user's change.
+      let pendingOpen: CursorOpenOptions | undefined;
+      const reopen = async (change: Partial<CursorOpenOptions>) => {
+        const candidate = { ...(pendingOpen ?? openOptions), ...change };
+        if (busy) {
+          pendingOpen = candidate;
+          return;
+        }
+        busy = true;
+        try {
+          await client.request("open", candidate);
+          openOptions = candidate;
+          pendingOpen = undefined;
+        } finally {
+          busy = false;
+        }
+      };
+      const applyPendingOpen = async () => {
+        const candidate = pendingOpen;
+        if (!candidate) return;
+        await client.request("open", { ...candidate, model });
+        openOptions = { ...candidate, model };
+        if (pendingOpen === candidate) pendingOpen = undefined;
       };
       const handle: AgentSessionHandle = {
         id: opened.agentId,
@@ -433,6 +472,9 @@ export class CursorAgent extends BaseAgent {
               permissionNotice = false;
               windowsNotice = false;
             }
+            await applyPendingOpen();
+            validate(options);
+            if (abortRequested) throw new Error("Cursor send was cancelled");
             productContextPending = false;
             running = run(input, options);
           } catch (error) {
@@ -506,8 +548,8 @@ export class CursorAgent extends BaseAgent {
         setModel: async (id, settings) => {
           if (settings?.providerId && settings.providerId !== "cursor")
             throw new Error("Cursor requires the Cursor connection");
-          if (busy)
-            throw new Error("Wait for the current Cursor run to finish");
+          // Model parameters travel with every send: a change during a run applies to
+          // the next message and never alters the running turn.
           validate();
           const nextTuning = { ...tuning, ...settings };
           const selected = selectModel(id, nextTuning);
@@ -521,8 +563,6 @@ export class CursorAgent extends BaseAgent {
         },
         setEffort: async (effort) => {
           validate();
-          if (busy)
-            throw new Error("Wait for the current Cursor run to finish");
           const nextTuning = { ...tuning, effort };
           const selected = selectModel(model.id, nextTuning);
           tuning = nextTuning;
@@ -531,8 +571,6 @@ export class CursorAgent extends BaseAgent {
         },
         setFastMode: async (fastMode) => {
           validate();
-          if (busy)
-            throw new Error("Wait for the current Cursor run to finish");
           const nextTuning = { ...tuning, fastMode };
           const selected = selectModel(model.id, nextTuning);
           tuning = nextTuning;
@@ -541,8 +579,6 @@ export class CursorAgent extends BaseAgent {
         },
         setThinkingEnabled: async (thinkingEnabled) => {
           validate();
-          if (busy)
-            throw new Error("Wait for the current Cursor run to finish");
           const nextTuning = { ...tuning, thinkingEnabled };
           const selected = selectModel(model.id, nextTuning);
           tuning = nextTuning;
@@ -551,32 +587,14 @@ export class CursorAgent extends BaseAgent {
         },
         setPermissionMode: async (permission) => {
           validate();
-          if (busy)
-            throw new Error("Wait for the current Cursor run to finish");
           const next = cursorPermissionMode(permission);
           if (permission !== next)
             throw new Error("Cursor supports Auto, Full access and Plan only");
-          const candidate = { ...openOptions, permissionMode: next };
-          busy = true;
-          try {
-            await client.request("open", candidate);
-            openOptions = candidate;
-          } finally {
-            busy = false;
-          }
+          await reopen({ permissionMode: next });
         },
         setWritableDirs: async (writableDirs) => {
           validate();
-          if (busy)
-            throw new Error("Wait for the current Cursor run to finish");
-          const candidate = { ...openOptions, writableDirs };
-          busy = true;
-          try {
-            await client.request("open", candidate);
-            openOptions = candidate;
-          } finally {
-            busy = false;
-          }
+          await reopen({ writableDirs });
         },
         compactSession: async (instructions) => {
           if (instructions?.trim())

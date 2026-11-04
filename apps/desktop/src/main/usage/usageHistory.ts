@@ -91,7 +91,7 @@ export interface UsageHistoryDay {
 }
 
 function usageAgentKind(value: string): UsageHistoryModel['agentKind'] {
-  return value === 'codex' || value === 'pi' || value === 'media' ? value : 'claude-code';
+  return value === 'codex' || value === 'pi' || value === 'cursor' || value === 'media' ? value : 'claude-code';
 }
 
 export interface UsageHistoryModel {
@@ -515,6 +515,11 @@ export function piSubscriptionUsageModelKey(model: string): string {
   return `${displayModelName(model)}#billing=subscription`;
 }
 
+/** Cursor 订阅轮按 Cursor 账号计费，与其它 agent 共用 billing 后缀并保留独立 agentKind。 */
+export function cursorSubscriptionUsageModelKey(model: string): string {
+  return `${displayModelName(model)}#billing=subscription`;
+}
+
 /**
  * 订阅行的估算价选取,按 agent 分流:
  *   - codex → 订阅直连(chatgpt/ / xai/)registry 参考价 → OpenAI registry 参考价
@@ -533,7 +538,8 @@ export function getSubscriptionValuePriceFor(
   at?: string | Date,
   overrides?: ModelPriceOverridesSnapshot,
 ): ModelPriceQuote | undefined {
-  if (agentKind === 'media') return undefined;
+  // Cursor 按 Cursor 账号自己的套餐计费，Cindy 价表不代表它的价值；只显示 token。
+  if (agentKind === 'media' || agentKind === 'cursor') return undefined;
   if (agentKind === 'codex') {
     return (
       getSubscriptionDirectValuePrice(model, 'codex', pricing, at, overrides) ??
@@ -789,6 +795,7 @@ export async function readUsageHistoryWith(
   // 避免历史重合并按 model-day 逐行 stat 覆盖文件。
   const priceOverrides = deps.getModelPriceOverridesSnapshot();
   const hasMissingPendingSubscriptionPrice = modelRows.some((r) =>
+    r.agentKind !== 'cursor' &&
     isSubscriptionUsageModel(r.model) &&
     r.money.kind !== 'value-estimate' &&
     !getSubscriptionValuePriceFor(

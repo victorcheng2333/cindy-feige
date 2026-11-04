@@ -7,6 +7,15 @@ import type {
 } from "./protocol.js";
 import { cursorRuntimePolicy } from "./permission-policy.js";
 
+/** SDK rejection when the persisted agent row still references an unfinished run. */
+export function isOrphanedActiveRunError(error: unknown): boolean {
+  const message =
+    error && typeof error === "object" && "message" in error
+      ? String((error as { message: unknown }).message)
+      : "";
+  return /already has (?:an )?active run/i.test(message);
+}
+
 /** One owner/session per process. Cancellation must run concurrently with send/wait. */
 export class CursorHostRuntime {
   private agent?: SDK.SDKAgent;
@@ -80,19 +89,33 @@ export class CursorHostRuntime {
     this.cancelled = false;
     this.turnId = options.turnId;
     try {
-      this.run = compact
-        ? await this.agent.summarize()
-        : await this.agent.send(options.message, {
-            // This worker owns the resumed local session and has no live run yet.
-            // Use SDK recovery for persisted runs orphaned by the previous process;
-            // never force a second send past the runtime's busy guard.
-            ...(this.recoverResumedRun ? { local: { force: true } } : {}),
-            model: options.model,
-            mode: options.planMode ? "plan" : "agent",
-            mcpServers: options.mcpServers,
-            onDelta: ({ update }) =>
-              this.notify({ event: "update", requestId: id, update }),
-          });
+      const agent = this.agent;
+      const start = (force: boolean) =>
+        agent.send(options.message, {
+          // This worker owns the resumed local session and has no live run yet.
+          // Use SDK recovery for persisted runs orphaned by the previous process;
+          // never force a second send past the runtime's busy guard.
+          ...(force ? { local: { force: true } } : {}),
+          model: options.model,
+          mode: options.planMode ? "plan" : "agent",
+          mcpServers: options.mcpServers,
+          onDelta: ({ update }) =>
+            this.notify({ event: "update", requestId: id, update }),
+        });
+      if (compact) this.run = await agent.summarize();
+      else {
+        const force = this.recoverResumedRun;
+        try {
+          this.run = await start(force);
+        } catch (error) {
+          // The agent row can still name a run that a previous worker stopped without
+          // finalizing (app quit, cancelled before the store settled). This runtime holds
+          // the task lease and has no live run of its own, so recover exactly once.
+          if (force || this.cancelled || !isOrphanedActiveRunError(error))
+            throw error;
+          this.run = await start(true);
+        }
+      }
       this.recoverResumedRun = false;
       if (this.cancelled) await this.run.cancel();
       // Public stream preserves native tool calls even when delta conversion omits them.

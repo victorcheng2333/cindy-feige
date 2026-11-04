@@ -1105,7 +1105,12 @@ export function createContextOverflowRollover(deps: ContextOverflowRolloverDeps)
     const window = effectiveContextWindow(sessionRow.model, reportedWindow, verified);
     // Native compaction owns healthy contexts. Keep the existing full-window
     // recovery guard shared with ordinary Sessions (Codex manages its own limit).
-    const pressure = sessionRow.agentKind !== 'codex' && shouldRebuildForContextPressure(usedTokens, window);
+    // Cursor summarizes natively and only reports an estimated occupancy derived
+    // from per-run aggregates; an estimate must never discard its native history.
+    const pressure =
+      sessionRow.agentKind !== 'codex' &&
+      sessionRow.agentKind !== 'cursor' &&
+      shouldRebuildForContextPressure(usedTokens, window);
     const compactFailed = liveUsage?.needsRollover === true;
     const piByteRecoveryFailed = sessionRow.agentKind === 'pi' && isPiRequestBodyRecoveryExhausted(lastError);
     const tokenViolated =

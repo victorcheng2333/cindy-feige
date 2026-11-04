@@ -1831,8 +1831,10 @@ describe('createContextOverflowRollover', () => {
     expect(deps.replayUserMessage).not.toHaveBeenCalled();
   });
 
-  it('lets Codex handle full-window pressure natively while keeping the Claude guard', async () => {
-    for (const agentKind of ['cc', 'codex'] as const) {
+  // Cursor regression 2026-11-04: an estimated occupancy (from per-run aggregate usage)
+  // forced a rebuild that discarded Cursor's native history on a ~75k context.
+  it('lets Codex and Cursor handle full-window pressure natively while keeping the Claude guard', async () => {
+    for (const agentKind of ['cc', 'codex', 'cursor'] as const) {
       const deps = makeDeps([msg('user', '继续', 'u1'), msg('assistant', '好', 'a1')]);
       deps.getSessionRow.mockResolvedValue({
         status: 'active',
