@@ -56,6 +56,32 @@ it('selects a model for an existing Cursor task with its full tuning', async () 
   expect(onSelect).toHaveBeenCalledWith({ providerId: 'account', modelId: 'next', agent: 'cursor', effort: 'low', fast: false }, { deviceId: null });
   expect(onClose).toHaveBeenCalledOnce();
 });
+// Review 2026-11-04: adjusting a non-current model only remembered its parameters and
+// gave no way to use them from the detail page. Unit, real sheet with captured view.
+it('uses the adjusted configuration directly from a non-current model detail page', async () => {
+  test.entries = [test.entries[0], { ...test.entries[0], modelId: 'other', displayName: 'Other',
+    capabilities: { codex: { ...test.entries[0].capabilities.codex, wireModelId: 'codex/other' } } }];
+  const efforts = new Map<string, string>();
+  const modelMemory = { getEffort: (_a: string, _p: string, model: string) => efforts.get(model),
+    getFast: () => undefined, setEffort: (_a: string, _p: string, model: string, effort: string) => { efforts.set(model, effort); },
+    setFast: vi.fn() };
+  const { onSelect, onClose } = await mount(undefined, { modelMemory });
+  const recommended = test.view.groups.find((g: any) => g.key === 'recommended');
+  // Mixed-provider section: each row names its source; effort is not repeated there.
+  expect(recommended.rows.map((row: any) => row.subtitle)).toEqual(['Provider', 'Provider']);
+  await act(async () => test.view.onOptions(recommended.rows.find((row: any) => row.selected)));
+  expect(test.view.options.onUse).toBeUndefined();
+  await act(async () => test.view.onBack());
+  await act(async () => test.view.onOptions(recommended.rows.find((row: any) => !row.selected)));
+  await act(async () => test.view.options.onChange({ ...test.view.options.row.config, effort: 'high' }));
+  expect(onSelect).not.toHaveBeenCalled();
+  await act(async () => test.view.options.onUse());
+  expect(onSelect).toHaveBeenCalledWith(
+    { providerId: 'account', modelId: 'codex/other', agent: 'codex', effort: 'high', fast: false },
+    { deviceId: null },
+  );
+  expect(onClose).toHaveBeenCalledOnce();
+});
 it('keeps the sheet and preferences unchanged after cancelled selection',async()=>{
   const {onClose}=await mount(vi.fn(async()=>false));
   await act(async()=>test.view.onSelect(test.view.groups[0].rows[0]));

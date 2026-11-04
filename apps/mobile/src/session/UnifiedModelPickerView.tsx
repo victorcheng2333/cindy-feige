@@ -557,6 +557,17 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             </View>
           ) : null}
         </Group>
+        {options.onUse ? (
+          <Group>
+            <Row
+              disabled={p.busy}
+              onPress={options.onUse}
+              subtitle={options.configurationSummary}
+              testID={`${p.testID}.use`}
+              title={t("models.unified.useConfiguration")}
+            />
+          </Group>
+        ) : null}
         {!options.editingFavorite ? (
           <>
             <Text style={styles.footnote} testID={`${p.testID}.configState`}>

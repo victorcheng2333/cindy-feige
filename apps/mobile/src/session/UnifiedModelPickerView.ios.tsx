@@ -508,6 +508,17 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               </HStack>
             ) : null}
           </Section>
+          {options.onUse ? (
+            <Section>
+              <ComposerNativeRow
+                title={t("models.unified.useConfiguration")}
+                subtitle={options.configurationSummary}
+                onPress={options.onUse}
+                disabled={p.busy}
+                testID={`${p.testID}.use`}
+              />
+            </Section>
+          ) : null}
           {!options.editingFavorite ? (
             <Section>
               <Text

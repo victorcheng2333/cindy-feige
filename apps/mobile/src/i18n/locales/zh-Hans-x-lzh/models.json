@@ -105,6 +105,7 @@
     "groupBadge_other": "供方组 · {{count}} 机",
     "harness": "Harness",
     "restoreRecommended": "复所荐",
+    "useConfiguration": "用此配置",
     "saveFailed": "存之未成，请再试。",
     "configure": "设",
     "syncFailed": "所藏未能同步。请重启再试；远方之机上之 Cindy 或须更新。",

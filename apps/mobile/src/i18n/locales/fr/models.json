@@ -105,6 +105,7 @@
     "groupBadge_other": "Groupe de fournisseurs · {{count}} ordinateurs",
     "harness": "Harness",
     "restoreRecommended": "Rétablir les paramètres recommandés",
+    "useConfiguration": "Utiliser cette configuration",
     "saveFailed": "Impossible d'enregistrer. Veuillez réessayer.",
     "configure": "Configurer",
     "syncFailed": "Impossible de synchroniser les favoris. Rouvrez le sélecteur pour réessayer ; l'ordinateur distant a peut-être besoin d'une mise à jour.",

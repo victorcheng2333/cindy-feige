@@ -177,11 +177,12 @@ export interface UnifiedMobilePickerViewProps {
     onSaveEdit?(): void;
     onFavorite(): void;
     onReset(): void;
+    /** Select this row with the configuration shown; absent for the current row. */
+    onUse?(): void;
     context: string;
     price: string | null;
   };
 }
-const ALL_AGENTS: readonly AgentKind[] = ["claude-code", "codex", "pi"];
 export function UnifiedModelPickerSheet(
   p: ModelPickerSheetProps & { unified: UnifiedMobilePickerOptions },
 ) {
@@ -436,16 +437,16 @@ export function UnifiedModelPickerSheet(
           defaultValue: config.effort,
         })
       : "";
+  // Account identity only: effort already sits beside the title (effortLabel).
   const describe = (
     entry: UnifiedModelEntry,
-    config: MobileModelConfiguration,
     providers: readonly (typeof p.providers)[number][] = p.providers,
   ) => {
     const provider = providers.find((item) => item.id === entry.providerId);
     const identity =
       provider?.openAiAccount?.identity?.trim() ||
       provider?.subscriptionAccount?.identity?.trim();
-    return [identity, effortText(config)].filter(Boolean).join(" · ");
+    return identity ?? "";
   };
   const makeRow = (
     entry: UnifiedModelEntry,
@@ -485,7 +486,7 @@ export function UnifiedModelPickerSheet(
           p.apiKeyStatus ?? "unknown",
           p.providers.find((item) => item.id === entry.providerId),
         ),
-      subtitle: describe(entry, config),
+      subtitle: describe(entry),
       effortLabel: effortText(config),
       costMarks: mobileCostMarks(
         p.providers.find((item) => item.id === entry.providerId),
@@ -582,7 +583,7 @@ export function UnifiedModelPickerSheet(
         // Remote catalog capabilities are independent of the host installation.
         fastCapable: () => true,
       });
-    const details = describe(entry, config, catalog.providers);
+    const details = describe(entry, catalog.providers);
     return {
       key,
       entry,
@@ -700,7 +701,14 @@ export function UnifiedModelPickerSheet(
     groups.push({
       key: "recommended",
       title: t("models.unified.recommended"),
-      rows: recommended,
+      // This section mixes providers: name each row's source so the same model from two
+      // accounts is not shown as two indistinguishable rows.
+      rows: recommended.map((row) => ({
+        ...row,
+        subtitle: [providerName(row.entry.providerId), row.subtitle]
+          .filter(Boolean)
+          .join(" · "),
+      })),
     });
   if (all || shownFilter !== "favorites")
     for (const provider of p.providers) {
@@ -1276,6 +1284,12 @@ export function UnifiedModelPickerSheet(
                 });
               },
               onReset: () => change(recommendedConfig!, true),
+              // Adjusting a non-current row only remembers its parameters; offer the
+              // explicit action instead of requiring a return to the list.
+              onUse:
+                !row.selected && !favoriteEdit && !row.disabled
+                  ? () => select(row)
+                  : undefined,
             }
           : undefined
       }
