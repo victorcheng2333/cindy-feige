@@ -26,7 +26,7 @@ import { isPluginTaskPermissionMode, PLUGIN_TASK_PERMISSION_MODES } from '../../
 const TASK_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
 
 interface TaskConfig {
-  agentKind?: 'cc' | 'codex' | 'pi';
+  agentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
   model?: string;
   effort?: string;
   fastMode?: boolean | 'ultrafast';

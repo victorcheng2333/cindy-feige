@@ -108,7 +108,7 @@ function normalizePositiveInt(value: unknown): number {
 
 const messageRowid = sql<number>`rowid`;
 
-type DbAgentKind = 'cc' | 'codex' | 'pi';
+type DbAgentKind = 'cc' | 'codex' | 'pi' | 'cursor';
 
 interface MessagePosition {
   createdAt: number;
@@ -1018,6 +1018,7 @@ export async function forkSessionAtMessage(
       remoteHostId: source.remoteHostId ?? null,
     };
     const forkRemote = async () => {
+      if (agentKind === 'cursor') throw new Error('Cursor does not support fork');
       const ownerRoute = forkSource.agentDeviceId!;
       const location = await authorizeSharedTaskHistory(ownerRoute, sourceSessionId, agentKind, forkSource.model);
       let childGeneration: string | undefined;

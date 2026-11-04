@@ -50,6 +50,14 @@ describe('mobile session Agent switch contract', () => {
     expect(sessionAgentKind({ agentKind: 'cc' })).toBe('claude-code');
     expect(sessionAgentKind({ agentKind: 'codex' })).toBe('codex');
     expect(sessionAgentKind({ agentKind: 'pi' })).toBe('pi');
+    // Remote Cursor rows previously fell through to Claude Code (unit, one host row).
+    expect(sessionAgentKind({ agentKind: 'cursor' })).toBe('cursor');
+    expect(mobileAgentLabel('cursor')).toBe('Cursor');
+    expect(mobileAgentLabelFromUnknown('cursor')).toBe('Cursor');
+    expect(mobileAgentVendor('cursor')).toBe('cursor');
+    // Host same-engine choices also arrive as pending intents; preserve the Cursor target.
+    expect(normalizeSessionAgentSwitchIntent({ targetAgentKind: 'cursor', model: 'grok', providerId: 'cursor', effort: 'low' }))
+      .toEqual({ targetAgentKind: 'cursor', model: 'grok', providerId: 'cursor', effort: 'low' });
     expect(mobileAgentLabel('claude-code')).toBe('Claude Code');
     expect(mobileAgentLabel('codex')).toBe('Codex');
     expect(mobileAgentLabel('pi')).toBe('Pi');

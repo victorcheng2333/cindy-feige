@@ -1,3 +1,4 @@
+import { isCursorCapabilityRouteEnforced } from './cursor/capability-routing.js';
 import type {
   CapabilityRouteOverride,
   CapabilityRoutingPolicy,
@@ -15,6 +16,7 @@ const CAPABILITY_ROUTE_ENFORCERS: Readonly<
   'claude-code': isClaudeCapabilityRouteEnforced,
   codex: isCodexCapabilityRouteEnforced,
   pi: () => false,
+  cursor: isCursorCapabilityRouteEnforced,
 };
 
 /**

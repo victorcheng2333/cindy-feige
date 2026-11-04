@@ -61,7 +61,8 @@ const PROVIDER_TITLE: Record<string, string> = {
 };
 
 export function providerDisplayTitle(p: Pick<ProviderView, 'id' | 'name'>): string {
-  return p.id === 'xd' ? PROVIDER_TITLE.xd : p.name || PROVIDER_TITLE[p.id] || p.id;
+  return p.id === 'xd' && !p.name?.startsWith('Cindy AI · ')
+    ? PROVIDER_TITLE.xd : p.name || PROVIDER_TITLE[p.id] || p.id;
 }
 
 function isNonNegativeFinite(value: unknown): value is number {
@@ -251,6 +252,7 @@ export function effortLabelFromRuntime(
   effort: string | null | undefined,
 ): string {
   if (!effort) return '';
+  if (runtime.currentModel && !runtime.currentModel.efforts.includes(effort)) return '';
   return effortLabelFor(
     runtime.currentModel ?? { effortDisplayNames: {} },
     effort,

@@ -8752,7 +8752,7 @@ export interface GhostRoutineRunPointData {
 
 /** 模型路由(插件看到与回传的同一形状)。agentKind: cc = Claude Code。 */
 export interface GhostModelRoute {
-  agentKind: 'cc' | 'codex' | 'pi';
+  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
   model: string;
   providerId: string;
   effort?: string;

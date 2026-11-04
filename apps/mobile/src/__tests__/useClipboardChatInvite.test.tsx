@@ -30,12 +30,28 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   close(); setMobileAuthOwner('clipboard-owner');
-  h.os = 'ios'; h.state = 'active'; h.version = '1'; h.listeners.clear();
+  h.os = 'android'; h.state = 'active'; h.version = '1'; h.listeners.clear();
   h.read.mockReset().mockResolvedValue(link); h.hasText.mockReset().mockResolvedValue(true);
   h.readVersion.mockReset().mockImplementation(async () => h.version);
   root = createRoot(document.createElement('div'));
 });
 afterEach(async () => { await act(async () => root.unmount()); close(); });
+
+// Unit regression: a fresh process loses the clipboard change-count cache.
+// iOS must not read clipboard contents on launch, login readiness or foreground,
+// even for a valid invite; links and owner-initiated pasting remain explicit.
+it('never reads the iOS clipboard on launch, foreground or remount', async () => {
+  h.os = 'ios';
+  await render(false); await render();
+  await state('background'); h.version = '2'; await state('active');
+  await act(async () => root.render(null)); await render();
+  expect(h.hasText).not.toHaveBeenCalled();
+  expect(h.read).not.toHaveBeenCalled();
+  expect(h.readVersion).not.toHaveBeenCalled();
+  expect(getChatInviteIntent()).toBeNull();
+  receiveChatInviteLink(other);
+  expect(getChatInviteIntent()?.link).toBe(other);
+});
 
 it('waits for startup/login readiness, then opens a complete copied invitation', async () => {
   await render(false); expect(h.read).not.toHaveBeenCalled();
@@ -47,14 +63,13 @@ it('waits until foreground and discovers a newly copied link on returning', asyn
   await state('background'); h.version = '2'; h.read.mockResolvedValue(other);
   await state('active'); expect(getChatInviteIntent()?.link).toBe(other);
 });
-it('does not reread unchanged iOS contents or reopen a cancelled invitation', async () => {
+it('does not reopen a cancelled Android clipboard invitation', async () => {
   await render(); close(); await state('background'); await state('active');
-  expect(h.read).toHaveBeenCalledTimes(1); expect(getChatInviteIntent()).toBeNull();
+  expect(h.read).toHaveBeenCalledTimes(2); expect(getChatInviteIntent()).toBeNull();
 });
 // Unit regression from Dev UAT: another external invite overwrote the only
 // content-dedup key. The simple cancellation test never opens a second link.
-it.each(['ios', 'android'])('does not revive the previous clipboard after another invitation on %s', async os => {
-  h.os = os;
+it('does not revive the previous Android clipboard after another invitation', async () => {
   await render(); expect(getChatInviteIntent()?.link).toBe(canonical); close();
   receiveChatInviteLink(other); close();
   await state('background'); h.version = '2'; await state('active');
@@ -69,14 +84,14 @@ it.each(['', 'hello', 'https://example.test', 'A'.repeat(43), 'cindy://chat-invi
 it('ignores images without reading the clipboard contents', async () => {
   h.hasText.mockResolvedValue(false); await render(); expect(h.read).not.toHaveBeenCalled();
 });
-it.each([false, true])('does not repeat permission denial for the same clipboard (throws=%s)', async throws => {
+it.each([false, true])('keeps Android clipboard read failures nonfatal and accepts a later link (throws=%s)', async throws => {
   if (throws) h.read.mockRejectedValue(new Error('denied')); else h.read.mockResolvedValue('');
   await render(); await state('inactive'); await state('active');
-  expect(h.read).toHaveBeenCalledTimes(1); expect(getChatInviteIntent()).toBeNull();
+  expect(h.read).toHaveBeenCalledTimes(2); expect(getChatInviteIntent()).toBeNull();
   h.version = '2'; h.read.mockResolvedValue(link); await state('background'); await state('active');
   expect(getChatInviteIntent()?.link).toBe(canonical);
 });
-it('waits through permission-dialog inactivity and presents only when active', async () => {
+it('waits through inactivity and presents only when active', async () => {
   const reading = deferred<string>(); h.read.mockReturnValue(reading.promise); await render();
   await state('inactive'); await act(async () => reading.resolve(link));
   expect(getChatInviteIntent()).toBeNull(); await state('active');
@@ -102,10 +117,6 @@ it('rejects an old account read after the account owner changes', async () => {
   const reading = deferred<string>(); h.read.mockReturnValue(reading.promise); await render();
   setMobileAuthOwner('another-owner'); await render(false);
   await act(async () => reading.resolve(link)); expect(getChatInviteIntent()).toBeNull();
-});
-it('discards content when the iOS clipboard changed during its read', async () => {
-  h.read.mockImplementation(async () => { h.version = '2'; return link; });
-  await render(); expect(getChatInviteIntent()).toBeNull();
 });
 it('uses content deduplication on Android without an iOS version API', async () => {
   h.os = 'android'; await render(); expect(getChatInviteIntent()?.link).toBe(canonical); close();

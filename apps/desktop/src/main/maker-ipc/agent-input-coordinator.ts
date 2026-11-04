@@ -1078,6 +1078,10 @@ function isNoActiveTurnError(err: unknown): boolean {
   return /\[NO_ACTIVE_TURN\]|no active .*turn|has no active turn/i.test(msg);
 }
 
+function isSteerFollowupRequiredError(err: unknown): boolean {
+  return /\[STEER_FOLLOWUP_REQUIRED\]/.test(errorMessage(err));
+}
+
 function isStaleTurnError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /\[STALE_TURN\]/i.test(msg);
@@ -2736,6 +2740,23 @@ export class AgentInputCoordinator {
           this.emit(sessionId);
         }
         return finishSteerRequest(false);
+      }
+
+      if (isSteerFollowupRequiredError(err)) {
+        // A definitive refusal transfers ownership back without declaring the
+        // running turn idle. Stop/clear wins over a late refusal, as with steer ACKs.
+        if (!markerStillPresent || opts?.fallbackToTurn === false) {
+          this.emit(sessionId);
+          return finishSteerRequest(false);
+        }
+        if (latest.queuePaused || latest.queueInteractionLocks.length > 0) {
+          this.movePreparedItemToQueueFront(latest, item, opts?.removeFromQueue === true);
+          this.emit(sessionId);
+        } else {
+          this.fallbackPreparedAsTurn(sessionId, item, opts?.removeFromQueue === true);
+        }
+        if (opts?.touchUserSend) this.touchUserSend(sessionId);
+        return finishSteerRequest(true);
       }
 
       if (isNoActiveTurnError(err)) {

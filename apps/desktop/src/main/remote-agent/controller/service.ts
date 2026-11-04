@@ -204,6 +204,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
   };
   type StartInput = { agentKind: AgentKind; deviceId: string; options: StartSessionOptions };
   const startAttempt = async (input: StartInput, skipDirect: boolean, attempt: ReturnType<typeof registerPendingRemoteStart>): Promise<AgentSessionHandle> => {
+    if (input.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
     const requireCurrent = () => attempt.signal.throwIfAborted();
     requireCurrent();
     const opts: StartSessionOptions = { ...input.options };

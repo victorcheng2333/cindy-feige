@@ -21,7 +21,7 @@ import {
   getActiveDataOwnerPushStamp,
   isAppSessionBoundaryPending,
 } from '../appSessionState.js';
-import { isDeviceLinkInvoke } from '../device-link/invoke-context.js';
+import { isDeviceLinkInvoke, getDeviceLinkInvokeContext } from '../device-link/invoke-context.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 
 /** The existing renderer store is authoritative. Dispatch once to ONE owner-fenced
@@ -59,14 +59,14 @@ export function registerModelFavoritesSync(
     )
       broadcast(MODEL_FAVORITES_CHANGED, {});
   });
-  const request = async (mutation?: unknown): Promise<RemoteModelFavorite[]> => {
+  const request = async (mutation: unknown = undefined, includeCursor = false): Promise<RemoteModelFavorite[]> => {
     if (isAppSessionBoundaryPending())
       throwIpcError('PRECONDITION_FAILED', 'Favorites owner is changing');
     if (pending.size >= 64)
       throwIpcError('DEVICE_LINK_UNAVAILABLE', 'Favorites request capacity exceeded');
     let operation;
     try {
-      operation = mutation === undefined ? undefined : parseModelFavoriteMutation(mutation);
+      operation = mutation === undefined ? undefined : parseModelFavoriteMutation(mutation, undefined, includeCursor);
     } catch {
       throwIpcError('INVALID_PARAMS', 'Invalid favorite operation');
     }
@@ -86,7 +86,7 @@ export function registerModelFavoritesSync(
           if (reply.failed)
             throwIpcError('PRECONDITION_FAILED', 'Favorites were not confirmed; refresh before retrying');
           let items;
-          try { items = parseModelFavorites(reply.items); }
+          try { items = parseModelFavorites(reply.items, includeCursor); }
           catch { throwIpcError('INTERNAL', 'Invalid favorites host response'); }
           resolve(items);
         } catch (error) {
@@ -99,6 +99,7 @@ export function registerModelFavoritesSync(
         host.send(FAVORITE_HOST_REQUEST, {
           requestId,
           mutation: operation,
+          includeCursor,
           ownerStamp: getActiveDataOwnerPushStamp(),
           expiresAt: Date.now() + 7500,
         });
@@ -107,13 +108,19 @@ export function registerModelFavoritesSync(
       }
     });
   };
-  ipcMain.handle(MODEL_FAVORITES_GET, (event) => {
+  const includeCursorFor = (options: unknown): boolean => {
+    if (!options || typeof options !== 'object' || (options as { includeCursor?: unknown }).includeCursor !== true) return false;
+    if (!isDeviceLinkInvoke()) return true;
+    const context = getDeviceLinkInvokeContext();
+    return context?.sameAccountController === true && !context.sharedTask;
+  };
+  ipcMain.handle(MODEL_FAVORITES_GET, (event, options?: unknown) => {
     if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
-    return request();
+    return request(undefined, includeCursorFor(options));
   });
-  ipcMain.handle(MODEL_FAVORITES_APPLY, (event, mutation: unknown) => {
+  ipcMain.handle(MODEL_FAVORITES_APPLY, (event, mutation: unknown, options?: unknown) => {
     if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
     if (mutation === undefined) throwIpcError('INVALID_PARAMS', 'Favorite operation required');
-    return request(mutation);
+    return request(mutation, includeCursorFor(options));
   });
 }

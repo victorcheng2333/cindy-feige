@@ -1,6 +1,6 @@
 import type { AuthState, Maker } from '@cindy/maker-core';
 import { describe, expect, it, vi } from 'vitest';
-import { parseCodexDeviceCodeProgress, registerMakerAuthHandlers } from '../authHandlers';
+import { connectCursorApiKey, parseCodexDeviceCodeProgress, registerMakerAuthHandlers } from '../authHandlers';
 import { MAKER_INVOKE, MAKER_PUSH } from '../channels';
 import { registerMakerStatusHandlers } from '../statusHandlers';
 import { registerMakerUsageHandlers, toLegacyUsdModelPricing } from '../usageHandlers';
@@ -14,6 +14,29 @@ function createMakerStub(methods: Partial<Maker>): Maker {
 }
 
 describe('maker auth IPC handlers', () => {
+  // New local key mutation must use IPC errors and never push failed candidates.
+  it('publishes a validated Cursor key connection and rejects invalid candidates privately', async () => {
+    const broadcast = vi.fn();
+    const setter = vi.fn(async () => ({ authenticated: true, authSource: 'api-key' as const }));
+    await expect(connectCursorApiKey(' fixture-key ', setter, broadcast)).resolves.toMatchObject({ authenticated: true });
+    expect(setter).toHaveBeenCalledWith('fixture-key');
+    expect(broadcast).toHaveBeenCalledWith(MAKER_PUSH.AUTH_STATE_CHANGED, { agentKind: 'cursor', authenticated: true, authSource: 'api-key' });
+    broadcast.mockClear();
+    await expect(connectCursorApiKey('', setter, broadcast)).rejects.toThrow('[INVALID_PARAMS]');
+    await expect(connectCursorApiKey('fixture', async () => { throw new Error('private-key-value'); }, broadcast)).rejects.toThrow('[PRECONDITION_FAILED]');
+    await expect(connectCursorApiKey('fixture', async () => ({ authenticated: false }), broadcast)).rejects.toThrow('[PRECONDITION_FAILED]');
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it('routes Cursor key validation cancellation when no browser login is active', async () => {
+    const harness = new IpcHarness();
+    const cancel = vi.fn();
+    registerMakerAuthHandlers(harness, createMakerStub({}), vi.fn(), () => null, undefined, cancel);
+    await harness.invoke(MAKER_INVOKE.AUTH_CANCEL_LOGIN, 'cursor');
+    expect(cancel).toHaveBeenCalledOnce();
+    await harness.invoke(MAKER_INVOKE.AUTH_CANCEL_LOGIN, 'codex');
+    expect(cancel).toHaveBeenCalledOnce();
+  });
   it.each(['logout', 'auth-change'])('does not broadcast an old owner logout after %s yields', async (phase) => {
     const owner = vi.spyOn(appSessionState, 'activeOwnerScopeKey').mockReturnValue('owner-a:1');
     try {

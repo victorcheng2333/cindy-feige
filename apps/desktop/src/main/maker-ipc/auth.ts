@@ -11,6 +11,9 @@
 
 import type { Maker } from '@cindy/maker-core';
 import { BrowserWindow } from 'electron';
+import { cancelCursorApiKeyValidation, setCursorApiKey } from '../maker-host/cursor-auth.js';
+import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
+import { MAKER_INVOKE } from './channels.js';
 import { createLogger } from '../logger.js';
 
 import { readClaudeApiKey } from '../maker-host/auth-adapters.js';
@@ -18,7 +21,7 @@ import { clearChatgptBridgeCredentialCache } from '../maker-host/anthropic-respo
 import { refreshDiscoveredCodexModels } from '../maker-host/createDesktopProviderService.js';
 import { requestCodexModelBackfill } from '../maker-host/index.js';
 import { syncOpenAiMediaAfterCodexAuthChange } from '../maker-host/model-discovery/openai-media.js';
-import { registerMakerAuthHandlers } from './authHandlers.js';
+import { connectCursorApiKey, registerMakerAuthHandlers } from './authHandlers.js';
 import { createElectronIpcHandlerRegistry } from './electronIpcRegistry.js';
 
 const log = createLogger('maker-ipc:auth');
@@ -36,9 +39,15 @@ function broadcast(channel: string, payload: unknown): void {
 
 export function registerMakerAuthIpc(maker: Maker): void {
   log.info('registering maker:auth:* IPC handlers');
+  const registry = createElectronIpcHandlerRegistry();
+  // This secret-writing endpoint is intentionally absent from Device Link allowlists.
+  registry.handle(MAKER_INVOKE.CURSOR_SET_API_KEY, async (event, apiKey: unknown) => {
+    assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
+    return connectCursorApiKey(apiKey, setCursorApiKey, broadcast);
+  });
 
   registerMakerAuthHandlers(
-    createElectronIpcHandlerRegistry(),
+    registry,
     maker,
     broadcast,
     readClaudeApiKey,
@@ -65,6 +74,7 @@ export function registerMakerAuthIpc(maker: Maker): void {
       }
       syncOpenAiMediaAfterCodexAuthChange();
     },
+    cancelCursorApiKeyValidation,
   );
 
   log.info('maker:auth:* IPC handlers registered');

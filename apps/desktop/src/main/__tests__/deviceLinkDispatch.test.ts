@@ -10,6 +10,8 @@ vi.mock('../device-link/settings-store', () => ({
   readDeviceLinkSettings: () => ({ remoteControlEnabled, revokedControllers }),
 }));
 const diagnosticLog = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
+const registerJPushPeerMock = vi.hoisted(() => vi.fn(() => ({ configured: true })));
+vi.mock('../device-link/jpush.js', () => ({ registerJPushPeer: registerJPushPeerMock }));
 vi.mock('../logger', () => ({ createLogger: () => diagnosticLog }));
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), removeHandler: vi.fn() },
@@ -53,7 +55,7 @@ import {
 } from '../device-link/invoke-context';
 import * as subscriptions from '../device-link/subscriptions';
 import { createDesktopOnlyConfirmationRequestId } from '../cindy-brain/desktopOnlyConfirmationProjection';
-import { PLUGIN_OAUTH_CHANNEL } from '@cindy/device-link';
+import { PLUGIN_OAUTH_CHANNEL, JPUSH_REGISTRATION_CHANNEL, providerShareGuestPeer, sharedTaskGuestPeer } from '@cindy/device-link';
 import { initializePluginOauthHost, invalidatePluginOauth, publishedPluginOauthIdentity } from '../plugin-oauth/runtime';
 import { OauthBox } from '../plugin-oauth/box';
 import { testOauthSigningKey } from '../plugin-oauth/__tests__/fixtures';
@@ -70,9 +72,26 @@ beforeEach(() => {
   fetchLocalMediaToOssMock.mockReset();
   transcribeRemoteVoiceInputMock.mockReset();
   adviseAndRecordVoiceInputDictionaryLearningMock.mockReset();
+  registerJPushPeerMock.mockClear();
 });
 
 describe('runInvoke 双层校验', () => {
+  // unit: new registration channel must use authenticated src and deny cross-account guests;
+  // existing allowlist tests did not cover this credential-adjacent recipient mutation.
+  it('registers push only for the invoking same-account peer, respecting revocation', async () => {
+    const registration = { alias: 'test-only' };
+    expect(await runInvoke('phone', { channel: JPUSH_REGISTRATION_CHANNEL, args: [registration] }))
+      .toEqual({ ok: true, result: { configured: true } });
+    expect(registerJPushPeerMock).toHaveBeenCalledWith('phone', registration);
+    registerJPushPeerMock.mockClear();
+    for (const peer of [providerShareGuestPeer('share', 'member', 'device'), sharedTaskGuestPeer('task', 'member', 'device')]) {
+      expect((await runInvoke(peer, { channel: JPUSH_REGISTRATION_CHANNEL, args: [registration] })).ok).toBe(false);
+    }
+    revokedControllers = ['phone'];
+    expect(await runInvoke('phone', { channel: JPUSH_REGISTRATION_CHANNEL, args: [registration] }))
+      .toMatchObject({ ok: false, error: { code: 'ACCESS_REVOKED' } });
+    expect(registerJPushPeerMock).not.toHaveBeenCalled();
+  });
   it('routes OAuth with the authenticated src and applies revocation before its private handler', async () => {
     initializePluginOauthHost({
       owner: () => 'member:g1', available: () => true,
@@ -178,7 +197,9 @@ describe('runInvoke 双层校验', () => {
       ok: true,
       result: {
         active: true,
-        context: { controllerDeviceId: 'ctrl-a', channel: 'maker:list-active' },
+        context: expect.objectContaining({
+          controllerDeviceId: 'ctrl-a', channel: 'maker:list-active', sameAccountController: true,
+        }),
       },
     });
     expect(isDeviceLinkInvoke()).toBe(false);

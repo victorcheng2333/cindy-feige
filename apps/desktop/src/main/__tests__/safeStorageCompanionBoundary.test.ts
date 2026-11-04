@@ -63,10 +63,11 @@ describe('generic safeStorage companion boundary', () => {
     const original = Buffer.from('fixture:{"env":{"KEY":"fixture-private-token"}}').toString('base64');
     fs.writeFileSync(file, original);
     for (const variant of [key, key.toUpperCase(), 'bot_environment_future_format', 'bot_environment_',
-      MCP_APP_REVISION_KEY_STORAGE_KEY, MCP_APP_REVISION_KEY_STORAGE_KEY.toUpperCase()]) {
+      MCP_APP_REVISION_KEY_STORAGE_KEY, MCP_APP_REVISION_KEY_STORAGE_KEY.toUpperCase(),
+      'jpush_config', 'jpush_registrations', 'JPUSH_CONFIG']) {
       expect(await api.invoke(String(operation), variant, 'replacement')).toEqual(result);
     }
-    expect(api.assertTrustedAppRendererEvent).toHaveBeenCalledTimes(6);
+    expect(api.assertTrustedAppRendererEvent).toHaveBeenCalledTimes(9);
     expect(api.resolveOwnerScopedSecretStorageKey).not.toHaveBeenCalled();
     expect(api.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
     expect(api.safeStorage.decryptString).not.toHaveBeenCalled();

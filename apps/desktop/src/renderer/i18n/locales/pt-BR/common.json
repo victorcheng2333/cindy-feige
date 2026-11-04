@@ -1439,6 +1439,19 @@
     }
   },
   "menubar": {
+    "cursor": {
+      "pools": "Reservas",
+      "auto": "Modelos Cursor",
+      "api": "Outros modelos",
+      "total": "Uso incluído",
+      "remaining": "Restante por reserva",
+      "separate": "As reservas do Cursor são independentes.",
+      "explanation": "Esgotar uma reserva não esgota as outras. As porcentagens não são somadas.",
+      "resetUnknown": "Data de renovação desconhecida",
+      "extra": "Gastos adicionais",
+      "notRead": "Não disponível",
+      "extraHint": "Veja a cobrança do Cursor"
+    },
     "balance": {
       "name": "Saldo do Cindy",
       "quotaName": "Cota do Cindy",
@@ -4464,6 +4477,18 @@
         "custom": "Continue com configurações personalizadas. Você pode buscar modelos ou adicioná-los manualmente.",
         "configure": "Configurar provedor",
         "keepCustom": "Continuar com configurações personalizadas"
+      },
+      "cursor": {
+        "description": "Execute tarefas locais com sua conta Cursor. A cobrança é feita pelo Cursor. Suporta Auto, acesso total e plano; perguntar, retroceder e criar ramificações não estão disponíveis.",
+        "connect": "Conectar Cursor",
+        "disconnect": "Desconectar Cursor",
+        "waiting": "Conclua o login no navegador. Isso pode levar até cinco minutos.",
+        "stopWarning": "As tarefas Cursor em execução serão interrompidas. O histórico será mantido.",
+        "loginFailed": "O login no Cursor não foi concluído. Verifique o navegador e a conexão.",
+        "legacyPermission": "O Cursor não oferece o modo de permissões com confirmação. Esta tarefa usa a revisão automática do Cursor.",
+        "windowsSandbox": "O Cursor não oferece uma sandbox do sistema de arquivos no Windows. O modo automático continua usando a revisão automática do Cursor.",
+        "historyReset": "O histórico do Cursor desta tarefa não está disponível na conta atual. A referência anterior foi removida. Um novo envio usará um novo contexto; as mensagens da tarefa serão mantidas.",
+        "historyUnavailable": "Esta conta não consegue restaurar o histórico do Cursor da tarefa. Verifique a conta e o status da tarefa e tente novamente."
       }
     },
     "experimental": {
@@ -12276,6 +12301,17 @@
       "listAria": "Modos de permissão",
       "autoFallback": "A revisão automática está temporariamente indisponível. As permissões foram alteradas para Padrão e será solicitada confirmação quando necessário.",
       "modes": {
+        "cursor": {
+          "auto": {
+            "label": "Revisão automática"
+          },
+          "bypassPermissions": {
+            "label": "Acesso total"
+          },
+          "plan": {
+            "label": "Modo de planejamento"
+          }
+        },
         "claude-code": {
           "ask": {
             "label": "Permissões padrão",

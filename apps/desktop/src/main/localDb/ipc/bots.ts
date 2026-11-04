@@ -940,7 +940,7 @@ export async function reconcileBotProfileFolder(
   return derived;
 }
 
-function botSessionAgentKind(config: { harness?: unknown }): 'cc' | 'codex' | 'pi' {
+function botSessionAgentKind(config: { harness?: unknown }): 'cc' | 'codex' | 'pi' | 'cursor' {
   return config.harness === 'codex' ? 'codex' : config.harness === 'pi' ? 'pi' : 'cc';
 }
 

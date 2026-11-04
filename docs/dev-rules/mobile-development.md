@@ -100,6 +100,9 @@ JSON 已包含 `worktree` / `expectedSource`、`region` / `bundleId`、目标设
 - 只有完全属于个人的偏好留在仓库外：常用机型、模拟器后端（`CINDY_MOBILE_SIMULATOR`）等。
   本次明确指定的设备或区域高于个人默认；本次覆盖不自动写回个人偏好。
 - 自定义 bundle ID、签名团队与私有端点留在本地配置；仓库提供模板和校验，凭证进入凭证存储。
+  `self-host-regions.json` 的可选 `iosDisplayName` 只覆盖 iOS 的 `CFBundleDisplayName`；
+  留空或未启用本地／自建配置时保留原名，不改变 Android 名称。个人包首次改名需要新原生包，
+  不把它当作存量安装的 JS 热更新。
 - 设备在线状态、已安装包、Metro 占用、工具位置和缓存命中是现场事实，每次探测，不作为长期偏好。
 
 不要用临时 Metro、端口探测或手工修改 `.env` 代替这些脚本。多 worktree、原生构建、
@@ -375,10 +378,15 @@ SDK 规则随依赖一起进入应用的最终 R8 配置，不在应用侧重复
 
 ## 原生配置与 runtime fingerprint(冷更边界)
 
+个人构建可选接入极光 iOS 推送，配置和验收见
+[个人极光推送](../jpush-personal-push.md)。`CindyJPush` 原生模块与通知扩展需要冷更；
+默认不初始化 SDK。不要把 Desktop 的 Master Secret 放入手机构建。
+
 ### 伙伴通信通知
 
 `plugins/with-communication-notifications.js` 为当前 bundle identity 生成
-`CindyNotificationService` 扩展，启用 Communication Notifications，并向 EAS 登记扩展签名。
+`CindyNotificationService` 扩展，在主 App 上启用 Communication Notifications，并向 EAS 登记扩展签名。
+不要在通知扩展上重复声明 communication entitlement，否则个人团队的扩展签名配置可能拒绝构建。
 扩展消费伙伴回复与群消息的可选 `sender` 数据；保留正文、深链和系统隐私设置，任何处理失败或
 系统超时都回退原通知，且只交付一次。头像不发起网络请求、不读取用户账号存储。
 Swift 源码和打包头像显式进入 fingerprint。首次发布需要原生新包和重新生成的签名配置；

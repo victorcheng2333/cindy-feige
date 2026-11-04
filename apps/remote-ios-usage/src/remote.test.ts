@@ -190,6 +190,7 @@ it("reads ChatGPT generic quota instead of the most recent model-specific bucket
   ).toEqual([
     { channel: "maker:usage:codex-rate-limits", args: [] },
     { channel: "maker:usage:codex-rate-limits", args: ["second"] },
+    { channel: "maker:usage:cursor-subscription", args: [] },
   ]);
 });
 
@@ -319,4 +320,21 @@ it("does not allow a queued route write to survive logout", async () => {
   await remote.logout(); await rejected;
   await remote.saveSession(tokens);
   expect(await remote.readLastDevice()).toBeNull();
+});
+
+// Unit: live Host discovery must include Cursor despite its local-only runtime catalog.
+it("reads Cursor pools with precise values, seconds conversion and stable service order", async () => {
+  const { r, invoke } = make();
+  invoke.mockImplementation(async (_d, request) => ({ ok: true, result: request.channel === 'maker:provider:list'
+    ? { providers: [{ id: 'openai', connected: true, auth: { method: 'oauth' } }, { id: 'anthropic', connected: true, auth: { method: 'oauth' } }] }
+    : request.channel === 'maker:usage:cursor-subscription'
+      ? { providerId: 'cursor', connected: true, status: 'ready', snapshot: { pools: [{ id: 'auto', usedPercent: 0.262 }, { id: 'api', usedPercent: 100 }], resetsAtMs: 4102444800000, fetchedAtMs: 1793750400000 } }
+      : {} }));
+  const accounts = await r.usage('mac');
+  expect(accounts.map(a => a.service)).toEqual(['Claude', 'ChatGPT', 'Cursor']);
+  expect(accounts[2].windows[0].left).toBeCloseTo(99.738);
+  expect(accounts[2].windows[0].reset).toBe(4102444800);
+  expect(accounts[2].windows[1].left).toBe(0);
+  invoke.mockImplementation(async (_d, request) => request.channel === 'maker:provider:list' ? { ok: true, result: { providers: [] } } : { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED' } });
+  expect((await r.usage('old'))[0]).toMatchObject({ noticeOnly: true, failed: true, windows: [], error: expect.stringContaining('更新 Cindy') });
 });

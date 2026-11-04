@@ -115,6 +115,7 @@ function secretDir(): string {
 }
 
 const DYNAMIC_SECRET_PREFIXES = [
+  'jpush_',
   'bot_environment_',
   'byok_cache_',
   CUSTOM_MCP_SECRET_PREFIX,
@@ -1077,6 +1078,29 @@ export const byokSnapshotSecretIo = {
   write(key: string, value: string): boolean {
     if (!/^byok_cache_[a-f0-9]{64}$/.test(key)) return false;
     return electronSecretIo.write(key, value);
+  },
+};
+
+/** Fork push configuration and peer subscriptions; no renderer read/write surface. */
+export const jpushSecretIo = {
+  read(key: 'config' | 'registrations'): string | null {
+    return electronSecretIo.read(`jpush_${key}`);
+  },
+  write(key: 'config' | 'registrations', value: string): boolean {
+    if (isAppSessionBoundaryPending()) return false;
+    const scoped = resolveOwnerScopedSecretStorageKey(`jpush_${key}`);
+    if (!scoped || !safeStorage.isEncryptionAvailable()) return false;
+    const directory = secretDir();
+    fs.mkdirSync(directory, { recursive: true });
+    const target = path.join(directory, `${scoped}.enc`);
+    const temporary = `${target}.${randomBytes(8).toString('hex')}.tmp`;
+    try {
+      fs.writeFileSync(temporary, safeStorage.encryptString(value).toString('base64'), { mode: 0o600 });
+      fs.renameSync(temporary, target);
+      return true;
+    } finally {
+      try { fs.unlinkSync(temporary); } catch { /* Renamed or not created. */ }
+    }
   },
 };
 

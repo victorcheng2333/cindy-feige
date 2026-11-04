@@ -4368,6 +4368,18 @@
         "custom": "續自訂之設，可取模型清單或親增之。",
         "configure": "往設之",
         "keepCustom": "續自訂"
+      },
+      "cursor": {
+        "description": "以 Cursor 帳號行本機差事，由 Cursor 計費。可自動、全權、謀劃；詢問、回退、分叉尚未備。",
+        "connect": "連接 Cursor",
+        "disconnect": "斷開 Cursor",
+        "waiting": "請於瀏覽器登入，至多候五分鐘。",
+        "stopWarning": "Cursor 方行之差事將止，舊錄仍存。",
+        "loginFailed": "Cursor 登入未成，請察瀏覽器與網絡。",
+        "legacyPermission": "Cursor 無詢問權限之式，此任務以 Cursor 自動審閱。",
+        "windowsSandbox": "Cursor 於 Windows 無檔案系統沙箱；自動模式仍由 Cursor 自動審閱。",
+        "historyReset": "目前帳號下未見此差事之 Cursor 歷史，舊參照已清除。再次傳送將用新上下文，差事訊仍保留。",
+        "historyUnavailable": "目前帳號無法還原此差事之 Cursor 歷史。請確認帳號及差事狀態後重試。"
       }
     },
     "experimental": {
@@ -12136,6 +12148,17 @@
       "listAria": "權柄模式",
       "autoFallback": "自動審批暫不可用，已切換為預設權柄；需時將詢問君。",
       "modes": {
+        "cursor": {
+          "auto": {
+            "label": "自審"
+          },
+          "bypassPermissions": {
+            "label": "完全存取"
+          },
+          "plan": {
+            "label": "謀定模式"
+          }
+        },
         "claude-code": {
           "ask": {
             "label": "預設權柄",

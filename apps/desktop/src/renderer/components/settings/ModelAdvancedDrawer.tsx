@@ -1,3 +1,4 @@
+import { CursorMark } from '@/components/icons/CursorMark';
 import { displayPricingComponent, isDisplayPricingTableRedundant } from '@/lib/displayPricingFormat';
 import { DisplayPricingDetails, DisplayPricingQuote } from '@/components/DisplayPricingDetails';
 import { Button } from '@/components/ui/button';
@@ -88,9 +89,11 @@ const AGENT_LABEL: Record<AgentKind, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   pi: 'Pi',
+  cursor: 'Cursor',
 };
 
 const AGENT_MARK: Record<AgentKind, (size: number) => ReactNode> = {
+  cursor: size => <CursorMark size={size} />,
   'claude-code': (size) => <ClaudeMark size={size} />,
   codex: (size) => <CodexMark size={size} />,
   pi: (size) => <PiMark size={size} />,

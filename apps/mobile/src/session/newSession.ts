@@ -428,7 +428,7 @@ type NewSessionDefaultModel = {
   id: string;
   efforts: readonly string[];
   defaultEffort: string | null;
-  newSessionDefault?: readonly ('claude-code' | 'codex' | 'pi')[];
+  newSessionDefault?: readonly string[];
 };
 
 function isNewSessionDefaultForAgent(

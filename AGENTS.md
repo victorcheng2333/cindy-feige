@@ -6,6 +6,11 @@ Cindy 是面向大众用户的开源 AI 助手，连接模型、工具与设备�
 ## 本 fork 的个人打包约定（优先于下文通用交付流程）
 
 - 本 fork 主要供维护者自己使用，默认不向 upstream 提 PR。
+- 用户说「Mac 猫猫」「猫猫」时，指 `apps/remote-mac-usage` 的独立「猫猫.app」，
+  不是 Cindy 自带的菜单栏额度面板。「猫猫替换包」必须更新独立应用，保留原登录与
+  设备筛选，备份旧版并核对新版实际运行；只更新 Cindy 不算完成。构建与签名入口见
+  `apps/remote-mac-usage/README.md`。涉及远程取数时，还需核对提供数据的 Cindy 接口。
+  明确说「iOS 猫猫」时指 `apps/remote-ios-usage` 的独立 iOS 应用，不是原版 Cindy Mobile。
 - 维护者的区域偏好：未指定区域时一律按中国大陆版处理，不主动处理国际版；只有明确
   要求 Global／国际版时才使用它。本条优先于下文通用区域默认约定，由 Agent 显式传参落实。
 - 用户说「打包」时，直接在当前 checkout 执行 `pnpm package -- --region cn`；默认当前

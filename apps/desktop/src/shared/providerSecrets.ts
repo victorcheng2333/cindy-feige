@@ -112,6 +112,8 @@ export function isRendererAccessibleSafeStorageKey(storageKey: string): boolean 
     // Imported environments contain private credentials/checkpoints. All generic
     // read/store/remove calls must leave this entire namespace to Main.
     && !normalized.startsWith('bot_environment_')
+    // Personal push credentials and recipient bindings are configured by Main only.
+    && !normalized.startsWith('jpush_')
   );
 }
 

@@ -288,7 +288,7 @@ import { ModelPickerSheet } from '@/session/ModelPickerSheet';
 import { MobileModelIconMark } from '@/session/MobileProviderMark';
 import { getModel, type ProviderView } from '@cindy/model-providers/registry';
 import { shouldBlockLegacyRemoteModelWindowSwitch } from '@cindy/maker-shared/agent-capabilities';
-import { clearSessionMirror, makeSessionMirrorAccessors } from '@/session/sessionModelMirror';
+import { clearSessionMirror, makeSessionMirrorAccessors, refreshSessionModelMirror } from '@/session/sessionModelMirror';
 import { effortLabelFromRuntime, rowFastEditable } from '@/session/modelPickerRows';
 import {
   buildMobileModelSections,
@@ -2973,7 +2973,11 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     }),
     [maker, sessionId],
   );
-  useEffect(() => () => clearSessionMirror(sessionId), [sessionId]);
+  useEffect(() => () => clearSessionMirror(sessionId), [sessionId, deviceId, auth.user?.id]);
+  useEffect(() => {
+    if (!modelSheetOpen || !canConfigureSessionModel) return;
+    return refreshSessionModelMirror(sessionId, () => maker.getNewMakerDefaults(sessionAgentKind));
+  }, [modelSheetOpen, canConfigureSessionModel, sessionId, deviceId, auth.user?.id, maker, sessionAgentKind]);
   // 打开选择器时先展示待生效的跨 Harness 配置；setState 更新 agentKind 前，
   // 也不能让当前运行模型覆盖这份 intent。
   const modelSheetUsesIntent = Boolean(
@@ -9203,6 +9207,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!location || deviceIdRef.current !== deviceId) return false;
     const relocates = location.agentDeviceId !== undefined;
     if (config.agent !== sessionAgentKind) {
+      if (config.agent === 'cursor') return false;
       if (!sessionAgentSwitchSupported) return false;
       // 换电脑与换引擎是同一份交接风险:换电脑那一步已经确认过,不再叠一层换引擎确认。
       if (!relocates && agentSwitchIntent?.targetAgentKind !== config.agent && !(await confirmMobileSessionAgentSwitch(config.agent, !!agentSwitchIntent,
@@ -9213,6 +9218,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       return applied;
     }
     if (relocates || orcaModelSelectionUsesIntent) {
+      if (config.agent === 'cursor') return false;
       // 同引擎换电脑或 Orca 换模型均走下一条消息生效的切换意图。
       if (!canStageOrcaModelSelection(config.agent, capability.contextWindow,
         targetCapabilities.supportsModelWindowSwitchGuard === true)) return false;
@@ -10743,7 +10749,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                 selectedFastMode: collab.workerForm.form.model.fast,
               } : undefined,
               scope: JSON.stringify([auth.user?.id, collabWorkerDeviceId, 'orca-worker']),
-              agents: collab.workerForm.pickerAgents,
+              agents: collab.workerForm.pickerAgents.filter(agent => agent !== 'cursor'),
               loadCapabilities: async (agent) => {
                 const result = normalizeMobileAgentCapabilities(await collab.workerForm.maker.getCapabilities(agent));
                 if (!result) throw new Error('Capabilities unavailable');

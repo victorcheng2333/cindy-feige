@@ -10,8 +10,8 @@
  *   - 被控端本地改 / 应用任何控制端写 → 广播 maker:session-model-pref:changed(增量),
  *     remoteSessionStore 路由到 applySessionModelPrefPush 刷新镜像;
  *   - 离开会话 clearSessionMirror,防泄漏。
- * 镜像初始为空(非选中行先显示模型默认),与桌面 push 增量口径一致;手机不做全量 seed
- * (桌面草稿场景才有 replaceScope)。
+ * 打开模型列表时读取被控端已有的 providerModelMemory 全量快照；读取期间的本地编辑
+ * 和增量 push 按字段保留，迟到快照不覆盖新值。旧被控端没有快照时沿用增量镜像。
  */
 import { useSyncExternalStore } from 'react';
 
@@ -23,6 +23,10 @@ import type { MobileModelMemoryAccessors } from './draftModelMemory';
 interface Slot {
   effortByModel: Record<string, string>;
   fastByModel: Record<string, boolean | 'ultrafast'>;
+  effortChangedAt: Record<string, number>;
+  fastChangedAt: Record<string, number>;
+  effortPending: Record<string, boolean>;
+  fastPending: Record<string, boolean>;
 }
 
 // sessionId → (`${agent}:${providerId}` → Slot)
@@ -30,6 +34,7 @@ const store = new Map<string, Map<string, Slot>>();
 
 const listeners = new Set<() => void>();
 let version = 0;
+let writeSerial = 0;
 function emit(): void {
   version++;
   for (const l of listeners) l();
@@ -60,23 +65,27 @@ function getSlot(sessionId: string, agent: AgentKind, providerId: string, create
   const k = slotKey(agent, providerId);
   let slot = bySlot.get(k);
   if (!slot && create) {
-    slot = { effortByModel: {}, fastByModel: {} };
+    slot = { effortByModel: {}, fastByModel: {}, effortChangedAt: {}, fastChangedAt: {}, effortPending: {}, fastPending: {} };
     bySlot.set(k, slot);
   }
   return slot;
 }
 
-function setMirrorEffort(sessionId: string, agent: AgentKind, providerId: string, model: string, effort: string): void {
+function setMirrorEffort(sessionId: string, agent: AgentKind, providerId: string, model: string, effort: string, pending = false): void {
   if (!sessionId || !providerId || !model || !effort) return;
-  const slot = getSlot(sessionId, agent, providerId, true)!;
+  const slot = getSlot(sessionId, agent, '*', true)!;
+  slot.effortChangedAt[model] = ++writeSerial;
+  slot.effortPending[model] = pending;
   if (slot.effortByModel[model] === effort) return;
   slot.effortByModel[model] = effort;
   emit();
 }
 
-function setMirrorFast(sessionId: string, agent: AgentKind, providerId: string, model: string, enabled: boolean | 'ultrafast'): void {
+function setMirrorFast(sessionId: string, agent: AgentKind, providerId: string, model: string, enabled: boolean | 'ultrafast', pending = false): void {
   if (!sessionId || !providerId || !model) return;
-  const slot = getSlot(sessionId, agent, providerId, true)!;
+  const slot = getSlot(sessionId, agent, '*', true)!;
+  slot.fastChangedAt[model] = ++writeSerial;
+  slot.fastPending[model] = pending;
   if (slot.fastByModel[model] === enabled) return;
   slot.fastByModel[model] = enabled;
   emit();
@@ -97,7 +106,7 @@ export function applySessionModelPrefPush(payload: unknown): void {
     fast?: unknown;
   };
   if (typeof p.sessionId !== 'string' || !p.sessionId) return;
-  if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi') return;
+  if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') return;
   if (typeof p.providerId !== 'string' || !p.providerId) return;
   if (typeof p.model !== 'string' || !p.model) return;
   if (typeof p.effort === 'string' && p.effort.length > 0) {
@@ -129,22 +138,78 @@ export function makeSessionMirrorAccessors(
 ): MobileModelMemoryAccessors {
   return {
     getEffort: (agent, providerId, model) =>
-      getSlot(sessionId, agent, providerId, false)?.effortByModel[model],
+      getSlot(sessionId, agent, '*', false)?.effortByModel[model]
+        ?? getSlot(sessionId, agent, providerId, false)?.effortByModel[model],
     getFast: (agent, providerId, model) =>
-      getSlot(sessionId, agent, providerId, false)?.fastByModel[model],
+      getSlot(sessionId, agent, '*', false)?.fastByModel[model]
+        ?? getSlot(sessionId, agent, providerId, false)?.fastByModel[model],
     setEffort: (agent, providerId, model, effort) => {
-      setMirrorEffort(sessionId, agent, providerId, model, effort);
+      setMirrorEffort(sessionId, agent, providerId, model, effort, true);
       onWrite(agent, providerId, model, { effort });
     },
     setFast: (agent, providerId, model, enabled) => {
-      setMirrorFast(sessionId, agent, providerId, model, enabled);
+      setMirrorFast(sessionId, agent, providerId, model, enabled, true);
       onWrite(agent, providerId, model, { fast: enabled });
     },
   };
+}
+
+/** Refresh from the host's existing read-only defaults channel. No phone persistence. */
+export function refreshSessionModelMirror(
+  sessionId: string,
+  readDefaults: () => Promise<unknown>,
+): () => void {
+  let cancelled = false;
+  const started = writeSerial;
+  void readDefaults().then(defaults => {
+    if (cancelled || !record(defaults) || !record(defaults.providerModelMemory)) return;
+    const snapshot = defaults.providerModelMemory;
+    const keys = new Set([...Object.keys(snapshot), ...(store.get(sessionId)?.keys() ?? [])]);
+    let changed = false;
+    for (const key of keys) {
+      const split = key.indexOf(':');
+      const agent = key.slice(0, split);
+      const provider = key.slice(split + 1);
+      if (!provider || !['claude-code', 'codex', 'pi', 'cursor'].includes(agent)) continue;
+      const raw = Object.hasOwn(snapshot, key) && record(snapshot[key]) ? snapshot[key] : {};
+      const slot = getSlot(sessionId, agent as AgentKind, provider, true)!;
+      for (const field of ['effortByModel', 'fastByModel'] as const) {
+        const incoming = record(raw[field]) ? raw[field] : {};
+        const current: Record<string, string | boolean> = slot[field];
+        const revisions = field === 'effortByModel' ? slot.effortChangedAt : slot.fastChangedAt;
+        const pending = field === 'effortByModel' ? slot.effortPending : slot.fastPending;
+        for (const model of new Set([...Object.keys(current), ...Object.keys(incoming)])) {
+          if ((revisions[model] ?? 0) > started) continue;
+          const value = Object.hasOwn(incoming, model) ? incoming[model] : undefined;
+          // The host's renderer cache can lag its write acknowledgement. Keep
+          // optimistic values until a push or matching snapshot confirms them.
+          if (pending[model] && current[model] !== value) continue;
+          delete pending[model];
+          const valid = field === 'effortByModel'
+            ? typeof value === 'string' && value.length > 0
+            : typeof value === 'boolean' || value === 'ultrafast';
+          if (valid && current[model] !== value) {
+            current[model] = value as string | boolean;
+            changed = true;
+          } else if (!valid && Object.hasOwn(current, model)) {
+            delete current[model];
+            changed = true;
+          }
+        }
+      }
+    }
+    if (changed) emit();
+  }).catch(() => undefined); // Older hosts may not expose model memory.
+  return () => { cancelled = true; };
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** 测试用 —— 清空整个进程内镜像(其它代码不应调用)。 */
 export function __resetForTest(): void {
   store.clear();
   version = 0;
+  writeSerial = 0;
 }

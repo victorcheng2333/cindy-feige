@@ -963,8 +963,9 @@ describe('getRunningSnapshot 后台 subagent 折算(真 store)', () => {
     }
   });
 
-  it('seedBackgroundTaskSnapshots 保留 Pi provider,不把持久子会话标成 Claude', () => {
-    const sid = `seed-pi-${Math.random().toString(36).slice(2, 8)}`;
+  // Review P1: restored Cursor children must retain their real provider too.
+  it.each(['pi', 'cursor', 'codex'] as const)('seedBackgroundTaskSnapshots 保留 %s provider', (provider) => {
+    const sid = `seed-${provider}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       makerChatStore.seedBackgroundTaskSnapshots(sid, [
         {
@@ -972,11 +973,11 @@ describe('getRunningSnapshot 后台 subagent 折算(真 store)', () => {
           taskType: 'pi_subagent',
           toolUseId: 'pi-run-1',
           title: 'Inspect auth',
-          provider: 'pi',
+          provider,
         },
       ]);
       const update = makerChatStore.getSnapshot(sid).taskUpdates?.get('pi-run-1');
-      expect(update?.provider).toBe('pi');
+      expect(update?.provider).toBe(provider);
       expect(update?.taskType).toBe('pi_subagent');
       expect(update?.status).toBe('running');
       expect(update?.title).toBe('Inspect auth');
@@ -1567,4 +1568,13 @@ describe('getRunningSnapshot 后台 subagent 折算(真 store)', () => {
       globalWindow.window = previousWindow;
     }
   });
+});
+
+// Tier: unit. The Desktop reducer has its own protocol normalization; shared tests alone do not cover it.
+it('retains Cursor identity on native child task events', () => {
+  const next = handleStreamEvent(EMPTY_SESSION_STATE, {
+    sessionId: 'cursor-protocol-fixture', type: 'agent_task_update', source: 'cursor',
+    data: { provider: 'cursor', taskId: 'child', status: 'completed', title: 'Inspect files' },
+  });
+  expect(next.taskUpdates?.get('child')).toMatchObject({ provider: 'cursor', status: 'completed' });
 });

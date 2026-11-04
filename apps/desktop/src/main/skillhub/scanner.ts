@@ -71,10 +71,10 @@ export interface Skill {
   /** 同一 URL 基键存在多个来源时，详情路由必须携带 sourceKey。 */
   requiresSourceKey?: boolean;
   /** 来自哪个 agent 引擎。 */
-  engine: 'claude-code' | 'codex' | 'pi';
+  engine: 'claude-code' | 'codex' | 'pi' | 'cursor';
   /** 发现该 skill 的所有引擎专属路径（去重后）。~/.agents/ 通用路径不算引擎。 */
   linkedEngines: Array<{
-    engine: 'claude-code' | 'codex' | 'pi';
+    engine: 'claude-code' | 'codex' | 'pi' | 'cursor';
     label: string;
     runtimeStatus?: PiRuntimeCapabilityStatus;
   }>;
@@ -399,7 +399,7 @@ interface SkillPathMarker {
 
 function parseSkillPathMarker(absolutePath: string): SkillPathMarker | null {
   const normalizedPath = path.resolve(absolutePath).replace(/\\/g, '/');
-  const markerMatch = /\/(?:\.claude\/(?:skills|commands|agents)|\.agents\/skills|\.codex\/skills|\.pi\/skills|codex-home\/skills)\//.exec(normalizedPath);
+  const markerMatch = /\/(?:\.claude\/(?:skills|commands|agents)|\.agents\/skills|\.codex\/skills|\.cursor\/skills|\.pi\/skills|codex-home\/skills)\//.exec(normalizedPath);
   if (!markerMatch) return null;
 
   const segments = normalizedPath

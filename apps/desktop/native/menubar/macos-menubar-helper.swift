@@ -122,9 +122,13 @@ struct MBActivity: Decodable, Identifiable, Equatable {
 }
 
 struct MBDaily: Decodable, Equatable {
-  let money: [Double]
+  private let rawMoney: [Double]
   let paid: Double
-  let tokens: [Double]
+  private let rawTokens: [Double]
+  // Older main processes and preview fixtures send three harnesses.
+  var money: [Double] { rawMoney + Array(repeating: 0, count: max(0, 4 - rawMoney.count)) }
+  var tokens: [Double] { rawTokens + Array(repeating: 0, count: max(0, 4 - rawTokens.count)) }
+  enum CodingKeys: String, CodingKey { case rawMoney = "money", paid, rawTokens = "tokens" }
 }
 
 struct MBScopeData: Decodable, Equatable {
@@ -290,6 +294,7 @@ enum Palette {
     case "claude3": return claude3
     case "codex": return codex
     case "pi": return pi
+    case "cursor": return ink
     default: return ink
     }
   }
@@ -306,6 +311,7 @@ enum Palette {
     switch harness {
     case "claude-code": return claude
     case "pi": return pi
+    case "cursor": return ink
     default: return codex
     }
   }
@@ -2834,8 +2840,8 @@ struct UsagePoint: Identifiable {
   let value: Double
 }
 
-/// Harness stacking order, bottom to top: Codex, Claude Code, Pi.
-let harnessOrder: [(index: Int, key: String)] = [(1, "codex"), (0, "claude-code"), (2, "pi")]
+/// Harness stacking order, bottom to top: Codex, Claude Code, Pi, Cursor.
+let harnessOrder: [(index: Int, key: String)] = [(1, "codex"), (0, "claude-code"), (2, "pi"), (3, "cursor")]
 
 struct UsageChart: View {
   let days: [String]
@@ -2896,6 +2902,7 @@ struct UsageChart: View {
       "codex": gradient(Palette.codex),
       "claude-code": gradient(Palette.claude),
       "pi": gradient(Palette.pi),
+      "cursor": gradient(Palette.ink),
     ])
     .chartLegend(.hidden)
     .chartYAxis(.hidden)
@@ -3283,7 +3290,7 @@ struct UsagePage: View {
         let present = harnessOrder.filter { row.money[$0.index] > 0 }
         caption(present.isEmpty
           ? store.s("noUsage")
-          : present.map { "\(store.s("harness." + $0.key)) \(Fmt.money(row.money[$0.index]))" }.joined(separator: " · "))
+          : present.map { "\(($0.key == "cursor" ? "Cursor" : store.s("harness." + $0.key))) \(Fmt.money(row.money[$0.index]))" }.joined(separator: " · "))
       } else {
         bigNumber(Fmt.money(total))
         caption(store.s("wideCaptionMoney", ["n": String(store.usageRange)]) + " · " + store.s(scope == "local" ? "scopeLocal" : "scopeAll"))
@@ -3323,9 +3330,9 @@ struct UsagePage: View {
   }
 
   private func harnessTotals(_ daily: [MBDaily]) -> [Double] {
-    var totals = [0.0, 0.0, 0.0]
+    var totals = [0.0, 0.0, 0.0, 0.0]
     for day in daily {
-      for j in 0..<3 { totals[j] += day.money[j] }
+      for j in 0..<4 { totals[j] += day.money[j] }
     }
     return totals
   }
@@ -3336,13 +3343,13 @@ struct UsagePage: View {
     VStack(alignment: .leading, spacing: 8) {
       HarnessBar(values: harnessOrder.map { ($0.key, byHarness[$0.index]) })
         .frame(height: 4)
-      HStack(alignment: .top, spacing: 0) {
-        ForEach(Array(harnessOrder.enumerated()), id: \.element.index) { position, harness in
-          if position > 0 { Spacer(minLength: 10) }
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading),
+        count: harnessOrder.filter { byHarness[$0.index] > 0 }.count > 3 ? 2 : max(1, harnessOrder.filter { byHarness[$0.index] > 0 }.count)), alignment: .leading, spacing: 10) {
+        ForEach(Array(harnessOrder.filter { byHarness[$0.index] > 0 }.enumerated()), id: \.element.index) { _, harness in
           VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
               Circle().fill(Palette.harness(harness.key)).frame(width: 6, height: 6)
-              Text(store.s("harness." + harness.key)).lineLimit(1)
+              Text((harness.key == "cursor" ? "Cursor" : store.s("harness." + harness.key))).lineLimit(1)
               Text("\(Int((byHarness[harness.index] / max(total, 0.0001) * 100).rounded()))%")
                 .foregroundStyle(Palette.ink3)
             }

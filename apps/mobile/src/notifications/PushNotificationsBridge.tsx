@@ -4,6 +4,8 @@ import { AppState } from 'react-native';
 import { useAuth } from '@/auth/AuthContext';
 import { useSelfHostedRelay } from '@/device-link/selfHostedRelay';
 import Notifications from './nativeNotifications';
+import { acceptsJPushResponse, jpushLifecycle, subscribeJPush } from './jpush';
+import { getActiveMobileSessionRealm } from '@/config/env';
 import { ChatBackgroundBridge } from './ChatBackgroundBridge';
 import { notificationRecoveryRoute, parseNotificationResponseDeepLink } from './pushRegistrationModel';
 import {
@@ -12,6 +14,7 @@ import {
   readPushEnabled,
   retryPendingUnregister,
   syncPushRegistration,
+  subscribePushPreferences,
 } from './pushNotifications';
 
 /** 已消费点击的去重键(模块级:组件重挂/Provider 重建也不重复路由)。 */
@@ -39,6 +42,7 @@ export function PushNotificationsBridge() {
   routerRef.current = router;
   /** 冷启动点通知时 auth 可能未就绪,先存下待路由的深链。 */
   const pendingDeepLinkRef = useRef<string | null>(null);
+  const pendingResponseRef = useRef<NotificationResponse | null>(null);
   const authStateRef = useRef({
     initialized: auth.initialized,
     isAuthenticated: auth.isAuthenticated,
@@ -51,6 +55,17 @@ export function PushNotificationsBridge() {
   apiFetchRef.current = auth.apiFetch;
   // 自建中转下不登记 device-link 推送;切回官方中转后按本机开关重新同步一次。
   const selfHostedRelay = useSelfHostedRelay() !== null;
+
+  useEffect(() => {
+    if (!auth.initialized) return;
+    jpushLifecycle?.setOwner(auth.isAuthenticated && auth.user
+      ? `${getActiveMobileSessionRealm()}:${auth.user.id}` : null);
+    if (!auth.isAuthenticated) {
+      pendingDeepLinkRef.current = null;
+      pendingResponseRef.current = null;
+      void jpushLifecycle?.disable().catch(() => undefined);
+    }
+  }, [auth.initialized, auth.isAuthenticated, auth.user, auth.accountGeneration]);
 
   useEffect(() => {
     if (!isPushSupported()) return;
@@ -79,6 +94,19 @@ export function PushNotificationsBridge() {
     };
   }, [auth.accountGeneration, auth.initialized, auth.isAuthenticated, auth.user, selfHostedRelay]);
 
+  useEffect(() => {
+    if (!jpushLifecycle || !auth.initialized || !auth.isAuthenticated) return;
+    let cancelled = false;
+    const sync = async () => {
+      const enabled = await readPushEnabled();
+      if (!cancelled) await syncPushRegistration({ enabled, apiFetch: apiFetchRef.current }).catch(() => undefined);
+    };
+    const state = AppState.addEventListener('change', value => { if (value === 'active') void sync(); });
+    const prefs = subscribePushPreferences(signedOut => { if (signedOut) cancelled = true; else void sync(); });
+    void sync();
+    return () => { cancelled = true; state.remove(); prefs(); };
+  }, [auth.accountGeneration, auth.initialized, auth.isAuthenticated]);
+
   // APNs token 轮换 → 重新上报(仅开关开启且已登录时)
   useEffect(() => {
     if (!isPushSupported()) return;
@@ -100,7 +128,14 @@ export function PushNotificationsBridge() {
     if (!target) return;
     const { initialized, isAuthenticated } = authStateRef.current;
     if (!initialized || !isAuthenticated) return; // 待 auth 就绪后由下方 effect 重放
+    if (pendingResponseRef.current && !acceptsJPushResponse(pendingResponseRef.current)) {
+      if (!jpushLifecycle?.registration()) return; // Same-owner cold start may still be binding.
+      pendingDeepLinkRef.current = null;
+      pendingResponseRef.current = null;
+      return;
+    }
     pendingDeepLinkRef.current = null;
+    pendingResponseRef.current = null;
     routerRef.current.push(target as never);
   }, []);
 
@@ -108,6 +143,7 @@ export function PushNotificationsBridge() {
   useEffect(() => {
     if (!isPushSupported()) return;
     const consumeResponse = (response: NotificationResponse): void => {
+      if (!acceptsJPushResponse(response)) return;
       const deepLink = parseNotificationResponseDeepLink(response);
       if (!deepLink) return;
       const identifier = response.notification.request.identifier;
@@ -116,6 +152,7 @@ export function PushNotificationsBridge() {
       consumedNotificationResponseKeys.add(dedupeKey);
       void Notifications.clearLastNotificationResponseAsync?.()?.catch(() => undefined);
       pendingDeepLinkRef.current = notificationRecoveryRoute(deepLink, dedupeKey);
+      pendingResponseRef.current = response;
       flushPendingDeepLink();
     };
 
@@ -131,12 +168,14 @@ export function PushNotificationsBridge() {
       consumeResponse(response);
     });
     readLastResponse();
+    const unsubscribeJPush = subscribeJPush(() => { readLastResponse(); flushPendingDeepLink(); });
     const appStateSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') readLastResponse();
     });
     return () => {
       sub.remove();
       appStateSub.remove();
+      unsubscribeJPush();
     };
   }, [flushPendingDeepLink]);
 

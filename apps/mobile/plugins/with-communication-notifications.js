@@ -33,8 +33,12 @@ function configureProject(project, config, platformRoot, projectRoot) {
   const directory = path.join(platformRoot, TARGET);
   fs.mkdirSync(directory, { recursive: true });
   fs.copyFileSync(path.join(__dirname, 'communication-notifications/NotificationService.swift'), path.join(directory, 'NotificationService.swift'));
-  fs.writeFileSync(path.join(directory, 'Info.plist'), plist.default.build(extensionInfo()));
-  fs.writeFileSync(path.join(directory, `${TARGET}.entitlements`), plist.default.build({ [ENTITLEMENT]: true }));
+  const pushGroup = config.ios?.infoPlist?.CindyJPushAppGroup;
+  fs.writeFileSync(path.join(directory, 'Info.plist'), plist.default.build({ ...extensionInfo(), ...(pushGroup ? { CindyJPushAppGroup: pushGroup } : {}) }));
+  // Communication Notifications belongs to the containing app, not the service extension.
+  fs.writeFileSync(path.join(directory, `${TARGET}.entitlements`), plist.default.build({
+    ...(pushGroup ? { 'com.apple.security.application-groups': [pushGroup] } : {}),
+  }));
   for (const [name, file] of Object.entries(portraits)) {
     fs.copyFileSync(path.resolve(projectRoot, file), path.join(directory, `teammate-${name}.png`));
   }
@@ -97,7 +101,7 @@ module.exports = function withCommunicationNotifications(config) {
       ...experimental.ios,
       appExtensions: [
         ...(experimental.ios?.appExtensions ?? []).filter(item => item.targetName !== TARGET),
-        { targetName: TARGET, bundleIdentifier: `${config.ios.bundleIdentifier}.${TARGET}`, entitlements: { [ENTITLEMENT]: true } },
+        { targetName: TARGET, bundleIdentifier: `${config.ios.bundleIdentifier}.${TARGET}`, entitlements: {} },
       ],
     } },
   } } };

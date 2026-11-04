@@ -1,3 +1,4 @@
+import { CURRENT_CINDY_REGION } from '../shared/brandRegion.js';
 /**
  * Main-process minimal i18n.
  *
@@ -24,6 +25,7 @@ import { BRAND_NAME } from '@cindy/maker-shared/branding';
 import { DEFAULT_CLASSICAL_REPLY_STYLE, type ClassicalReplyStyleId } from '@cindy/maker-shared/classical-reply';
 
 import {
+  defaultLocalePreference,
   DEFAULT_LOCALE,
   resolvePreferredSystemLocale,
   type SupportedLocale,
@@ -95,7 +97,8 @@ function resolveOsLocale(): SupportedLocale {
 
 function getMainLocale(): SupportedLocale {
   if (cachedLocale) return cachedLocale;
-  cachedLocale = resolveOsLocale();
+  const preference = defaultLocalePreference(CURRENT_CINDY_REGION);
+  cachedLocale = preference === 'system' ? resolveOsLocale() : preference;
   return cachedLocale;
 }
 

@@ -2115,6 +2115,7 @@ function utilityRequestPlan(input: {
   /** Some coding-specialized models reject their wire's reasoning field. */
   supportsReasoning?: boolean;
 }): Pick<Parameters<typeof requestProviderHttpText>[0], 'steps' | 'memoryKey' | 'compat'> {
+  if (input.agentKind === 'cursor') throw new Error('Cursor does not support auxiliary HTTP requests');
   const harness: CompatibilityHarness = input.agentKind;
   let mode: UtilityReasoningMode;
   if (input.disableReasoning) {

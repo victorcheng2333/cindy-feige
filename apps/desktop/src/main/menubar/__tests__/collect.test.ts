@@ -1,7 +1,9 @@
+import { parseCursorQuota } from '../cursorUsage';
 import type { ProviderView } from '@cindy/model-providers';
 import { describe, expect, it } from 'vitest';
 
 import {
+  cursorSource,
   kimiSource,
   claudeSource,
   codexSource,
@@ -152,6 +154,11 @@ describe('collectMenubarInputs', () => {
       ...overrides,
     };
   }
+
+  it('keeps a connected Cursor visible when quota is unavailable', async () => {
+    const collected = await collectMenubarInputs(deps({ listProviders: async () => [provider({ id: 'cursor' })], readCursor: async () => null }));
+    expect(collected.sources).toEqual([expect.objectContaining({ id: 'cursor', kind: 'subscription', family: 'cursor', windows: [] })]);
+  });
 
   it('keeps the other sources when one reader fails', async () => {
     const errors: string[] = [];
@@ -419,4 +426,17 @@ it('labels usage with catalog display names and folds route variants together', 
   const series = usageScope(payload, days, [], names).modelSeries!;
   expect(series.models.map((m) => m.name)).toEqual(['Opus 5.5', 'GPT-6 Astra', 'mystery-1']);
   expect(series.tokens[0]).toEqual([200, 100, 100, 0]);
+});
+
+// Unit: the previous collector mislabeled Cursor as Claude; independent quota pools must survive mapping.
+it('keeps Cursor usage separate and maps independent pools without a fake limiting window', () => {
+  const snapshot = parseCursorQuota({ billingCycleEnd: NOW + 86400000, planUsage: { autoPercentUsed: 20, apiPercentUsed: 100, totalPercentUsed: 60 } }, NOW)!;
+  const source = cursorSource(provider({ id: 'cursor' }), snapshot, NOW);
+  expect(source.windows.map(w => [w.label, w.kind, w.usedPercent])).toEqual([['auto', 'scoped', 20], ['api', 'scoped', 100]]);
+  const scope = usageScope({ modelDaily: [{ day: '2026-10-11', agentKind: 'cursor', model: 'composer', tokens: 42, money: { amount: 2 } }] } as never, ['2026-10-11'], []);
+  expect(scope.daily[0].money).toEqual([0, 0, 0, 2]);
+  expect(scope.models['7'][0].harness).toBe('cursor');
+  expect(parseCursorQuota({ billingCycleEnd: NOW - 1, planUsage: { autoPercentUsed: 20 } }, NOW)).toBeNull();
+  expect(parseCursorQuota({ planUsage: { autoPercentUsed: '0', apiPercentUsed: -1 } }, NOW)).toBeNull();
+  expect(parseCursorQuota({ planUsage: { totalPercentUsed: 40 } }, NOW)?.pools).toEqual([{ id: 'total', usedPercent: 40 }]);
 });

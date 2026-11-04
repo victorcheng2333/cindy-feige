@@ -1,3 +1,5 @@
+import type { CindyRegion } from '@cindy/maker-shared/brand-identity';
+
 /** UI-supported concrete locales. */
 export const SUPPORTED_LOCALES = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt-PT', 'pt-BR', 'zh-Hant-x-lzh', 'zh-Hans-x-lzh'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
@@ -26,6 +28,11 @@ export function modernLocaleOf(locale: SupportedLocale): SupportedLocale {
 export type LocalePreference = SupportedLocale | 'system';
 
 export const DEFAULT_LOCALE: SupportedLocale = 'en';
+
+/** Default preference only; explicit user language (including system) always wins. */
+export function defaultLocalePreference(region: CindyRegion): LocalePreference {
+  return region === 'global' ? 'system' : 'zh-CN';
+}
 
 function normalizeLocaleTag(raw: string | undefined | null): string | null {
   const tag = raw?.trim().replace(/_/g, '-').replace(/\..*$/, '');

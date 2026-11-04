@@ -1,5 +1,23 @@
 # 跨端协议兼容
 
+## 同账号控制端的 Cursor 收藏元数据（2026-11-04）
+
+既有 `maker:model-favorites:get` 可附加 `{ includeCursor: true }`；`apply` 在单次 mutation
+之后附加相同 options。仅宿主验证的同账号控制端（排除共享任务访客）或可信本机窗口可启用。
+缺省仍返回不含 Cursor 的兼容投影；旧解析入口默认继续拒绝第四种引擎。新手机连旧宿主时，
+仍可读取已有三引擎收藏，Cursor 保存失败必须如实呈现，不建立手机本地收藏替代真相。
+新宿主的 renderer 按已验证标记投影，同一份存储、owner fence 和持久确认继续生效。
+
+此选项只声明收藏元数据读取能力，不授予跨电脑 Cursor 执行权限，不加入访客白名单。
+沿用现有 invoke/push、加密与通用中转路由，官方与自建中转无需升级；实际自建中转 interop
+及新旧读取、访客伪造选项拒绝的回归通过。
+
+## 猫猫 Mac 的 Cursor 额度读取（2026-11-04）
+
+新增同账号只读 `maker:usage:cursor-subscription`（无参数），沿用远程开关、撤权、已建链与白名单门禁；不向共享任务或供应商分享访客开放。返回 `providerId: cursor`、非敏感连接状态 `connected`、`status: ready | unavailable` 与归一化快照（独立模型池已用百分比、毫秒重置时间、读取时间），不含身份、凭证或原始网络响应。Cursor 执行能力仍不出现在远程供应商目录；猫猫用本专用只读接口发现额度账号，不因此开放远程执行。猫猫 Mac 转成自身秒级时间，分别展示两池，未知不当零。旧 Host 拒绝新通道时显示更新提示，不借用本机或其他账号数据。
+
+只增加现有 invoke 的业务通道，不改变 envelope、握手、加密、重连或 relay 路由。官方／自建中转沿用通用加密转发，无需升级中转；共享客户端测试及实际自建中转 interop 已验证。手机版原有额度入口不变；独立猫猫新增 Cursor 卡片。
+
 ## 机器实时状态（2026-11-02）
 
 新增只读 invoke `maker:machine:status`（`packages/device-link/src/machineStatus.ts`），同账号远控可用，不进共享任务访客白名单。
@@ -4515,3 +4533,12 @@ device-link 操作、字段或白名单。远程打开在执行端判定：新�
 ## GitHub 公共读取能力
 
 `git-context:github-read` 只在同账号授权链路开放，控制端先检查 `github-read-v1`。未声明的旧电脑返回明确不支持，既有 `pr-status` 的关联范围过滤与链接打开不变。新通道不进入共享任务访客 allowlist；中转仍转发原 invoke / invoke-result 帧，不引入服务器消息种类。关联新增 `associationSource / associationOrigin` 可选字段；旧消费者按原字段兼容，新消费者默认只显示宿主投影的明确有效关联。详见 [功能合同](../product-rules/github-status-and-associations.md)。
+
+## 个人构建的可选推送登记
+
+`device-link:jpush:registration:v1` 仅在通用 invoke 中增加可选通道，不改变 envelope、
+notify 或 relay capability。同账号设备只能登记/删除自己 `env.src` 对应的随机别名，
+共享任务访客、供应商分享对端、撤销设备及关闭远控时拒绝。Master Secret 不在协议中。
+旧 Desktop 不支持该 channel 时保留其正常错误，手机不重置全局连接；自建中转只需沿用
+已有同账号 invoke 转发，不增加推送服务端能力。两端适配及验证见
+[个人极光推送](../jpush-personal-push.md)。

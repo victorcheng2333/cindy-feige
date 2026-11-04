@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('@/i18n', () => ({ i18n: { t: (key: string) => key } }));
 import { createElement, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -20,7 +21,7 @@ vi.mock('@/session/mobileModelPreferences', async () => {
 vi.mock('@/session/providerModelSections', () => ({buildMobileModelSections:(input:any)=>({activeSourceId:test.activeSource?test.activeSource(input):'account'})}));
 vi.mock('@/session/draftModelMemory',()=>({useDraftModelMemoryVersion:()=>0}));
 vi.mock('@/session/sessionModelMirror',()=>({useSessionModelMirrorVersion:()=>0}));
-vi.mock('@/session/modelPickerRows',()=>({budgetRowDisabled:()=>false,presentPickerPrice:()=>null}));
+vi.mock('@/session/modelPickerRows',async original=>({...await original<any>(),budgetRowDisabled:()=>false,presentPickerPrice:()=>null}));
 vi.mock('@/session/unifiedMobileModels',async importOriginal=>({...await importOriginal<any>(),mobileUnifiedEntries:(providers:any[])=>test.entriesFor?test.entriesFor(providers):test.entries}));
 vi.mock('react-i18next',()=>({useTranslation:()=>({t:(key:string)=>key})}));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
@@ -41,6 +42,20 @@ async function mount(onSelect=vi.fn(async()=>true),extra={}) {
   } as any)));
   return {onSelect,onClose};
 }
+// Unit: exercise the existing-task picker, not just catalog projection. A Cursor
+// row formerly threw before render; prior component fixtures only used cc/codex/Pi.
+it('selects a model for an existing Cursor task with its full tuning', async () => {
+  test.entries = [{ providerId: 'account', modelId: 'next', displayName: 'Next',
+    candidates: ['cursor'], recommended: 'cursor', nativeAgent: 'cursor', capabilities: {
+      cursor: { wireModelId: 'next', efforts: ['low', 'high'], defaultEffort: 'low', supportsFastMode: true, contextWindow: 200000 },
+    } }];
+  const onSelect = vi.fn(async () => true);
+  const { onClose } = await mount(onSelect, { agentKind: 'cursor', activeModelId: 'old',
+    unified: { scope: 'cursor-task', agents: ['cursor'], loadCapabilities: async () => ({ hasFastMode: true }), onSelect } });
+  await act(async () => test.view.onSelect(test.view.groups[0].rows[0]));
+  expect(onSelect).toHaveBeenCalledWith({ providerId: 'account', modelId: 'next', agent: 'cursor', effort: 'low', fast: false }, { deviceId: null });
+  expect(onClose).toHaveBeenCalledOnce();
+});
 it('keeps the sheet and preferences unchanged after cancelled selection',async()=>{
   const {onClose}=await mount(vi.fn(async()=>false));
   await act(async()=>test.view.onSelect(test.view.groups[0].rows[0]));

@@ -1,6 +1,6 @@
 /** Worker 面板按账号和任务所在电脑提交过的完整路线。 */
 export interface WorkerCreationSelection {
-  agent: 'claude-code' | 'codex' | 'pi';
+  agent: 'claude-code' | 'codex' | 'pi' | 'cursor';
   model: string;
   providerId: string | null;
   agentDeviceId: string | null;

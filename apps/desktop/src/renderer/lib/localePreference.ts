@@ -3,7 +3,8 @@ import {
   isClassicalReplyStyle,
   type ClassicalReplyStyleId,
 } from '@cindy/maker-shared/classical-reply';
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type LocalePreference, type SupportedLocale } from '../../shared/locale';
+import { CURRENT_CINDY_REGION } from '../../shared/brandRegion';
+import { defaultLocalePreference, DEFAULT_LOCALE, SUPPORTED_LOCALES, type LocalePreference, type SupportedLocale } from '../../shared/locale';
 
 const LOCALE_STORAGE_KEY = 'language';
 let unpersistedPreference: LocalePreference | undefined;
@@ -28,7 +29,7 @@ export function readStoredLocale(): LocalePreference {
   } catch {
     // Storage may be unavailable in sandboxed windows.
   }
-  return 'system';
+  return defaultLocalePreference(CURRENT_CINDY_REGION);
 }
 
 export function effectiveOf(pref: LocalePreference): SupportedLocale {

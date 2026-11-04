@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const fixture = vi.hoisted(() => ({ region: 'cn' }));
+vi.mock('../brandRegion', () => ({ get CURRENT_CINDY_REGION() { return fixture.region; } }));
+import { readStoredLocale, getEffectiveLocale } from '../../renderer/lib/localePreference';
 
 import { resolvePreferredSystemLocale, resolveSystemLocale } from '../locale';
 
@@ -33,4 +37,29 @@ describe('desktop locale resolution', () => {
   ])('resolves %s to %s', (tag, expected) => {
     expect(resolveSystemLocale(tag)).toBe(expected);
   });
+});
+
+// Tier: unit. Test the production first-frame reader, including saved overrides and system language.
+it('starts CN in Chinese on an English OS and preserves an explicit user choice', () => {
+  let saved: string | null = null;
+  vi.stubGlobal('localStorage', { getItem: () => saved });
+  vi.stubGlobal('window', { electronAPI: { preferredSystemLocale: 'en' } });
+  try {
+    fixture.region = 'cn';
+    expect(readStoredLocale()).toBe('zh-CN');
+    expect(getEffectiveLocale()).toBe('zh-CN');
+    saved = 'ja';
+    expect(getEffectiveLocale()).toBe('ja');
+    saved = 'system';
+    expect(getEffectiveLocale()).toBe('en');
+    saved = null;
+    fixture.region = 'dev';
+    expect(getEffectiveLocale()).toBe('zh-CN');
+    fixture.region = 'global';
+    expect(readStoredLocale()).toBe('system');
+    expect(getEffectiveLocale()).toBe('en');
+  } finally {
+    fixture.region = 'cn';
+    vi.unstubAllGlobals();
+  }
 });

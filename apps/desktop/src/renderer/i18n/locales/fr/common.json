@@ -1439,6 +1439,19 @@
     }
   },
   "menubar": {
+    "cursor": {
+      "pools": "Réserves",
+      "auto": "Modèles Cursor",
+      "api": "Autres modèles",
+      "total": "Utilisation incluse",
+      "remaining": "Restant par réserve",
+      "separate": "Les réserves Cursor sont indépendantes.",
+      "explanation": "Une réserve peut être épuisée sans que les autres le soient. Les pourcentages ne s’additionnent pas.",
+      "resetUnknown": "Date de réinitialisation inconnue",
+      "extra": "Dépenses supplémentaires",
+      "notRead": "Non disponible",
+      "extraHint": "Voir la facturation Cursor"
+    },
     "balance": {
       "name": "Solde Cindy",
       "quotaName": "Quota Cindy",
@@ -4464,6 +4477,18 @@
         "custom": "Continuez avec des paramètres personnalisés. Vous pouvez récupérer les modèles ou les ajouter manuellement.",
         "configure": "Configurer le fournisseur",
         "keepCustom": "Continuer avec des paramètres personnalisés"
+      },
+      "cursor": {
+        "description": "Exécutez des tâches locales avec votre compte Cursor. La facturation Cursor s’applique. Modes Auto, accès complet et plan disponibles ; confirmation, retour en arrière et branchement indisponibles.",
+        "connect": "Connecter Cursor",
+        "disconnect": "Déconnecter Cursor",
+        "waiting": "Terminez la connexion dans votre navigateur. Cela peut prendre cinq minutes.",
+        "stopWarning": "Les tâches Cursor en cours seront arrêtées. Leur historique sera conservé.",
+        "loginFailed": "La connexion à Cursor n’a pas abouti. Vérifiez le navigateur et votre connexion.",
+        "legacyPermission": "Cursor ne prend pas en charge le mode de permissions avec confirmation. Cette tâche utilise la vérification automatique de Cursor.",
+        "windowsSandbox": "Cursor ne fournit pas de bac à sable du système de fichiers sous Windows. Le mode automatique utilise toujours la vérification automatique de Cursor.",
+        "historyReset": "L’historique Cursor de cette tâche est indisponible dans le compte actuel. L’ancienne référence a été supprimée. Un nouvel envoi utilisera un nouveau contexte ; les messages de la tâche sont conservés.",
+        "historyUnavailable": "Ce compte ne peut pas restaurer l’historique Cursor de la tâche. Vérifiez le compte et l’état de la tâche, puis réessayez."
       }
     },
     "experimental": {
@@ -12276,6 +12301,17 @@
       "listAria": "Modes d'autorisation",
       "autoFallback": "La revue automatique est temporairement indisponible. Passage aux autorisations par défaut ; une confirmation sera demandée si nécessaire.",
       "modes": {
+        "cursor": {
+          "auto": {
+            "label": "Revue auto"
+          },
+          "bypassPermissions": {
+            "label": "Accès complet"
+          },
+          "plan": {
+            "label": "Mode plan"
+          }
+        },
         "claude-code": {
           "ask": {
             "label": "Autorisations par défaut",

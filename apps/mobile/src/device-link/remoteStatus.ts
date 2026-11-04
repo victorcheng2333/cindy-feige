@@ -14,7 +14,7 @@ export {
   isPreconditionFailedRemoteError,
 } from '@cindy/maker-shared/device-link-contract';
 
-const AGENT_NOT_AUTHENTICATED_RE = /^(?:\[[A-Z_]+\] )?(claude-code|codex|pi) not authenticated: ?(.*)$/;
+const AGENT_NOT_AUTHENTICATED_RE = /^(?:\[[A-Z_]+\] )?(claude-code|codex|pi|cursor) not authenticated: ?(.*)$/;
 
 const CONNECTION_ISSUE_COPY_KEYS: Record<
   DeviceLinkConnectionIssueKind,
@@ -101,7 +101,7 @@ export function describeAgentAuthError(error: string | null | undefined): string
   if (!error) return null;
   const matched = AGENT_NOT_AUTHENTICATED_RE.exec(error.trim());
   if (!matched) return null;
-  const agent = matched[1] === 'claude-code' ? 'Claude' : matched[1] === 'pi' ? 'Pi' : 'Codex';
+  const agent = matched[1] === 'cursor' ? 'Cursor' : matched[1] === 'claude-code' ? 'Claude' : matched[1] === 'pi' ? 'Pi' : 'Codex';
   const reason = matched[2] || 'unknown';
   const reasonKey: Record<string, string> = {
     no_key: 'noKey',
@@ -119,6 +119,8 @@ export function describeAgentAuthError(error: string | null | undefined): string
 /** 结构化运行错误保留 marker 做状态分类，展示文案复用 Mobile i18n。 */
 function localizedRuntimeErrorCopy(error: unknown): string | null {
   const formatted = typeof error === 'string' ? error : formatRemoteErrorShared(error);
+  const auth = describeAgentAuthError(formatted);
+  if (auth) return auth;
   if (formatted.includes('[REMOTE_AGENT_MEMBER_BUDGET_PAUSED]')) return i18n.t('session.remoteError.REMOTE_AGENT_MEMBER_BUDGET_PAUSED');
   const agentCode = parseAgentErrorCode(formatted)?.code;
   if (agentCode && i18n.exists(`session.remoteError.${agentCode}`)) return i18n.t(`session.remoteError.${agentCode}`);

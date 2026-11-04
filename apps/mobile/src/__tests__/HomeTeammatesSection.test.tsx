@@ -130,21 +130,21 @@ it('re-reads cloud companions on each manual home refresh', async () => {
 
 // The new collapsed home must retain the chat receipt semantics of expanded rows:
 // a thread can be unread after main is read, while a server-read room stays quiet.
-it('uses server read receipts and thread unread state in the collapsed group strip', async () => {
+it('uses server read receipts and thread unread state in the collapsed group header', async () => {
   h.collapsed = true; h.showAvatars = true;
   const group = { ...item, key: 'host:group', chatUnread: { count: 1, threadCount: 1 },
     item: { ...item.item, ref: { collectionId: 'bot-groups', kind: 'bot-group', id: 'group' }, display: { title: 'Team' } } };
   groups.items = [group];
   await render(0);
-  const cell = () => byId('home.teammatesStrip.group.host.group');
-  expect(cell()?.querySelector('[data-testid="teammate.status.unread"]')).not.toBeNull();
-  h.unread = true;
+  const cell = () => byId('home.teammatesAttention');
+  expect(cell()).not.toBeNull();
+  h.unreadIds.add('group');
   group.chatUnread = { count: 0, threadCount: 0 };
   await render(0);
-  expect(cell()?.querySelector('[data-testid="teammate.status.unread"]')).toBeNull();
+  expect(cell()).toBeNull();
   group.chatUnread = { count: 2, threadCount: 0 };
   await render(0);
-  expect(cell()?.querySelector('[data-testid="teammate.status.unread"]')).not.toBeNull();
+  expect(cell()).not.toBeNull();
 });
 
 // PR #7079: unit-tier component coverage of the cloud/group routes that bypass the teammate hook.
@@ -164,53 +164,6 @@ it.each(['cloud', 'group', 'created-group'] as const)('defers the %s route until
   expect(h.push).not.toHaveBeenCalled();
   routeAfterClose?.();
   expect(h.push).toHaveBeenCalledExactlyOnceWith(kind === 'cloud' ? '/cloud-chat' : '/group-chat');
-});
-
-// Unit performance regression through the real home section: the old strip
-// subscribes ordinary bots to group identities and rerenders all cells on every
-// unrelated cache/parent update. Count work, then verify real unread/avatar/navigation
-// updates; no native FPS or wall-time claim is inferred from this synthetic load.
-// One bot plus one unrelated notification is the minimal trigger; 50 x 10
-// exercises the representative repeated-refresh load without a timing assertion.
-it('keeps a 50-companion strip quiet through ten refreshes and updates only the affected cell', async () => {
-  h.collapsed = true; h.showAvatars = true;
-  const items = Array.from({ length: 50 }, (_, index) => ({ ...item, key: `host:bot${index}`,
-    item: { ...item.item, ref: { ...item.item.ref, id: `bot${index}` }, display: { title: `Bot ${index}`, avatar: undefined as any } } }));
-  const show = (rows: typeof items) => render(0, { context: {
-    navigation: null, route: null, shared: { roster: { ...roster, items: rows }, groups },
-  } } as any);
-  await show(items);
-  expect(h.avatarRenders).toHaveLength(50);
-  h.stripRenders = []; h.avatarRenders = []; h.identityReads = 0;
-  let latest = items;
-  for (let index = 0; index < 10; index++) {
-    latest = structuredClone(items);
-    latest[17].item.revision = String(index + 2);
-    await show(latest);
-    await act(async () => { h.cacheRevision++; h.cacheListeners.forEach(listener => listener()); });
-  }
-  expect(h.stripRenders).toHaveLength(0);
-  expect(h.avatarRenders).toHaveLength(0);
-  expect(h.identityReads).toBe(0);
-  await act(async () => { h.unreadIds.add('bot17'); h.cacheRevision++; h.cacheListeners.forEach(listener => listener()); });
-  expect(h.stripRenders).toEqual(['home.teammatesStrip.bot.host.bot17']);
-  expect(byId('home.teammatesStrip.bot.host.bot17')?.querySelector('[data-testid="teammate.status.unread"]')).not.toBeNull();
-  expect(h.avatarRenders).toHaveLength(0);
-  h.stripRenders = [];
-  await act(async () => { h.unreadIds.clear(); h.cacheRevision++; h.cacheListeners.forEach(listener => listener()); });
-  expect(h.stripRenders).toEqual(['home.teammatesStrip.bot.host.bot17']);
-  expect(byId('home.teammatesStrip.bot.host.bot17')?.querySelector('[data-testid="teammate.status.unread"]')).toBeNull();
-  expect(h.avatarRenders).toHaveLength(0);
-  h.stripRenders = [];
-  latest[17] = { ...latest[17], item: { ...latest[17].item, display: {
-    ...latest[17].item.display, avatar: { kind: 'emoji', value: '🤖', fallbackText: 'B' },
-  } } };
-  await show([...latest]);
-  expect(h.stripRenders).toEqual(['home.teammatesStrip.bot.host.bot17']);
-  expect(h.avatarRenders).toEqual(['Bot 17']);
-  expect(byId('avatar.Bot 17')?.textContent).toBe('🤖');
-  await act(async () => byId('home.teammatesStrip.bot.host.bot17')!.click());
-  expect(h.openTeammate).toHaveBeenCalledExactlyOnceWith(latest[17]);
 });
 
 // Integration: leaving the full home and mounting its sidebar used to collapse the
@@ -252,16 +205,16 @@ it.each([[false, false, false], [true, false, false], [false, true, false], [fal
   } finally { roster.items = original; roster.loading = false; }
 });
 
-// Unit: explicitly hiding avatars must remove the entire body, including an empty create row.
+// Unit: the owner-requested Mac parity hides the whole body even with a legacy avatar override.
 // Keep header-only/search transitions and the independent fold covered through the real section.
-it('keeps only the header when avatars are disabled, restores the strip when enabled, and never changes the fold when the setting changes', async () => {
+it('hides avatars for both legacy preferences and restores rows only when expanded', async () => {
   h.collapsed = true; h.showAvatars = false;
   await render(0);
   expect(byId('home.teammatesHeader')).not.toBeNull();
   expect(byId('home.teammatesStrip')).toBeNull();
   expect(byId('row.bot')).toBeNull();
   h.showAvatars = true; await render(0);
-  expect(byId('home.teammatesStrip')).not.toBeNull();
+  expect(byId('home.teammatesStrip')).toBeNull();
   await act(async () => byId('home.teammatesHeader')!.click());
   h.showAvatars = false; await render(0);
   expect(byId('row.bot')).not.toBeNull();

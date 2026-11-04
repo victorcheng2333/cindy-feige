@@ -26,6 +26,19 @@ function project() {
 }
 
 describe('communication notification extension', () => {
+  // Production plugin output: without this entitlement the NSE cannot redact stale-account
+  // previews. Existing cases only verify official builds without the optional transport.
+  it('shares the display gate only for an explicitly configured personal push build', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'cindy-notification-plugin-'));
+    roots.push(root);
+    plugin.configureProject(project(), { name: 'Cindy', ios: {
+      bundleIdentifier: 'org.example.selfhost', infoPlist: { CindyJPushAppGroup: 'group.org.example.selfhost' },
+    } }, root, path.resolve(import.meta.dirname, '../..'));
+    const directory = path.join(root, 'CindyNotificationService');
+    expect(plist.parse(readFileSync(path.join(directory, 'Info.plist'), 'utf8')).CindyJPushAppGroup).toBe('group.org.example.selfhost');
+    expect(plist.parse(readFileSync(path.join(directory, 'CindyNotificationService.entitlements'), 'utf8'))['com.apple.security.application-groups'])
+      .toEqual(['group.org.example.selfhost']);
+  });
   it.each(['com.xd.cindy', 'com.xd.cindycn', 'org.example.selfhost'])('embeds one extension with the actual %s identity', (bundleIdentifier) => {
     const root = mkdtempSync(path.join(tmpdir(), 'cindy-notification-plugin-'));
     roots.push(root);
@@ -48,12 +61,16 @@ describe('communication notification extension', () => {
       expect(settings.APPLICATION_EXTENSION_API_ONLY).toBe('YES');
     }
     const info = plist.parse(readFileSync(path.join(root, 'CindyNotificationService/Info.plist'), 'utf8'));
+    // Regression: a real device build rejected the communication entitlement on the NSE.
+    // Exercise generated signing inputs (unit); the existing case incorrectly required it.
+    expect(plist.parse(readFileSync(path.join(root, 'CindyNotificationService/CindyNotificationService.entitlements'), 'utf8')))
+      .not.toHaveProperty('com.apple.developer.usernotifications.communication');
     expect(info.NSExtension.NSExtensionPointIdentifier).toBe('com.apple.usernotifications.service');
     expect(readFileSync(path.join(root, 'CindyNotificationService/teammate-cindy.png')).length).toBeGreaterThan(0);
     const configured = plugin(config);
     expect(configured.extra.eas.build.experimental.ios.appExtensions).toEqual([{
       targetName: 'CindyNotificationService', bundleIdentifier: `${bundleIdentifier}.CindyNotificationService`,
-      entitlements: { 'com.apple.developer.usernotifications.communication': true },
+      entitlements: {},
     }]);
   });
 });

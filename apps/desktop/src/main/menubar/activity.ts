@@ -1,6 +1,7 @@
 import { isDefaultDraftSessionTitle } from '@cindy/maker-shared/session-title';
 import type { AgentIslandSessionSnapshot } from '../../shared/agentIsland.js';
 import type { MenubarActivity } from '../../shared/menubarQuota.js';
+import { dbToMakerAgentKind } from '../../shared/agentKindConversion.js';
 import { MENUBAR_HARNESS_LOGOS } from './logos.js';
 import type { MenubarTranslate } from './snapshot.js';
 
@@ -12,8 +13,7 @@ export function buildMenubarActivities(
 ): MenubarActivity[] {
   return sessions.map((session): MenubarActivity => {
     const companion = session.companion;
-    const harness =
-      session.agentKind === 'codex' ? 'codex' : session.agentKind === 'pi' ? 'pi' : 'claude-code';
+    const harness = dbToMakerAgentKind(session.agentKind);
     const status = t(
       `ui.activity${
         {

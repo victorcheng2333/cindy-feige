@@ -58,6 +58,14 @@ describe('resolveDisplayContextWindow', () => {
     })).toBe(1_000_000);
   });
 
+  // Tier: unit. Cursor models can omit context capacity; a fabricated 200K made
+  // a valid large conversation show 100% despite the SDK reporting no limit.
+  it('keeps an unknown Cursor capacity unknown while accepting declared capacity', () => {
+    expect(resolveDisplayContextWindow({ sdkContextWindow: 0, allowDefaultWindow: false })).toBe(0);
+    expect(resolveDisplayContextWindow({ sdkContextWindow: 0, allowDefaultWindow: false,
+      modelContextWindow: 1_000_000 })).toBe(1_000_000);
+  });
+
   it('falls back to the model capability before the hardcoded default', () => {
     expect(resolveDisplayContextWindow({
       modelContextWindow: 262_144,

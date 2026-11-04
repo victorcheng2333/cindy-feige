@@ -1,3 +1,5 @@
+import { setLocalHarnessProviderReader } from './active-catalog.js';
+import { readCursorConnection, cursorModelDiscoveryFailure, cursorProvider } from './cursor-auth.js';
 import { loadManagedClaudeModels, refreshManagedClaudeModels } from './claude-account-models.js';
 import { readProviderPresentation } from './provider-presentation-store.js';
 import { projectSubscriptionFastPolicy } from './subscription-fast-policy.js';
@@ -1002,6 +1004,7 @@ export function getDesktopSelectableCatalog(): Catalog {
 
 /** 进程内单例：注入 active-catalog（同步读）+ 实时连接状态读取器。 */
 export function getDesktopProviderService(options: { allowSideEffects?: boolean } = {}): ProviderService {
+  setLocalHarnessProviderReader(cursorProvider);
   const authState = getAuthState();
   const ownerId = getActiveAppSession().dataOwnerId;
   if (
@@ -1021,6 +1024,8 @@ export function getDesktopProviderService(options: { allowSideEffects?: boolean 
   }
   if (singleton) return singleton;
   singleton = createProviderService({
+    cursorConnected: readCursorConnection,
+    modelDiscoveryFailure: (id, connected) => id === 'cursor' && connected ? cursorModelDiscoveryFailure() : null,
     projectProvider: projectSubscriptionFastPolicy,
     getProviderPresentation: (providerId) => {
       const presentation = readProviderPresentation(providerId);

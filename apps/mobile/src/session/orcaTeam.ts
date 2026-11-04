@@ -299,9 +299,10 @@ export type OrcaCollabEntryStatus =
 
 /** 能否挂协同入口(与桌面 resolveCollabEntryPolicy 同口径):Worker 子任务不能嵌套协同。 */
 export function isOrcaCollabEligible(
-  session: Pick<RemoteSession, 'orcaRole' | 'orcaRemoteLead' | 'workspaceKind' | 'workingDir'> | null,
+  session: (Pick<RemoteSession, 'orcaRole' | 'orcaRemoteLead' | 'workspaceKind' | 'workingDir'>
+    & Partial<Pick<RemoteSession, 'agentKind'>>) | null,
 ): boolean {
-  if (!session || session.orcaRole === 'worker' || session.orcaRemoteLead) return false;
+  if (!session || session.agentKind === 'cursor' || session.orcaRole === 'worker' || session.orcaRemoteLead) return false;
   if (session.workspaceKind === 'dialogue') return true;
   return session.workspaceKind === 'project' && !!session.workingDir?.trim();
 }
@@ -312,7 +313,8 @@ export function isOrcaCollabEligible(
  */
 export async function readOrcaCollabEntryStatus(
   maker: MobileMakerTransport,
-  session: Pick<RemoteSession, 'orcaRole' | 'orcaRemoteLead' | 'workspaceKind' | 'workingDir' | 'remoteHostId'>,
+  session: Pick<RemoteSession, 'orcaRole' | 'orcaRemoteLead' | 'workspaceKind' | 'workingDir' | 'remoteHostId'>
+    & Partial<Pick<RemoteSession, 'agentKind'>>,
   agent: OrcaWorkerAgentKind,
 ): Promise<Exclude<OrcaCollabEntryStatus, 'loading'>> {
   if (!isOrcaCollabEligible(session)) return 'ineligible';

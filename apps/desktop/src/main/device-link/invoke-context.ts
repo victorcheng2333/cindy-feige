@@ -16,6 +16,8 @@ import type { SharedTaskPeerCapture } from './sharedTaskDispatch.js';
 
 export interface DeviceLinkInvokeContext {
   controllerDeviceId: string;
+  /** Host-verified account identity, never read from invoke arguments or platform. */
+  sameAccountController?: boolean;
   channel: string;
   /** Host-verified sharedTask identity and revocation fence; never populated from wire args. */
   sharedTask?: SharedTaskPeerCapture;

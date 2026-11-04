@@ -1408,6 +1408,19 @@
     }
   },
   "menubar": {
+    "cursor": {
+      "pools": "分池",
+      "auto": "Cursor 模型",
+      "api": "其他模型",
+      "total": "方案額度",
+      "remaining": "各池剩餘",
+      "separate": "Cursor 的額度池獨立計算。",
+      "explanation": "一個池用完，不代表其他池也用完；各池百分比不能相加。",
+      "resetUnknown": "重設時間未知",
+      "extra": "額外消費",
+      "notRead": "尚未讀取",
+      "extraHint": "在 Cursor 帳單查看"
+    },
     "balance": {
       "name": "Cindy 餘額",
       "quotaName": "Cindy 本期配額",
@@ -4380,6 +4393,18 @@
         "custom": "繼續自訂設定，可取得模型清單或手動新增。",
         "configure": "前往設定",
         "keepCustom": "繼續自訂"
+      },
+      "cursor": {
+        "description": "使用 Cursor 帳號執行本機任務，費用由 Cursor 結算。支援自動、完整存取和計畫；暫不支援詢問、回退和分支。",
+        "connect": "連接 Cursor",
+        "disconnect": "中斷 Cursor 連接",
+        "waiting": "請在瀏覽器中完成登入，最多等待五分鐘。",
+        "stopWarning": "正在執行的 Cursor 任務將停止，歷史記錄會保留。",
+        "loginFailed": "Cursor 登入未完成，請檢查瀏覽器和網路連線。",
+        "legacyPermission": "Cursor 不支援詢問權限模式。此任務使用 Cursor 自動審閱。",
+        "windowsSandbox": "Cursor 在 Windows 上不提供檔案系統沙箱；自動模式仍由 Cursor 自動審閱。",
+        "historyReset": "目前帳號下找不到此任務的 Cursor 歷史，舊參照已清除。再次傳送將使用新的上下文，任務訊息仍會保留。",
+        "historyUnavailable": "目前帳號無法還原此任務的 Cursor 歷史。請確認帳號和任務狀態後重試。"
       }
     },
     "experimental": {
@@ -12149,6 +12174,17 @@
       "listAria": "權限模式",
       "autoFallback": "自動審批暫時不可用，已切換為預設權限；需要時會詢問你。",
       "modes": {
+        "cursor": {
+          "auto": {
+            "label": "自動審批"
+          },
+          "bypassPermissions": {
+            "label": "完全訪問"
+          },
+          "plan": {
+            "label": "計劃模式"
+          }
+        },
         "claude-code": {
           "ask": {
             "label": "預設權限",

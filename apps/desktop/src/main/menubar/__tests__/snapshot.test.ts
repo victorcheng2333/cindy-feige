@@ -399,3 +399,17 @@ describe('buildUsageWidgetSnapshot', () => {
     expect(buildUsageWidgetSnapshot(view, NOW, () => null)).toBeNull();
   });
 });
+
+// Unit: a depleted independent pool must not turn the entire Cursor account red or trigger a global alert.
+it('shows Cursor pools independently without adding them or choosing the smallest', () => {
+  const cursor = codex('cursor', 0, { family: 'cursor', brand: 'Cursor', account: null, windows: [
+    { kind: 'scoped', label: 'auto', usedPercent: 20, resetsAtMs: NOW + DAY, windowMinutes: 0 },
+    { kind: 'scoped', label: 'api', usedPercent: 100, resetsAtMs: NOW + DAY, windowMinutes: 0 },
+  ] });
+  const build = input([cursor, codex('empty', 100)]);
+  const view = buildMenubarView(build);
+  expect(view.sources[0]).toMatchObject({ value: null, fill: null, level: 'normal', when: '80% / 0%' });
+  expect(view.details.cursor.legend.map(item => item.label)).toEqual(['Cursor models 80%', 'Other models 0%']);
+  expect(view.details.cursor.saySecondary).toContain('not added');
+  expect(isLowOnEverything(build)).toBe(false);
+});

@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import type { ProviderView } from '@cindy/model-providers/registry';
 import type { UnifiedModelEntry } from '@cindy/model-providers';
 import { addModelFavorite, matchesEntry, mobileUnifiedEntries, resolveMobileModelConfig, sameConfiguration } from '@/session/unifiedMobileModels';
 const cap = (agent: 'codex'|'claude-code') => ({agent,wireModelId:agent === 'codex' ? 'codex/model' : 'model',efforts:['low','medium','high'],defaultEffort:'medium',supportsFastMode:true,contextWindow:200000,defaultEffortSource:"catalog",contextWindowVerified:true});
@@ -54,4 +55,32 @@ it('restores Ultrafast only while the selected account advertises that tier', ()
   const actual = resolveMobileModelConfig(available, { fastCapable, favorite });
   expect(actual.fast).toBe('ultrafast');
   expect(sameConfiguration(actual, { ...actual, fast: true })).toBe(false);
+});
+
+// Tier: unit. Shared catalogs gained a local-only engine; it must not enter mobile selection.
+it('filters Cursor out of catalogs and rejects direct Cursor configuration', () => {
+  const localEntry = { ...entry, recommended: 'cursor' as const, candidates: ['cursor' as const], nativeAgent: 'cursor' as const };
+  expect(() => resolveMobileModelConfig(localEntry, { fastCapable })).toThrow('local desktop');
+  const provider: ProviderView = { id: 'cursor', name: 'Cursor', source: 'builtin' as const, connected: true,
+    agents: ['cursor' as const], auth: { method: 'oauth' as const },
+    routing: { cursor: { upstream: 'https://api.cursor.com', authStrategy: 'none' as const } },
+    models: { cursor: [{ id: 'model', name: 'Model', contextWindow: 0, efforts: [], defaultEffort: null }] } };
+  expect(mobileUnifiedEntries([provider], ['cursor', 'codex'], {}, false)).toEqual([]);
+});
+
+// Unit regression: local host execution is still local when controlled from iOS.
+// Prior coverage only rejected new Cursor drafts and omitted existing Cursor tasks.
+it('allows Cursor catalog and tuning only for an existing Cursor task', () => {
+  const provider: ProviderView = { id: 'cursor', name: 'Cursor', source: 'builtin' as const, connected: true,
+    agents: ['cursor' as const], auth: { method: 'oauth' as const },
+    routing: { cursor: { upstream: 'https://api.cursor.com', authStrategy: 'none' as const } },
+    models: { cursor: [{ id: 'model', name: 'Model', contextWindow: 200000, efforts: ['low', 'high'], defaultEffort: 'low', supportsFastMode: true }] } };
+  const rows = mobileUnifiedEntries([provider], ['cursor'], {}, true,
+    { providerId: 'cursor', modelId: 'model', agent: 'cursor' });
+  expect(rows).toHaveLength(1);
+  const config = resolveMobileModelConfig(rows[0], { pinned: 'cursor', fastCapable: () => true });
+  expect(config).toMatchObject({ agent: 'cursor', modelId: 'model', effort: 'low' });
+  expect(mobileUnifiedEntries([provider], ['cursor'], {}, false)).toEqual([]);
+  expect(mobileUnifiedEntries([provider], ['cursor'], {}, true,
+    { providerId: 'other', modelId: 'model', agent: 'codex' })).toEqual([]);
 });

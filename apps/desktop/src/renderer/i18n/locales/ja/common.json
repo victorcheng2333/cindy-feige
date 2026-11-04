@@ -1408,6 +1408,19 @@
     }
   },
   "menubar": {
+    "cursor": {
+      "pools": "利用枠",
+      "auto": "Cursor モデル",
+      "api": "その他のモデル",
+      "total": "プラン利用枠",
+      "remaining": "枠ごとの残り",
+      "separate": "Cursor の利用枠は独立しています。",
+      "explanation": "一つの枠を使い切っても、他の枠は利用できる場合があります。割合は合算できません。",
+      "resetUnknown": "リセット日時不明",
+      "extra": "追加利用料金",
+      "notRead": "未取得",
+      "extraHint": "Cursor の請求画面で確認"
+    },
     "balance": {
       "name": "Cindy 残高",
       "quotaName": "Cindy の今期クォータ",
@@ -4380,6 +4393,18 @@
         "custom": "カスタム設定を続けます。モデル一覧を取得するか、手動で追加できます。",
         "configure": "設定に進む",
         "keepCustom": "カスタム設定を続ける"
+      },
+      "cursor": {
+        "description": "Cursor アカウントでローカルのタスクを実行します。料金は Cursor によって請求されます。自動、フルアクセス、計画に対応。確認、巻き戻し、分岐には未対応です。",
+        "connect": "Cursor に接続",
+        "disconnect": "Cursor の接続を解除",
+        "waiting": "ブラウザーでログインを完了してください。最大5分かかります。",
+        "stopWarning": "実行中の Cursor タスクは停止します。履歴は保持されます。",
+        "loginFailed": "Cursor のログインが完了しませんでした。ブラウザーと接続を確認してください。",
+        "legacyPermission": "Cursor は確認する権限モードに対応していません。このタスクでは Cursor の自動レビューを使用します。",
+        "windowsSandbox": "Windows 上の Cursor にはファイルシステムのサンドボックスがありません。自動モードでは引き続き Cursor の自動レビューを使用します。",
+        "historyReset": "現在のアカウントでは、このタスクの Cursor 履歴が見つからないため、古い参照を削除しました。再送すると新しいコンテキストを使用します。タスクのメッセージは保持されます。",
+        "historyUnavailable": "このアカウントでは、タスクの Cursor 履歴を復元できません。アカウントとタスクの状態を確認してから、再試行してください。"
       }
     },
     "experimental": {
@@ -12149,6 +12174,17 @@
       "listAria": "権限モード",
       "autoFallback": "自動レビューは一時的に利用できないため、デフォルト権限に切り替えました。必要な操作は確認します。",
       "modes": {
+        "cursor": {
+          "auto": {
+            "label": "自動レビュー"
+          },
+          "bypassPermissions": {
+            "label": "フルアクセス"
+          },
+          "plan": {
+            "label": "計画モード"
+          }
+        },
         "claude-code": {
           "ask": {
             "label": "デフォルト権限",

@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { remotePresentation } from '../../modules/cindy-remote-presentation/src';
 import { isMobileAuthOwnerCurrent, type MobileAuthOwnerGeneration } from '@/auth/authOwnerGeneration';
 import { getChatInviteIntent, getChatInviteSequence, parseChatInviteLink, receiveChatInviteLink, subscribeChatInviteIntent } from './chatInviteIntent';
 
-/** Foreground-only discovery; clipboard contents never leave memory unless they are a valid invitation. */
+/** Android foreground discovery. iOS invitations require a link or user-initiated paste. */
 export function useClipboardChatInvite(enabled: boolean, owner: MobileAuthOwnerGeneration): void {
-  const lastVersion = useRef<string | undefined>(undefined);
   const handledLinks = useRef(new Set<string>());
   useEffect(() => {
-    if (!enabled || Platform.OS === 'web') return;
+    // Even checking a new clipboard on launch can ask for paste permission on
+    // iOS. An in-process change-count cache cannot prevent this after relaunch.
+    if (!enabled || Platform.OS !== 'android') return;
     let disposed = false;
     let busy = false;
     let background = 0;
@@ -23,9 +23,6 @@ export function useClipboardChatInvite(enabled: boolean, owner: MobileAuthOwnerG
     remember();
     const unsubscribe = subscribeChatInviteIntent(remember);
     const current = () => !disposed && isMobileAuthOwnerCurrent(owner);
-    const version = () => Platform.OS === 'ios'
-      ? remotePresentation?.clipboardVersion?.().catch(() => undefined) ?? Promise.resolve(undefined)
-      : Promise.resolve(undefined);
     const present = () => {
       if (!pending || AppState.currentState !== 'active') return;
       const target = pending;
@@ -42,21 +39,12 @@ export function useClipboardChatInvite(enabled: boolean, owner: MobileAuthOwnerG
       const started = background;
       const sequence = getChatInviteSequence();
       try {
-        const before = await version();
-        if (!current() || started !== background || AppState.currentState !== 'active') return;
-        if (before !== undefined && before === lastVersion.current) return;
         if (!await Clipboard.hasStringAsync()) return;
         if (!current() || started !== background || sequence !== getChatInviteSequence()
           || AppState.currentState !== 'active') return;
-        // The change count avoids another iOS permission prompt for the same clipboard, including denial.
-        lastVersion.current = before;
         const text = await Clipboard.getStringAsync();
         if (!current()) return;
-        if (started !== background) { lastVersion.current = undefined; return; }
-        const after = await version();
-        if (!current()) return;
-        if (started !== background) { lastVersion.current = undefined; return; }
-        if (before !== undefined && after !== undefined && before !== after) return;
+        if (started !== background) return;
         const link = text.length <= 8192 ? parseChatInviteLink(text.trim()) : null;
         if (link) pending = { link, sequence, background: started };
         present();

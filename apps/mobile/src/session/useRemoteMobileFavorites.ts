@@ -88,7 +88,8 @@ export function useRemoteMobileFavorites(scope: string, visible: boolean) {
     const request = ++seq.current;
     try {
       const items = parseModelFavorites(
-        await invoke(deviceId, MODEL_FAVORITES_GET, []),
+        await invoke(deviceId, MODEL_FAVORITES_GET, [{ includeCursor: true }]),
+        true,
       );
       if (valid() && seq.current === request) {
         lastFavorites.set(cacheKey, items);
@@ -139,7 +140,7 @@ export function useRemoteMobileFavorites(scope: string, visible: boolean) {
         throw new Error("Favorites not ready");
       ++seq.current;
       try {
-        await invoke(deviceId, MODEL_FAVORITES_APPLY, [mutation]);
+        await invoke(deviceId, MODEL_FAVORITES_APPLY, [mutation, { includeCursor: true }]);
         if (!valid()) throw new Error("Device changed");
         await refresh();
       } catch (error) {

@@ -43,6 +43,8 @@ interface LocaleContextValue {
   effectiveLocale: SupportedLocale;
   /** 设置偏好 —— 持久化到 localStorage、刷 i18next、刷 <html lang>。 */
   setLocale: (next: LocalePreference) => void;
+  /** Follow a host broadcast in this window without changing the user's preference. */
+  followLocale: (next: SupportedLocale) => void;
   /** 古典界面（文言）下 AI 作答的输出风格。 */
   classicalStyle: ClassicalReplyStyleId;
   setClassicalStyle: (next: ClassicalReplyStyleId) => void;
@@ -64,13 +66,13 @@ function syncClassicalStyle(style: ClassicalReplyStyleId): void {
   });
 }
 
-function applyLocale(loc: SupportedLocale): void {
+function applyLocale(loc: SupportedLocale, syncHost = true): void {
   // i18next 自带 isInitialized 检查；同步资源 + 同步 init 下永远是 true。
   void i18n.changeLanguage(loc);
   if (typeof document !== 'undefined') {
     document.documentElement.lang = loc;
   }
-  syncApplicationMenuLocale(loc);
+  if (syncHost) syncApplicationMenuLocale(loc);
 }
 
 /**
@@ -80,13 +82,13 @@ function applyLocale(loc: SupportedLocale): void {
  * initializing i18next synchronously here keeps even an early render failure
  * in the user's selected language.
  */
-export function bootstrapInitialLocale(): SupportedLocale {
+export function bootstrapInitialLocale(syncHost = true): SupportedLocale {
   const effectiveLocale = getEffectiveLocale();
-  applyLocale(effectiveLocale);
+  applyLocale(effectiveLocale, syncHost);
   return effectiveLocale;
 }
 
-export function LocaleProvider({ children }: { children: ReactNode }) {
+export function LocaleProvider({ children, syncHost = true }: { children: ReactNode; syncHost?: boolean }) {
   const [locale, setLocaleState] = useState<LocalePreference>(readStoredLocale);
   const [effectiveLocale, setEffectiveLocale] = useState<SupportedLocale>(getEffectiveLocale);
   const [classicalStyle, setClassicalStyleState] = useState<ClassicalReplyStyleId>(readStoredClassicalStyle);
@@ -109,16 +111,20 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     applyLocale(eff);
   }, []);
 
-  // 首次 mount 时确保 i18next + <html lang> 与 state 一致 (state 来自 localStorage,
-  // 而 i18n.init 默认用的是 DEFAULT_LOCALE，两者可能不同)。
-  // 仅 mount 一次：locale 后续变化都走 setLocale 路径。
+  const followLocale = useCallback((next: SupportedLocale) => {
+    setEffectiveLocale(next);
+    applyLocale(next, false);
+  }, []);
+
+  // Only the primary window initializes the host's language. Auxiliary windows
+  // follow broadcasts without feeding stale snapshots back into the host.
   useEffect(() => {
-    applyLocale(effectiveLocale);
-  }, [effectiveLocale]);
+    applyLocale(effectiveLocale, syncHost);
+  }, [effectiveLocale, syncHost]);
 
   const value = useMemo<LocaleContextValue>(
-    () => ({ locale, effectiveLocale, setLocale, classicalStyle, setClassicalStyle }),
-    [locale, effectiveLocale, setLocale, classicalStyle, setClassicalStyle],
+    () => ({ locale, effectiveLocale, setLocale, followLocale, classicalStyle, setClassicalStyle }),
+    [locale, effectiveLocale, setLocale, followLocale, classicalStyle, setClassicalStyle],
   );
 
   return createElement(LocaleContext.Provider, { value }, children);

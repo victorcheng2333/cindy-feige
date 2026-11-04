@@ -7,7 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({ auth: { user: null as { id: string } | null }, push: vi.fn(),
   preview: vi.fn(), accept: vi.fn(), clipboard: vi.fn(), view: null as any, sequence: 0,
-  state: 'active', listeners: new Set<(value: string) => void>() }));
+  os: 'ios', state: 'active', listeners: new Set<(value: string) => void>() }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: h.push }),
   useNavigationContainerRef: () => ({ getRootState: () => ({ index: 0, routes: [{ name: 'devices/index', key: 'home' }] }) }),
 }));
@@ -15,7 +15,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => `operation-${++h.sequence}` })
 vi.mock('@/auth/AuthContext', () => ({ useAuth: () => h.auth }));
 vi.mock('expo-clipboard', () => ({ hasStringAsync: async () => true, getStringAsync: h.clipboard }));
 vi.mock('../../modules/cindy-remote-presentation/src', () => ({ remotePresentation: null }));
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' }, AppState: { get currentState() { return h.state; },
+vi.mock('react-native', () => ({ Platform: { get OS() { return h.os; } }, AppState: { get currentState() { return h.state; },
   addEventListener: (_: string, listener: (value: string) => void) => {
     h.listeners.add(listener); return { remove: () => h.listeners.delete(listener) };
   },
@@ -44,7 +44,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const old = getChatInviteIntent(); if (old) closeChatInvite(old.id);
   setMobileAuthOwner(null); h.auth.user = null; h.view = null;
-  h.state = 'active'; h.listeners.clear();
+  h.os = 'ios'; h.state = 'active'; h.listeners.clear();
   vi.clearAllMocks(); h.preview.mockResolvedValue(preview); h.accept.mockResolvedValue({ groupId });
   h.clipboard.mockResolvedValue('');
   ready = false; root = createRoot(document.createElement('div'));
@@ -65,7 +65,19 @@ it('waits for login and native dismissal before navigating an explicitly accepte
   await act(async () => { h.view.model.closed(); h.view.model.closed(); });
   expect(h.push).toHaveBeenCalledExactlyOnceWith({ pathname: '/companions/groups/[groupId]', params: { groupId } });
 });
-it('previews a copied invitation through the real Host and accepts only after confirmation', async () => {
+it('does not read copied invitations on iOS startup or foreground, but still previews explicit links', async () => {
+  h.clipboard.mockResolvedValue(`cindy://chat-invite/${token}`);
+  await account('owner'); ready = true; await render();
+  await appState('background'); await appState('active');
+  expect(h.clipboard).not.toHaveBeenCalled();
+  expect(h.preview).not.toHaveBeenCalled();
+  await act(async () => receiveChatInviteLink(`cindy://chat-invite/${token}`));
+  expect(h.preview).toHaveBeenCalledOnce();
+  expect(h.view.model.phase).toBe('preview');
+  expect(h.accept).not.toHaveBeenCalled();
+});
+it('previews a copied invitation through the real Android Host and accepts only after confirmation', async () => {
+  h.os = 'android';
   h.clipboard.mockResolvedValue(`https://invite.example.test/chat-invite/join#${token}`);
   await account('owner'); ready = true; await render();
   expect(h.preview).toHaveBeenCalledOnce();
@@ -106,6 +118,7 @@ it('recognizes the same external link during a manual preview without changing i
   expect(h.accept).not.toHaveBeenCalled();
 });
 it('does not reopen a manually previewed clipboard invitation after cancellation and another link', async () => {
+  h.os = 'android';
   await account('owner'); ready = true; openManualChatInvite(); await render();
   const link = `cindy://chat-invite/${token}`;
   h.clipboard.mockResolvedValue(link);

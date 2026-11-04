@@ -13,6 +13,13 @@
 
 ## 凭证不入仓
 
+个人极光推送的发送凭证与接收登记复用 `safe-storage/owner_<账号摘要>_jpush_*.enc`，
+由 Main 固定键读写，不开放 Renderer 或远程配置。一次性导入文件只放操作系统临时目录，
+成功后删除；未导入的残留需要手动清理。手机随机别名保存在 SecureStore
+`cindy.jpush.registration.v1`，撤销失败保留标记重试；App Group 的
+`jpush-display-gate.json` 只存当前随机别名和预览开关，原子写入，关闭/退出时删除。
+该文件不含发送凭证或正文。完整生命周期见[个人极光推送](../jpush-personal-push.md)。
+
 - 用户凭证、OAuth 授权、API key、访问令牌、刷新令牌、私钥和 Agent 授权文件不得以
   复制、链接、fixture、日志或生成物等形式进入仓库工作区或任何可能被 Git 跟踪的路径。
 - `.gitignore` 只是误操作兜底，不是凭证存储方案。发现凭证曾进入 Git 历史时，应立即

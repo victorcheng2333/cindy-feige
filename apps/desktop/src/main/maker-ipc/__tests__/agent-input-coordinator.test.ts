@@ -8578,6 +8578,49 @@ describe('AgentInputCoordinator steer transaction', () => {
     expect(mocks.touchUserSendInDb).toHaveBeenCalledWith(sid, undefined);
   });
 
+  // Cursor SDK revert_to_followup means not accepted, even while its run is
+  // still working. Existing no-active-turn tests only covered idle fallback.
+  // Unit: preserve the input in the real queue, then deliver exactly once after done.
+  it('queues a steer requiring follow-up without terminating the active turn', async () => {
+    const h = createHarness();
+    const sid = 'steer-native-followup';
+    const first = makeItem('q-1', 'first');
+    const second = makeItem('q-2', 'second');
+    h.coordinator.enqueue(sid, first);
+    await flush();
+    h.steerToAgent.mockRejectedValueOnce(new Error('[STEER_FOLLOWUP_REQUIRED] native refusal'));
+    expect(await h.coordinator.steer(sid, second, { touchUserSend: true })).toBe(true);
+    await flush();
+    expect(h.sendToAgent).toHaveBeenCalledTimes(1);
+    expect(latestProjection(h.projections).pendingQueue.map(item => item.clientId)).toEqual(['q-2']);
+    h.setRunning(false);
+    h.coordinator.onTurnEvent(sid, 'done');
+    await flush();
+    expect(h.sendToAgent).toHaveBeenCalledTimes(2);
+    expect(latestProjection(h.projections).pendingQueue).toEqual([]);
+  });
+  it.each(['pause', 'clear', 'no-fallback'] as const)('preserves %s while a native steer returns to follow-up', async (action) => {
+    const h = createHarness();
+    const sid = `steer-followup-${action}`;
+    h.coordinator.enqueue(sid, makeItem('q-1', 'first'));
+    await flush();
+    const gate = deferred<void>();
+    const started = deferred<void>();
+    h.steerToAgent.mockImplementationOnce(async () => { started.resolve(); await gate.promise; });
+    const pending = h.coordinator.steer(sid, makeItem('q-2', 'second'),
+      action === 'no-fallback' ? { fallbackToTurn: false } : undefined);
+    await started.promise;
+    if (action === 'pause') h.coordinator.setExecutionPaused(sid, true);
+    if (action === 'clear') h.coordinator.clearSession(sid);
+    gate.reject(new Error('[STEER_FOLLOWUP_REQUIRED] native refusal'));
+    expect(await pending).toBe(action === 'pause');
+    await flush();
+    expect(h.sendToAgent).toHaveBeenCalledTimes(1);
+    const projection = latestProjection(h.projections);
+    expect(projection.pendingQueue.map(item => item.clientId)).toEqual(action === 'pause' ? ['q-2'] : []);
+    if (action === 'pause') expect(projection.queueInteractionLocks).toContain('execution-pause');
+  });
+
   it('reconciles a stale tracker on drain and releases the queued head without Stop/steer', async () => {
     vi.useFakeTimers();
     try {

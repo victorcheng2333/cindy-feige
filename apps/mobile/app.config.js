@@ -50,6 +50,9 @@ function loadRegionBuildConfig(region, { selfHosted = false } = {}) {
   if (!block || typeof block !== 'object') {
     throw new Error(`${path.basename(file)} 缺少 region "${region}" 配置块`);
   }
+  if (block.iosDisplayName !== undefined && typeof block.iosDisplayName !== 'string') {
+    throw new Error(`${path.basename(file)} 的 ${region}.iosDisplayName 必须是字符串`);
+  }
   // 身份字段:自建发布线必须非空;本地构建允许留空,由调用方回落内置 dev 身份并打警告。
   if (selfHosted && !(block.iosBundleId?.trim() && block.androidPackage?.trim())) {
     throw new Error(
@@ -306,6 +309,10 @@ module.exports = (context = {}) => {
       ...baseConfig.ios,
       bundleIdentifier: regional.iosBundleIdentifier,
       usesAppleSignIn: true,
+      // A fork's local iOS display name must not rename Android or official builds.
+      ...(regionBuildConfig?.iosDisplayName?.trim()
+        ? { infoPlist: { ...baseConfig.ios?.infoPlist, CFBundleDisplayName: regionBuildConfig.iosDisplayName.trim() } }
+        : {}),
     },
     android: {
       ...baseConfig.android,
@@ -426,5 +433,12 @@ module.exports = (context = {}) => {
     }
   }
 
+  // Opt-in personal push transport. Public AppKey only; Master Secret stays on Desktop.
+  if (process.env.CINDY_JPUSH_APP_KEY) {
+    next.plugins = [...next.plugins, ['./plugins/with-jpush', {
+      appKey: process.env.CINDY_JPUSH_APP_KEY,
+      environment: process.env.CINDY_JPUSH_APNS_ENV,
+    }]];
+  }
   return next;
 };

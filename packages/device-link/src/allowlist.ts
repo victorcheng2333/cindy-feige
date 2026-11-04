@@ -25,6 +25,7 @@
  * Renderer 可调用。它由业务 dispatch 拦截,绝不放行通用 UI / shell IPC。
  */
 import { FILE_PEER_CHANNEL } from './filePeer.js';
+import { JPUSH_REGISTRATION_CHANNEL } from './jpush.js';
 import { MACHINE_STATUS_CHANNEL } from './machineStatus.js';
 import { PROVIDER_GROUP_REMOTE_CHANNEL } from './providerGroup.js';
 import { REMOTE_AGENT_CHANNEL } from './remoteAgent.js';
@@ -565,6 +566,7 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   'maker:usage:codex-reset-auto-use',
   // 桌面小组件快照（只读，被控端 dispatch 拦截；准入同上方用量只读通道）。
   DL_USAGE_WIDGET_SNAPSHOT_CHANNEL,
+  JPUSH_REGISTRATION_CHANNEL,
   // Claude 订阅账号余量快照(只读,cached-first):控制端远程会话状态栏 chip 显示
   // 被控端订阅的 5h/周/分模型窗口剩余(数据真相在被控端 —— turn 在被控端消耗其
   // 订阅额度)。快照只含利用率百分比、reset 时间与账号归属指纹(单向 scrypt 哈希,
@@ -581,6 +583,8 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   // Same-account read-only Kimi quota; no secrets, arbitrary endpoints, shared-task or share guests.
   // Old hosts reject the channel; callers never fall back to their local account.
   'maker:usage:kimi-coding',
+  // Same-account read-only Cursor pools; no credentials or account mutation.
+  'maker:usage:cursor-subscription',
   // cc 默认路由会话的生效计费路由观察值(只读,'gateway' | 'subscription' | null):
   // 控制端远程会话据此判定订阅 / 网关显示形态 —— 路由真值在被控端 proxy 的按请求
   // 观察 registry 里,控制端拿本机凭证状态重算必然张冠李戴。入参 sessionId,无

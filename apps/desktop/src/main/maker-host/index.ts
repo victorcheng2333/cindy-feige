@@ -1,3 +1,5 @@
+import { buildCursorAgent } from './cursor-host.js';
+import { setCursorSessionStopper } from './cursor-auth.js';
 import { refreshManagedClaudeModels } from './claude-account-models.js';
 import { setClaudeAccountRetirement, retryClaudeAccountCleanups } from './claude-account-auth.js';
 import { listCustomProviders } from './custom-provider-store.js';
@@ -2805,6 +2807,13 @@ export function getMaker(): Maker {
     });
     const piAgent = buildPiAgentForDesktop();
     if (piAgent) makerAgents.pi = piAgent;
+    const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger);
+    if (cursorAgent) { makerAgents.cursor = cursorAgent; _mcpProviders.cursor = piMcpProviders; }
+    setCursorSessionStopper(async () => {
+      for (const session of _maker?.listActiveSessions() ?? []) {
+        if (session.agentKind === 'cursor') await _maker?.closeSession(session.id);
+      }
+    });
 
     setVisionGatewayKeyReader(readClaudeApiKey);
     _visionBridgeInstance = createVisionBridge({
@@ -3013,7 +3022,7 @@ export function getMaker(): Maker {
             getActiveCatalog(),
           );
           await preparePersistedOrcaSessionStart(sessionId, opts as MakerSessionCreateOpts);
-          if (opts.agentKind === 'pi' && opts.thinkingEnabled === undefined) {
+          if ((opts.agentKind === 'pi' || opts.agentKind === 'cursor') && opts.thinkingEnabled === undefined) {
             const thinkingEnabled = getThinkingEnabledFromMemory(
               opts.agentKind,
               opts.providerId,

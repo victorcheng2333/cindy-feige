@@ -35,8 +35,8 @@ function resolveAvailableLocalRoute(
 export function availableAppDefaultModels(input: {
   providers: readonly ProviderView[];
   currentRoute?: BotModelRoute | null;
-  tuning?: (agent: 'claude-code' | 'codex' | 'pi', providerId: string, model: string) => { effort?: string; fastMode?: boolean | 'ultrafast' };
-  availableAgents: ReadonlySet<'cc' | 'codex' | 'pi'>;
+  tuning?: (agent: 'claude-code' | 'codex' | 'pi' | 'cursor', providerId: string, model: string) => { effort?: string; fastMode?: boolean | 'ultrafast' };
+  availableAgents: ReadonlySet<'cc' | 'codex' | 'pi' | 'cursor'>;
   enabled: NonNullable<Parameters<typeof resolveAvailableLocalRoute>[0]['isModelEnabled']>;
 }) {
   const current = resolveAvailableLocalRoute({ providers: input.providers, providersLoading: false,

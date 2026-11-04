@@ -1150,8 +1150,8 @@ export function UnifiedModelPickerSheet(
         row
           ? {
               row,
-              agents: row.entry.candidates.filter((agent) =>
-                ALL_AGENTS.includes(agent),
+              agents: row.entry.candidates.filter(agent => p.unified.agents.includes(agent) &&
+                (agent !== "cursor" || (p.existingSessionRoute && p.agentKind === "cursor" && !row.remoteDevice)),
               ),
               fastCapable:
                 !!cap?.supportsFastMode && (!!row.remoteDevice || fastCapable(row.config.agent)),
@@ -1191,6 +1191,7 @@ export function UnifiedModelPickerSheet(
                         original: { ...originFavorite },
                         config: resolveMobileModelConfig(row.entry, {
                           favorite: originFavorite,
+                          pinned: p.existingSessionRoute ? p.agentKind : undefined,
                           fastCapable: row.remoteDevice ? () => true : fastCapable,
                         }),
                       });

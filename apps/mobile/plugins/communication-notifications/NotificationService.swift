@@ -18,7 +18,20 @@ final class NotificationService: UNNotificationServiceExtension {
     original = request.content
     completionLock.unlock()
 
-    let content = request.content
+    var content = request.content
+    if let alias = content.userInfo["cindyPushAlias"] as? String {
+      // The original APNs alert is generic. Never put sensitive detail in the timeout fallback.
+      guard let gate = readPushGate(),
+        gate["alias"] as? String == alias, gate["preview"] as? Bool == true,
+        let detail = content.userInfo["cindyPreview"] as? [String: Any],
+        let title = detail["title"] as? String, let body = detail["body"] as? String,
+        let expanded = content.mutableCopy() as? UNMutableNotificationContent
+      else { finish(content); return }
+      expanded.title = String(title.prefix(240))
+      expanded.body = String(body.prefix(1000))
+      if let sender = detail["sender"] { expanded.userInfo["sender"] = sender }
+      content = expanded
+    }
     let category = content.userInfo["category"] as? String
     let isChat = category == "chat-message"
     let isGroup = isChat && (content.userInfo["conversationKind"] as? String) != "direct"
@@ -75,10 +88,23 @@ final class NotificationService: UNNotificationServiceExtension {
   private func finish(_ content: UNNotificationContent) {
     completionLock.lock()
     let callback = handler
+    var delivered = content
+    if let fallback = original, let alias = fallback.userInfo["cindyPushAlias"] as? String {
+      let gate = readPushGate()
+      if gate?["alias"] as? String != alias || gate?["preview"] as? Bool != true { delivered = fallback }
+    }
     handler = nil
     original = nil
     completionLock.unlock()
-    callback?(content)
+    callback?(delivered)
+  }
+
+  private func readPushGate() -> [String: Any]? {
+    guard let group = Bundle.main.object(forInfoDictionaryKey: "CindyJPushAppGroup") as? String,
+      let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group),
+      let data = try? Data(contentsOf: directory.appendingPathComponent("jpush-display-gate.json"))
+    else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
   }
 
   static func avatar(_ input: Any?, name: String) -> INImage? {

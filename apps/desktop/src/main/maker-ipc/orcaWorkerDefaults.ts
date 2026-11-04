@@ -81,7 +81,7 @@ export async function resolveWorkerCreationDefaults(
       const models = route.remoteCodexModels ?? deps.getAvailableModels(agent);
       if (
         models.some((model) => model.id === input.model) &&
-        route.availability[agent].some(
+        (route.availability[agent] ?? []).some(
           (provider) =>
             provider.models.includes(input.model!) &&
             (!input.providerId || provider.id === input.providerId),
@@ -102,7 +102,7 @@ export async function resolveWorkerCreationDefaults(
   if (mayRemember) {
     try {
       savedRouting = await catalog(remembered.agent, rememberedLocation);
-      const providers = savedRouting.availability[remembered.agent];
+      const providers = savedRouting.availability[remembered.agent] ?? [];
       const models = savedRouting.remoteCodexModels ?? deps.getAvailableModels(remembered.agent);
       savedProvider ??= savedRouting.resolveDefaultProviderIdForModel(
         remembered.agent,

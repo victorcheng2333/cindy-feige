@@ -370,6 +370,7 @@ describe('mobile native app config', () => {
     writeFileSync(regionsPath, JSON.stringify({
       cn: {
         iosBundleId: 'com.local.cindycn',
+        iosDisplayName: 'Fork iOS',
         androidPackage: 'com.local.cindycn',
         tapdb: { clientId: 'cn-json-id', clientToken: 'cn-json-token' },
       },
@@ -391,6 +392,10 @@ describe('mobile native app config', () => {
 
     const cn = buildConfig({ config: appJson.expo });
     expect(cn.ios.bundleIdentifier).toBe('com.local.cindycn');
+    // Unit: resolve the actual native display-name override; existing fixtures
+    // only varied bundle IDs. The iOS override must leave shared/Android naming alone.
+    expect(cn.ios.infoPlist.CFBundleDisplayName).toBe('Fork iOS');
+    expect(cn.name).toBe('Cindy');
     expect(cn.extra.cindy.regionConfigSource).toBe('self-host-regions');
     expect(cn.extra.cindy.tapdb.clientId).toBe('cn-json-id');
     expect(cn.extra.cindy).not.toHaveProperty('google');
@@ -402,6 +407,7 @@ describe('mobile native app config', () => {
     process.env.EXPO_PUBLIC_CINDY_AUTH_REGION = 'global';
     const global = buildConfig({ config: appJson.expo });
     expect(global.ios.bundleIdentifier).toBe('com.local.cindy');
+    expect(global.ios.infoPlist).not.toHaveProperty('CFBundleDisplayName');
     expect(global.extra.cindy.google.webClientId).toBe(
       'local-web.apps.googleusercontent.com',
     );

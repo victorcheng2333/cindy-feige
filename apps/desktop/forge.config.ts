@@ -38,7 +38,8 @@ import {
 
 const _require = createRequire(__filename);
 const DESKTOP_PACKAGE_VERSION = (_require('./package.json') as { version: string }).version;
-const CINDY_SOURCE_METADATA_PATH = path.join(__dirname, 'resources', 'cindy-source.json');
+// Each Forge process owns its staging file; another build must not remove it.
+const CINDY_SOURCE_METADATA_PATH = path.join(os.tmpdir(), `cindy-source-${process.pid}`, 'cindy-source.json');
 
 function resolveSourceCommit(): string {
   try {
@@ -71,6 +72,7 @@ function formatLocalBuildTime(date = new Date()): string {
 function stageCindySourceMetadata(): void {
   const sourceCommit = resolveSourceCommit();
   const builtAt = formatLocalBuildTime();
+  fs.mkdirSync(path.dirname(CINDY_SOURCE_METADATA_PATH), { recursive: true });
   fs.writeFileSync(
     CINDY_SOURCE_METADATA_PATH,
     `${JSON.stringify({ sourceCommit, builtAt }, null, 2)}\n`,
@@ -82,7 +84,7 @@ function stageCindySourceMetadata(): void {
 }
 
 function removeCindySourceMetadata(): void {
-  fs.rmSync(CINDY_SOURCE_METADATA_PATH, { force: true });
+  fs.rmSync(path.dirname(CINDY_SOURCE_METADATA_PATH), { recursive: true, force: true });
 }
 
 // ── 构建期身份(2026-07-17 Cindy 渠道分叉) ─────────────────────────────────────
@@ -115,6 +117,8 @@ const UPDATER_EXE = `${BRAND_IDENTITY.updaterName}.exe`;
 // version conflicts, so it is copied with parent-relative node_modules layout
 // instead of being flattened into the generic runtime dep list below.
 const DISCORD_RUNTIME_DEPS = ['discord.js'];
+// SDK webpack chunks must stay beside the entry; zod is its runtime peer.
+const CURSOR_RUNTIME_DEPS = ['@cursor/sdk', 'zod'];
 
 // Workspace 用 pnpm `node-linker=hoisted`，所有依赖都只在根 node_modules/ 下，
 // apps/desktop/node_modules/ 里连 symlink 都没建。electron-packager 只扫
@@ -367,6 +371,7 @@ function bundleNativeDeps(buildPath: string, targetPlatform: string, targetArch:
   // 选对 .node / .dylib / .dll。
   const deps = [
     ...NATIVE_RUNTIME_DEPS,
+    ...(targetPlatform === 'win32' && targetArch === 'arm64' ? [] : [`@cursor/sdk-${targetPlatform}-${targetArch}`]),
     parcelWatcherPlatformPkg(targetPlatform, targetArch),
     ...sharpPlatformPkgs(targetPlatform, targetArch),
     // Reviewer PDF utility 的 canvas wrapper 由 Vite externalize；正式包必须
@@ -395,6 +400,7 @@ function bundleNativeDeps(buildPath: string, targetPlatform: string, targetArch:
     console.log(`[forge:afterCopy] bundled native dep: ${dep} <- ${src}`);
   }
   copyDiscordRuntimeDeps(destModules);
+  copyRuntimeDependencyTrees(CURSOR_RUNTIME_DEPS, destModules);
   copyRuntimeDependencyTrees(READ_SHEET_RUNTIME_PACKAGES, destModules);
 }
 
@@ -796,7 +802,7 @@ function stageRipgrep(targetPlatform: string, targetArch: string): void {
 function extraResourcesForTarget(targetPlatform: string): string[] {
   const base = [
     'resources/icon.png',
-    'resources/cindy-source.json',
+    CINDY_SOURCE_METADATA_PATH,
     'resources/cindy-version-protocol.json',
     // Input bytes for upgrading retired preset avatars to ordinary managed images.
     'resources/legacy-teammate-avatars',
@@ -1849,7 +1855,7 @@ const config: ForgeConfig = {
     // .node 依赖同目录的 onnxruntime 动态库,只解包 .node 会加载失败。
     asar: {
       unpack:
-        '**/{@img/{sharp-libvips-*,sharp-win32-*},loudness,native/sqlite-vec,node-pty,sherpa-onnx-{darwin,win,linux}-*}/**',
+        '{**/{@cursor/*,zod,@img/{sharp-libvips-*,sharp-win32-*},loudness,native/sqlite-vec,node-pty,sherpa-onnx-{darwin,win,linux}-*}/**,**/.vite/build/cursorHostProcess.js}',
     },
     // 打包名(out 目录 / mac .app 包名 / Helper 目录名 / 主 plist CFBundleName)
     // 按区域派生:cn/global 'Cindy'(2026-07-26 显示名统一,.app 撞名双装
@@ -2101,6 +2107,7 @@ const config: ForgeConfig = {
       // packaged builds retain Forge's normal concurrency.
       concurrent: isDev ? false : true,
       build: [
+        { entry: 'src/main/maker-host/cursorHostProcess.ts', config: 'vite.cursor-host.config.ts', target: 'preload' },
         {
           entry: 'src/main/index.ts',
           config: 'vite.main.config.ts',

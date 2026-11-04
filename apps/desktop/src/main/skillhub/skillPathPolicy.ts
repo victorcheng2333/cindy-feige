@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const SKILL_PATH_WHITELIST = /\/(\.(claude\/(skills|commands|agents)|agents\/skills|codex\/skills|pi\/skills)|codex-home\/skills)\//;
+const SKILL_PATH_WHITELIST = /\/(\.(claude\/(skills|commands|agents)|agents\/skills|codex\/skills|cursor\/skills|pi\/skills)|codex-home\/skills)\//;
 
 export function isLexicallyAllowedSkillPath(absolutePath: string): boolean {
   // path.resolve 解析 .. 和 . 段，防止遍历绕过白名单

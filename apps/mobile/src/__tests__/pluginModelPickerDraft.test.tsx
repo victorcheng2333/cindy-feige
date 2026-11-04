@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('@/i18n', () => ({ i18n: { t: (key: string) => key } }));
 /**
  * Regression: plugin picks lost nonselected effort/Fast and wrote persistent
  * engine/favorite preferences even when cancelled. Mount the production plugin,
@@ -50,7 +51,8 @@ vi.mock('@/session/useMobileModelQuotas', () => ({ useMobileModelQuotas: () => (
 vi.mock('@/session/providerModelSections', () => ({ buildMobileModelSections: () => ({ activeSourceId: 'account' }) }));
 vi.mock('@/session/draftModelMemory', () => ({ useDraftModelMemoryVersion: () => 0 }));
 vi.mock('@/session/sessionModelMirror', () => ({ useSessionModelMirrorVersion: () => 0 }));
-vi.mock('@/session/modelPickerRows', () => ({ budgetRowDisabled: () => false, presentPickerPrice: () => null }));
+vi.mock('@/session/modelPickerRows', async original => ({
+  ...await original<any>(), budgetRowDisabled: () => false, presentPickerPrice: () => null }));
 vi.mock('@/session/unifiedMobileModels', async (original) => ({
   ...await original<any>(),
   mobileUnifiedEntries: () => [{

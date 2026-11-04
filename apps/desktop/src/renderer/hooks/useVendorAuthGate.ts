@@ -241,6 +241,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
   const cc = useVendorReadiness('cc');
   const codex = useVendorReadiness('codex');
   const pi = useVendorReadiness('pi');
+  const cursor = useVendorReadiness('cursor');
 
   const checkAndConfirm = useCallback(
     async (
@@ -276,7 +277,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       const deviceId = options?.deviceId;
       if (deviceId) {
         const providerAgent: ProviderAgentKind =
-          vendor === 'codex' ? 'codex' : vendor === 'pi' ? 'pi' : 'claude-code';
+          vendor === 'cursor' ? 'cursor' : vendor === 'codex' ? 'codex' : vendor === 'pi' ? 'pi' : 'claude-code';
         const includeSuspended = options?.existingSessionRoute === true;
         // 模型选择器已读到的来源快照(被控端来源变化推送会令其失效)显示已有可用来源时直接复用:
         // provider:list 经隧道实测 1–5 秒,重拉一遍会整段挡在远程新建任务的第一步。
@@ -359,7 +360,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       }
 
       // 触发一次最新检查——避免 stale state 误放行。
-      const target = vendor === 'codex' ? codex : vendor === 'pi' ? pi : cc;
+      const target = vendor === 'cursor' ? cursor : vendor === 'codex' ? codex : vendor === 'pi' ? pi : cc;
       // 已建会话的发送门禁计入 suspended 来源(见 useVendorReadiness 注释);草稿不传。
       const readiness = await target.revalidate({
         includeSuspended: options?.existingSessionRoute === true,
@@ -381,7 +382,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       }
       return { proceed: false };
     },
-    [cc, codex, pi, confirm, copy, navigate, t],
+    [cc, codex, pi, cursor, confirm, copy, navigate, t],
   );
 
   return { checkAndConfirm };

@@ -18,8 +18,30 @@ const log = createLogger('maker-ipc:authHandlers');
 /** main → renderer 的 push 广播能力。 */
 export type MakerIpcBroadcast = (channel: string, payload: unknown) => void;
 
+/** Secret-writing body; the Electron adapter verifies the trusted local sender. */
+export async function connectCursorApiKey(
+  apiKey: unknown,
+  setKey: (key: string) => Promise<AuthState>,
+  broadcast: MakerIpcBroadcast,
+): Promise<AuthState> {
+  if (typeof apiKey !== 'string' || !apiKey.trim() || apiKey.length > 16_384)
+    throwIpcError('INVALID_PARAMS', 'A Cursor API key is required');
+  const owner = activeOwnerScopeKey();
+  let state: AuthState;
+  try { state = await setKey(apiKey.trim()); }
+  catch { throwIpcError('PRECONDITION_FAILED', 'Cursor connection could not be updated'); }
+  if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
+    return { authenticated: false, errorReason: 'login_cancelled' };
+  if (!state.authenticated) {
+    if (state.errorReason === 'login_cancelled') return state;
+    throwIpcError('PRECONDITION_FAILED', 'Cursor key validation or credential storage failed');
+  }
+  broadcast(MAKER_PUSH.AUTH_STATE_CHANGED, { agentKind: 'cursor', ...state });
+  return state;
+}
+
 /** IPC 允许的 agent 种类；运行时枚举校验不能靠 TypeScript 强转替代。 */
-const AGENT_KINDS = ['claude-code', 'codex', 'pi'] as const satisfies readonly AgentKind[];
+const AGENT_KINDS = ['claude-code', 'codex', 'pi', 'cursor'] as const satisfies readonly AgentKind[];
 const AGENT_LOGIN_MODES = ['browser', 'device-code', 'local'] as const satisfies readonly AgentLoginMode[];
 const MAX_LOGIN_PROGRESS_CHARS = 16_384;
 const LOGIN_OWNER_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -132,6 +154,8 @@ export function registerMakerAuthHandlers(
     liveModelsApplied: boolean,
     isCurrent: () => boolean,
   ) => void | Promise<void>,
+  /** Manual Cursor key validation runs outside the browser login operation. */
+  onCursorKeyCancel?: () => void,
 ): void {
   const mutationGeneration = new Map<AgentKind, number>();
   const loginRequestGeneration = new Map<AgentKind, number>();
@@ -509,7 +533,10 @@ export function registerMakerAuthHandlers(
     const activeOperation = activeLoginOperations.get(kind);
     // 无在途登录的迟到 Cancel 是彻底的 no-op：既不能翻转已认证状态，也不能推进
     // generation 后误作废正在收尾的 logout。
-    if (!activeOperation) return;
+    if (!activeOperation) {
+      if (kind === 'cursor') onCursorKeyCancel?.();
+      return;
+    }
     await cancelLoginOperation(kind, activeOperation);
   });
 

@@ -45,7 +45,7 @@ const EMPTY_STATE: ResourceUsageState = {};
 
 export function ResourceUsageWindowLayout() {
   const { t } = useTranslation();
-  const { effectiveLocale, setLocale } = useLocale();
+  const { effectiveLocale, followLocale } = useLocale();
   const { isMac, isFullscreen } = useMacFullscreen();
   const presentationReadySentRef = useRef(false);
   const presentationReadyInFlightRef = useRef(false);
@@ -74,7 +74,7 @@ export function ResourceUsageWindowLayout() {
     const offLocaleChanged = window.electronAPI.resourceUsageWindow.onLocaleChanged((locale) => {
       // Main 广播来自任一 renderer 的语言设置；忽略同值回广播，避免资源窗口
       // 收到通知后再次 invoke app-menu:set-locale 形成 IPC 回环。
-      if (locale !== effectiveLocale) setLocale(locale);
+      if (locale !== effectiveLocale) followLocale(locale);
     });
     void window.electronAPI.resourceUsageWindow.rendererReady().catch((err) => {
       log.warn('report renderer ready failed', err);
@@ -88,7 +88,7 @@ export function ResourceUsageWindowLayout() {
         presentationReadyRetryRef.current = null;
       }
     };
-  }, [effectiveLocale, setLocale]);
+  }, [effectiveLocale, followLocale]);
 
   const handleFirstSample = useCallback(() => {
     if (
@@ -185,7 +185,7 @@ export function ResourceUsageWindowRoot() {
   return (
     <ThemeProvider>
       <FontSettingsProvider>
-        <LocaleProvider>
+        <LocaleProvider syncHost={false}>
           <WallpaperSettingsProvider>
             <ConfirmDialogProvider>
               <ResourceUsageWindowLayout />

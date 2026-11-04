@@ -397,7 +397,8 @@
         "all": "Todo",
         "cc": "Claude Code",
         "codex": "Codex",
-        "pi": "Pi"
+        "pi": "Pi",
+        "cursor": "Cursor"
       },
       "filterLastActivityHeading": "Última actividad",
       "filterLastActivity": {

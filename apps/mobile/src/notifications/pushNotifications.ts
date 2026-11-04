@@ -16,6 +16,7 @@ import {
 } from '@/config/devServerEnvironment';
 import { getActiveSelfHostedRelay } from '@/device-link/selfHostedRelayRouting';
 import Notifications from './nativeNotifications';
+import { jpushEnabled, jpushLifecycle } from './jpushRuntime';
 import { buildPushTokenRegistrationBody, parseNotificationResponseDeepLink } from './pushRegistrationModel';
 
 /** APNs / FCM registration, scoped to the current account realm and lifecycle. */
@@ -272,8 +273,12 @@ export function subscribePushPreferences(listener: (signedOut?: boolean) => void
 }
 export async function readPushPreviewEnabled() { return (await AsyncStorage.getItem('cindy.push.preview')) !== '0'; }
 export async function writePushPreviewEnabled(enabled: boolean) {
+  // Blank locally before awaiting storage or the network; save the preference even offline.
+  const removal = jpushLifecycle?.disable().catch(() => undefined);
   await AsyncStorage.setItem('cindy.push.preview', enabled ? '1' : '0');
   for (const listener of pushPreferenceListeners) listener();
+  await removal;
+  if (jpushLifecycle && await readPushEnabled()) await jpushLifecycle.sync(enabled);
 }
 export async function readPushEnabled(): Promise<boolean> {
   try {
@@ -284,6 +289,7 @@ export async function readPushEnabled(): Promise<boolean> {
 }
 
 export async function writePushEnabled(enabled: boolean): Promise<void> {
+  if (!enabled) void jpushLifecycle?.disable().catch(() => undefined);
   await AsyncStorage.setItem(PUSH_ENABLED_KEY, enabled ? '1' : '0');
   for (const listener of pushPreferenceListeners) listener();
 }
@@ -329,6 +335,11 @@ async function syncPushRegistrationInternal(
   const realm = getActiveMobileSessionRealm();
   const stateScope = capturePushStateScope(realm);
 
+  if (jpushEnabled && !opts.enabled) {
+    await jpushLifecycle?.disable();
+    return 'unregistered';
+  }
+
   if (!opts.enabled) {
     const registeredRealms = await readPushRealms(
       PUSH_REGISTERED_KEY,
@@ -358,6 +369,12 @@ async function syncPushRegistrationInternal(
     if (lifecycleGeneration !== pushLifecycleGeneration) return 'skipped';
   }
   if (permission.status !== 'granted') return 'permission-denied';
+
+  if (jpushEnabled) {
+    await Notifications.getDevicePushTokenAsync();
+    if (lifecycleGeneration !== pushLifecycleGeneration) return 'skipped';
+    return await jpushLifecycle!.sync(await readPushPreviewEnabled()) ? 'registered' : 'skipped';
+  }
 
   let deviceToken;
   try { deviceToken = await Notifications.getDevicePushTokenAsync(); }
@@ -457,7 +474,14 @@ export function unregisterPushTokenBestEffort(
   realm: ClientEndpointRegion = getActiveMobileSessionRealm(),
 ): Promise<void> {
   pushLifecycleGeneration += 1;
+  if (jpushLifecycle) {
+    jpushLifecycle.setOwner(null);
+    // Revoke locally before waiting for the SDK; network cleanup must never block logout.
+    void jpushLifecycle.disable().catch(() => undefined);
+  }
   for (const listener of pushPreferenceListeners) listener(true);
+  // Asking Expo for a native token here would re-register APNs while JPush is stopping it.
+  if (jpushEnabled) return Promise.resolve();
   // 不进入 pushMutationTail：当前 tail 可能正在 apiFetch → terminal handler →
   // clearLocalSession → 本函数。等待 tail 会形成自等待死锁。
   return unregisterPushTokenBestEffortInternal(realm, accessToken);
@@ -492,5 +516,6 @@ async function retryPendingUnregisterInternal(
 export function retryPendingUnregister(
   apiFetch: AuthedApiFetch,
 ): Promise<void> {
+  if (jpushEnabled) return Promise.resolve();
   return runPushMutation(() => retryPendingUnregisterInternal(apiFetch));
 }

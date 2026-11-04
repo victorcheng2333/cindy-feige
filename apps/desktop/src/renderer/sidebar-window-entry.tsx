@@ -38,14 +38,14 @@ installHiddenAnimationGate();
 bootstrapLocalThemesSync();
 themeService.applyTheme(getInitialThemeVariant().theme);
 applyFontSettings(getInitialFontSettings());
-bootstrapInitialLocale();
+bootstrapInitialLocale(false);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('Missing #root element');
 
 createRoot(rootElement).render(
   <TopLevelErrorBoundary>
-    <LocaleProvider>
+    <LocaleProvider syncHost={false}>
       <ConfirmDialogProvider>
         <AuthProvider enableSessionExpiredPrompt={false}>
           <WallpaperSettingsProvider>

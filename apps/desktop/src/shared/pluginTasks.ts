@@ -1,7 +1,7 @@
 import type { PluginMessageAttachment } from './pluginAttachments.js';
 /** Ordinary local Session API. Identity and permission grants remain Host-owned. */
 export interface PluginTaskRoute {
-  agentKind: 'cc' | 'codex' | 'pi';
+  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
   providerId: string;
   model: string;
   effort: string;

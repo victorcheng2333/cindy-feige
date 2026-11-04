@@ -22,7 +22,8 @@ import * as sessionService from '@/lib/sessionService';
 import { toast } from '@/lib/toast';
 import { ErrorNotice } from '@/components/ui/error-notice';
 import { parseAgentErrorCode } from '@cindy/maker-shared/error-redaction';
-import type { AgentKind, RunStatus, ScheduleRun } from '@cindy/maker-scheduler';
+import type { AgentKind } from '@cindy/model-providers';
+import type { RunStatus, ScheduleRun } from '@cindy/maker-scheduler';
 import type { SessionReference } from '../../../../shared/sessionReference';
 import {
   DropdownMenu,

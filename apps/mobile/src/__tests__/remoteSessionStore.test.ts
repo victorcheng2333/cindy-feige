@@ -154,7 +154,7 @@ function pushMakerStatus(sessionId: string, data: Record<string, unknown>, devic
 function pushMakerTaskUpdate(
   sessionId: string,
   taskId: string,
-  opts: { source?: 'claude-code' | 'codex' | 'pi'; status?: string; description?: string } = {},
+  opts: { source?: 'claude-code' | 'codex' | 'pi' | 'cursor'; status?: string; description?: string } = {},
 ): void {
   remoteSessionStore.applyRemotePush('dev-1', 'maker:event', {
     sessionId,
@@ -3920,6 +3920,12 @@ describe('remoteSessionStore', () => {
     pushMakerStatus('s1', { isRunning: true, status: 'Thinking', tokenUsage: 100 });
     expect(remoteSessionStore.getSessionTaskUpdates('s1').size).toBe(1);
     expect([...remoteSessionStore.getSessionTaskUpdates('s1').values()][0]?.taskId).toBe('task-new');
+  });
+
+  // Unit regression: Cursor's native task cards must not be relabeled as Claude.
+  it('preserves Cursor as the source of agent task updates', () => {
+    pushMakerTaskUpdate('s1', 'cursor-task', { source: 'cursor' });
+    expect([...remoteSessionStore.getSessionTaskUpdates('s1').values()][0]?.provider).toBe('cursor');
   });
 
   it('preserves Pi as the source of agent task updates', () => {

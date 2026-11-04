@@ -2370,16 +2370,18 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     config: MobileModelConfiguration,
     source?: { deviceId: string | null },
   ): Promise<boolean> => {
+    const agent = config.agent;
+    if (agent === 'cursor') return false;
     if (creating || !selectedDeviceId) return false;
     const remoteDeviceId = source?.deviceId ?? null;
     const deviceAtStart = selectedDeviceId;
     const sequence = ++runtimeActionSeqRef.current;
-    const targetCapabilities = normalizeMobileAgentCapabilities(await maker.getCapabilities(config.agent));
+    const targetCapabilities = normalizeMobileAgentCapabilities(await maker.getCapabilities(agent));
     if (!targetCapabilities) return false;
-    const storedPermission = newSessionPreferences?.permissionModeByAgent[config.agent];
-    const permission = config.agent === draft.agentKind ? draft.permissionMode
-      : (storedPermission ?? defaultPermissionModeForNewSessionAgent(config.agent));
-    if (config.agent !== draft.agentKind && !(await confirmFullAccessChange(draft.permissionMode, permission, {
+    const storedPermission = newSessionPreferences?.permissionModeByAgent[agent];
+    const permission = agent === draft.agentKind ? draft.permissionMode
+      : (storedPermission ?? defaultPermissionModeForNewSessionAgent(agent));
+    if (agent !== draft.agentKind && !(await confirmFullAccessChange(draft.permissionMode, permission, {
       restoringRememberedChoice: storedPermission !== undefined,
     }))) return false;
     if (deviceAtStart !== selectedDeviceRef.current || sequence !== runtimeActionSeqRef.current) return false;
@@ -2389,25 +2391,25 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       // 模型与来源属于那台电脑:单独记,草稿只跟着换 Agent 与权限(权限仍在被控电脑上生效)。
       setRemoteAgentChoice({
         controlledDeviceId: deviceAtStart,
-        pick: { deviceId: remoteDeviceId, agentKind: config.agent, model: config.modelId,
+        pick: { deviceId: remoteDeviceId, agentKind: agent, model: config.modelId,
           providerId: config.providerId, effort: config.effort, fastMode },
       });
-      setDraft((current) => ({ ...current, agentKind: config.agent, permissionMode: permission }));
+      setDraft((current) => ({ ...current, agentKind: agent, permissionMode: permission }));
     } else {
       explicitProviderModelSelectionRef.current = config.modelId;
       setRemoteAgentChoice(null);
-      setDraft((current) => ({ ...current, agentKind: config.agent, model: config.modelId,
+      setDraft((current) => ({ ...current, agentKind: agent, model: config.modelId,
         providerId: config.providerId, effort: config.effort, fastMode, permissionMode: permission }));
       requestHostChoiceWrite(true);
     }
     // 选其他电脑 / 分享来的模型就记下(下次打开新建页恢复);选回被控电脑自己的就清掉。
     void saveNewSessionPreferences({
-      agentKind: config.agent,
+      agentKind: agent,
       remoteAgentForDevice: {
         deviceId: deviceAtStart,
-        agentKind: config.agent,
+        agentKind: agent,
         pick: remoteDeviceId
-          ? { deviceId: remoteDeviceId, agentKind: config.agent, model: config.modelId,
+          ? { deviceId: remoteDeviceId, agentKind: agent, model: config.modelId,
             providerId: config.providerId, effort: config.effort, fastMode }
           : null,
       },
@@ -6037,7 +6039,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
               selectedFastMode: collabForm.form.model.fast,
             } : undefined,
             scope: JSON.stringify([auth.user?.id, collabWorkerDeviceId, 'orca-worker']),
-            agents: collabForm.pickerAgents,
+            agents: collabForm.pickerAgents.filter(agent => agent !== 'cursor'),
             loadCapabilities: async (agent) => {
               const result = normalizeMobileAgentCapabilities(await collabForm.maker.getCapabilities(agent));
               if (!result) throw new Error('Capabilities unavailable');

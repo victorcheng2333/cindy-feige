@@ -67,6 +67,8 @@ import {
   unregisterPushTokenBestEffort,
 } from '@/notifications/pushNotifications';
 import { setActiveSelfHostedRelay } from '@/device-link/selfHostedRelayRouting';
+import { installJPushRuntime } from '@/notifications/jpushRuntime';
+import { JPushLifecycle, type JPushLifecycleDependencies } from '@/notifications/jpushLifecycle';
 
 const REGISTERED_KEY = 'cindy.push.registered';
 const PENDING_KEY = 'cindy.push.pendingUnregister';
@@ -118,6 +120,7 @@ describe('push notification realm routing', () => {
     expect(await handler.handleNotification(notification)).toMatchObject({ shouldShowBanner: false, shouldPlaySound: false });
   });
   beforeEach(() => {
+    installJPushRuntime(null);
     vi.clearAllMocks();
     store.clear();
     envState.activeRealm = 'cn';
@@ -133,7 +136,33 @@ describe('push notification realm routing', () => {
   });
 
   afterEach(() => {
+    installJPushRuntime(null);
     vi.unstubAllGlobals();
+  });
+
+  // Production registration entry: opt-in native transport must not register its token with
+  // the official topic, or ask Expo to re-register APNs while logout is stopping JPush.
+  it('routes personal registration through JPush and does not re-register APNs on logout', async () => {
+    let saved: Awaited<ReturnType<JPushLifecycleDependencies['read']>> = null;
+    let gate = '';
+    const native = new JPushLifecycle({
+      config: { appKey: 'a'.repeat(24), production: false },
+      read: async () => saved, write: async value => { saved = value; }, remove: async () => { saved = null; },
+      randomAlias: () => `cindy_${'b'.repeat(32)}`,
+      bind: async () => {}, disable: async () => {},
+      gate: alias => { gate = alias; return true; }, changed: () => {},
+    });
+    native.setOwner('cn:one');
+    installJPushRuntime(native);
+    const apiFetch = vi.fn();
+    expect(await syncPushRegistration({ enabled: true, apiFetch })).toBe('registered');
+    expect(gate).not.toBe('');
+    expect(apiFetch).not.toHaveBeenCalled();
+    mocks.getDevicePushTokenAsync.mockClear();
+    await unregisterPushTokenBestEffort('fake-token');
+    expect(gate).toBe('');
+    expect(mocks.getDevicePushTokenAsync).not.toHaveBeenCalled();
+    await native.disable();
   });
 
   it('向当前会话区域注册，但推送构建线仍保持安装包区域', async () => {

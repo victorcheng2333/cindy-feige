@@ -9,6 +9,8 @@ interface ResolveDisplayContextWindowOptions {
   nativeContextPending?: boolean;
   /** Codex must not use provider metadata or a usable-window snapshot as its total. */
   runtimeWindowAuthoritative?: boolean;
+  /** Engines with no published capacity must show unknown instead of an invented default. */
+  allowDefaultWindow?: boolean;
 }
 
 /** Runtime snapshots already contain the applied working budget. Catalogs only fill missing data. */
@@ -19,6 +21,7 @@ export function resolveDisplayContextWindow({
   runtimeWindowAuthoritative = false,
   nativeContextWindow,
   nativeContextPending = false,
+  allowDefaultWindow = true,
 }: ResolveDisplayContextWindowOptions): number {
   if (runtimeWindowAuthoritative) {
     if (nativeContextPending) return 0;
@@ -31,5 +34,5 @@ export function resolveDisplayContextWindow({
   for (const fallback of [verifiedContextWindow, modelContextWindow]) {
     if (Number.isFinite(fallback) && (fallback ?? 0) > 0) return Math.floor(fallback!);
   }
-  return DEFAULT_CONTEXT_WINDOW;
+  return allowDefaultWindow ? DEFAULT_CONTEXT_WINDOW : 0;
 }

@@ -1,4 +1,4 @@
-import { currentQuota, missingResetText, quotaLabel, type Account, type Command, type Device, type Quota, type Snapshot } from './model';
+import { poolPercent, currentQuota, missingResetText, quotaLabel, type Account, type Command, type Device, type Quota, type Snapshot } from './model';
 import { demoSnapshot } from './demo';
 
 const root = document.getElementById('app')!;
@@ -24,7 +24,30 @@ function quota(q: Quota | undefined, label: string, available: boolean) {
     <progress max="100" value="${remaining}" aria-label="${escape(label)}剩余${valid ? Math.round(remaining) + '%' : '未知'}"></progress>
     <div class="reset">${escape(until(q, available))}</div></div>`;
 }
+function cursorAccount(a: Account, d: Device) {
+  const available = d.online && d.remoteControlEnabled && !d.error && !a.failed;
+  const pools = a.windows.some(q => q.label !== '套餐总额度')
+    ? ['Cursor 模型', '其他模型'].map(label => ({ label, q: a.windows.find(q => q.label === label) }))
+    : a.windows.length ? [{ label: '套餐总额度', q: a.windows[0] }]
+    : ['Cursor 模型', '其他模型'].map(label => ({ label, q: undefined }));
+  return `<article class="account cursor-account"><div class="account-heading"><div class="cursor-title"><span class="cursor-mark" aria-hidden="true">C</span><div><h3>Cursor</h3><p class="pool-caption">模型额度池</p></div></div><span class="brand">${a.updatedAt ? `更新于 ${escape(date(a.updatedAt))}` : '等待有效读数'}</span></div>
+    ${a.error ? `<p class="pool-error" role="status">${escape(a.error)}</p>` : ''}
+    <div class="cursor-pools">${pools.map(({ label, q }, i) => {
+      const valid = available && currentQuota(q);
+      const remaining = valid ? q.remaining : null;
+      const display = remaining === null ? '—' : poolPercent(remaining);
+      return `<section class="pool pool-${i} ${remaining !== null && remaining <= 10 ? 'pool-crit' : remaining !== null && remaining <= 30 ? 'pool-low' : ''}"><h4>${escape(label)}</h4><p class="pool-caption">${label === 'Cursor 模型' ? 'Cursor Grok · Composer' : label === '其他模型' ? 'Claude · GPT 等' : '来源仅返回汇总'}</p>
+        <div class="pool-value">${escape(display)}${valid ? '<span>%</span>' : ''}</div><p class="pool-caption">剩余可用</p>
+        <progress max="100" value="${remaining ?? 0}" aria-label="${escape(label)}剩余${remaining === null ? '未知' : escape(display) + '%'}"></progress>
+        <div class="pool-used">${valid ? `已用 ${escape(poolPercent(100 - q.remaining))}%` : '尚无有效额度'}</div>
+        <p class="pool-reset">${escape(until(q, !!available))}</p>
+        ${q?.resetsAt && valid ? `<p class="pool-caption">${escape(date(q.resetsAt * 1000))} 重置</p>` : ''}</section>`;
+    }).join('')}</div>
+    <p class="pool-note">两个额度池分别计量，不合并百分比。一个池用完，不代表整个订阅都已用完。</p>
+    <details data-key="${escape(d.deviceId + ':' + a.id)}"><summary>额度说明</summary><p>Cursor 模型池用于 Cursor Grok、Composer 等模型；其他模型池用于第三方模型。模型池耗尽后的用量可能转入其他池或按量付费，具体以 Cursor 账单为准。</p><p class="pool-note">额外付费状态尚未读取；未知与读取失败不会显示为 0%。</p></details></article>`;
+}
 function account(a: Account, d: Device) {
+  if (a.service === 'Cursor') return cursorAccount(a, d);
   const available = d.online && d.remoteControlEnabled && !d.error && !a.failed;
   const windows = [300, 10080].map(minutes => a.windows.find(q => q.minutes === minutes && !q.label));
   const title = a.failed ? '暂未获取额度' : a.updatedAt ? `数据更新于 ${date(a.updatedAt)}` : d.checkedAt ? `读取于 ${date(d.checkedAt)} · 数据更新时间未知` : '等待首次读取';
@@ -39,7 +62,8 @@ function device(d: Device) {
   return `<section class="device ${!d.online || !d.remoteControlEnabled ? 'offline' : ''}"><div class="device-title"><h2>${escape(d.name)}</h2><span class="status">${status}</span></div>
     ${d.error ? `<p class="empty">${escape(d.error)}</p>` : ''}
     ${d.accounts.map(a => account(a, d)).join('')}
-    ${d.accounts.length ? '' : `<p class="empty">${!d.online ? '电脑上线后会自动读取额度。' : !d.remoteControlEnabled ? '请在这台电脑上开启 Cindy 远程连接。' : snapshot.busy ? '正在读取订阅账号…' : d.error ? '可点击刷新重新读取。' : '未找到可读取的 Claude / ChatGPT 订阅账号。'}</p>`}</section>`;
+    ${d.cursorUnsupported && d.online && !d.error ? '<p class="pool-note">这台电脑尚不支持 Cursor 额度读取，更新 Cindy 后可显示。</p>' : ''}
+    ${d.accounts.length ? '' : `<p class="empty">${!d.online ? '电脑上线后会自动读取额度。' : !d.remoteControlEnabled ? '请在这台电脑上开启 Cindy 远程连接。' : snapshot.busy ? '正在读取订阅账号…' : d.error ? '可点击刷新重新读取。' : '未找到可读取的 Claude / ChatGPT / Cursor 订阅账号。'}</p>`}</section>`;
 }
 function input(name: string, label: string, placeholder = '', type = 'text') {
   return `<label for="${name}">${label}</label><input id="${name}" name="${name}" type="${type}" required maxlength="254" placeholder="${placeholder}" value="${escape(fields[name])}" autocomplete="${name === 'code' ? 'one-time-code' : 'off'}" ${snapshot.busy ? 'disabled' : ''}>`;

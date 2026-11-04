@@ -859,7 +859,7 @@ export class Maker {
     const onInvalidResumeSession: StartSessionOptions['onInvalidResumeSession'] =
       startOpts[LOCAL_AGENT_CLIENT]
         ? async () => false
-        : opts.agentKind === 'claude-code' || opts.agentKind === 'pi'
+        : opts.agentKind === 'claude-code' || opts.agentKind === 'pi' || opts.agentKind === 'cursor'
           ? (expectedSdkSessionId) => this.invalidateAndClearSdkSessionId(id, expectedSdkSessionId)
           : undefined;
     try {

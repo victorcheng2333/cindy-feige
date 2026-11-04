@@ -112,6 +112,8 @@ export function materializeExclusiveProviderRoute(
   modelId: string,
   providerId: string | null,
 ): ExclusiveProviderRoute {
+  // Cursor's account catalog owns its native model namespace (including Grok).
+  if (agent === 'cursor') return { kind: 'keep' };
   if (!isExclusiveXaiModelId(modelId)) return { kind: 'keep' };
   const xai = views.find(
     (provider) =>

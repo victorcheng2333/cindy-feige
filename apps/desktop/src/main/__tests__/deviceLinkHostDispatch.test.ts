@@ -61,6 +61,7 @@ import {
 import { createRemoteWorkingDirGuard } from '../device-link/remote-workdir-guard';
 import { createIpcError } from '../../shared/ipc-errors';
 import { __testing as registry } from '../device-link/invoke-registry';
+import { getDeviceLinkInvokeContext } from '../device-link/invoke-context';
 import type { InvokeResultPayload } from '@cindy/device-link';
 
 const SRC = 'controller-device';
@@ -482,4 +483,33 @@ it('advertises Kimi quota only from official routes in the redacted remote catal
   expect(text).not.toContain('api.kimi.com');
   expect(text).not.toContain('proxy.example');
   expect(text.match(/kimiCodingUsageAgents/g)).toHaveLength(1);
+});
+
+// Tier 2: Cursor is an explicit read-only tunnel, with no caller-selected credentials or URL.
+// Regression: the catalog handler needs the host's verified peer scope; a normal
+// same-account invoke previously looked identical to an arbitrary IPC sender.
+it('provides same-account scope to the model catalog without trusting invoke arguments', async () => {
+  const handler = registerHandler('maker:provider:list', () => {
+    expect(getDeviceLinkInvokeContext()?.sameAccountController).toBe(true);
+    return { providers: [] };
+  });
+  expect(await runInvoke(SRC, { channel: 'maker:provider:list', args: [] }))
+    .toMatchObject({ ok: true, result: { providers: [] } });
+  expect(handler).toHaveBeenCalledTimes(1);
+  h.settings.remoteControlEnabled = false;
+  expect(await runInvoke(SRC, { channel: 'maker:provider:list', args: [] }))
+    .toMatchObject({ ok: false, error: { code: 'REMOTE_DISABLED' } });
+  expect(handler).toHaveBeenCalledTimes(1);
+});
+const cursorRead = vi.hoisted(() => vi.fn());
+vi.mock('../maker-host/cursor-auth.js', () => ({ readCursorQuota: cursorRead, cursorConnected: () => true }));
+it('reads only the current Cursor pools and rejects arguments or disabled access', async () => {
+  const snapshot = { pools: [{ id: 'auto', usedPercent: 1 }, { id: 'api', usedPercent: 3 }], resetsAtMs: 1796083200000, fetchedAtMs: 1793750400000 };
+  cursorRead.mockResolvedValue(snapshot);
+  expect(await runInvoke(SRC, { channel: 'maker:usage:cursor-subscription', args: [] })).toEqual({ ok: true, result: { providerId: 'cursor', connected: true, status: 'ready', snapshot } });
+  cursorRead.mockClear();
+  expect(await runInvoke(SRC, { channel: 'maker:usage:cursor-subscription', args: ['other-account'] })).toMatchObject({ ok: false, error: { code: 'IPC_ERROR' } });
+  h.settings.remoteControlEnabled = false;
+  expect(await runInvoke(SRC, { channel: 'maker:usage:cursor-subscription', args: [] })).toMatchObject({ ok: false, error: { code: 'REMOTE_DISABLED' } });
+  expect(cursorRead).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import { CursorMark } from '@/components/icons/CursorMark';
 import { AddSpeechModelsDialog } from './AddSpeechModelsDialog';
 import { providerSpeechSetup } from '../../../shared/speechProviderSetup';
 import { useCodexRateLimits } from '@/hooks/useCodexRateLimits';
@@ -314,6 +315,7 @@ function useRemoteControlEnabled(): boolean | null {
 
 /** 供应商行图标(内置品牌 mark / 首字母 monogram)。 */
 function providerIcon(p: ProviderView, size: number): ReactNode {
+  if (p.id === 'cursor') return <CursorMark size={size} />;
   if (hasProviderLogo(p.id, p.routing)) {
     return <ProviderLogoMark providerId={p.id} routing={p.routing} logoKind={p.logoKind} size={size} />;
   }
@@ -717,7 +719,7 @@ function DetailHeader({
     provider && provider.agents.length === 1
       ? t('settings.providers.detail.singleAgentNote', {
           agent:
-            provider.agents[0] === 'claude-code'
+            provider.agents[0] === 'cursor' ? 'Cursor' : provider.agents[0] === 'claude-code'
               ? 'Claude Code'
               : provider.agents[0] === 'pi'
                 ? 'Pi'
@@ -1071,6 +1073,102 @@ function LocalProviderNameInput({
       }}
     />
   );
+}
+
+function CursorHeader({ provider, onChanged, children }: { provider: ProviderView; onChanged: () => void; children?: ReactNode }) {
+  const { t } = useTranslation();
+  const { confirm } = useConfirmDialog();
+  const [pending, setPending] = useState(false);
+  const [editingKey, setEditingKey] = useState(false);
+  const [draftKey, setDraftKey] = useState('');
+  const [error, setError] = useState('');
+  const [identity, setIdentity] = useState('');
+  const [apiKeySource, setApiKeySource] = useState(false);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pending || editingKey) return;
+    return window.electronAPI.maker.auth.onLoginProgress((progress) => {
+      if (progress.agentKind !== 'cursor') return;
+      try {
+        const url = new URL(progress.phase);
+        if (url.origin === 'https://cursor.com' && !url.username && !url.password) setLoginUrl(url.href);
+      } catch { /* Non-URL progress does not replace the current browser link. */ }
+    });
+  }, [pending, editingKey]);
+  useEffect(() => {
+    let active = true;
+    setIdentity('');
+    setApiKeySource(false);
+    if (provider.connected) void window.electronAPI.maker.auth.getState('cursor').then(state => {
+      if (active) { setIdentity(state.identity ?? ''); setApiKeySource(state.authSource === 'api-key'); }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [provider.connected]);
+  const confirmStop = () => !provider.connected || confirm({
+    title: t('settings.providers.builtinApiKey.replaceKey'),
+    description: t('settings.providers.cursor.stopWarning'),
+    confirmText: t('settings.providers.builtinApiKey.saveKey'), cancelText: t('settings.providers.button.cancel'),
+  });
+  const saveKey = async () => {
+    const key = draftKey.trim();
+    if (!key || !await confirmStop()) return;
+    setPending(true); setError(''); setLoginUrl(null);
+    try {
+      const result = await window.electronAPI.maker.auth.setCursorApiKey(key);
+      if (result.authenticated) {
+        setEditingKey(false); setIdentity(result.identity ?? ''); setApiKeySource(true);
+        toast.success(t('settings.providers.builtinApiKey.toast.saved', { name: 'Cursor' }));
+      } else if (result.errorReason !== 'login_cancelled') {
+        setError(t('settings.providers.builtinApiKey.toast.saveFailed', { name: 'Cursor' }));
+      }
+    } catch { setError(t('settings.providers.builtinApiKey.toast.saveFailed', { name: 'Cursor' })); }
+    finally { setPending(false); setDraftKey(''); onChanged(); }
+  };
+  const change = async () => {
+    if (pending) { await window.electronAPI.maker.auth.cancelLogin('cursor'); return; }
+    if (editingKey) { setEditingKey(false); setDraftKey(''); setError(''); return; }
+    if (provider.connected && !await confirm({
+      title: t('settings.providers.cursor.disconnect'),
+      description: t('settings.providers.cursor.stopWarning'),
+      confirmText: t('settings.providers.cursor.disconnect'), cancelText: t('settings.providers.button.cancel'),
+    })) return;
+    setPending(true); setError(''); setLoginUrl(null);
+    try {
+      if (provider.connected) {
+        const scope = await window.electronAPI.maker.listProviders();
+        await window.electronAPI.maker.auth.logout('cursor', scope);
+      } else {
+        const result = await window.electronAPI.maker.auth.triggerLogin('cursor');
+        if (!result.authenticated && result.errorReason !== 'login_cancelled') setError(t('settings.providers.cursor.loginFailed'));
+      }
+    } catch { setError(t('settings.providers.cursor.loginFailed')); }
+    finally { setPending(false); setLoginUrl(null); onChanged(); }
+  };
+  return <DetailHeader icon={<CursorMark size={18} />} title="Cursor" provider={provider}
+    subtitle={[identity, apiKeySource ? t('settings.providers.custom.authMode.apiKey') : '', t(pending ? 'settings.providers.cursor.waiting' : 'settings.providers.cursor.description')].filter(Boolean).join(' · ')}
+    status={provider.connected ? { kind: 'connected' } : undefined}
+    primaryAction={{ label: t(pending || editingKey ? 'settings.providers.button.cancel' : provider.connected ? 'settings.providers.cursor.disconnect' : 'settings.providers.cursor.connect'), onClick: () => void change() }}
+    editAction={!editingKey ? { label: t(provider.connected ? 'settings.providers.import.replaceKey' : 'settings.providers.wizard.useApiKey'), disabled: pending,
+      onClick: () => { setDraftKey(''); setError(''); setEditingKey(true); } } : undefined}
+    detail={error || editingKey || (pending && loginUrl) ? <div className="flex flex-col gap-2">
+      {error && <p role="alert" className="text-13 text-[var(--text-primary)]">{error}</p>}
+      {editingKey && <div className="flex items-center gap-2 pt-2">
+        <SettingsTextInput value={draftKey} onChange={setDraftKey}
+          placeholder={t('settings.providers.builtinApiKey.keyPlaceholder')} size="sm" mono secret
+          disabled={pending} className="min-w-0 flex-1" />
+        <PillButton label={t('settings.providers.builtinApiKey.saveKey')} onClick={() => void saveKey()}
+          disabled={pending || !draftKey.trim()} />
+      </div>}
+      {pending && loginUrl && <div className="flex flex-wrap gap-2">
+        <OAuthBrowserLink url={loginUrl} />
+        <Button variant="secondary" size="md" onClick={() => {
+          void navigator.clipboard.writeText(loginUrl)
+            .then(() => toast.success(t('sharing.linkCopied')))
+            .catch(() => toast.error(t('sharing.copyLinkFailed')));
+        }}><Copy size={13} />{t('sharing.copyLink')}</Button>
+      </div>}
+    </div> : undefined}
+  >{children}</DetailHeader>;
 }
 
 function OpenAiHeader({
@@ -2610,7 +2708,7 @@ export function ProvidersSection() {
         // 即使未做 OAuth 登录也需占行以便配置 / 管理图像 key。
         const openaiHasImageCap = p.id === 'openai' && (p.imageModels?.length ?? 0) > 0;
         if (
-          p.id === 'xd' ||
+          p.id === 'xd' || p.id === 'cursor' ||
           p.connected ||
           p.removed === false ||
           (p.id === 'openai' && openaiReconnectRequired) ||
@@ -3077,6 +3175,7 @@ export function ProvidersSection() {
   // 详情头部按供应商类型分派(鉴权逻辑与重构前一致)。
   const renderDetailHeader = (p: ProviderView, children: ReactNode): ReactNode => {
     if (isOrganizationManagedProvider(p)) return <ManagedProviderHeader key={p.id} provider={p} children={children} />;
+    if (p.id === 'cursor') return <CursorHeader provider={p} onChanged={refetch}>{children}</CursorHeader>;
     if (p.id === 'xd')
       return <XdGatewayHeader children={children} provider={p} onChanged={refetch} />;
     if (p.id === 'anthropic')
@@ -3452,7 +3551,7 @@ export function ProvidersSection() {
                   {/* 允许被远程调用 + 「远程与分享」入口(含供应商组)：供应商已连接且能跑 Agent 时出现。
                       本机未允许远程控制时整行仍显示，但开关不可用(provider-sharing.md §3)；入口始终可用，
                       只给本机用时也可以建组(provider-groups.md §10)。 */}
-                  {remoteControlEnabled !== null &&
+                  {effectiveSelected.id !== 'cursor' && remoteControlEnabled !== null &&
                     !effectiveSelected.suspended &&
                     effectiveSelected.connected &&
                     effectiveSelected.agents.length > 0 &&

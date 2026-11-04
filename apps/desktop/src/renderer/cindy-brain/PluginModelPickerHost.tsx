@@ -84,6 +84,7 @@ export function PluginModelPickerDialog({
               setRoute((r) => (r ? { ...r, fastMode } : r));
             }}
             onUnifiedSelect={({ providerId, modelId, engine, effort, fast }) => {
+              if (engine === 'cursor') { setError(true); return false; }
               setRoute({
                 providerId,
                 model: modelId,

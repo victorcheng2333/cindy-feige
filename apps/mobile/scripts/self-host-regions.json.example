@@ -2,6 +2,7 @@
     "cn": {
         "authRegion": "cn",
         "iosBundleId": "",
+        "iosDisplayName": "",
         "iosAppStoreId": "",
         "androidPackage": "",
         "androidStoreUrl": "",
@@ -31,6 +32,7 @@
     "global": {
         "authRegion": "global",
         "iosBundleId": "",
+        "iosDisplayName": "",
         "iosAppStoreId": "",
         "androidPackage": "",
         "androidStoreUrl": "",
@@ -65,6 +67,7 @@
     "dev": {
         "authRegion": "dev",
         "iosBundleId": "",
+        "iosDisplayName": "",
         "iosAppStoreId": "",
         "androidPackage": "",
         "androidStoreUrl": "",

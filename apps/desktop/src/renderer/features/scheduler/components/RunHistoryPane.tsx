@@ -87,14 +87,14 @@ export function RunHistoryPane({
   );
   const sessionReferences = useSessionReferences(runSessionIds);
   const sessionAgentMap = useMemo(() => {
-    const m = new Map<string, AgentKind>();
+    const m = new Map<string, AgentKind | 'cursor'>();
     for (const sess of allSessions) {
-      m.set(sess.id, sess.agentKind === 'cc' ? 'claude-code' : sess.agentKind === 'pi' ? 'pi' : 'codex');
+      m.set(sess.id, sess.agentKind === 'cc' ? 'claude-code' : sess.agentKind);
     }
     return m;
   }, [allSessions]);
   const resolveRunAgent = useCallback(
-    (run: ScheduleRun): AgentKind => {
+    (run: ScheduleRun): AgentKind | 'cursor' => {
       if (!run.sessionId) return s.agentKind;
       const referenceAgent = sessionReferences.get(run.sessionId)?.agentKind;
       return (

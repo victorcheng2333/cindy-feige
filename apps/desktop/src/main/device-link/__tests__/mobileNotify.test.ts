@@ -2,6 +2,51 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { NOTIFY_TITLE_MAX_LENGTH, NOTIFY_BODY_MAX_LENGTH, NOTIFY_DEEP_LINK_MAX_LENGTH } from '@cindy/device-link';
 import { MobileNotifyDeduper, buildBotGroupNotifyPayload, buildSessionNotifyPayload } from '../mobileNotify';
+import { buildJPushRequest, sendJPush } from '../jpushSender';
+
+// unit: credential/owner and APNs protocol boundaries; the original tests only build notify frames.
+// Minimal cases: private preview, stale owner before POST, vendor failure reflecting credentials.
+describe('personal JPush delivery', () => {
+  const registration = { appKey: 'a'.repeat(24), alias: `cindy_${'b'.repeat(32)}`, production: false, preview: true };
+  const payload = buildSessionNotifyPayload({ sessionId: 's1', title: 'Private title', kind: 'done', selfDeviceId: 'd1', fallbackBody: 'Private result' });
+  it('keeps the APNs fallback generic and only includes detail when preview is allowed', () => {
+    const full = buildJPushRequest(registration, payload);
+    expect(full.notification.ios.alert).toEqual({ title: 'Cindy', body: 'Cindy' });
+    expect(full.notification.ios.extras.cindyPreview?.body).toBe('Private result');
+    expect(full.options.apns_production).toBe(false);
+    // JPush REST uses the hyphenated APNs field; an underscore is rejected (1009).
+    expect(full.notification.ios['mutable-content']).toBe(true);
+    expect(full.audience).toEqual({ alias: [registration.alias] });
+    const privateRequest = JSON.stringify(buildJPushRequest({ ...registration, preview: false }, payload));
+    expect(privateRequest).not.toContain('Private');
+  });
+  it('does not send across owners or app keys, and treats removed aliases as no target', async () => {
+    let calls = 0;
+    const request = (async (url: string, init: RequestInit) => {
+      calls++;
+      expect(url).toBe('https://api.jpush.cn/v3/push');
+      expect(init.redirect).toBe('error');
+      return new Response(JSON.stringify({ error: { code: 1011 } }), { status: 400 });
+    }) as typeof fetch;
+    const credentials = { appKey: registration.appKey, masterSecret: 'fake-not-a-real-secret' };
+    expect(await sendJPush(credentials, registration, payload, { fetch: request, isCurrent: () => false })).toBe('stale');
+    expect(calls).toBe(0);
+    expect(await sendJPush(credentials, registration, payload, { fetch: request, isCurrent: () => true })).toBe('no-target');
+    expect(calls).toBe(1);
+  });
+  it('does not expose an upstream error body', async () => {
+    await expect(sendJPush({ appKey: registration.appKey, masterSecret: 'fake' }, registration, payload, {
+      isCurrent: () => true,
+      fetch: (async () => new Response(JSON.stringify({ error: { message: 'reflected secret' } }), { status: 401 })) as typeof fetch,
+    })).rejects.toThrow('JPUSH_HTTP_401');
+  });
+  it('fits Chinese/emoji previews within the vendor byte limit without breaking the route', () => {
+    const result = buildJPushRequest(registration, { ...payload, title: '中文'.repeat(120), body: '😀结果'.repeat(400), sender: { id: 'bot', avatar: { kind: 'jpeg', value: 'a'.repeat(2048) } } });
+    expect(Buffer.byteLength(JSON.stringify(result.notification.ios))).toBeLessThanOrEqual(2000);
+    expect(result.notification.ios.extras.deepLink).toBe(payload.deepLink);
+    expect(result.notification.ios.extras.cindyPreview?.sender).toBeUndefined();
+  });
+});
 
 describe('buildSessionNotifyPayload', () => {
   it('identifies only teammate replies and isolates the same bot on different hosts', () => {

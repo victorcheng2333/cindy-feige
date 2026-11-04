@@ -1,3 +1,4 @@
+import { enqueueJPush, initializePersonalPush } from './jpush.js';
 import { pluginDeviceSync } from '../cindy-brain/index.js';
 import { PLUGIN_SYNC_CHANNEL } from '../cindy-brain/deviceSyncSlot.js';
 import { PluginSyncAccess } from './pluginSyncAccess.js';
@@ -59,6 +60,7 @@ import {
   type Envelope,
   type PushPayload,
   type NotifySender,
+  type NotifyPayload,
   DeviceLinkError,
   resolveRemoteInvokeTimeoutMs,
 } from '@cindy/device-link';
@@ -1291,8 +1293,10 @@ export function initDeviceLinkService(options: DeviceLinkServiceOptions = {}): v
 
   // 登录态驱动仲裁:已登录即参与认领(控制端列表/被控端可达都依赖这条 WS)
   observedAuthRealm = authManager.getActiveAuthRealm();
+  initializePersonalPush();
   syncWithAuthState(authManager.getAuthState().isAuthenticated);
   unsubscribeAuthState = authManager.onAuthStateChange((state) => {
+    if (state.isAuthenticated) initializePersonalPush();
     const nextRealm = authManager.getActiveAuthRealm();
     const realmChanged = observedAuthRealm !== null && observedAuthRealm !== nextRealm;
     observedAuthRealm = nextRealm;
@@ -2165,6 +2169,17 @@ export async function remoteUnsubscribe(
 
 const mobileNotifyDeduper = new MobileNotifyDeduper();
 
+function sendPersonalAndOfficialNotify(payload: NotifyPayload): boolean {
+  const generation = mobileNotifyGeneration;
+  const source = client;
+  const personal = enqueueJPush(payload,
+    () => client === source && generation === mobileNotifyGeneration && (!arbiter || arbiter.isOwner()) && readDeviceLinkSettings().remoteControlEnabled && authManager.getAuthState().isAuthenticated,
+    peer => readDeviceLinkSettings().revokedControllers.includes(peer),
+    getSessionNotificationBody(payload.category === 'session-done' ? 'done' : payload.category === 'session-error' ? 'error' : 'needs-reply'));
+  const official = source?.sendNotify(payload) ?? false;
+  return personal || official;
+}
+
 /**
  * 会话终态时给本账号已注册推送 token 的手机发系统推送(fire-and-forget)。
  * 静默跳过的场景(返回 false):
@@ -2218,19 +2233,18 @@ export function sendMobileSessionNotify(payload: {
   }
   const now = Date.now();
   if (!mobileNotifyDeduper.shouldSend(payload.sessionId, payload.kind, now, payload.eventId)) return false;
-  const sent = client.sendNotify(
-    buildSessionNotifyPayload({
-      sessionId: payload.sessionId,
-      title: payload.title,
-      kind: payload.kind,
-      selfDeviceId,
-      fallbackBody: payload.fallbackBody ?? getSessionNotificationBody(payload.kind),
-      detail: payload.detail,
-      imageFallback: getNotificationImageLabel(),
-      ...(payload.teammateBotId ? { teammateBotId: payload.teammateBotId } : {}),
-      ...(payload.teammateAvatar ? { teammateAvatar: payload.teammateAvatar } : {}),
-    }),
-  );
+  const notify = buildSessionNotifyPayload({
+    sessionId: payload.sessionId,
+    title: payload.title,
+    kind: payload.kind,
+    selfDeviceId,
+    fallbackBody: payload.fallbackBody ?? getSessionNotificationBody(payload.kind),
+    detail: payload.detail,
+    imageFallback: getNotificationImageLabel(),
+    ...(payload.teammateBotId ? { teammateBotId: payload.teammateBotId } : {}),
+    ...(payload.teammateAvatar ? { teammateAvatar: payload.teammateAvatar } : {}),
+  });
+  const sent = sendPersonalAndOfficialNotify(notify);
   if (sent) {
     mobileNotifyDeduper.recordSent(payload.sessionId, payload.kind, now, payload.eventId);
     log.debug(`mobile notify sent: session=${payload.sessionId.slice(0, 8)} kind=${payload.kind}`);
@@ -2254,7 +2268,7 @@ export function sendMobileBotGroupNotify(payload: {
   const key = `bot-group:${payload.groupId}`;
   const now = Date.now();
   if (!mobileNotifyDeduper.shouldSend(key, 'needs-reply', now, payload.eventId)) return false;
-  const sent = client.sendNotify(buildBotGroupNotifyPayload({
+  const sent = sendPersonalAndOfficialNotify(buildBotGroupNotifyPayload({
     groupId: payload.groupId,
     title: payload.title,
     body: payload.body,

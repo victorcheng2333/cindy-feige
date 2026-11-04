@@ -801,7 +801,7 @@ interface ChatInputProps {
    * M35: Vendor lock — when provided, ModelSelector only shows models
    * belonging to this vendor ('cc' for Claude, 'codex' for OpenAI Codex).
    */
-  vendorKey?: 'cc' | 'codex' | 'pi';
+  vendorKey?: 'cc' | 'codex' | 'pi' | 'cursor';
   /**
    * Optional override for the composerDraftStore key used to persist editor
    * content (and via attachmentState, attachments) across mount/unmount.
@@ -932,7 +932,7 @@ interface ChatInputProps {
    * `lastByVendor.model` 并原样进 createSession,写错就是首条请求路由到一个不存在的模型。
    */
   onUnifiedDraftSelect?: (selection: {
-    vendor: 'cc' | 'codex' | 'pi';
+    vendor: 'cc' | 'codex' | 'pi' | 'cursor';
     providerId: string;
     /** 选中引擎的 **wire model id**。 */
     modelId: string;
@@ -1028,14 +1028,15 @@ function rememberCatalogModelPrefs(
 const UNIFIED_AGENT_KINDS: readonly AgentKind[] = ['claude-code', 'codex', 'pi'];
 
 /** AgentKind → NewMaker vendor(useAvailableAgents 用 vendor 口径)。 */
-function agentKindToVendor(kind: AgentKind): 'cc' | 'codex' | 'pi' {
-  return kind === 'codex' ? 'codex' : kind === 'pi' ? 'pi' : 'cc';
+function agentKindToVendor(kind: AgentKind): 'cc' | 'codex' | 'pi' | 'cursor' {
+  return kind === 'cursor' ? 'cursor' : kind === 'codex' ? 'codex' : kind === 'pi' ? 'pi' : 'cc';
 }
 
-function vendorKeyToAgentKind(v?: 'cc' | 'codex' | 'pi'): AgentKind | null {
+function vendorKeyToAgentKind(v?: 'cc' | 'codex' | 'pi' | 'cursor'): AgentKind | null {
   if (v === 'cc') return 'claude-code';
   if (v === 'codex') return 'codex';
   if (v === 'pi') return 'pi';
+  if (v === 'cursor') return 'cursor';
   return null;
 }
 
@@ -1899,7 +1900,7 @@ export function ChatInput({
   // (localStorage,按 agent 分槽、sanitize 恒有种子值)。默认模型/档位偏好已全量本地化,
   // 不再依赖服务端 UserPreferences(登录态失效/离线时模型与档位选择必须照常工作)。
   const localVendorDefaults =
-    getDraft().lastByVendor[vendorKey === 'pi' ? 'pi' : vendorKey === 'codex' ? 'codex' : 'cc'];
+    getDraft().lastByVendor[vendorKey === 'cursor' ? 'cursor' : vendorKey === 'pi' ? 'pi' : vendorKey === 'codex' ? 'codex' : 'cc'];
   // session-agent-switch 意图制:意图期内 chip / 选择器显示用户选择的目标
   // (model/effort/provider/fast),props(镜像 DB)仍是旧引擎值——真切换在下一条
   // 消息发送时刻 apply,patched 回流后意图清除、显示交回 props。意图存放在
@@ -2007,8 +2008,9 @@ export function ChatInput({
   const ccCaps = useAgentCapabilities('claude-code', catalogDeviceId);
   const codexCaps = useAgentCapabilities('codex', catalogDeviceId);
   const piCaps = useAgentCapabilities('pi', catalogDeviceId);
+  const cursorCaps = useAgentCapabilities(catalogDeviceId ? null : 'cursor');
   const activeAgentCapabilities =
-    agentKind === 'codex'
+    agentKind === 'cursor' ? cursorCaps.capabilities : agentKind === 'codex'
       ? codexCaps.capabilities
       : agentKind === 'pi'
         ? piCaps.capabilities
@@ -2048,7 +2050,7 @@ export function ChatInput({
   // options; it can therefore use the same deferred handoff transaction as a
   // normal session. Remote sessions remain gated by their host capabilities.
   const sessionAgentSwitchSupported =
-    sessionOrcaRole !== undefined && runtimeAgentKind != null &&
+    sessionOrcaRole !== undefined && runtimeAgentKind != null && runtimeAgentKind !== 'cursor' &&
     (!deviceLinkDeviceId || ccSupportsSessionAgentSwitch || codexSupportsSessionAgentSwitch);
 
   // 切换写入的串行链与写序号都按 session 存在**模块级**协调层(agentSwitchCoordinator),
@@ -6822,7 +6824,7 @@ export function ChatInput({
         deviceProviders: remoteProviders.providers,
         localProviders: providers,
         capabilities:
-          currentModelAgentKind === 'codex'
+          currentModelAgentKind === 'cursor' ? cursorCaps.capabilities : currentModelAgentKind === 'codex'
             ? codexCaps.capabilities
             : currentModelAgentKind === 'pi'
               ? piCaps.capabilities
@@ -6840,6 +6842,7 @@ export function ChatInput({
       ccCaps.capabilities,
       codexCaps.capabilities,
       piCaps.capabilities,
+      cursorCaps.capabilities,
     ],
   );
 
@@ -6901,7 +6904,7 @@ export function ChatInput({
           initialProviderId,
         });
       if (!remoteDeviceId) {
-        const vendor = agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
+        const vendor = agentKind === 'cursor' ? 'cursor' : agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
         if (modelOnly) {
           // 只保护新建默认的模型 / 来源 / 其思考档；按 (引擎, 模型) 跨来源共享的档位与 Fast 预设
           // 是独立的既有行为，下面照常记录。
@@ -7223,6 +7226,7 @@ export function ChatInput({
       runtimeAgentKind,
       deviceLinkDeviceId,
       piCaps.capabilities,
+      cursorCaps.capabilities,
     ],
   );
 
@@ -7232,10 +7236,10 @@ export function ChatInput({
       providerId: string | null | undefined,
       invoke: (
         confirmedContextWindow?: number,
-      ) => Promise<{ deferred: boolean; superseded?: boolean } | undefined>,
+      ) => Promise<{ deferred: boolean; superseded?: boolean; pendingUntilSend?: boolean } | undefined>,
     ): Promise<{
       accepted: boolean;
-      result?: { deferred: boolean; superseded?: boolean };
+      result?: { deferred: boolean; superseded?: boolean; pendingUntilSend?: boolean };
     }> => {
       let result = await invoke();
       const finalPressure = result as {
@@ -7290,7 +7294,7 @@ export function ChatInput({
     ) => void | boolean | Promise<void | boolean>;
   }>({ byProvider: () => {}, byModel: () => {} });
   const confirmAgentBrowseSwitch = useCallback(
-    (targetAgent: 'claude-code' | 'codex' | 'pi' | null) =>
+    (targetAgent: 'claude-code' | 'codex' | 'pi' | 'cursor' | null) =>
       confirmAgentSwitchRisk({
         // 不必再问的两种:回原引擎(same-engine no-op),或点的就是已经确认过的意图目标
         // Harness(只换模型,不换引擎)。换到第三家仍要问(Chris 2026-08-20:Claude 任务里
@@ -7314,7 +7318,7 @@ export function ChatInput({
   );
   const performAgentSwitch = useCallback(
     async (
-      targetAgentKind: 'claude-code' | 'codex' | 'pi',
+      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
       newModelId: string,
       providerId: string | null = null,
       // 意图期内的档位/Fast/思考开关改动经此显式覆盖(用户手选优先于记忆/默认解析)。
@@ -7428,7 +7432,7 @@ export function ChatInput({
           deviceProviders: remoteProviders.providers,
           localProviders: providers,
           capabilities:
-            targetAgentKind === 'codex'
+            targetAgentKind === 'cursor' ? cursorCaps.capabilities : targetAgentKind === 'codex'
               ? codexCaps.capabilities
               : targetAgentKind === 'pi'
                 ? piCaps.capabilities
@@ -7600,7 +7604,7 @@ export function ChatInput({
             toast.success(
               t('newChat.chatInput.agentSwitch.deferred', {
                 agent:
-                  targetAgentKind === 'codex'
+                  targetAgentKind === 'cursor' ? 'Cursor' : targetAgentKind === 'codex'
                     ? 'Codex'
                     : targetAgentKind === 'pi'
                       ? 'Pi'
@@ -7710,6 +7714,7 @@ export function ChatInput({
       ccCaps.capabilities,
       codexCaps.capabilities,
       piCaps.capabilities,
+      cursorCaps.capabilities,
       syncSessionDraftModelPrefs,
     ],
   );
@@ -7983,7 +7988,7 @@ export function ChatInput({
       /** 选中引擎的 **wire model id** —— 唯一可发送、可当记忆键的那个 id。 */
       modelId: string;
       effort?: Effort;
-      engine: 'cc' | 'codex' | 'pi';
+      engine: 'cc' | 'codex' | 'pi' | 'cursor';
       fast: boolean | 'ultrafast';
       favoriteUid: string | null;
       /** 行的归一化 id(面板行身份)。草稿层不消费,更不作为发送 id。 */
@@ -8276,7 +8281,9 @@ export function ChatInput({
             if (deferredUntilTurnEnd) {
               effortCoordinator.suppressRuntimeEffort(sessionId);
               // 默认 success 1200ms 读不完这句;拉长到 4s。
-              toast.success(t('newChat.chatInput.credentialSwitchDeferred'), { duration: 4000 });
+              if (!setModelResult?.pendingUntilSend) {
+                toast.success(t('newChat.chatInput.credentialSwitchDeferred'), { duration: 4000 });
+              }
             }
             syncSessionDraftModelPrefs(
               newModelId,
@@ -8924,7 +8931,9 @@ export function ChatInput({
           effortCoordinator.setCommittedEffort(sessionId, eff);
           if (deferredUntilTurnEnd) {
             effortCoordinator.suppressRuntimeEffort(sessionId);
-            toast.success(t('newChat.chatInput.credentialSwitchDeferred'), { duration: 4000 });
+            if (!setModelResult?.pendingUntilSend) {
+              toast.success(t('newChat.chatInput.credentialSwitchDeferred'), { duration: 4000 });
+            }
           }
           applyProviderSelection();
           syncSessionDraftModelPrefs(
@@ -10076,7 +10085,7 @@ export function ChatInput({
                     }}
                     modelMemory={modelMemory}
                     vendorKey={
-                      runtimeAgentKind === 'codex'
+                      runtimeAgentKind === 'cursor' ? 'cursor' : runtimeAgentKind === 'codex'
                         ? 'codex'
                         : runtimeAgentKind === 'pi'
                           ? 'pi'
@@ -10145,7 +10154,7 @@ export function ChatInput({
                             currentVendor: vendorKey,
                             // 两步分段的目标是 vendor 口径,确认门按 AgentKind 判(与意图
                             // 记录同形),在边界上转一次 —— 见 confirmAgentBrowseSwitch。
-                            confirmBrowseSwitch: (targetVendor: 'cc' | 'codex' | 'pi') =>
+                            confirmBrowseSwitch: (targetVendor: 'cc' | 'codex' | 'pi' | 'cursor') =>
                               confirmAgentBrowseSwitch(vendorKeyToAgentKind(targetVendor)),
                             onSwitch: performAgentSwitch,
                           }

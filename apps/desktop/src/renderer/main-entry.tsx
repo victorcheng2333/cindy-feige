@@ -162,7 +162,7 @@ void (async () => {
     );
     root.render(
       <ThemeProvider syncWindowVibrancy={false}>
-        <LocaleProvider>
+        <LocaleProvider syncHost={false}>
           <ComputerPermissionGuideWindow />
         </LocaleProvider>
       </ThemeProvider>,
@@ -174,7 +174,7 @@ void (async () => {
     const { VoiceInputDictionaryToast } = await import('./voice-input/VoiceInputDictionaryToast');
     root.render(
       <ThemeProvider syncWindowVibrancy={false}>
-        <LocaleProvider>
+        <LocaleProvider syncHost={false}>
           <VoiceInputDictionaryToast />
         </LocaleProvider>
       </ThemeProvider>,
@@ -186,7 +186,7 @@ void (async () => {
     const { VoiceInputOverlay } = await import('./voice-input/VoiceInputOverlay');
     root.render(
       <ThemeProvider syncWindowVibrancy={false}>
-        <LocaleProvider>
+        <LocaleProvider syncHost={false}>
           <ConfirmDialogProvider>
             <VoiceInputOverlay />
           </ConfirmDialogProvider>

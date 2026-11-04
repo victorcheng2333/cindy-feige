@@ -130,14 +130,16 @@ export function PluginModelPicker({
           setSelection(value);
           return true;
         },
-        onSelect: (value) =>
-          answer({
+        onSelect: async (value) => {
+          if (value.agent === "cursor") return false;
+          return answer({
             agentKind: value.agent === "claude-code" ? "cc" : value.agent,
             providerId: value.providerId,
             model: value.modelId,
             effort: value.effort ?? "",
             fastMode: value.fast,
-          }),
+          });
+        },
       }}
     />
   );

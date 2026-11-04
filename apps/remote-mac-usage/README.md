@@ -1,13 +1,14 @@
 # 猫猫 Mac
 
-独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT 订阅额度。当前版本 0.1.6。
+独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.1.8。
 当前 Mac 不需要运行 Cindy；提供额度的电脑需要运行 Cindy、在线并允许相应远程访问。
 中国大陆版，独立 Bundle ID `com.chengfei.quotacat.cn`。
 
 ## 使用
 
 打开「猫猫.app」，用与远端电脑相同的 Cindy 账号登录。企业 SSO 默认标识为 `xd`，可修改。
-登录后直接进入全部电脑的额度总览；Claude 排在 ChatGPT 前面，5 小时与每周额度并排显示。
+登录后直接进入全部电脑的额度总览；订阅固定按 Claude → OpenAI（ChatGPT）→ Cursor 排序；Claude / ChatGPT 的 5 小时与每周额度并排显示。
+Cursor 使用独立双池卡片：Cursor 模型、其他模型分别显示剩余／已用百分比与重置日期，不能相加或用最低值代表整个账号；只有总额度时明确显示汇总，缺失池显示未知。保留一位小数，非零的极小用量显示为 `<0.1%`，接近满额显示为 `>99.9%`，不把少量消耗四舍五入成从未使用。额外付费状态不作推测。
 电脑筛选、模型专项额度、重置时间均可直接查看。相同订阅在不同电脑共享额度，不作相加。
 
 关闭窗口会保留菜单栏猫猫图标，点击即可再次打开；右键菜单可刷新或退出应用。
@@ -54,8 +55,9 @@ pnpm --dir apps/remote-mac-usage package
   退出登录清除，不保存令牌、额度数值或电脑名称，不跨账号恢复。
 - 不读取 Cindy 的 userData、登录文件或 Claude / ChatGPT 凭证。Renderer 不接收 token 或授权 ticket。
   只暴露固定登录／查看命令，Main 校验参数和窗口来源；页面无 Node、无网络能力，导航和下载关闭。
-- 复用 `@cindy/auth-client`、`@cindy/device-link` 与共享 Codex 限额桶选择逻辑，不修改协议或服务端。
-  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`。
+- 复用 `@cindy/auth-client`、`@cindy/device-link` 与共享 Codex 限额桶选择逻辑，沿用现有加密 invoke 协议，不修改服务端或中转。
+  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`、`maker:usage:cursor-subscription`。
+  Cursor 通道要求新版 Cindy；旧端返回不支持时明确提示更新。
   独立账号必须收到匹配的 providerId；旧端忽略账号参数时不借用默认账号额度。
 - 使用既有后台 link 能力，远端未确认支持时关闭该 peer 并提示更新，不降级为前台控制。
   这里的只读是客户端功能范围，Cindy 登录本身不等于服务端签发了只读权限。
@@ -63,7 +65,14 @@ pnpm --dir apps/remote-mac-usage package
   退出／换登录身份才停止整个客户端。传输重连复用既有 DeviceLinkClient，不重放写操作。
 - 不持久化额度历史、日志或完整网络响应。演示使用虚构数据；`--demo` 使用独立临时 profile，退出后回收。
 
-## 验证记录（2026-10-30）
+## 验证记录
+
+- 2026-11-04 / 0.1.8：独立猫猫新增 Cursor 双池卡片，固定 Claude → OpenAI → Cursor 排序。
+  同账号只读查询不开放 Cursor 远程执行；旧 Host 显示更新提示，失败与未知不当零。
+  31 项单测、类型检查、13 项 Electron UI 检查通过，覆盖深浅色／390px 窄窗、对比度与交互。
+  已在签名安装版保留原登录与设备筛选，通过实际 Device Link 读取真实 Cursor 两池数据；
+  已核对最终窗口的两池名称、剩余／已用、重置日期和排序。实测发现并修复小于 1% 的消耗被整数舍入隐藏的问题。
+
 
 - 2026-11-02 / 0.1.6：窗口失焦后自动收起，菜单栏图标上的点击交由显隐切换处理；
   延后到原生焦点／最小化状态更新后判定，避免打断最小化。类型检查、29 项单测及

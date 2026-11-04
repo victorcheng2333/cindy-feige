@@ -1,3 +1,4 @@
+import { poolPercent } from "./cursorQuota";
 import React, { useEffect, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import {
@@ -50,6 +51,13 @@ const demoAccounts: Account[] = [
     updated: Date.now(),
     failed: false,
   },
+  {
+    id: "cursor-demo", service: "Cursor", name: "Cursor", plan: "",
+    windows: [
+      { minutes: null, label: "Cursor 模型", left: 99.7, reset: Date.now() / 1000 + 27 * 86400 },
+      { minutes: null, label: "其他模型", left: 37, reset: Date.now() / 1000 + 27 * 86400 },
+    ], updated: Date.now(), failed: false,
+  },
 ];
 export default function App() {
   return (
@@ -69,6 +77,8 @@ function UsageApp() {
         line: "#383838",
         track: "#303030",
         accent: "#d97757",
+        poolA: "#392b26", poolB: "#26313d", poolAText: "#e69b7d", poolBText: "#9dc1e5",
+        quotaWarn: "#f3a115", quotaCritical: "#ef4444",
       }
     : {
         bg: "#f9f9f6",
@@ -78,6 +88,8 @@ function UsageApp() {
         line: "#d9d8d0",
         track: "#e8e6dc",
         accent: "#a8472a",
+        poolA: "#faf0eb", poolB: "#edf3f8", poolAText: "#a8472a", poolBText: "#3f6d9c",
+        quotaWarn: "#f3a115", quotaCritical: "#ef4444",
       };
   const [remote, setRemote] = useState<Remote | null>(null),
     [signed, setSigned] = useState(false),
@@ -360,6 +372,29 @@ function UsageApp() {
       </View>
     );
   };
+  const cursorPools = (a: Account) => {
+    const names = a.windows.some(q => q.label === "套餐总额度") && !a.windows.some(q => q.label !== "套餐总额度")
+      ? ["套餐总额度"] : ["Cursor 模型", "其他模型"];
+    return <View style={{ gap: 14 }}>
+      {a.error ? txt(a.error, { color: c.muted, fontSize: 13 }) : null}
+      <View style={{ flexDirection: "row", gap: 12 }}>{names.map((name, index) => {
+        const q = a.windows.find(w => w.label === name), available = !a.failed && valid(q);
+        const left = available ? q!.left : null;
+        return <View key={name} style={{ flex: 1, minWidth: 0, padding: 12, gap: 6, borderRadius: 8, backgroundColor: index ? c.poolB : c.poolA }}>
+          {txt(name, { fontSize: 14, fontWeight: "600", color: index ? c.poolBText : c.poolAText })}
+          {txt(index ? "Claude · GPT 等" : name === "套餐总额度" ? "来源仅返回汇总" : "Grok · Composer", { fontSize: 11, color: c.muted })}
+          {txt(left === null ? "—" : `${poolPercent(left)}%`, { fontSize: 30, lineHeight: 40, fontWeight: "500", fontVariant: ["tabular-nums"] })}
+          {txt("剩余可用", { fontSize: 12, color: c.muted })}
+          <View style={{ height: 6, borderRadius: 8, backgroundColor: c.track, overflow: "hidden", marginVertical: 6 }}>
+            {left !== null ? <View style={{ height: 6, width: `${left}%`, backgroundColor: left <= 10 ? c.quotaCritical : left <= 30 ? c.quotaWarn : c.muted }} /> : null}
+          </View>
+          {txt(left === null ? "尚无有效额度" : `已用 ${poolPercent(100 - left)}%`, { fontSize: 12, color: c.muted })}
+          {txt(resetText(q), { fontSize: 12, lineHeight: 19, color: c.muted, marginTop: 6 })}
+        </View>;
+      })}</View>
+      {txt("两个额度池分别计量，不合并百分比。一个池用完，不代表整个订阅都已用完。", { fontSize: 12, lineHeight: 20, color: c.muted })}
+    </View>;
+  };
   if (restoring)
     return (
       <SafeAreaView
@@ -439,7 +474,7 @@ function UsageApp() {
             !signed && !demo
               ? "连接 Cindy，在手机查看订阅的剩余配额。"
               : device
-                ? "5 小时与周配额，放在一起看。"
+                ? current?.service === "Cursor" ? "两个模型额度池，分别查看剩余与重置时间。" : "查看各个账号的剩余额度与重置时间。"
                 : "选择一台电脑，查看它连接的订阅账号。",
             { fontSize: 15, color: c.muted },
           )}
@@ -700,12 +735,12 @@ function UsageApp() {
                   { backgroundColor: c.card, borderColor: c.line },
                 ]}
               >
-                <View style={{ flexDirection: "row", gap: 30 }}>
+                {current.service === "Cursor" ? cursorPools(current) : <View style={{ flexDirection: "row", gap: 30 }}>
                   {quota(300, current)}
                   {quota(10080, current)}
-                </View>
+                </View>}
               </View>
-              {current.windows.map((q, i) => (
+              {current.service === "Cursor" ? txt("Cursor 模型池用于 Grok、Composer 等；其他模型池用于第三方模型。池耗尽后的扣费规则和额外付费状态，以 Cursor 账单为准。", { color: c.muted, fontSize: 13 }) : current.windows.map((q, i) => (
                 <View
                   key={i}
                   style={[
@@ -730,7 +765,7 @@ function UsageApp() {
             </View>
           ) : (
             <View style={{ gap: 14, marginTop: 12 }}>
-              {accounts.map((a) => (
+              {accounts.map((a) => a.noticeOnly ? <View key={a.id}>{txt(a.error ?? "Cursor 额度暂不可用", { color: c.muted, fontSize: 13 })}</View> : (
                 <Pressable
                   key={a.id}
                   accessibilityRole="button"
@@ -747,16 +782,11 @@ function UsageApp() {
                       color: c.muted,
                     })}
                   </View>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: 30,
-                      marginVertical: 16,
-                    }}
-                  >
+                  {a.service === "Cursor" ? <View style={{ marginVertical: 16 }}>{cursorPools(a)}</View> : <View
+                    style={{ flexDirection: "row", gap: 30, marginVertical: 16 }}>
                     {quota(300, a)}
                     {quota(10080, a)}
-                  </View>
+                  </View>}
                   {txt(
                     a.failed
                       ? "暂未获取用量"
@@ -768,7 +798,7 @@ function UsageApp() {
                 </Pressable>
               ))}
               {!busy && !accounts.length
-                ? txt("暂无 Claude / ChatGPT 订阅账号，或尚未读取到数据。", {
+                ? txt("暂无 Claude / ChatGPT / Cursor 订阅账号，或尚未读取到数据。", {
                     color: c.muted,
                   })
                 : null}

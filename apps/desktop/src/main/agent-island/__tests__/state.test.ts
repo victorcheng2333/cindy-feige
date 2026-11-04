@@ -3,6 +3,7 @@ import type { AgentEvent, InteractionRequest } from '@cindy/maker-core';
 import { DEFAULT_TOOL_ROW_WORDING } from '@cindy/maker-shared/message-presentation';
 import { DEFAULT_AGENT_ISLAND_STRINGS } from '../../../shared/agentIsland.js';
 import { buildMenubarActivities } from '../../menubar/activity.js';
+import { MENUBAR_HARNESS_LOGOS } from '../../menubar/logos.js';
 
 import {
   acknowledgeAgentIslandSessionRead,
@@ -46,6 +47,15 @@ import {
 // Existing island ordering tests did not exercise the menu adapter. Two running
 // tasks with an older task emitting newer output are the minimal failure input.
 describe('menu bar task ordering', () => {
+  // Review P1: Cursor was silently projected as Claude. Exercise the existing
+  // island-to-menu production path in privacy mode, including its brand mark.
+  it('keeps Cursor identity in the menu activity and private title', () => {
+    const state = createAgentIslandState();
+    applyAgentIslandUserPrompt(state, { sessionId: 'cursor-task', agentKind: 'cursor' }, 'Inspect', 1_000);
+    const rows = buildMenubarActivities(buildAgentIslandTaskOverview(state, 1_001), true,
+      (key, params) => key === 'tasks.private' ? String(params?.harness) : key);
+    expect(rows[0]).toMatchObject({ title: 'harness.cursor', logoSvg: MENUBAR_HARNESS_LOGOS.cursor });
+  });
   it('updates previews without reordering output, but promotes new prompts and waiting tasks', () => {
     const state = createAgentIslandState();
     const a = { sessionId: 'a', title: 'A' };

@@ -253,6 +253,16 @@ describe('effortLabelFor —— 五级优先(i18n → 模型覆盖 → capabilit
 
 
 describe('effortLabelFromRuntime —— 会话摘要按 app 语言覆盖 snapshot 标签', () => {
+  // Unit regression from iOS UAT: sessions retain the previous effort for DB
+  // compatibility when switching to a fixed-effort model. The summary must use
+  // the current model capability instead of displaying that historical value.
+  it('hides historical effort values that the current model does not support', () => {
+    const model = { id: 'fixed', label: 'Fixed', efforts: [], defaultEffort: null,
+      effortDisplayNames: {}, supportsFastMode: false };
+    expect(effortLabelFromRuntime({ currentModel: model, effortOptions: [] }, 'low')).toBe('');
+    expect(effortLabelFromRuntime({ currentModel: { ...model, efforts: ['high'] },
+      effortOptions: [{ id: 'high', label: '高' }] }, 'low')).toBe('');
+  });
   it('effortOptions 为 zh-CN 快照时仍随界面语言切换', async () => {
     const previousLanguage = i18n.language;
     const runtime = {

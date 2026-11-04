@@ -17,7 +17,7 @@ export function useModelFavoritesHost(): void {
         const items = accessHostModelFavorites(request.ownerStamp.dataOwnerId, request.mutation);
         // Long local composite sources cannot be represented by the existing wire
         // protocol. Keep them on disk without breaking older readers' entire list.
-        api.reply({ requestId: request.requestId, items: items.filter((item) => item.providerId.length <= MODEL_FAVORITE_TEXT_MAX_LENGTH) });
+        api.reply({ requestId: request.requestId, items: items.filter((item) => (request.includeCursor === true || item.agent !== 'cursor') && item.providerId.length <= MODEL_FAVORITE_TEXT_MAX_LENGTH) });
       } catch {
         api.reply({ requestId: request.requestId, failed: true });
       }

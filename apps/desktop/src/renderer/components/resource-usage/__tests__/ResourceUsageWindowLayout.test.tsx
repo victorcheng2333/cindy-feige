@@ -25,10 +25,10 @@ vi.mock('@/components/title-bar/WindowControls', () => ({
 
 vi.mock('@/hooks/useTheme', () => ({ ThemeProvider: ({ children }: React.PropsWithChildren) => children }));
 vi.mock('@/hooks/useFontSettings', () => ({ FontSettingsProvider: ({ children }: React.PropsWithChildren) => children }));
-const { setLocale } = vi.hoisted(() => ({ setLocale: vi.fn() }));
+const { followLocale } = vi.hoisted(() => ({ followLocale: vi.fn() }));
 vi.mock('@/hooks/useLocale', () => ({
   LocaleProvider: ({ children }: React.PropsWithChildren) => children,
-  useLocale: () => ({ effectiveLocale: 'en', setLocale }),
+  useLocale: () => ({ effectiveLocale: 'en', followLocale }),
 }));
 vi.mock('@/components/ui/confirm-dialog-provider', () => ({ ConfirmDialogProvider: ({ children }: React.PropsWithChildren) => children }));
 vi.mock('@/components/ui/toast', () => ({ ToastContainer: () => null }));
@@ -57,7 +57,7 @@ describe('ResourceUsageWindowRoot prewarm lifecycle', () => {
     resourceBodyProps = null;
     samplingListener = null;
     localeListener = null;
-    setLocale.mockClear();
+    followLocale.mockClear();
     rendererReady.mockClear();
     presentationReady.mockClear();
     resourceClose.mockClear();
@@ -119,7 +119,7 @@ describe('ResourceUsageWindowRoot prewarm lifecycle', () => {
 
     await act(async () => localeListener?.('zh-CN'));
 
-    expect(setLocale).toHaveBeenCalledWith('zh-CN');
+    expect(followLocale).toHaveBeenCalledWith('zh-CN');
   });
 
   it('ignores a same-locale broadcast to avoid an IPC feedback loop', async () => {
@@ -127,7 +127,7 @@ describe('ResourceUsageWindowRoot prewarm lifecycle', () => {
 
     await act(async () => localeListener?.('en'));
 
-    expect(setLocale).not.toHaveBeenCalled();
+    expect(followLocale).not.toHaveBeenCalled();
   });
 
   it('clears and remounts window controls when the reusable window is hidden', async () => {

@@ -23,8 +23,8 @@ import type { AgentKind } from '@/hooks/useAgentCapabilities';
 import type { Effort, PermissionMode } from '@/lib/userPreferences.types';
 
 export interface DeviceLinkCreateParams {
-  /** 草稿 vendor 形态:'cc' | 'codex' | 'pi'(persistedAgentKind)。 */
-  agentKind: 'cc' | 'codex' | 'pi';
+  /** 草稿 vendor 形态:'cc' | 'codex' | 'pi' | 'cursor'(persistedAgentKind)。 */
+  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
   /**
    * 被控端上的项目目录。缺省 / 空白 = 在该设备上建**不绑项目的 standalone dialogue**,
    * workspaceKind 随之派生为 'dialogue',运行目录由被控端分配。
@@ -85,6 +85,7 @@ export interface DeviceLinkCreateArgs {
 }
 
 export function buildDeviceLinkCreateArgs(p: DeviceLinkCreateParams): DeviceLinkCreateArgs {
+  if (p.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
   // 空白目录一律当「没选项目」处理(与本机 selectedWorkingDir 的 trim() || undefined 同口径),
   // 免得 '  ' 这种脏值在被控端被当成一个真实路径去校验。
   const dir = p.workingDir?.trim();
@@ -128,7 +129,7 @@ export interface DeviceLinkSubmissionCandidate {
 }
 
 export interface DeviceLinkSubmissionParams {
-  agentKind: 'cc' | 'codex' | 'pi';
+  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
   workingDir?: string;
   id?: string;
   extraDirs?: string[];
@@ -259,7 +260,7 @@ export function buildProvisionalRemoteSession(p: ProvisionalRemoteSessionParams)
     // 回流都会把它冲回 null,会话就先掉进项目外的草稿区、首条落地后再跳回项目。
     userSendAt: null,
     status: 'active',
-    // Session.agentKind 是本机形态('cc' | 'codex' | 'pi'),args 里是 maker-core 形态,这里转回来。
+    // Session.agentKind 是本机形态('cc' | 'codex' | 'pi' | 'cursor'),args 里是 maker-core 形态,这里转回来。
     agentKind: p.args.agentKind === 'claude-code' ? 'cc' : p.args.agentKind,
     // 乐观行就带上 Agent 所在电脑:会话页的模型按钮与目录从一开始就按那台显示。
     ...(p.args.agentDeviceId ? { agentDeviceId: p.args.agentDeviceId } : {}),

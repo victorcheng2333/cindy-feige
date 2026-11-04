@@ -1,3 +1,4 @@
+import { getDeviceLinkInvokeContext } from '../device-link/invoke-context.js';
 import { dialog } from 'electron';
 import { createVertexServiceAccountSelections } from '../maker-host/vertex-service-account.js';
 import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
@@ -1186,7 +1187,9 @@ export function registerProviderHandlers(
       return {
         dataOwnerId,
         ownerGeneration: ownerAtIngress?.generation ?? 0,
-        providers: providers.map((provider) => {
+        providers: providers.filter(provider => trusted || provider.id !== 'cursor' || (
+          getDeviceLinkInvokeContext()?.sameAccountController === true && !getDeviceLinkInvokeContext()?.sharedTask
+        )).map((provider) => {
           const safe = withoutProviderHeaderCredentials(provider);
           const view = {
             ...safe,
@@ -1769,7 +1772,7 @@ export function registerProviderHandlers(
       typeof target.providerId !== 'string' ||
       target.providerId.length === 0 ||
       target.providerId.length > MAX_DISABLE_ID_LENGTH ||
-      !VALID_AGENTS.includes(String(target.agent)) ||
+      (target.agent !== 'cursor' && !VALID_AGENTS.includes(String(target.agent))) ||
       typeof target.modelId !== 'string' ||
       target.modelId.length === 0 ||
       target.modelId.length > MAX_DISABLE_ID_LENGTH

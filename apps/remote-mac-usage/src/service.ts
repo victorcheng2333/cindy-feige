@@ -3,7 +3,7 @@ import { DeviceLinkClient, PROTOCOL_VERSION, DEVICE_LINK_CAPABILITY_BACKGROUND_L
 import WebSocket from 'ws';
 import endpoints from '../../../config/endpoint.json';
 import manifest from '../package.json';
-import { emptyAccount, parseAccount, parseDevices, subscriptionProviders, type Command, type Snapshot } from './model';
+import { emptyAccount, parseAccount, parseDevices, record, subscriptionProviders, type Command, type Snapshot } from './model';
 import { loginSso } from './sso';
 import type { SessionStore } from './storage';
 
@@ -125,18 +125,30 @@ export class UsageService {
               const read = async (channel: string, args: unknown[] = []) => {
                 this.check(epoch);
                 const result = await link.invoke(device.deviceId, { channel, args }, 15000); this.check(epoch);
-                if (!result.ok) throw Error('电脑未返回额度，请检查远程权限和版本');
+                if (!result.ok) throw Object.assign(Error('电脑未返回额度，请检查远程权限和版本'), { code: result.error.code });
                 return result.result;
               };
               const providers = subscriptionProviders(await read('maker:provider:list'));
+              // Cursor runtime remains local-only in the provider catalog. Discover quota
+              // through its dedicated read instead of exposing runnable Cursor models remotely.
+              let cursorResult: unknown;
+              device.cursorUnsupported = false;
+              try {
+                cursorResult = await read('maker:usage:cursor-subscription');
+                if (record(cursorResult).connected === true && !providers.some(p => p.id === 'cursor'))
+                  providers.push({ id: 'cursor', name: 'Cursor' });
+              } catch (error) { device.cursorUnsupported = !!error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED'; }
               const accounts = await Promise.all(providers.map(async p => {
                 const a = emptyAccount(p), builtin = a.service === 'Claude' ? 'anthropic' : 'openai';
-                try { return parseAccount(p, await read(a.service === 'Claude' ? 'maker:usage:claude-subscription' : 'maker:usage:codex-rate-limits',
+                try {
+                  if (a.service === 'Cursor') return parseAccount(p, cursorResult ?? await read('maker:usage:cursor-subscription'));
+                  return parseAccount(p, await read(a.service === 'Claude' ? 'maker:usage:claude-subscription' : 'maker:usage:codex-rate-limits',
                   a.id === builtin ? [] : [a.id])); }
-                catch { return { ...a, failed: true }; }
+                catch (error) { return { ...a, failed: true, ...(a.service === 'Cursor' ? { error: error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED' ? '请更新这台电脑上的 Cindy，以读取 Cursor 额度。' : '暂时读不到 Cursor 额度，请稍后刷新。' } : {}) }; }
               }));
               this.check(epoch);
-              device.accounts = accounts.sort((a, b) => Number(a.service !== 'Claude') - Number(b.service !== 'Claude'));
+              const serviceOrder = { Claude: 0, ChatGPT: 1, Cursor: 2 };
+              device.accounts = accounts.sort((a, b) => serviceOrder[a.service] - serviceOrder[b.service]);
               device.checkedAt = Date.now(); device.error = null;
             } catch (e) {
               if (epoch !== this.epoch) return;

@@ -65,7 +65,7 @@ interface SidebarWindowContext {
 
 export function SidebarWindowLayout() {
   const { t } = useTranslation();
-  const { effectiveLocale, setLocale } = useLocale();
+  const { effectiveLocale, followLocale } = useLocale();
   // 意识面板注册:子窗口没有 LayoutRoot,必须自行初始化 ghost 面板注册表
   // 并订阅 ghosts:changed(停靠形态所需;历史持久化的 ghost 页签也靠它识别 kind)。
   ensureGhostPanelsRegistered();
@@ -118,9 +118,9 @@ export function SidebarWindowLayout() {
 
   useEffect(() => {
     return window.electronAPI.onLocaleChanged?.((locale) => {
-      if (locale !== effectiveLocale) setLocale(locale);
+      if (locale !== effectiveLocale) followLocale(locale);
     }) ?? undefined;
-  }, [effectiveLocale, setLocale]);
+  }, [effectiveLocale, followLocale]);
 
   // presentation-ready 只代表轻量壳已经提交首帧。不能等待主窗 context:
   // 隐藏预热阶段 Chromium 可能节流 renderer，而 context 又由主窗异步上推；
