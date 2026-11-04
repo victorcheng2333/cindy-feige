@@ -66,7 +66,7 @@ import {
   matchesKeyboardEvent,
   SWITCH_SESSION_SHORTCUT_IDS,
 } from '../../../shared/appShortcuts';
-import { WORKLOUDER_CODEX_AGENT_SLOT_COUNT } from '../../../shared/workLouderCodex';
+import { WORKLOUDER_CODEX_AGENT_SLOT_COUNT, boundWorkLouderTaskTitle } from '../../../shared/workLouderCodex';
 import { setSessionOrdinalBadges } from './sidebar/sessionOrdinalBadges';
 import { useOwnTopNavScrollableRows, useSidebarCollapsedState } from '../feature-context';
 import { SidebarRailNavigation, SidebarTopNav } from '@/components/sidebar/SidebarTopNav';
@@ -682,7 +682,7 @@ export function CCAgentSidebarUpper() {
         const isActiveCatalog = session.status === 'active';
         return {
           id: session.id,
-          title: session.title ?? null,
+          title: boundWorkLouderTaskTitle(session.title),
           pinnedAt: Number.isFinite(pinnedAtMs) ? pinnedAtMs : null,
           userSendAt: Number.isFinite(userSendAtMs) ? userSendAtMs : null,
           ...(order === undefined ? {} : { sidebarOrder: order }),

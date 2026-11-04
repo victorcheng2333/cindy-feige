@@ -15,6 +15,7 @@ import {
   createWorkLouderCodexDefaultSettings,
 } from '../../../shared/workLouderCodex.js';
 import { createWorkLouderCodexSettingsIpc, __testing as settingsIpcTesting } from '../settingsIpc.js';
+import { boundWorkLouderTaskTitle } from '../../../shared/workLouderCodex.js';
 
 const DEFAULT_SETTINGS: WorkLouderCodexSettings = createWorkLouderCodexDefaultSettings();
 
@@ -215,6 +216,24 @@ describe('Work Louder Codex settings IPC business body', () => {
       { id: 'local-1', title: 'Local task', pinnedAt: null, userSendAt: 1_700 },
       { id: 'remote-1', title: 'Remote task', pinnedAt: 1_700_000_000_000, userSendAt: null },
     ]);
+  });
+
+  // Bug 2026-11-04: one imported task with a 4,052-character title made main reject the
+  // whole list; the renderer retried on every sidebar refresh (411 errors in a day).
+  // Contract: the renderer's bounded title is always accepted. Unit, real IPC validator.
+  it('accepts sidebar titles bounded by the shared limit, including split emoji', () => {
+    const { ipc, publishTasks } = makeIpc();
+    const long = boundWorkLouderTaskTitle('x'.repeat(4_052));
+    const emoji = boundWorkLouderTaskTitle(`${'y'.repeat(510)}😀😀`);
+
+    ipc.publishTasks(EVENT, [
+      { id: 'a', title: long, pinnedAt: null, userSendAt: null },
+      { id: 'b', title: emoji, pinnedAt: null, userSendAt: null },
+    ]);
+
+    expect(long).toHaveLength(512);
+    expect(emoji).toBe(`${'y'.repeat(510)}…`);
+    expect(publishTasks).toHaveBeenCalledOnce();
   });
 
   it('rejects a malformed task list rather than projecting garbage onto the keys', () => {

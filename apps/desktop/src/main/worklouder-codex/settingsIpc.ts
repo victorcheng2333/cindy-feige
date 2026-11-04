@@ -19,6 +19,7 @@ import {
   isWorkLouderCodexKeycapId,
   canonicalizeWorkLouderCodexKeycapId,
   isWorkLouderModel,
+  WORKLOUDER_CODEX_TASK_TITLE_MAX,
   type WorkLouderAccessoriesState,
   type WorkLouderCodexAction,
   type WorkLouderCodexLayout,
@@ -349,7 +350,7 @@ export function createWorkLouderCodexSettingsIpc(deps: WorkLouderCodexSettingsIp
         if (row.title !== null && typeof row.title !== 'string') {
           throwIpcError('INVALID_PARAMS', 'Work Louder Codex task title is invalid');
         }
-        if (typeof row.title === 'string' && row.title.length > 512) {
+        if (typeof row.title === 'string' && row.title.length > WORKLOUDER_CODEX_TASK_TITLE_MAX) {
           throwIpcError('INVALID_PARAMS', 'Work Louder Codex task title is too long');
         }
         if (
