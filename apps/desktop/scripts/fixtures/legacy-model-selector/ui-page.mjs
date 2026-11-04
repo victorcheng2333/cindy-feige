@@ -10,6 +10,8 @@ export default {
     'compact-motion': { about: 'Content width stays stable across animated opening' },
     'compact-short': { about: 'Only model rows scroll when height is constrained', viewport: { width: 760, height: 320 } },
     'compact-selected': { about: 'Opening focuses the selected remote model instead of the first local row' },
+    'compact-task': { about: 'Task handoff tabs with combined providers' },
+    'compact-task-narrow': { about: 'Task handoff at narrow width', viewport: { width: 390, height: 640 } },
     compact: { about: 'Local and authorized remote providers in one list without engine or search controls' },
     'compact-narrow': { about: 'Combined provider list in a narrow viewport', viewport: { width: 390, height: 640 } },
     shared: { about: 'Legacy picker can browse a shared provider' },
@@ -53,6 +55,23 @@ export default {
         assert.ok(bounds.content > bounds.height, 'list remains scrollable');
         await page.getByRole('listbox').evaluate(list => { list.scrollTop = list.scrollHeight; });
       }
+    }
+    if (ui.case.startsWith('compact-task')) {
+      assert.equal(await page.getByRole('tablist').count(), 1);
+      assert.equal(await page.getByRole('textbox').count(), 0);
+      await page.getByRole('group', { name: 'Anthropic-6', exact: true }).waitFor();
+      await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
+      await ui.capture('task-harnesses');
+      await page.getByRole('tab', { name: 'Codex', exact: true }).click();
+      await page.getByRole('group', { name: 'TapSVC', exact: true }).getByRole('option').waitFor();
+      await page.getByRole('group', { name: 'Anthropic-6', exact: true }).getByRole('option').waitFor();
+      assert.equal(await page.getByRole('tablist').count(), 1);
+      await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
+      await ui.capture('codex-providers');
+      await page.getByRole('group', { name: 'TapSVC', exact: true }).getByRole('option').click();
+      await page.waitForFunction(() => window.__modelPickerSelection?.agent === 'codex');
+      await page.getByRole('tablist').waitFor({ state: 'hidden' });
+      return;
     }
     if (ui.case.startsWith('compact')) {
       const remote = page.getByRole('group', { name: 'Anthropic-6', exact: true });

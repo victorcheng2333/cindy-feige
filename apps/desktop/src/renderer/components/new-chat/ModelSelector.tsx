@@ -1230,6 +1230,7 @@ type ModelSelectorContentViewProps = ModelSelectorContentProps & {
   /** A catalog keeps its own route, visibility and preferences inside the combined list. */
   catalogSection?: {
     deviceId: string;
+    browseVendor: 'cc' | 'codex' | 'pi' | 'cursor';
     catalogs: ReturnType<typeof useDevicesProviders>;
     boundGroup: RemoteProviderGroupEntry | null;
   };
@@ -1375,9 +1376,10 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const modelTagDensity = modelTagDensityForWidth(paneWidth ?? (fluidWidth ? null : 320));
   // session-agent-switch:两步式引擎切换的浏览态。browseVendor 初始 = 会话当前引擎;
   // 切到另一家 tab 只是「浏览目标引擎的模型」,选中模型行才真正触发切换事务。
-  const [browseVendor, setBrowseVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor'>(
+  const [localBrowseVendor, setBrowseVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor'>(
     agentSwitch?.currentVendor ?? vendorKey ?? 'cc',
   );
+  const browseVendor = catalogSection?.browseVendor ?? localBrowseVendor;
   const browseSwitchPendingRef = useRef(false);
   const handleBrowseVendorChange = async (next: 'cc' | 'codex' | 'pi' | 'cursor') => {
     if (interactionDisabled || next === browseVendor || browseSwitchPendingRef.current) return;
@@ -1397,7 +1399,8 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   useEffect(() => {
     setBrowseVendor(agentSwitch?.currentVendor ?? vendorKey ?? 'cc');
   }, [agentSwitch?.currentVendor, vendorKey]);
-  const hasEngineBrowser = !compactProviderList && (!!agentSwitch || !!onUnifiedSelect);
+  // Compact is a list layout, not a restriction on an existing task's handoff.
+  const hasEngineBrowser = !!agentSwitch || (!compactProviderList && !!onUnifiedSelect);
   const browsing = hasEngineBrowser && browseVendor !== (agentSwitch?.currentVendor ?? vendorKey ?? 'cc');
   const agentKind = hasEngineBrowser
     ? vendorKeyToAgentKind(browseVendor)
@@ -4008,15 +4011,15 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
           side="bottom"
         />
       )}
-      {!compactProviderList && agentSwitch && (
+      {!catalogSection && agentSwitch && (
         <>
           <VendorSegmentedSwitcher
             value={browseVendor}
             onChange={(next) => {
               if (next !== 'orca') void handleBrowseVendorChange(next);
             }}
-            hiddenVendors={(['cc', 'codex', 'pi'] as const).filter((vendor) =>
-              !!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!),
+            hiddenVendors={(['cc', 'codex', 'pi', 'cursor'] as const).filter((vendor) =>
+              vendor === 'cursor' || (!!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!)),
             )}
             disabled={interactionDisabled}
             dense
@@ -4148,7 +4151,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
           <ModelSelectorContentView
             {...props}
             key={device.deviceId}
-            catalogSection={{ deviceId: device.deviceId, catalogs: scopedCatalogs, boundGroup }}
+            catalogSection={{ deviceId: device.deviceId, browseVendor, catalogs: scopedCatalogs, boundGroup }}
             providersOverride={undefined}
             providersOverrideState={undefined}
             onNavigateToProviders={undefined}

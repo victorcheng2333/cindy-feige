@@ -4,9 +4,9 @@ import type { ProviderView } from '@cindy/model-providers';
 
 const modelId = 'moonshotai/kimi-k3.1-pro-highspeed';
 const providers = [{
-  id: 'tapsvc', name: 'TapSVC', source: 'custom', agents: ['claude-code'],
-  auth: { method: 'api-key' }, routing: { 'claude-code': {} }, connected: true,
-  models: { 'claude-code': [{
+  id: 'tapsvc', name: 'TapSVC', source: 'custom', agents: ['claude-code', 'codex', 'pi'],
+  auth: { method: 'api-key' }, routing: { 'claude-code': {}, codex: {}, pi: {} }, connected: true,
+  models: { codex: [{ id: 'gpt-fixture', name: 'GPT fixture', contextWindow: 200000, efforts: [] }], pi: [{ id: 'pi-fixture', name: 'Pi fixture', contextWindow: 200000, efforts: [] }], 'claude-code': [{
     id: modelId, name: modelId, group: 'custom', contextWindow: 200000,
     efforts: ['low', 'medium', 'high'], defaultEffort: 'high',
   }] },
@@ -19,7 +19,7 @@ void mountPage({
   }, deviceLink: {
     invoke: async (_deviceId: string, channel: string) => {
       if (channel === 'maker:provider:list') return { providers: [{ ...providers[0], id: 'shared-anthropic', name: _deviceId === 'device-fixture' ? 'Anthropic-6' : 'Anthtopic-6', remoteInvocationEnabled: true,
-        models: { 'claude-code': [{ id: 'claude-opus-5-5', name: 'Opus 5.5', contextWindow: 1000000, efforts: ['low', 'high'], defaultEffort: 'high' }] },
+        models: { codex: [{ id: 'gpt-fixture', name: 'GPT fixture', contextWindow: 200000, efforts: [] }], pi: [{ id: 'pi-fixture', name: 'Pi fixture', contextWindow: 200000, efforts: [] }], 'claude-code': [{ id: 'claude-opus-5-5', name: 'Opus 5.5', contextWindow: 1000000, efforts: ['low', 'high'], defaultEffort: 'high' }] },
       }] };
       if (channel === 'maker:get-capabilities') return { availableModels: [], effortLevels: [], permissionModes: [], hasFastMode: false };
       return null;
@@ -29,7 +29,7 @@ void mountPage({
     <main className="flex h-screen items-end justify-end p-6">
       <ModelSelector modelId={ctx.case === 'compact-selected' ? 'claude-opus-5-5' : modelId} effort="high" vendorKey="cc"
         agentIdentity={{ vendorKey: 'cc', state: 'pending' }}
-        currentProviderId={ctx.case === 'compact-selected' ? 'shared-anthropic' : 'tapsvc'} providersOverride={ctx.case === 'compact-selected' ? [{ ...providers[0], models: { 'claude-code': [{ ...providers[0].models['claude-code']![0], id: 'claude-opus-5-5', name: 'Opus 5.5' }] } }] : providers}
+        currentProviderId={ctx.case === 'compact-selected' ? 'shared-anthropic' : 'tapsvc'} providersOverride={ctx.case === 'compact-selected' ? [{ ...providers[0], models: { codex: [{ id: 'gpt-fixture', name: 'GPT fixture', contextWindow: 200000, efforts: [] }], pi: [{ id: 'pi-fixture', name: 'Pi fixture', contextWindow: 200000, efforts: [] }], 'claude-code': [{ ...providers[0].models['claude-code']![0], id: 'claude-opus-5-5', name: 'Opus 5.5' }] } }] : providers}
         providersOverrideState={{ status: 'ready', refresh: () => {} }}
         onModelChange={() => {}} onEffortChange={() => {}}
         {...((ctx.case === 'shared' || ctx.case.startsWith('compact')) ? {
@@ -39,12 +39,15 @@ void mountPage({
         {...(ctx.case.startsWith('compact') ? {
           compactProviderList: true,
           onNavigateToProviders: () => {},
-          onUnifiedSelect: async (selection: unknown) => {
+          onUnifiedSelect: ctx.case.startsWith('compact-task') ? undefined : async (selection: unknown) => {
             (window as unknown as { __modelPickerSelection: unknown }).__modelPickerSelection = selection;
             return true;
           },
         } : {})}
-        agentSwitch={{ currentVendor: 'cc', onSwitch: async () => {} }}
+        agentSwitch={ctx.case.startsWith('compact') && !ctx.case.startsWith('compact-task') ? undefined : { currentVendor: 'cc', onSwitch: async (agent, model, provider) => {
+          (window as unknown as { __modelPickerSelection: unknown }).__modelPickerSelection = { agent, model, provider };
+          return true;
+        } }}
         useMorphPopover={ctx.case !== 'radix'} unifiedPanel={false}
       />
     </main>

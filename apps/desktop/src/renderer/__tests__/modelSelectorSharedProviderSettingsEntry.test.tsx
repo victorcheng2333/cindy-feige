@@ -288,3 +288,55 @@ describe('合并供应商列表', () => {
     }
   });
 });
+
+// Regression 121c3603752: compact task picker hid the harness tabs. Existing
+// combined-list tests only select same-harness draft rows. Unit: render the real
+// task picker, switch its tab, and verify local handoff / remote relocation.
+// Standalone Vitest run: 3.64s (12 tests, 397ms execution).
+describe('精简任务列表跨 harness 切换', () => {
+  it.each(['codex', 'pi'] as const)('保留合并来源，确认后切到 %s', async agent => {
+    const originalLocal = catalogs.local;
+    const originalRemote = catalogs.byDevice['share:abc'];
+    const provider = (id: string) => ({
+      ...(originalLocal[0] as object), id, name: id, agents: [agent],
+      routing: { [agent]: {} }, remoteInvocationEnabled: true,
+      models: { [agent]: [{ id: `${agent}-model`, name: `${agent}-model`, contextWindow: 200000, efforts: ['high'], defaultEffort: 'high' }] },
+    });
+    catalogs.local = [...originalLocal, provider('target-local')];
+    catalogs.byDevice['share:abc'] = [...originalRemote, provider('target-remote')];
+    try {
+      const confirmBrowseSwitch = vi.fn(async () => false);
+      const onSwitch = vi.fn(async () => true);
+      const onRelocate = vi.fn(async () => true);
+      const onProviderChange = vi.fn();
+      renderPanel({ devices: [share], onRelocate }, {
+        unifiedPanel: false, compactProviderList: true, onUnifiedSelect: undefined,
+        onProviderChange, agentSwitch: { currentVendor: 'cc', confirmBrowseSwitch, onSwitch },
+      });
+      const tab = screen.getByRole('tab', { name: agent === 'codex' ? 'Codex' : 'Pi' });
+      await act(async () => { fireEvent.click(tab); });
+      expect(screen.queryByText(`${agent}-model`)).toBeNull();
+      expect(onSwitch).not.toHaveBeenCalled();
+      confirmBrowseSwitch.mockResolvedValue(true);
+      await act(async () => { fireEvent.click(tab); });
+      expect(confirmBrowseSwitch).toHaveBeenLastCalledWith(agent);
+      expect(screen.getAllByRole('tablist')).toHaveLength(1);
+      expect(screen.getAllByRole('listbox')).toHaveLength(1);
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'Cursor' })).toBeNull();
+      const local = screen.getByRole('group', { name: 'target-local' });
+      const remote = screen.getByRole('group', { name: 'target-remote' });
+      await act(async () => { fireEvent.click(within(local).getByRole('option')); });
+      expect(onSwitch).toHaveBeenCalledWith(agent, `${agent}-model`, 'target-local', expect.any(Object));
+      await act(async () => { fireEvent.click(within(remote).getByRole('option')); });
+      expect(onRelocate).toHaveBeenCalledWith(expect.objectContaining({
+        agent, modelId: `${agent}-model`, providerId: 'target-remote', agentDevice: share,
+      }));
+      expect(onProviderChange).not.toHaveBeenCalled();
+    } finally {
+      catalogs.local = originalLocal;
+      catalogs.byDevice['share:abc'] = originalRemote;
+    }
+  });
+});
