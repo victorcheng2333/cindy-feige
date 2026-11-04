@@ -55,6 +55,7 @@ function harness(
     normalizeMobileAgentCapabilities:(x:unknown)=>x, maker:{getCapabilities,setEffort:vi.fn(),setFastMode:vi.fn()},
     deviceId:'device',deviceIdRef:{current:'device'},sessionAgentKind:'codex',sessionAgentSwitchSupported:true,
     confirmMobileSessionAgentSwitch,
+    modelSheetApprovedAgentRef: { current: null },
     writeSessionAgentSwitchIntent,
     setModelSheetAgentKind, setComposerModel,sessionId:'session',
     runControlAction:async(action:()=>Promise<boolean>,patch:any)=>{const ok=await action();if(ok)state.intent=patch.agentSwitchIntent;return ok;},

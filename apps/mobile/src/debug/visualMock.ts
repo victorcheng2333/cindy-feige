@@ -1,3 +1,5 @@
+import type { ProviderView } from '@cindy/model-providers/registry';
+import type { CatalogModel } from '@cindy/model-providers/types';
 import { attachmentPreviewFixture } from "./attachmentPreviewFixture";
 import { githubPrVisualFixture } from './githubPrVisualFixture';
 import { groupMaskVisualFixture } from './groupMaskVisualFixture';
@@ -83,6 +85,7 @@ let preparedContextPromise: Promise<DeviceLinkContextValue> | null = null;
 let didWarnRealDataLoad = false;
 const deletedDeviceIds = new Set<string>();
 const renamedDevices = new Map<string, string>();
+const modelSelectionPatches = new Map<string, Partial<RemoteSession>>();
 
 export function visualMockDevices(): DeviceView[] {
   const realData = realDataSnapshot;
@@ -357,10 +360,44 @@ async function visualMockInvoke<T = unknown>(
         { sessionId: 'visual-running', agentKind: 'cc', isTurnRunning: true },
         { sessionId: 'visual-automation-running', agentKind: 'cc', isTurnRunning: true },
       ] as T;
+    case 'maker:list-available-agents':
+      return ['claude-code', 'codex', 'pi'] as T;
     case 'maker:get-capabilities':
       return visualMockCapabilities() as T;
     case 'maker:provider:list':
-      return { providers: [] } as T;
+      return { providers: visualMockProviders() } as T;
+    case 'maker:get-session-agent-switch-intent':
+      return (modelSelectionPatches.get(String(args[0]))?.agentSwitchIntent ?? null) as T;
+    case 'maker:switch-session-agent': {
+      const id = String(args[0]);
+      const session = visualMockSession(id);
+      const current = session.agentKind === 'cc' ? 'claude-code' : session.agentKind;
+      const intent = args[1] === current ? null : {
+        targetAgentKind: args[1], model: args[2], providerId: args[3] ?? null,
+        effort: args[4] ?? '', fastMode: args[5] ?? false,
+      } as RemoteSession['agentSwitchIntent'];
+      modelSelectionPatches.set(id, { ...modelSelectionPatches.get(id), agentSwitchIntent: intent });
+      return { deferred: intent !== null } as T;
+    }
+    case 'maker:set-model': {
+      const id = String(args[0]);
+      const runtime = args[4] as { effort?: string; fastMode?: boolean | 'ultrafast' } | undefined;
+      modelSelectionPatches.set(id, { ...modelSelectionPatches.get(id), model: String(args[1]),
+        providerId: typeof args[2] === 'string' ? args[2] : null, ...runtime, agentSwitchIntent: null });
+      return {} as T;
+    }
+    case 'maker:set-effort':
+    case 'maker:set-fast-mode': {
+      const id = String(args[0]);
+      modelSelectionPatches.set(id, { ...modelSelectionPatches.get(id),
+        ...(channel === 'maker:set-effort' ? { effort: String(args[1]) } : { fastMode: args[1] as boolean | 'ultrafast' }) });
+      return undefined as T;
+    }
+    case 'maker:usage:codex-rate-limits':
+      return { providerId: 'openai', rateLimits: { limitId: 'codex',
+        secondary: { usedPercent: 32, windowMinutes: 10080, resetsAt: Date.now() / 1000 + 172800 } } } as T;
+    case 'maker:usage:claude-subscription':
+      return { providerId: 'anthropic', sevenDay: { utilization: 46, resetsAt: Date.now() / 1000 + 172800 } } as T;
     case 'maker:api-key:present':
       return { present: true } as T;
     case 'maker:usage:model-pricing':
@@ -561,7 +598,7 @@ function visualMockSessions(statusFilter?: string): RemoteSession[] {
     }),
   ];
   if (statusFilter === 'automation') return sessions.filter((session) => session.source === 'scheduler');
-  return sessions;
+  return sessions.map(session => ({ ...session, ...modelSelectionPatches.get(session.id) }));
 }
 
 /** Shared UI mock catalog (`@cindy/maker-shared/ui-mock`), shown as tasks on the mock Mac. */
@@ -826,6 +863,18 @@ function visualMockProjection(sessionId: string): InputProjection {
   };
 }
 
+function visualMockProviders(): ProviderView[] {
+  const models: CatalogModel[] = [
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextWindow: 200000, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', supportsFastMode: true },
+    { id: 'gpt-5.5', name: 'GPT-5.5', contextWindow: 200000, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', supportsFastMode: true, supportsUltrafastMode: true },
+  ];
+  return [
+    { id: 'anthropic', name: 'Anthropic · Demo', source: 'builtin', connected: true, agents: ['claude-code'], auth: { method: 'oauth' }, routing: { 'claude-code': { upstream: 'https://example.invalid', authStrategy: 'none' } }, models: { 'claude-code': [models[0]] } },
+    { id: 'openai', name: 'OpenAI · Demo', source: 'builtin', connected: true, agents: ['codex'], auth: { method: 'oauth' }, routing: { codex: { upstream: 'https://example.invalid', authStrategy: 'none' } }, models: { codex: [models[1]] } },
+    { id: 'visual-api', name: 'Demo API', source: 'user', connected: true, agents: ['claude-code', 'codex', 'pi'], auth: { method: 'apiKey' }, routing: Object.fromEntries(['claude-code', 'codex', 'pi'].map(agent => [agent, { upstream: 'https://example.invalid', authStrategy: 'none' }])), models: { 'claude-code': models, codex: models, pi: models } },
+  ];
+}
+
 function visualMockCapabilities(): unknown {
   return {
     availableModels: [
@@ -849,6 +898,7 @@ function visualMockCapabilities(): unknown {
       },
     ],
     hasFastMode: true,
+    supportsSessionAgentSwitch: true,
     effortLevels: [
       { id: 'low', displayName: 'Low' },
       { id: 'medium', displayName: 'Medium' },

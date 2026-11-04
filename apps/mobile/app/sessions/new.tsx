@@ -422,6 +422,8 @@ import {
 } from '@/session/newSessionWorktree';
 import { mobileAgentLabel, mobileAgentVendor } from '@/session/sessionAgentSwitch';
 import { MobileModelIconMark } from '@/session/MobileProviderMark';
+import { MobileAgentMark } from '@/components/MobileAgentMark';
+import { RemoteSourceMark } from '@/session/RemoteSourceMark';
 import { draftModelMemoryFor, hydrateDraftModelMemory } from '@/session/draftModelMemory';
 import { effortLabelFromRuntime, rowFastEditable } from '@/session/modelPickerRows';
 import { useRemoteAgentCatalogs, useRemoteAgentCatalogsWithStatus } from '@/session/useRemoteAgentCatalogs';
@@ -514,6 +516,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     workingDir?: string;
     deviceExplicit?: string;
     visualFocusComposer?: string;
+    visualOpenModelPicker?: string;
     composerMorph?: string;
     visualDraft?: string;
     suggestion?: string;
@@ -526,6 +529,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const routeDeviceName = deviceDisplayName(routeDeviceId, typeof params.deviceName === 'string' ? params.deviceName : undefined);
   const initialWorkingDir = readRouteString(params.workingDir);
   const visualFocusComposer = MOBILE_VISUAL_MOCK_ENABLED && readRouteString(params.visualFocusComposer) === '1';
+  const visualOpenModelPicker = MOBILE_VISUAL_MOCK_ENABLED && readRouteString(params.visualOpenModelPicker) === '1';
   // The home action lands in the compact pill; only a user's tap opens the card and keyboard.
   const [entryMorph] = useState(() => readComposerEntry(readRouteString(params.composerMorph) ?? undefined));
   const navigation = useNavigation();
@@ -2451,6 +2455,14 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     requestHostChoiceWrite(false);
   }, [draftMemory, requestHostChoiceWrite]);
 
+  const visualPickerOpenedRef = useRef(false);
+  useEffect(() => {
+    if (visualOpenModelPicker && selectedDeviceId && deviceProviders.ready && !visualPickerOpenedRef.current) {
+      visualPickerOpenedRef.current = true;
+      setModelSheetOpen(true);
+    }
+  }, [visualOpenModelPicker, selectedDeviceId, deviceProviders.ready]);
+
   const toggleModelPicker = useCallback(() => {
     setWorkspacePickerOpen(false);
     setAgentPickerOpen(false);
@@ -3463,29 +3475,10 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
           testID="newSession.modelIndicator"
         >
           {remoteAgentPick ? (
-            // 另一台电脑上的模型:那台目录里的来源标,带远程标记。
-            remoteAgentPillProvider ? (
-              <MobileModelIconMark
-                color={colors.textSecondary}
-                icon={getModel(remoteAgentPillProvider, remoteAgentPick.model, remoteAgentPick.agentKind)?.icon}
-                name={remoteAgentPillProvider.name}
-                providerId={remoteAgentPillProvider.id}
-                routing={remoteAgentPillProvider.routing}
-                logoKind={remoteAgentPillProvider.logoKind}
-                remote
-              />
-            ) : null
-          ) : activeSourceProvider ? (
-            // 图标统一规则(桌面同源):模型条目 icon(AI Gateway 设定)优先,缺省回落来源标。
-            <MobileModelIconMark
-              color={colors.textSecondary}
-              icon={getModel(activeSourceProvider, draft.model, draft.agentKind)?.icon}
-              name={activeSourceProvider.name}
-              providerId={activeSourceProvider.id}
-              routing={activeSourceProvider.routing}
-              logoKind={activeSourceProvider.logoKind}
-            />
-          ) : null}
+            <RemoteSourceMark size={iconSize.sm} inset={{ x: 0, y: 0 }}>
+              <MobileAgentMark agentKind={remoteAgentPick.agentKind} color={colors.textSecondary} size={iconSize.sm} />
+            </RemoteSourceMark>
+          ) : <MobileAgentMark agentKind={draft.agentKind} color={colors.textSecondary} size={iconSize.sm} />}
           <Text style={styles.modelPillText} numberOfLines={1}>{pillModelSummary}</Text>
           {(remoteAgentPick ? remoteAgentPick.fastMode : triggerFastOn)
             ? (

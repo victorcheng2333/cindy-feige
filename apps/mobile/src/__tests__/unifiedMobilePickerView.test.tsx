@@ -85,9 +85,9 @@ vi.mock('@/session/MobileProviderMark', () => {
   return { MobileModelIconMark: stub, MobileProviderMark: stub };
 });
 vi.mock('@/session/SheetModal', () => ({ SheetModal: ({ children }: any) => children }));
-vi.mock('@/session/SheetSurface', () => ({ SheetSurface: ({ children, pinnedTop, onBack, backAccessibilityLabel, testID, renderScrollContent }: any) => createElement('section', null,
+vi.mock('@/session/SheetSurface', () => ({ SheetSurface: ({ children, pinnedTop, footer, onBack, backAccessibilityLabel, testID, renderScrollContent }: any) => createElement('section', null,
   onBack ? createElement('button', {onClick:onBack, 'aria-label':backAccessibilityLabel ?? 'shared.back'}, 'Back') : null,
-  pinnedTop, renderScrollContent ? renderScrollContent({ testID: `${testID}.scroll` }) : createElement('div', {'data-testid':`${testID}.scroll`}, children)) }));
+  pinnedTop, renderScrollContent ? renderScrollContent({ testID: `${testID}.scroll` }) : createElement('div', {'data-testid':`${testID}.scroll`}, children), footer) }));
 vi.mock('@/session/sessionAgentSwitch', () => ({ mobileAgentLabel: (agent: string) => agent }));
 vi.mock('@/theme', async () => {
   const tokens = await import('@/theme/tokens');
@@ -282,7 +282,7 @@ it('keeps selection errors visible in the retained native root list', async () =
   expect(list?.textContent).toContain('Save failed');
 });
 
-it.each(["query", "filter"])(
+it.each(["browsingAgent", "filter"])(
   "returns to the first result when %s changes after scrolling",
   async (field) => {
     const props = {
@@ -312,3 +312,23 @@ it.each(["query", "filter"])(
     expect(host.textContent).toContain("No results");
   },
 );
+
+// Unit: the new parameter-page action must submit the displayed configuration,
+// not the current model. The former view could only return to the list.
+it.each([
+  ['Android', UnifiedModelPickerView],
+  ['iOS', IosModelPickerView],
+] as const)('uses the configured model directly from its parameters on %s', async (_platform, Component) => {
+  const onSelect = vi.fn();
+  const row = {key:'next',selected:false,disabled:false,entry:{displayName:'Next',capabilities:{codex:{efforts:['medium','high']}}},
+    config:{agent:'codex',modelId:'next',effort:'high',fast:false},providerMark:{}};
+  await act(async () => root.render(createElement(Component, {
+    visible:true,testID:'modelSheet',title:'Next',filters:[],groups:[],agents:['codex'],browsingAgent:'codex',
+    onSelect,options:{row,agents:['codex'],favoritesDisabled:true},
+  } as any)));
+  const useButton = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('models.picker.useModel'));
+  expect(useButton).toBeTruthy();
+  await act(async () => useButton!.click());
+  expect(onSelect).toHaveBeenCalledWith(row);
+  expect(host.querySelector('input')).toBeNull();
+});

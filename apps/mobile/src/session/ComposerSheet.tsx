@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 export interface ComposerSheetProps {
   nativeContent?: boolean;
+  /** Model browsing needs a stable full-height sheet on narrow screens. */
+  largeOnly?: boolean;
   /** Preserve the RN sheet path for content with its own ScrollView. */
   contentScrolls?: boolean;
   /** Use an ungrouped system list instead of the default form. */

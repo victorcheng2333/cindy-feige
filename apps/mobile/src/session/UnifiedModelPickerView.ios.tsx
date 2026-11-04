@@ -8,9 +8,6 @@ import {
   RNHostView,
   VStack,
   Text,
-  TextField,
-  Toggle,
-  useNativeState,
 } from "@expo/ui/swift-ui";
 import {
   accessibilityLabel,
@@ -23,16 +20,12 @@ import {
   tint,
   tag,
   padding,
-  autocorrectionDisabled,
-  textInputAutocapitalization,
   lineLimit,
 } from "@expo/ui/swift-ui/modifiers";
 import {
   Check,
   SlidersHorizontal,
   Star,
-  Zap,
-  Search,
   X,
   LayoutGrid,
 } from "lucide-react-native";
@@ -99,42 +92,25 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       />
     </NativeMark>
   );
-  const search = useNativeState(p.query);
-  useEffect(() => {
-    if (search.get() !== p.query) search.set(p.query);
-  }, [p.query, search]);
   const options = p.options;
   const isFavorite = options?.isFavorite ?? !!options?.row.favorite;
   const config = options?.row.config;
   const level = (id: string) =>
     t(`models.options.effortLevels.${id}`, { defaultValue: id });
   const listHeader = (
-    <HStack spacing={12} modifiers={[padding({ horizontal: 20, bottom: 4 })]}>
-      {mark(Search)}
-      <TextField
-        text={search}
-        onTextChange={p.onQuery}
-        placeholder={t("models.picker.searchPlaceholder")}
-        modifiers={[
-          frame({ maxWidth: Infinity, minHeight: 44 }),
-          autocorrectionDisabled(),
-          textInputAutocapitalization("never"),
-        ]}
-        testID={`${p.testID}.search`}
-      />
-      {p.query ? (
-        <Button
-          onPress={() => p.onQuery("")}
-          modifiers={[
-            buttonStyle("plain"),
-            accessibilityLabel(t("devices.detail.search.clearA11y")),
-          ]}
+    <VStack spacing={8} modifiers={[padding({ horizontal: 20, bottom: 8 })]}>
+      {(p.agents?.length ?? 0) > 1 ? (
+        <Picker
+          label={t("models.unified.harness")}
+          selection={p.browsingAgent}
+          onSelectionChange={(agent: string) => { void p.onBrowseAgent(agent as typeof p.browsingAgent); }}
+          modifiers={[pickerStyle("segmented"), disabled(p.busy), frame({ minHeight: 44 })]}
+          testID={`${p.testID}.agentSwitcher`}
         >
-          <HStack modifiers={[frame({ width: 44, height: 44 })]}>
-            {mark(X)}
-          </HStack>
-        </Button>
+          {p.agents.map(agent => <Text key={agent} modifiers={[tag(agent)]}>{mobileAgentLabel(agent)}</Text>)}
+        </Picker>
       ) : null}
+      <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "trailing" })]}>
       <Button
         onPress={() => setPage("sources")}
         modifiers={[
@@ -161,7 +137,8 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
           </Text>
         </HStack>
       </Button>
-    </HStack>
+      </HStack>
+    </VStack>
   );
   const listContent = (
     <>
@@ -172,6 +149,10 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       ) : null}
       {p.groups.map((group) => (
         <Section key={group.key} title={group.title}>
+          {group.quota ? <HStack spacing={8}>
+            <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(colors.textSecondary)]}>{group.quota.label}</Text>
+            <RNHostView matchContents><ModelQuotaBar remaining={group.quota.remaining} label={group.quota.label} /></RNHostView>
+          </HStack> : null}
           {group.rows.map((row) => (
             <ComposerNativeRow
               key={row.key}
@@ -193,27 +174,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
                       ]}
                     >
                       {row.costMarks}
-                    </Text>
-                  ) : null}
-                  <RNHostView matchContents>
-                    <View
-                      pointerEvents="none"
-                      style={{ width: iconSize.sm, height: iconSize.sm }}
-                    >
-                      <MobileAgentMark
-                        agentKind={row.config.agent}
-                        color={colors.textSecondary}
-                      />
-                    </View>
-                  </RNHostView>
-                  {row.effortLabel ? (
-                    <Text
-                      modifiers={[
-                        font({ textStyle: "caption" }),
-                        foregroundStyle(colors.textSecondary),
-                      ]}
-                    >
-                      {row.effortLabel}
                     </Text>
                   ) : null}
                   {row.config.fast ? (
@@ -332,10 +292,14 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
   return (
     <ComposerSheet
       nativeContent
+      largeOnly
       visible={p.visible}
       onClosed={p.onClosed}
       onClose={p.onClose}
       onBack={page ? () => setPage(null) : p.onBack}
+      headerTrailing={<Button onPress={p.onClose} modifiers={[buttonStyle("plain"), accessibilityLabel(t("shared.closePanel"))]}>
+        <HStack modifiers={[frame({ width: 44, height: 44 })]}>{mark(X)}</HStack>
+      </Button>}
       backLabel={t("models.picker.backToModels")}
       title={
         page === "sources"
@@ -345,6 +309,13 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             : p.title
       }
       testID={p.testID}
+      footer={options && !options.editingFavorite && !options.row.selected ? (
+        <Button onPress={() => p.onSelect(options.row)}
+          modifiers={[buttonStyle("borderedProminent"), tint(colors.cta), disabled(p.busy || options.row.disabled), frame({ minHeight: 44, maxWidth: Infinity })]}
+          testID={`${p.testID}.useModel`}>
+          <Text modifiers={[foregroundStyle(colors.ctaText)]}>{t("models.picker.useModel")}</Text>
+        </Button>
+      ) : undefined}
       nativeRoot={{
         active: !options && !page,
         header: listHeader,
@@ -433,6 +404,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             </Section>
           ) : null}
           <Section>
+            {options.editingFavorite ? (
             <ComposerNativeRow
               title={t("models.unified.harness")}
               subtitle={mobileAgentLabel(config.agent)}
@@ -448,14 +420,17 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               disabled={p.busy}
               testID={`${p.testID}.harness`}
             />
+            ) : null}
             {options.row.entry.capabilities[config.agent]?.efforts.length ? (
+              <VStack alignment="leading" spacing={8}>
+              <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(colors.textSecondary)]}>{t("models.options.reasoningEffort")}</Text>
               <Picker
                 label={t("models.options.reasoningEffort")}
                 selection={config.effort}
                 onSelectionChange={(effort: string) =>
                   options.onChange({ ...config, effort })
                 }
-                modifiers={[pickerStyle("menu"), disabled(p.busy)]}
+                modifiers={[pickerStyle("segmented"), disabled(p.busy), frame({ minHeight: 44 })]}
                 testID={`${p.testID}.effort`}
               >
                 {options.row.entry.capabilities[config.agent]!.efforts.map(
@@ -466,46 +441,24 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
                   ),
                 )}
               </Picker>
+              </VStack>
             ) : null}
-            {options.fastCapable &&
-            options.row.entry.capabilities[config.agent]
-              ?.supportsUltrafastMode ? (
+            {options.fastCapable ? (
+              <VStack alignment="leading" spacing={8}>
+              <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(colors.textSecondary)]}>{t("models.options.speed.label")}</Text>
               <Picker
                 label={t("models.options.speed.label")}
-                selection={
-                  config.fast === "ultrafast"
-                    ? "ultrafast"
-                    : config.fast
-                      ? "fast"
-                      : "standard"
-                }
-                onSelectionChange={(value: string) =>
-                  options.onChange({
-                    ...config,
-                    fast:
-                      value === "ultrafast" ? "ultrafast" : value === "fast",
-                  })
-                }
-                modifiers={[pickerStyle("menu"), disabled(p.busy)]}
+                selection={config.fast === "ultrafast" ? "ultrafast" : config.fast ? "fast" : "standard"}
+                onSelectionChange={(value: string) => options.onChange({ ...config, fast: value === "ultrafast" ? "ultrafast" : value === "fast" })}
+                modifiers={[pickerStyle("segmented"), disabled(p.busy), frame({ minHeight: 44 })]}
                 testID={`${p.testID}.speed`}
               >
-                {(["standard", "fast", "ultrafast"] as const).map((value) => (
-                  <Text key={value} modifiers={[tag(value)]}>
-                    {t(`models.options.speed.${value}`)}
-                  </Text>
-                ))}
+                {(options.row.entry.capabilities[config.agent]?.supportsUltrafastMode
+                  ? ["standard", "fast", "ultrafast"] : ["standard", "fast"]).map(value => (
+                    <Text key={value} modifiers={[tag(value)]}>{t(`models.options.speed.${value}`)}</Text>
+                  ))}
               </Picker>
-            ) : options.fastCapable ? (
-              <HStack>
-                {mark(Zap, true)}
-                <Toggle
-                  label={t("models.options.fastMode")}
-                  isOn={!!config.fast}
-                  onIsOnChange={(fast) => options.onChange({ ...config, fast })}
-                  modifiers={[disabled(p.busy), tint(colors.inputCaret)]}
-                  testID={`${p.testID}.fast`}
-                />
-              </HStack>
+              </VStack>
             ) : null}
           </Section>
           {!options.editingFavorite ? (

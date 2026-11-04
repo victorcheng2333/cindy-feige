@@ -4,25 +4,19 @@ import { ErrorNotice } from "@/components/ErrorNotice";
 /**
  * 统一模型选择器的 Android / 兼容呈现(iOS 见 UnifiedModelPickerView.ios.tsx)。
  *
- * 交互与 iOS 同构:顶部搜索(跨来源)+ 右侧「来源」入口进二级来源页(带周配额进度条);
- * 列表按 收藏 → 推荐(仅已有任务)→ 各来源 分组(分组与顺序由 UnifiedModelPickerSheet 产出);
- * 行内设置入口进单模型设置页:Harness 二级页选完自动回设置主页、推理强度下拉
- * (NativePullDownMenu,包里没有 MenuView 时退回行内展开)、Fast 开关、收藏 / 恢复推荐独立行。
+ * 交互与 iOS 同构:顶部 Harness 分段 + 独立「来源」入口进二级来源页(带周配额进度条);
+ * 列表按 收藏 → 各来源 分组(分组与顺序由 UnifiedModelPickerSheet 产出);
+ * 行内设置入口进单模型参数页，推理强度与速度直接选择；收藏编辑 / 恢复推荐沿用已有保存边界。
  * 外观保持 Android:SheetModal + SheetSurface 单 Modal 内导航、RN 自绘分组行与主题 token。
  */
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Brain,
   ChevronRight,
-  ChevronsUpDown,
   Check,
   LayoutGrid,
-  Search,
   SlidersHorizontal,
   Star,
-  X,
-  Zap,
 } from "lucide-react-native";
 import {
   Pressable,
@@ -31,17 +25,12 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
-  type TextInput as RNTextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { Text, TextInput } from "@/components/AppText";
+import { Text } from "@/components/AppText";
 import { MobileAgentMark } from "@/components/MobileAgentMark";
-import {
-  NativePullDownMenu,
-  NativeSwitch,
-  usesNativePullDownMenu,
-} from "@/platform/chrome";
+
 import {
   fontWeight,
   iconSize,
@@ -192,10 +181,8 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       }),
     [height, insets.top],
   );
-  const [snap, setSnap] = useState<ContextSheetSnap>("half");
+  const [snap, setSnap] = useState<ContextSheetSnap>("full");
   const [page, setPage] = useState<Page>(null);
-  const [effortExpanded, setEffortExpanded] = useState(false);
-  const searchRef = useRef<RNTextInput>(null);
   const modelListRef = useRef<FlatList>(null);
   const modelItems = useMemo(
     () =>
@@ -212,14 +199,13 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
   );
   useEffect(() => {
     modelListRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [p.query, p.filter]);
+  }, [p.filter, p.browsingAgent]);
   // 与 iOS 同口径:重新打开或切换设置对象都回到主页。
   useEffect(() => {
     setPage(null);
-    setEffortExpanded(false);
   }, [p.visible, p.options?.row.key]);
   useEffect(() => {
-    if (p.visible) setSnap("half");
+    if (p.visible) setSnap("full");
   }, [p.visible]);
 
   const icon = (Icon: typeof Star, filled = false) => (
@@ -234,9 +220,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
     t(`models.options.effortLevels.${id}`, { defaultValue: id });
   const options = p.options;
   const showSecondary = !!options || !!page;
-  useEffect(() => {
-    if (showSecondary) searchRef.current?.blur();
-  }, [showSecondary]);
   const isFavorite = options?.isFavorite ?? !!options?.row.favorite;
   const config = options?.row.config;
   const back = page ? () => setPage(null) : p.onBack;
@@ -263,47 +246,23 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
     );
 
   const searchHeader = (
-    <View style={styles.searchRow}>
-      <View style={styles.searchField}>
-        <Search
-          color={colors.textSecondary}
-          size={iconSize.md}
-          strokeWidth={iconStroke.regular}
-        />
-        <TextInput
-          accessibilityLabel={t("models.picker.searchAccessibility")}
-          autoCapitalize="none"
-          autoCorrect={false}
-          onChangeText={p.onQuery}
-          // Android adjustResize:聚焦搜索时吸到 full,边输边看列表(与旧版模型浮窗同口径)。
-          onFocus={() => setSnap("full")}
-          placeholder={t("models.picker.searchPlaceholder")}
-          placeholderTextColor={colors.textPlaceholder}
-          ref={searchRef}
-          style={styles.searchInput}
-          testID={`${p.testID}.search`}
-          value={p.query}
-        />
-        {p.query ? (
-          <Pressable
-            accessibilityLabel={t("devices.detail.search.clearA11y")}
-            accessibilityRole="button"
-            hitSlop={4}
-            onPress={() => p.onQuery("")}
-            style={({ pressed }) => [
-              styles.iconButton,
-              pressed && styles.pressed,
-            ]}
-            testID={`${p.testID}.search.clear`}
-          >
-            <X
-              color={colors.textTertiary}
-              size={iconSize.md}
-              strokeWidth={iconStroke.regular}
-            />
-          </Pressable>
-        ) : null}
-      </View>
+    <View style={styles.pickerHeader}>
+      {(p.agents?.length ?? 0) > 1 ? (
+        <View style={styles.segments} accessibilityRole="tablist" testID={`${p.testID}.agentSwitcher`}>
+          {p.agents.map(agent => (
+            <Pressable key={agent} accessibilityRole="tab"
+              accessibilityLabel={mobileAgentLabel(agent)}
+              accessibilityState={{ selected: p.browsingAgent === agent, disabled: p.busy }}
+              disabled={p.busy} onPress={() => void p.onBrowseAgent(agent)}
+              style={[styles.segment, p.browsingAgent === agent && styles.segmentSelected]}
+              testID={`${p.testID}.agent.${agent}`}>
+              <MobileAgentMark agentKind={agent} color={colors.textPrimary} size={iconSize.sm} />
+              <Text style={styles.segmentText}>{mobileAgentLabel(agent)}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <View style={styles.sourceToolbar}>
       <Pressable
         accessibilityLabel={t("models.unified.source")}
         accessibilityRole="button"
@@ -325,6 +284,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
           strokeWidth={iconStroke.regular}
         />
       </Pressable>
+      </View>
     </View>
   );
 
@@ -413,61 +373,22 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
     options && config
       ? (options.row.entry.capabilities[config.agent]?.efforts ?? [])
       : [];
-  const nativeMenu = usesNativePullDownMenu();
-  const effortRow =
-    options && config && efforts.length ? (
-      <View>
-        <NativePullDownMenu
-          disabled={p.busy}
-          actions={efforts.map((effort) => ({
-            id: effort,
-            title: level(effort),
-            state: effort === config.effort ? "on" : "off",
-            disabled: p.busy,
-          }))}
-          onAction={(id) => {
-            const effort = efforts.find((item) => item === id);
-            if (p.busy || !effort) return;
-            options.onChange({ ...config, effort });
-          }}
-          testID={`${p.testID}.effortMenu`}
-        >
-          <Row
-            accessibilityLabel={`${t("models.options.reasoningEffort")}, ${level(config.effort)}`}
-            disabled={p.busy}
-            onPress={() => {
-              if (!nativeMenu) setEffortExpanded((open) => !open);
-            }}
-            leading={icon(Brain)}
-            testID={`${p.testID}.effort`}
-            title={t("models.options.reasoningEffort")}
-            trailing={
-              <ChevronsUpDown
-                color={colors.textTertiary}
-                size={iconSize.sm}
-                strokeWidth={iconStroke.regular}
-              />
-            }
-            value={config.effort ? level(config.effort) : null}
-          />
-        </NativePullDownMenu>
-        {!nativeMenu && effortExpanded
-          ? efforts.map((effort) => (
-              <Row
-                disabled={p.busy}
-                key={effort}
-                onPress={() => {
-                  options.onChange({ ...config, effort });
-                  setEffortExpanded(false);
-                }}
-                selected={effort === config.effort}
-                testID={`${p.testID}.effort.${effort}`}
-                title={level(effort)}
-              />
-            ))
-          : null}
+  const effortRow = options && config && efforts.length ? (
+    <View style={styles.choiceGroup}>
+      <Text style={styles.footnote}>{t("models.options.reasoningEffort")}</Text>
+      <View style={styles.segments}>
+        {efforts.map(effort => (
+          <Pressable key={effort} accessibilityRole="radio"
+            accessibilityState={{ selected: config.effort === effort, disabled: p.busy }}
+            disabled={p.busy} onPress={() => options.onChange({ ...config, effort })}
+            style={[styles.segment, config.effort === effort && styles.segmentSelected]}
+            testID={`${p.testID}.effort.${effort}`}>
+            <Text style={styles.segmentText}>{level(effort)}</Text>
+          </Pressable>
+        ))}
       </View>
-    ) : null;
+    </View>
+  ) : null;
 
   const settingsPage =
     options && config ? (
@@ -493,6 +414,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
           </Text>
         ) : null}
         <Group>
+          {options.editingFavorite ? (
           <Row
             disabled={p.busy}
             leading={
@@ -514,46 +436,24 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             }
             value={mobileAgentLabel(config.agent)}
           />
+          ) : null}
           {effortRow}
-          {options.fastCapable &&
-          options.row.entry.capabilities[config.agent]
-            ?.supportsUltrafastMode ? (
-            <>
-              {(["standard", "fast", "ultrafast"] as const).map((speed) => {
-                const value =
-                  speed === "ultrafast" ? "ultrafast" : speed === "fast";
-                return (
-                  <Row
-                    key={speed}
-                    disabled={p.busy}
-                    title={t(`models.options.speed.${speed}`)}
-                    onPress={() => options.onChange({ ...config, fast: value })}
-                    trailing={
-                      config.fast === value ? (
-                        <Check
-                          size={iconSize.action}
-                          color={colors.textPrimary}
-                        />
-                      ) : null
-                    }
-                  />
-                );
-              })}
-            </>
-          ) : options.fastCapable ? (
-            <View style={styles.row}>
-              <View style={styles.leading}>{icon(Zap, true)}</View>
-              <Text numberOfLines={1} style={[styles.rowTitle, styles.rowMain]}>
-                {t("models.options.fastMode")}
-              </Text>
-              <NativeSwitch
-                accessibilityLabel={t("models.options.fastMode")}
-                disabled={p.busy}
-                onValueChange={(fast) => options.onChange({ ...config, fast })}
-                seedColor={colors.cta}
-                testID={`${p.testID}.fast`}
-                value={!!config.fast}
-              />
+          {options.fastCapable ? (
+            <View style={styles.choiceGroup}>
+              <Text style={styles.footnote}>{t("models.options.speed.label")}</Text>
+              <View style={styles.segments}>
+                {(options.row.entry.capabilities[config.agent]?.supportsUltrafastMode
+                  ? ["standard", "fast", "ultrafast"] : ["standard", "fast"]).map(speed => {
+                  const value = speed === "ultrafast" ? "ultrafast" : speed === "fast";
+                  return <Pressable key={speed} accessibilityRole="radio"
+                    accessibilityState={{ selected: config.fast === value, disabled: p.busy }}
+                    disabled={p.busy} onPress={() => options.onChange({ ...config, fast: value })}
+                    style={[styles.segment, config.fast === value && styles.segmentSelected]}
+                    testID={`${p.testID}.speed.${speed}`}>
+                    <Text style={styles.segmentText}>{t(`models.options.speed.${speed}`)}</Text>
+                  </Pressable>;
+                })}
+              </View>
             </View>
           ) : null}
         </Group>
@@ -687,15 +587,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               {row.costMarks ? (
                 <Text style={styles.meta}>{row.costMarks}</Text>
               ) : null}
-              <MobileAgentMark
-                agentKind={row.config.agent}
-                color={colors.textSecondary}
-              />
-              {row.effortLabel ? (
-                <Text numberOfLines={1} style={styles.meta}>
-                  {row.effortLabel}
-                </Text>
-              ) : null}
               {row.config.fast ? (
                 <ModelSpeedIcon
                   mode={row.config.fast}
@@ -796,7 +687,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
           heights={heights}
           onClose={p.onClose}
           onSnapChange={(next) => {
-            if (next === "half") searchRef.current?.blur();
             setSnap(next);
           }}
           pinnedTop={searchHeader}
@@ -834,6 +724,10 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
                           <Text style={styles.groupLabel}>
                             {item.group.title}
                           </Text>
+                          {item.group.quota ? <View style={styles.sourceToolbar}>
+                            <Text style={styles.footnote}>{item.group.quota.label}</Text>
+                            <ModelQuotaBar remaining={item.group.quota.remaining} label={item.group.quota.label} />
+                          </View> : null}
                         </View>
                       ) : (
                         <View>
@@ -864,13 +758,15 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             onBack={back}
             onClose={p.onClose}
             onSnapChange={(next) => {
-              // 拖回 half 视为想收起键盘(与旧版模型浮窗同口径)。
-              if (next === "half") searchRef.current?.blur();
               setSnap(next);
             }}
             snap={snap}
             testID={p.testID}
             title={title}
+            footer={!page && options && !options.row.selected && !options.editingFavorite ? (
+              <Row title={t("models.picker.useModel")} onPress={() => p.onSelect(options.row)}
+                disabled={p.busy || options.row.disabled} testID={`${p.testID}.useModel`} />
+            ) : undefined}
           >
             {p.error ? <ErrorNotice message={p.error} /> : null}
             {page === "sources"
@@ -889,6 +785,14 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
 
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
+    pickerHeader: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+    sourceToolbar: { alignItems: 'flex-end' },
+    choiceGroup: { padding: spacing.md, gap: spacing.sm },
+    segments: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, padding: spacing.xs, backgroundColor: colors.surfaceChip, borderRadius: radius.container },
+    segment: { flexGrow: 1, flexBasis: 60, minHeight: 44, paddingHorizontal: spacing.xs, flexDirection: 'row', gap: spacing.xs, alignItems: 'center', justifyContent: 'center', borderRadius: radius.control },
+    segmentSelected: { backgroundColor: colors.surfaceElevated },
+    segmentText: { color: colors.textPrimary, fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.medium },
+
     hiddenList: { opacity: 0 },
     secondaryLayer: {
       position: "absolute",

@@ -113,6 +113,7 @@ import { Text, TextInput } from '@/components/AppText';
 import { usePendingQuestionScroll } from '@/session/usePendingQuestionScroll';
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 import { MobileAgentMark } from '@/components/MobileAgentMark';
+import { RemoteSourceMark } from '@/session/RemoteSourceMark';
 import { mobileInteractionStyles } from '@/components/mobileInteractionStyles';
 import { SessionHeaderNativeBack, SessionHeaderNativeActions, SessionHeaderNativeTitle, SessionHeaderNativeBlur } from '@/session/SessionHeaderNativeControls';
 import { TaskTagDots } from '@/session/TaskTags';
@@ -1084,6 +1085,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     focusComposerRequestKey?: string;
     focusRequestKey?: string;
     visualFocusComposer?: string;
+    visualOpenModelPicker?: string;
     openSearch?: string;
     openSearchRequest?: string;
     visualOpenSearch?: string;
@@ -1113,6 +1115,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const routeFocusComposerRequestKey = readRouteParam(params.focusComposerRequestKey);
   const routeFocusRequestKey = readRouteParam(params.focusRequestKey);
   const visualFocusComposer = MOBILE_VISUAL_MOCK_ENABLED && readRouteParam(params.visualFocusComposer) === '1';
+  const visualOpenModelPicker = MOBILE_VISUAL_MOCK_ENABLED && readRouteParam(params.visualOpenModelPicker) === '1';
   const visualOpenSearch = MOBILE_VISUAL_MOCK_ENABLED && readRouteParam(params.visualOpenSearch) === '1';
   const visualSearchQuery = MOBILE_VISUAL_MOCK_ENABLED ? readRouteParam(params.visualSearchQuery) : null;
   const navigation = useNavigation<SessionRouteParamsNavigation & {
@@ -1339,6 +1342,10 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
   // 已建会话的模型浮窗可先浏览另一 Agent；只改此浏览态不触碰会话，选模型才登记 intent。
   const [modelSheetAgentKind, setModelSheetAgentKind] = useState<MobileSessionAgentKind>('claude-code');
+  const modelSheetApprovedAgentRef = useRef<MobileSessionAgentKind | null>(null);
+  useEffect(() => {
+    modelSheetApprovedAgentRef.current = null;
+  }, [modelSheetOpen, deviceId, sessionId]);
   const [attachments, setAttachments] = useState<RemoteSerializedAttachment[]>([]);
   // send() 里 await 在途图片上传后闭包里的 attachments 已是旧值,经 ref 读最新列表。
   const attachmentsRef = useRef(attachments);
@@ -7564,28 +7571,13 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
             accessibilityLabel={composerRuntimeAccessibilityLabel}
             fastOn={composerPillFastOn}
             label={composerRuntimeLabel}
-            leading={agentSwitchIntent && composerSwitchesAgent ? (
-              <MobileAgentMark
-                agentKind={agentSwitchIntent.targetAgentKind}
-                color={colors.textSecondary}
-                size={iconSize.sm}
-              />
-            ) : composerPillSourceId ? (
-              // 正常态显示真正生效来源；断开态显示 DB 中的真实来源并使用状态色，
-              // 不静默换成 activeSourceId 的默认回退 Logo。
-              // Agent(下一条消息起)在另一台电脑运行:与桌面 trigger 同一个远程标记。
-              <MobileModelIconMark
-                color={composerSelectedSourceDisconnected ? colors.statusError : undefined}
-                icon={composerDisplaySession && composerPillSourceProvider
-                  ? getModel(composerPillSourceProvider, composerDisplaySession.model, composerDisplayAgentKind)?.icon
-                  : undefined}
-                name={composerPillSourceProvider?.name ?? composerPillSourceId}
-                providerId={composerPillSourceId}
-                routing={composerPillSourceProvider?.routing}
-                logoKind={composerPillSourceProvider?.logoKind}
-                remote={Boolean(nextAgentDeviceId)}
-              />
-            ) : null}
+            leading={nextAgentDeviceId ? (
+              <RemoteSourceMark size={iconSize.sm} inset={{ x: 0, y: 0 }}>
+                <MobileAgentMark agentKind={composerDisplayAgentKind}
+                  color={composerSelectedSourceDisconnected ? colors.statusError : colors.textSecondary} size={iconSize.sm} />
+              </RemoteSourceMark>
+            ) : <MobileAgentMark agentKind={composerDisplayAgentKind}
+              color={composerSelectedSourceDisconnected ? colors.statusError : colors.textSecondary} size={iconSize.sm} />}
             onPress={toggleComposerModelPicker}
             testID="session.composerModelButton"
           />
@@ -7870,6 +7862,22 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
 
 
     return {
+      pendingSelection: agentSwitchIntent && currentSession ? (
+        <View style={styles.modelSwitchNotice} testID="session.modelSwitchNotice">
+          <Text style={styles.modelSwitchNoticeText} numberOfLines={1}>{composerRuntimeAccessibilitySummary}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('models.agentSwitch.cancel')}
+            disabled={controlBusy || !canUseRemoteSessionControls}
+            onPress={() => void writeSessionAgentSwitchIntent({
+              targetAgentKind: sessionAgentKind, model: currentSession.model,
+              providerId: currentSession.providerId ?? null, effort: currentSession.effort ?? '',
+              fastMode: currentSession.fastMode ?? false,
+              ...(intentChangesAgentLocation(agentSwitchIntent) ? { agentDeviceId: currentSession.agentDeviceId ?? null } : {}),
+            })}
+            style={styles.modelSwitchCancel} testID="session.cancelModelSwitch">
+            <Text style={styles.modelSwitchNoticeText}>{t('models.agentSwitch.cancel')}</Text>
+          </Pressable>
+        </View>
+      ) : null,
       toolbar: renderComposerToolbar(),
       leading: renderComposerCompactLeading(),
       trailing: renderComposerTrailingActions(),
@@ -9210,7 +9218,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       if (config.agent === 'cursor') return false;
       if (!sessionAgentSwitchSupported) return false;
       // 换电脑与换引擎是同一份交接风险:换电脑那一步已经确认过,不再叠一层换引擎确认。
-      if (!relocates && agentSwitchIntent?.targetAgentKind !== config.agent && !(await confirmMobileSessionAgentSwitch(config.agent, !!agentSwitchIntent,
+      if (!relocates && modelSheetApprovedAgentRef.current !== config.agent && agentSwitchIntent?.targetAgentKind !== config.agent && !(await confirmMobileSessionAgentSwitch(config.agent, !!agentSwitchIntent,
           ))) return false;
       const applied = await writeSessionAgentSwitchIntent({targetAgentKind:config.agent,model:config.modelId,
         providerId:config.providerId,effort:config.effort,fastMode:config.fast,...location});
@@ -9312,6 +9320,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       const confirmed = await confirmMobileSessionAgentSwitch(next, !!agentSwitchIntent);
       if (!confirmed) return false;
     }
+    modelSheetApprovedAgentRef.current = next;
     setModelSheetAgentKind(next);
     return true;
   }, [agentSwitchIntent, modelSheetAgentKind, sessionAgentKind, sessionAgentSwitchSupported]);
@@ -9343,6 +9352,16 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       void runControlAction(() => maker.setFastMode(sessionId, enabled), { fastMode: enabled });
     }
   }, [agentSwitchIntent, canConfigureSessionModel, maker, modelSheetAgentKind, orcaModelSelectionUsesIntent, runControlAction, sessionAgentKind, sessionId, writeSessionAgentSwitchIntent]);
+  const visualPickerOpenedRef = useRef('');
+  useEffect(() => {
+    const key = `${deviceId}:${sessionId}`;
+    if (visualOpenModelPicker && canConfigureSessionModel && visualPickerOpenedRef.current !== key) {
+      visualPickerOpenedRef.current = key;
+      setModelSheetAgentKind(agentSwitchIntent?.targetAgentKind ?? sessionAgentKind);
+      setModelSheetOpen(true);
+    }
+  }, [visualOpenModelPicker, canConfigureSessionModel, deviceId, sessionId, agentSwitchIntent, sessionAgentKind]);
+
   const toggleComposerModelPicker = useCallback(() => {
     if (!canConfigureSessionModel) {
       setModelSheetOpen(false);
@@ -9352,6 +9371,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       setModelSheetOpen(false);
       return;
     }
+    modelSheetApprovedAgentRef.current = null;
     setModelSheetAgentKind(agentSwitchIntent?.targetAgentKind ?? sessionAgentKind);
     setModelSheetOpen(true);
   }, [agentSwitchIntent, canConfigureSessionModel, modelSheetOpen, sessionAgentKind]);
@@ -12369,6 +12389,7 @@ interface SessionComposerControls {
   leading: ReactNode;
   trailing: ReactNode;
   attachmentTray: ReactNode;
+  pendingSelection?: ReactNode;
   voiceButton: (style?: StyleProp<ViewStyle>) => ReactNode;
 }
 interface SessionComposerInputProps {
@@ -12804,6 +12825,7 @@ function SessionComposerInput({
                     {attachmentError}
                   </Text>
                 ) : null}
+                {controls.pendingSelection}
                 {/* Keep UIKit's shadow outside the scrolling viewport's rectangular clip. */}
                 <ComposerFrame
                   onTouchStart={recommendationPresentation.hide}
@@ -13631,6 +13653,9 @@ function ComposerPaletteFrame({
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  modelSwitchNotice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
+  modelSwitchNoticeText: { flexShrink: 1, color: colors.textSecondary, fontSize: typeScale.footnote, lineHeight: lineHeight.caption, fontWeight: fontWeight.regular },
+  modelSwitchCancel: { marginLeft: 'auto', minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
   safeArea: { flex: 1, backgroundColor: colors.surface },
   keyboard: { flex: 1 },
   sessionChrome: {

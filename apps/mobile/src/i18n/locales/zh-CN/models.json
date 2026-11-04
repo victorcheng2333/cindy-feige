@@ -1,5 +1,6 @@
 {
   "picker": {
+    "useModel": "使用此模型",
     "title": "模型",
     "permissionTitle": "权限",
     "searchAccessibility": "搜索模型",

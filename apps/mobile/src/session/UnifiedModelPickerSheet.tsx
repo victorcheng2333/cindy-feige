@@ -131,6 +131,7 @@ export interface UnifiedMobileGroup {
   key: string;
   title: string;
   rows: UnifiedMobileRow[];
+  quota?: { remaining: number; label: string };
 }
 export interface UnifiedMobilePickerViewProps {
   visible: boolean;
@@ -139,8 +140,9 @@ export interface UnifiedMobilePickerViewProps {
   onBack?: () => void;
   title: string;
   testID: string;
-  query: string;
-  onQuery(value: string): void;
+  agents: readonly AgentKind[];
+  browsingAgent: AgentKind;
+  onBrowseAgent(agent: AgentKind): Promise<void>;
   filter: string;
   onFilter(value: string): void;
   filters: {
@@ -194,7 +196,7 @@ export function UnifiedModelPickerSheet(
   const prefs = useMobileModelPreferences(p.unified.scope, p.visible, p.unified.preferenceScope === 'request');
   useDraftModelMemoryVersion();
   useSessionModelMirrorVersion();
-  const [query, setQuery] = useState("");
+  const [browsingAgent, setBrowsingAgent] = useState<AgentKind>(p.agentKind);
   const [filter, setFilter] = useState("all");
   const [target, setTarget] = useState<{
     providerId: string;
@@ -228,7 +230,7 @@ export function UnifiedModelPickerSheet(
   useEffect(() => {
     if (!p.visible) return;
     opening.current += 1;
-    setQuery("");
+    setBrowsingAgent(p.agentKind);
     setFilter("all");
     initialRemoteFilter.current = true;
     filterTouched.current = false;
@@ -452,12 +454,12 @@ export function UnifiedModelPickerSheet(
     favorite?: MobileModelFavorite,
   ): UnifiedMobileRow => {
     const selected =
-      entry.providerId === sourceId && matchesEntry(entry, p.activeModelId);
+      entry.providerId === sourceId && matchesEntry(entry, p.activeModelId) && browsingAgent === p.agentKind;
     const config = resolveMobileModelConfig(entry, {
       favorite,
       live: !favorite && selected ? selection : undefined,
       pinned: p.existingSessionRoute ? p.agentKind : undefined,
-      override: prefs.value.engines[modelKey(entry.providerId, entry.modelId)],
+      override: browsingAgent,
       memory: p.modelMemory,
       fastCapable,
     });
@@ -562,7 +564,7 @@ export function UnifiedModelPickerSheet(
       !favorite &&
       directory.sourceId !== null &&
       entry.providerId === directory.sourceId &&
-      matchesEntry(entry, p.activeModelId);
+      matchesEntry(entry, p.activeModelId) && browsingAgent === p.agentKind;
     const key =
       favorite?.uid ??
       `remote:${catalog.deviceId}:${modelKey(entry.providerId, entry.modelId)}`;
@@ -572,13 +574,14 @@ export function UnifiedModelPickerSheet(
     // 不用手机这边按被控电脑供应商记的引擎偏好与档位记忆:同 id 的供应商在两台电脑上不是同一个。
     // 收藏行按收藏副本解析(位置已从 providerId 里拆出来,这里是那台电脑上的供应商 id)。
     const config =
-      (!selected && !favorite ? remoteConfigs.get(key) : undefined) ??
+      (!selected && !favorite && remoteConfigs.get(key)?.agent === browsingAgent ? remoteConfigs.get(key) : undefined) ??
       resolveMobileModelConfig(entry, {
         favorite,
         live: selected
           ? { ...selection, providerId: directory.sourceId ?? "" }
           : undefined,
         pinned: p.existingSessionRoute ? p.agentKind : undefined,
+        override: browsingAgent,
         // Remote catalog capabilities are independent of the host installation.
         fastCapable: () => true,
       });
@@ -657,10 +660,7 @@ export function UnifiedModelPickerSheet(
       : providerName(row.entry.providerId);
   };
   const matches = (row: UnifiedMobileRow) =>
-    !query.trim() ||
-    `${row.entry.displayName} ${row.entry.modelId} ${row.entry.description ?? ""} ${rowProviderName(row)}`
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase());
+    row.entry.candidates.includes(browsingAgent) && row.config.agent === browsingAgent;
   // 停在(或点过)一个被收进组里的来源时,改看收着它的组那一项:组摘要读到得晚,刚打开时可能先停在了组员上。
   const groupFilterOf = (entry: MobileProviderGroupEntry) =>
     entry.deviceId === null
@@ -678,7 +678,7 @@ export function UnifiedModelPickerSheet(
     return null;
   })();
   const shownFilter = hiddenFilterTarget ?? filter;
-  const all = query.trim() || shownFilter === "all";
+  const all = shownFilter === "all";
   const filtered = rows.filter(
     (row) => matches(row) && (all || shownFilter === row.entry.providerId),
   );
@@ -690,28 +690,20 @@ export function UnifiedModelPickerSheet(
       title: t("models.unified.favorites"),
       rows: favoriteRows,
     });
-  const recommended =
-    all && p.existingSessionRoute
-      ? filtered
-          .filter((row) => row.selected || row.config.agent === p.agentKind)
-          .sort((a, b) => Number(b.selected) - Number(a.selected))
-      : [];
-  if (recommended.length)
-    groups.push({
-      key: "recommended",
-      title: t("models.unified.recommended"),
-      rows: recommended,
-    });
   if (all || shownFilter !== "favorites")
     for (const provider of p.providers) {
       const group = filtered.filter(
         (row) =>
-          row.entry.providerId === provider.id && !recommended.includes(row),
+          row.entry.providerId === provider.id,
       );
       if (group.length)
         groups.push({
           key: provider.id,
           title: providerName(provider.id),
+          quota: quotas[provider.id]?.remaining !== undefined ? {
+            remaining: quotas[provider.id]!.remaining!,
+            label: t("session.menu.usage.remaining", { percent: quotas[provider.id]!.remaining }),
+          } : undefined,
           rows: group,
         });
     }
@@ -790,11 +782,15 @@ export function UnifiedModelPickerSheet(
   const recommendedConfig =
     row &&
     resolveMobileModelConfig(row.entry, {
+      override: browsingAgent,
       pinned: p.existingSessionRoute ? p.agentKind : undefined,
       fastCapable: row.remoteDevice ? () => true : fastCapable,
     });
   const resetAgents = row
-    ? [...new Set([row.config.agent, recommendedConfig!.agent])]
+    ? [...new Set([row.config.agent, recommendedConfig!.agent,
+        ...(prefs.value.engines[modelKey(row.entry.providerId, row.entry.modelId)]
+          ? [prefs.value.engines[modelKey(row.entry.providerId, row.entry.modelId)]] : []),
+      ])]
     : [];
   const localCanReset =
     !!row &&
@@ -1078,8 +1074,28 @@ export function UnifiedModelPickerSheet(
           : (row?.entry.displayName ?? p.title ?? t("models.picker.title"))
       }
       testID={p.testID ?? "modelSheet"}
-      query={query}
-      onQuery={setQuery}
+      agents={p.unified.agents}
+      browsingAgent={browsingAgent}
+      onBrowseAgent={async (agent) => {
+        if (agent === browsingAgent || !p.unified.agents.includes(agent)) return;
+        await transact(async (isCurrent) => {
+          if (p.agentSwitch && agent !== 'cursor') {
+            if (await p.agentSwitch.onBrowseAgent(agent) === false) return;
+          }
+          if (!isCurrent()) return;
+          setBrowsingAgent(agent);
+          // Keep a chosen source when it offers this engine. Otherwise show the
+          // full catalog instead of an unexplained empty list from the old source.
+          if (shownFilter !== 'all' && shownFilter !== 'favorites') {
+            const available = entries.some(entry => entry.providerId === shownFilter && entry.candidates.includes(agent))
+              || remoteDirectories.some(({ catalog, entries: candidates }) => candidates.some(entry =>
+                remoteFilterId(catalog.deviceId, entry.providerId) === shownFilter && entry.candidates.includes(agent)));
+            if (!available) setFilter('all');
+          }
+          setTarget(null);
+          setFavoriteEdit(null);
+        });
+      }}
       filter={shownFilter}
       onFilter={(value) => {
         initialRemoteFilter.current = false;
@@ -1158,6 +1174,7 @@ export function UnifiedModelPickerSheet(
               onChange: change,
               context: [
                 rowProviderName(row),
+                mobileAgentLabel(row.config.agent),
                 cap?.contextWindow
                   ? t("models.picker.contextSuffix", {
                       size: `${Math.round(cap.contextWindow / 1000)}K`,

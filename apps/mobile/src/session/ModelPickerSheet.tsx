@@ -8,7 +8,7 @@ import { modelNeedsReselection } from './modelReselection';
 import { UnifiedModelPickerSheet, type UnifiedMobilePickerOptions } from './UnifiedModelPickerSheet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, Search, X } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import {
   Animated,
   Easing,
@@ -20,7 +20,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import type { TextInput as RNTextInput } from 'react-native';
-import { Text, TextInput } from '@/components/AppText';
+import { Text } from '@/components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MobileAgentCapabilities, MobileChoiceOption, MobileModelOption } from '@/session/agentCapabilities';
@@ -345,42 +345,6 @@ function LegacyModelPickerSheet({
   );
   const permissionLabel = permission.label;
 
-  const searchRow = (
-    <View style={styles.searchRow}>
-      <Search color={colors.textTertiary} size={iconSize.sm} strokeWidth={iconStroke.regular} />
-      <TextInput
-        accessibilityLabel={t('models.picker.searchAccessibility')}
-        autoCapitalize="none"
-        autoCorrect={false}
-        // Android 靠原生 adjustResize 避让键盘(SheetModal 在 Android 不套 KAV,见其头注释):
-        // 停在 half 档时键盘一开,面板缩成「0.56 ×(屏高−键盘)」的一小条,列表几乎没了。
-        // 聚焦搜索时吸到 full,铺满键盘上方全部可用高度,边打字边看列表。失焦不收回(留 full,
-        // 少一次跳动)。iOS 走 KAV padding 把 half 面板顶到键盘上方即可,吸 full 反而会把面板
-        // 顶部(含搜索框)推出屏幕外,故不在 iOS 触发。
-        onFocus={Platform.OS === 'android' ? () => setPrimarySnap('full') : undefined}
-        onChangeText={setQuery}
-        placeholder={t('models.picker.searchPlaceholder')}
-        placeholderTextColor={colors.textPlaceholder}
-        ref={searchInputRef}
-        style={styles.searchInput}
-        testID={`${testID}.search`}
-        value={query}
-      />
-      {query ? (
-        <Pressable
-          accessibilityLabel={t('devices.detail.search.clearA11y')}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => setQuery('')}
-          style={({ pressed }) => [styles.searchClear, pressed && { opacity: 0.6 }]}
-          testID={`${testID}.search.clear`}
-        >
-          <X color={colors.textTertiary} size={iconSize.sm} strokeWidth={iconStroke.regular} />
-        </Pressable>
-      ) : null}
-    </View>
-  );
-
   const agentContent = (<>
       {providersReady && modelNeedsReselection(modelVisibilityOverrides, agentKind, activeModelId, selectedProviderId) ? (
         <Text style={styles.modelHiddenHint} testID={`${testID}.modelHiddenHint`}>
@@ -412,7 +376,6 @@ function LegacyModelPickerSheet({
   const primaryPinnedTop = (
     <View style={styles.pinnedTop}>
       {agentContent}
-      {searchRow}
     </View>
   );
 

@@ -1,5 +1,6 @@
 {
   "picker": {
+    "useModel": "이 모델 사용",
     "title": "모델",
     "permissionTitle": "권한",
     "searchAccessibility": "모델 검색",

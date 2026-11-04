@@ -1,5 +1,6 @@
 {
   "picker": {
+    "useModel": "Usar este modelo",
     "title": "Modelo",
     "permissionTitle": "Permissões",
     "searchAccessibility": "Pesquisar modelos",
