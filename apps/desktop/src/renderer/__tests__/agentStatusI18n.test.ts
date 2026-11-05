@@ -16,10 +16,26 @@ describe('localizeAgentStatus', () => {
   it('localizes Cindy-owned static status labels', () => {
     expect(localizeAgentStatus('Thinking...', i18n.t)).toBe('正在思考…');
     expect(localizeAgentStatus('Editing files...', i18n.t)).toBe('正在编辑文件…');
-    expect(localizeAgentStatus('Working', i18n.t)).toBe('正在工作…');
+    expect(localizeAgentStatus('Working', i18n.t)).toBe('正在处理…');
     expect(localizeAgentStatus('Running', i18n.t)).toBe('运行中…');
     expect(localizeAgentStatus('Spawning agent...', i18n.t)).toBe('正在启动 Subagent…');
     expect(localizeAgentStatus('Done', i18n.t)).toBe('已完成');
+  });
+
+  // #8894: the status bar previously translated Generating literally, even
+  // between tool calls. Unit coverage of the public presentation entry: no
+  // live block means processing; live text/tool events determine the action.
+  it('uses real activity for generic running states without changing image generation', () => {
+    expect(localizeAgentStatus('Generating...', i18n.t)).toBe('正在处理…');
+    expect(localizeAgentStatus('Generating image...', i18n.t)).toBe('正在生成图片…');
+    expect(localizeAgentStatus('Generating...', i18n.t, {
+      startedAt: null,
+      messages: [{ clientId: 'reply', role: 'assistant', content: 'Hello', isStreaming: true }],
+    })).toBe('正在回复…');
+    expect(localizeAgentStatus('Working...', i18n.t, {
+      startedAt: null,
+      messages: [{ clientId: 'read', role: 'tool_use', content: '', toolName: 'Read', toolInput: { file_path: '/tmp/example.txt' } }],
+    })).toBe('正在读取文件…');
   });
 
   it('keeps the command or tool name while localizing the running suffix', () => {

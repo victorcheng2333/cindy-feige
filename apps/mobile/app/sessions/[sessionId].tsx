@@ -40,6 +40,7 @@ import { CHAT_HEADER_BLUR_FADE_INSIDE, ChatIdentityHeader } from '@/session/Chat
 import { useHiddenHistoryChase } from '@/session/hiddenHistoryChase';
 import { collectCompanionPluginInvocations } from '@/session/pluginInvocations';
 import { COMPANION_STATUS_AVATAR_SIZE, CompanionWorkingStatus, useCompanionDisplayResource, useCompanionWorkingLabel } from '@/session/CompanionWorkingStatus';
+import { taskWorkingPhase } from '@/session/companionWorkingPhase';
 import { RemoteCompanionAvatar } from '@/components/RemoteCompanionAvatar';
 import { useRemoteResourceSession } from '@/session/useRemoteResourceSession';
 import { SharedTaskEndedState } from '@/session/SharedTaskEndedState';
@@ -11305,6 +11306,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                       availableRegion={composerRegion}
                       key={JSON.stringify([auth.accountGeneration, deviceId, sessionId])}
                       sessionKey={JSON.stringify([auth.accountGeneration, deviceId, sessionId])}
+                      status={remoteSessionRunStatus.status}
+                      messages={messages}
                       reconnectAttempt={remoteSessionRunStatus.reconnectAttempt}
                       pendingRecovery={pendingRecoveryStatus}
                       sideTaskRunning={remoteSessionRunStatus.sideTaskRunning}
@@ -13382,6 +13385,8 @@ function ComposerRuntimePill({
 function ComposerActivityStatus({
   availableRegion,
   sessionKey,
+  status,
+  messages,
   reconnectAttempt,
   pendingRecovery = null,
   sideTaskRunning,
@@ -13399,6 +13404,8 @@ function ComposerActivityStatus({
 }: {
   availableRegion?: LayoutRect;
   sessionKey: string;
+  status: string;
+  messages: readonly RemoteMessage[];
   reconnectAttempt: RemoteSessionRunStatus['reconnectAttempt'];
   /** 自愈 / 供应商组换电脑进行中：只显示这一行状态(与消息流里的进行中行同一个说法)。 */
   pendingRecovery?: { label: string; attempt?: number; maxAttempts?: number;
@@ -13521,6 +13528,11 @@ function ComposerActivityStatus({
   );
   // 三类进度共用这一个 attempt 字段, 但说法必须分开: 模型容量、请求限流与传输层重连
   // 的用户含义不同，混用会把用户引向错误的排查方向。
+  const phase = taskWorkingPhase(status, messages, startedAt);
+  const workingText = phase === 'waiting-input'
+    ? t('interaction.panel.awaitingAnswer')
+    : phase === 'waiting-approval' ? t('devices.companions.awaiting')
+    : t(`devices.companions.working.${phase}`);
   const activityText = reconnectAttempt
     ? t(
         reconnectAttempt.kind === 'overload'
@@ -13529,9 +13541,9 @@ function ComposerActivityStatus({
             ? 'session.screen.rateLimitRetrying'
             : 'session.screen.networkReconnecting',
       )
-    : // 发送等待超过阈值时,同一行先说明卡在哪一步;创建完成后回到「思考中」。
+    : // Slow sends explain the blocked step; normal work follows live activity.
       slowSendPhase ? t(`session.new.slowSend.${slowSendPhase}`)
-    : t('session.screen.thinking');
+    : workingText;
 
   return (
     <View

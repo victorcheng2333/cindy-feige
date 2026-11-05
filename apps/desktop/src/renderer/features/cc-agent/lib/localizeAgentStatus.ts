@@ -5,7 +5,6 @@ import { isSubagentParentToolUseId } from '@cindy/maker-shared/message-render';
 
 const STATUS_KEYS = new Map<string, string>([
   ['thinking', 'ccAgent.agentStatus.thinking'],
-  ['generating', 'ccAgent.agentStatus.generating'],
   ['editing files', 'ccAgent.agentStatus.editingFiles'],
   ['searching web', 'ccAgent.agentStatus.searchingWeb'],
   ['generating image', 'ccAgent.agentStatus.generatingImage'],
@@ -15,7 +14,6 @@ const STATUS_KEYS = new Map<string, string>([
   ['waiting on approval', 'ccAgent.sidebar.card.awaitingPermission'],
   ['waiting on input', 'ccAgent.sidebar.card.awaitingQuestion'],
   ['just wait', 'ccAgent.agentStatus.waiting'],
-  ['working', 'ccAgent.agentStatus.working'],
   ['running', 'ccAgent.agentStatus.running'],
 ]);
 
@@ -105,8 +103,20 @@ export function localizePlainAgentStatus(
  * and arbitrary status text verbatim. Raw terminal stdout/stderr never passes
  * through this helper.
  */
-export function localizeAgentStatus(status: string, t: TFunction): string {
-  const staticKey = STATUS_KEYS.get(normalizeStaticStatus(status));
+export function localizeAgentStatus(
+  status: string,
+  t: TFunction,
+  activity?: { messages: readonly Message[]; startedAt: number | null },
+): string {
+  const normalized = normalizeStaticStatus(status);
+  // Generic harness statuses do not prove that text is being generated.
+  // Reuse the composer's event-based phases when live activity is available.
+  if (normalized === 'generating' || normalized === 'working') {
+    return activity
+      ? localizePlainAgentStatus(status, activity.messages, activity.startedAt, t)
+      : t('ccAgent.agentStatus.processing');
+  }
+  const staticKey = STATUS_KEYS.get(normalized);
   if (staticKey) return t(staticKey);
 
   const trimmedStatus = status.trim();

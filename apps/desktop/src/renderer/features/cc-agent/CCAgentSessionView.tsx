@@ -251,6 +251,7 @@ import {
   remoteErrorMessageForBanner,
   makerChatStore,
   type AgentTaskUpdate,
+  type ChatMessage,
   type MessageDeliveryMode,
   type QueuedMessage,
 } from '@/lib/makerChatStore';
@@ -5635,6 +5636,7 @@ function CCAgentSessionContent({
                   key={sessionId}
                   sessionKey={sessionId ?? null}
                   status={composerStatus}
+                  messages={sideChatMessages}
                   reconnectStatus={reconnectStatus}
                   tokenUsage={agentStatus.tokenUsage}
                   outputTokens={agentStatus.outputTokens ?? 0}
@@ -6568,6 +6570,7 @@ const STATUS_BAR_FADE_MS = 400;
 
 function RunningStatusBar({
   status,
+  messages,
   reconnectStatus = null,
   tokenUsage,
   outputTokens = 0,
@@ -6588,6 +6591,7 @@ function RunningStatusBar({
   className,
 }: {
   status: string;
+  messages: readonly ChatMessage[];
   /** Same pending row / continuation owner as the message stream; overrides stale agent status. */
   reconnectStatus?: string | null;
   tokenUsage: number;
@@ -6693,7 +6697,7 @@ function RunningStatusBar({
       ? backgroundBashOnlyCount > 0
         ? t('chat.backgroundActivity.bashStatus', { count: backgroundBashOnlyCount })
         : t('chat.backgroundActivity.status')
-      : localizeAgentStatus(status, t));
+      : localizeAgentStatus(status, t, { messages, startedAt }));
   // F-COMPACT-1: when SDK is auto-summarizing the conversation, give the
   // status bar a distinct icon so the user can tell "Compacting..." apart
   // from "Thinking..." — both share the shimmer animation by design, but
