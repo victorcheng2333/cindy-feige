@@ -14,9 +14,9 @@ export interface ProjectScheduleConfig {
   recurring?: boolean;
   manual?: boolean;
   intervalMs?: number;
-  agentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  agentKind?: 'claude-code' | 'codex' | 'pi';
   /** 显式模型选择的 Harness；省略时保留旧配置的跟随绑定任务语义。 */
-  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  modelAgentKind?: 'claude-code' | 'codex' | 'pi';
   modelAgentDeviceId?: string;
   model?: string;
   /** 显式来源(供应商)id;省略 = 使用该 Agent 的原生默认来源。 */

@@ -1408,19 +1408,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "分池",
-      "auto": "Cursor 模型",
-      "api": "其他模型",
-      "total": "套餐额度",
-      "remaining": "各池剩余",
-      "separate": "Cursor 的额度池独立计算。",
-      "explanation": "一个池用完，不代表其他池也用完；各池百分比不能相加。",
-      "resetUnknown": "重置时间未知",
-      "extra": "额外消费",
-      "notRead": "暂未读取",
-      "extraHint": "在 Cursor 账单查看"
-    },
     "balance": {
       "name": "Cindy 余额",
       "quotaName": "Cindy 本期配额",
@@ -4393,18 +4380,6 @@
         "custom": "继续自定义配置，可获取模型列表或手动添加。",
         "configure": "前往配置",
         "keepCustom": "继续自定义"
-      },
-      "cursor": {
-        "description": "使用 Cursor 账号运行本机任务，费用由 Cursor 结算。支持自动、完全访问和计划；暂不支持询问、回退和分叉。",
-        "connect": "连接 Cursor",
-        "disconnect": "断开 Cursor",
-        "waiting": "请在浏览器中完成登录，最多等待五分钟。",
-        "stopWarning": "正在运行的 Cursor 任务将停止，历史记录会保留。",
-        "loginFailed": "Cursor 登录未完成，请检查浏览器和网络连接。",
-        "legacyPermission": "Cursor 不支持询问权限模式。此任务使用 Cursor 自动审阅。",
-        "windowsSandbox": "Cursor 在 Windows 上不提供文件系统沙箱；自动模式仍由 Cursor 自动审阅。",
-        "historyReset": "当前账号下找不到此任务的 Cursor 历史，旧引用已清除。再次发送将使用新的上下文，任务消息仍会保留。",
-        "historyUnavailable": "当前账号无法恢复此任务的 Cursor 历史。请确认账号和任务状态后重试。"
       }
     },
     "experimental": {
@@ -12174,17 +12149,6 @@
       "listAria": "权限模式",
       "autoFallback": "自动审批暂时不可用，已切换为默认权限；需要时会询问你。",
       "modes": {
-        "cursor": {
-          "auto": {
-            "label": "自动审批"
-          },
-          "bypassPermissions": {
-            "label": "完全访问"
-          },
-          "plan": {
-            "label": "计划模式"
-          }
-        },
         "claude-code": {
           "ask": {
             "label": "默认权限",

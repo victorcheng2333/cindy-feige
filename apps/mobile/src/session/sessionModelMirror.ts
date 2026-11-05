@@ -106,7 +106,7 @@ export function applySessionModelPrefPush(payload: unknown): void {
     fast?: unknown;
   };
   if (typeof p.sessionId !== 'string' || !p.sessionId) return;
-  if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') return;
+  if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi') return;
   if (typeof p.providerId !== 'string' || !p.providerId) return;
   if (typeof p.model !== 'string' || !p.model) return;
   if (typeof p.effort === 'string' && p.effort.length > 0) {
@@ -154,6 +154,13 @@ export function makeSessionMirrorAccessors(
   };
 }
 
+/** 测试用 —— 清空整个进程内镜像(其它代码不应调用)。 */
+export function __resetForTest(): void {
+  store.clear();
+  version = 0;
+  writeSerial = 0;
+}
+
 /** Refresh from the host's existing read-only defaults channel. No phone persistence. */
 export function refreshSessionModelMirror(
   sessionId: string,
@@ -170,7 +177,7 @@ export function refreshSessionModelMirror(
       const split = key.indexOf(':');
       const agent = key.slice(0, split);
       const provider = key.slice(split + 1);
-      if (!provider || !['claude-code', 'codex', 'pi', 'cursor'].includes(agent)) continue;
+      if (!provider || !['claude-code', 'codex', 'pi'].includes(agent)) continue;
       const raw = Object.hasOwn(snapshot, key) && record(snapshot[key]) ? snapshot[key] : {};
       const slot = getSlot(sessionId, agent as AgentKind, provider, true)!;
       for (const field of ['effortByModel', 'fastByModel'] as const) {
@@ -205,11 +212,4 @@ export function refreshSessionModelMirror(
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/** 测试用 —— 清空整个进程内镜像(其它代码不应调用)。 */
-export function __resetForTest(): void {
-  store.clear();
-  version = 0;
-  writeSerial = 0;
 }

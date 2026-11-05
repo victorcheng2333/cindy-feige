@@ -688,7 +688,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   }), [draft.workingDir, draft.workspaceKind]);
   // 旧被控电脑不支持给 Worker 选 Agent 位置：首个 Worker 只能从被控电脑的目录里选，与任务的
   // Agent 在另一台电脑运行对不上，两者仍互斥。
-  const collabEligible = draft.agentKind !== 'cursor' && isOrcaCollabEligible(collabTarget)
+  const collabEligible = isOrcaCollabEligible(collabTarget)
     && (remoteAgentPick === null || workerAgentLocationSupported);
   // 换设备 / 换工作区后,草稿里的协同设置属于旧目标:丢弃,避免在新目标上静默开启。
   // 按草稿武装时的目标比对(而不是「目标一变就清」):返回编辑恢复草稿时目标与草稿一起回填,
@@ -696,11 +696,11 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const collabTargetKey = orcaCollabDraftTargetKey(selectedDeviceId, draft.workspaceKind, draft.workingDir);
   const collabDraftTargetRef = useRef<string | null>(null);
   useEffect(() => {
-    if (draft.agentKind === 'cursor' || collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);
-  }, [collabTargetKey, draft.agentKind]);
+    if (collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);
+  }, [collabTargetKey]);
   // 读入口状态;重连后重读:断线时读失败会落成「不可用」,不能让表单一直卡住。
   useEffect(() => {
-    if (!contextSheetOpen || !collabEligible || !selectedDeviceId || draft.agentKind === 'cursor') return undefined;
+    if (!contextSheetOpen || !collabEligible || !selectedDeviceId) return undefined;
     let cancelled = false;
     setCollabEntryStatus('loading');
     void readOrcaCollabEntryStatus(maker, collabTarget, draft.agentKind)
@@ -2006,17 +2006,14 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     setAvailableAgentKinds(null);
     void withTransientRemoteRetry(async () => {
       await openLink(selectedDeviceId);
-      const agents = await maker.listAvailableAgents();
-      if (!agents.includes('cursor')) return agents;
-      const cursor = normalizeMobileAgentCapabilities(await maker.getCapabilities('cursor'));
-      return cursor?.supportsControlledCursorCreation ? agents : agents.filter(agent => agent !== 'cursor');
+      return maker.listAvailableAgents();
     })
       .then((agents) => {
         if (cancelled) return;
         setAvailableAgentKinds(
           new Set(
             (Array.isArray(agents) ? agents : []).filter(
-              (a): a is NewSessionAgentKind => a === 'claude-code' || a === 'codex' || a === 'pi' || a === 'cursor',
+              (a): a is NewSessionAgentKind => a === 'claude-code' || a === 'codex' || a === 'pi',
             ),
           ),
         );
@@ -2377,14 +2374,13 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     config: MobileModelConfiguration,
     source?: { deviceId: string | null },
   ): Promise<boolean> => {
-    const agent = config.agent;
-    if (agent === 'cursor' && source?.deviceId) return false;
     if (creating || !selectedDeviceId) return false;
+    const agent = config.agent;
     const remoteDeviceId = source?.deviceId ?? null;
     const deviceAtStart = selectedDeviceId;
     const sequence = ++runtimeActionSeqRef.current;
     const targetCapabilities = normalizeMobileAgentCapabilities(await maker.getCapabilities(agent));
-    if (!targetCapabilities || (agent === 'cursor' && !targetCapabilities.supportsControlledCursorCreation)) return false;
+    if (!targetCapabilities) return false;
     const storedPermission = newSessionPreferences?.permissionModeByAgent[agent];
     const permission = agent === draft.agentKind ? draft.permissionMode
       : (storedPermission ?? defaultPermissionModeForNewSessionAgent(agent));
@@ -4240,11 +4236,11 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       // (review P2——此前只有目标流有这行,首条消息发送成功路径漏了,标注
       // 缓存文件永久留在本地)。
       composerAnnotationsRef.current?.forgetAllAttachments();
-      handedOff = true;
       router.replace({
         pathname: '/sessions/[sessionId]',
         params: { sessionId, deviceId: deviceIdSnapshot, deviceName: selectedDeviceName },
       });
+      handedOff = true;
     } catch (err) {
       if (!isCurrentOwner()) return;
       // agent 未鉴权(电脑端没配 key / 没登录)是新任务失败的高频原因。
@@ -6035,7 +6031,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
               selectedFastMode: collabForm.form.model.fast,
             } : undefined,
             scope: JSON.stringify([auth.user?.id, collabWorkerDeviceId, 'orca-worker']),
-            agents: collabForm.pickerAgents.filter(agent => agent !== 'cursor'),
+            agents: collabForm.pickerAgents,
             loadCapabilities: async (agent) => {
               const result = normalizeMobileAgentCapabilities(await collabForm.maker.getCapabilities(agent));
               if (!result) throw new Error('Capabilities unavailable');

@@ -43,7 +43,7 @@ export type SendToSessionCallback = (params: {
     {
       responsibilityRecorded?: false;
       targetSessionId: string;
-      agentKind: ControlWorkerAgent | 'cursor';
+      agentKind: ControlWorkerAgent;
       wakeKind: "resumed" | "already-active" | "created" | "queued";
       targetTitle: string | null;
       targetLastUserSendAt: string | null;

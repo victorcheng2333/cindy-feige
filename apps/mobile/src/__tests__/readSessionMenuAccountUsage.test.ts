@@ -42,18 +42,6 @@ const reader = () => ({
 });
 
 describe("existing remote quota compatibility", () => {
-  // Unit: Cursor native models may share names with subscription bridges. Existing
-  // fixtures lacked Cursor; one xai-prefixed model must not query an unrelated account.
-  it('does not attribute Cursor models to other subscription accounts', async () => {
-    const cursor = { ...session, agentKind: 'cursor' as const, providerId: null, model: 'xai/grok' };
-    const r = reader();
-    expect(sessionSubscriptionFamily(cursor)).toBeNull();
-    expect(await readSessionMenuAccountUsage(cursor, r)).toMatchObject({ source: 'unavailable', windows: [], amounts: [] });
-    expect(r.getCodexRateLimits).not.toHaveBeenCalled();
-    expect(r.getSubscriptionUsage).not.toHaveBeenCalled();
-    expect(r.getAccountUsage).not.toHaveBeenCalled();
-  });
-
   it('reads the selected independent account and never falls back after its read fails', async () => {
     const r = reader();
     const provider = { id: 'openai-second', auth: { method: 'oauth' as const, native: 'codex' as const } };
@@ -621,15 +609,12 @@ describe("new subscription families cannot be skipped", () => {
     },
   );
 
-  it("covers session subscription channels and the separate Cursor quota channel", () => {
+  it("reads every subscription snapshot channel the desktop exposes remotely", () => {
     const exposed = [...REMOTE_INVOKE_ALLOWLIST].filter((channel) =>
       /^maker:usage:[a-z0-9-]+-subscription$/.test(channel),
     );
     expect(exposed.length).toBeGreaterThan(0);
-    // Cursor quota is readable by the usage clients, but Cursor remote sessions are
-    // intentionally unsupported. It must not become a native session auth family.
-    expect([...Object.values(SUBSCRIPTION_USAGE_CHANNELS), "maker:usage:cursor-subscription"].sort())
-      .toEqual(exposed.sort());
+    expect(Object.values(SUBSCRIPTION_USAGE_CHANNELS).sort()).toEqual(exposed.sort());
   });
 
   it.each(["en", "ja", "ko", "zh-CN", "zh-TW", "es", "fr", "de", "pt-PT", "pt-BR"])(

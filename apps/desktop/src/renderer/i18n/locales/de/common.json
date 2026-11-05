@@ -1421,19 +1421,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "Kontingente",
-      "auto": "Cursor-Modelle",
-      "api": "Andere Modelle",
-      "total": "Enthaltene Nutzung",
-      "remaining": "Verbleibend je Pool",
-      "separate": "Cursor-Nutzungspools sind unabhängig.",
-      "explanation": "Ist ein Pool aufgebraucht, kann ein anderer noch verfügbar sein. Prozentwerte werden nicht addiert.",
-      "resetUnknown": "Zurücksetzungszeit unbekannt",
-      "extra": "Zusätzliche Ausgaben",
-      "notRead": "Nicht verfügbar",
-      "extraHint": "Siehe Cursor-Abrechnung"
-    },
     "balance": {
       "name": "Cindy-Guthaben",
       "quotaName": "Cindy-Kontingent",
@@ -4424,18 +4411,6 @@
         "custom": "Fahre mit benutzerdefinierten Einstellungen fort. Du kannst Modelle abrufen oder manuell hinzufügen.",
         "configure": "Anbieter konfigurieren",
         "keepCustom": "Mit benutzerdefinierten Einstellungen fortfahren"
-      },
-      "cursor": {
-        "description": "Lokale Aufgaben mit deinem Cursor-Konto ausführen. Die Abrechnung erfolgt über Cursor. Auto, Vollzugriff und Planung werden unterstützt; Nachfragen, Zurücksetzen und Verzweigen sind nicht verfügbar.",
-        "connect": "Cursor verbinden",
-        "disconnect": "Cursor trennen",
-        "waiting": "Schließe die Anmeldung im Browser ab. Dies kann bis zu fünf Minuten dauern.",
-        "stopWarning": "Laufende Cursor-Aufgaben werden gestoppt. Ihr Verlauf bleibt erhalten.",
-        "loginFailed": "Die Cursor-Anmeldung wurde nicht abgeschlossen. Prüfe den Browser und deine Verbindung.",
-        "legacyPermission": "Cursor unterstützt keinen Berechtigungsmodus mit Rückfragen. Diese Aufgabe verwendet die automatische Prüfung von Cursor.",
-        "windowsSandbox": "Cursor bietet unter Windows keine Dateisystem-Sandbox. Der automatische Modus verwendet weiterhin die automatische Prüfung von Cursor.",
-        "historyReset": "Der Cursor-Verlauf dieser Aufgabe ist im aktuellen Konto nicht verfügbar. Der alte Verweis wurde entfernt. Erneutes Senden verwendet einen neuen Kontext; die Nachrichten der Aufgabe bleiben erhalten.",
-        "historyUnavailable": "Dieses Konto kann den Cursor-Verlauf der Aufgabe nicht wiederherstellen. Prüfe Konto und Aufgabenstatus und versuche es erneut."
       }
     },
     "experimental": {
@@ -12207,17 +12182,6 @@
       "listAria": "Berechtigungsmodi",
       "autoFallback": "Die automatische Prüfung ist vorübergehend nicht verfügbar. Auf Standardberechtigungen umgestellt; bei Bedarf wirst du gefragt.",
       "modes": {
-        "cursor": {
-          "auto": {
-            "label": "Automatische Prüfung"
-          },
-          "bypassPermissions": {
-            "label": "Vollzugriff"
-          },
-          "plan": {
-            "label": "Planmodus"
-          }
-        },
         "claude-code": {
           "ask": {
             "label": "Standardberechtigungen",

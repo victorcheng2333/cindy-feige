@@ -203,20 +203,4 @@ describe('favorites of another computer live in the home list', () => {
       expect.objectContaining({ providerId: encoded, modelId: 'opus' }),
     ]);
   });
-  // Unit tier: actual renderer projection must keep new engine metadata away from old readers.
-  it.each([false, true])('projects Cursor only with reader opt-in (%s)', includeCursor => {
-    addModelFavorite({ ...config, agent: 'cursor' });
-    const onRequest = vi.fn<ModelFavoritesHostApi['onRequest']>().mockReturnValue(() => {});
-    const reply = vi.fn<ModelFavoritesHostApi['reply']>();
-    vi.stubGlobal('electronAPI', { modelFavoritesHost: { onRequest, reply, ready: vi.fn(), changed: vi.fn() } });
-    renderHook(() => useModelFavoritesHost());
-    act(() => onRequest.mock.calls[0]![0]({
-      requestId: 'cursor-get', expiresAt: Date.now() + 1000, includeCursor,
-      ownerStamp: { dataOwnerId: 'owner', ownerGeneration: 1 },
-    }));
-    const items = parseModelFavorites(reply.mock.calls[0]![0].items, includeCursor);
-    expect(items).toHaveLength(includeCursor ? 1 : 0);
-    if (includeCursor) expect(items[0]!.agent).toBe('cursor');
-  });
-
 });

@@ -141,8 +141,7 @@ export class GhostModelPicker {
     }
     if (!target) return fail('UNAVAILABLE', 'No active Host page is available');
     const requestCurrent = () => current() && (target.isCurrent?.() ?? true);
-    const initial = options.initial as PluginTaskRoute | undefined;
-    if (initial?.agentKind === 'cursor') return fail('INVALID_REQUEST', 'Cursor is not available for plugin tasks');
+    const initial = options.initial;
     const request: PluginModelPickerRequest = {
       requestId: randomUUID(),
       ghostId,

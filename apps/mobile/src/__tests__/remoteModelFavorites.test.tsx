@@ -121,7 +121,7 @@ it("maps engine spelling and treats unchanged field order as no operation", () =
 });
 it("reads only the controlled computer and reloads on its invalidation", async () => {
   await act(async () => root.render(createElement(Probe, {})));
-  expect(h.invoke).toHaveBeenCalledWith("a", "maker:model-favorites:get", [{ includeCursor: true }]);
+  expect(h.invoke).toHaveBeenCalledWith("a", "maker:model-favorites:get", []);
   expect(h.view.items).toEqual([mobileFavorite(item)]);
   await act(async () => h.push?.("b"));
   expect(h.invoke).toHaveBeenCalledTimes(1);
@@ -151,7 +151,6 @@ it("writes a single mutation and re-reads after confirmed save", async () => {
   await act(async () => h.view.save([]));
   expect(h.invoke).toHaveBeenCalledWith("a", "maker:model-favorites:apply", [
     { kind: "remove", expected: item },
-    { includeCursor: true },
   ]);
   expect(h.view.items).toEqual([]);
 });
@@ -165,19 +164,4 @@ it("old hosts do not fall back to local favorites or claim successful saves", as
   await expect(h.view.save([mobileFavorite(item)])).rejects.toThrow(
     "not ready",
   );
-});
-
-// Unit tier: real remote hook reads and mutates a Cursor favorite, then reloads host truth.
-it("opts into Cursor metadata and confirms a Cursor save from the host", async () => {
-  let stored: unknown[] = [];
-  h.invoke.mockImplementation(async (_device, channel, args) => {
-    expect(args.at(-1)).toEqual({ includeCursor: true });
-    if (channel.endsWith(":apply")) stored = [{ ...args[0].item, uid: "cursor-fav" }];
-    return stored;
-  });
-  await act(async () => root.render(createElement(Probe, {})));
-  const cursor = mobileFavorite({ ...item, agent: "cursor" });
-  await act(async () => h.view.save([cursor]));
-  expect(h.view.items).toEqual([{ ...cursor, uid: "cursor-fav" }]);
-  expect(h.view.error).toBeNull();
 });

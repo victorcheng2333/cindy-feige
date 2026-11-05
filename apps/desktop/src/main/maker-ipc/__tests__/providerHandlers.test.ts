@@ -468,29 +468,6 @@ describe('provider:list IPC handler', () => {
     await expect(harness.invoke(MAKER_INVOKE.PROVIDER_LIST)).rejects.toThrow('boom');
   });
 
-  // Unit regression: iOS uses a synthetic IPC sender after host authorization.
-  // Earlier picker tests started from a catalog that the real handler filtered out.
-  it('serves a redacted Cursor model catalog to the same-account controller', async () => {
-    const harness = new IpcHarness();
-    const provider = { ...catalogView('cursor', { cursor: ['cursor-model'] }), name: 'Cursor', agents: ['cursor'],
-      models: { cursor: [{ id: 'cursor-model', name: 'Cursor Model', contextWindow: 200000, efforts: ['low', 'high'], defaultEffort: 'high' }] },
-      routing: { cursor: { upstream: 'https://api.cursor.com', authStrategy: 'api-key-header', headerOverride: { Authorization: 'Bearer invalid-fixture-secret' } } } } as ProviderView;
-    const listProviders = vi.fn(async () => [provider]);
-    registerProviderHandlers(harness, makeDeps({ listProviders, isTrustedSender: () => false, getRemoteProviderInvocationEnabled: () => false }));
-    const payload = await runDeviceLinkInvokeContext({ controllerDeviceId: 'phone', sameAccountController: true, channel: MAKER_INVOKE.PROVIDER_LIST },
-      () => harness.invoke(MAKER_INVOKE.PROVIDER_LIST)) as { providers: ProviderView[] };
-    expect(payload.providers.map(p => p.id)).toContain('cursor');
-    expect(JSON.stringify(payload)).not.toContain('invalid-fixture-secret');
-    expect(listProviders).toHaveBeenCalledWith({ allowSideEffects: false });
-    expect(unifiedModelEntries({ providers: payload.providers, agents: ['cursor'], scope: 'session',
-      keepModel: { providerId: 'cursor', modelId: 'cursor-model', agent: 'cursor' } })).toHaveLength(1);
-    // A bare renderer and a shared-task guest do not gain this controller view.
-    expect((await harness.invoke(MAKER_INVOKE.PROVIDER_LIST) as { providers: ProviderView[] }).providers).toEqual([]);
-    const guest = await runDeviceLinkInvokeContext({ controllerDeviceId: 'guest', sameAccountController: true, channel: MAKER_INVOKE.PROVIDER_LIST, sharedTask: {} as never },
-      () => harness.invoke(MAKER_INVOKE.PROVIDER_LIST)) as { providers: ProviderView[] };
-    expect(guest.providers).toEqual([]);
-  });
-
   it('redacts runtime header credentials for untrusted or synthetic callers', async () => {
     const harness = new IpcHarness();
     const provider = {

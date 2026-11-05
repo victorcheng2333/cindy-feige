@@ -15,7 +15,7 @@ export interface DeploymentDetectionResult {
 /** In-memory handoff only. Never persisted or logged. */
 export interface DetectedProviderDraft {
   preset: ProviderPreset;
-  agent: Exclude<AgentKind, 'cursor'>;
+  agent: AgentKind;
   config: CustomProviderConfig;
   apiKey: string;
   keys?: Partial<Record<AgentKind, string>>;

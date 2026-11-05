@@ -1439,19 +1439,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "Fondos",
-      "auto": "Modelos de Cursor",
-      "api": "Otros modelos",
-      "total": "Uso incluido",
-      "remaining": "Restante por fondo",
-      "separate": "Los fondos de Cursor son independientes.",
-      "explanation": "Agotar un fondo no agota los demás. Los porcentajes no se suman.",
-      "resetUnknown": "Fecha de reinicio desconocida",
-      "extra": "Gasto adicional",
-      "notRead": "No disponible",
-      "extraHint": "Consulta la factura de Cursor"
-    },
     "balance": {
       "name": "balanza Cindy",
       "quotaName": "Cuota Cindy",
@@ -4477,18 +4464,6 @@
         "custom": "Continúe con la configuración personalizada. Puede buscar modelos o agregarlos manualmente.",
         "configure": "Configurar proveedor",
         "keepCustom": "Continuar con la configuración personalizada"
-      },
-      "cursor": {
-        "description": "Ejecuta tareas locales con tu cuenta de Cursor. Se aplica la facturación de Cursor. Admite Auto, acceso completo y plan; no admite preguntar, retroceder ni bifurcar.",
-        "connect": "Conectar Cursor",
-        "disconnect": "Desconectar Cursor",
-        "waiting": "Completa el inicio de sesión en el navegador. Puede tardar hasta cinco minutos.",
-        "stopWarning": "Las tareas de Cursor en ejecución se detendrán. Se conservará su historial.",
-        "loginFailed": "No se completó el inicio de sesión en Cursor. Comprueba el navegador y la conexión.",
-        "legacyPermission": "Cursor no admite el modo de permisos con confirmación. Esta tarea usa la revisión automática de Cursor.",
-        "windowsSandbox": "Cursor no ofrece un entorno aislado del sistema de archivos en Windows. El modo automático sigue usando la revisión automática de Cursor.",
-        "historyReset": "El historial de Cursor de esta tarea no está disponible en la cuenta actual. Se eliminó la referencia anterior. Al enviar de nuevo se usará un contexto nuevo; los mensajes de la tarea se conservan.",
-        "historyUnavailable": "Esta cuenta no puede restaurar el historial de Cursor de la tarea. Comprueba la cuenta y el estado de la tarea y vuelve a intentarlo."
       }
     },
     "experimental": {
@@ -12301,17 +12276,6 @@
       "listAria": "Modos de permisos",
       "autoFallback": "La revisión automática no está disponible temporalmente. Se cambió a los permisos predeterminados y se te pedirá autorización cuando sea necesario.",
       "modes": {
-        "cursor": {
-          "auto": {
-            "label": "Revisión automática"
-          },
-          "bypassPermissions": {
-            "label": "Acceso completo"
-          },
-          "plan": {
-            "label": "Modo de plan"
-          }
-        },
         "claude-code": {
           "ask": {
             "label": "Permisos predeterminados",

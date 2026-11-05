@@ -1,4 +1,3 @@
-import type { CursorQuotaSnapshot } from './cursorUsage.js';
 import type { ProviderAccountUsageResult } from '../../shared/providerAccountUsage.js';
 import { kimiUsageWindowMinutes } from '../../shared/kimiCodingUsage.js';
 /**
@@ -49,7 +48,7 @@ const WEEK_MINUTES = 10_080;
 const FIVE_HOUR_MINUTES = 300;
 /** Tasks beyond this are summarized as "N more"; the list stays cheap to build. */
 const MAX_TASK_ROWS = 30;
-const HARNESSES: readonly MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor'];
+const HARNESSES: readonly MenubarHarness[] = ['claude-code', 'codex', 'pi'];
 
 export interface MenubarBalanceReading {
   available: number;
@@ -76,7 +75,6 @@ export interface MenubarSessionRow {
 export interface MenubarCollectDeps {
   nowMs: number;
   listProviders(): Promise<ProviderView[]>;
-  readCursor?(): Promise<CursorQuotaSnapshot | null>;
   readKimi?(providerId: string): Promise<ProviderAccountUsageResult>;
   readCodex(providerId: string): Promise<CodexAccountUsagePayload | RateLimitSnapshot | null>;
   readClaude(providerId: string): Promise<ClaudeSubscriptionUsageSnapshot | null>;
@@ -125,7 +123,6 @@ export async function collectMenubarInputs(deps: MenubarCollectDeps): Promise<Me
   if (balance) sources.push(balanceSource(balance));
   const subscriptionReads = providers.map(async (provider): Promise<MenubarSourceInput | null> => {
     if (!provider.connected || provider.suspended || provider.removed) return null;
-    if (provider.id === 'cursor') return cursorSource(provider, await safe('cursor', async () => await deps.readCursor?.() ?? null, null), deps.nowMs);
     const kind = providerWeeklyQuotaSource(provider);
     // A Codex account waiting to be reconnected stays in the list without numbers instead
     // of falling into the hidden pay-as-you-go group.
@@ -748,16 +745,5 @@ export function kimiSource(provider: ProviderView, result: ProviderAccountUsageR
       windowMinutes: kimiUsageWindowMinutes(w.id) ?? 0,
     })) ?? [],
     credits: null, creditsUnlimited: false, prepaidUsd: null, updatedAtMs: snapshot?.fetchedAt ?? null,
-  };
-}
-
-export function cursorSource(provider: ProviderView, snapshot: CursorQuotaSnapshot | null, nowMs: number): MenubarSubscriptionInput {
-  const current = snapshot && (snapshot.resetsAtMs === null || snapshot.resetsAtMs > nowMs) ? snapshot : null;
-  return {
-    kind: 'subscription', id: provider.id, providerId: provider.id, family: 'cursor',
-    logoSvg: MENUBAR_HARNESS_LOGOS.cursor, brand: 'Cursor', account: null, plan: null,
-    // Independent pools do not constrain one another. No invented monthly duration or pace.
-    windows: current?.pools.map(pool => ({ kind: 'scoped', label: pool.id, usedPercent: pool.usedPercent, resetsAtMs: current.resetsAtMs, windowMinutes: 0 })) ?? [],
-    credits: null, creditsUnlimited: false, prepaidUsd: null, updatedAtMs: current?.fetchedAtMs ?? null,
   };
 }

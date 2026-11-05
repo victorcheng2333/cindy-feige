@@ -867,7 +867,7 @@ export interface AgentIslandRemoteSessionInput {
   workingDir: string | null;
   projectDir?: string | null;
   workspaceKind: string | null;
-  /** DB 形态('cc' | 'codex' | 'pi' | 'cursor')。 */
+  /** DB 形态('cc' | 'codex' | 'pi')。 */
   agentKind: string | null;
   phase: AgentIslandSessionPhase;
   detail: string;

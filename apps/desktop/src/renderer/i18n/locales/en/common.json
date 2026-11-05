@@ -1421,19 +1421,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "Pools",
-      "auto": "Cursor models",
-      "api": "Other models",
-      "total": "Included usage",
-      "remaining": "Remaining by pool",
-      "separate": "Cursor usage pools are separate.",
-      "explanation": "One pool can run out while another still has usage. Percentages are not added together.",
-      "resetUnknown": "Reset time unavailable",
-      "extra": "Additional spending",
-      "notRead": "Not available",
-      "extraHint": "See Cursor billing"
-    },
     "balance": {
       "name": "Cindy balance",
       "quotaName": "Cindy quota",
@@ -4436,18 +4423,6 @@
         "custom": "Continue with custom settings. You can fetch models or add them manually.",
         "configure": "Configure provider",
         "keepCustom": "Continue with custom settings"
-      },
-      "cursor": {
-        "description": "Run local tasks with your Cursor account. Cursor billing applies. Auto, Full access and Plan are supported; Ask, rewind and fork are unavailable.",
-        "connect": "Connect Cursor",
-        "disconnect": "Disconnect Cursor",
-        "waiting": "Finish signing in in your browser. This may take up to five minutes.",
-        "stopWarning": "Running Cursor tasks will stop. Their history will be kept.",
-        "loginFailed": "Cursor sign-in did not complete. Check the browser and your connection.",
-        "legacyPermission": "Cursor does not support Ask permission mode. This task uses Cursor Auto-review.",
-        "windowsSandbox": "Cursor does not provide a filesystem sandbox on Windows. Auto mode still uses Cursor Auto-review.",
-        "historyReset": "This task’s Cursor history is unavailable under the current account. The old reference was cleared. Sending again will use fresh context; task messages are retained.",
-        "historyUnavailable": "This account cannot restore the task’s Cursor history. Check the account and task status, then retry."
       }
     },
     "experimental": {
@@ -12220,17 +12195,6 @@
       "listAria": "Permission modes",
       "autoFallback": "Auto-review is temporarily unavailable. Switched to Default permissions and will ask when needed.",
       "modes": {
-        "cursor": {
-          "auto": {
-            "label": "Auto-review"
-          },
-          "bypassPermissions": {
-            "label": "Full access"
-          },
-          "plan": {
-            "label": "Plan mode"
-          }
-        },
         "claude-code": {
           "ask": {
             "label": "Default permissions",

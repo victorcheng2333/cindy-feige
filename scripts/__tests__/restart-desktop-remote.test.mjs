@@ -10,6 +10,7 @@ import {
 	applyDesktopStartupConfigForPhase,
 	clearInheritedIsolatedAuthAuthorization,
 	clearDesktopDevCaches,
+	closeDarwinTerminalTtys,
 	commandUsesUserDataDir,
 	createIsolatedAuthLaunchProof,
 	defaultIsolatedUserDataDir,
@@ -1706,4 +1707,23 @@ test("readDesktopDevLogTail strips terminal control sequences and keeps the last
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+// Unit regression: a non-responsive Terminal blocked real handoff acceptance
+// before startup. Simulate an Apple Event timeout without a real wait/process.
+test('Terminal cleanup continues after a bounded failed Apple Event', () => {
+  const calls = [], warnings = [];
+  closeDarwinTerminalTtys(['/dev/ttys001', '/dev/ttys002'], {
+    platform: 'darwin',
+    runCommand(command, args, options) {
+      calls.push({ command, args, options });
+      assert.ok(options.timeout > 0 && options.timeout <= 3000);
+      return calls.length === 1 ? { status: null, stderr: null, error: new Error('ETIMEDOUT') } : { status: 0 };
+    },
+    warn: message => warnings.push(message),
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].args.at(-1), '/dev/ttys002');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /ETIMEDOUT/);
 });

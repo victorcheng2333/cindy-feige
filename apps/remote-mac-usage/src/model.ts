@@ -2,12 +2,12 @@ import { selectCodexUsageForModel } from '../../../packages/maker-shared/src/cod
 
 export interface Quota { minutes: number | null; remaining: number; resetsAt: number | null; label?: string }
 export interface Account {
-  id: string; name: string; service: 'Claude' | 'ChatGPT' | 'Cursor'; plan: string;
-  windows: Quota[]; updatedAt: number | null; failed: boolean; error?: string;
+  id: string; name: string; service: 'Claude' | 'ChatGPT'; plan: string;
+  windows: Quota[]; updatedAt: number | null; failed: boolean;
 }
 export interface Device {
   deviceId: string; name: string; online: boolean; remoteControlEnabled: boolean;
-  platform: string; accounts: Account[]; cursorUnsupported?: boolean; error: string | null; checkedAt: number | null;
+  platform: string; accounts: Account[]; error: string | null; checkedAt: number | null;
 }
 export type LoginView =
   | { kind: 'idle' | 'browser' }
@@ -57,34 +57,16 @@ export function subscriptionProviders(raw: unknown): Record<string, unknown>[] {
   if (!Array.isArray(providers)) throw Error('电脑未返回账号列表');
   return providers.map(record).filter(p => p.connected === true && !p.removed && !p.suspended &&
     typeof p.id === 'string' && record(p.auth).method === 'oauth' &&
-    (p.id === 'cursor' || !p.access || record(p.access).kind === 'subscription') &&
-    (['claude', 'codex'].includes(String(record(p.auth).native)) || ['anthropic', 'openai', 'cursor'].includes(String(p.id))));
+    (!p.access || record(p.access).kind === 'subscription') &&
+    (['claude', 'codex'].includes(String(record(p.auth).native)) || ['anthropic', 'openai'].includes(String(p.id))));
 }
 export function emptyAccount(p: Record<string, unknown>): Account {
-  if (p.id === 'cursor') return { id: 'cursor', name: 'Cursor', service: 'Cursor', plan: '', windows: [], updatedAt: null, failed: false };
   const openai = record(p.auth).native === 'codex' || p.id === 'openai';
   return { id: String(p.id), name: text(p.name, openai ? 'ChatGPT' : 'Claude'), service: openai ? 'ChatGPT' : 'Claude',
     plan: '', windows: [], updatedAt: null, failed: false };
 }
 export function parseAccount(p: Record<string, unknown>, payload: unknown): Account {
   const a = emptyAccount(p), raw = record(payload);
-  if (a.service === 'Cursor') {
-    if (raw.providerId !== 'cursor') throw Error('Cursor account mismatch');
-    if (raw.status !== 'ready') return { ...a, failed: true, error: '远端暂未读到 Cursor 额度，请确认连接状态后刷新。' };
-    const snapshot = record(raw.snapshot);
-    a.updatedAt = timestamp(snapshot.fetchedAtMs);
-    const reset = timestamp(snapshot.resetsAtMs);
-    const names: Record<string, string> = { auto: 'Cursor 模型', api: '其他模型', total: '套餐总额度' };
-    const seen = new Set<string>();
-    if (Array.isArray(snapshot.pools)) for (const item of snapshot.pools) {
-      const pool = record(item), id = String(pool.id);
-      if (!Object.hasOwn(names, id) || seen.has(id) || !finite(pool.usedPercent) || pool.usedPercent < 0) continue;
-      seen.add(id);
-      a.windows.push({ minutes: null, label: names[id], remaining: Math.max(0, 100 - pool.usedPercent), resetsAt: reset === null ? null : reset / 1000 });
-    }
-    if (!a.windows.length) return { ...a, failed: true, error: '远端未返回有效的 Cursor 额度池。' };
-    return a;
-  }
   const builtin = a.service === 'Claude' ? 'anthropic' : 'openai';
   if ((raw.providerId !== undefined && raw.providerId !== a.id) || (a.id !== builtin && raw.providerId !== a.id))
     throw Error('远端版本无法区分这个独立账号，请更新远端 Cindy');

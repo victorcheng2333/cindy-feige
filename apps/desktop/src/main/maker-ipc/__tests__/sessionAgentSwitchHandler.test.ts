@@ -32,6 +32,7 @@ function makeRow(overrides: Partial<AgentSwitchSessionRow> = {}): AgentSwitchSes
     remoteHostId: null,
     orcaRole: null,
     sdkSessionId: 'sdk-old',
+    permissionMode: 'auto',
     ...overrides,
   };
 }
@@ -84,41 +85,6 @@ const validParams = {
   model: 'gpt-5.5',
   providerId: null,
 };
-
-// Unit regression: the model picker uses SWITCH_SESSION_AGENT even within Cursor.
-// Existing fixtures covered only the three older harnesses; one Cursor row was rejected
-// before reaching same-engine selection. Exercise the registered IPC with atomic axes.
-describe('Cursor model picker admission', () => {
-  it('routes a local Cursor choice and its tuning to same-engine model selection', async () => {
-    const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
-    const { deps, calls } = makeDeps({
-      getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cursor', model: 'old', providerId: 'cursor' })),
-      selectSameAgentModel,
-    });
-    const ipc = new IpcHarness();
-    registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', 'cursor', 'grok', 'cursor', 'high', true))
-      .resolves.toMatchObject({ agentKind: 'cursor', model: 'grok', deferred: true });
-    expect(vi.mocked(deps.selectSameAgentModel!).mock.calls[0].slice(0, 3)).toEqual(['s1', {
-      targetAgentKind: 'cursor', model: 'grok', providerId: 'cursor', effort: 'high', fastMode: true, sameAgentSelection: true,
-    }, false]);
-    expect(calls).toEqual([]);
-  });
-
-  it.each([
-    { source: 'cc', target: 'cursor', device: undefined },
-    { source: 'cursor', target: 'codex', device: undefined },
-    { source: 'cursor', target: 'cursor', device: 'other-device' },
-  ])('rejects unsupported Cursor handoff $source to $target ($device)', async ({ source, target, device }) => {
-    const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
-    const { deps, calls } = makeDeps({ getSessionRow: vi.fn(async () => makeRow({ agentKind: source })), selectSameAgentModel });
-    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', target, 'model', null, 'high', false,
-      device ? { agentDeviceId: device } : undefined)).rejects.toThrow('UNSUPPORTED_CAPABILITY');
-    expect(calls).toEqual([]);
-    expect(selectSameAgentModel).not.toHaveBeenCalled();
-  });
-});
 
 describe('same-harness native relocation', () => {
   // Quota balancing is now automatic only while native context survives. Exercise the

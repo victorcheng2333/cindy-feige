@@ -137,7 +137,7 @@ export interface CreateSessionResult {
   usedProjectContext?: boolean;
 }
 
-export type MobileAgentKind = "claude-code" | "codex" | "pi" | "cursor";
+export type MobileAgentKind = "claude-code" | "codex" | "pi";
 
 /**
  * 订阅家族 → 被控端余量快照 channel。ChatGPT 走 Codex 自有控制面

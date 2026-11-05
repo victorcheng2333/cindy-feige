@@ -49,7 +49,7 @@ function refreshRemoteCapabilitiesOnce(deviceId: string): void {
   remoteCapabilitiesRefreshInFlight.set(deviceId, pending);
 }
 
-type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi';
 
 /** runtime agent id → NewMaker vendor(其余保持同名)。 */
 function toVendor(agent: RuntimeAgentKind): MakerVendor {

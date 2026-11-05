@@ -19,10 +19,10 @@ import {
 
 const STORAGE_KEY = 'xdt-maker.mobile.home.view-preferences.v1';
 
-/** 首页视图偏好:设备范围 + 显示菜单(与桌面侧栏同结构)。缺省值保持老用户现在的样子。 */
+/** 首页视图偏好:设备范围 + 显示菜单(与桌面侧栏同结构)。 */
 export interface HomeViewPreferences {
   groupByProject: boolean;
-  /** 缺省关:老首页是项目 folder + 对话按时间混排,不是桌面现在的「对话归组」。 */
+  /** 默认归入「对话」文件夹，与桌面一致；显式显示偏好仍优先。 */
   groupDialogue: boolean;
   sortBy: HomeListSortBy;
   statusFilter: HomeStatusFilter;
@@ -163,7 +163,7 @@ export async function clearHomeViewPreferences(): Promise<void> {
 function emptyPreferences(): HomeViewPreferences {
   return {
     groupByProject: true,
-    groupDialogue: false,
+    groupDialogue: true,
     selectedDevice: null,
     sortBy: 'recency',
     statusFilter: 'active',
@@ -189,7 +189,7 @@ function normalizeStoredPreferences(value: unknown): HomeViewPreferences {
     groupByProject: typeof record.groupByProject === 'boolean'
       ? record.groupByProject
       : true,
-    groupDialogue: record.groupDialogue === true,
+    groupDialogue: record.groupDialogue !== false,
     selectedDevice: deviceId
       ? { deviceId, name: deviceName || deviceId }
       : null,

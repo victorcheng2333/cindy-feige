@@ -180,6 +180,7 @@ export interface AgentSwitchSessionRow {
   sdkSessionId: string | null;
   workingDir?: string | null;
   source?: string | null;
+  permissionMode?: string | null;
   /** Agent 在哪台电脑运行(null / 缺省 = 任务所在电脑)。 */
   agentDeviceId?: string | null;
 }
@@ -196,7 +197,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
   resolveProviderGroupTarget?(
     sessionId: string,
     target: {
-      agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+      agentKind: 'claude-code' | 'codex' | 'pi';
       model: string;
       providerId: string | null;
       /** 用户选的位置(null = 任务所在电脑)。 */
@@ -233,7 +234,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
    * (测试最小 harness)。
    */
   assertModelRouteUsable?(
-    agent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+    agent: 'claude-code' | 'codex' | 'pi',
     model: string,
     providerId: string | null,
     /** 被切换的任务；Agent 在另一台电脑运行的任务按那台的目录裁决(本机不校验)。 */
@@ -247,7 +248,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
    */
   assertAgentDeviceRouteUsable?(
     deviceId: string,
-    agent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+    agent: 'claude-code' | 'codex' | 'pi',
     model: string,
     providerId: string | null,
   ): Promise<void>;
@@ -258,7 +259,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
   readOwnerGeneration?(): number;
   confirmNativeHistoryFallback?(sessionId: string, targetDeviceId: string | null): Promise<boolean>;
   relocateNativeHistory?(input: {
-    sessionId: string; kind: 'claude-code' | 'codex' | 'pi' | 'cursor'; nativeId: string; workingDir: string;
+    sessionId: string; kind: 'claude-code' | 'codex' | 'pi'; nativeId: string; workingDir: string;
     fromDevice: string | null; toDevice: string | null; assertCurrent(): void;
   }): Promise<string | null>;
   closeSession(sessionId: string): Promise<void>;
@@ -750,8 +751,8 @@ export async function performSessionAgentSwitch(
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throwIpcError('INVALID_PARAMS', 'sessionId required');
   }
-  if (targetAgentKind !== 'claude-code' && targetAgentKind !== 'codex' && targetAgentKind !== 'pi' && targetAgentKind !== 'cursor') {
-    throwIpcError('INVALID_PARAMS', 'targetAgentKind must be claude-code | codex | pi | cursor');
+  if (targetAgentKind !== 'claude-code' && targetAgentKind !== 'codex' && targetAgentKind !== 'pi') {
+    throwIpcError('INVALID_PARAMS', 'targetAgentKind must be claude-code | codex | pi');
   }
   if (typeof model !== 'string' || model.length === 0) {
     throwIpcError('INVALID_PARAMS', 'model required');
@@ -793,13 +794,6 @@ export async function performSessionAgentSwitch(
   throwIfAgentSwitchAborted(signal);
   if (!row || row.status === 'deleted') {
     throwIpcError('NOT_FOUND', `Session ${sessionId} not found`);
-  }
-  // The unified picker routes same-engine model choices through this entry too.
-  // Admit local Cursor choices, while keeping its unsupported handoff paths closed.
-  if ((row.agentKind === 'cursor' || targetAgentKind === 'cursor') && (
-    row.agentKind !== targetAgentKind || row.agentDeviceId || requestedAgentDeviceId
-  )) {
-    throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor supports model changes on the current local task only');
   }
   if (params.runtimeSource === 'agent' && row.status === 'archived') {
     throwIpcError('UNSUPPORTED_CAPABILITY', 'archived task cannot change harness');
@@ -1029,6 +1023,7 @@ export async function performSessionAgentSwitch(
   // 交接素材与停泊绑定先于任何状态变更取得(失败不留半切换状态)。
   // Phase 2:目标引擎有停泊原生会话 → resume + 增量交接(只补离开期间的进展,
   // 工作状态区仍按全量历史提取);无绑定 → v1 全量交接 + 全新原生会话。
+  const switchStartedAt = Date.now();
   // 换电脑不复用目标电脑旧的停泊记录；同机回切也只认在本机离场的线程，
   // 避免把另一台电脑上的原生会话误当成本机可续接的历史。
   const parked = deps.findParkedEngineSession && !relocating && !orcaGroupReturnRebuild
@@ -1068,6 +1063,7 @@ export async function performSessionAgentSwitch(
   const orcaLeadLeavingRemote = row.orcaRole === 'lead' && currentAgentDeviceId !== null;
 
   return deps.withCloseSuppressed(sessionId, async () => {
+    const commitStartedAt = Date.now();
     throwIfAgentSwitchAborted(signal);
     if (live) {
       try {
@@ -1288,6 +1284,7 @@ export async function performSessionAgentSwitch(
     let bootstrapError: string | undefined;
     let resumed = !!(relocatedNativeId || parked);
     let retryPending = false;
+    const bootstrapStartedAt = Date.now();
     // resume 模式无视 skipBootstrap:只有 eager spawn 才能确定性观测 resume 失败
     // 并在同一事务内回落全量交接;交给 lazy-create 的话,失效的停泊 id 会让之后
     // 每次发送反复失败且无人回落。
@@ -1418,6 +1415,10 @@ export async function performSessionAgentSwitch(
       engineReady,
       resumed,
       handoffChars: handoff.length,
+      // 分段：读历史与拼交接 / 关旧会话到写完边界 / 启动目标引擎。
+      prepareMs: commitStartedAt - switchStartedAt,
+      commitMs: bootstrapStartedAt - commitStartedAt,
+      bootstrapMs: Date.now() - bootstrapStartedAt,
       ...(agentDeviceChanges ? { agentDeviceChange: targetAgentDeviceId ? 'other-device' : 'task-device' } : {}),
       ...(forcedRelocation ? { agentDeviceChange: 'reassigned-by-provider-group' } : {}),
     });

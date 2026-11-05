@@ -302,7 +302,7 @@ export function isOrcaCollabEligible(
   session: (Pick<RemoteSession, 'orcaRole' | 'orcaRemoteLead' | 'workspaceKind' | 'workingDir'>
     & Partial<Pick<RemoteSession, 'agentKind'>>) | null,
 ): boolean {
-  if (!session || session.agentKind === 'cursor' || session.orcaRole === 'worker' || session.orcaRemoteLead) return false;
+  if (!session || session.orcaRole === 'worker' || session.orcaRemoteLead) return false;
   if (session.workspaceKind === 'dialogue') return true;
   return session.workspaceKind === 'project' && !!session.workingDir?.trim();
 }

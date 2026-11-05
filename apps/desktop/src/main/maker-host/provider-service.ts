@@ -95,7 +95,6 @@ export interface ProviderServiceDeps {
    * 2026-07)的连接态判定:连接 = 该供应商的 key 已存(生产 = providerSecretStore.has)。
    * 缺省 = 一律未连接。
    */
-  cursorConnected?: (options: ConnectionReadOptions) => boolean | Promise<boolean>;
   builtinApiKeyConnected?: (providerId: string) => boolean;
   /** Saved custom configuration is not evidence that its credential still exists. */
   customApiKeyConnected?: (provider: Provider) => boolean;
@@ -148,15 +147,14 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
       snapshotOnly: opts?.snapshotOnly === true,
       waitForDiscovery: opts?.waitForDiscovery === true,
     };
-    const [xd, anthropic, openai, xai, cursor] = await Promise.all([
+    const [xd, anthropic, openai, xai] = await Promise.all([
       Promise.resolve(deps.connection.xd(readOpts)),
       Promise.resolve(deps.connection.anthropic(readOpts)),
       Promise.resolve(deps.connection.openai(readOpts)),
       Promise.resolve(deps.connection.xai(readOpts)),
-      Promise.resolve(deps.cursorConnected?.(readOpts) ?? false),
     ]);
     const catalog = opts?.getCatalog?.() ?? opts?.catalog ?? deps.getCatalog();
-    const connected: ConnectionState = { xd, anthropic, openai, xai, cursor };
+    const connected: ConnectionState = { xd, anthropic, openai, xai };
     for (const p of catalog.providers) {
       // 无鉴权供应商无需任何登录或密钥：只要目录声明有效，就可立即参与模型选择。
       // 该规则与 source 无关，覆盖远端目录下发的 built-in/self-hosted 条目。

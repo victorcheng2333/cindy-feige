@@ -89,7 +89,6 @@ export async function setSessionRuntimeHarness(
       if (params.beforeMutation) await params.beforeMutation();
       if (!effective)
         return { ok: false, errorCode: 'NOT_FOUND', message: `session ${id} not found` };
-      if (effective.agentKind === 'cursor') return { ok: false, errorCode: 'INVALID_ARGS', message: 'Cursor does not yet support changing harness' };
       const profile = await deps.resolve(
         {
           agentKind: patch.harness,

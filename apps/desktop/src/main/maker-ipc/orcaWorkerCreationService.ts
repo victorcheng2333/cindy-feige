@@ -133,7 +133,7 @@ export interface OrcaWorkerProviderRoutingContext {
   remoteCodexModels?: OrcaWorkerModelCapabilities[];
   /** 远端目录的 worker 默认值(缺省时沿用 SSH Codex 的默认规则)。 */
   remoteWorkerDefaults?: (lead: OrcaLeadSessionSnapshot, agent: AgentKind) => OrcaWorkerDefaultsSnapshot;
-  availability: Record<Exclude<AgentKind, 'cursor'>, OrcaWorkerProviderSnapshot[]> & { cursor?: OrcaWorkerProviderSnapshot[] };
+  availability: Record<AgentKind, OrcaWorkerProviderSnapshot[]>;
   resolveDefaultProviderIdForModel(agent: AgentKind, model: string): string | null;
 }
 

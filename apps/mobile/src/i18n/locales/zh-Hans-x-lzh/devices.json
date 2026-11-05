@@ -394,8 +394,7 @@
         "all": "全",
         "cc": "Claude Code",
         "codex": "Codex",
-        "pi": "Pi",
-        "cursor": "Cursor"
+        "pi": "Pi"
       },
       "filterLastActivityHeading": "近动",
       "filterLastActivity": {

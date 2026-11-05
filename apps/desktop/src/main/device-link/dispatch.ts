@@ -2,7 +2,6 @@ import { JPUSH_REGISTRATION_CHANNEL } from '@cindy/device-link';
 import { registerJPushPeer } from './jpush.js';
 import { parseKimiUsageRequest, isKimiCodingProvider } from '../../shared/kimiCodingUsage.js';
 import { readKimiCodingAccountUsage } from '../maker-host/provider-account-usage.js';
-import { readCursorQuota, cursorConnected } from '../maker-host/cursor-auth.js';
 import { PROVIDER_SHARE_INSIGHTS_CHANNEL } from '../../shared/providerShareInsights.js';
 import { hasRichAnswer, compactRichAnswer, richAnswerText } from '@cindy/maker-shared/rich-answer';
 import type { RemoteAgentLimitUsage } from '../../shared/remoteAgentLimits.js';
@@ -4721,12 +4720,6 @@ async function executeRemoteInvoke(src: string, payload: InvokePayload | undefin
   // Subscription IPC validates local senders (Claude for named accounts, xAI always).
   // Keep that check; authorized device-link reads use the same injected data readers.
   // 直读注入的 usage reader(cached-first,只读快照,无副作用)。已过三道 gate。
-  if (payload.channel === 'maker:usage:cursor-subscription') {
-    if (!isSameAccountController(src)) return { ok: false, error: { code: 'IPC_ERROR', message: '[FORBIDDEN] Same-account connection required' } };
-    if ((payload.args ?? []).length) return { ok: false, error: { code: 'IPC_ERROR', message: '[INVALID_PARAMS] Cursor quota takes no arguments' } };
-    const snapshot = await readCursorQuota();
-    return { ok: true, result: { providerId: 'cursor', connected: cursorConnected(), status: snapshot ? 'ready' : 'unavailable', snapshot } };
-  }
   if (payload.channel === 'maker:usage:kimi-coding') {
     const request = parseKimiUsageRequest((payload.args ?? [])[0]);
     if (!request) return { ok: false, error: { code: 'IPC_ERROR', message: '[INVALID_PARAMS] invalid Kimi usage query' } };

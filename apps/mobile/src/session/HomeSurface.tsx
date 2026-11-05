@@ -693,7 +693,7 @@ function HomeScreenContent({ active = true, width, newSessionInSystemBar = false
   const [headerHeight, setHeaderHeight] = useState<number | null>(null);
   const [headerFrosted, setHeaderFrosted] = useState(false);
   const [groupByProject, setGroupByProject] = useRetainedHomeState(viewSession, 'groupByProject', true);
-  const [groupDialogue, setGroupDialogue] = useRetainedHomeState(viewSession, 'groupDialogue', false);
+  const [groupDialogue, setGroupDialogue] = useRetainedHomeState(viewSession, 'groupDialogue', true);
   const [sortBy, setSortBy] = useRetainedHomeState<HomeListSortBy>(viewSession, 'sortBy', 'recency');
   const [projectOrder, setProjectOrder] = useRetainedHomeState<HomeProjectOrder>(viewSession, 'projectOrder', 'activity');
   const [manualProjectOrder, setManualProjectOrder] = useRetainedHomeState<string[]>(viewSession, 'manualProjectOrder', []);

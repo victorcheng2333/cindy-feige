@@ -1,4 +1,3 @@
-import { readCursorQuota } from '../maker-host/cursor-auth.js';
 /**
  * Quota and usage overview: what every subscription has left, the Cindy balance and recent
  * usage, collected once and shared by every surface that shows it.
@@ -419,7 +418,6 @@ export class QuotaOverviewService {
     const collected = await collectMenubarInputs({
       nowMs,
       listProviders: () => getDesktopProviderService().listProviders({ allowSideEffects: false }),
-      readCursor: () => readCursorQuota(force),
       readKimi: (providerId) => readKimiCodingAccountUsage({ providerId, forceRefresh: force }),
       readCodex: (providerId) => readCodexAccountUsageSnapshot(providerId),
       readClaude: (providerId) => readClaudeSubscriptionUsageSnapshotForDeviceLink(providerId),

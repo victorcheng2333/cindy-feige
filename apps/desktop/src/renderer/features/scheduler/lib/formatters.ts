@@ -243,7 +243,7 @@ export function basenameOf(p?: string | null): string | null {
  * Claude，导致 Pi 自动化的详情摘要显示成 Claude（issue 4418）。仅影响展示文案，不改
  * 执行路由。
  */
-export function humanizeAgentKind(k: AgentKind | 'cursor'): string {
+export function humanizeAgentKind(k: AgentKind): string {
   switch (k) {
     case 'claude-code':
       return 'Claude';
@@ -251,8 +251,6 @@ export function humanizeAgentKind(k: AgentKind | 'cursor'): string {
       return 'Codex';
     case 'pi':
       return 'Pi';
-    case 'cursor':
-      return 'Cursor';
     default: {
       // 穷尽性检查：AgentKind 新增引擎时这里编译报错，避免再次静默回落成 Claude。
       const unreachable: never = k;

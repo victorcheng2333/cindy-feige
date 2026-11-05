@@ -1368,9 +1368,6 @@ importers:
       '@cindy/model-providers':
         specifier: workspace:*
         version: link:../model-providers
-      '@cursor/sdk':
-        specifier: 1.2.0
-        version: 1.2.0(zod@4.3.6)
       better-sqlite3:
         specifier: '*'
         version: 12.11.1
@@ -2496,42 +2493,6 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
-
-  '@cursor/sdk-darwin-arm64@1.2.0':
-    resolution: {integrity: sha512-UkZ/RdxKCpOQ85nRgzSq+g0h+gIw36/lCEvQvomhs5EkSFZW3OwbeEzkAU3UYglZ7t3RNHj3mc5C5cdDtHguvw==}
-    cpu: [arm64]
-    os: [darwin]
-    hasBin: true
-
-  '@cursor/sdk-darwin-x64@1.2.0':
-    resolution: {integrity: sha512-mJTFdX+qv9dHAm59tT7uq7ci7+BDvFoNk4gdF2zGp9SLULicY+FdFD64p1qLen1bX5Y2soZaX5mWBy7BfObjcg==}
-    cpu: [x64]
-    os: [darwin]
-    hasBin: true
-
-  '@cursor/sdk-linux-arm64@1.2.0':
-    resolution: {integrity: sha512-Rs+cd5snuhxMAHkpqRfEGPB1qAsfqSOYJh5SOHZTOWy2LkRVO62WHwd4x80C2emj+dosTV5WAcuF2kMKKcrDJg==}
-    cpu: [arm64]
-    os: [linux]
-    hasBin: true
-
-  '@cursor/sdk-linux-x64@1.2.0':
-    resolution: {integrity: sha512-ainsGAFtkWTBZrLABp82Hvfv7VB/FxmZHE42qMVotFTRDwOY2iduvhSig910bVxv+kw3S00Srmu/9CxklLwhbw==}
-    cpu: [x64]
-    os: [linux]
-    hasBin: true
-
-  '@cursor/sdk-win32-x64@1.2.0':
-    resolution: {integrity: sha512-p3rkyta6R/nXIukd3/ifJq32otkkGoUi41T2jxnHbPHMhzE2F8OuJQGBVmORuQLMr+bIGGVZmCxertgs4WgzcQ==}
-    cpu: [x64]
-    os: [win32]
-    hasBin: true
-
-  '@cursor/sdk@1.2.0':
-    resolution: {integrity: sha512-Nqm2U0zTWrYEDCv3Rdwsfa1gYZWsg+JnY+I2F8BwWSAr3FNo0TZWwyHWoWngZgriF1w02fJ4gjJWaul9zysvgQ==}
-    engines: {node: '>=22.13'}
-    peerDependencies:
-      zod: 4.3.6
 
   '@develar/schema-utils@2.6.5':
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
@@ -12656,35 +12617,6 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.0': {}
-
-  '@cursor/sdk-darwin-arm64@1.2.0':
-    optional: true
-
-  '@cursor/sdk-darwin-x64@1.2.0':
-    optional: true
-
-  '@cursor/sdk-linux-arm64@1.2.0':
-    optional: true
-
-  '@cursor/sdk-linux-x64@1.2.0':
-    optional: true
-
-  '@cursor/sdk-win32-x64@1.2.0':
-    optional: true
-
-  '@cursor/sdk@1.2.0(zod@4.3.6)':
-    dependencies:
-      '@bufbuild/protobuf': 1.10.0
-      '@connectrpc/connect': 1.7.0(@bufbuild/protobuf@1.10.0)
-      '@connectrpc/connect-web': 1.7.0(@bufbuild/protobuf@1.10.0)(@connectrpc/connect@1.7.0(@bufbuild/protobuf@1.10.0))
-      '@statsig/js-client': 3.31.0
-      zod: 4.3.6
-    optionalDependencies:
-      '@cursor/sdk-darwin-arm64': 1.2.0
-      '@cursor/sdk-darwin-x64': 1.2.0
-      '@cursor/sdk-linux-arm64': 1.2.0
-      '@cursor/sdk-linux-x64': 1.2.0
-      '@cursor/sdk-win32-x64': 1.2.0
 
   '@develar/schema-utils@2.6.5':
     dependencies:

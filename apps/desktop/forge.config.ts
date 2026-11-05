@@ -117,8 +117,6 @@ const UPDATER_EXE = `${BRAND_IDENTITY.updaterName}.exe`;
 // version conflicts, so it is copied with parent-relative node_modules layout
 // instead of being flattened into the generic runtime dep list below.
 const DISCORD_RUNTIME_DEPS = ['discord.js'];
-// SDK webpack chunks must stay beside the entry; zod is its runtime peer.
-const CURSOR_RUNTIME_DEPS = ['@cursor/sdk', 'zod'];
 
 // Workspace 用 pnpm `node-linker=hoisted`，所有依赖都只在根 node_modules/ 下，
 // apps/desktop/node_modules/ 里连 symlink 都没建。electron-packager 只扫
@@ -371,7 +369,6 @@ function bundleNativeDeps(buildPath: string, targetPlatform: string, targetArch:
   // 选对 .node / .dylib / .dll。
   const deps = [
     ...NATIVE_RUNTIME_DEPS,
-    ...(targetPlatform === 'win32' && targetArch === 'arm64' ? [] : [`@cursor/sdk-${targetPlatform}-${targetArch}`]),
     parcelWatcherPlatformPkg(targetPlatform, targetArch),
     ...sharpPlatformPkgs(targetPlatform, targetArch),
     // Reviewer PDF utility 的 canvas wrapper 由 Vite externalize；正式包必须
@@ -400,7 +397,6 @@ function bundleNativeDeps(buildPath: string, targetPlatform: string, targetArch:
     console.log(`[forge:afterCopy] bundled native dep: ${dep} <- ${src}`);
   }
   copyDiscordRuntimeDeps(destModules);
-  copyRuntimeDependencyTrees(CURSOR_RUNTIME_DEPS, destModules);
   copyRuntimeDependencyTrees(READ_SHEET_RUNTIME_PACKAGES, destModules);
 }
 
@@ -1855,7 +1851,7 @@ const config: ForgeConfig = {
     // .node 依赖同目录的 onnxruntime 动态库,只解包 .node 会加载失败。
     asar: {
       unpack:
-        '{**/{@cursor/*,zod,@img/{sharp-libvips-*,sharp-win32-*},loudness,native/sqlite-vec,node-pty,sherpa-onnx-{darwin,win,linux}-*}/**,**/.vite/build/cursorHostProcess.js}',
+        '**/{@img/{sharp-libvips-*,sharp-win32-*},loudness,native/sqlite-vec,node-pty,sherpa-onnx-{darwin,win,linux}-*}/**',
     },
     // 打包名(out 目录 / mac .app 包名 / Helper 目录名 / 主 plist CFBundleName)
     // 按区域派生:cn/global 'Cindy'(2026-07-26 显示名统一,.app 撞名双装
@@ -2107,7 +2103,6 @@ const config: ForgeConfig = {
       // packaged builds retain Forge's normal concurrency.
       concurrent: isDev ? false : true,
       build: [
-        { entry: 'src/main/maker-host/cursorHostProcess.ts', config: 'vite.cursor-host.config.ts', target: 'preload' },
         {
           entry: 'src/main/index.ts',
           config: 'vite.main.config.ts',

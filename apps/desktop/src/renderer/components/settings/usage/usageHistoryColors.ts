@@ -31,7 +31,6 @@ export function usageHistoryAgentColor(agentKind: UsageAgentKind): string {
     codex: 'var(--engine-badge-codex)',
     pi: MODEL_COLORS[0],
     media: 'var(--text-secondary)',
-    cursor: 'var(--text-primary)',
   };
   return colors[agentKind];
 }

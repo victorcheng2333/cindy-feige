@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { scanCursorCustomizations } from '../cursor/customization-scanner.js';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { scanCustomizationSources, type SourceDef } from './customization-scanner.js';
 
@@ -26,31 +25,10 @@ function writeSkill(sourceDir: string, relativeDir: string, name: string): strin
 }
 
 afterEach(() => {
-  vi.restoreAllMocks();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe('scanCustomizationSources', () => {
-  // Tier: unit. Cursor previously had no management/palette discovery. Isolated native
-  // project + user roots verify the production scanner without reading real user data.
-  it('discovers Cursor project and global skills, preserving the nearest definition first', async () => {
-    const root = tempRoot();
-    const home = path.join(root, 'home');
-    vi.spyOn(os, 'homedir').mockReturnValue(home);
-    const repo = path.join(root, 'repo');
-    const cwd = path.join(repo, 'app');
-    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
-    const nearest = writeSkill(cwd, '.cursor/skills/shared', 'shared');
-    const ancestor = writeSkill(repo, '.agents/skills/shared', 'shared');
-    const global = writeSkill(home, '.cursor/skills/global', 'global');
-    writeSkill(root, '.cursor/skills/outside-repo', 'outside-repo');
-    const result = await scanCursorCustomizations({ workingDirs: [cwd] });
-    expect(result.errors).toEqual([]);
-    expect(result.items.map((item) => item.absolutePath)).toEqual([nearest, ancestor, global]);
-    expect(result.items.map((item) => item.scope)).toEqual(['project', 'project', 'global']);
-    expect(await scanCursorCustomizations({ kinds: ['agent'], workingDirs: [cwd] }))
-      .toEqual({ items: [], errors: [] });
-  });
   it('discovers direct Skills and one namespace level without recursing further', () => {
     const root = tempRoot();
     const sourceDir = path.join(root, 'skills');

@@ -144,6 +144,9 @@ export function createHost(client: DeviceLinkClient) {
       case "local-db:sessions:list":
         result = [{ id: SESSION_ID, title: "Fixture" }];
         break;
+      case "maker:session:discard-provisional":
+        result = { discarded: true, remaining: false };
+        break;
       case "fixture:held": {
         const { src, id } = env;
         heldResult = () =>

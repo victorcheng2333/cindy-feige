@@ -117,7 +117,7 @@ export function sessionSubscriptionFamily(
   accountProvider?: OpenAiAccountProvider,
   claudeRoute: ClaudeSessionRoute = null,
 ): NativeSubscriptionAuth | null {
-  if (session.agentKind === "cursor" || session.remoteHostId?.trim()) return null;
+  if (session.remoteHostId?.trim()) return null;
   if (canUseLocalCodexRateLimitControl(session, accountProvider)) return "codex";
   const provider = session.providerId?.trim() || null;
   const family = accountFamily(provider, accountProvider);
@@ -185,7 +185,7 @@ export async function readSessionMenuAccountUsage(
   reader: Reader,
   accountProvider?: OpenAiAccountProvider,
 ): Promise<SessionMenuAccountUsage> {
-  if (session.agentKind === "cursor" || session.remoteHostId?.trim()) return empty("unavailable");
+  if (session.remoteHostId?.trim()) return empty("unavailable");
   // The host projects runtime-effective selection onto providerId. Missing
   // selection alone proves neither a Gateway nor a subscription route.
   const provider = session.providerId?.trim() || null;

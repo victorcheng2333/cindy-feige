@@ -89,10 +89,7 @@ try {
       await check(`${theme}-${width}`);
     }
   }
-  await page.locator('.cursor-account summary').click();
-  await page.getByText('额外付费状态尚未读取；未知与读取失败不会显示为 0%。', { exact: true }).waitFor();
-  await check('dark-cursor-details');
-  await page.locator('.account:not(.cursor-account) details').first().locator('summary').click();
+  await page.locator('details').first().locator('summary').click();
   await page.getByText('Sonnet · 每周',{exact:true}).waitFor();
   await check('dark-details');
   await page.getByLabel('筛选电脑').selectOption('demo-studio');

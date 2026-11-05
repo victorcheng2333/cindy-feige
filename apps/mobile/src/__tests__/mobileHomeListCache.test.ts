@@ -61,15 +61,6 @@ describe('mobileHomeListCache', () => {
     vi.useRealTimers();
   });
 
-  // Cursor remote-view regression: old unit fixtures only used the three original engines.
-  // A host row with agentKind=cursor must survive the public cache write/read boundary.
-  it('retains Cursor identity across a cold-start list cache round trip', async () => {
-    const { getCachedHomeListSnapshot, cacheHomeListSnapshot } = await import('@/session/mobileHomeListCache');
-    await cacheHomeListSnapshot(USER_ID, [makeSession('cursor', 'mac', { agentKind: 'cursor' })]);
-    const [cached] = await getCachedHomeListSnapshot(USER_ID);
-    expect(cached.sessions[0].agentKind).toBe('cursor');
-  });
-
   it('retains lane ownership and creator avatars across cold starts', async () => {
     const { getCachedHomeListSnapshot, cacheHomeListSnapshot } = await import('@/session/mobileHomeListCache');
     const companion = { id: 'cindy-default', role: 'routine' };

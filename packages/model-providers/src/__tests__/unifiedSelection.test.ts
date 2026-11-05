@@ -273,7 +273,7 @@ describe('candidateAgentsForModel', () => {
       'codex',
       'pi',
     ]);
-    expect(UNIFIED_AGENT_PRIORITY).toEqual(['claude-code', 'codex', 'pi', 'cursor']);
+    expect(UNIFIED_AGENT_PRIORITY).toEqual(['claude-code', 'codex', 'pi']);
   });
 
   it('bridge 壳与 root 条目寻址同一逻辑模型,候选是并集', () => {
@@ -1323,15 +1323,4 @@ it('keeps display pricing attached to the selected provider and engine', () => {
     displayPricing: quote, currency: 'CNY', costDiscount: 0.2,
   });
   expect(resolveAgentCapability(providers, 'openai', 'same-model', 'codex')).not.toHaveProperty('displayPricing');
-});
-
-// New local-only SDK connection: exact model identity must never borrow another harness.
-it('offers Cursor account models only through Cursor without a compatibility label', () => {
-  const cursor = view({ id: 'cursor', models: { cursor: [m('fixture-model', { contextWindow: 0, efforts: [], defaultEffort: null })] } });
-  const entries = unifiedModelEntries({ providers: [cursor] });
-  expect(entries).toHaveLength(1);
-  expect(entries[0]).toMatchObject({ providerId: 'cursor', candidates: ['cursor'], recommended: 'cursor' });
-  expect(entries[0].capabilities.cursor?.protocolMode).toBe('matching');
-  expect(candidateAgentsForModel([cursor], 'cursor', 'fixture-model')).toEqual(['cursor']);
-  expect(resolveWireModelId(cursor, 'fixture-model', 'claude-code')).toBeNull();
 });

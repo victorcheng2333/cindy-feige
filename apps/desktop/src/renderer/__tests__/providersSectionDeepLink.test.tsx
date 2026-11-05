@@ -230,49 +230,6 @@ afterEach(() => {
 });
 
 describe('ProvidersSection — 深链定位', () => {
-  // Tier: unit. A browser-open failure previously left Cursor sign-in with no
-  // recovery action. Only the current pending login may expose a vendor-origin link.
-  it('offers Cursor browser recovery only while its login is pending', async () => {
-    let progress!: Parameters<typeof window.electronAPI.maker.auth.onLoginProgress>[0];
-    let finish!: (state: { authenticated: boolean }) => void;
-    Object.assign(window.electronAPI.maker.auth, {
-      triggerLogin: vi.fn(() => new Promise((resolve) => { finish = resolve; })),
-      onLoginProgress: vi.fn((callback) => { progress = callback; return () => undefined; }),
-    });
-    window.electronAPI.openExternal = vi.fn(async () => ({ success: true }));
-    providersState.providers = [makeProvider('cursor', { name: 'Cursor', connected: false,
-      agents: ['cursor'], models: { cursor: [] }, auth: { method: 'oauth' } })];
-    renderAt('?tab=providers&connect=cursor');
-    fireEvent.click(await screen.findByRole('button', { name: 'settings.providers.cursor.connect' }));
-    act(() => progress({ agentKind: 'cursor', phase: 'https://example.test/not-cursor' }));
-    expect(screen.queryByRole('button', { name: 'settings.providers.genericOAuth.reopenLoginPage' })).toBeNull();
-    const url = 'https://cursor.com/loginDeepSdk?fixture=1';
-    act(() => progress({ agentKind: 'cursor', phase: url }));
-    fireEvent.click(screen.getByRole('button', { name: 'settings.providers.genericOAuth.reopenLoginPage' }));
-    expect(window.electronAPI.openExternal).toHaveBeenCalledExactlyOnceWith(url);
-    await act(async () => finish({ authenticated: true }));
-    expect(screen.queryByRole('button', { name: 'settings.providers.genericOAuth.reopenLoginPage' })).toBeNull();
-  });
-  // Tier: unit. Manual key entry stays transient and failed validation remains
-  // visible; this path was absent from the native Cursor connection panel.
-  it('submits a transient Cursor key and clears the secret after validation fails', async () => {
-    const setKey = vi.fn(async () => ({ authenticated: false, errorReason: 'invalid' }));
-    Object.assign(window.electronAPI.maker.auth, { setCursorApiKey: setKey });
-    providersState.providers = [makeProvider('cursor', { name: 'Cursor', connected: false,
-      agents: ['cursor'], models: { cursor: [] }, auth: { method: 'oauth' } })];
-    renderAt('?tab=providers&connect=cursor');
-    fireEvent.keyDown(await screen.findByRole('button', { name: 'settings.providers.detail.moreActionsAria' }), { key: 'ArrowDown' });
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.providers.wizard.useApiKey' }));
-    const input = screen.getByPlaceholderText('settings.providers.builtinApiKey.keyPlaceholder') as HTMLInputElement;
-    expect(input.type).toBe('password');
-    fireEvent.change(input, { target: { value: ' invalid-fixture-key ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'settings.providers.builtinApiKey.saveKey' }));
-    await waitFor(() => expect(setKey).toHaveBeenCalledWith('invalid-fixture-key'));
-    expect((await screen.findByRole('alert')).textContent).toContain('settings.providers.builtinApiKey.toast.saveFailed');
-    expect(input.value).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: 'settings.providers.button.cancel' }));
-    expect(screen.queryByPlaceholderText('settings.providers.builtinApiKey.keyPlaceholder')).toBeNull();
-  });
   it('does not rediscover a deleted local Codex provider into the settings list', async () => {
     providersState.providers.push(makeProvider('openai', {
       name: 'Deleted local account', removed: true, imageModels: [{ id: 'image', name: 'Image' }],

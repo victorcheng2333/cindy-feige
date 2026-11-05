@@ -20,8 +20,8 @@ export const modelKey = (providerId: string, modelId: string) => JSON.stringify(
 export function matchesEntry(entry: UnifiedModelEntry, modelId: string) {
   return entry.modelId === modelId || Object.values(entry.capabilities).some(c => c?.wireModelId === modelId);
 }
-export function mobileUnifiedEntries(providers: readonly ProviderView[], agents: readonly AgentKind[], visibility: Record<string, boolean> | undefined, existing: boolean, keepModel?: {providerId: string | null; modelId: string; agent: AgentKind}, allowCursorDraft = false) {
-  return unifiedModelEntries({ providers, agents: agents.filter(agent => agent !== 'cursor' || (!existing && allowCursorDraft) || (existing && keepModel?.agent === 'cursor')), scope: existing ? 'session' : 'draft', keepModel,
+export function mobileUnifiedEntries(providers: readonly ProviderView[], agents: readonly AgentKind[], visibility: Record<string, boolean> | undefined, existing: boolean, keepModel?: {providerId: string | null; modelId: string; agent: AgentKind}) {
+  return unifiedModelEntries({ providers, agents, scope: existing ? 'session' : 'draft', keepModel,
     isVisible: (providerId, model, agent) => visibility === undefined || isModelVisible(visibility[`${agent}:${providerId}:${model.id}`], model.defaultEnabled),
   });
 }

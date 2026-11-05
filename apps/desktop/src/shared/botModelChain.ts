@@ -2,7 +2,7 @@ import { normalizeModelRoute, modelRouteLocationKey, type ModelRoute } from '@ci
 
 export const BOT_MODEL_CHAIN_MAX = 5;
 
-export type BotHarness = 'claude' | 'codex' | 'pi' | 'cursor';
+export type BotHarness = 'claude' | 'codex' | 'pi';
 
 export type BotModelRoute = ModelRoute;
 

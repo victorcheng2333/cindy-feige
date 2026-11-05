@@ -4318,7 +4318,7 @@ describe('Maker invalid-resume persistence bridge', () => {
   // PR #7684: a visible local app uses createSession, unlike the private bridge.
   // Exercise late invalid-history detection during Session.send: it must not
   // clear the app's saved native id or authorize an automatic replay (unit).
-  it.each(['claude-code', 'pi', 'cursor'] as const)('does not recover or replay a visible %s local app session', async (agentKind) => {
+  it.each(['claude-code', 'pi'] as const)('does not recover or replay a visible %s local app session', async (agentKind) => {
     const storage = createStorage();
     const replay = vi.fn();
     const startSession = vi.fn(async (opts: CreateSessionOptions) => {
@@ -4348,8 +4348,7 @@ describe('Maker invalid-resume persistence bridge', () => {
     }
   });
 
-  // Cursor Review P0: use the same persisted CAS for missing local SDK history.
-  it.each(['claude-code', 'cursor'] as const)('injects a compare-and-clear callback for resumed %s sessions', async (agentKind) => {
+  it.each(['claude-code', 'pi'] as const)('injects a compare-and-clear callback for resumed %s sessions', async (agentKind) => {
     const storage = createStorage();
     await storage.create({
       id: 'session-1',

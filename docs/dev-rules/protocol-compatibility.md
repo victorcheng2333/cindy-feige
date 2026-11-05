@@ -1,28 +1,16 @@
 # 跨端协议兼容
 
-## 手机在受控电脑新建 Cursor 任务
+## Cursor 引擎退役（2026-11-05）
 
-`maker:get-capabilities` 为 Cursor 追加可选 `supportsControlledCursorCreation`，只有宿主验证的同账号控制端（非共享任务访客）得到 true。手机在收到该能力后才把 Cursor 加入新建 Harness 和当前受控电脑的模型目录；旧宿主缺省 false。创建仍经过原有账号、目录和会话校验，禁止 SSH、跨电脑 Agent 分配、供应商分享和协同子任务。已有 Cursor 任务继续原地换模型，不开放跨 Harness 交接。
+Desktop、iOS、Android 和独立额度客户端移除 Cursor 执行、登录、模型选择、预热及额度查询。
+不再声明 Cursor 能力或注册专用 IPC；旧控制端的 Cursor 创建请求由现有参数校验拒绝，
+专用草稿和额度通道不再列入 allowlist。新版控制端也不再向旧电脑提供 Cursor 选项。
 
-沿用既有 invoke 及通用加密转发，无新增 channel、frame 或 relay 行为，自建中转无需改动。新旧能力解析和宿主准入已做定向回归；本轮未做真机或自建中转联网验证。
-
-## 同账号控制端的 Cursor 收藏元数据（2026-11-04）
-
-既有 `maker:model-favorites:get` 可附加 `{ includeCursor: true }`；`apply` 在单次 mutation
-之后附加相同 options。仅宿主验证的同账号控制端（排除共享任务访客）或可信本机窗口可启用。
-缺省仍返回不含 Cursor 的兼容投影；旧解析入口默认继续拒绝第四种引擎。新手机连旧宿主时，
-仍可读取已有三引擎收藏，Cursor 保存失败必须如实呈现，不建立手机本地收藏替代真相。
-新宿主的 renderer 按已验证标记投影，同一份存储、owner fence 和持久确认继续生效。
-
-此选项只声明收藏元数据读取能力，不授予跨电脑 Cursor 执行权限，不加入访客白名单。
-沿用现有 invoke/push、加密与通用中转路由，官方与自建中转无需升级；实际自建中转 interop
-及新旧读取、访客伪造选项拒绝的回归通过。
-
-## 猫猫 Mac 的 Cursor 额度读取（2026-11-04）
-
-新增同账号只读 `maker:usage:cursor-subscription`（无参数），沿用远程开关、撤权、已建链与白名单门禁；不向共享任务或供应商分享访客开放。返回 `providerId: cursor`、非敏感连接状态 `connected`、`status: ready | unavailable` 与归一化快照（独立模型池已用百分比、毫秒重置时间、读取时间），不含身份、凭证或原始网络响应。Cursor 执行能力仍不出现在远程供应商目录；猫猫用本专用只读接口发现额度账号，不因此开放远程执行。猫猫 Mac 转成自身秒级时间，分别展示两池，未知不当零。旧 Host 拒绝新通道时显示更新提示，不借用本机或其他账号数据。
-
-只增加现有 invoke 的业务通道，不改变 envelope、握手、加密、重连或 relay 路由。官方／自建中转沿用通用加密转发，无需升级中转；共享客户端测试及实际自建中转 interop 已验证。手机版原有额度入口不变；独立猫猫新增 Cursor 卡片。
+维护者明确要求不兼容实验任务：移除所有 Cursor 只读分支和退役身份判据。一次性清理由
+`scripts/purge-cursor-experiment.py` 完成，先备份再按 `agent_kind=cursor` 删除任务及关联记录；
+不在产品启动时做迁移，也不保留第四种引擎类型。
+没有新的 wire 字段、握手或恢复策略；单个退役请求失败不重启设备连接。自建中转继续透明
+转发既有 invoke，客户端负责拒绝已退役能力，无需中转适配或版本升级。
 
 ## 机器实时状态（2026-11-02）
 

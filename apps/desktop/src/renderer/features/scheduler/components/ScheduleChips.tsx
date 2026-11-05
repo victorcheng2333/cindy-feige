@@ -59,7 +59,7 @@ import type { SessionReference } from '../../../../shared/sessionReference';
 import { isReviewSessionSource } from '../../../../shared/sessionSource';
 
 export type Destination = 'local' | 'worktree' | 'thread';
-export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type AgentKind = 'claude-code' | 'codex' | 'pi';
 
 interface ChipButtonProps {
   icon?: React.ReactNode;

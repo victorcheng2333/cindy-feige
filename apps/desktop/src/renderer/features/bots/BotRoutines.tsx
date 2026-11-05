@@ -475,11 +475,11 @@ export function BotRoutines({
               agentDeviceId: draft.modelOverride.agentDeviceId ?? null,
             } : null}
             disabled={busy} deviceId={settingsTarget.deviceId}
-            onChange={(route) => { if (route?.harness === 'cursor') return; setDraft({ ...draft, modelOverride: route ? {
+            onChange={(route) => setDraft({ ...draft, modelOverride: route ? {
               agentKind: route.harness === 'claude' ? 'claude-code' : route.harness,
               model: route.model, providerId: route.providerId, effort: route.effort,
               fastMode: route.fastMode, agentDeviceId: route.agentDeviceId ?? null,
-            } : null }); }}
+            } : null })}
           />}
           {supportsSessionModes && <div className="space-y-2">
             <span aria-hidden className={fieldLabelClass}>{t('routines.sessionMode')}</span>

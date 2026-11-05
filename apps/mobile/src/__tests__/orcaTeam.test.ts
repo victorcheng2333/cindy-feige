@@ -62,16 +62,6 @@ const remoteLead = {
 };
 
 describe('mobile Orca collaboration entry', () => {
-  // Unit regression: Cursor was coerced to Claude by the worker form's default,
-  // exposing collaboration that the host rejects. A normal Cursor task must
-  // short-circuit before querying another engine's capabilities or policy.
-  it('does not offer collaboration or probe Claude capabilities for a Cursor task', async () => {
-    const maker = fakeMaker({});
-    const cursor = { ...project, agentKind: 'cursor' as const };
-    expect(isOrcaCollabEligible(cursor)).toBe(false);
-    await expect(readOrcaCollabEntryStatus(maker, cursor, 'claude-code')).resolves.toBe('ineligible');
-    expect(maker.getCapabilities).not.toHaveBeenCalled();
-  });
   it('only offers collaboration to Lead-capable tasks', () => {
     expect(isOrcaCollabEligible(project)).toBe(true);
     expect(isOrcaCollabEligible({ ...project, workingDir: '' })).toBe(false);

@@ -364,12 +364,10 @@ export function PluginScheduleDraft({
             return caps;
           },
           onSelect: async (value) => {
-            const agent = value.agent;
-            if (agent === "cursor") return false;
             assertCurrent();
             setDraft((d) => ({
               ...d,
-              agentKind: agent,
+              agentKind: value.agent,
               model: value.modelId,
               providerId: value.providerId,
               effort: value.effort || "",

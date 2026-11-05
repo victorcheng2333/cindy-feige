@@ -173,8 +173,3 @@ export {
 } from './claude-code/claude-projects-fs.js';
 
 export type { PiCacheCompatibility } from './pi/cache-compatibility.js';
-
-export { CursorAgent, CURSOR_CAPABILITIES } from './cursor/index.js';
-export type { CursorAgentDeps } from './cursor/index.js';
-export { CursorRpcClient } from './cursor/rpc-client.js';
-export { cursorModelDescriptor } from './cursor/model-config.js';

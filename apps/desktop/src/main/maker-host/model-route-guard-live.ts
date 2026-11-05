@@ -148,7 +148,7 @@ export async function resolveNewTaskDefaultModelRoute(
 
 /** 该 agent 的静态原生默认来源偏好(nativeDefaultSourceId 的无 rail 近似)。 */
 function staticNativeDefaults(agent: AgentKind): readonly string[] {
-  return agent === 'cursor' ? ['cursor'] : agent === 'codex' ? ['openai', 'xd'] : ['xd'];
+  return agent === 'codex' ? ['openai', 'xd'] : ['xd'];
 }
 
 /**
@@ -365,7 +365,6 @@ export async function resolveRouteCopyCapabilities(
  * (PR #744 review 第十五轮)。
  */
 const DEFAULT_ONESHOT_MODEL: Record<AgentKind, string> = {
-  cursor: '', // Cursor does not implement one-shot; never borrow a gateway model.
   'claude-code': 'claude-haiku-4-5',
   codex: 'gpt-5.4-mini',
   // pi oneShot 未实现(BaseAgent 默认抛 NotSupported);占位与 claude 同款网关小模型。

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   previewCleared: vi.fn(),
   discard: vi.fn(async () => ({ discarded: true })),
   commit: vi.fn(async () => ({ committed: true })),
+  setModel: vi.fn(async () => ({ deferred: true, superseded: false })),
 }));
 
 vi.mock('@/lib/sessionService', () => ({ create: mocks.create }));
@@ -67,12 +68,14 @@ describe('provisional draft task', () => {
         maker: {
           discardProvisionalSession: mocks.discard,
           commitProvisionalSession: mocks.commit,
+          setModel: mocks.setModel,
         },
       },
     };
   });
   afterEach(() => {
     delete (globalThis as { window?: unknown }).window;
+    setDataOwnerGeneration(null, 0);
   });
 
   it('opens one unsent task while typing and reuses it for the same settings', async () => {

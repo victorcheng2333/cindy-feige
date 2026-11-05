@@ -378,7 +378,7 @@ export function isRestorableQueuedMessage(value: unknown): value is AgentInputQu
     !!msg.createOpts && typeof msg.createOpts === 'object' &&
     (msg.createOpts.agentKind === 'claude-code' ||
       msg.createOpts.agentKind === 'codex' ||
-      msg.createOpts.agentKind === 'pi' || msg.createOpts.agentKind === 'cursor')
+      msg.createOpts.agentKind === 'pi')
   );
 }
 

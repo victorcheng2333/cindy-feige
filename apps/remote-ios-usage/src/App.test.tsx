@@ -300,23 +300,3 @@ it('updates overview and detail countdowns without waiting for a usage response'
     vi.useRealTimers();
   }
 });
-
-// Unit: real overview and detail must show model pools, not fabricated 5-hour/week windows.
-it("shows precise Cursor pools in overview and detail without losing pull-to-refresh", async () => {
-  fake.usage.mockResolvedValue([{ id: 'cursor', name: 'Cursor', service: 'Cursor', plan: '', failed: false, updated: Date.now(), windows: [
-    { minutes: null, label: 'Cursor 模型', left: 99.738, reset: 4102444800 },
-    { minutes: null, label: '其他模型', left: 96.968, reset: 4102444800 },
-  ] }]);
-  await act(async () => root.render(<App />));
-  await click('Test Mac');
-  expect(host.textContent).toContain('99.7%');
-  expect(host.textContent).toContain('已用 0.3%');
-  expect(host.textContent).toContain('其他模型');
-  expect(host.textContent).not.toContain('5 小时额度');
-  await click('Cursor');
-  expect(host.textContent).toContain('99.7%');
-  expect(host.textContent).toContain('以 Cursor 账单为准');
-  await click('测试下拉');
-  expect(host.textContent).toContain('99.7%');
-  expect(fake.logout).not.toHaveBeenCalled();
-});

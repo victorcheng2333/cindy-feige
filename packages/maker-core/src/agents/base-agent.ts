@@ -684,7 +684,7 @@ export interface AgentDeps {
   getDisabledSkillPaths?: () => readonly string[];
   /** Optional host isolation for SkillHub discovery; native runtime discovery is unaffected. */
   scanLocalCustomizations?: (
-    engine: 'claude-code' | 'codex' | 'pi' | 'cursor',
+    engine: 'claude-code' | 'codex' | 'pi',
     options: ListCustomizationsOptions,
   ) => Promise<ListCustomizationsResult>;
   /** Host-owned local Skills, loaded without writing user/project discovery directories. */

@@ -114,7 +114,6 @@ function isChatModel(model: CatalogModel, provider: Provider): boolean {
 }
 
 const AGENT_LABEL: Record<AgentKind, string> = {
-  cursor: 'Cursor',
   codex: 'Codex',
   'claude-code': 'Claude Code',
   pi: 'Pi',
@@ -229,8 +228,7 @@ export function buildTextOneshotPinOptions(
       }
     }
   }
-  return entries.filter(e => e.agentKind !== 'cursor').map((e) => {
-    if (e.agentKind === 'cursor') throw new Error('Unsupported auxiliary engine');
+  return entries.map((e) => {
     const providerName = displayProviderName(e.provider);
     const base = `${e.model.name} · ${providerName}`;
     return {

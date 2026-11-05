@@ -1,5 +1,7 @@
 # 猫猫 iOS
 
+> 2026-11-05：已移除 Cursor 额度入口，保留 Claude / ChatGPT 账号、登录和设备筛选。下方 Cursor 验证条目为旧版本记录。
+
 独立的 iOS 订阅用量客户端，默认连接中国大陆 Cindy。独立 Bundle ID：
 `com.chengfei.remoteiosusage`，不依赖原版应用组、推送或分享扩展，也不修改原版 Mobile。
 
@@ -22,14 +24,14 @@ pnpm --dir apps/remote-ios-usage exec expo export --platform ios
 - 登录：默认企业标识 `xd` 的企业 SSO，及手机号／邮箱验证码；支持账号选择和 SSO 额外验证码。
 - SSO 使用系统浏览器与既有托管回调、PKCE、独立轮询密钥；取消和五分钟超时均清理本次授权，不接收迟到凭证。企业域名可编辑。
 - 设备列表：显示同账号电脑，离线或关闭远程连接的电脑不可进入。
-- 用量总览：Claude / ChatGPT 账号并排展示 5 小时与周配额；Cursor 账号用独立双池卡片展示 Cursor 模型、其他模型的剩余／已用比例与重置时间。
+- 用量总览：Claude / ChatGPT 账号并排展示 5 小时与周配额。
 - 详情：各周期及模型专项配额、重置时间。过期值显示等待刷新，不假定重置到 100%。
 - 「先看看界面」进入明确标注的虚构演示模式，不访问服务端。
 
 ## 连接与边界
 
 使用 `@cindy/auth-client`、`@cindy/device-link` 既有协议和中国大陆公开端点。
-仅调用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits` 和 `maker:usage:cursor-subscription`，按连接 ID 校验独立账号。
+仅调用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`，按连接 ID 校验独立账号。
 Cursor 额度由专用只读接口发现，不开放 Cursor 的远程执行能力；旧端不支持时明确提示更新，不借用其他账号或本机额度。
 界面只提供只读功能，不代表服务端为这个客户端颁发了只读权限。
 

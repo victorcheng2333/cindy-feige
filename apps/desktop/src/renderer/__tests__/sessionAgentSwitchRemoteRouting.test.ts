@@ -106,22 +106,6 @@ describe('makerChatStore.mirrorAgentSwitchIntent', () => {
     expect(makerChatStore.getSnapshot(s).agentKind).toBe('claude-code');
   });
 
-  // Tier: unit. Real host broadcasts Cursor same-agent tuning before the next send;
-  // dropping that projection left the composer on the old model despite a successful selection.
-  it('mirrors Cursor pending model, effort and Fast without changing the running engine', async () => {
-    const { makerChatStore } = await import('@/lib/makerChatStore');
-    const s = sid();
-    makerChatStore.mirrorAgentSwitchIntent(s, {
-      targetAgentKind: 'cursor', model: 'claude-opus-5-5', providerId: 'cursor',
-      effort: 'high', fastMode: true,
-    });
-    expect(makerChatStore.getSnapshot(s).agentSwitchIntent).toEqual({
-      target: 'cursor', model: 'claude-opus-5-5', providerId: 'cursor',
-      effort: 'high', fastMode: true,
-    });
-    expect(makerChatStore.getSnapshot(s).agentKind).toBe('claude-code');
-  });
-
   it('幂等:同值回声不重建快照(不与本端乐观登记打架)', async () => {
     const { makerChatStore } = await import('@/lib/makerChatStore');
     const s = sid();

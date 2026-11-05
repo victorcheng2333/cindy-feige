@@ -80,7 +80,7 @@ interface AgentTaskCardProps {
   sessionId?: string;
   /** Current owning harness. Pi's durable-detail sidebar must never surface
    * after the session has switched to Claude Code or Codex. */
-  sessionAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
+  sessionAgentKind?: 'cc' | 'codex' | 'pi';
 }
 
 function readInputString(input: unknown, keys: string[]): string | undefined {
@@ -349,7 +349,7 @@ export function AgentTaskCard({
     ? t('chat.agentTask.provider.workflow')
     : isBash
       ? t('chat.agentTask.provider.shell')
-      : provider === 'cursor' ? 'Cursor' : provider === 'codex'
+      : provider === 'codex'
         ? t('chat.agentTask.provider.codex')
         : provider === 'pi'
           ? t('chat.agentTask.provider.pi')

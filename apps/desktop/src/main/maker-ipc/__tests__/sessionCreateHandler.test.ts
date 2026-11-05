@@ -354,16 +354,14 @@ it('closes the returned instance once when terminal cancellation interrupts publ
   expect(close).toHaveBeenCalledOnce();
 });
 
-// Regression: iOS sent a valid Cursor draft, but the production IPC parser rejected
-// it before the same-account creation guard/transaction could run. Tier: unit.
-it('accepts the complete Cursor create payload through the real IPC parser', async () => {
+// Unknown engines must fail before bootstrapping any replacement engine.
+// Existing tests exercised supported engines only. Unit tier, minimal legacy wire payload.
+it('rejects unknown engine requests without starting another engine', async () => {
   const harness = new IpcHarness();
-  const deps = createDeps({bootstrapSession:vi.fn().mockResolvedValue({
-    session:createSessionStub({agentKind:'cursor'}),didInjectOrcaInstructions:false,didInjectProjectContext:true,
-  })});
+  const deps = createDeps();
   registerMakerSessionCreateHandler(harness, deps);
-  const draft = {agentKind:'cursor',workingDir:'/repo',workspaceKind:'project',model:'cursor-model',providerId:'cursor',effort:'high',fastMode:true,permissionMode:'auto',planMode:false};
-  await expect(harness.invoke(MAKER_INVOKE.CREATE_SESSION, draft)).resolves.toMatchObject({sessionId:'session-1',agentKind:'cursor'});
-  expect(deps.bootstrapSession).toHaveBeenCalledWith(expect.objectContaining(draft));
-  expect(deps.broadcastSessionCreated).toHaveBeenCalledWith('session-1');
+  await expect(harness.invoke(MAKER_INVOKE.CREATE_SESSION, {
+    agentKind: 'unsupported-engine', workingDir: '/fixture', model: 'fixture-model',
+  })).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+  expect(deps.bootstrapSession).not.toHaveBeenCalled();
 });

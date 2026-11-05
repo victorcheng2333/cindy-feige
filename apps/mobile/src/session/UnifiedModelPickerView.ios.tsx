@@ -104,7 +104,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
           modifiers={[pickerStyle("segmented"), disabled(p.busy), frame({ minHeight: 44 })]}
           testID={`${p.testID}.agentSwitcher`}
         >
-          {p.agents.map(agent => <Text key={agent} modifiers={[tag(agent)]}>{mobileAgentLabel(agent)}</Text>)}
+          {p.agents.map(agent => <Text key={agent} modifiers={[tag(agent)]}>{agent === 'claude-code' ? 'Claude' : mobileAgentLabel(agent)}</Text>)}
         </Picker>
       ) : null}
       <HStack modifiers={[frame({ maxWidth: Infinity, alignment: "trailing" })]}>
@@ -153,7 +153,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               key={row.key}
               title={row.entry.displayName}
               subtitle={[
-                mobileAgentLabel(row.config.agent),
+                row.config.agent === 'claude-code' ? 'Claude' : mobileAgentLabel(row.config.agent),
                 row.subtitle,
                 row.quotaLabel,
               ]

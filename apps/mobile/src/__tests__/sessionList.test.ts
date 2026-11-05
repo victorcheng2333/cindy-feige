@@ -100,16 +100,6 @@ function message(sessionId: string, id: string, role: RemoteMessage['role'], con
 }
 
 describe('sessionList', () => {
-  // Cursor remote-view regression: exercise shared and localized production list projections;
-  // prior fixtures omitted Cursor, causing a visible Claude Code subtitle (unit, one row).
-  it('labels Cursor consistently before and after localizing the session list', () => {
-    const cursor = session('cursor', { agentKind: 'cursor', model: 'auto', providerId: 'cursor' });
-    expect(toRemoteSessionListItem(cursor).subtitle).toContain('Cursor');
-    const rows = buildRemoteSessionSections([cursor]).flatMap(section => section.data);
-    expect(rows[0].subtitle).toContain('Cursor');
-    expect(rows[0].subtitle).not.toContain('Claude');
-  });
-
   it('groups pinned, dialogue, and project sessions without duplicating pinned rows', () => {
     const sections = buildRemoteSessionSections([
       session('project-old', { updatedAt: '2026-01-01T00:01:00.000Z' }),

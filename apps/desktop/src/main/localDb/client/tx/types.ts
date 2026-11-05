@@ -1596,7 +1596,7 @@ export type SessionImportTransactionArgs =
         status: 'active' | 'archived';
         tokensUsed: number;
         userSendAt: number;
-        agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
+        agentKind: 'cc' | 'codex' | 'pi';
         createdAt: number;
         updatedAt: number;
       };

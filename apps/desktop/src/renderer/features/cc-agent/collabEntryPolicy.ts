@@ -73,7 +73,6 @@ function nonEmpty(value: string | null | undefined): string | null {
  * 又要在被控端跳过项目级 —— 两个字段互相独立,不是二选一。
  */
 export function resolveCollabEntryPolicy(target: CollabEntryTarget): CollabEntryPolicyScope {
-  if (target.agentKind === 'cursor') return NOT_ELIGIBLE;
   if (target.orcaRole === 'worker' || target.orcaRemoteWorker) return NOT_ELIGIBLE;
   if (target.workspaceKind !== 'project' && target.workspaceKind !== 'dialogue') {
     return NOT_ELIGIBLE;

@@ -44,7 +44,7 @@ export interface ImDefaultRouteRecord {
   manual?: true;
 }
 
-const AGENT_KINDS: readonly Exclude<AgentKind, 'cursor'>[] = ['claude-code', 'codex', 'pi'];
+const AGENT_KINDS: readonly AgentKind[] = ['claude-code', 'codex', 'pi'];
 
 /**
  * 渠道原始设置里影响路由的部分。三个引擎都算进去: 选定引擎的模型全被停用时

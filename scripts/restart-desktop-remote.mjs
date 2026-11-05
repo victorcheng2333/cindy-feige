@@ -597,13 +597,15 @@ function darwinTerminalTtysForProcesses(processes) {
   return [...new Set(processes.map((proc) => darwinTtyPath(proc.tty)).filter(Boolean))];
 }
 
-function closeDarwinTerminalTtys(ttys) {
-  if (process.platform !== 'darwin' || ttys.length === 0) return;
+export function closeDarwinTerminalTtys(ttys, { platform = process.platform, runCommand = run, warn = console.warn } = {}) {
+  if (platform !== 'darwin' || ttys.length === 0) return;
 
   for (const ttyPath of ttys) {
-    const result = run('osascript', osascriptCloseDarwinTerminalTtyArgs(ttyPath));
-    if (result.status !== 0 && result.stderr.trim()) {
-      console.warn(`==> Failed to close Terminal tab for ${ttyPath}: ${result.stderr.trim()}`);
+    // Terminal may be waiting for Automation permission or stop answering Apple
+    // Events. Tidying an old tab must not block restarting the dev instance.
+    const result = runCommand('osascript', osascriptCloseDarwinTerminalTtyArgs(ttyPath), { timeout: 3000 });
+    if (result.status !== 0) {
+      warn(`==> Failed to close Terminal tab for ${ttyPath}: ${result.error?.message || result.stderr?.trim() || 'cleanup did not complete'}`);
     }
   }
 }

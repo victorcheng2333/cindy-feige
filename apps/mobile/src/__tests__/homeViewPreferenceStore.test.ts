@@ -18,7 +18,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 const OWNER = 'owner-a';
 const defaultPrefs = {
   groupByProject: true,
-  groupDialogue: false,
+  groupDialogue: true,
   selectedDevice: null,
   sortBy: 'recency',
   statusFilter: 'active',
@@ -35,6 +35,18 @@ const defaultPrefs = {
 } as const;
 
 describe('homeViewPreferenceStore', () => {
+  // Unit regression: an absent override (fresh install or sparse legacy settings)
+  // must collect non-project sessions into Chat instead of flooding the home list.
+  // Existing tests only exercised explicitly enabled grouping.
+  it.each([null, { selectedDevice: null }, { groupDialogue: false }])(
+    'defaults to the Chat folder while preserving an explicit choice: %j',
+    async (stored) => {
+      const { __testing, readHomeViewPreferences } = await import('@/session/homeViewPreferenceStore');
+      if (stored) store.set(__testing.storageKey, JSON.stringify(stored));
+      expect((await readHomeViewPreferences(OWNER)).groupDialogue)
+        .toBe(stored?.groupDialogue !== false);
+    },
+  );
   it('persists teammate multi-selection for its owner and resets without changing project choices', async () => {
     const { saveHomeViewPreferences, readHomeViewPreferences } = await import('@/session/homeViewPreferenceStore');
     await saveHomeViewPreferences({ teammateFilter: { owner: OWNER, value: ['cindy', 'filo'] }, projectFilter: { owner: OWNER, value: ['project'] } });
@@ -232,7 +244,7 @@ describe('homeViewPreferenceStore', () => {
     expect((await readHomeCollapsePreferences(OWNER)).collapsedProjectKeys).toEqual(keys.slice(-200));
   });
 
-  it('keeps old-blob defaults: project on, dialogue group off, time sort, active', async () => {
+  it('fills sparse legacy preferences with project and Chat folders enabled', async () => {
     const { __testing, readHomeViewPreferences } =
       await import('@/session/homeViewPreferenceStore');
 

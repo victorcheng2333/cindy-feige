@@ -54,6 +54,7 @@ function setup(orcaRole: 'lead' | 'worker' | null, supported = true, agentDevice
     isProviderShareAgentDeviceId: (id: unknown) => typeof id === 'string' && id.startsWith('share:'),
     confirmAgentLocationForPick, intentChangesAgentLocation: () => false,
     confirmMobileSessionAgentSwitch: vi.fn(async () => true),
+    modelSheetApprovedAgentRef: { current: null },
     shouldBlockLegacyRemoteModelWindowSwitch, showRemoteModelWindowUnsupported: vi.fn(),
     writeSessionAgentSwitchIntent: write, setComposerModel: setModel, runControlAction,
     setModelSheetOpen: vi.fn(), setModelSheetAgentKind: vi.fn(),

@@ -3,8 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BUNDLED_CATALOG, providerMediaField } from '@cindy/model-providers';
 
 import {
-  setLocalHarnessProviderReader,
-  notifyLocalHarnessProviderChanged,
   commitModelPlaneFromCatalog,
   clearDiscoveredProviderModels,
   getActiveCatalog,
@@ -21,26 +19,8 @@ import {
 } from '../active-catalog.js';
 
 describe('active catalog revision', () => {
-  // Tier: unit. A cached catalog must neither hide newly discovered SDK models nor retain another owner's models.
-  it('reads account-scoped local models outside the shared catalog cache and publishes revisions', () => {
-    let ids = ['first-model'];
-    setLocalHarnessProviderReader(() => ({ id: 'cursor', name: 'Cursor', source: 'builtin',
-      agents: ['cursor'], auth: { method: 'oauth' }, routing: {}, models: { cursor: ids.map(id => ({
-        id, name: id, contextWindow: 0, efforts: [], defaultEffort: null,
-      })) } }));
-    const read = () => getActiveCatalog().providers.find(p => p.id === 'cursor')?.models.cursor?.map(m => m.id);
-    expect(read()).toEqual(['first-model']);
-    const listener = vi.fn(read);
-    setActiveCatalogChangedListener(listener);
-    ids = ['second-model'];
-    notifyLocalHarnessProviderChanged();
-    expect(listener.mock.results[0]?.value).toEqual(['second-model']);
-    ids = []; // Owner changed before that owner's discovery completes.
-    expect(read()).toEqual([]);
-  });
   afterEach(() => {
     setActiveCatalogChangedListener(null);
-    setLocalHarnessProviderReader(undefined);
     setActiveCatalog(BUNDLED_CATALOG);
     setAnthropicDiscoveredModels([]);
     setDiscoveredCodexModels([]);

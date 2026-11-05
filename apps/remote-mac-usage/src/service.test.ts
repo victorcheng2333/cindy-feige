@@ -61,7 +61,7 @@ describe('standalone remote quota service', () => {
     const h = harness(); await h.service.restore(); expect(h.service.snapshot().signedIn).toBe(true);
     await h.service.refresh();
     expect(h.service.snapshot().devices.map(d => d.accounts[0].windows[0].remaining)).toEqual([68, 68]);
-    expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription', 'maker:usage:cursor-subscription']));
+    expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription']));
     expect(JSON.stringify(h.service.snapshot())).not.toContain('fake-access'); h.service.dispose();
   });
   it('keeps saved login on a transient refresh error, but clears a revoked login', async () => {
@@ -174,35 +174,4 @@ describe('quota and local command boundaries', () => {
     const result = await loginSso(auth as unknown as CindyAuthClient, 'fake', new AbortController().signal, async () => {});
     expect(result.status).toBe('ok');
   });
-});
-
-// Unit: actual service discovery and tunnel routing must retain Cursor and independent pool values.
-it('discovers Cursor, reads separate pools, and keeps unavailable different from zero', async () => {
-  const h = harness();
-  h.link.invoke.mockImplementation(async (_id, request) => ({ ok: true, result: (request.channel === 'maker:provider:list'
-    ? { providers: [{ id: 'openai', name: 'OpenAI', connected: true, auth: { method: 'oauth' } }, provider()] }
-    : { providerId: 'cursor', connected: true, status: 'ready', snapshot: { pools: [{ id: 'auto', usedPercent: 1 }, { id: 'api', usedPercent: 100 }], fetchedAtMs: 1793750400000, resetsAtMs: 4102444800000 } }) as never }));
-  await h.service.restore(); await h.service.refresh();
-  expect(h.service.snapshot().devices[0].accounts.map(a => a.service)).toEqual(['Claude', 'ChatGPT', 'Cursor']);
-  expect(h.service.snapshot().devices[0].accounts[2]).toMatchObject({ service: 'Cursor', failed: false, windows: [
-    { label: 'Cursor 模型', remaining: 99, minutes: null, resetsAt: 4102444800 },
-    { label: '其他模型', remaining: 0, minutes: null, resetsAt: 4102444800 },
-  ] });
-  expect(h.link.invoke.mock.calls.some(call => call[1].channel === 'maker:usage:cursor-subscription')).toBe(true);
-  expect(parseAccount({ id: 'cursor' }, { providerId: 'cursor', status: 'unavailable', snapshot: null })).toMatchObject({ failed: true, windows: [] });
-  expect(() => parseAccount({ id: 'cursor' }, { providerId: 'another', status: 'ready' })).toThrow('mismatch');
-  h.link.invoke.mockImplementation(async (_id, request) => (request.channel === 'maker:provider:list' ? { ok: true, result: { providers: [] } } : { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED', message: 'old host' } }) as never);
-  await h.service.refresh();
-  expect(h.service.snapshot().devices[0]).toMatchObject({ cursorUnsupported: true, error: null });
-  h.service.dispose();
-});
-
-// Unit: live Cursor responses have sub-percent spend; integer rounding hid it as unused.
-it('keeps sub-percent Cursor usage visible without claiming a full or empty pool', () => {
-  expect(poolPercent(99.6)).toBe('99.6');
-  expect(poolPercent(0.4)).toBe('0.4');
-  expect(poolPercent(99.98)).toBe('>99.9');
-  expect(poolPercent(0.02)).toBe('<0.1');
-  expect(poolPercent(100)).toBe('100');
-  expect(poolPercent(0)).toBe('0');
 });

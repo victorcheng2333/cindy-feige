@@ -28,7 +28,6 @@
     "@anthropic-ai/sdk": "^0.93.0",
     "@cindy/maker-shared": "workspace:*",
     "@cindy/model-providers": "workspace:*",
-    "@cursor/sdk": "1.2.0",
     "diff": "^8.0.4",
     "gray-matter": "^4.0.3"
   },

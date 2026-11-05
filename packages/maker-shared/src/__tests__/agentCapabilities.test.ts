@@ -83,8 +83,6 @@ describe('agent capabilities shared model', () => {
       'plan',
     ]);
     expect(capabilities?.supportsSessionAgentSwitch).toBe(false);
-    expect(capabilities?.supportsControlledCursorCreation).toBe(false);
-    expect(normalizeMobileAgentCapabilities({...desktopCapabilitiesPayload, supportsControlledCursorCreation:true})?.supportsControlledCursorCreation).toBe(true);
     expect(capabilities?.supportsModelWindowSwitchGuard).toBe(false);
     expect(capabilities?.availableModels[0].newSessionDefault).toEqual(['claude-code', 'codex', 'pi']);
     expect('newSessionDefault' in (capabilities?.availableModels[1] ?? {})).toBe(false);

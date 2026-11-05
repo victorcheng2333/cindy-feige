@@ -82,13 +82,13 @@ function currentStore(rootPath?: string) {
 }
 
 export async function readBotModelChainSettings(
-  options?: { rootPath?: string; providers?: readonly ProviderView[]; availableAgents?: ReadonlySet<'cc' | 'codex' | 'pi' | 'cursor'> },
+  options?: { rootPath?: string; providers?: readonly ProviderView[]; availableAgents?: ReadonlySet<'cc' | 'codex' | 'pi'> },
 ): Promise<BotModelChainSettings> {
   return (await readBotModelChainSettingsState(options)).value;
 }
 
 export async function readBotModelChainSettingsState(
-  options?: { rootPath?: string; providers?: readonly ProviderView[]; availableAgents?: ReadonlySet<'cc' | 'codex' | 'pi' | 'cursor'> },
+  options?: { rootPath?: string; providers?: readonly ProviderView[]; availableAgents?: ReadonlySet<'cc' | 'codex' | 'pi'> },
 ): Promise<OverrideSettingsState<BotModelChainSettings>> {
   const store = currentStore(options?.rootPath);
   store.invalidateIfChanged();

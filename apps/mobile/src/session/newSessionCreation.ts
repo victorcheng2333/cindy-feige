@@ -959,6 +959,7 @@ function finishTask(task: InternalTask): void {
 
 function exactSessionFromProbe(value: unknown, sessionId: string): RemoteSession | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if ('provisional' in value && value.provisional === true) return null;
   return (value as { id?: unknown }).id === sessionId
     ? value as RemoteSession
     : null;

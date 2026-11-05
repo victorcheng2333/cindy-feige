@@ -25,13 +25,6 @@ import { CONTINUE_AFTER_ERROR_PROMPT, CONTINUE_AFTER_APP_EXIT_PROMPT } from '@ci
 
 const ATTACHMENT_SHA256 = 'a'.repeat(64);
 
-// Unit regression: existing Cursor tasks must keep their engine in the real queue envelope.
-it('preserves Cursor execution identity in mobile sends', () => {
-  const queued = buildQueuedTextMessage(session({ agentKind: 'cursor', model: 'grok', providerId: 'cursor' }), 'hello', new Date('2026-01-01T00:00:00Z'), 'cursor-message');
-  expect(queued.createOpts).toMatchObject({ agentKind: 'cursor', model: 'grok', providerId: 'cursor' });
-});
-
-
 function session(patch: Partial<RemoteSession> = {}): RemoteSession {
   return {
     id: 's1',

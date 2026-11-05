@@ -70,12 +70,3 @@ it("encodes another computer's source into the favorite provider id and round-tr
   expect(() => agentDeviceFavoriteSource({ deviceId: "", providerId: "anthropic" })).toThrow();
   expect(() => agentDeviceFavoriteSource({ deviceId, providerId: "p".repeat(500) })).toThrow();
 });
-
-// Metadata opt-in preserves old readers; it does not negotiate remote engine execution.
-it("keeps Cursor off legacy snapshots while accepting explicit metadata opt-in", () => {
-  const cursor = { ...item, agent: "cursor" };
-  expect(() => parseModelFavorites([cursor])).toThrow();
-  expect(parseModelFavorites([cursor], true)).toEqual([cursor]);
-  expect(() => parseModelFavoriteMutation({ kind: "add", item: cursor })).toThrow();
-  expect(parseModelFavoriteMutation({ kind: "add", item: cursor }, 512, true)).toMatchObject({ item: { agent: "cursor" } });
-});

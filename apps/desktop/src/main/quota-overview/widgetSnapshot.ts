@@ -15,7 +15,7 @@ import { familyLogo, MENUBAR_CINDY_LOGO } from '../menubar/logos.js';
 import type { MenubarFamily, MenubarModelSeries } from '../menubar/snapshot.js';
 
 const WIDGET_DAYS = 30;
-const FAMILIES: Exclude<MenubarFamily, 'cursor'>[] = ['claude', 'codex', 'grok', 'kimi'];
+const FAMILIES: MenubarFamily[] = ['claude', 'codex', 'grok', 'kimi'];
 
 /** Panel strings the widget needs, plus the duration templates for live countdowns. */
 const UI_KEYS = [
@@ -77,7 +77,7 @@ export function buildUsageWidgetSnapshot(
   const data = view.usage.scopes[scope] ?? view.usage.scopes.all;
   const count = Math.min(view.usage.days.length, data?.daily.length ?? 0, WIDGET_DAYS);
   // Same days as the view; the series is collected alongside it, so it only lines up when its length matches.
-  const seriesDaily = series && !series.models.some(model => model.harness === 'cursor') && series.daily.length === view.usage.days.length && count > 0
+  const seriesDaily = series && series.daily.length === view.usage.days.length && count > 0
     ? series.daily.slice(-count) : undefined;
   const seriesTokens = seriesDaily ? series!.tokens.slice(-count) : undefined;
   const strings: Record<string, string> = {};
@@ -104,10 +104,9 @@ export function buildUsageWidgetSnapshot(
       daily: count > 0 && data ? data.daily.slice(-count).map((day, i) => {
         const models = seriesDaily?.[i];
         const modelTokens = seriesTokens?.[i];
-        // Widget v1 has three fixed harness slots; never relabel Cursor as Claude.
-        return { money: [day.money[0], day.money[1], day.money[2]], paid: day.paid, tokens: [day.tokens[0], day.tokens[1], day.tokens[2]], ...(models && modelTokens ? { models, modelTokens } : {}) };
+        return { money: [day.money[0], day.money[1], day.money[2]] as [number, number, number], paid: day.paid, tokens: [day.tokens[0], day.tokens[1], day.tokens[2]] as [number, number, number], ...(models && modelTokens ? { models, modelTokens } : {}) };
       }) : [],
-      ...(seriesDaily ? { models: series!.models.flatMap(model => model.harness === 'cursor' ? [] : [{ ...model, harness: model.harness }]) } : {}),
+      ...(seriesDaily ? { models: series!.models } : {}),
     },
     strings,
   };

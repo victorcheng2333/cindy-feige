@@ -1,3 +1,21 @@
+> **已退役（2026-11-05）**：维护者决定从所有客户端移除 Cursor 引擎。以下仅为历史调查和实测记录，不再描述当前能力或开发计划；所列运行时文件和探针已移除。其他引擎及通用体验优化保留。
+
+## 退役实现与验证（2026-11-05）
+
+2026-11-05 补充：维护者要求不保留旧任务兼容。已用一次性脚本清除本机 8 个 Cursor 任务及 911 条消息，执行前备份并核验其他引擎任务和消息无缺失；SDK 私有目录和加密登录配置移入备份。新版 Mac CN ARM64 Developer ID 包和 iOS 个人签名包已生成，均回读确认不含退役兼容及预热入口。iOS 设备连接返回 CoreDeviceError 4016，维护者明确选择暂缓 iOS 安装、先替换 Mac。
+
+- 已移除 maker-core Cursor adapter、Desktop 登录和 utility worker、SDK 依赖及补丁、打包入口、各端模型选择、专用预热/远程通道和额度展示。独立 Mac / iOS 猫猫同步移除 Cursor 额度查询。
+- 维护者随后明确取消历史兼容：已撤掉只读展示、退役身份判据及对应测试；一次性清理脚本按 Cursor 身份备份并删除本机实验任务、消息，隔离 Cindy 私有 SDK 状态与登录配置。其他引擎不变。
+- 已逐文件核对保留 iOS 原生选择器、首页与偏好、通用任务创建/镜像修复、远程重启脚本等其他优化。通用 provisional 标记和重复提交保护继续保留。
+- 类型检查：maker-core、Desktop、Mobile、独立 Mac / iOS 猫猫通过。锁文件冻结校验通过，没有引入 Expo / React Native 依赖漂移。
+- 定向测试：核心 154 项；Desktop 创建/鉴权/目录/额度组 610 项，后续退役切换回归通过（切换文件 162 项）；模型和界面组 586 项通过、1 项既有失败；Mobile 410 项经修正测试断言后通过，另 65 项 transport 测试通过；模型目录 85 项、Device Link 59 项、共享协议 90 项、Mac 猫猫 29 项、iOS 猫猫 39 项通过。仅复跑了受修正影响的文件，计数不重复累加。
+- 自建中转：隔离 loopback 的真实配对、调用和自动重连互通测试通过；没有修改服务端或连接恢复策略。
+- 界面：真实模型选择器、供应商设置的 Light / Dark 共 4 个场景通过，已查看截图；没有 iOS / Android 真机目检。
+- 未通过的既有检查：插件选择器取消测试仍查询旧统一面板的 `data-unified-anchor`，移除前 ModelSelector 的隔离对照也同样失败；全量 `ui:check --changed` 被 PDF worker 的 default export 错误挡住，改用上述定向场景；全仓 i18n 有既有键名缺失，比较 HEAD 与当前 key 集合确认未新增缺失。没有跳过断言或修改其他产品行为来制造通过。
+- 文档检查与 `git diff --check` 通过。后续已完成 Mac 签名打包、覆盖安装并确认新版启动；iOS 安装包已生成，维护者决定继续使用现有远程客户端，暂不覆盖安装。
+
+---
+
 # Cursor Agent 引擎接入方案
 
 > 状态：桌面本机实验版（2026-11-04）；此前已完成真实账号 Electron dev 联调及 CN macOS arm64 签名安装版验收，详见文末分项记录。本轮稳定性修正尚未重新打包安装；跨平台运行未验收。参考实现为本地 `t3code` 仓库
@@ -189,7 +207,7 @@ flowchart LR
 | 用户自己的 Cursor 规则、Skill、MCP、插件 | 支持 | `settingSources: ['project','user','team','mdm','plugins']` |
 | Cindy 托管 Skill | 第二期 | 与 Cursor 的 Skill 目录对齐后再做，避免两份来源 |
 | rewind / fork / 会话树 / HTML 导出 | 不支持 | `Capabilities` 不声明 |
-| 换引擎续做 | 第二期 | 复用 `cross-agent-convert`；转入 Cursor 时以交接摘要作为首条消息。现有 `session-import/sources/cursor.ts` 已能读 Cursor CLI 的本地记录 |
+| 换引擎续做 | 已实现任务内交接，待真实模型验收 | 复用 `sessionAgentSwitchHandler` 的全量／增量交接，见文末 2026-11-05 实现；外部 IDE／CLI 历史导入仍是独立功能 |
 
 ### 4.4 产品提示词（需要你确认）
 
@@ -670,3 +688,713 @@ Cursor 同引擎待应用配置，不开放跨引擎／跨电脑分配；旧控�
 0.8 秒；输入队列既有大文件完整运行约 17.5 秒（625 项，采集约 5.6 秒），新增 4 条队列用例
 单独运行约 4.9 秒、执行 7 毫秒，未增加真实等待或重复加载模块。该大测试文件仍有 5 处
 既有 lint 错误，位于本次新增用例以外；未为此修改无关测试或弱化规则。
+
+
+## 任务内跨 Harness 上下文交接（2026-11-05）
+
+### 使用方式与范围
+
+在已有普通任务的模型选择器里选择另一 Harness 的模型，沿用原来的切换确认。
+选择仅登记意图；下一条消息发送、当前轮次结束后才实际切换。支持 Cursor 与 Claude Code、
+Codex、Pi 双向交接，任务 ID、消息历史和工作目录保持不变。手机是控制端，执行仍在被控电脑。
+
+这里接的是 Cindy 内管理的 Cursor SDK 任务，不复制 Cursor IDE、CLI 的私有数据库，
+也不把一种 Harness 的原生 transcript 冒充另一种 Harness 的记录。无新设置、依赖或数据库迁移。
+本节取代本文较早阶段“跨引擎交接未开放”的现状描述；那些段落保留为历史验证记录。
+
+### 实现方案
+
+1. **首次切入：新原生会话 + 有界历史。** 使用现有 `buildHandoffText`，从已过滤 clear／rewind
+   的 Cindy 消息构建交接：近期用户与助手文本、工具调用及有界结果、工作状态、早期索引和
+   按需检索指引。最多查询最近 400 条素材；近期逐字区默认四个用户轮次，单条文本上限
+   2,000 字符，最终交接最多 16,000 字符。这里的“全量交接”指覆盖所取素材的摘要模式，
+   **不表示完整无损迁移全部上下文**。图片原始数据、模型隐藏推理与运行中进程状态不迁移。
+2. **切回：恢复原生会话 + 增量。** 边界记录离场原生 ID 与消息水位。回到同一电脑的已有
+   Harness 时恢复停泊会话，只补离开期间的消息；工作状态仍参照完整素材。Cursor 原生存储
+   仍按现有账号、凭证与 Cindy 任务隔离，不复制或改写 SDK 历史。
+3. **恢复失败：使用现有原子回退。** 原生恢复失败后，清除目标绑定与更新边界为全量交接
+   同成同败，再尝试新原生会话；回退落库失败保留恢复意图，发送事务阻止错误派发。
+   这只用于显式切换事务，普通 Cursor 原生 resume 的错误策略未修改。
+4. **只给下一条实际发送的输入加前缀。** 交接放入 user wire 消息，界面／持久化的用户消息
+   保持原文。只有 vendor accepted 才消费交接；发送前失败保留供重试，重启可从边界重建。
+   沿用 clear 纪元与回退过滤，避免已清空历史被迟到结果重新注入。没有改 system prompt，
+   没有新增模型总结请求，也没有增加每一轮的固定前缀。
+5. **入口一致。** Desktop 解开 Cursor 任务的引擎浏览限制并正确显示切换卡的 Cursor 名称。
+   手机读取被控端 Cursor 切换能力，旧 Host 缺失／false 时不提供该选项；选择仍复用原有
+   确认、意图推送和发送事务，不在手机保存另一套交接状态。
+
+### 准入边界
+
+宿主在关旧会话和改路由之前拒绝：SSH、跨电脑执行、Orca 与远端 Worker、伙伴、IM、调度、
+插件等非普通任务来源、共享访客／未验证同账号控制端，以及目标任务仍带只读引用目录的情况。
+Cursor 目标须显式选择 Cursor 连接。切入前权限必须已是 Auto、Full access 或 Plan；Ask、
+acceptEdits、default 或未知旧档位拒绝切入，用户可先按原有权限入口显式改选，交接不代改权限。
+可写目录继续走已有运行时配置，未扩大权限档支持。
+同引擎原地改模型维持已有行为；新增准入限制只针对首次切入 Cursor。
+
+核心代码：`apps/desktop/src/main/maker-ipc/sessionAgentSwitchHandler.ts`、`register.ts`，
+发送复用 `makerSendTransaction.ts` 与 `agentHandoffPendingSingleton.ts`；没有另造迁移状态机。
+
+### 验证与限制
+
+- 真实 handler／发送事务的依赖注入回归覆盖六个方向、运行中延后、停泊恢复、恢复失败全量回退、
+  控制端身份、任务类型与只读引用目录拒绝，以及交接到达 Cursor 首条 wire 而不污染用户原文。
+- 切换 handler 与交接生成共 265 项；发送事务和切换确认 298 项；SQLite 历史／停泊等 74 项；
+  手机切换与 Orca 回归 56 项；Cursor adapter／runtime 契约回放 35 项通过。
+  SQLite 测试首次因 Node ABI 不匹配失败，改用本机 Node 22 后全部通过；没有重编译共享依赖。
+  手机原有 AST 夹具遗漏 `modelSheetApprovedAgentRef`，补齐依赖后原断言通过。
+- Desktop 与 Mobile 类型检查通过。新增测试并入原文件，无网络、真实凭证或真实模型调用。
+  handler 测试执行约 45ms；这只表示合成回归，不代表模型延迟。
+- 性能影响：首次交接增加一次有界输入，回切用增量减少重复输入；摘要构造无 LLM 请求。
+  未改工具列表、translator 或既有 system 前缀。真实缓存命中率、首 token 延迟、上下文用量
+  与回答完整性尚未在实际账号双向切换中测量，不能据单测声称模型质量或缓存表现已验证。
+- Windows、iOS 真机、实际模型双向续做和异常断电仍待验收。代码未打包、未替换当前运行的应用。
+  已有交接机制在边界插入失败时只以内存保住本进程交接，进程同时退出仍有丢交接风险；
+  本次沿用并明确记录该既有限制，没有宣称切换和边界写入是单个原子事务。
+
+- 界面专项预览：`legacy-model-selector` 的 Cursor 案例在 760px／390px、Light／Dark 四个
+  组合通过，实际点击 Cursor 标签、模型行并核对目标 provider；已查看截图总览，未发现本次
+  四标签新增导致的重叠或横向溢出。生产选择器未替换模块。`ui:check --changed` 的整组选页
+  仍受现有 `PdfPreview.tsx` 的 `pdf.worker.min.mjs?url` 默认导出错误阻断；专项预览不代表
+  整个任务页、切换卡或手机真机都完成了视觉验收。
+
+- 定向 lint 仍有 19 个已有未使用变量错误：`register.ts` 17 个、`ChatInput.tsx` 与
+  `ModelSelector.tsx` 各 1 个；对 HEAD 原文件通过 eslint stdin 复跑得到相同错误，未改门禁或
+  清理无关代码。交接 handler 与切换卡文件的该次 lint 无报错。
+- 测试卫生门禁未通过：未修改的 `newMakerDraft.test.ts` 有 56 处未说明的 `resetModules`，
+  超过基线 54；已确认该文件与基线文件均和 HEAD 一致。本次未改基线或扩大修复范围。
+
+### 安装版验收准备（2026-11-05）
+
+用户要求拉取代码、替换本机中国大陆包并跑真实模型交接。`git pull --ff-only` 显示已是
+跟踪分支最新；交接改动保留在工作区。初次隔离开发实例没有 Cursor 登录；经用户授权
+复用现有登录后，Cursor 连接检查成功，但被动共库 Codex 启动被全局 Skill 投影只读保护
+阻断，没有发出成功的模型轮次，也未修改这道保护。用户随后明确选择先替换正式包再验收。
+
+实际准备中修正了开发重启脚本的 Terminal 清理无限等待：清理 Apple Event 最多等 3 秒，
+失败记录警告并继续。91 项启动脚本回归通过。新增
+`apps/desktop/scripts/cursor-handoff-e2e.mjs` 可对核对过身份的开发实例执行真实队列／切换
+验收；只读预检已运行，完整模型流程尚未通过，不能把脚本存在当成验收成功。
+安装版后续验收必须使用实际应用，逐项记录模型回复、历史交接和回切；签名构建成功本身不代表通过。
+
+首轮中国大陆 Developer ID 包已安装并启动，正式版 Codex 真实调用返回预置验收标记。
+实际打开已有任务的模型菜单后发现 Cursor 标签仍缺失：`ChatInput` 的运行时列表候选常量
+只枚举三种引擎，专项选择器夹具没有经过这层父组件。已补上 Cursor，并修正 Desktop
+远控 roster 的 Cursor 解析遗漏；既有 hook 回归扩展为远端重连后返回 Cursor，7 项用例
+通过（单文件 1.05 秒）。这次失败说明选择器单独预览不足以代替整个任务页验收。
+修复包已再次完成中国大陆 ARM64 构建、Developer ID 重签、严格签名与 ZIP 校验；
+安装器确认新版启动，Desktop 类型检查也通过。随后前台操作连续被实际键鼠活动保护
+（`USER_INPUT_ACTIVE`）拒绝，等待电脑空闲继续双向模型测试；目前不计为交接通过。
+
+### 安装版人工双向验收（2026-11-05）
+
+用户在已有普通任务中手动完成 Cursor（Grok 4.6）→ Codex（GPT-6-Astra）→ Cursor，
+随后授权核对该任务记录。以下结论来自实际本地切换边界、执行模型元数据和完成回复，
+不是仅依据模型自述“记得上下文”：
+
+- 首次切入 Codex：边界 `resumed=false`、`consumed=true`，交接文本 14,988 字符；
+  Codex 实际完成回复，能够承接此前 Cursor 使用说明。
+- 切回 Cursor：边界 `resumed=true`、`consumed=true`，交接文本缩为 2,102 字符，
+  包含刚才 Codex 的新增回复；当前 Cursor 原生会话 ID 与切出前一致。
+  Cursor 随后实际完成回复并继续调用工具，恢复链路正常。
+- 因此可确认这条已安装版本的 Cursor ↔ Codex 人工双向流程通过，且回切确实走了
+  原生会话恢复和增量交接。用户消息未被交接文本覆盖。
+
+本次未设置仅在中间引擎出现的新随机标记，因此不能单凭回答证明所有增量事实均被模型
+正确使用；也不等于完整、无损复制隐藏状态。Claude Code ↔ Cursor、Pi ↔ Cursor、
+Codex 原生会话再次恢复、异常中断恢复与跨端实机仍未完成真实模型验收。
+
+### 人工交接的耗时诊断（2026-11-05）
+
+对上一节人工流程只读核对本机 main 日志、任务事件、持久消息与 Cursor 原生 run events。
+两次切换均无 resume 失败、全量回退或重发证据。模型菜单登记意图与发送之间的用户停顿
+不计入引擎启动时间。以下是单次样本，不是相同模型／历史长度下的性能对照。
+
+| 阶段 | 切入 Codex | 切回 Cursor |
+| --- | ---: | ---: |
+| 边界写入至引擎就绪（近似，不含写入前准备） | 1.00 秒 | 2.66 秒 |
+| 用户消息落库至首段文字入库 | 4.78 秒 | 18.96 秒 |
+| 用户消息落库至宿主轮次结束 | 10.36 秒 | 28.64 秒 |
+| 交接文本 | 14,988 字符 | 2,102 字符 |
+| 模型参数 | GPT-6-Astra，medium | Grok 4.6，high，Fast=true |
+
+Cursor 原生 run 在开始后约 26 毫秒报告 RUNNING，17.333 秒出现首个模型思考增量，
+18.934 秒出现首段文字；对应文字约 5 毫秒后进入 Cindy 消息记录。不能把 RUNNING 当作
+模型已经开始生成，也不能由这个区间区分 SDK 的工具初始化、网络、排队和模型预填充。
+文字已由 translator 逐段推送，未发现 Cindy 等整轮完成才显示的缓冲证据。
+
+同任务此前两轮普通 Cursor 续聊（同模型与参数）的首个模型增量分别在 11.788、12.099 秒，
+整轮分别为 21.519、12.640 秒。因此慢启动并非交接独有，交接样本比最近一轮额外等待
+约 5.2 秒，但单样本无法证明这部分由交接造成。
+
+回切之后还发生 4 个工具调用（检查仓库和读取方案），首段文字到结束又约 9.7 秒；
+Codex 该轮没有工具调用。原生 Cursor 前一轮已有约 74k 输入 token；本轮 SDK 汇总输入
+230,913、其中 cache read 151,936，属于整轮多个推理步骤的累计量，不是一次上下文
+暴增到 231k。不能用该累计值认定重复注入。回切只补增量且未重新附加首轮产品说明。
+运行期间控制端另有断线重连记录，可能额外影响手机看到输出的时刻；现有日志无法量化
+客户端展示延迟，以上数字仅代表宿主和 SDK。
+
+优化优先级：
+
+1. 先补分段性能观测：auth、MCP bridge、worker ready、native resume、send、SDK RUNNING、
+   首个模型增量、首个文本、结束，分别计时。只记耗时／阶段／结果，不记输入、工具参数、
+   凭证或 SDK 原始诊断。当前约 17 秒区间内部不可分辨，不能先宣称是模型服务端慢。
+2. 在专用验收任务做同 Cursor 模型、同参数、同等历史的普通续聊与回切对照，使用无工具
+   随机标记；原来的 high/Fast 保持不变。中推理或较短历史作为单独变量，再由用户决定
+   是否改变日常配置，不静默降低推理或自动压缩原生历史。
+3. 优先解决被计时证实的 SDK 准备或工具发现阻塞。当前 MCP bridge 已是单例，不能把
+   每次建桥当作既定原因，也不能为提速删掉原生规则／Skills／MCP 或权限校验。
+4. worker 预热、只读查找并行、避免重复解析历史属于次级候选：当前本地恢复仅约 2.66 秒，
+   即使消除整个已测区间，也解释不了后面的 17 秒。预热只可加载进程，不提前执行模型、
+   注入任务凭证或抢占会话；必须保留 owner generation、取消及同任务唯一执行的约束。
+
+本轮仅完成诊断与优化排序，未修改运行时、提示词、账号参数或安装包；尚无优化前后实测收益。
+
+### JSONL 与工作区初始化实测（2026-11-05）
+
+**结论：当前任务规模的 JSONL 全量逐点读取约 0.82 秒，工作区全来源冷预热约 1.33～1.74 秒；
+两者都是可优化成本，但尚不能解释之前 17.3 秒的首个模型增量等待。** 以下为组件级探针，
+不是生产发送链路的完整分段追踪，不能将这些耗时直接相加再从 17.3 秒中相减。
+
+环境：本机 macOS ARM64、Node v22.22.2，直接加载已安装签名包内的 `@cursor/sdk` 1.2.0。
+全部调用真实 SDK 公共接口，没有复制 store 实现；没有调用 `Agent.send`、模型或 MCP 工具。
+原始数值与测量边界见 [计时数据 JSON](benchmarks/cursor-handoff-2026-11-05.json)。
+
+#### JSONL 离线读写
+
+仅复制用户指定任务的四个 NDJSON 文件到 `mkdtemp` 临时目录（目录 0700、文件 0600）；
+所有写入都作用于副本。测量前后核对原文件 SHA256，四个文件均未变化；结束删除副本。
+原 checkpoint 文件 4,009,624 字节、348 条，run events 992,762 字节。
+
+| 操作 | 次数／输入 | 实测 |
+| --- | --- | --- |
+| `checkpoints.get` 逐个读取全部 348 条 | 顺序扫描 3 遍 | 每遍 812.24／832.76／812.25 ms |
+| 单条 checkpoint 读取 | 每遍 348 次 | 每遍中位数 2.34／2.36／2.31 ms |
+| `checkpoints.create` | 副本上新增 20 条，每条 1 KiB | 中位数 18.79 ms，范围 17.71～20.83 ms |
+| `runEvents.append` | 副本上新增 30 条，每条含 100 字符正文 | 中位数 10.00 ms，范围 9.08～11.07 ms |
+
+读取同时检查返回 blob 的字节长度与快照一致。SDK 源码仍逐次整文件读取、解析和查找，
+新增记录仍整文件序列化并原子替换，因此增长风险成立；本机当前 4 MB 规模并没有复现
+社区案例中单次恢复耗费十几秒的量级。三遍全部读取并不表示真实恢复需要读取所有 348 条，
+也未清空 OS 文件缓存。写入尺寸是明确的微基准输入，不代表每个生产 checkpoint 或事件大小。
+
+#### 工作区预热与原生 MCP
+
+每种来源启动 3 个全新 Node 进程，顺序执行 `createAgentPlatform({localStore, workspaceRef})`
+与 `platform.prewarmLocalWorkspace(options)`；先计冷预热，再保留 release 引用、用完全相同
+options 再次预热以测复用。每次释放引用并清理临时 SDK 状态。SDK 模块加载另计约 79～95 ms，
+不包含在下表。这里“冷”指 SDK 新进程，不是冷磁盘、首次下载或操作系统重启。
+
+| 来源配置 | 3 次冷预热（ms） | 中位数（ms） | 同进程保留引用后的再次预热（ms） |
+| --- | --- | ---: | --- |
+| `[]` | 724.03／726.88／709.40 | 724.03 | 0.063～0.080 |
+| `[project]` | 732.05／720.79／725.81 | 725.81 | 0.079～0.092 |
+| `[project,user,team,mdm,plugins]` | 1333.27／1334.06／1736.66 | 1334.06 | 0.057～0.060 |
+
+三个变体均保持 `autoReview=true` 和 `sandboxOptions.enabled=true`。首次脚本从临时目录
+启动时 SDK 找不到沙箱辅助程序，返回 ConfigurationError；将探针 `argv[1]` 的辅助程序
+定位锚点设为正式包物理 worker 入口后成功，未修改应用、二进制或关闭沙箱。失败探测不计入表内。
+
+全来源配置启动了当前用户配置中的 3 个 stdio MCP。探针只观察子进程 stdin/stdout 中的
+JSON-RPC 方法、请求 ID 对应关系和时间，输出不含正文、命令参数、地址或凭证：
+
+- 一个服务器三次 `initialize` 分别耗时 1118.10／1162.83／1082.63 ms；随后 `tools/list`
+  耗时 1.66／1.61／1.70 ms，均返回 25 个工具。没有调用这些工具。
+- 另两个服务器三次均在发出 `initialize` 后以退出码 1 结束，未取得初始化回复。
+  只确认失败状态，未定位失败原因；本轮未修改用户 MCP 配置。**预热返回成功不等于所有 MCP 成功。**
+- MCP 连接可能并行，单个握手耗时不能与完整预热时间再次相加。
+
+重要限制：使用显式无效占位 API key，未提取真实凭证，因此未验证已登录的 team／dashboard
+配置路径；虽然来源枚举与宿主一致，并不代表取得了全部生产配置。没有注入 Cindy 的
+per-session HTTP MCP 映射，也未运行真实 Electron utility process。测量到的是真实 SDK
+对本仓工作区与当前可发现原生配置的预热，不是完整正式版首轮初始化。SDK 状态隔离到临时目录，
+用户 MCP 自身仍按既有配置启动；无模型费用。
+
+#### 调整优化顺序
+
+1. 优先给真实正式版发送链路补阶段计时，覆盖 SDK 初始化、checkpoint 访问、Cindy HTTP MCP
+   握手与首个增量，定位本轮组件探针没有覆盖的等待。未认证探针不能排除认证、网络或后端成本。
+2. 工作区预热能避开本次测到的约 1.3 秒初始化，但必须在同一进程保留相同 options 的引用；
+   另起预热进程再退出不会给正式 worker 留下 executor 缓存。不得承诺省掉全部 17 秒。
+3. JSONL 向索引存储迁移是长历史增长治理候选，当前规模优先级低于定位主要等待。迁移前必须
+   单独设计现有 agent ID、checkpoint、run events 的兼容与回滚，不能直接换 store 丢掉旧历史。
+4. 两个 MCP 的退出失败需要单独排查；本轮没有观察到它们等待 10／60 秒超时，不能把它们
+   当作此前长等待的已确认原因。
+
+本轮只增加诊断数据与文档，没有修改运行时、真实存储、模型参数或安装包。
+
+### MCP 连接复用与分段计时（2026-11-05）
+
+本节修正上文两处判断。历史记录里 Codex→Cursor 只有一条，走的是恢复原生会话加增量交接；
+全量首次切入 Cursor 至今没有真实样本。
+
+- **“比普通续聊多等 5.2 秒”不能归因于交接。** 上一轮 Cursor 在 16.9 小时前，缓存已冷；
+  相近条件下首响本身在 6.6～12.9 秒之间波动。20 轮 4 种模型最快 6.1 秒、中位 9.5 秒，
+  与未命中缓存的 token 数几乎无关（R²=0.15）。样本来自同一仓库的两个任务，不代表其他环境。
+- **“MCP bridge 是单例，所以不是原因”不成立。** 桥是单例，但 `agent.send` 的 `mcpServers`
+  让 SDK 每轮新建一套 MCP lease。
+
+无模型探针（假后端、假 MCP、占位 key）对真实 SDK 1.2.0 与 `CursorHostRuntime` 的结果：
+
+| 场景 | 改动前：`send` 传参 | 改动后：`open` 传参 |
+| --- | --- | --- |
+| 第二轮 HTTP MCP 重连 | 全部（3 个） | 0 |
+| 第二轮用户 stdio 进程 | 重新启动 1 个 | 0 |
+| 首轮 stdio 进程 | 2 个 | 1 个 |
+
+workspace 级与 send 级走 SDK 同一份 MCP 加载配置，工具来源不变。原生 reopen 带同一份配置，
+其后首轮会重连，再下一轮恢复复用。桥的代际由会话 lease 固定、地址不变，MCP 会话没有闲置
+过期；用户 stdio 服务器中途退出不再被下一轮顺带拉起，这一点依赖 SDK 自身处理，尚未验证。
+
+计时写入 main 日志，只含耗时、阶段与标识，不含输入、工具数据或 SDK 原始诊断：
+
+- `agent-switch: switched`：`prepareMs`（读历史与拼交接）、`commitMs`（关旧会话到写完边界）、
+  `bootstrapMs`（启动目标引擎）。
+- `Cursor session timing`：`authMs`、`mcpBridgeMs`、`workerOpenMs`、`agentOpenMs`；
+  前两个 open 字段的差是进程启动、SDK 加载与 RPC。
+- `Cursor run timing`：`preSendMs`、`sendReturnedMs`、`firstThinkingMs`、`firstTextMs`、
+  `firstToolMs`、`endMs`、`runInWorker`；`runInWorker=1` 包含 SDK 懒启动 executor。
+- `Cursor SDK timing`：`cursorUtilityTransport.ts` 白名单只放行 SDK 的上下文变慢与限流等待
+  记录，且只取已知数字字段；其余输出继续丢弃。没有上下文变慢记录、`firstThinkingMs` 仍高，
+  说明等待在请求发出之后。
+
+真实账号的首响收益尚未测量，代码未打包、未替换安装版。剩余约 6 秒固定开销的归属要靠上述
+日志判断，不能据此次探针声称已解决。下一候选是选模型时预热目标引擎，它依赖本次的 Agent 级
+配置，因为 executor 缓存键包含 `mcpServers`。
+
+### 2026-11-05 保留能力的启动优化
+
+维护者补充要求：优化启动时需要保留 hooks、MCP 与 skills 后续可用性，参考 Cursor App
+提前准备并复用环境的方式。因此本轮保留 `project/user/team/mdm/plugins` 全部来源，
+没有把 `settingSources` 改为仅 project，也没有改写用户的 `uv`／`npx` 配置或全局提示词。
+SDK 的来源开关按整层生效，hooks 仅支持文件配置；直接关闭 user 并不能实现
+「保留用户 hooks、只延迟 MCP」。官方契约见 [TypeScript SDK](https://cursor.com/docs/sdk/typescript)。
+
+- `CursorHostRuntime.open` 在实际发送所用的同一个 worker 内启动原生工作区预热，
+  使用与 agent 完全相同的 options，并持有 release 引用。已有输入时预建任务流程因此
+  能提前解析环境，不发空 prompt、不创建模型 run。首次发送与在途预热共享 SDK 缓存；
+  失败由正常发送路径重新初始化。关闭与替换会回收引用，包括关闭后才完成的预热。
+- 新建页 Cursor 草稿只换模型、深度或 Fast 时保留任务与 worker，借现有 `setModel`
+  事务登记选择，在真实发送时应用。发送抢在新建页 debounce 前也走同一逻辑。
+  引擎、来源、目录、权限、计划模式改变仍按原流程重建；切账号或宿主拒绝选择时不误提交。
+- 已有 Cursor handle 本来就通过每轮 `send.model` 切模型；本次修复的重复创建位于
+  `provisionalDraftTask.ts`，不是新增一套模型路由。
+
+真实 SDK 1.2.0 的隔离探针（macOS ARM64、Node 22，假 agent、一个 loopback HTTP MCP、
+临时项目和 JSONL store、无效 key、仅 project 来源、沙箱开启、不调用模型）：生产 runtime
+启动预热，打开返回 1.79 ms，预热返回 1305.74 ms，MCP tools/list 到达 1314.39 ms；
+同 options 只换模型再次预热为 0.048 ms，initialize 与 tools/list 各一次。
+这是机制探针，agent 创建为 fake，不能用打开耗时代表真实启动，也不能推出线上节省比例。
+SDK 仍扫描了其可发现的 skills；此探针不是空白用户环境或全部生产能力验收。
+**预热返回早于 MCP 握手完成，不等于全部 MCP 已就绪。** 探针结束关闭服务并删除临时目录。
+
+定向回归：Cursor adapter/runtime 40 条；Desktop 草稿、预热、模型切换与发送事务
+423 条。新增用例先红后绿；Cursor 测试单文件 0.68 秒，草稿单文件 0.88 秒。
+重点保护同配置复用、晚到 lease 回收、失败后正常发送、草稿立即发送、权限／目录／来源变化
+仍重建、切账号拒绝接管。未修改模型事件翻译与 token 计量，现有顺序和用量回归通过。
+没有真实模型请求，故 prompt cache 命中率、回答质量与真实首字耗时尚未实测。
+maker-core 与 Desktop 类型检查、文档检查通过。全仓 `check:test-hygiene` 未通过：
+未修改的 `renderer/__tests__/newMakerDraft.test.ts` 有 56 处未注明理由的模块重载，
+基线允许 54；本轮未修改该文件或放宽基线。未做真实 UI／Windows 验收。
+
+按仓库常驻 worker 尚未实现。Cindy MCP URL 与 token 绑定 session 身份，SDK 缓存键包含
+这份 MCP 配置；只共用 cwd 或进程并不能保证 executor 命中，更不能串用任务权限。
+后续需分别设计进程复用和任务工具上下文隔离。当前改动只覆盖本机 Cursor；手机／设备互联
+控制该本机任务时共用 runtime 预热，SSH／另一台电脑执行 Cursor 的能力范围不变。
+原生 `RUNNING` 也不等于模型网络请求已经发出；现有 6–17 秒样本不能证明 SDK 固定下限。
+代码尚未打包、安装或通过真实账号测量，不能承诺达到 Cursor App 的 2–3 秒。
+
+### 2026-11-05 跨任务工作区 worker 与 MCP 身份隔离
+
+维护者继续要求按仓库常驻 worker，先确定 MCP 身份隔离再实现。本轮共享的是 **SDK 进程**，
+不是跨任务合并原生 agent 或 executor。工作区以 `fs.realpath(workingDir)` 为边界，子目录／
+不同 worktree 保持各自边界，不为了命中率猜测或上移 Git 根目录。
+
+| 对象 | 共享／隔离规则 |
+| --- | --- |
+| utility worker | 同 Cindy owner 代次、同 Cursor 凭证代次／binding、同 canonical 工作目录复用；模型不参与 key |
+| SDK 模块与进程内缓存 | 同 worker 复用；最后一个任务关闭后保留空进程 10 分钟，新任务取消回收计时 |
+| agent、run、JSONL store | 每个任务独立的 `CursorHostRuntime`；保留原 stateDir 与原生会话 ID，不迁移历史 |
+| Cindy MCP | 保留原 URL 的 session／instance、HMAC token、toolset 和代际注销；池不改写或共用这些配置 |
+| 原生 executor／用户 MCP | 按 SDK 原始 options 缓存键分开。不同任务的 Cindy MCP 配置不同，仍各自初始化；不伪装成一份全局凭证 |
+| 内部 RPC | Main 分配不可复用的 lane UUID；一个物理 `CursorRpcClient` 分配全局 request ID，事件沿该请求返回 |
+| 登录／key 校验 | 继续专用短寿命进程；任务 lane 不允许登录或 key 校验 |
+
+**关闭证明改变**：独占进程退出曾是唯一证明；现在正常任务关闭以 worker 的已排空 ACK 为证明。
+Router 先关闭该 lane 的准入、取消本轮，再等待已接收的 open/send/steer 等全部结束，最后
+等待 SDK `Symbol.asyncDispose` 和预热引用释放。收到 ACK 后，Main 才触发该任务的 onClose、
+撤销 MCP 身份和释放宿主工作目录 lease。关闭前到达、尚未执行的 send 不得越过取消开始运行；
+已关闭 lane 的迟到 open 不得复活任务。旧 native agent 的异步 disposal 也纳入关闭等待。
+
+**故障半径**：普通取消／关闭仅作用于本任务；进程崩溃、私有 RPC 失联，或关闭超时／失败而
+无法证明任务停止时，才终止整台 worker。其余同 worker 任务明确失败、不自动重放；其它工作区
+不受影响。终止未获 exit 确认时，旧 worker 留在受监督集合，允许再次关闭，不能提前撤销其
+MCP／文件租约。失联 worker 立即退出可复用池，新的任务不再取得它。
+
+**账号边界**：owner invalidation 同步封住所有旧 lane，再终止含空闲进程的整个池。
+Cursor 登录替换／断开在写入或删除凭证前等待任务和池退出；目录解析跨 await 后重新核对 owner、
+凭证代次和提交边界。App 通过既有 onQuit post-async 阶段，在任务退出后回收空闲 worker，
+不另挂 fire-and-forget 的 before-quit。池 key 不含 raw key，池状态不落盘；
+SDK 数字诊断不再归给某一任务，任务启动日志另带 `workerPid`／`workerReused`。
+
+实现入口：`maker-host/cursorWorkerPool.ts`、`cursor-auth.ts`；共享端为
+`agents/cursor/host-router.ts`、`host-runtime.ts`、`rpc-client.ts`（相对 maker-core/src）。
+现有 MCP 网关与授权逻辑保持不变，未新增 Renderer／Device Link 通道；手机控制本机任务时
+复用同一池，Cursor 的 SSH、跨电脑执行、伙伴／协同限制仍沿原规则。
+
+手动隔离探针：
+
+```bash
+node apps/desktop/scripts/cursor-worker-pool-probe.mjs --dedicated
+node apps/desktop/scripts/cursor-worker-pool-probe.mjs
+```
+
+使用 Node >=22.13、真实 SDK、生产 worker entry/router/pool/transport，只有 Electron parentPort
+以 Node IPC 适配；用假 model catalog、无效 key、三个 loopback MCP 身份和临时 project 来源，
+沙箱保持开启、不发 prompt。独立组用不同池 key 强制每任务一个进程；两组均验证不同原生 agent、
+三份 MCP URL/token、关闭 A 后 B 仍可操作、连续任务复用与最终确认进程退出。临时目录、子进程和
+监听端口在 finally 中清理。不是完整 Electron、真实账号、工具执行或 Windows 验收。
+
+本机 macOS ARM64、Node 22、SDK 1.2.0 单次对照：
+
+| 配置 | 进程数 | A：打开至假 MCP ready | B | C |
+| --- | ---: | ---: | ---: | ---: |
+| 每任务独立进程 | 3 | 1601 ms | 1535 ms | 1512 ms |
+| 同工作区共享进程 | 1 | 1525 ms | 449 ms | 471 ms |
+
+每组的三个 MCP initialize 各一次；共享组保留三个身份，未以跨任务合并连接换取速度。
+以上是机制与启动成本样本，不是线上 SLA，不包含模型首字；不能承诺把真实 18–48 秒全部削掉。
+没有改变提示词、工具定义或 token 计量；缓存率、模型输出质量和真实首字仍须安装后实测。
+
+回归覆盖多任务输出／取消、存储与 MCP 参数隔离、异步 native disposal、关闭期间迟到 send、
+错误 cwd／key、关闭未确认重试、进程失联／崩溃、空闲回收、目录别名、owner 与凭证代次。
+新 router 与 pool 测试单文件均约 0.27 秒；原 MCP 网关及身份接线 54 条通过。
+本轮相关回归合计 158 条通过（Cursor 运行时／路由 46、进程池／账号／transport 30、
+MCP 桥 54、退出生命周期 28）；maker-core／Desktop 类型检查及文档检查通过。
+`check:test-hygiene` 仍仅报告前述未修改的 `newMakerDraft.test.ts` 56／54 基线问题，
+未修改基线。未打包、未替换应用，真实账号、完整 Electron 与 Windows 仍未验收。
+
+### 2026-11-05 安装后首轮复核与 queued 口径纠正
+
+新版安装器在 13:26:38 返回成功。随后同一工作目录的新 Grok 4.6（High、Fast）任务来自
+iPhone；这次是重启后的首个 Cursor worker，启动日志已含新增字段，`workerReused=false`。
+安装版 SDK 1.2.0 的 CJS 入口与 checkout 哈希相同，未发现仍在使用旧包的证据。
+
+| 本机阶段 | 耗时／时间 |
+| --- | --- |
+| 宿主开始创建（由 timing 反推） | 13:27:52.897 |
+| 整体创建 | 2701 ms |
+| MCP 桥配置装配 | 18 ms，15 个 server；不代表握手完成 |
+| worker open / SDK Agent.create | 2681 / 2559 ms；差 122 ms 是其余进程／加载／RPC 成本 |
+| 用户消息落库 / 原生 run 开始 | 13:27:55.888 / 13:27:55.903 |
+| 首个非空思考 / 正文 | 13:28:03.161 / 13:28:04.358 |
+| run 开始至思考 / 正文 | 7258 / 8455 ms |
+| 本机创建开始至正文 | 11461 ms；不包含手机按钮至本机开始处理的未知区间 |
+
+**纠正早前讨论中的 18–48 秒归因**：SDK `Agent.create` 会先创建一个 `queued` 的占位 run，
+尚未接收 prompt。隔离运行真实 SDK、零次 send，仍得到 1 条 queued run、startedAt=null。
+因此 `runs.createdAt → startedAt` 不能作为「点击发送后启动等待」的计时。
+旧 Grok 样本在 12:27:25.064 已完成 agent 预建，12:27:42.912 才提交草稿，
+用户消息在 12:27:43.027 落库，原生 run 12:27:43.042 开始，12:27:53.978 出正文：
+消息落库至正文为 10951 ms，不能据占位 run 时间写成约 29 秒。
+旧 Opus 样本同样在 12:29:13.797 预建完成，12:30:01.253 提交草稿，
+12:30:01.351 消息落库，12:30:01.366 开始，12:30:13.202 出正文；落库至正文 11851 ms，
+不能据占位 run 写成约 60 秒。发送前区间不等于 SDK 执行等待；缺少真实按钮时间，
+也不能反向断言那段一定是用户打字。此前对该区间的启动耗时归因不成立。
+
+旧 Grok 与新 Grok 的同口径「消息落库至正文」为 10.951 → 8.470 秒，但只有两个样本，
+不能把差值全归功于改动。旧桌面样本的 agent 创建发生在草稿阶段；这次手机新建先创建
+再发送，约 2.7 秒未被输入时间覆盖，因而本机整体仍约 11.5 秒。代码核对发现 Mobile
+现有任务页已接 `prewarmSession`，新建页／创建管线没有同样的输入时预建流程；此前不能
+把「手机可调用预热 RPC」等同于「手机新建首条消息已提前预热」。重启后首任务也没有可复用进程，
+本样本无法验证跨任务池命中收益；并且任务专属 executor/MCP 仍分别初始化。
+
+剩余瓶颈在 Agent.create 的 2.559 秒及 run 开始至正文的 8.455 秒。
+SDK 的 create 路径包含模型目录校验，不能用假 model catalog 探针的 15–19 ms 代替真实账号
+创建成本；当前计时尚不足以把 2.559 秒进一步归因。`RUNNING` 也早于部分本地准备，
+剩余 8.455 秒不能直接全称为服务端模型等待。未采集 prewarm 完成／失败和真实模型请求
+开始／首响应的分段数据，缺少日志不等于已排除 hooks、MCP 或网络。
+
+本轮只读核对安装回执、主日志、任务日志、原生 JSONL 的类型／时间以及数据库的消息元数据，
+没有修改用户任务、取消在跑工作或请求真实模型；没有向仓库保存原文、账号、设备或任务标识。
+下一次优化应先补齐手机新建的提前准备，并补可区分预热、目录校验、请求及首输出的计时，
+按同入口／同模型／相近 prompt 比较冷任务和同工作区第二任务，不再使用 queued 占位时刻作发送基准。
+
+### 2026-11-05 同工作区第二任务复核
+
+随后同工作区、同模型／High／Fast 的第二个任务实际命中进程池：两条日志的 worker PID
+相同，第二条 `workerReused=true`。但用户报告更慢与本机计时一致：
+
+| 阶段 | 重启后第一任务 | 同工作区第二任务 |
+| --- | --- | --- |
+| 宿主整体创建 | 2701 ms | 2296 ms |
+| SDK Agent.create | 2559 ms | 2294 ms |
+| 发送至首思考 | 约 7258 ms（原生 run 起点） | 40723 ms（宿主 send 起点） |
+| 发送至首正文 | 约 8455 ms（原生 run 起点） | 44104 ms（宿主 send 起点） |
+
+两种发送起点相差毫秒级，不能当成严格控制变量实验；第二条宿主 send 在
+13:32:34.228 左右，SDK send 返回耗时 3104 ms，首正文原生事件在 13:33:18.332。
+创建开始至首正文约 46.8 秒，不包含手机按钮至本机开始的未知区间。
+`sendReturnedMs` 仅表示拿到 Run；SDK 在后台的 `done` 路径仍会执行 sessionStart／
+beforeSubmitPrompt hooks 及后续请求，不能据此把剩余 41 秒全部判为远端模型等待。
+
+读取安装所用 SDK 1.2.0 的 CJS 实现，确认以下边界：
+
+- `prewarmLocalWorkspace` 与 agent `getExecutor` 都走模块级 executor Map；不同 platform
+  实例本身不导致缓存失效。缓存键包含完整 `mcpServers`，任务专属身份导致跨任务不命中
+  是既定隔离行为，进程复用不等于 workspace executor／MCP 复用。
+- 显式传入 localStore 时每次创建新的 platform，模型目录缓存为 platform 实例成员；
+  不能期待仅复用进程就消除每个任务的目录校验。真实耗时还需分段记录。
+- `JsonlLocalAgentStore` 的所有实例共用一个模块级写 Promise 链；事件追加会整文件读取、
+  解析、序列化并原子重写。不同目录不隔离写入调度。独立 Node 进程中用真实 SDK 创建
+  两个临时 store，只拦住 A 的事件文件读取：B 的 append 在释放 A 前既未开始读盘也未完成，
+  释放后两者完成。实验不发送 prompt，不读取真实任务内容，并清理临时目录。
+  这确认共享 worker 引入了跨任务写盘排队，但没有证明本次 44 秒来自该队列。
+
+现有日志缺少 hooks、模型请求／首响应、JSONL 队列等待和事件循环延迟的关联计时。
+首任务在第二任务期间仍未结束，也不能仅凭并发关系认定因果。后续需要先补上述观测，
+并处理共享 JSONL 队列对其它任务的影响，再衡量继续共享进程的收益；不能据进程池命中
+就宣称已实现 Cursor App 式的热运行时。
+
+用户要求的 Claude CLI 独立只读复核已完成。它直接核对本仓代码及 SDK 源码，确认
+executor 缓存键、不同 platform 可共享预热、模型目录缓存按实例以及 Mobile 新建缺口，
+未把 44 秒归为某个已确定原因；其分析使用上面的脱敏计时输入，不是另一组性能实验。
+另两项经主审回查代码成立：`CursorRpcClient.request` 默认 30 秒超时调用 `stop` 关闭物理
+transport，池化后单任务 open／cancel／steer 超时会波及同 worker 其它任务；共享 worker
+的 `createCursorRpc()` 未传 sessionId，SDK slow timing 当前缺少任务归属。前者本次未见
+触发（第二任务正常完成），后者是诊断缺口。JSONL 全局队列的隔离实验为主审另行验证，
+不能写成独立 reviewer 已运行。后续应先收敛故障范围和补计时，再评估 executor 级共享；
+不采用去掉任务 MCP 身份的方式强行命中缓存。
+
+### 2026-11-05 第二轮优化实现与已有任务样本
+
+复核期间同一个已打开的 Grok 任务出现第二轮：消息在 14:20:16.189 落库，原生 run 在
+14:20:16.213 开始，14:20:24.397 首思考、14:20:29.112 首正文；约 8.2／12.9 秒。
+没有新的 agent 创建记录。这证明等待并不限于首次创建；不能只优化预热就宣称问题解决。
+该样本仍来自上一安装版，不是下面新实现的性能验收。
+
+本轮实现：
+
+- `host-runtime` 同时进行 workspace 预热和 agent 创建；失败回收新 lease，替换时新预热
+  取得引用后才释放旧引用。`settingSources`、每任务 MCP 身份及原有工具集合保持一致。
+- `platform-factory` 使用 SDK 公开 platform API，独立 store／agent，通过公开模型校验
+  方法缓存同凭据、团队和完整参数的成功结果 5 分钟，合并在途校验、失败移除、返回副本。
+  缓存随账号／凭据代次对应的 worker 回收，不写盘，不注入假目录或跳过原生校验。
+- `store-worker` 每个任务一个存储线程，执行原 SDK `JsonlLocalAgentStore`。旧目录、文件格式、
+  加密 metadata 与 checkpoint 原样保留，无历史迁移；JSONL 全局队列和同步解析移出共享
+  agent 事件循环。关闭先停止接收操作、排空在途写入，再终止线程。指标为调用数、耗时总和
+  与窗口最大值；总和可能包含重叠调用，不能当作阻塞墙钟时间。
+- pool 请求超时不再直接触发物理 RPC timeout，而是先封住对应 lane 并请求关闭。
+  close ACK 仍须证明已排空和 dispose；8 秒内无法确认时仍终止整个 worker。这是保留
+  执行／MCP 租约安全的兜底，不是彻底隔离任意原生卡死。SDK 的 open 没有可用中止接口，
+  不能假装单任务已停或提前释放其工具身份。
+- `network-timing` 使用 AsyncLocalStorage 和 Node diagnostics_channel 关联每轮已知
+  AgentService Run／RunSSE／RunPoll 的请求建立和响应头到达，绝不读取／记录 URL、头、
+  prompt 或正文，也不消费响应流。未观察到事件不能当作没有请求；响应头不等于模型 token。
+  run 实时记录开始、send 返回、首非空思考／正文／工具，不必等整个任务结束；最终记录
+  同 worker 活跃 run 数、事件循环最大延迟和存储指标。请求前仍包含未细分的 hooks／MCP
+  准备，暂未侵入 SDK 私有 hook 调度去打点。
+- 手机普通项目 Cursor 新建页按能力预建未发送任务；发送只接管已就绪、配置一致的 ID，
+  在途预建直接让正常发送走新 ID，避免可选优化变成前台等待。清理失败保留控制器责任；
+  后台管线接管后页面不得再删除。重试探测区分 provisional 行。协议与兼容边界见
+  [手机预建契约](dev-rules/protocol-compatibility.md#手机在受控电脑新建-cursor-任务)。
+
+独立 Claude CLI 只读复核发现的手机交接、等待和回执判据问题已修正并增加生产入口回归；
+其指出的无法确认原生结束后整 worker 退出是上述有意保留的兜底。真实 SDK 1.2.0 的生产
+pool／router／transport 探针仍通过三个任务、三个 MCP 身份和单进程复用；新存储探针
+证明旧数据可读、旧 SDK 可读回新写入、checkpoint 字节不变，以及 A 的真实 JSONL 读被
+拦住时 B 仍能写。探针没有发送模型 prompt。跨任务共享 executor 仍未启用：现有 per-send
+MCP override 会建立新的 session MCP lease，不能仅靠该 API 就承诺复用全部 MCP 或身份隔离。
+
+这轮修改尚未打包安装，手机提前准备也需要新版手机 JS。真实账号首字改善、缓存命中率、
+Windows 和打包后的 asar 路径仍待安装验收；不能把单测或 fake catalog 探针当作 44 秒已修复。
+
+
+本轮验证结果：核心 Cursor 51 条、Desktop 池／鉴权／传输／创建门禁 35 条；Mobile
+创建／持久恢复／传输与草稿控制器分别通过，其中复核修正后的创建及控制器 86 条、约
+2.5 秒。新增服务单测单文件预算内，无真实模型请求。真实 Electron 42.11.12 / Node 24.19.0
+utility process 中的存储线程读写、关闭也通过（临时 fixture app，无 Cindy 登录／任务）。
+自建中转沿真实加入流程生成临时设备身份，新增草稿 invoke／回执与签名、重连互通通过。
+复验入口：`node apps/desktop/scripts/cursor-store-worker-probe.mjs --electron`、
+`node apps/desktop/scripts/cursor-worker-pool-probe.mjs` 和既有 relay `interop` 脚本。
+这些验证仍不覆盖正式签名包中的 asar 布局、Windows 或真实账号首字延迟。
+
+Desktop、Mobile、maker-core、device-link 的类型检查通过，文档检查 10 条通过。
+maker-shared 单包默认 `tsc --noEmit` 未通过：未改动的 `botGroupProcess.ts:95` 使用
+`findLastIndex`，当前 lib 不含 ES2023，报 TS2550／TS7006；HEAD 同样包含该行，未修改
+该文件或 tsconfig 来绕过。相关能力归一化 14 条、远程 allowlist 56 条通过。
+
+
+### 2026-11-05 14:49 安装后真实补充消息复核
+
+安装器 14:49:10 返回 ok。14:51 的既有 Grok 4.6 / High / Fast 任务恢复后首轮日志含新
+计时字段，说明新包已经运行。它是原任务第三轮、但当前 worker 第一轮（应用重启后恢复），
+不能称为同一进程内的热第二轮。
+
+| 从 worker 本轮 send 起点计时 | 耗时 |
+| --- | --- |
+| SDK send 返回 Run | 1016 ms |
+| AgentService 模型请求建立 | 1644 ms |
+| 首响应头 | 1871 ms |
+| 首非空思考 | 31250 ms |
+| 首非空正文 | 53210 ms |
+| 整轮结束 | 98066 ms |
+
+本轮最终事件循环最大延迟 58 ms，存储调用 616 次、耗时总和 4592 ms、单次最大 64 ms。
+这些指标不支持「共享 JS 事件循环／单次 JSONL 写入卡住几十秒」的解释，但不是所有本地异步
+准备已排除的证据。响应头到首思考相隔 29379 ms；首思考到正文 21960 ms，期间已有思考输出。
+AgentService 使用双向通信，响应头不等于全部历史／请求上下文已上传，更不等于模型开始推理；
+仍不能把 29 秒全部归给远端排队或模型。请求建立前约 1.6 秒也不是纯 TCP 建连时间。
+
+随后同 worker、同模型／High／Fast 的新任务：创建总计 111 ms（agentCreate 109 ms），
+发送时预热 ready；send 返回 26 ms、模型请求建立 1065 ms、响应头 1291 ms、首思考 4826 ms、
+首正文 5499 ms。两任务输入和历史不同，不是受控 A/B；至少表明该请求路径并非固定要等待
+30–50 秒，也证明进程／模型校验复用已经命中。
+
+既有任务此前最近记录的上下文约 137252 tokens；本轮原生汇总 inputTokens 178455、
+cacheReadTokens 87488（约 49%），上一轮为 807792／723072（约 90%）。这是整轮多步的
+累计统计，不是首请求 cache hit 证据，不能直接推出因果。下一步应对同一短输入做长历史／
+新任务对照，并在需要时测 AgentService 上下文交接和首原生响应；不靠清空用户历史或降低
+High 来伪装性能修复。本轮只读日志和时间／用量元数据，未修改或取消用户运行中的任务。
+
+### 2026-11-05 本机 SDK 内部执行链复核
+
+核对安装包和 checkout 的 `@cursor/sdk` 1.2.0，CJS `index.js` 与 `336.js` 分别一致。
+以下是实际发布代码的静态执行链，不是对 Cursor App 实现的推测，也不代表已经量出每段
+在上述 29 秒中的占比。定位标记使用函数名和字符串；发布代码经过压缩，行号不稳定。
+
+1. `sendImpl` 先进入 RUNNING，再读取 checkpoint、取得 executor；返回 Run 不代表
+   上下文已准备或模型已开始生成。local executor 后台 runner 先执行 `onSessionStart`、
+   `onBeforeSubmitPrompt`，再进入内部 `AgentClient.run`。因此上述首请求之前约 1.6 秒
+   包含首轮提交 hook，不能把这个 hook 的首次执行放到响应头之后的 29 秒里。
+2. `AgentClient.runInternal` 的 `requestContextBlobTransportMode` 默认 `legacy`；
+   `qo` 在该模式直接返回，不走 `dual`／`ref_only` 的上下文拆分预构建流程。当前 SDK
+   local adapter 的 `runOptions` 没有覆盖这个选项。运行流仍注册 `requestContextArgs`
+   本地执行器；服务端可以在连接建立后请求上下文，所以响应头不是准备结束的边界。
+3. `LocalRequestContextExecutor.computeCachedRequestContext` 并行取规则／子 Agent
+   缓存、MCP 状态、环境、Git、notes、skills 等；命中全局缓存不等于整份请求上下文
+   直接复用。resource provider 外层成功后还会再次取 session MCP 状态并重写工具／说明，
+   保持当前 session 的工具上下文。尚未证明这些操作在该慢轮实际耗时很高。
+4. 同一双向流拆成 interaction、exec、checkpoint、KV 四条处理链。
+   `ControlledKvManager` 收到 `getBlobArgs` 后读本地 blob 并写回 `getBlobResult`，
+   多个收到的请求并发处理；不能只见多个 blob 就认定本地串行，也不能把磁盘读取时间
+   当作包括服务端请求往返在内的总交接时间。
+5. **内部已有更有价值的首字诊断入口，但 SDK local adapter 没有接出来。**
+   收到可选 `ttftBreakdown` 时，内部 splitter 可经 `onTtftBreakdown` 回调提供
+   `serverFirstTokenMs`、`preStreamSetupMs`、`waitForFirstEventMs`、`providerTtftMs`、
+   `slowPoolWaitMs` 以及可选 `clientPrepMs`／`preHandlerMs`；还可补充 transit 计时。
+   local adapter 的 `runOptions` 只传请求 ID、模型、重试、headers 与自定义 system prompt，
+   未接该回调；公开 `.d.ts` 也未暴露它。不是 Cindy 漏开一个公开开关。只有服务端实际
+   发送该字段才有数据，不能从旧 JSONL 恢复之前被丢弃的分段，字段也不能未经口径确认
+   就相加为总时间。
+
+下一步诊断应同时记录上下文执行起止、首思考前 KV 交接次数／字节数／时间，以及服务端
+实际返回的首字分段。优先争取 SDK 公开诊断回调；本地验证若需插桩，使用隔离的版本固定
+副本，只输出白名单数值和事件类型，不开启全量 DEBUG、不记录 prompt／blob／headers／
+密钥，不修改运行中安装包。不能先把私有 `ref_only` 选项强开为生产性能修复。上述检查
+未修改 SDK 或产品运行行为；确认的是诊断盲区，尚未确定该慢轮的最终原因。
+
+### 2026-11-05 第二轮重复准备优化（源码已实现，未安装）
+
+这次沿实际 SDK 执行链收敛到两项可以明确验证的重复工作，没有整份缓存动态上下文，
+没有跳过 hooks、权限检查或 Git 状态更新，也没有启用私有 `ref_only` 传输模式。
+
+- **历史恢复**：SDK local checkpoint loader 在每次 `loadLatest` 中分页列举该 agent 的
+  全部历史 blob，逐个 `get` 并经 base64 bundle 重建内存存储，即便同一 worker 已成功
+  保存了最新 checkpoint。`checkpoint-cache.ts` 在原生保存成功后只记住 root、原生
+  blob store 的对象身份与 protobuf decoder；下一次加载先读取 agent 行核对 cwd／root，
+  再从原生内存 blob 解码一个新状态。不会直接复用上一轮可变的 conversation 对象。
+  首次恢复、root 变化、原生 store 被替换、数据缺失、未知 codec、保存失败均回原生路径。
+  不改持久格式、加密 metadata 或服务端 blob 缓存协议；仅适用于 Cindy 独占任务租约。
+- **上下文内 MCP 快照**：原生请求上下文 executor 内取一次 MCP 状态，resource provider
+  外层又取一次。现在同一个 context execution 的 accessor 共用一次结果；边界由
+  AsyncLocalStorage 定义，完成即清空，不跨请求、不跨任务，不复用权限判断。失败查询
+  不缓存；显式 `refreshNow` 清除本次快照并保留原方法接收者。工具执行路径和下一次
+  上下文请求仍读原生状态。rules／skills 继续走 SDK 已有缓存，动态环境及 Git 保持原生更新。
+- **内部计时**：版本固定的 pnpm 补丁只改 SDK CJS `336.js` 五处，连接 worker 内的
+  `sdk-runtime.ts`，接出请求上下文各部分耗时、MCP 实际读取／复用次数、首原生消息、首非
+  heartbeat，以及服务端可选 TTFT 分段。只保留本轮首次收到的 TTFT 对象，避免把后续
+  模型步骤的缺省字段补进首请求；重试 attempt 不覆盖首次计时。section 耗时可重叠，
+  不能相加当墙钟耗时。只记录白名单数值与 clock 枚举，不记录原始消息、参数、blob 或头。
+
+宿主仅在 dedicated utility worker 中安装版本化扩展。ESM／Bun 路径不改，未装扩展的
+CJS 调用保留原状态查询行为；补丁维护见 `dependency-patches/README.md`。这些指标随
+原有私有 `phase`／`timing` 回包进入本机日志，不新增 Device Link 通道或手机 JS 依赖；
+安装新版受控 Desktop 后，本机和手机发来的后续消息都会走同一优化。Cursor 的 SSH
+工作区仍按原有不支持边界处理。
+
+原生探针 `node apps/desktop/scripts/cursor-followup-probe.mjs` 使用真实 SDK、临时 JSONL、
+真实 send／checkpoint 生命周期和 128 个模拟历史 blob（executor 替身，不请求真实模型）：
+原生加载 129 次 blob get、3 次 list，本机约 18–26 ms；命中后 0 次 blob get／list、
+不足 1 ms（仍有 agent 行校验）。checkpoint 字节相同，重开原生 platform 可恢复；原生
+blob handle 被替换时回退。随后在同一 fixture 进程只暴露已安装 SDK 的内部类、替换
+workspace bootstrap 防止网络和 hooks，直接执行真实 `LocalResourceProvider` 请求上下文：
+MCP 状态查询由 2 次降至 1 次，下一次请求重新取数。该探针没有改写 SDK 文件。
+
+核心 Cursor 定向单测 63 条通过（约 0.54 秒）；原生 pool 探针仍通过单进程、三个 agent、
+三个不同 MCP 身份、关闭一个不影响另一个。maker-core、Desktop 类型检查通过。pnpm frozen install
+验证补丁可以应用，锁文件仅保留 Cursor 补丁相关三处变更，没有升级其他依赖。
+尚未打包安装，真实账号 TTFT 分段尚未采到，不能把模拟样本的毫秒改善称为 29 秒已修复。
+
+
+### 2026-11-05 安装实测发现的启动参数兼容问题
+
+首个签名包安装成功，但真实旧任务冷恢复被 SDK 拒绝：Desktop 现有能力配置把 IDE 专用
+`rename_chat`／`renameChat` 当作 SDK 的 `disallowedTools` 传入，原生 SDK 1.2.0 并无
+这两个工具名。消息停留在宿主队列，没有发出模型请求，不能计为首字等待；本次未执行的
+测试消息已通过宿主工具撤回，避免重试后重复。SDK index 与上一安装版哈希相同，非 SDK
+升级引入；此前已打开的 agent 热轮不重新校验 open，因此旧版基线仍能执行。
+
+修复把实际 Desktop 禁用策略集中为 `cursor-tool-policy.ts`，按 SDK `ToolName` 做类型
+约束，只保留原有 `webSearch`／`generateImage` 禁用项。不存在的 IDE 名称从错误命名空间
+移除，不恢复任何实际存在的受禁工具；Cindy 自己的标题流程、权限档和模型设置不变。
+原生 follow-up 探针现在读取生产 Desktop 策略并交给真实 SDK create，覆盖此前只用 fake SDK
+而遗漏的入口校验；真实探针与 42 条 Cursor adapter 定向回归通过。修复后重新打包安装
+再测，不用直接改写已签名安装包的方法临时绕过。
+
+### 2026-11-05 16:24 修正版安装后的真实对照结果
+
+Developer ID 中国大陆版 ARM64 安装器在 16:24:15 返回 ok，安装后的 ASAR 和 SDK chunk
+均与构建产物哈希一致。使用同一已有 Grok 4.6 / High / Fast 任务、同一条只要求回复
+「收到」且禁止工具的短消息，旧版 3 轮、新版冷恢复 1 轮 + 热后续 3 轮，全部测试成功结束。
+首个包的无效工具名失败没有发出模型请求，排除于计时样本。一次性重启跟进已清理。
+
+| 样本 | worker 开始 send 到首思考 | 到首正文 | 响应头到首思考 | 本轮 cache read / input |
+| --- | ---: | ---: | ---: | ---: |
+| 旧版 1（无缓存命中，与构建重叠） | 11243 ms | 11492 ms | 9617 ms | 0 / 93106 |
+| 旧版 2（缓存命中） | 3835 ms | 4250 ms | 2770 ms | 93056 / 93434 |
+| 旧版 3（缓存命中） | 3437 ms | 3625 ms | 2423 ms | 93376 / 93710 |
+| 新版冷恢复（无缓存命中） | 10545 ms | 10693 ms | 8536 ms | 0 / 93987 |
+| 新版热后续 1 | 3481 ms | 3632 ms | 2787 ms | 93952 / 94127 |
+| 新版热后续 2 | 3198 ms | 3617 ms | 2502 ms | 94080 / 94269 |
+| 新版热后续 3 | 3376 ms | 3656 ms | 2672 ms | 94208 / 94412 |
+
+这些时间起点是 worker 的本轮 send，不是点击发送；不含 UI／宿主排队及新建 agent。
+新版冷恢复另有 session open 2736 ms，其中 agentCreate 2491 ms、15 个 MCP bridge 22 ms。
+所有测试 run 的 modelRequests=1，没有模型发起的工具调用。cache read 为 SDK 整轮用量，
+不是独立逐请求缓存 trace；本次短回复样本结构相同，但不能回推原来长回答的缓存因果。
+
+对比两组均有模型缓存命中的热轮（旧 n=2，新 n=3）的中位数：
+
+- `sendReturnedMs`：386 → 50 ms，减少 336 ms。
+- `firstModelRequestMs`：803.5 → 464 ms，减少 339.5 ms。
+- 响应头到首思考：2596.5 → 2672 ms，增加 75.5 ms，属于相近的观察值，未见这一段明显改善。
+- worker send 到首正文：3937.5 → 3632 ms，减少 305.5 ms（约 0.31 秒）。
+
+新增内部计时证明两项优化生效：三轮热消息 checkpointCacheHits 均为 1，checkpointLoadMs
+为 0／0／1 ms（毫秒取整），冷恢复为 385 ms；存储调用由旧版热轮 359／367 次降至
+57／58／57 次。每轮请求上下文内 MCP 状态均读取 1 次、复用 1 次。热轮整个上下文收集
+32／44／42 ms，其中 MCP 4／5／7 ms、Git 23／34／29 ms；冷恢复上下文为 233 ms，MCP
+218 ms。原生规则、skills、环境与 Git 更新路径保留。
+
+服务端首字分段首次取得真实值（clock=server）：冷恢复 serverFirstTokenMs=8543、
+providerTtftMs=6408；三轮热消息分别为 2796/691、2518/686、2681/690 ms。四轮
+slowPoolWaitMs 均为 0。总首字与 provider 首字的数值差仍约 1.8–2.1 秒，当前字段不能
+进一步分解这段，也不能把存在重叠口径的字段直接相加。冷／热用量与 provider 首字差异
+提示模型缓存状态值得继续追踪，但尚未证明此前 29 秒的唯一原因。
+
+**本次结论**：热后续的本地重复准备减少约 0.3 秒，未证明省掉几十秒；原来那次
+29379 ms 的响应头后等待在这组短消息里未复现。此前原问题不同、历史逐轮增长、前后
+非随机顺序、冷恢复与热轮不等价且样本少，不能把 29 秒减去新热轮 2.67 秒称为优化收益。
+当前可观察到的主要波动在模型／SDK 请求路径，本地规则和 MCP 汇总已不是这些热轮的
+秒级瓶颈。安装、签名、真实首字与缓存命中均已验证；Windows 未实测。

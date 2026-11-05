@@ -1,5 +1,5 @@
-export type OrcaDisplayAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
-export type OrcaDisplayVendor = 'cc' | 'codex' | 'pi' | 'cursor';
+export type OrcaDisplayAgentKind = 'claude-code' | 'codex' | 'pi';
+export type OrcaDisplayVendor = 'cc' | 'codex' | 'pi';
 
 export function normalizeOrcaDisplayAgentKind(agentKind: unknown): OrcaDisplayAgentKind {
   if (agentKind === 'codex') return 'codex';
@@ -13,5 +13,5 @@ export function orcaAgentLabel(agentKind: OrcaDisplayAgentKind): string {
 }
 
 export function orcaVendorForAgentKind(agentKind: OrcaDisplayAgentKind): OrcaDisplayVendor {
-  return agentKind === 'cursor' ? 'cursor' : agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
+  return agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
 }

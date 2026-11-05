@@ -46,7 +46,6 @@ export function modelProtocolComparison(
   // per-model API, so the vendor API is the real upstream. Cindy AI is a gateway, not a bridge.
   const subscriptionBridge = provider.source === 'builtin' && provider.id !== 'xd';
   const forAgent = (agent: AgentKind) => {
-    if (agent === 'cursor' && models.cursor) return { harness: null, outbound: null, localConversion: false, path: 'direct' as const, mode: 'matching' as const };
     const model = models[agent];
     if (!model) return null;
     const routing = provider.routing?.[agent];
@@ -104,6 +103,6 @@ export function nativeModelAgents(
   const comparison = modelProtocolComparison(provider, models);
   return (Object.keys(models) as AgentKind[]).filter(agent => {
     const protocol = comparison.forAgent(agent);
-    return (agent === 'cursor' || !!protocol?.outbound) && protocol?.mode === 'matching';
+    return !!protocol?.outbound && protocol.mode === 'matching';
   });
 }
