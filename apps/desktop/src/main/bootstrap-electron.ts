@@ -1,3 +1,4 @@
+import { captureLocalReplacementTurns, resumeLocalReplacementTurns } from './localReplacementResumeHost';
 import { observeManagedClaudeStatus } from './maker-host/claude-account-auth.js';
 import { refreshManagedClaudeModels } from './maker-host/claude-account-models.js';
 import { claudeCliLoginRevision } from './maker-host/claude-native-cli-status.js';
@@ -9894,7 +9895,7 @@ app.on('ready', async () => {
             startImConnection,
             log: dbClientLog,
           });
-          attemptStartScheduler();
+          void attemptStartScheduler().then(resumeLocalReplacementTurns);
           attemptStartEmbeddingHost();
         });
       };
@@ -9908,7 +9909,7 @@ app.on('ready', async () => {
           startImConnection,
           log: dbClientLog,
         });
-        attemptStartScheduler();
+        void attemptStartScheduler().then(resumeLocalReplacementTurns);
         attemptStartEmbeddingHost();
       });
       accountProviderReadinessArm.publish(
@@ -10191,11 +10192,13 @@ onQuit(
   'sync',
 );
 let schedulerQuit: Promise<void> | undefined;
+let localReplacementCapture: Promise<void> | undefined;
 onQuit(
   'session-active-turn-freeze',
   () => {
     suspendUsageLimitWaits();
     freezeSessionActiveTurnMarkers();
+    localReplacementCapture = captureLocalReplacementTurns(listInTurnSessionIds(getMakerIfReady()));
     // Fence scheduler completion before process reapers / Maker close emit
     // terminal events. Keep the write alive until the async quit phase drains.
     schedulerQuit = getSchedulerIfInitialized()?.stop({ interrupted: true });
@@ -10205,6 +10208,7 @@ onQuit(
   },
   'sync',
 );
+onQuit('local-replacement-capture', () => localReplacementCapture, 'async');
 onQuit('usage-limit-waits-flush', flushUsageLimitWaits, 'async');
 onQuit(
   'reap-claude-children',

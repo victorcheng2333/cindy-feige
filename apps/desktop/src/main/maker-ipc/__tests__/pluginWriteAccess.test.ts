@@ -488,7 +488,7 @@ describe('new user input waits outside execution fences',()=>{
  const sendStart=source.indexOf('      sendToAgentAccepted: async (sessionId, message, createOpts, sendOpts) => {');
  const sendText=source.slice(sendStart,source.indexOf('      assertRemoteInputControlBoundary:',sendStart));
  const sendJs=ts.transpileModule(`return {${sendText}}.sendToAgentAccepted;`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
- const enqueueStart=source.indexOf('    MAKER_INVOKE.INPUT_ENQUEUE,');
+ const enqueueStart=source.indexOf('  const enqueueSessionInput = async (');
  const enqueueText=source.slice(source.indexOf('      const sid = requireSessionId(sessionId);',enqueueStart),source.indexOf('      if (parsed.durableDelivery)',enqueueStart));
  const enqueueJs=ts.transpileModule(`return async function(event,sessionId,item){${enqueueText}};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
  it.each(['send','enqueue'].flatMap(entry=>[false,true].map(switchOwner=>({entry,switchOwner}))))('$entry waits for permission and rejects changed owner=$switchOwner',async({entry,switchOwner})=>{

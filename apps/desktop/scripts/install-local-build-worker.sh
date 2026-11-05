@@ -10,13 +10,15 @@ LOG="$STATE/install.log"; STATUS="$STATE/status.json"; LOCK="$STATE/worker.pid"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$STATE/backups/Cindy-$TS.app"
 MAIN_EXE="$TARGET/Contents/MacOS/$EXE"
+RESUME_TOKEN="$(uuidgen)"
+RESUME_REQUEST="$STATE/resume-request.json"
 QUIT_TIMEOUT=60     # seconds Cindy gets to finish its graceful quit
 START_TIMEOUT=60    # seconds the new app gets to appear
 STAY_UP=10          # seconds the new app must keep running
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 status() { printf '{"state":"%s","message":"%s","at":"%s","app":"%s","backup":"%s"}\n' "$1" "$2" "$(date '+%F %T')" "$TARGET" "$BACKUP" > "$STATUS"; }
-finish() { rm -f "$LOCK"; rm -rf "$STAGING"; exit "$1"; }
+finish() { rm -f "$LOCK" "$RESUME_REQUEST" "$RESUME_REQUEST.tmp"; rm -rf "$STAGING"; exit "$1"; }
 main_pids() { ps -axo pid=,comm= | awk -v p="$MAIN_EXE" '{ pid=$1; $1=""; sub(/^ +/, ""); if ($0 == p) print pid }'; }
 # Poll every 0.5s; argument is a timeout in seconds.
 wait_gone() { local i; for ((i = 0; i < $1 * 2; i++)); do [ -z "$(main_pids)" ] && return 0; sleep 0.5; done; return 1; }
@@ -43,6 +45,12 @@ PIDS="$(main_pids)"
 if [ -n "$PIDS" ]; then
   log "sending SIGTERM to $PIDS"
   status quitting "正在退出 Cindy"
+  # Bind the handoff to this exact process; old clients safely ignore it.
+  if [ "$(echo "$PIDS" | wc -w | tr -d ' ')" = 1 ]; then
+    umask 077
+    printf '{"token":"%s","pid":%s,"at":%s}\n' "$RESUME_TOKEN" "$PIDS" "$(date +%s)" > "$RESUME_REQUEST.tmp"
+    mv "$RESUME_REQUEST.tmp" "$RESUME_REQUEST"
+  fi
   kill -TERM $PIDS 2>/dev/null
   if ! wait_gone "$QUIT_TIMEOUT"; then
     log "Cindy did not exit within ${QUIT_TIMEOUT}s; nothing changed"
@@ -74,7 +82,7 @@ xattr -dr com.apple.quarantine "$TARGET" 2>/dev/null
 
 log "opening new app"
 status starting "正在启动新版"
-open "$TARGET"
+open "$TARGET" --args "--local-replacement-resume=$RESUME_TOKEN"
 if wait_up; then
   log "new app is running"
   status ok "新版已启动"

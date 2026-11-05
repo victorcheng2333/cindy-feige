@@ -1,3 +1,4 @@
+import { waitForLocalReplacementResume } from '../../localReplacementResumeHost';
 import { assertCursorTaskCreationAllowed } from './cursorTaskCreation.js';
 import { captureSessionCreationCancellation } from '../sessionRuntimeCleanup.js';
 import { pagePermissionSessionChanged } from '../../mcp-apps/pagePermissions.js';
@@ -1870,13 +1871,21 @@ export function registerSessionIpc(
   // 正在跑的 turn 算进来。只服务本机顶层 renderer,不进 device-link allowlist。
   ipcMain.handle('local-db:sessions:interrupted-resume-candidates', async (event) => {
     assertTrustedAppRendererEvent(event);
+    const owner = readCurrentDbClientSnapshot();
+    const automaticallyResumed = await waitForLocalReplacementResume();
+    if (!owner || readCurrentDbClientSnapshot() !== owner) {
+      throwIpcError('PRECONDITION_FAILED', 'Account changed during replacement recovery');
+    }
     const rows = await listInterruptedResumeCandidateRows(
       ({ botId, role, profileStatus }) =>
         botSessionInputBlockReason({ source: 'bot', role, profileStatus }) === null
         && !isShadowedCompanionSession({ role, botId }, isCompanionShadowed),
     );
+    if (readCurrentDbClientSnapshot() !== owner) {
+      throwIpcError('PRECONDITION_FAILED', 'Account changed during interrupted task lookup');
+    }
     const wording = createLocalizedToolRowWording();
-    return rows.map(({ sessionId, interruptedAt, lastToolUse }) => ({
+    return rows.filter((row) => !automaticallyResumed.has(row.sessionId)).map(({ sessionId, interruptedAt, lastToolUse }) => ({
       sessionId,
       interruptedAt,
       activity: lastToolUse

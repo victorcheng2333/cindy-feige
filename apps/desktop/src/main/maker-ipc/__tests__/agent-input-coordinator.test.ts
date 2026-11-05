@@ -429,6 +429,32 @@ describe('MCP App queued message grants', () => {
 });
 
 describe('INPUT_ENQUEUE crash-restored remote Worker pause', () => {
+  // Replacement restart contract: the production host enqueue must release a restored pause,
+  // and recheck the one-shot guard before accepting input. Existing cases only invoke IPC.
+  it('continues a replacement-interrupted task through the restored input queue', async () => {
+    const h = createHarness();
+    h.setLoadQueueSnapshot(async () => [makeItem('later', 'queued later task')]);
+    const input = createInputEnqueueHarness(h.coordinator, { remote: false });
+    await input.enqueueReplacement('replacement-task', makeItem('replacement', CONTINUE_AFTER_APP_EXIT_PROMPT), undefined, {
+      revalidate: async () => {}, assertCurrent: () => {},
+    });
+    await vi.waitFor(() => expect(h.sendToAgent).toHaveBeenCalled());
+    expect(h.sendToAgent.mock.calls[0]?.[1]).toMatchObject({ content: CONTINUE_AFTER_APP_EXIT_PROMPT });
+  });
+
+  it.each(['revalidate', 'assertCurrent'] as const)('does not accept a superseded replacement at %s', async (stage) => {
+    const h = createHarness();
+    h.setRunning(true);
+    const input = createInputEnqueueHarness(h.coordinator, { remote: false });
+    const guard = {
+      revalidate: async () => { if (stage === 'revalidate') throw new Error('superseded'); },
+      assertCurrent: () => { if (stage === 'assertCurrent') throw new Error('superseded'); },
+    };
+    await expect(input.enqueueReplacement('replacement-task', makeItem('replacement', CONTINUE_AFTER_APP_EXIT_PROMPT), undefined, guard)).rejects.toThrow('superseded');
+    expect(h.coordinator.getProjection('replacement-task').pendingQueue).toEqual([]);
+    expect(h.sendToAgent).not.toHaveBeenCalled();
+  });
+
   function hostInput(
     h: ReturnType<typeof createHarness>, remote = true, mobile = false,
     resumeInterruptedScheduleRun: typeof import('../../scheduler-host/index.js').resumeInterruptedScheduleRun = async () => null,

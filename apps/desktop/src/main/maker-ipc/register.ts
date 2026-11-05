@@ -1,3 +1,6 @@
+import { getSessionInterruptionBootAt } from '../localDb/sessionInterruptionBoot';
+import { setLocalReplacementResumeSender } from '../localReplacementResumeHost';
+import { listInterruptedPendingRows } from '../localDb/sessionActiveTurn';
 import { supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { createTaskCompletionDeliveryHost, type TaskCompletionDeliveryHost } from './taskCompletionDeliveryHost.js';
@@ -11,7 +14,7 @@ import { setPluginPageToolRunner } from '../mcp-integrations/plugin-app-registry
 import { getCindyGhostsMcpDeps } from '../mcp-integrations/ghost.js';
 import { pluginAppResult } from '../mcp-apps/pluginCards.js';
 import { restorePluginPageSession } from '../mcp-apps/pluginPageCall.js';
-import { resumeInterruptedScheduleRun } from '../scheduler-host/index.js';
+import { getSchedulerIfInitialized, resumeInterruptedScheduleRun } from '../scheduler-host/index.js';
 import { readTaskDeliveryNote } from '../bot-autonomy/hub.js';
 import { setVoiceTaskDispatch, setVoiceCallMemoryReader } from '../voice-conversation/taskBridge.js';
 import { buildBotMemoryScopeKey, SessionCreationCleanupPendingError } from '@cindy/maker-core';
@@ -21828,13 +21831,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // device-link 出方向:远程入队消息的 OSS 引用(files[] + persistedContent)在入队前一次性物化成本地
   // 临时文件(共用下载、用后删 OSS),保证喂 agent 的 files[] 与落库的 persistedContent 都是本地路径。
   // 本机会话无 OSS 引用 → materializeQueuedOssAttachmentsDeferred 原样返回,零开销。
-  ipcMain.handle(
-    MAKER_INVOKE.INPUT_ENQUEUE,
-    async (event, sessionId: unknown, item: unknown, opts?: unknown) => {
+  const enqueueSessionInput = async (
+    sessionId: unknown, item: unknown, opts?: unknown,
+    replacement?: { revalidate: () => Promise<void>; assertCurrent: () => void },
+  ): Promise<ReturnType<AgentInputCoordinator['getProjection']>> => {
       const sid = requireSessionId(sessionId);
       await assertReviewExternalInputAllowed(sid);
-      const deviceLinkInvoke = isDeviceLinkInvoke();
-      if (!deviceLinkInvoke) assertTrustedAppRendererEvent(event);
+      const deviceLinkInvoke = replacement ? false : isDeviceLinkInvoke();
       const inputOwner = getCurrentDbClientSnapshot();
       await withSessionPermissionChange(sid, async () => undefined);
       if (!inputOwner || inputOwner !== getCurrentDbClientSnapshot()) throwIpcError('PRECONDITION_FAILED', 'Account changed before input');
@@ -21967,8 +21970,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         // 「继续任务」durable ack 延后到 vendor dispatch 成功（onDispatchedUserTurn）：
         // 排队可取消时旧中断提示必须能恢复；accepted 但仍可能 cancelled-before-dispatch
         // 时也不能提前 ack。续跑项本身由 coordinator 插到队首（普通输入仍 FIFO）。
+        if (replacement) await replacement.revalidate();
         let duplicate = false;
         const enqueueInput = (input: AgentInputQueuedMessage) => {
+          replacement?.assertCurrent();
           assertCurrentInputGeneration();
           if (inputOwner !== getCurrentDbClientSnapshot()) throwIpcError('PRECONDITION_FAILED', 'Account changed before input');
           assertRemoteInputClearNotInFlight(sid, deviceLinkInvoke);
@@ -22073,8 +22078,60 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         } else markQueuedAttachmentDurableAfterSnapshot(sid, parsed.clientId, attachmentOwnerId);
         throw err;
       }
-    },
-  );
+  };
+  ipcMain.handle(MAKER_INVOKE.INPUT_ENQUEUE, (event, sessionId: unknown, item: unknown, opts?: unknown) => {
+    if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
+    return enqueueSessionInput(sessionId, item, opts);
+  });
+
+  // Host-only continuation uses the same durable queue, scheduler recovery and dispatch ack as Continue.
+  // The guard is a closure, never accepted from renderer/device-link payloads.
+  setLocalReplacementResumeSender(async (turn, clientId, isCurrent) => {
+    if (!getSchedulerIfInitialized()) {
+      throwIpcError('PRECONDITION_FAILED', 'Replacement recovery requires scheduler readiness');
+    }
+    const sid = turn.sessionId;
+    const generation = inputCoordinator.getGeneration(sid);
+    const assertCurrent = () => {
+      if (!isCurrent() || !inputCoordinator.isGenerationCurrent(sid, generation)
+        || isSessionInTurn(sid) || maker.getSession(sid)?.isTurnRunning()
+        || inputCoordinator.hasQueuedItemWhere(sid, (item) => item.text === CONTINUE_AFTER_APP_EXIT_PROMPT
+          || (item.hostAcceptedAtMs ?? 0) >= getSessionInterruptionBootAt())) {
+        throwIpcError('PRECONDITION_FAILED', 'Replacement continuation superseded');
+      }
+    };
+    const revalidate = async () => {
+      assertCurrent();
+      const pending = (await listInterruptedPendingRows({ includeBotTasks: true }))
+        .find((row) => row.sessionId === sid && row.startedAt === turn.startedAt);
+      assertCurrent();
+      if (!pending || (pending.botTask && (
+        botSessionInputBlockReason({ source: 'bot', role: pending.botTask.role, profileStatus: pending.botTask.profileStatus }) !== null
+        || isShadowedCompanionSession(pending.botTask, isCompanionShadowed)))) {
+        throwIpcError('PRECONDITION_FAILED', 'Task is no longer eligible for replacement continuation');
+      }
+    };
+    await revalidate();
+    const [row] = await getDbClient().drizzle.select().from(sessions).where(eq(sessions.id, sid)).limit(1);
+    const meta = await maker.getSessionMeta(sid);
+    assertCurrent();
+    if (!row || !meta) throwIpcError('NOT_FOUND', 'Replacement task not found');
+    const text = CONTINUE_AFTER_APP_EXIT_PROMPT;
+    await enqueueSessionInput(sid, {
+      clientId, durableDelivery: true, text, persistedContent: text,
+      model: row.model ?? '', effort: row.effort ?? '',
+      permissionMode: row.permissionMode ?? 'default', workingDir: meta.workDir,
+      chatMessage: { clientId, role: 'user', content: text },
+      createOpts: {
+        agentKind: meta.agentKind, workingDir: meta.workDir, model: row.model ?? '',
+        effort: row.effort ?? undefined, permissionMode: row.permissionMode ?? 'default',
+        providerId: row.providerId, fastMode: row.fastMode ?? undefined,
+        planMode: row.planModeEnabled === true,
+        ...(row.sdkSessionId ? { resumeSessionId: row.sdkSessionId } : {}),
+        ...(row.remoteHostId ? { remoteHostId: row.remoteHostId } : {}),
+      },
+    } satisfies AgentInputQueuedMessage, undefined, { revalidate, assertCurrent });
+  });
 
   ipcMain.handle(
     MAKER_INVOKE.INPUT_COMPACT,

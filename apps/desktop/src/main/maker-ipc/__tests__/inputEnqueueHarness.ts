@@ -10,14 +10,16 @@ import type { SchedulerQueuedPromptRequest } from '../register.js';
 // Execute the production IPC handler while injecting only its host services.
 // Shared by queue tests and the real scheduler-runner continuation regression.
 const source = readFileSync(new URL('../register.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const start = source.indexOf('    MAKER_INVOKE.INPUT_ENQUEUE,');
-const handlerStart = source.indexOf('    async (event, sessionId: unknown, item: unknown, opts?: unknown) => {', start);
-const handlerEnd = source.indexOf('\n  );', handlerStart);
-if (start < 0 || handlerStart < start || handlerEnd < handlerStart) throw new Error('INPUT_ENQUEUE handler not found');
-const handler = source.slice(handlerStart, handlerEnd).trim().replace(/,$/, '');
-const compiled = transpileModule(`return (${handler});`, {
-  compilerOptions: { target: ScriptTarget.ES2022 },
-}).outputText;
+const start = source.indexOf('  const enqueueSessionInput = async (');
+const end = source.indexOf('  // Host-only continuation', start);
+if (start < 0 || end < start) throw new Error('INPUT_ENQUEUE handler not found');
+const compiled = transpileModule(`
+  let handler;
+  const ipcMain = { handle: (_channel, fn) => { handler = fn; } };
+  const MAKER_INVOKE = { INPUT_ENQUEUE: 'enqueue' };
+  ${source.slice(start, end)}
+  return { enqueue: handler, enqueueReplacement: enqueueSessionInput };
+`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
 
 export function createInputEnqueueHarness(coordinator: AgentInputCoordinator, options: {
   remote?: boolean;
@@ -80,7 +82,10 @@ export function createInputEnqueueHarness(coordinator: AgentInputCoordinator, op
       'discardSpecificQueuedAttachmentOwnership', 'markQueuedAttachmentDurableAfterSnapshot',
     ].map(name => [name, noop])),
   };
-  const enqueue = new Function(...Object.keys(bindings), compiled)(...Object.values(bindings)) as
-    (event: object, sid: string, item: AgentInputQueuedMessage, opts?: unknown) => Promise<AgentInputProjection>;
-  return { enqueue, acceptedCallbacks, preparations };
+  const handlers = new Function(...Object.keys(bindings), compiled)(...Object.values(bindings)) as {
+    enqueue: (event: object, sid: string, item: AgentInputQueuedMessage, opts?: unknown) => Promise<AgentInputProjection>;
+    enqueueReplacement: (sid: string, item: AgentInputQueuedMessage, opts: unknown,
+      guard: { revalidate: () => Promise<void>; assertCurrent: () => void }) => Promise<AgentInputProjection>;
+  };
+  return { ...handlers, acceptedCallbacks, preparations };
 }
