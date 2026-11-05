@@ -1483,7 +1483,7 @@ describe('new session model', () => {
 
   it('exposes Pi as a first-class agent and preserves Fast for Pi sessions', () => {
     expect(NEW_SESSION_AGENT_OPTIONS.map((option) => option.kind)).toEqual([
-      'claude-code', 'codex', 'pi',
+      'claude-code', 'codex', 'pi', 'cursor',
     ]);
     const pi = withAgentDefaults({ ...DRAFT_WITH_MODEL, fastMode: true }, 'pi');
     expect(pi).toMatchObject({ agentKind: 'pi', model: '', fastMode: true });
@@ -2919,4 +2919,11 @@ describe('页面 Auto 校准和提交保留 Cindy 来源身份', () => {
       expect(result).toMatchObject({ model: auto, providerId: 'pool-new' });
     },
   );
+});
+
+// Unit: creation must preserve the fourth harness instead of silently falling back to Claude.
+it('creates Cursor on the controlled host after capability admission', () => {
+  const draft = withAgentDefaults({...DEFAULT_NEW_SESSION_DRAFT}, 'cursor');
+  expect(availableNewSessionAgentOptions(new Set(['cursor'])).map(item => item.kind)).toEqual(['cursor']);
+  expect(buildRemoteCreateSessionOptions({...draft,model:'cursor-model',firstMessage:'hello',workingDir:'/repo'})).toMatchObject({agentKind:'cursor',model:'cursor-model'});
 });

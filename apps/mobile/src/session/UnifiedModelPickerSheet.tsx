@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { modelNeedsReselection } from './modelReselection';
 import { mobileProviderAccountTitle } from "./mobileModelRowPresentation";
 import { mobileCostMarks } from "./mobileModelRowPresentation";
@@ -233,7 +234,7 @@ export function UnifiedModelPickerSheet(
     opening.current += 1;
     setBrowsingAgent(p.agentKind);
     setFilter("all");
-    initialRemoteFilter.current = true;
+    initialRemoteFilter.current = Platform.OS !== 'ios';
     filterTouched.current = false;
     setTarget(null);
     setRemoteConfigs(new Map());
@@ -317,6 +318,7 @@ export function UnifiedModelPickerSheet(
           : selectedDeviceId === null
             ? keepModel
             : undefined,
+        !p.existingSessionRoute && p.unified.agents.includes('cursor'),
       ),
     [
       p.providers,
@@ -624,7 +626,8 @@ export function UnifiedModelPickerSheet(
   // 收藏和本机收藏排在同一节里:位置编在 providerId 里的,到那台电脑的目录里找模型,
   // 点开即在那台运行。那台电脑离线(包括只因任务的 Agent 在那台、靠缓存留在列表里)或没开放远程调用时
   // 先不显示,收藏本身保留。
-  const favorites = prefs.value.favorites.flatMap((item) => {
+  const favoritesEnabled = Platform.OS !== 'ios';
+  const favorites = (favoritesEnabled ? prefs.value.favorites : []).flatMap((item) => {
     const source = parseAgentDeviceFavoriteSource(item.providerId);
     if (source) {
       const directory = remoteDirectories.find(
@@ -1051,7 +1054,7 @@ export function UnifiedModelPickerSheet(
   // 归组的任务打开即停在组那一项(组的归属读回来得晚也挪过去,用户自己点过来源就不再挪)。
   const boundFilter = boundGroup ? groupFilterOf(boundGroup) : null;
   useEffect(() => {
-    if (!p.visible || filterTouched.current || !boundFilter) return;
+    if (Platform.OS === 'ios' || !p.visible || filterTouched.current || !boundFilter) return;
     initialRemoteFilter.current = false;
     setFilter(boundFilter);
   }, [p.visible, boundFilter]);
@@ -1107,7 +1110,7 @@ export function UnifiedModelPickerSheet(
       }}
       filters={[
         { id: "all", label: t("models.unified.all") },
-        ...(prefs.favoritesReady
+        ...(favoritesEnabled && prefs.favoritesReady
           ? [{ id: "favorites", label: t("models.unified.favorites") }]
           : []),
         ...p.providers
@@ -1170,7 +1173,7 @@ export function UnifiedModelPickerSheet(
           ? {
               row,
               agents: row.entry.candidates.filter(agent => p.unified.agents.includes(agent) &&
-                (agent !== "cursor" || (p.existingSessionRoute && p.agentKind === "cursor" && !row.remoteDevice)),
+                (agent !== "cursor" || (!row.remoteDevice && (!p.existingSessionRoute || p.agentKind === "cursor"))),
               ),
               fastCapable:
                 !!cap?.supportsFastMode && (!!row.remoteDevice || fastCapable(row.config.agent)),

@@ -25,7 +25,6 @@ import {
 import {
   Check,
   SlidersHorizontal,
-  Star,
   X,
   LayoutGrid,
 } from "lucide-react-native";
@@ -34,7 +33,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 import { iconSize, useTheme } from "@/theme";
-import { MobileAgentMark } from "@/components/MobileAgentMark";
 import { ComposerSheet } from "./ComposerSheet";
 import { ComposerNativeSection as Section } from "./ComposerNativeSection";
 import { ComposerNativeRow } from "./ComposerNativeRow";
@@ -79,11 +77,11 @@ function ProviderSourceMark({
 export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const [page, setPage] = useState<"sources" | "harness" | null>(null);
+  const [page, setPage] = useState<"sources" | null>(null);
   useEffect(() => {
     setPage(null);
   }, [p.visible, p.options?.row.key]);
-  const mark = (Icon: typeof Star, filled = false) => (
+  const mark = (Icon: typeof Check, filled = false) => (
     <NativeMark>
       <Icon
         size={iconSize.action}
@@ -93,13 +91,12 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
     </NativeMark>
   );
   const options = p.options;
-  const isFavorite = options?.isFavorite ?? !!options?.row.favorite;
   const config = options?.row.config;
   const level = (id: string) =>
     t(`models.options.effortLevels.${id}`, { defaultValue: id });
   const listHeader = (
     <VStack spacing={8} modifiers={[padding({ horizontal: 20, bottom: 8 })]}>
-      {(p.agents?.length ?? 0) > 1 ? (
+      {(p.agents?.length ?? 0) > 0 ? (
         <Picker
           label={t("models.unified.harness")}
           selection={p.browsingAgent}
@@ -121,9 +118,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
         testID={`${p.testID}.filter`}
       >
         <HStack>
-          {p.filter === "favorites" ? (
-            mark(Star, true)
-          ) : p.filter === "all" ? (
+          {p.filter === "all" ? (
             mark(LayoutGrid)
           ) : (
             <NativeMark>
@@ -228,7 +223,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               }
               optionsIcon={mark(SlidersHorizontal)}
               selectionIcon={mark(Check)}
-              accessory={row.favorite ? mark(Star, true) : undefined}
               selected={row.selected}
               disabled={p.busy || row.disabled}
               onPress={() => p.onSelect(row)}
@@ -275,10 +269,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             ) : null}
           </VStack>
         ) : (
-          mark(
-            item.id === "favorites" ? Star : LayoutGrid,
-            item.id === "favorites" && p.filter === "favorites",
-          )
+          mark(LayoutGrid)
         )
       }
       onPress={() => {
@@ -304,12 +295,10 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       title={
         page === "sources"
           ? t("models.unified.source")
-          : page === "harness"
-            ? t("models.unified.harness")
-            : p.title
+          : p.title
       }
       testID={p.testID}
-      footer={options && !options.editingFavorite && !options.row.selected ? (
+      footer={options && !options.row.selected ? (
         <Button onPress={() => options.onUse ? options.onUse() : p.onSelect(options.row)}
           modifiers={[buttonStyle("borderedProminent"), tint(colors.cta), disabled(p.busy || options.row.disabled), frame({ minHeight: 44, maxWidth: Infinity })]}
           testID={`${p.testID}.useModel`}>
@@ -337,38 +326,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             </Section>
           ))}
         </>
-      ) : page === "harness" && options && config ? (
-        <Section>
-          {options.agents.map((agent) => (
-            <ComposerNativeRow
-              key={agent}
-              title={mobileAgentLabel(agent)}
-              leading={
-                <NativeMark>
-                  <MobileAgentMark
-                    agentKind={agent}
-                    color={colors.textSecondary}
-                  />
-                </NativeMark>
-              }
-              selected={config.agent === agent}
-              selectionIcon={mark(Check)}
-              disabled={p.busy}
-              onPress={() => {
-                const cap = options.row.entry.capabilities[agent];
-                if (!cap) return;
-                options.onChange({
-                  ...config,
-                  agent,
-                  modelId: cap.wireModelId,
-                  effort: cap.defaultEffort ?? cap.efforts[0] ?? "",
-                  fast: false,
-                });
-                setPage(null);
-              }}
-            />
-          ))}
-        </Section>
       ) : options && config ? (
         <>
           <Section>
@@ -381,46 +338,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               {options.context}
             </Text>
           </Section>
-          {options.onEditFavorite ? (
-            <Section>
-              <ComposerNativeRow
-                title={t("models.unified.editFavorite")}
-                onPress={options.onEditFavorite}
-                disabled={p.busy || options.favoritesDisabled}
-                testID={`${p.testID}.editFavorite`}
-              />
-            </Section>
-          ) : null}
-          {options.editingFavorite ? (
-            <Section>
-              <Text
-                modifiers={[
-                  font({ textStyle: "footnote" }),
-                  foregroundStyle(colors.textSecondary),
-                ]}
-              >
-                {t("models.unified.editFavoriteHint")}
-              </Text>
-            </Section>
-          ) : null}
           <Section>
-            {options.editingFavorite ? (
-            <ComposerNativeRow
-              title={t("models.unified.harness")}
-              subtitle={mobileAgentLabel(config.agent)}
-              leading={
-                <NativeMark>
-                  <MobileAgentMark
-                    agentKind={config.agent}
-                    color={colors.textSecondary}
-                  />
-                </NativeMark>
-              }
-              onPress={() => setPage("harness")}
-              disabled={p.busy}
-              testID={`${p.testID}.harness`}
-            />
-            ) : null}
             {options.row.entry.capabilities[config.agent]?.efforts.length ? (
               <VStack alignment="leading" spacing={8}>
               <Text modifiers={[font({ textStyle: "footnote" }), foregroundStyle(colors.textSecondary)]}>{t("models.options.reasoningEffort")}</Text>
@@ -461,8 +379,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               </VStack>
             ) : null}
           </Section>
-{!options.editingFavorite ? (
-            <Section>
+          <Section>
               <Text
                 testID={`${p.testID}.configState`}
                 modifiers={[
@@ -484,16 +401,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
                   testID={`${p.testID}.reset`}
                 />
               ) : null}
-              <Text
-                modifiers={[
-                  font({ textStyle: "footnote" }),
-                  foregroundStyle(colors.textSecondary),
-                ]}
-              >
-                {t("models.unified.resetScopeHint")}
-              </Text>
-            </Section>
-          ) : null}
+          </Section>
           {options.price ? (
             <Section>
               <Text
@@ -506,49 +414,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               </Text>
             </Section>
           ) : null}
-          {options.editingFavorite ? (
-            <Section>
-              <ComposerNativeRow
-                title={t("models.unified.saveFavorite")}
-                onPress={() => options.onSaveEdit?.()}
-                disabled={p.busy || options.favoritesDisabled}
-                testID={`${p.testID}.saveFavorite`}
-              />
-              <ComposerNativeRow
-                title={t("models.unified.cancelEdit")}
-                onPress={() => options.onCancelEdit?.()}
-                disabled={p.busy}
-                testID={`${p.testID}.cancelEdit`}
-              />
-            </Section>
-          ) : (
-            <Section title={t("models.unified.currentConfiguration")}>
-              <ComposerNativeRow
-                title={t(
-                  isFavorite
-                    ? "models.unified.savedConfiguration"
-                    : "models.unified.favoriteConfiguration",
-                )}
-                subtitle={options.configurationSummary}
-                leading={mark(Star, isFavorite)}
-                disabled={p.busy || options.favoritesDisabled}
-                onPress={options.onFavorite}
-                testID={`${p.testID}.favorite`}
-              />
-              <Text
-                modifiers={[
-                  font({ textStyle: "footnote" }),
-                  foregroundStyle(colors.textSecondary),
-                ]}
-              >
-                {t(
-                  isFavorite
-                    ? "models.unified.removeFavoriteHint"
-                    : "models.unified.saveFavoriteHint",
-                )}
-              </Text>
-            </Section>
-          )}
           {options.notice ? (
             <Section>
               <Text

@@ -688,7 +688,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   }), [draft.workingDir, draft.workspaceKind]);
   // 旧被控电脑不支持给 Worker 选 Agent 位置：首个 Worker 只能从被控电脑的目录里选，与任务的
   // Agent 在另一台电脑运行对不上，两者仍互斥。
-  const collabEligible = isOrcaCollabEligible(collabTarget)
+  const collabEligible = draft.agentKind !== 'cursor' && isOrcaCollabEligible(collabTarget)
     && (remoteAgentPick === null || workerAgentLocationSupported);
   // 换设备 / 换工作区后,草稿里的协同设置属于旧目标:丢弃,避免在新目标上静默开启。
   // 按草稿武装时的目标比对(而不是「目标一变就清」):返回编辑恢复草稿时目标与草稿一起回填,
@@ -696,11 +696,11 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const collabTargetKey = orcaCollabDraftTargetKey(selectedDeviceId, draft.workspaceKind, draft.workingDir);
   const collabDraftTargetRef = useRef<string | null>(null);
   useEffect(() => {
-    if (collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);
-  }, [collabTargetKey]);
+    if (draft.agentKind === 'cursor' || collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);
+  }, [collabTargetKey, draft.agentKind]);
   // 读入口状态;重连后重读:断线时读失败会落成「不可用」,不能让表单一直卡住。
   useEffect(() => {
-    if (!contextSheetOpen || !collabEligible || !selectedDeviceId) return undefined;
+    if (!contextSheetOpen || !collabEligible || !selectedDeviceId || draft.agentKind === 'cursor') return undefined;
     let cancelled = false;
     setCollabEntryStatus('loading');
     void readOrcaCollabEntryStatus(maker, collabTarget, draft.agentKind)
@@ -2006,14 +2006,17 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     setAvailableAgentKinds(null);
     void withTransientRemoteRetry(async () => {
       await openLink(selectedDeviceId);
-      return maker.listAvailableAgents();
+      const agents = await maker.listAvailableAgents();
+      if (!agents.includes('cursor')) return agents;
+      const cursor = normalizeMobileAgentCapabilities(await maker.getCapabilities('cursor'));
+      return cursor?.supportsControlledCursorCreation ? agents : agents.filter(agent => agent !== 'cursor');
     })
       .then((agents) => {
         if (cancelled) return;
         setAvailableAgentKinds(
           new Set(
             (Array.isArray(agents) ? agents : []).filter(
-              (a): a is NewSessionAgentKind => a === 'claude-code' || a === 'codex' || a === 'pi',
+              (a): a is NewSessionAgentKind => a === 'claude-code' || a === 'codex' || a === 'pi' || a === 'cursor',
             ),
           ),
         );
@@ -2375,13 +2378,13 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     source?: { deviceId: string | null },
   ): Promise<boolean> => {
     const agent = config.agent;
-    if (agent === 'cursor') return false;
+    if (agent === 'cursor' && source?.deviceId) return false;
     if (creating || !selectedDeviceId) return false;
     const remoteDeviceId = source?.deviceId ?? null;
     const deviceAtStart = selectedDeviceId;
     const sequence = ++runtimeActionSeqRef.current;
     const targetCapabilities = normalizeMobileAgentCapabilities(await maker.getCapabilities(agent));
-    if (!targetCapabilities) return false;
+    if (!targetCapabilities || (agent === 'cursor' && !targetCapabilities.supportsControlledCursorCreation)) return false;
     const storedPermission = newSessionPreferences?.permissionModeByAgent[agent];
     const permission = agent === draft.agentKind ? draft.permissionMode
       : (storedPermission ?? defaultPermissionModeForNewSessionAgent(agent));

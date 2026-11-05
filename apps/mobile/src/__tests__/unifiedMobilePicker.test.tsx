@@ -4,6 +4,8 @@ import { createElement, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { UnifiedModelPickerSheet } from '@/session/UnifiedModelPickerSheet';
+const platform = vi.hoisted(() => ({ OS: 'android' }));
+vi.mock('react-native', () => ({ Platform: platform }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-uuid' }));
 const test = vi.hoisted(() => ({ view: null as any, favoritesReady:true, quotas:{} as any, syncError:null as unknown, prefs: {favorites:[],engines:{}} as any, save: vi.fn(), entries: [] as any[],
   // 按传入的目录派生(供应商组用例:每台电脑的供应商各有自己的行与正在用的来源);缺省用上面的固定值。
@@ -26,7 +28,7 @@ vi.mock('@/session/unifiedMobileModels',async importOriginal=>({...await importO
 vi.mock('react-i18next',()=>({useTranslation:()=>({t:(key:string)=>key})}));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 let root:ReturnType<typeof createRoot>;
-beforeEach(()=>{test.favoritesReady=true;test.syncError=null;test.quotas={};test.entriesFor=null;test.activeSource=null;test.save.mockReset().mockImplementation(async value => {test.prefs=value;});test.prefs={favorites:[],engines:{}};test.entries=[{
+beforeEach(()=>{platform.OS='android';test.favoritesReady=true;test.syncError=null;test.quotas={};test.entriesFor=null;test.activeSource=null;test.save.mockReset().mockImplementation(async value => {test.prefs=value;});test.prefs={favorites:[],engines:{}};test.entries=[{
   providerId:'account',modelId:'model',displayName:'Model',candidates:['codex','claude-code'],recommended:'codex',nativeAgent:'codex',
   capabilities:{codex:{wireModelId:'codex/model',efforts:['medium','high'],defaultEffort:'medium',supportsFastMode:true,contextWindow:200000},
   'claude-code':{wireModelId:'model',efforts:['medium','high'],defaultEffort:'medium',supportsFastMode:false,contextWindow:200000}},
@@ -845,4 +847,17 @@ it('browses one Harness at a time without selecting or persisting on rejected co
   expect(test.save).not.toHaveBeenCalled();
   await act(async () => test.view.onSelect(rows[0]));
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({agent:'claude-code',modelId:'model'}),{deviceId:null});
+});
+
+// iOS uses the ordinary catalog even when favorites exist, without deleting desktop preferences.
+it('opens all models on iOS without exposing or mutating saved favorites', async () => {
+  platform.OS = 'ios';
+  test.prefs.favorites = [{uid:'saved',providerId:'account',modelId:'codex/model',agent:'codex',effort:'high',fast:false}];
+  await mount();
+  expect(test.view.filter).toBe('all');
+  expect(test.view.filters.map((item:any) => item.id)).not.toContain('favorites');
+  expect(test.view.groups.map((item:any) => item.key)).toEqual(['account']);
+  expect(test.view.groups[0].rows[0].favorite).toBeUndefined();
+  expect(test.prefs.favorites).toHaveLength(1);
+  expect(test.save).not.toHaveBeenCalled();
 });

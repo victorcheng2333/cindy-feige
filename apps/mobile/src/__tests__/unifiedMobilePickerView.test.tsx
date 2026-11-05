@@ -117,8 +117,6 @@ it.each([null, '2d · 70%'])('keeps both account identities visible with quota %
 it.each([
   ['Android', 'light', UnifiedModelPickerView],
   ['Android', 'dark', UnifiedModelPickerView],
-  ['iOS', 'light', IosModelPickerView],
-  ['iOS', 'dark', IosModelPickerView],
 ] as const)('shows add/remove favorite states on %s in %s mode while retaining source settings', async (_platform, mode, Component) => {
   theme.mode = mode;
   const row = {
@@ -149,7 +147,7 @@ it.each([
   expect(host.textContent).toContain('models.unified.savedConfiguration');
 });
 
-it.each([['Android', UnifiedModelPickerView], ['iOS', IosModelPickerView]] as const)(
+it.each([['Android', UnifiedModelPickerView]] as const)(
   'separates recommendation status, reset and explicit favorite editing on %s', async (_platform, Component) => {
     const row={key:'model',entry:{displayName:'Model',capabilities:{codex:{efforts:[]}}},config:{agent:'codex',effort:'high',fast:false},providerMark:{}};
     const render=async(extra:Record<string,unknown>)=>act(async()=>root.render(createElement(Component,{
@@ -331,4 +329,21 @@ it.each([
   await act(async () => useButton!.click());
   expect(onSelect).toHaveBeenCalledWith(row);
   expect(host.querySelector('input')).toBeNull();
+});
+
+// iOS simplification: even a saved configuration must expose tuning and use, never favorite actions.
+it.each(['light', 'dark'] as const)('keeps iOS parameter controls without favorite actions in %s', async mode => {
+  theme.mode = mode;
+  const onSelect = vi.fn();
+  const row = { key:'model', entry:{displayName:'Model', capabilities:{codex:{efforts:['high']}}}, config:{agent:'codex',effort:'high',fast:false},providerMark:{} };
+  await act(async () => root.render(createElement(IosModelPickerView, {
+    visible:true,testID:'modelSheet',title:'Model',filter:'all',groups:[],filters:[],onSelect,
+    options:{row,agents:['codex'],isFavorite:true,onEditFavorite:vi.fn(),onFavorite:vi.fn(),canReset:true},
+  } as any)));
+  expect(host.textContent).toContain('models.options.reasoningEffort');
+  expect(host.textContent).toContain('models.unified.restoreRecommended');
+  expect(host.textContent).not.toMatch(/favorite|Favorite|savedConfiguration|resetScopeHint/);
+  const use = Array.from(host.querySelectorAll('button')).find(button => button.textContent?.includes('models.picker.useModel'))!;
+  await act(async () => use.click());
+  expect(onSelect).toHaveBeenCalledWith(row);
 });

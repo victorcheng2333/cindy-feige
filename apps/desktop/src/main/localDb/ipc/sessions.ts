@@ -1,3 +1,4 @@
+import { assertCursorTaskCreationAllowed } from './cursorTaskCreation.js';
 import { captureSessionCreationCancellation } from '../sessionRuntimeCleanup.js';
 import { pagePermissionSessionChanged } from '../../mcp-apps/pagePermissions.js';
 import { removeSessionModelInterface } from '../../maker-host/session-model-interface.js';
@@ -1716,9 +1717,7 @@ export function registerSessionIpc(
     const createBody = bodyWithoutProvisional as Parameters<typeof sessionCreateToRow>[1];
     // M16: agentKind 白名单校验（防止 renderer 传非法值）
     const ALLOWED_AGENT_KINDS = new Set<string>(['cc', 'codex', 'pi', 'cursor']);
-    if (bodyObj.agentKind === 'cursor' && (isDeviceLinkInvoke() || bodyObj.remoteHostId || bodyObj.agentDeviceId)) {
-      throwIpcError('INVALID_PARAMS', 'Cursor supports local desktop tasks only');
-    }
+    if (bodyObj.agentKind === 'cursor') assertCursorTaskCreationAllowed(bodyObj);
     if (bodyObj.agentKind !== undefined && !ALLOWED_AGENT_KINDS.has(bodyObj.agentKind as string)) {
       throwIpcError('INVALID_PARAMS', `invalid agentKind: ${String(bodyObj.agentKind)}`);
     }

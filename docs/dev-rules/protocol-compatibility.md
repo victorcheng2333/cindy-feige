@@ -1,5 +1,11 @@
 # 跨端协议兼容
 
+## 手机在受控电脑新建 Cursor 任务
+
+`maker:get-capabilities` 为 Cursor 追加可选 `supportsControlledCursorCreation`，只有宿主验证的同账号控制端（非共享任务访客）得到 true。手机在收到该能力后才把 Cursor 加入新建 Harness 和当前受控电脑的模型目录；旧宿主缺省 false。创建仍经过原有账号、目录和会话校验，禁止 SSH、跨电脑 Agent 分配、供应商分享和协同子任务。已有 Cursor 任务继续原地换模型，不开放跨 Harness 交接。
+
+沿用既有 invoke 及通用加密转发，无新增 channel、frame 或 relay 行为，自建中转无需改动。新旧能力解析和宿主准入已做定向回归；本轮未做真机或自建中转联网验证。
+
 ## 同账号控制端的 Cursor 收藏元数据（2026-11-04）
 
 既有 `maker:model-favorites:get` 可附加 `{ includeCursor: true }`；`apply` 在单次 mutation

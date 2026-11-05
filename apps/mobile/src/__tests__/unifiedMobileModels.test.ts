@@ -58,9 +58,7 @@ it('restores Ultrafast only while the selected account advertises that tier', ()
 });
 
 // Tier: unit. Shared catalogs gained a local-only engine; it must not enter mobile selection.
-it('filters Cursor out of catalogs and rejects direct Cursor configuration', () => {
-  const localEntry = { ...entry, recommended: 'cursor' as const, candidates: ['cursor' as const], nativeAgent: 'cursor' as const };
-  expect(() => resolveMobileModelConfig(localEntry, { fastCapable })).toThrow('local desktop');
+it('filters Cursor out of unapproved catalogs', () => {
   const provider: ProviderView = { id: 'cursor', name: 'Cursor', source: 'builtin' as const, connected: true,
     agents: ['cursor' as const], auth: { method: 'oauth' as const },
     routing: { cursor: { upstream: 'https://api.cursor.com', authStrategy: 'none' as const } },
@@ -83,4 +81,13 @@ it('allows Cursor catalog and tuning only for an existing Cursor task', () => {
   expect(mobileUnifiedEntries([provider], ['cursor'], {}, false)).toEqual([]);
   expect(mobileUnifiedEntries([provider], ['cursor'], {}, true,
     { providerId: 'other', modelId: 'model', agent: 'codex' })).toEqual([]);
+});
+
+// The controlled host admits new Cursor tasks; remote catalogs still use the default deny path.
+it('admits Cursor draft models only when the caller explicitly enables controlled-host creation', () => {
+  const provider = {id:'cursor',name:'Cursor',source:'builtin',connected:true,agents:['cursor'],auth:{method:'oauth'},routing:{cursor:{upstream:'https://example.invalid',authStrategy:'none'}},models:{cursor:[{id:'model',name:'Model',contextWindow:200000,efforts:['low','high'],defaultEffort:'low'}]}} as ProviderView;
+  const rows = mobileUnifiedEntries([provider], ['cursor'], undefined, false, undefined, true);
+  expect(rows).toHaveLength(1);
+  expect(resolveMobileModelConfig(rows[0], {fastCapable})).toMatchObject({agent:'cursor',modelId:'model',effort:'low'});
+  expect(mobileUnifiedEntries([provider], ['cursor'], undefined, false)).toEqual([]);
 });

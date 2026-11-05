@@ -1,3 +1,4 @@
+import { supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { createTaskCompletionDeliveryHost, type TaskCompletionDeliveryHost } from './taskCompletionDeliveryHost.js';
 import { setRoutineResultDispatch } from '../routines/deliveryDispatch.js';
@@ -7489,6 +7490,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       // host 级 optional 能力；旧 desktop 缺省为 false。两个 agent 查询都带回，
       // 手机读取当前 agent 快照即可决定是否展示切换入口。
       supportsSessionAgentSwitch: agentKind !== 'cursor',
+      supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
       // Mobile 据此对已知受压缩窗降级为 fail closed。
       supportsModelWindowSwitchGuard: true,
@@ -10480,6 +10482,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     closeCancelledSession: async session => { await maker.closeSessionIfCurrent(session); },
     bootstrapSession: async (co) => {
       assertSessionCreationCurrent();
+      if (co.agentKind === 'cursor') assertCursorTaskCreationAllowed(co);
       await ensureRemoteReadyForSessionStart({ createOpts: co });
       assertSessionCreationCurrent();
       const result = await bootstrapSession(co, assertSessionCreationCurrent);

@@ -20,8 +20,8 @@ export const modelKey = (providerId: string, modelId: string) => JSON.stringify(
 export function matchesEntry(entry: UnifiedModelEntry, modelId: string) {
   return entry.modelId === modelId || Object.values(entry.capabilities).some(c => c?.wireModelId === modelId);
 }
-export function mobileUnifiedEntries(providers: readonly ProviderView[], agents: readonly AgentKind[], visibility: Record<string, boolean> | undefined, existing: boolean, keepModel?: {providerId: string | null; modelId: string; agent: AgentKind}) {
-  return unifiedModelEntries({ providers, agents: agents.filter(agent => agent !== 'cursor' || (existing && keepModel?.agent === 'cursor')), scope: existing ? 'session' : 'draft', keepModel,
+export function mobileUnifiedEntries(providers: readonly ProviderView[], agents: readonly AgentKind[], visibility: Record<string, boolean> | undefined, existing: boolean, keepModel?: {providerId: string | null; modelId: string; agent: AgentKind}, allowCursorDraft = false) {
+  return unifiedModelEntries({ providers, agents: agents.filter(agent => agent !== 'cursor' || (!existing && allowCursorDraft) || (existing && keepModel?.agent === 'cursor')), scope: existing ? 'session' : 'draft', keepModel,
     isVisible: (providerId, model, agent) => visibility === undefined || isModelVisible(visibility[`${agent}:${providerId}:${model.id}`], model.defaultEnabled),
   });
 }
@@ -35,8 +35,6 @@ export function resolveMobileModelConfig(entry: UnifiedModelEntry, args: {
   const pinned = entry.nativeAgent === null || entry.nativeAgent === args.pinned ? usable(args.pinned) : undefined;
   const agent = args.favorite ? usable(args.favorite.agent) ?? entry.recommended
     : usable(args.live?.agent) ?? usable(args.override) ?? pinned ?? entry.recommended;
-  // Local-only engines must not escape through the mobile model picker or its write callbacks.
-  if (agent === 'cursor' && args.pinned !== 'cursor') throw new Error('Cursor supports local desktop tasks only');
   const cap = entry.capabilities[agent]!;
   const effort = args.favorite?.effort ?? args.live?.effort ?? args.memory?.getEffort(agent, entry.providerId, cap.wireModelId);
   const levels: readonly string[] = cap.efforts;
