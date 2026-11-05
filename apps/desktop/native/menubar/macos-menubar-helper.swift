@@ -178,9 +178,7 @@ struct MBView: Decodable, Equatable {
   /// The real item and its settings preview always use the same text.
   var statusTitle: String {
     guard gate == nil else { return "" }
-    let usage = (statusTextByMode[settings.statusText] ?? nil) ?? ""
-    guard let count = attentionCount, count > 0 else { return usage }
-    return usage.isEmpty ? String(count) : "\(count) · \(usage)"
+    return (statusTextByMode[settings.statusText] ?? nil) ?? ""
   }
 }
 
