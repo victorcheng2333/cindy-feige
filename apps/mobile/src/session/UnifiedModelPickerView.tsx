@@ -457,7 +457,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             </View>
           ) : null}
         </Group>
-        {!options.editingFavorite ? (
+{!options.editingFavorite ? (
           <>
             <Text style={styles.footnote} testID={`${p.testID}.configState`}>
               {t(
@@ -764,7 +764,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             testID={p.testID}
             title={title}
             footer={!page && options && !options.row.selected && !options.editingFavorite ? (
-              <Row title={t("models.picker.useModel")} onPress={() => p.onSelect(options.row)}
+              <Row title={t("models.picker.useModel")} onPress={() => options.onUse ? options.onUse() : p.onSelect(options.row)}
                 disabled={p.busy || options.row.disabled} testID={`${p.testID}.useModel`} />
             ) : undefined}
           >

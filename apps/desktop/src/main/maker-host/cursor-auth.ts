@@ -22,7 +22,14 @@ const log = createLogger('cursor-auth');
 let login: CursorRpcClient | undefined;
 let generation = 0;
 let mutation: object | null = null;
+/**
+ * Only the credential swap itself fences running tasks. Browser authorization and key
+ * validation can take minutes; tasks keep working on the current connection until a new
+ * one is ready to replace it, and a cancelled sign-in never touches them.
+ */
+let committing = false;
 let keyValidation: { cancelled: boolean } | null = null;
+let browserLogin: { cancelled: boolean } | null = null;
 let refreshAfter = 0;
 let refreshScope = '';
 let discoveryFailure: { scope: string; value: ProviderModelDiscoveryFailure } | undefined;
@@ -153,6 +160,7 @@ export async function setCursorApiKey(apiKey: string): Promise<AuthState> {
     login = rpc;
     const identity = await rpc.request<{ email?: string }>('validate-key', { apiKey });
     if (!current()) return { authenticated: false, errorReason: 'login_cancelled' };
+    committing = true;
     await stopSessions();
     if (!current()) return { authenticated: false, errorReason: 'login_cancelled' };
     const credentials: Credentials = { apiKey, source: 'api-key', email: identity.email,
@@ -175,16 +183,19 @@ export async function setCursorApiKey(apiKey: string): Promise<AuthState> {
   } finally {
     if (keyValidation === operation) keyValidation = null;
     if (login === rpc) login = undefined;
-    if (mutation === operation) mutation = null;
+    if (mutation === operation) {
+      mutation = null;
+      committing = false;
+    }
     await rpc?.close();
   }
 }
 export const cursorAuthAdapter: AuthAdapter = {
   getState: async () => state(),
   captureCredentialGeneration: () =>
-    `${activeOwnerScopeKey()}:${generation}:${readCredentials()?.bindingId ?? ''}:${mutation !== null}`,
+    `${activeOwnerScopeKey()}:${generation}:${readCredentials()?.bindingId ?? ''}:${committing}`,
   getAuthEnv: async (): Promise<Record<string, string>> => {
-    if (mutation) throw new Error('Cursor connection is changing');
+    if (committing) throw new Error('Cursor connection is changing');
     const credentials = readCredentials();
     return credentials ? { CURSOR_API_KEY: credentials.apiKey } : {};
   },
@@ -194,18 +205,17 @@ export const cursorAuthAdapter: AuthAdapter = {
     if (mutation) throw new Error('Cursor connection is changing');
     if (!safeStorage.isEncryptionAvailable())
       return { authenticated: false, errorReason: 'Credential storage is unavailable' };
-    const operation = {};
+    const operation = { cancelled: false };
     mutation = operation;
+    browserLogin = operation;
     const owner = activeOwnerScopeKey();
-    const revision = ++generation;
+    let revision = generation;
     const current = () =>
-      revision === generation && owner === activeOwnerScopeKey() && !isAppSessionBoundaryPending();
+      !operation.cancelled && revision === generation && owner === activeOwnerScopeKey() && !isAppSessionBoundaryPending();
     let rpc: CursorRpcClient | undefined;
     try {
       rpc = createCursorRpc();
       login = rpc;
-      await stopSessions();
-      if (!current()) throw new Error('Cursor sign-in was cancelled');
       const credentials = await rpc.request<SdkLoginResult>(
         'login',
         {},
@@ -220,11 +230,15 @@ export const cursorAuthAdapter: AuthAdapter = {
         310_000,
       );
       if (!current()) throw new Error('Cursor sign-in was cancelled');
+      committing = true;
+      await stopSessions();
+      if (!current()) throw new Error('Cursor sign-in was cancelled');
       const bindingId = credentials.email
         ? createHash('sha256').update(credentials.email).digest('hex')
         : randomUUID();
       if (!genericOAuthSecretIo.write('cursor', JSON.stringify({ ...credentials, bindingId })))
         throw new Error('Credential storage is unavailable');
+      revision = ++generation;
       models = undefined;
       await refreshCursorModels().catch(() => {
         log.warn('Cursor model discovery failed after login');
@@ -235,23 +249,30 @@ export const cursorAuthAdapter: AuthAdapter = {
       log.warn('Cursor sign-in did not complete');
       return {
         authenticated: false,
-        errorReason: revision !== generation ? 'login_cancelled' : 'Cursor sign-in failed',
+        errorReason: operation.cancelled || revision !== generation ? 'login_cancelled' : 'Cursor sign-in failed',
       };
     } finally {
       if (login === rpc) login = undefined;
-      if (mutation === operation) mutation = null;
+      if (browserLogin === operation) browserLogin = null;
+      if (mutation === operation) {
+        mutation = null;
+        committing = false;
+      }
       await rpc?.close();
     }
   },
   cancelLogin: () => {
-    generation++;
+    // Cancelling authorization leaves the current connection and its tasks untouched.
+    if (browserLogin) browserLogin.cancelled = true;
     void login?.close().catch(() => {});
   },
   logout: async () => {
     if (mutation && !login) throw new Error('Cursor connection is changing');
     generation++;
+    if (browserLogin) browserLogin.cancelled = true;
     const operation = {};
     mutation = operation;
+    committing = true;
     const owner = activeOwnerScopeKey();
     try {
       await login?.close();
@@ -263,7 +284,10 @@ export const cursorAuthAdapter: AuthAdapter = {
       models = undefined;
       notifyLocalHarnessProviderChanged();
     } finally {
-      if (mutation === operation) mutation = null;
+      if (mutation === operation) {
+        mutation = null;
+        committing = false;
+      }
     }
   },
 };

@@ -179,11 +179,12 @@ export interface UnifiedMobilePickerViewProps {
     onSaveEdit?(): void;
     onFavorite(): void;
     onReset(): void;
+    /** Select this row with the configuration shown; absent for the current row. */
+    onUse?(): void;
     context: string;
     price: string | null;
   };
 }
-const ALL_AGENTS: readonly AgentKind[] = ["claude-code", "codex", "pi"];
 export function UnifiedModelPickerSheet(
   p: ModelPickerSheetProps & { unified: UnifiedMobilePickerOptions },
 ) {
@@ -438,6 +439,7 @@ export function UnifiedModelPickerSheet(
           defaultValue: config.effort,
         })
       : "";
+  // Keep account identity and effort on the secondary line, leaving the model title uncluttered.
   const describe = (
     entry: UnifiedModelEntry,
     config: MobileModelConfiguration,
@@ -690,6 +692,7 @@ export function UnifiedModelPickerSheet(
       title: t("models.unified.favorites"),
       rows: favoriteRows,
     });
+
   if (all || shownFilter !== "favorites")
     for (const provider of p.providers) {
       const group = filtered.filter(
@@ -1293,6 +1296,12 @@ export function UnifiedModelPickerSheet(
                 });
               },
               onReset: () => change(recommendedConfig!, true),
+              // Adjusting a non-current row only remembers its parameters; offer the
+              // explicit action instead of requiring a return to the list.
+              onUse:
+                !row.selected && !favoriteEdit && !row.disabled
+                  ? () => select(row)
+                  : undefined,
             }
           : undefined
       }

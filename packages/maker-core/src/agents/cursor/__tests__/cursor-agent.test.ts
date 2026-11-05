@@ -361,8 +361,9 @@ describe("CursorAgent", () => {
       [
         {
           type: "turn-ended",
+          // SDK semantics: inputTokens already includes cache reads/writes.
           usage: {
-            inputTokens: 70,
+            inputTokens: 80,
             outputTokens: 4,
             cacheReadTokens: 10,
             cacheWriteTokens: 0,
@@ -371,7 +372,7 @@ describe("CursorAgent", () => {
       ],
       {
         usage: {
-          inputTokens: 70,
+          inputTokens: 80,
           outputTokens: 4,
           cacheReadTokens: 10,
           cacheWriteTokens: 0,
@@ -391,6 +392,56 @@ describe("CursorAgent", () => {
     expect(handle.getUsageSnapshot().contextTokens).toBe(80);
     expect(handle.getUsageSnapshot().outputTokens ?? 0).toBe(0);
     expect(handle.getUsageSnapshot().tokenUsage).toBe(0);
+    await handle.close();
+  });
+  // Bug 2026-11-04: a 48-tool run reported inputTokens=1,845,868 (sum of every model call,
+  // cache included). Treating it as occupancy (plus cache again) forced a false context
+  // overflow rebuild on a ~75k context. Unit, real adapter + translator.
+  it("estimates occupancy from per-run aggregate usage instead of summing every model call", async () => {
+    const tool = (callId: string, modelCallId: string) =>
+      [
+        {
+          type: "tool-call-started",
+          callId,
+          modelCallId,
+          toolCall: { type: "read", args: { path: "/a" } },
+        },
+        {
+          type: "tool-call-completed",
+          callId,
+          modelCallId,
+          toolCall: {
+            type: "read",
+            args: { path: "/a" },
+            result: { status: "success", value: { content: "x" } },
+          },
+        },
+      ] as unknown as InteractionUpdate[];
+    const f = fixture(
+      [
+        ...tool("t1", "m1"),
+        ...tool("t2", "m2"),
+        ...tool("t3", "m3"),
+        {
+          type: "turn-ended" as const,
+          usage: {
+            inputTokens: 400_000,
+            outputTokens: 900,
+            cacheReadTokens: 360_000,
+            cacheWriteTokens: 1_000,
+          },
+        },
+      ],
+      { usage: undefined },
+    );
+    const { handle, events } = await runFixture(f);
+    const snapshot = handle.getUsageSnapshot();
+    expect(snapshot.contextTokens).toBe(100_000);
+    // run.wait() omitted usage: the turn total is still reported for accounting.
+    expect(snapshot.tokenUsage).toBe(400_900);
+    expect(events.find((e) => e.type === "done")?.data).toMatchObject({
+      usage: { inputTokens: 400_000, outputTokens: 900, cacheReadTokens: 360_000 },
+    });
     await handle.close();
   });
   it("surfaces usage limits without inventing a reset time or a success", async () => {
@@ -763,6 +814,40 @@ describe("CursorAgent", () => {
     await handle.close();
   });
 
+  // Review 2026-11-04: changing model/effort/permission while Cursor worked threw
+  // "Wait for the current Cursor run to finish". Changes now apply to the next
+  // message without touching the running turn. Unit, real adapter.
+  it("stages model and permission changes made during a run for the next message", async () => {
+    const f = fixture();
+    const handle = await f.agent.startSession({ model: "test", workingDir: "/fixture" });
+    const original = f.rpc.request.bind(f.rpc);
+    let finishRun: (() => void) | undefined;
+    f.rpc.request = (method, ...args) => {
+      if (method !== "send" || finishRun) return original(method, ...args);
+      f.calls.push({ method, params: args[0] });
+      return new Promise((resolve) => {
+        finishRun = () => resolve({ id: "run-1", status: "finished" } as never);
+      }) as never;
+    };
+    const terminal = (async () => {
+      for await (const event of handle.events())
+        if (event.type === "status" && (event.data as { isRunning: boolean }).isRunning === false)
+          return;
+    })();
+    await handle.send({ type: "user", content: "first" });
+    await handle.setModel!("other");
+    await handle.setPermissionMode!("bypassPermissions");
+    expect(f.calls.filter((call) => call.method === "open")).toHaveLength(1);
+    finishRun?.();
+    await terminal;
+    await handle.send({ type: "user", content: "second" });
+    const after = f.calls.slice(f.calls.findIndex((call) => call.method === "send") + 1);
+    expect(after.map((call) => call.method)).toEqual(["open", "send"]);
+    expect(after[0].params).toMatchObject({ permissionMode: "bypassPermissions", model: { id: "other" } });
+    expect(after[1].params).toMatchObject({ model: { id: "other" } });
+    await handle.close();
+  });
+
   it("preserves the live SDK agent when reopening fails", async () => {
     const close = vi.fn();
     const send = vi.fn(async () => ({
@@ -867,6 +952,47 @@ describe("CursorAgent", () => {
       await runtime.close();
     },
   );
+
+  // Bug 2026-11-04: after quitting mid-run the agent row no longer listed the run, yet
+  // the SDK kept rejecting with "already has active run" on every retry. Unit, host runtime.
+  it("recovers once when the SDK reports an orphaned run the store did not record", async () => {
+    const options: Array<{ local?: { force?: boolean } }> = [];
+    let orphan = true;
+    let unavailable = false;
+    const send = vi.fn(async (_message, opts) => {
+      options.push(opts);
+      if (unavailable) throw new Error("Cursor upstream unavailable");
+      if (orphan && !opts.local?.force)
+        throw new Error("Agent agent-1 already has active run");
+      orphan = false;
+      return {
+        stream: async function* () {},
+        wait: async () => ({ id: "run", status: "finished" }),
+      };
+    });
+    const sdk = {
+      Agent: { resume: async () => ({ agentId: "id", send, close() {} }) },
+      JsonlLocalAgentStore: class {
+        agents = { get: async () => ({ activeRunId: null }) };
+      },
+    };
+    const runtime = new CursorHostRuntime(sdk as never, () => {});
+    await runtime.open({
+      apiKey: "invalid-test-key",
+      workingDir: "/fixture",
+      stateDir: "/fixture/state",
+      resumeSessionId: "id",
+      model: { id: "test" },
+      permissionMode: "auto",
+    });
+    const message = { message: { text: "continue" }, model: { id: "test" }, planMode: false };
+    await expect(runtime.send(1, message)).resolves.toMatchObject({ status: "finished" });
+    expect(options.map((o) => !!o.local?.force)).toEqual([false, true]);
+    unavailable = true;
+    await expect(runtime.send(2, message)).rejects.toThrow("upstream unavailable");
+    expect(options).toHaveLength(3);
+    await runtime.close();
+  });
 
   it("cancels a run even when cancel arrived while SDK send was pending", async () => {
     let resolveSend!: (run: unknown) => void;

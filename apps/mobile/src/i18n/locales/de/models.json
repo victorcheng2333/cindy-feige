@@ -106,6 +106,7 @@
     "groupBadge_other": "Anbietergruppe · {{count}} Computer",
     "harness": "Harness",
     "restoreRecommended": "Empfohlene wiederherstellen",
+    "useConfiguration": "Diese Konfiguration verwenden",
     "saveFailed": "Speichern fehlgeschlagen. Versuche es erneut.",
     "configure": "Konfigurieren",
     "syncFailed": "Favoriten konnten nicht synchronisiert werden. Öffne die Auswahl erneut, um es noch einmal zu versuchen; der entfernte Computer benötigt möglicherweise ein Update.",

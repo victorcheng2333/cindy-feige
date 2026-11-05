@@ -310,7 +310,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       }
       testID={p.testID}
       footer={options && !options.editingFavorite && !options.row.selected ? (
-        <Button onPress={() => p.onSelect(options.row)}
+        <Button onPress={() => options.onUse ? options.onUse() : p.onSelect(options.row)}
           modifiers={[buttonStyle("borderedProminent"), tint(colors.cta), disabled(p.busy || options.row.disabled), frame({ minHeight: 44, maxWidth: Infinity })]}
           testID={`${p.testID}.useModel`}>
           <Text modifiers={[foregroundStyle(colors.ctaText)]}>{t("models.picker.useModel")}</Text>
@@ -461,7 +461,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               </VStack>
             ) : null}
           </Section>
-          {!options.editingFavorite ? (
+{!options.editingFavorite ? (
             <Section>
               <Text
                 testID={`${p.testID}.configState`}

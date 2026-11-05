@@ -106,6 +106,7 @@
     "groupBadge_other": "Grupo de provedores · {{count}} computadores",
     "harness": "Harness",
     "restoreRecommended": "Restaurar recomendadas",
+    "useConfiguration": "Usar esta configuração",
     "saveFailed": "Não foi possível salvar. Tente novamente.",
     "configure": "Configurar",
     "syncFailed": "Não foi possível sincronizar os favoritos. Abra o seletor novamente para tentar outra vez; o computador remoto pode precisar de uma atualização.",

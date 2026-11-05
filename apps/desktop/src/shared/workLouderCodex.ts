@@ -63,6 +63,22 @@ export const WORKLOUDER_CODEX_PREVIEW_INPUT_CHANNEL = 'worklouder-codex:preview-
 
 export const WORKLOUDER_CODEX_AGENT_SLOT_COUNT = 6;
 
+/** Main rejects longer titles; a key label never needs more than this. */
+export const WORKLOUDER_CODEX_TASK_TITLE_MAX = 512;
+
+/**
+ * Bound a task title for the keyboard without splitting a surrogate pair. One imported
+ * task with a multi-kilobyte title used to make main reject the whole list every minute.
+ */
+export function boundWorkLouderTaskTitle(title: string | null | undefined): string | null {
+  if (typeof title !== 'string') return null;
+  if (title.length <= WORKLOUDER_CODEX_TASK_TITLE_MAX) return title;
+  let end = WORKLOUDER_CODEX_TASK_TITLE_MAX - 1;
+  const code = title.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return `${title.slice(0, end)}…`;
+}
+
 export const WORKLOUDER_CODEX_AUTO_DIM_OPTIONS = [
   'off',
   '30-seconds',
