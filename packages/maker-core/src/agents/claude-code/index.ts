@@ -129,7 +129,7 @@ import {
 } from '../shared/tool-loop-review.js';
 import {
   applyExploreInheritCapEnv,
-  applySdkEntrypoint,
+  applyClaudeEntrypoint,
   applySubagentModelEnv,
   buildClaudeEnv,
   applyClaudeContextWindow,
@@ -1798,8 +1798,8 @@ export class ClaudeCodeAgent extends BaseAgent {
       for (const key of REMOTE_ROUTE_OVERRIDE_ENV_KEYS) delete remoteEnv[key];
       Object.assign(remoteEnv, remoteRoute.env);
       remoteEnv.ANTHROPIC_BASE_URL = remoteRoute.endpoint;
-      // route.env 只决定路由和认证;入口身份继续使用 SDK 标记。
-      applySdkEntrypoint(remoteEnv);
+      // route.env 只决定路由和认证;入口身份继续使用指定的 t3-code 标记。
+      applyClaudeEntrypoint(remoteEnv);
     }
     // 远端路由决策日志(排障还原「为什么这个会话走网关/直连/自定义上游」)。只打安全
     // 字段:endpoint 只取 host,凭证形态与接线布尔量;绝不打 token / header 值。
@@ -4580,7 +4580,7 @@ export class ClaudeCodeAgent extends BaseAgent {
             })),
           // 旧宿主 token 刷新接线暂保留:只有 env 带 token 且 adapter 实现刷新时才传入。
           // 当前 Desktop adapter 不实现刷新,nativeCliAuth 也会剥除 token,不会进入此分支。
-          // sdk-ts 不在旧 CLI 的刷新回调入口白名单内,不能把保留此字段当作续期保证;
+          // t3-code 入口不依赖旧 CLI 的刷新回调白名单,不能把保留此字段当作续期保证;
           // 当前订阅登录与续期由 CLI 自己的凭证库处理,不为旧回调改用 Desktop 身份。
           // getOAuthToken 未在 SDK Options 类型中声明,保留原有 spread 接线形式。
           ...(env.CLAUDE_CODE_OAUTH_TOKEN && this.deps.auth.getFreshSubscriptionToken

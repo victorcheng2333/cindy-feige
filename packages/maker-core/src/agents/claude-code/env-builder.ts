@@ -199,7 +199,7 @@ export const REMOTE_ROUTE_OVERRIDE_ENV_KEYS = [
 ] as const;
 
 /**
- * 使用 Claude Agent SDK 的入口标记,覆盖从终端继承或路由注入的其它身份。
+ * 使用维护者指定的 t3-code 入口标记,覆盖从终端继承或路由注入的其它身份。
  * 本机登录、API Key 与远端会话共用此规则;不以是否注入 OAuth token 区分入口。
  *
  * 原生订阅登录与续期由 CLI 自己处理,不依赖宿主 OAuth 刷新回调白名单。
@@ -207,8 +207,8 @@ export const REMOTE_ROUTE_OVERRIDE_ENV_KEYS = [
  * 守门。凭证来源仍由 nativeCliAuth / CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST 决定。
  * 远端路由 materialization 后再次调用,避免 route.env 覆盖入口。
  */
-export function applySdkEntrypoint(env: Record<string, string>): void {
-  env.CLAUDE_CODE_ENTRYPOINT = 'sdk-ts';
+export function applyClaudeEntrypoint(env: Record<string, string>): void {
+  env.CLAUDE_CODE_ENTRYPOINT = 't3-code';
 }
 
 /**
@@ -551,7 +551,7 @@ export async function buildClaudeEnv(
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = '1';
   }
 
-  applySdkEntrypoint(env);
+  applyClaudeEntrypoint(env);
 
   // xdt-maker 自己托管会话生命周期和自动任务。Claude Code 原生 cron 会读取
   // workdir/.claude/scheduled_tasks.json，并把到期任务作为隐藏 meta prompt 注入

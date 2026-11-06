@@ -49,7 +49,7 @@ describe('remote Claude environment', () => {
     };
     const remoteEnv = buildRemoteClaudeSdkEnv({
       ANTHROPIC_API_KEY: 'session-key',
-      CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+      CLAUDE_CODE_ENTRYPOINT: 't3-code',
       CLAUDE_CONFIG_DIR: '/home/remote/.xdt-server/v1/claude-home',
     }, daemonEnv);
 
@@ -58,7 +58,7 @@ describe('remote Claude environment', () => {
       PATH: daemonEnv.PATH,
       LANG: daemonEnv.LANG,
       ANTHROPIC_API_KEY: 'session-key',
-      CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+      CLAUDE_CODE_ENTRYPOINT: 't3-code',
       CLAUDE_CONFIG_DIR: '/home/remote/.xdt-server/v1/claude-home',
     });
     expect(daemonEnv.CLAUDE_CODE_OAUTH_TOKEN).toBe('stale-remote-oauth');
