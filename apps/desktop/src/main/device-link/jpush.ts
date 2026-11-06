@@ -98,8 +98,17 @@ export function enqueueJPush(payload: NotifyPayload, isLinkCurrent: () => boolea
     for (const [peer, registration] of records) {
       const current = () => !isAppSessionBoundaryPending() && activeOwnerScopeKey() === owner
         && isLinkCurrent() && !isRevoked(peer);
-      void sendJPush(credentials, registration, payload, { fetch, isCurrent: current, privateBody }).catch(() => {
-        log.warn('mobile push delivery failed');
+      void sendJPush(credentials, registration, payload, { fetch, isCurrent: current, privateBody }).catch((error: unknown) => {
+        // Only fixed categories and numeric vendor codes may enter diagnostics.
+        // Never log the Error object, response text, payload or routing handles.
+        const message = error instanceof Error ? error.message : '';
+        const cause = error instanceof Error ? error.cause : undefined;
+        const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
+        const networkCodes = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'];
+        const reason = /^JPUSH_HTTP_[1-5]\d{2}(?:_CODE_\d{1,6})?$/.test(message) || message === 'JPUSH_PAYLOAD_TOO_LARGE'
+          ? message : typeof code === 'string' && networkCodes.includes(code) ? code
+            : error instanceof Error && error.name === 'TimeoutError' ? 'TIMEOUT' : 'UNKNOWN';
+        log.warn(`mobile push delivery failed: ${reason}`);
       });
     }
     return records.length > 0;

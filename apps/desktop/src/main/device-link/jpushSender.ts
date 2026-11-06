@@ -67,5 +67,8 @@ export async function sendJPush(
   const body = await response.json().catch(() => null) as { error?: { code?: number } } | null;
   if (body?.error?.code === 1011) return 'no-target';
   // Never surface vendor response text: it can contain routing handles or request data.
-  throw new Error(`JPUSH_HTTP_${response.status}`);
+  const code = body?.error?.code;
+  const suffix = typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 999999
+    ? `_CODE_${code}` : '';
+  throw new Error(`JPUSH_HTTP_${response.status}${suffix}`);
 }

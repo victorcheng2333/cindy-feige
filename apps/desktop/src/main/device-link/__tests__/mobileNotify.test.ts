@@ -34,11 +34,12 @@ describe('personal JPush delivery', () => {
     expect(await sendJPush(credentials, registration, payload, { fetch: request, isCurrent: () => true })).toBe('no-target');
     expect(calls).toBe(1);
   });
-  it('does not expose an upstream error body', async () => {
+  // A failed real delivery was unclassifiable. Keep numeric diagnostics, never reflected content.
+  it.each([1004, 'reflected secret', null])('does not expose an upstream error body (code=%s)', async (code) => {
     await expect(sendJPush({ appKey: registration.appKey, masterSecret: 'fake' }, registration, payload, {
       isCurrent: () => true,
-      fetch: (async () => new Response(JSON.stringify({ error: { message: 'reflected secret' } }), { status: 401 })) as typeof fetch,
-    })).rejects.toThrow('JPUSH_HTTP_401');
+      fetch: (async () => new Response(JSON.stringify({ error: { code, message: 'reflected secret' } }), { status: 401 })) as typeof fetch,
+    })).rejects.toThrow(new Error(code === 1004 ? 'JPUSH_HTTP_401_CODE_1004' : 'JPUSH_HTTP_401'));
   });
   it('fits Chinese/emoji previews within the vendor byte limit without breaking the route', () => {
     const result = buildJPushRequest(registration, { ...payload, title: '中文'.repeat(120), body: '😀结果'.repeat(400), sender: { id: 'bot', avatar: { kind: 'jpeg', value: 'a'.repeat(2048) } } });
