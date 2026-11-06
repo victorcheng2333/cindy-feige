@@ -1,6 +1,21 @@
 import type { NativeImage } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
-import { createRuntimeAppIconController } from '../app-icon.js';
+import { createRuntimeAppIconController, initializeRuntimeAppIcon } from '../app-icon.js';
+
+const startup = vi.hoisted(() => {
+  const bundled = { isEmpty: () => false };
+  const placeholder = { isEmpty: () => false };
+  return { bundled, placeholder, setIcon: vi.fn() };
+});
+vi.mock('electron', () => ({
+  app: { isPackaged: true, dock: { setIcon: startup.setIcon },
+    getFileIcon: async () => startup.placeholder, on: vi.fn() },
+  BrowserWindow: { getAllWindows: () => [] },
+  nativeImage: {
+    createFromPath: (file: string) => file.endsWith('icon-dock.png') ? startup.bundled : startup.placeholder,
+    createFromBuffer: () => startup.bundled,
+  },
+}));
 
 /* Runtime app-icon contract: test native Dock/window effects, reset, future
  * windows and decode failures through the production controller. No existing
@@ -15,6 +30,23 @@ function fixture(platform: NodeJS.Platform) {
   return { controller, dock, win, original, custom, decode };
 }
 describe('runtime application icon', () => {
+  // 2026-11-06 Dock regression, unit: the real packaged startup used a nonempty
+  // OS placeholder as the default icon. Controller-only cases missed the loader.
+  // One macOS startup must publish the bundled rounded image, without OS lookup.
+  it('starts packaged macOS with the bundled Dock artwork even when the OS returns a placeholder', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const resources = Object.getOwnPropertyDescriptor(process, 'resourcesPath');
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' });
+    Object.defineProperty(process, 'resourcesPath', { configurable: true, value: '/packaged-fixture/Resources' });
+    try {
+      await initializeRuntimeAppIcon();
+      expect(startup.setIcon).toHaveBeenCalledExactlyOnceWith(startup.bundled);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      if (resources) Object.defineProperty(process, 'resourcesPath', resources);
+      else Reflect.deleteProperty(process, 'resourcesPath');
+    }
+  });
   it('changes the macOS Dock with the native API and restores the original icon', () => {
     const h = fixture('darwin');
     h.controller.set(Buffer.from('png')); expect(h.dock.setIcon).toHaveBeenLastCalledWith(h.custom);

@@ -41,11 +41,12 @@ let controller: ReturnType<typeof createRuntimeAppIconController> | undefined;
 
 export async function initializeRuntimeAppIcon(): Promise<void> {
   if (controller) return;
-  // Read the packaged bundle's actual icon; dev uses Cindy's rounded Dock asset.
-  const original = process.platform === 'darwin' && app.isPackaged
-    ? await app.getFileIcon(path.resolve(process.resourcesPath, '..', '..'))
-    : nativeImage.createFromPath(app.isPackaged ? path.join(process.resourcesPath, 'icon.png')
-      : path.join(__dirname, '../../resources', process.platform === 'darwin' ? 'icon-dock.png' : 'icon.png'));
+  // getFileIcon can return a nonempty macOS placeholder after an app replacement.
+  // Setting that as the Dock image overrides the valid bundle icon for this run.
+  const file = process.platform === 'darwin' ? 'icon-dock.png' : 'icon.png';
+  const original = nativeImage.createFromPath(app.isPackaged
+    ? path.join(process.resourcesPath, file)
+    : path.join(__dirname, '../../resources', file));
   const next = createRuntimeAppIconController({ platform: process.platform, original,
     decode: bytes => nativeImage.createFromBuffer(bytes), dock: app.dock,
     windows: () => BrowserWindow.getAllWindows().filter(isAppContentWindow),

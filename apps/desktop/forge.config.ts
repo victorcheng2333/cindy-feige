@@ -798,6 +798,7 @@ function stageRipgrep(targetPlatform: string, targetArch: string): void {
 function extraResourcesForTarget(targetPlatform: string): string[] {
   const base = [
     'resources/icon.png',
+    ...(targetPlatform === 'darwin' ? ['resources/icon-dock.png'] : []),
     CINDY_SOURCE_METADATA_PATH,
     'resources/cindy-version-protocol.json',
     // Input bytes for upgrading retired preset avatars to ordinary managed images.
