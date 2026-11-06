@@ -4,7 +4,7 @@
 
 用户或助手消息中提到完整 GitHub PR 链接时自动关联，不要求 Agent 另调 attach，也不按任务分支猜测归属。工具结果不参与提取，单纯调用 GitHub 查询工具不建立关联；助手把链接写入可见消息则按提及关联。关联只用于显示状态，不登记自动化，也不推断唯一 owner。手动添加、固定和排序仍可用。
 
-桌面、手机、伙伴卡和任务摘要沿现有 `association_source=explicit` 且 `removed_at IS NULL` 的投影展示；该存储值表示当前有效关联，并不代表用户曾手动确认。消息提取记录 `association_origin=message`，保持 `manually_added=false`；手动管理或 Agent attach 记录真实入口并保护关联不被消息重算删除。
+桌面、手机、伙伴卡和任务摘要沿现有 `association_source=explicit` 且 `removed_at IS NULL` 的投影展示；该存储值表示当前有效关联，并不代表用户曾手动确认。消息提取记录 `association_origin=message`，保持 `manually_added=false`；手动管理或 Agent attach 记录真实入口并保护关联不被消息重算删除。顶栏分支在拿不到任务真实工作目录时，只用 `manually_added=true` 的关联 PR 的源分支兜底；仅由消息提及的 PR 不代表任务分支。
 
 升级必须保留原有未移除关联的可见性。0144 将这些 `legacy` 关系恢复为 `explicit`，缺少来源时记为 `upgrade`；保留 ID、固定、排序、手动标记和时间。历史补扫使用新的完成标记，覆盖自动提取停用期间遗漏的消息；外部编程工具导入消息也走同一提取语义。清空、回退及用户或助手正文更新（含普通插件改写）按仍可见消息重算自动关联，保留手动关联。移除优先：普通 attach、再次提及、补扫和迁移都不能复活已移除项，必须显式 restore。固定最多三条，工具列表不受顶栏数量限制。
 

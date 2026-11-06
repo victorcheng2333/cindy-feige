@@ -7,7 +7,13 @@
 
 import { GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft } from 'lucide-react';
 
-import type { GitContextDirSource, PrStatusKind, PrStatusResult } from '@/lib/gitContext.types';
+import type {
+  GitContextDirSource,
+  PrStatusKind,
+  PrStatusResult,
+  SessionPrRef,
+} from '@/lib/gitContext.types';
+import { MAX_STATUS_QUERIES } from '@/lib/prStatus';
 
 /**
  * 本机 gh 不可用时徽标承担的引导动作。tooltip 是非交互浮层放不了按钮,
@@ -101,6 +107,15 @@ export function pickBranchLabel(opts: {
   if (prBranch) return prBranch;
   if (branchSource === 'workingDir' && !hasPrRefs) return localBranch;
   return null;
+}
+
+/**
+ * 能代表任务分支的 PR:只认手动添加、Agent attach 或用户固定 / 排序过的关联(manuallyAdded)。
+ * 消息里提及的 PR 只用于显示状态，不推断归属(github-status-and-associations.md);
+ * 拿它的源分支兜底，会把调研时引用的别人仓库分支挂到顶栏上。只在有状态查询的前几条里选。
+ */
+export function pickBranchPrRef(prRefs: readonly SessionPrRef[]): SessionPrRef | undefined {
+  return prRefs.slice(0, MAX_STATUS_QUERIES).find((ref) => ref.manuallyAdded === true);
 }
 
 export const PR_STATUS_ICON: Record<PrStatusKind, typeof GitPullRequest> = {

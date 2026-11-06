@@ -4,8 +4,9 @@ import { prNumberLabel } from '@cindy/maker-shared';
  *
  * 组成:
  *   - 分支 chip:GitBranch 图标 + 分支名(detached 显示短 sha)。分支按信任度取:
- *     遥测/worktree/远端执行端推断出的真实工作目录 HEAD(可信)→ PR 源分支(head.ref,
- *     worktree 已删时兜底)→ working_dir HEAD(低信任,仅在无 PR 时最后兜底)。
+ *     遥测/worktree/远端执行端推断出的真实工作目录 HEAD(可信)→ 手动或 Agent 关联的
+ *     PR 源分支(head.ref,worktree 已删时兜底;消息里提及的 PR 不参与)→ working_dir
+ *     HEAD(低信任,仅在无此类 PR 时最后兜底)。
  *     HEAD 变化(用户/agent 切分支)由 useSessionGitContext 实时推送刷新。
  *   - PR chip(最多 MAX_STATUS_QUERIES 条，固定与手动优先级在前):
  *     整组悬停显示 PR 信息，点击打开 PR；悬停面板右上角齿轮进入关联管理(共享访客除外)。
@@ -54,6 +55,7 @@ import {
   prStatusColor,
   PR_STATUS_ICON,
   pickBranchLabel,
+  pickBranchPrRef,
   prFailureCopyKey,
   prGuidanceFor,
 } from './gitContextPrVisuals';
@@ -89,17 +91,17 @@ function GitContextBadgeContent({ session }: { session: Session }) {
       : head?.kind === 'detached'
         ? `${t('ccAgent.gitContext.detached')} ${head.shortSha}`
         : null;
-  // 首条 PR(固定、手动顺序优先，其次最近提及)的源分支(head.ref);worktree 已删时兜底分支。
-  const mostRecentPr = prRefs[0];
-  const mostRecentPrStatus = mostRecentPr ? prStatuses.get(prStatusKey(mostRecentPr)) : undefined;
-  const prBranch = mostRecentPrStatus?.ok ? mostRecentPrStatus.branch : null;
+  // 首条归属本任务的 PR 的源分支(head.ref);worktree 已删时兜底分支。
+  const branchPr = pickBranchPrRef(prRefs);
+  const branchPrStatus = branchPr ? prStatuses.get(prStatusKey(branchPr)) : undefined;
+  const prBranch = branchPrStatus?.ok ? branchPrStatus.branch : null;
   // 优先级:遥测/worktree 真实目录分支(可信)→ PR 源分支 → working_dir 兜底
-  //(仅在无 PR 引用时;有 PR 则宁可留空也不退回共享分支冒充)。
+  //(仅在无归属 PR 时;有则宁可留空也不退回共享分支冒充)。
   const branchLabel = pickBranchLabel({
     localBranch,
     prBranch,
     branchSource,
-    hasPrRefs: prRefs.length > 0,
+    hasPrRefs: branchPr !== undefined,
   });
 
   return (

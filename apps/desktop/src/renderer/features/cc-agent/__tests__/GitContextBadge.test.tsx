@@ -63,34 +63,58 @@ afterEach(() => {
 });
 
 describe('GitContextBadge', () => {
-  it('对话目录不是 git 仓库时,仍显示消息里的 PR 徽标', () => {
-    gitContextMock.mockReturnValue({
-      head: null,
-      branchSource: null,
-      prRefs: [
-        {
-          id: 'ref-1',
-          sessionId: 'session-1',
-          owner: 'octo',
-          repo: 'repo',
-          prNumber: 7,
-          url: 'https://github.com/octo/repo/pull/7',
-          firstSeenAt: 1,
-          lastSeenAt: 2,
-        },
-      ],
-      prStatuses: new Map(),
-    });
+  // Bug regression: a research task that only quoted someone else's PR showed
+  // that PR's head branch as if the task had switched to it.
+  it.each([
+    { manuallyAdded: undefined, branchShown: false },
+    { manuallyAdded: true, branchShown: true },
+  ])(
+    '对话目录不是 git 仓库时显示 PR 徽标，只有手动 / Agent 关联的 PR 兜底分支(manuallyAdded=$manuallyAdded)',
+    ({ manuallyAdded, branchShown }) => {
+      gitContextMock.mockReturnValue({
+        head: null,
+        branchSource: null,
+        prRefs: [
+          {
+            id: 'ref-1',
+            sessionId: 'session-1',
+            owner: 'octo',
+            repo: 'repo',
+            prNumber: 7,
+            url: 'https://github.com/octo/repo/pull/7',
+            firstSeenAt: 1,
+            lastSeenAt: 2,
+            manuallyAdded,
+          },
+        ],
+        prStatuses: new Map([
+          [
+            'github:github.com/octo/repo#7',
+            {
+              ok: true as const,
+              owner: 'octo',
+              repo: 'repo',
+              prNumber: 7,
+              status: 'open' as const,
+              title: 'Quoted PR',
+              htmlUrl: 'https://github.com/octo/repo/pull/7',
+              branch: 'their/feature',
+              unresolvedCount: 0,
+            },
+          ],
+        ]),
+      });
 
-    render(
-      <Tooltip.Provider>
-        <GitContextBadge session={dialogueSession} />
-      </Tooltip.Provider>,
-    );
+      render(
+        <Tooltip.Provider>
+          <GitContextBadge session={dialogueSession} />
+        </Tooltip.Provider>,
+      );
 
-    expect(screen.getByRole('button', { name: /pr.openAria/ }).textContent).toContain('#7');
-    expect(screen.queryByLabelText(/ccAgent\.gitContext\.branchAria/)).toBeNull();
-  });
+      expect(screen.getByRole('button', { name: /pr.openAria/ }).textContent).toContain('#7');
+      expect(screen.queryByText('their/feature') !== null).toBe(branchShown);
+    },
+  );
 
   // Unit regression: the shared-task host intentionally rejects management
   // reads. Keep PR viewing available without offering this unusable entry;
