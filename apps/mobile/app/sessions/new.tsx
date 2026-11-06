@@ -3164,6 +3164,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         connectionProvider: (providerId: string) => voiceContext.createAsrConnection(providerId),
         refinerTargetProvider: (providerId: string, options?: { refreshAccessToken?: boolean }) =>
           voiceContext.createRefinerTarget(providerId, options),
+        refineRequestBudget: () => voiceContext.refineRequestBudget(),
         warmRefiner: (input: { system: string; user: unknown; promptCacheKey: string;
         }) =>
           voiceContext.warmRefiner(input),
@@ -5984,7 +5985,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                 hostDeviceId: selectedDeviceId,
               },
             }
-            : {}),
+            : { remote: undefined }),
         }}
         activeModelId={remoteAgentPick?.model ?? draft.model}
         activePermissionMode={displayPermissionMode}
@@ -6046,7 +6047,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                     selectedDeviceId: collabForm.form.agentDeviceId ?? null,
                   },
                 }
-              : {}),
+              : { remote: undefined }),
           }}
           activeModelId={collabForm.form.model?.id ?? ''}
           activePermissionMode=""

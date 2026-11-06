@@ -82,6 +82,7 @@ describe('buildClaudeEnv', () => {
     );
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-ts');
     expect(env.ANTHROPIC_API_KEY).toBe('session-key');
+    expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBe('1');
   });
 
   it.each([

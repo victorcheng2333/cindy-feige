@@ -17,6 +17,7 @@ export * from './interfaces/index.js';
 
 // agents
 export * from './agents/index.js';
+export { workspaceSettingsFiles, parseClaudeSettingsJson } from './agents/claude-code/workspace-settings-guard.js';
 export * from './agents/pi/managed-command.js';
 export { evaluatePiProjectTrust, piProjectKey } from './agents/pi/project-trust.js';
 export {
@@ -98,6 +99,8 @@ export {
   type SqliteFactory,
 } from './memory/manager.js';
 export { isBotMcpServerAllowed } from './agents/shared/bot-runtime-policy.js';
+export { resolveAllowedManagedSkills, snapshotManagedSkillGrants } from './agents/shared/managed-skill-policy.js';
+export { isSkillDisabled } from './agents/shared/skill-activation.js';
 export {
   MemoryFlushController,
   DEFAULT_FLUSH_THRESHOLDS,

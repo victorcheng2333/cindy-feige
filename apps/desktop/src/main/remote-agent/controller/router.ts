@@ -36,7 +36,7 @@ export interface ReverseHttpRouterDeps {
 const FORWARD_REQUEST_HEADERS = new Set(['content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id']);
 const FORWARD_RESPONSE_HEADERS = new Set(['content-type', 'mcp-session-id', 'mcp-protocol-version']);
 
-/** 本机工具已有的路径参数；兼容 MCP snake_case 与宿主 camelCase，正文和插件业务参数不做文本替换。 */
+/** 本机工具已有的路径参数；兼容 MCP snake_case 与宿主 camelCase，除 prompt 外正文和插件业务参数不做文本替换。 */
 const PATH_ARGUMENTS = new Set([
   'path', 'paths', 'filepath', 'filepaths', 'directory', 'directories', 'dir', 'dirs',
   'workingdir', 'workdir', 'cwd', 'root', 'libraryroot', 'sourcepath', 'destinationpath',
@@ -81,6 +81,8 @@ export function mapRemoteMcpArguments(workspace: ExecutorWorkspace, value: unkno
       } catch { /* 普通字符串参数保持原样。 */ }
     }
     if (/^(?:cmd|command)$/.test(key)) return workspace.mapCommand(value, resolveExecutorShell().dialect);
+    // Scheduler prompts execute later on this computer; translate their virtual paths too.
+    if (key === 'prompt') return workspace.mapTextFromAgent(value);
     const fieldContext = pathTextContext(key);
     if (fieldContext === 'ambiguous-path') return workspace.mapTextFromAgent(value, fieldContext);
     if (fieldContext === 'path' || PATH_ARGUMENTS.has(key.replace(/_/g, '').toLowerCase())) return workspace.mapAlias(value);

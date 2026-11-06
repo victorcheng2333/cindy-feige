@@ -1,6 +1,6 @@
 import { teammateSelectionStyle } from './teammateSelection';
+import { TeammateStatusDot, TeammateRowStatus, TeammateRunningPreview } from './TeammateStatusDot';
 import { aggregateTeammateStatus } from '@cindy/maker-shared/teammate-status';
-import { TeammateStatusDot } from './TeammateStatusDot';
 import { localTeammateStatus, remoteTeammateStatus, groupTeammateStatus } from './teammateRosterStatus';
 import { BotGenerationLabel } from './BotGenerationLabel';
 import { botRosterLabel } from '../../../shared/botCreation';
@@ -58,7 +58,6 @@ import {
   botListSubtitle,
   botListTimestampAt,
   formatBotListTimestamp,
-  formatBotUnreadBadge,
 } from './botListDisplay';
 import { botDeviceLabel, partitionBotRoster } from './botRosterDisplay';
 import { readTeammatesSectionCollapsed, writeTeammatesSectionCollapsed } from './teammatesSectionPrefs';
@@ -73,15 +72,6 @@ import {
 } from './botStore';
 
 const readRevision = () => JSON.stringify(getBotLastReadAtMap());
-
-/**
- * 未读药丸。用的是登记在 DESIGN.md §10 的窄作用域 token `--bot-unread-bg` /
- * `--bot-unread-fg`（双模式同值 #417CDD + 白字），不是反相 CTA：白底药丸落在选中行
- * 的浅灰选中态上会和选中态互相抢焦点，而「有新消息」在 IM 里本来就有一个所有人都
- * 认得的颜色。这个 token 只服务伙伴列表的未读徽标与待办点，不外溢到别的地方。
- */
-const UNREAD_BADGE_CLASS =
-  'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-[var(--bot-unread-bg)] px-1 text-10 font-medium tabular-nums leading-none text-[var(--bot-unread-fg)]';
 
 /** 段头悬停动作:与置顶 / 项目段头同款,鼠标离开后只保留键盘焦点或打开中的菜单。 */
 const HEADER_HOVER_ACTION_CLASS = cn(
@@ -517,12 +507,28 @@ export function TeammatesSection() {
                 const selected = Boolean(routeCindy);
                 const activity = local ? botRunningActivity(local) : undefined;
                 const subtitle = local ? botListSubtitle(local) : null;
+                const remoteRunning = 'deviceId' in bot && bot.online
+                  && (bot.generation || bot.teammateActivity?.phase === 'running');
+                // Show other computers’ work without switching the selected device.
+                const otherRunning = cindyStatus === 'running' && !activity
+                  && !remoteRunning
+                  ? cindyOptions.find(option => option.key !== currentCindy.key && statusForBot(option.bot) === 'running')
+                  : undefined;
+                const otherBot = otherRunning?.bot;
+                const otherActivity = otherBot && !('deviceId' in otherBot) ? botRunningActivity(otherBot) : undefined;
+                const otherGeneration = otherBot && 'deviceId' in otherBot ? otherBot.generation : undefined;
                 const subtitleText = cindyStatus === 'awaiting' ? t('bots.avatarStatus.awaiting') : activity ? <BotGenerationLabel sessionId={activity.sessionId} phase={activity.workingPhase} startedAt={activity.startedAtMs} />
-                  : 'deviceId' in bot && bot.online && bot.generation ? <BotGenerationLabel sessionId={bot.sessionId ?? undefined} {...bot.generation} remote={{ deviceId: bot.deviceId, botId: bot.id }} />
+                  : 'deviceId' in bot && remoteRunning ? <BotGenerationLabel sessionId={bot.sessionId ?? undefined} {...(bot.generation ?? { phase: 'processing', startedAt: null })} remote={{ deviceId: bot.deviceId, botId: bot.id }} />
+                  : otherRunning && otherBot ? <>{otherRunning.label}{' · '}<BotGenerationLabel
+                      sessionId={otherActivity?.sessionId ?? ('deviceId' in otherBot ? otherBot.sessionId ?? undefined : undefined)}
+                      phase={otherActivity?.workingPhase ?? otherGeneration?.phase}
+                      startedAt={otherActivity?.startedAtMs ?? otherGeneration?.startedAt}
+                      remote={'deviceId' in otherBot ? { deviceId: otherBot.deviceId, botId: otherBot.id } : undefined}
+                    /></>
                   : subtitle ? subtitle.kind === 'placeholder' ? t('bots.list.startChat') : subtitle.text
                     : 'preview' in bot ? bot.preview || bot.description || t('bots.list.startChat') : '';
                 return <CindyDeviceRow key="cindy-devices" current={currentCindy} options={cindyOptions}
-                  status={cindyStatus} selected={selected} typing={Boolean(activity || ('deviceId' in bot && bot.online && bot.generation))} subtitle={subtitleText}
+                  status={cindyStatus === 'done' || cindyStatus === 'unread' ? statusForBot(bot) : cindyStatus} selected={selected} typing={Boolean(activity || remoteRunning || otherRunning)} subtitle={subtitleText}
                   timestamp={formatBotListTimestamp(local
                     ? botListTimestampAt({ lastMessageAt: local.lastMessageAt, working: Boolean(activity) }, now)
                     : 'activityAt' in bot ? bot.activityAt : 0, now, t)}
@@ -545,31 +551,37 @@ export function TeammatesSection() {
               if ('deviceId' in bot) {
                 const selected = bot.id === botId && bot.deviceId === deviceId;
                 const deviceName = botDeviceLabel({ deviceId: bot.deviceId, name: bot.deviceName }, rosterDevices);
+                const status = statusForBot(bot);
+                const showRunning = status !== 'awaiting' && bot.online
+                  && Boolean(bot.generation || bot.teammateActivity?.phase === 'running');
                 return (
                   <button key={remoteBotKey(bot)} type="button" aria-current={selected ? 'page' : undefined}
                     onClick={() => navigate(`/bots/remote/${encodeURIComponent(bot.deviceId)}/${encodeURIComponent(bot.id)}`)}
-                    className={cn('flex w-full min-w-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring', selected ? 'bg-sidebar-item-active text-sidebar-item-active-foreground' : 'text-[var(--sidebar-nav-text)] hover:bg-sidebar-item-hover')}>
-                    <span className="relative shrink-0"><BotAvatar bot={bot} size="row" /><TeammateStatusDot status={statusForBot(bot)} /></span>
+                    className={cn('relative flex w-full min-w-0 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring', selected ? 'bg-sidebar-item-active text-sidebar-item-active-foreground' : 'text-[var(--sidebar-nav-text)] hover:bg-sidebar-item-hover')}>
+                    <span className="relative shrink-0"><BotAvatar bot={bot} size="row" /></span>
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="flex min-w-0 items-baseline gap-2">
                         <span className="min-w-0 truncate text-14 leading-5">{bot.name}</span>
                         <BotConnectionStatus inline online={bot.online} connectionKnown={bot.connectionKnown} deviceName={deviceName} quiet={isCloudCompanionRemote(cloud, bot)} className={selected ? 'opacity-70' : 'text-[var(--sidebar-list-muted)]'} />
                       </span>
-                      <span className={cn('truncate text-12 leading-4', selected ? 'opacity-70' : 'text-[var(--sidebar-list-muted)]')}>{statusForBot(bot) === 'awaiting' ? t('bots.avatarStatus.awaiting') : bot.online && bot.generation ? <BotGenerationLabel sessionId={bot.sessionId ?? undefined} {...bot.generation} remote={{ deviceId: bot.deviceId, botId: bot.id }} /> : bot.preview || bot.description || t('bots.list.startChat')}</span>
+                      <span className="flex min-w-0 items-center">
+                        <span className={cn('min-w-0 truncate text-12 leading-4', !showRunning && (selected ? 'opacity-70' : 'text-[var(--sidebar-list-muted)]'))}>{status === 'awaiting' ? t('bots.avatarStatus.awaiting') : showRunning ? <TeammateRunningPreview><BotGenerationLabel sessionId={bot.sessionId ?? undefined} {...(bot.generation ?? { phase: 'processing', startedAt: null })} remote={{ deviceId: bot.deviceId, botId: bot.id }} /></TeammateRunningPreview> : bot.preview || bot.description || t('bots.list.startChat')}</span>
+                        <TeammateRowStatus status={status} />
+                      </span>
                     </span>
-                    <span className={cn('min-w-10 shrink-0 self-start whitespace-nowrap pt-0.5 text-right text-11 tabular-nums', selected ? 'opacity-70' : 'text-[var(--sidebar-list-muted)]')}>{formatBotListTimestamp(bot.activityAt, now, t)}</span>
+                    <span data-teammate-timestamp className={cn('min-w-10 shrink-0 self-start whitespace-nowrap pt-0.5 text-right text-11 tabular-nums', selected ? 'opacity-70' : 'text-[var(--sidebar-list-muted)]')}>{formatBotListTimestamp(bot.activityAt, now, t)}</span>
                   </button>
                 );
               }
               const selected = !deviceId && bot.id === botId;
               const unread = unreadByBotId[bot.id] ?? 0;
               const subtitle = botListSubtitle(bot);
-              // TA 正在回话时，第二行临时让位给「正在输入…」——聊天列表里这一行
-              // 回答的是「TA 现在怎么样」，进行中比上一句说过什么更要紧。回合一
-              // 结束就落回最新消息预览，不留痕。
+              // Running progress temporarily replaces the last message preview.
               const activity = botRunningActivity(bot);
               const typing = Boolean(activity);
-              const subtitleText = statusForBot(bot) === 'awaiting' ? t('bots.avatarStatus.awaiting') : typing
+              const status = statusForBot(bot);
+              const showRunning = typing && status !== 'awaiting';
+              const subtitleText = status === 'awaiting' ? t('bots.avatarStatus.awaiting') : typing
                 ? <BotGenerationLabel sessionId={activity?.sessionId} phase={activity?.workingPhase} startedAt={activity?.startedAtMs} />
                 : subtitle.kind === 'placeholder'
                   ? t('bots.list.startChat')
@@ -621,8 +633,7 @@ export function TeammatesSection() {
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
-                    {/* Keep the existing avatar size alongside identity and message preview. */}
-                    <span className="relative shrink-0"><BotAvatar bot={bot} size="row" /><TeammateStatusDot status={statusForBot(bot)} /></span>
+                    <span className="relative shrink-0"><BotAvatar bot={bot} size="row" /></span>
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="flex items-baseline gap-2">
                         {bot.pinnedAt ? (
@@ -642,42 +653,24 @@ export function TeammatesSection() {
                           {botRosterLabel(bot, bots)}
                         </span>
                         {!typing && <BotConnectionStatus inline className={selected ? 'opacity-70' : 'text-[var(--sidebar-list-muted)]'} />}
-                        {/* 权限模式仍不在聊天列表挂警告；这里仅显示 Hermes 风格、
-                            已持久化且需要用户处理的运行失败。 */}
-
                       </span>
                       <span className="flex min-w-0 items-center gap-2">
-                        {/* 未读只强调名字与数字，预览保持次级，避免整行同时争抢注意力。 */}
                         <span
                           className={cn(
                             'min-w-0 flex-1 truncate text-12 leading-4',
-                            // 「正在输入…」是个过程说明,不是消息内容:斜体 + 三级色,
-                            // 哪怕这一行有未读也不跟着提到一级——否则一个瞬时状态
-                            // 会比真正的新消息还抢眼。
-                            mutedClass,
-                            typing && 'italic',
+                            !showRunning && mutedClass,
                           )}
                           title={typeof subtitleText === 'string' ? subtitleText : undefined}
                         >
-                          {subtitleText}
+                          {showRunning ? <TeammateRunningPreview>{subtitleText}</TeammateRunningPreview> : subtitleText}
                         </span>
+                        <TeammateRowStatus status={status} />
                       </span>
                     </span>
-                    {/*
-                      时间与未读共用右对齐列；相对时间按文字宽度撑开，避免折行。
-                    */}
+                    {/* Reserve the timestamp column so status changes do not shift the preview. */}
                     <span className="flex min-w-10 shrink-0 self-stretch flex-col items-end justify-between whitespace-nowrap py-0.5">
-                      <span className={cn('min-h-4 text-11 tabular-nums', mutedClass)}>{timestamp}</span>
-                      <span className="flex min-h-4 items-center justify-end">
-                        {unread > 0 ? (
-                          <span
-                            className={UNREAD_BADGE_CLASS}
-                            aria-label={t('bots.list.unread', { count: unread })}
-                          >
-                            {formatBotUnreadBadge(unread)}
-                          </span>
-                        ) : null}
-                      </span>
+                      <span data-teammate-timestamp className={cn('min-h-4 text-11 tabular-nums', mutedClass)}>{timestamp}</span>
+                      <span aria-hidden className="flex min-h-4 items-center justify-end" />
                     </span>
                   </button>
                   {renderBotContextMenu(bot, selected)}
