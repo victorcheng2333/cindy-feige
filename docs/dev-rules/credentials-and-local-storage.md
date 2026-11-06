@@ -84,9 +84,11 @@ Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订
   端口，它对每个目标重新按系统代理 / PAC 决定直连或走代理（env 作用于整棵进程树，含 Bash
   工具里的 git / npm，内网例外必须照旧直连），明文 HTTP 不下发代理。都是 TCP 隧道，TLS
   端到端，代理、转发端口与 Cindy 都看不到凭证。
-- 订阅会话不设 host 接管标记；Cindy 的所有 Claude 会话按维护者选择统一使用 `t3-code` 入口，
+- 订阅会话不设 host 接管标记。Claude 入口按认证形态固定：订阅（本机 CLI 登录 / OAuth token）
+  按维护者选择使用 `t3-code`，本机读订阅余量（`get_usage`）同样使用；API Key 使用 SDK 原生 `sdk-ts`，
+  因为 Anthropic Individual API 额度可能按入口拒绝请求（anthropics/claude-code#106458，上游 #8542）。
   不声明 Claude Desktop 身份，也不依赖 CLI 的 Desktop 项目级上游 / 鉴权环境过滤。
-  入口由 maker-core `env-builder.applyClaudeEntrypoint` 在环境合并后固定，远端路由展开后再次应用；
+  入口由 maker-core `env-builder.applyClaudeEntrypoint` 在环境合并后固定，远端路由展开后按最终凭证重新判定；
   不继承外层终端或路由声明的应用身份。此标识不承诺订阅扣减倍率或额度改善，实际扣减仍由上游决定。
   入口身份不改变凭证来源，普通项目设置、权限与 hooks 仍由 CLI 加载。
   原生登录与续期由 CLI 自己处理，不依赖旧宿主 OAuth 刷新回调。SDK 模式没有终端的

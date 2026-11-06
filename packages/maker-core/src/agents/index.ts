@@ -37,6 +37,7 @@ export {
 } from './credential-mode.js';
 // host 在 boot 阶段需要的 env 守卫(详见 claude-code/env-builder.ts 注释)
 export {
+  CLAUDE_SUBSCRIPTION_ENTRYPOINT,
   SENSITIVE_ANTHROPIC_ENV_KEYS,
   cleanProcessEnv,
   stripSensitiveAnthropicEnv,

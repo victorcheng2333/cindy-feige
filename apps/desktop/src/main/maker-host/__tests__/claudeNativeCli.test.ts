@@ -16,7 +16,12 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp/cindy-test-user-data' } }));
-vi.mock('@cindy/maker-core', () => ({ cleanProcessEnv: () => ({ PATH: '/usr/bin' }), findSettingsFileOverride: async () => null }));
+vi.mock('@cindy/maker-core', () => ({
+  CLAUDE_SUBSCRIPTION_ENTRYPOINT: 't3-code',
+  // 模拟从 Claude Code 终端启动 Cindy:外层入口会被继承进 cleanProcessEnv。
+  cleanProcessEnv: () => ({ PATH: '/usr/bin', CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }),
+  findSettingsFileOverride: async () => null,
+}));
 vi.mock('../../agent-binaries/index.js', () => ({ getReadyBinaryPath: () => h.binary }));
 vi.mock('../../logger.js', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -372,6 +377,8 @@ describe('readClaudeCliPlanUsage', () => {
     }));
     h.spawn.mockReturnValue(child);
     await expect(readClaudeCliPlanUsage()).resolves.toEqual({ rateLimits: RATE_LIMITS, subscriptionType: 'max' });
+    // 订阅余量请求与正式订阅会话同一入口,不沿用外层终端继承的值。
+    expect((h.spawn.mock.calls[0]![2] as { env: NodeJS.ProcessEnv }).env.CLAUDE_CODE_ENTRYPOINT).toBe('t3-code');
     const args = argsOf(h.spawn.mock.calls[0]!);
     expect(args).toEqual(expect.arrayContaining([
       '--input-format', 'stream-json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', 'user',

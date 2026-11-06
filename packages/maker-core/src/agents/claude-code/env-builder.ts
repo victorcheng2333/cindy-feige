@@ -198,17 +198,25 @@ export const REMOTE_ROUTE_OVERRIDE_ENV_KEYS = [
   'ANTHROPIC_BASE_URL',
 ] as const;
 
+/** 订阅会话的入口标记;本机 CLI 订阅控制请求(如 get_usage)也用它,与正式会话一致。 */
+export const CLAUDE_SUBSCRIPTION_ENTRYPOINT = 't3-code';
+
 /**
- * 使用维护者指定的 t3-code 入口标记,覆盖从终端继承或路由注入的其它身份。
- * 本机登录、API Key 与远端会话共用此规则;不以是否注入 OAuth token 区分入口。
+ * 按认证形态固定入口标记,覆盖从终端继承或路由注入的其它身份。
+ *
+ * 订阅(本机 CLI 登录 / OAuth token)使用维护者指定并实测过额度的 t3-code。
+ * API Key 使用 SDK 原生 sdk-ts:Anthropic Individual API 额度可能按入口拒绝请求
+ * (anthropics/claude-code#106458,上游 makecindy/cindy#8542)。
  *
  * 原生订阅登录与续期由 CLI 自己处理,不依赖宿主 OAuth 刷新回调白名单。
  * 不使用 Desktop 身份或依赖其项目设置过滤;订阅会话由 workspace-settings-guard
  * 守门。凭证来源仍由 nativeCliAuth / CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST 决定。
- * 远端路由 materialization 后再次调用,避免 route.env 覆盖入口。
+ * 远端路由 materialization 后须按最终凭证重新判定。
  */
-export function applyClaudeEntrypoint(env: Record<string, string>): void {
-  env.CLAUDE_CODE_ENTRYPOINT = 't3-code';
+export function applyClaudeEntrypoint(env: Record<string, string>, nativeCliAuth = false): void {
+  env.CLAUDE_CODE_ENTRYPOINT = nativeCliAuth || env.CLAUDE_CODE_OAUTH_TOKEN
+    ? CLAUDE_SUBSCRIPTION_ENTRYPOINT
+    : 'sdk-ts';
 }
 
 /**
@@ -551,7 +559,7 @@ export async function buildClaudeEnv(
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = '1';
   }
 
-  applyClaudeEntrypoint(env);
+  applyClaudeEntrypoint(env, nativeCliAuth);
 
   // xdt-maker 自己托管会话生命周期和自动任务。Claude Code 原生 cron 会读取
   // workdir/.claude/scheduled_tasks.json，并把到期任务作为隐藏 meta prompt 注入

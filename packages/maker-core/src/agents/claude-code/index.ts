@@ -1798,7 +1798,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       for (const key of REMOTE_ROUTE_OVERRIDE_ENV_KEYS) delete remoteEnv[key];
       Object.assign(remoteEnv, remoteRoute.env);
       remoteEnv.ANTHROPIC_BASE_URL = remoteRoute.endpoint;
-      // route.env 只决定路由和认证;入口身份继续使用指定的 t3-code 标记。
+      // route.env 是最终认证来源,据此重新选择订阅(t3-code)/ API Key(sdk-ts)入口。
       applyClaudeEntrypoint(remoteEnv);
     }
     // 远端路由决策日志(排障还原「为什么这个会话走网关/直连/自定义上游」)。只打安全

@@ -18,7 +18,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { runClaudeControlRead } from './claude-control-scheduler.js';
 
-import { cleanProcessEnv, findSettingsFileOverride } from '@cindy/maker-core';
+import { CLAUDE_SUBSCRIPTION_ENTRYPOINT, cleanProcessEnv, findSettingsFileOverride } from '@cindy/maker-core';
 import { hasProxyEnvConfig, parseOutboundProxyUrl } from '@cindy/anthropic-compat-proxy';
 
 import { getReadyBinaryPath } from '../agent-binaries/index.js';
@@ -298,7 +298,8 @@ export function readClaudeCliPlanUsage(configDir?: string, isCurrent: () => bool
 async function queryClaudeCliPlanUsage(configDir: string | undefined, isCurrent: () => boolean): Promise<ClaudeCliPlanUsage | null> {
   const binary = cliBinaryPath();
   if (!binary) throw new Error('claude cli unavailable');
-  const env = await cliEnv({ network: true, configDir });
+  // 读余量是用订阅登录发出的 SDK 模式请求,入口与正式订阅会话一致,不继承外层终端的值。
+  const env = { ...await cliEnv({ network: true, configDir }), CLAUDE_CODE_ENTRYPOINT: CLAUDE_SUBSCRIPTION_ENTRYPOINT };
   if (!isCurrent()) throw new Error('Claude account changed');
   // --setting-sources user:不读工作区的项目级设置(它们可改写上游 / 鉴权);
   // --strict-mcp-config:不拉起用户配置的 MCP server;--no-session-persistence:不落会话记录。
