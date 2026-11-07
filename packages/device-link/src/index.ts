@@ -85,3 +85,5 @@ export * from "./companionCloud.js";
 export * from "./machineStatus.js";
 export * from "./pluginPages.js";
 export * from './jpush.js';
+
+export { StallDiagnostics, diagnosticChannel, diagnosticRef, diagnosticOperation } from './stallDiagnostics.js';

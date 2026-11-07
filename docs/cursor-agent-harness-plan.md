@@ -858,7 +858,8 @@ Codex 该轮没有工具调用。原生 Cursor 前一轮已有约 74k 输入 tok
 
 环境：本机 macOS ARM64、Node v22.22.2，直接加载已安装签名包内的 `@cursor/sdk` 1.2.0。
 全部调用真实 SDK 公共接口，没有复制 store 实现；没有调用 `Agent.send`、模型或 MCP 工具。
-原始数值与测量边界见 [计时数据 JSON](benchmarks/cursor-handoff-2026-11-05.json)。
+原始计时数据文件 `benchmarks/cursor-handoff-2026-11-05.json` 当前未保存在仓库中；
+以下保留当时的测量摘要，原始数值与测量边界无法从该文件复核。
 
 #### JSONL 离线读写
 

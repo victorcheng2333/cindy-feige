@@ -836,6 +836,19 @@ export function AddProviderWizard({
       setXaiDeviceLogin(selected.id === 'xai' && method === 'device');
       try {
         let ok = false;
+        if (id === 'openai') {
+          const loginKey = crypto.randomUUID();
+          const login = { cancel: () => { void window.electronAPI.subscriptionAccounts.command({ action: 'cancel', providerId: 'openai', loginKey }).catch(() => {}); } };
+          localLoginRef.current = login;
+          try {
+            await window.electronAPI.subscriptionAccounts.command({ action: 'add', providerId: 'openai', loginKey });
+            if (localLoginRef.current === login) onDone('openai');
+          } catch (error) {
+            if (localLoginRef.current !== login || String(error).includes('SUBSCRIPTION_LOGIN_CANCELLED')) return;
+            throw error;
+          } finally { if (localLoginRef.current === login) localLoginRef.current = null; }
+          return;
+        }
         if (id === 'openai' || id === 'anthropic' || id === 'xai' || preset) {
           const brand = id;
           const native = brand === 'openai' ? 'codex' as const : brand === 'anthropic' ? 'claude' as const : 'xai' as const;
@@ -1947,7 +1960,9 @@ export function AddProviderWizard({
                     )}
                     <Button variant="secondary" size="lg" type="button" onClick={() => void handleAuthorize()}>
                       {t(
-                        ['openai', 'anthropic', 'xai'].includes(sel.provider.id)
+                        sel.provider.id === 'openai'
+                          ? 'subscriptionAccounts.add'
+                          : ['anthropic', 'xai'].includes(sel.provider.id)
                           ? 'settings.providers.openai.addIndependentAccount'
                           : sel.provider.auth.oauth?.flow === 'device-code'
                             ? 'settings.providers.wizard.authorizeWithDeviceCode'

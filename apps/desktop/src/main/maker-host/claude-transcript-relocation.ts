@@ -32,6 +32,7 @@ import type { DbClient } from '../localDb/client/DbClient.js';
 import { createLogger } from '../logger.js';
 import { defaultClaudeConfigDirCandidates } from '../maker-orchestration/claudeTranscriptAnchors.js';
 import { readClaudeHistoryHome } from './claude-history-home.js';
+import { readBoundClaudeConfigDir } from '../subscription-accounts/store.js';
 
 const log = createLogger('claude-transcript-relocation');
 
@@ -191,7 +192,7 @@ export async function relocateClaudeTranscriptsForSessionMove(
     // provider is not authority for moving the older forks.
     const groups = new Map<string, string[]>();
     for (const id of sdkSessionIds) {
-      const home = readClaudeHistoryHome(id) ?? defaultClaudeConfigDirCandidates()[0];
+      const home = readClaudeHistoryHome(id) ?? readBoundClaudeConfigDir(id) ?? defaultClaudeConfigDirCandidates()[0];
       const members = groups.get(home) ?? [];
       members.push(id);
       groups.set(home, members);
@@ -211,21 +212,15 @@ export async function relocateClaudeTranscriptsForSessionMove(
     if (result.targetKeyInexact) {
       log.warn('transcript relocation skipped: target project key inexact (path too long)', {
         sessionId,
+        oldWorkingDir,
         newWorkingDir,
+        liveId,
+        copied: result.copied,
+        replaced: result.replaced,
+        skipped: result.skipped,
+        missing: result.missing,
       });
-      return { persistedSdkSessionId };
     }
-    const level = result.missing.length > 0 ? 'warn' : 'info';
-    log[level]('relocated Claude transcripts for session move', {
-      sessionId,
-      oldWorkingDir,
-      newWorkingDir,
-      liveId,
-      copied: result.copied,
-      replaced: result.replaced,
-      skipped: result.skipped,
-      missing: result.missing,
-    });
     return { persistedSdkSessionId };
   } catch (err) {
     log.warn('transcript relocation failed (session move proceeds)', {

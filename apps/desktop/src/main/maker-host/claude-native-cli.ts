@@ -96,8 +96,8 @@ function cliBinaryPath(): string | null {
 }
 
 /**
- * 登录与登录态检查用 CLI 默认配置目录(dev 多实例也一样),凭证库因此与终端里的
- * `claude`、订阅会话共用同一份。process.env 的 CLAUDE_CONFIG_DIR 在 boot 期已被剥离。
+ * 默认账号不设配置目录，继续共用终端的凭证库。显式的额外账号只为本次 CLI
+ * 子进程设置目录；process.env 的 CLAUDE_CONFIG_DIR 在 boot 期已被剥离。
  */
 async function cliEnv(options: { network: boolean; configDir?: string }): Promise<NodeJS.ProcessEnv> {
   if (options.configDir !== undefined && !path.isAbsolute(options.configDir)) throw new Error('Invalid Claude configuration directory');
@@ -440,7 +440,8 @@ export type ClaudeCliLoginResult =
  * CLI 已用非订阅方式登录(API Key、中转 token 等)时直接返回 not_a_subscription,不替用户
  * 改 CLI 的登录:这类配置在 CLI 里优先于订阅登录,改了也用不上,还会影响终端里的 claude。
  */
-export async function runClaudeCliLogin(signal: AbortSignal, options?: { configDir?: string; force?: boolean }): Promise<ClaudeCliLoginResult> {
+export async function runClaudeCliLogin(signal: AbortSignal, options?: { configDir?: string; force?: boolean } | string): Promise<ClaudeCliLoginResult> {
+  options = typeof options === 'string' ? { configDir: options } : options;
   const before = await refreshClaudeCliLoginStatus({ force: true, configDir: options?.configDir });
   if (signal.aborted) return { ok: false, reason: 'login_cancelled' };
   if (before.loggedIn && !options?.force) return { ok: true, status: before };

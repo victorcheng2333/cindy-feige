@@ -1,4 +1,4 @@
-import { claudeHistoryHomeCandidates } from '../maker-host/claude-history-home.js';
+import { readClaudeHistoryHome, claudeHistoryHomeCandidates } from '../maker-host/claude-history-home.js';
 /**
  * 会话分享导出编排:把一个任务(cc / codex / pi)打成 .cshare 文件。
  * 远程供应商任务导出本机消息与可用媒体，不读取本机的同名原生转录。
@@ -44,6 +44,7 @@ import {
 } from '../maker-host/codex-local-sessions.js';
 import { readCodexThreadStorageReadOnly } from '../maker-host/codex-thread-storage.js';
 import { defaultClaudeConfigDirCandidates } from '../maker-orchestration/claudeTranscriptAnchors.js';
+import { readBoundClaudeConfigDir } from '../subscription-accounts/store.js';
 import { resolveSafe as resolveImageUrl } from '../imageCacheStore.js';
 import { resolveSafe as resolveVideoUrl } from '../videoCacheStore.js';
 import { resolveSafe as resolveModelUrl } from '../modelCacheStore.js';
@@ -378,11 +379,12 @@ async function collectSessionPhaseA(
       }
       sdkSessionIds = sdkSessionIds.filter((id) => allowed.has(id));
     }
-    // 与 loadClaudeTranscriptAnchorIndex 同口径:遍历全部候选目录
-    // (CLAUDE_CONFIG_DIR → ~/.claude → 旧版 dev 的 XDT_USER_DATA_DIR/claude-home),
-    // 只查第一个会把落在后续候选的 jsonl 误记缺失(review bot P1)。
     for (const sid of sdkSessionIds) {
-      const projectsRoots = claudeHistoryHomeCandidates(sid).map(dir => path.join(dir, 'projects'));
+      // Bound secondary histories never fall back to another account. Default and
+      // pre-pool histories retain the env/default/legacy-dev candidate search.
+      const boundDir = readClaudeHistoryHome(sid) ?? readBoundClaudeConfigDir(sid);
+      const projectsRoots = (boundDir ? [boundDir] : claudeHistoryHomeCandidates(sid))
+        .map((dir) => path.join(dir, 'projects'));
       let jsonl: string | null = null;
       for (const projectsRoot of projectsRoots) {
         jsonl = await findClaudeSessionJsonl(sid, session.workingDir ?? undefined, projectsRoot);

@@ -338,6 +338,18 @@ const requiredUnitWorkspace = (name, cwd, { workers = 1, execution, pool, exclud
 export default {
   workspaces: [
     requiredUnitWorkspace('cindy-headless', 'apps/cindy-headless'),
+    // The fork's independent clients are pnpm workspaces too; run their existing
+    // regressions so manifest validation does not block the shared test gate.
+    {
+      ...requiredUnitWorkspace('remote-ios-usage', 'apps/remote-ios-usage'),
+      tiers: {
+        unit: {
+          status: 'required',
+          command: vitestBin('run', '--config', '../mobile/vitest.config.ts', '--pool=threads', '--maxWorkers=1', ...unitTestShardArgs()),
+        },
+      },
+    },
+    requiredUnitWorkspace('remote-mac-usage', 'apps/remote-mac-usage'),
     {
       name: 'desktop',
       cwd: 'apps/desktop',

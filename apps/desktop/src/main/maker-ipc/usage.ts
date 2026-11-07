@@ -77,6 +77,7 @@ import { desktopCodexAuthAdapter } from '../maker-host/auth-adapters.js';
 import { hasClaudeNativeLogin } from '../maker-host/claude-native-auth.js';
 import { peekClaudeCliLoginStatus } from '../maker-host/claude-native-cli-status.js';
 import { readClaudeCliPlanUsage } from '../maker-host/claude-native-cli.js';
+import { observeSubscriptionAccountUsage } from '../subscription-accounts/runtime.js';
 import { getGrokAccessToken, hasGrokOAuthLogin } from '../maker-host/grok-oauth-login.js';
 import { outboundFetch } from '../maker-host/outbound-fetch.js';
 import { CodexResetAutoUse, parseCodexResetAutoUse } from '../usage/codexResetAutoUse.js';
@@ -434,7 +435,8 @@ export function registerMakerUsageIpc(maker: Maker): void {
 
   // 订阅会话的 CLI 在会话里上报 SDK rate_limit_event → 落库 + 广播(maker-core 只对本机
   // Claude 订阅会话转发)。事件晚于登出 / 断开到达时丢弃,不复活刚清掉的快照。
-  setClaudeRateLimitInfoListener((info, context) => {
+  setClaudeRateLimitInfoListener((info, context, account) => {
+    if (account) { observeSubscriptionAccountUsage(account, info); return; }
     if (context?.providerId && context.providerId !== 'anthropic') { noteManagedClaudeRateLimit(info, context); return; }
     if (context?.runtime && (context.runtime.scopeKey !== activeOwnerScopeKey() || context.runtime.revision !== `system:${claudeCliLoginRevision()}`)) return;
     if (!hasClaudeNativeLogin()) return;

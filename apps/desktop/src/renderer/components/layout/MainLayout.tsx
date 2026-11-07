@@ -1,6 +1,4 @@
 import { getDataOwnerGeneration, isDataOwnerGenerationCurrent } from '@/contexts/dataOwnerGeneration';
-import { usePluginUiVisibilityOwner } from '@/cindy-brain/usePluginUiVisibility';
-import { initPluginTabViewHost } from '@/features/right-sidebar/pluginTabViews';
 import { PerformanceTrace, openPerformanceTrace } from '@/components/performance-trace/PerformanceTrace';
 import { readInstalledGhostsSnapshot } from '@/cindy-brain/useInstalledGhosts';
 import { installedGhostStoragePart, resolvePluginInstanceQuery } from '../../../shared/pluginIdentity';
@@ -46,7 +44,6 @@ import { useDeviceLinkRemoteProjects } from '@/features/device-link/useDeviceLin
 import { useAgentIslandRemoteSessionsSync } from '@/features/device-link/agentIslandRemoteSessions';
 import { pluginScheduleNavigationState } from '@/features/scheduler/lib/pluginScheduleCreateIntent';
 import { ScheduleSessionIndexOwner } from '@/features/scheduler/components/ScheduleSessionIndexOwner';
-import { AppBadgeAttentionSync } from '@/components/layout/AppBadgeAttentionSync';
 import { usePendingAlertAttention } from '@/hooks/usePendingAlertAttention';
 import { FeatureSidebarSlotProvider } from '@/features/feature-context';
 import { useAppShortcut } from '@/hooks/useAppShortcut';
@@ -264,7 +261,6 @@ function SidebarPinSpacer({ width }: { width: number }) {
 }
 
 export function MainLayout() {
-  const pluginVisibility = usePluginUiVisibilityOwner();
   useRememberMainEntry();
   // 未处理报错的恢复与已处置收敛不依赖当前路由或侧栏是否挂载。
   usePendingAlertAttention();
@@ -410,7 +406,7 @@ export function MainLayout() {
       : null;
   // Windows 内容区右上的右栏唤起 chip:仅面板收起或分离时在场。
   const showWindowsRightSidebarTrigger =
-    pluginVisibility.tools && rightSidebarAvailable && rsbWindow.loaded && (rsbDetached || isRightSidebarCollapsed);
+    rightSidebarAvailable && rsbWindow.loaded && (rsbDetached || isRightSidebarCollapsed);
   const rowRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   // B1a(去方位化):左侧占位块(pinning spacer + Sidebar)的 wrapper。
@@ -476,8 +472,7 @@ export function MainLayout() {
   // hook 的语义包含「从设置等栈外页后退回最近任务」。浏览栈按数据所有者
   // (账号 + 恢复代次)隔离：切号时不能把上一个账号的任务带过来。
   const { dataOwnerId, dataOwnerRecoveryEpoch } = useAuth();
-  useEffect(() => { initPluginTabViewHost(); }, [dataOwnerId, dataOwnerRecoveryEpoch]);
-  // 个人 fork 的左上角按钮保留页面级后退/前进；这里仅保留任务浏览栈与其快捷键。
+  // Preserve the fork’s page navigation and the task-history shortcuts.
   useSessionBrowseHistory({
     ownerKey: `${dataOwnerId ?? 'signed-out'}:${dataOwnerRecoveryEpoch}`,
   });
@@ -749,7 +744,7 @@ export function MainLayout() {
         | { type: 'plugin'; pluginId: string }
         | { type: 'local-plugin-share'; snapshotId: string }
         | { type: 'installed-plugin'; ghostId?: string }
-        | { type: 'settings'; tab: 'voice-input' | 'providers' | 'billing' | 'remote-control' | 'builtin-tools'; connect?: string; intent?: 'topup' },
+        | { type: 'settings'; tab: 'voice-input' | 'providers' | 'billing' | 'remote-control' | 'builtin-tools' | 'im-bot'; connect?: string; intent?: 'topup'; imGroup?: 'cindy' | 'personal' },
     ) => {
       if (payload.type === 'chat-message') {
         const search = new URLSearchParams({ messageId: payload.messageId });
@@ -830,7 +825,9 @@ export function MainLayout() {
             ? `&connect=${encodeURIComponent(payload.connect)}`
             : '';
         const intent = payload.tab === 'billing' && payload.intent === 'topup' ? '&intent=topup' : '';
-        navigate(`/settings?tab=${payload.tab}${connect}${intent}`);
+        // imGroup 交给 SettingsView 已有的 ?imGroup= 分区定位。
+        const imGroup = payload.tab === 'im-bot' && payload.imGroup ? `&imGroup=${payload.imGroup}` : '';
+        navigate(`/settings?tab=${payload.tab}${connect}${intent}${imGroup}`);
       }
     },
     [navigate, navigateToSession, openShareImport],
@@ -1700,14 +1697,14 @@ export function MainLayout() {
   // unrelated updates from invalidating the entire routed conversation again.
   const outletContext = useMemo(() => ({
     sidebarWidth,
-    rightSidebarCollapsed: rsbDetached || isRightSidebarCollapsed || !pluginVisibility.tools,
+    rightSidebarCollapsed: rsbDetached || isRightSidebarCollapsed,
     onToggleRightSidebar: handleOpenRightSidebar,
     rightSidebarSide,
     setRightSidebarAvailable,
     setRightSidebarSessionId: declareRightSidebarSessionId,
     setRightSidebarWorkdir,
   }), [
-    sidebarWidth, rsbDetached, isRightSidebarCollapsed, pluginVisibility.tools, handleOpenRightSidebar,
+    sidebarWidth, rsbDetached, isRightSidebarCollapsed, handleOpenRightSidebar,
     rightSidebarSide, declareRightSidebarSessionId, setRightSidebarWorkdir,
   ]);
 
@@ -1733,10 +1730,8 @@ export function MainLayout() {
     >
       <ScheduleSessionIndexOwner />
       {!isSecondaryWindow() && <PerformanceTrace statusContainer={performanceTraceStatusHost} />}
-      {!isSecondaryWindow() && <AppBadgeAttentionSync />}
       <div
         ref={rowRef}
-        data-plugin-ui-element="workspace"
         className={cn(
           'relative flex h-screen bg-content-area text-foreground',
           isDragging && 'select-none cursor-col-resize',
@@ -1747,7 +1742,7 @@ export function MainLayout() {
             flex + shrink-0 与 aside 原有的 flex child 行为一致,不改变布局;
             peek 期 aside 变 fixed 出流,wrapper 宽度自然等于流内 spacer 宽。 */}
         {!isSettingsRoute && (
-          <div ref={sidebarBlockRef} data-plugin-ui-element="sidebar" className="flex shrink-0">
+          <div ref={sidebarBlockRef} className="flex shrink-0">
             {/* pinning 冻结期的流内占位:抽屉保持 fixed 不动,由本 spacer 跑 0→W 的
                 250ms 宽度动画把主区推开;动画结束(peekState 回 idle)后同一帧内
                 spacer 卸载、aside 摘掉 fixed 落回流内 —— 两者矩形一致,交换无跳变。 */}
@@ -1773,14 +1768,12 @@ export function MainLayout() {
             之上，钉死窗口左上角红绿灯旁,不随侧栏折叠/展开/peek 移动
             （见 ChromeActions.tsx）。设置页隐藏（侧栏本身不显示，无折叠语义）。 */}
         {!isSettingsRoute && (
-          <div className="contents" data-plugin-ui-element="sidebar">
           <ChromeActions
             navigation={navigationHistory}
             isSidebarCollapsed={isSidebarCollapsed}
             onToggleSidebar={handleToggleSidebar}
             peekTriggerProps={sidebarPeek.triggerProps}
           />
-          </div>
         )}
         {/* 布局树引擎:聊天主区与工具面板的**顺序与在场**改由
             布局树(userData/layout.v1.json)驱动,渲染链 LayoutRoot → 面板注册表
@@ -1803,7 +1796,7 @@ export function MainLayout() {
                   'relative flex flex-1 flex-col overflow-hidden bg-content-area',
                   isSettingsRoute ? 'min-w-0' : 'min-w-[400px]',
                   // RSB Maximize(Phase 6):主区彻底 display:none,把整个非左栏空间让给 RSB。
-                  isRightSidebarMaximized && pluginVisibility.tools && pluginVisibility.workspace && 'hidden',
+                  isRightSidebarMaximized && 'hidden',
                 )}
                 // Windows 浮动入口每个占 28px + 4px 间距；分屏工具条使用同一占位，
                 // 避免远程桌面 / 面板入口盖住关闭分屏等操作。mac 与左侧入口无需右端让位。
@@ -1826,9 +1819,9 @@ export function MainLayout() {
                     headerContent 路由下 ContentHeader 会因 sidebarVisible=true 提前 return null,
                     我们为 rail 浮动 chrome 预留的 spacer 不渲染、按钮悬空。 */}
                 <ContentHeaderSlot
-                  sidebarVisible={pluginVisibility.sidebar && !isSettingsRoute && !isSidebarCollapsed && !isRailMode}
-                  showCollapsedActions={pluginVisibility.sidebar && !isSettingsRoute && (isSidebarCollapsed || isRailMode)}
-                  isSidebarRail={pluginVisibility.sidebar && hasRailChromeActions && !rightSidebarOwnsRailChromeActions}
+                  sidebarVisible={!isSettingsRoute && !isSidebarCollapsed && !isRailMode}
+                  showCollapsedActions={!isSettingsRoute && (isSidebarCollapsed || isRailMode)}
+                  isSidebarRail={hasRailChromeActions && !rightSidebarOwnsRailChromeActions}
                   // M2(2026-07-09 口径修订):mac 右上浮层随面板在场常驻(折叠
                   // toggle 永远钉窗口右上角),ContentHeader 右端占位不再分侧别。
                   rightSidebarAvailable={rightSidebarAvailable}
@@ -1904,7 +1897,7 @@ export function MainLayout() {
                   ref={rightSidebarRef}
                   // 路由不声明右栏时仅派生强制折叠，不写入 isRightSidebarCollapsed，
                   // 也不落按会话记忆的折叠偏好。
-                  isCollapsed={isRightSidebarCollapsed || rightSidebarForceCollapsed || !pluginVisibility.tools}
+                  isCollapsed={isRightSidebarCollapsed || rightSidebarForceCollapsed}
                   // width 只在非 maximize 受控,且只是兜底 —— RSB 优先消费
                   // 引擎 PaneWidthContext 的实时值;maximize 时 RightSidebar 内部走
                   // flex-1 自己撑满(2026-07-01 bug 修)。拖宽把手 = 引擎分割线。
@@ -1914,7 +1907,7 @@ export function MainLayout() {
                   // 收起后聊天区角上才显示展开入口。mac 仍走窗口右上浮层。
                   onCloseSidebar={handleCloseRightSidebar}
                   onMaximize={handleMaximizeRightSidebar}
-                  isMaximized={isRightSidebarMaximized && pluginVisibility.tools}
+                  isMaximized={isRightSidebarMaximized}
                   reserveLeftChromeActions={shouldReserveLeftChromeActions({
                     isSidebarCollapsed,
                     rightSidebarSide,
@@ -1941,7 +1934,7 @@ export function MainLayout() {
             <LayoutRoot
               suppressNonChatPanels={isSettingsRoute}
               rightTabsCollapsed={
-                !rightSidebarMounted || isRightSidebarCollapsed || rightSidebarForceCollapsed || !pluginVisibility.tools
+                !rightSidebarMounted || isRightSidebarCollapsed || rightSidebarForceCollapsed
               }
             />
           </TabGroupHostProvider>
@@ -1980,7 +1973,6 @@ export function MainLayout() {
             右上角（系统按钮下一行），与截图中的原位置一致。 */}
         {!isMac && (
           <div
-            data-plugin-ui-element="windowControls"
             className="absolute right-0 top-0 z-50 flex h-[46px] items-center pr-2"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
@@ -2000,7 +1992,6 @@ export function MainLayout() {
             是面板自属控件,贴右(或 maximize 撑满)时在浮层里(视觉落在面板顶栏
             右端),贴左时跟面板走进 Shell 顶栏右端(见 RightSidebarShell)。 */}
         {isMac &&
-          pluginVisibility.tools &&
           rightSidebarAvailable &&
           rsbWindow.loaded &&
           (rsbDetached || isRightSidebarCollapsed) && (

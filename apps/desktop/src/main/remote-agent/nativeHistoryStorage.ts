@@ -1,10 +1,11 @@
-import { claudeHistoryHomeCandidates, rememberClaudeHistoryHome } from '../maker-host/claude-history-home.js';
+import { readClaudeHistoryHome, claudeHistoryHomeCandidates, rememberClaudeHistoryHome } from '../maker-host/claude-history-home.js';
 import { activeOwnerScopeKey } from '../appSessionState.js';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { findClaudeSessionJsonl, sanitizeClaudeProjectKey } from '@cindy/maker-core';
+import { readBoundClaudeConfigDir } from '../subscription-accounts/store.js';
 import { readCodexThreadStorageReadOnly } from '../maker-host/codex-thread-storage';
 import { dumpCodexThreadStateRows, importSharedCodexThread, removeSharedCodexThread } from '../maker-host/codex-local-sessions';
 import { migrationNativeContext } from '../session-share/migrationNativeContext';
@@ -18,7 +19,8 @@ export function nativeHistoryStorage(userDataDir: string, options?: { claudeHome
       if (kind !== 'pi' && !/^[a-f0-9-]{36}$/i.test(nativeId)) throw new Error('NATIVE_HISTORY_INVALID_ID');
       if (kind === 'claude-code') {
         let file: string | null = null;
-        for (const dir of claudeHistoryHomeCandidates(nativeId)) {
+        const boundDir = readClaudeHistoryHome(nativeId) ?? readBoundClaudeConfigDir(nativeId);
+        for (const dir of boundDir ? [boundDir] : claudeHistoryHomeCandidates(nativeId)) {
           file = await findClaudeSessionJsonl(nativeId, undefined, path.join(dir, 'projects'));
           if (file) break;
         }

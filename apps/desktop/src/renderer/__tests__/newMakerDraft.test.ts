@@ -54,6 +54,7 @@ describe('newMakerDraft store', () => {
     });
     resetDraftWorkspaceAfterSend();
 
+    // reset-modules: 模拟应用重启，从持久草稿重新读取远端项目的归属。
     vi.resetModules();
     const reloaded = await loadModule();
     expect(reloaded.getDraft()).toMatchObject({
@@ -74,6 +75,7 @@ describe('newMakerDraft store', () => {
     });
     resetDraftWorkspaceAfterSend();
 
+    // reset-modules: 模拟应用重启，验证本机和 SSH 项目选择确实已持久化。
     vi.resetModules();
     const reloaded = await loadModule();
     expect(reloaded.getDraft()).toMatchObject({
