@@ -85,7 +85,7 @@ index 0eb1f09dee82edd99e3e614938233db5cdeaebfe..2d015f69554ef6088945893837a54f2b
  }
  
  - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
-@@ -116,10 +170,13 @@ - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
+@@ -116,10 +170,13 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
      NSDictionary *menu = dict[@"menu"];
      if (menu) {
        self.menu = [[self class] initUIMenuWithDict:menu menuAction:menuAction imageLoader:imageLoader];
@@ -99,7 +99,7 @@ index 0eb1f09dee82edd99e3e614938233db5cdeaebfe..2d015f69554ef6088945893837a54f2b
    NSString *buttonId = dict[@"buttonId"];
    if (buttonId && action) {
      self.target = self;
-@@ -130,6 +187,180 @@ - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
+@@ -130,6 +187,180 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
    return self;
  }
  
@@ -280,7 +280,7 @@ index 0eb1f09dee82edd99e3e614938233db5cdeaebfe..2d015f69554ef6088945893837a54f2b
  + (void)resolveImageFromConfig:(NSDictionary *)dict
                     imageLoader:(RCTImageLoader *)imageLoader
                 completionBlock:(void (^)(UIImage *_Nullable))completionBlock
-@@ -188,11 +419,19 @@ + (UIMenu *)initUIMenuWithDict:(NSDictionary<NSString *, id> *)dict
+@@ -188,11 +419,19 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
                   image = img;
                 }];
  
@@ -305,7 +305,7 @@ index 0eb1f09dee82edd99e3e614938233db5cdeaebfe..2d015f69554ef6088945893837a54f2b
  }
  
  + (UIAction *)createActionItemFromConfig:(NSDictionary *)dict
-@@ -200,11 +439,21 @@ + (UIAction *)createActionItemFromConfig:(NSDictionary *)dict
+@@ -200,11 +439,21 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
                               imageLoader:(RCTImageLoader *)imageLoader
  {
    NSString *menuId = dict[@"menuId"];
@@ -329,15 +329,19 @@ index 0eb1f09dee82edd99e3e614938233db5cdeaebfe..2d015f69554ef6088945893837a54f2b
                                                }];
  
 diff --git a/ios/RNSScreenStackHeaderConfig.mm b/ios/RNSScreenStackHeaderConfig.mm
-index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..0607a759241ee9823cca347e382b146ef73bb5cd 100644
+index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..1601d7419c9b2a574159384c9e9b91403d03e9e2 100644
 --- a/ios/RNSScreenStackHeaderConfig.mm
 +++ b/ios/RNSScreenStackHeaderConfig.mm
-@@ -559,8 +559,13 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -558,9 +558,16 @@ RNS_IGNORE_SUPER_CALL_END
+   navitem.hidesBackButton = config.hideBackButton;
    navitem.leftItemsSupplementBackButton = config.backButtonInCustomView;
  #endif
-   navitem.titleView = nil;
+-  navitem.titleView = nil;
 -  navitem.leftBarButtonItems = nil;
 -  navitem.rightBarButtonItems = nil;
++  // Cindy patch: keep the mounted title while refreshing header options. Clearing it first
++  // makes UIKit animate it out and back in when the home computer/scope changes.
++  UIView *nextTitleView = nil;
 +  // Cindy patch: build the bar button lists locally and assign them only when they change.
 +  // Clearing them first (the original behaviour) removes every bar button on each header
 +  // update, which dismisses an open menu even for keepsMenuPresented actions.
@@ -348,7 +352,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..0607a759241ee9823cca347e382b146e
  
  #if !TARGET_OS_TV
    // We want to set navitem.searchController to nil only if we are sure
-@@ -573,17 +578,11 @@ + (void)updateViewController:(UIViewController *)vc
+@@ -573,22 +580,16 @@ RNS_IGNORE_SUPER_CALL_END
      // `- [RNSScreenStackHeaderConfig replaceNavigationBarViewsWithSnapshotOfSubview:]` method.
      switch (subview.type) {
        case RNSScreenStackHeaderSubviewTypeLeft: {
@@ -368,7 +372,18 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..0607a759241ee9823cca347e382b146e
          break;
        }
        case RNSScreenStackHeaderSubviewTypeCenter:
-@@ -648,10 +647,18 @@ + (void)updateViewController:(UIViewController *)vc
+       case RNSScreenStackHeaderSubviewTypeTitle: {
+-        navitem.titleView = subview;
++        nextTitleView = subview;
+         break;
+       }
+       case RNSScreenStackHeaderSubviewTypeSearchBar: {
+@@ -648,10 +649,23 @@ RNS_IGNORE_SUPER_CALL_END
++  // A missing title still removes the old view; an unchanged one stays attached.
++  if (navitem.titleView != nextTitleView) {
++    navitem.titleView = nextTitleView;
++  }
++
    // This assignment should be done after `navitem.titleView = ...` assignment (iOS 16.0 bug).
    // See: https://github.com/software-mansion/react-native-screens/issues/1570 (comments)
    navitem.title = config.title;
@@ -391,7 +406,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..0607a759241ee9823cca347e382b146e
  
    // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items
    // (setting nav bar visibility should be done after `navitem.*BarButtonItems`).
-@@ -784,6 +791,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -784,6 +798,7 @@ RNS_IGNORE_SUPER_CALL_END
  
  - (NSArray<UIBarButtonItem *> *)barButtonItemsFromConfigs:(NSArray<NSDictionary<NSString *, id> *> *)dicts
                                           withCurrentItems:(NSArray<UIBarButtonItem *> *)currentItems
@@ -399,7 +414,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..0607a759241ee9823cca347e382b146e
  {
    if (dicts.count == 0) {
      return currentItems;
-@@ -793,7 +801,27 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -793,7 +808,27 @@ RNS_IGNORE_SUPER_CALL_END
    for (NSUInteger i = 0; i < dicts.count; i++) {
      NSDictionary *dict = dicts[i];
      if (dict[@"buttonId"] || dict[@"menu"]) {
@@ -428,7 +443,7 @@ index 1c844846a5c66e31cfa530ca462774d2fb6bbea1..0607a759241ee9823cca347e382b146e
            action:^(NSString *buttonId) {
              auto eventEmitter = std::static_pointer_cast<const facebook::react::RNSScreenStackHeaderConfigEventEmitter>(
                  self->_eventEmitter);
-@@ -803,15 +831,7 @@ - (void)applySemanticContentAttributeIfNeededToNavCtrl:(UINavigationController *
+@@ -803,15 +838,7 @@ RNS_IGNORE_SUPER_CALL_END
                        .buttonId = std::string([buttonId UTF8String])});
              }
            }

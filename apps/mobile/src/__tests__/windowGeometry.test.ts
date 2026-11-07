@@ -177,4 +177,11 @@ describe('native bar trailing reserve beside the Duo status area', () => {
     expect(sharedStatusRowTrailingReserve(portrait(520, { regions: [{ kind: 'occlusion', x: 270, y: 0, width: 120, height: 37 }] }))).toBe(0);
     expect(sharedStatusRowTrailingReserve(window())).toBe(0);
   });
+  // Regression: iPhone home title showed only「所」of「所有任务」(2026-11-07); its bar sits below
+  // the status area even though iOS 27.1 reports that area at the trailing corner.
+  it('reserves nothing on a compact-width phone whose bar sits below the status area', () => {
+    expect(sharedStatusRowTrailingReserve(window({ width: 402, height: 874, barEdge: 'none', regularWidth: false,
+      insets: { top: 62, left: 0, right: 0, bottom: 34 },
+      regions: [{ kind: 'occlusion', x: 260, y: 0, width: 142, height: 54 }] }))).toBe(0);
+  });
 });

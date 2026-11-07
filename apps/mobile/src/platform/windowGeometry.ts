@@ -112,10 +112,12 @@ function trailingStatusRegions(g: WindowGeometry): ReservedRegion[] {
  * portrait): the system moves the trailing items left of the status area, so a title view sized
  * for the full bar runs under them. The status area grows with its content (a Live Activity
  * widens it), so this follows the reported region and adds the bar's item spacing before it.
- * 0 for bars below the status area or beside a vertical rail.
+ * 0 for bars below the status area or beside a vertical rail. A compact-width phone also
+ * reports its status area at the trailing corner, but its bar sits below it (as in
+ * floatingTopRow): reserving there shrank the iPhone home title to its first character.
  */
 export function sharedStatusRowTrailingReserve(g: WindowGeometry): number {
-  if (!g.reservedRegionsSupported || g.barEdge !== 'none') return 0;
+  if (!g.reservedRegionsSupported || !g.regularWidth || g.barEdge !== 'none') return 0;
   const status = trailingStatusRegions(g);
   if (!status.length) return 0;
   return Math.max(0, g.width - Math.min(...status.map(r => r.x)) + spacing.lg);
