@@ -351,5 +351,16 @@
     "title": "开发者",
     "identity": "标识信息",
     "updateInfo": "更新之讯"
+  },
+  "composer": {
+    "title": "书讯",
+    "runningSend": {
+      "label": "差事行时遣新讯",
+      "hint": "差事行时，点遣钮默以此法遣之。择「插言」，则讯径入当轮；不得入者，留于队中。",
+      "options": {
+        "queue": "排队",
+        "steer": "插言"
+      }
+    }
   }
 }

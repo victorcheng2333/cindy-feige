@@ -351,5 +351,16 @@
     "title": "Developer",
     "identity": "Identifiers",
     "updateInfo": "Update info"
+  },
+  "composer": {
+    "title": "Message input",
+    "runningSend": {
+      "label": "While a task is running",
+      "hint": "How the send button delivers new messages while a task is running. With Steer, the message goes into the current turn; if it can’t, it stays in the queue.",
+      "options": {
+        "queue": "Queue",
+        "steer": "Steer"
+      }
+    }
   }
 }

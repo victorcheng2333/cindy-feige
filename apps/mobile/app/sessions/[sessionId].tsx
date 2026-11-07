@@ -213,6 +213,7 @@ import {
   usePendingCompanionReplyQuote,
 } from '@/session/companionReplyQuote';
 import { useCompanionReplyTargetPreference } from '@/session/companionReplyTargetPreference';
+import { useComposerRunningSendPreference } from '@/session/composerRunningSendPreference';
 import {
   bundledAssetToDataUri,
   cleanupConversationSharePngTemps,
@@ -1259,6 +1260,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const pendingInteractionsAuthoritative = useSessionPendingInteractionsAuthoritative(sessionId);
   const inputProjection = useSessionInputProjection(sessionId);
   const remoteSessionRunning = useSessionRunning(sessionId);
+  const { preference: runningSendPreference } = useComposerRunningSendPreference();
   const makerTurnRunning = useSessionMakerTurnRunning(sessionId);
   const recommendationSession = currentSession;
   const remoteSessionRunStatus = useSessionRunStatus(sessionId);
@@ -1839,6 +1841,10 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const [composerActivityStartedAt, setComposerActivityStartedAt] = useState<number | null>(null);
   const lastPendingPlanRequestIdRef = useRef<string | null>(null);
   const [queueBusy, setQueueBusy] = useState(false);
+  // Messages sent through the durable outbox while the task runs with the steer
+  // preference. The outbox only enqueues; each one is steered from the queue once the
+  // host has accepted it. Value: whether the entry has been seen in the queue yet.
+  const autoSteerClientIdsRef = useRef(new Map<string, boolean>());
   const [controlBusy, setControlBusy] = useState(false);
   const [messageActionBusy, setMessageActionBusy] = useState<{
     clientId: string;
@@ -6620,6 +6626,10 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       return;
     }
     if (sendInFlightRef.current || sending) return;
+    // 取发送前的状态:发送本身会让 isSessionStreaming 变真。
+    const steerWhileRunning = !options.messageEditResend
+      && (remoteSessionRunning || currentTurnStreaming)
+      && runningSendPreference === 'steer';
     sendInFlightRef.current = true;
     setSending(true);
     const messageWorkLease = remoteSessionStore.acquireSessionMessageWork(sessionId, true);
@@ -6994,6 +7004,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
           if (!sendScopeStillAlive() || !isMobileAuthOwnerCurrent(ownerAtSend)) return;
           noteLocalSend(record.item.clientId);
           await mobileDurableOutbox.add(record);
+          if (steerWhileRunning) autoSteerClientIdsRef.current.set(record.item.clientId, false);
           committed = true;
           messageAccepted = true;
           if (replyQuoteAtSend) clearSentCompanionReplyQuote(sessionId, replyQuoteAtSend);
@@ -7434,6 +7445,20 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       if (enqueueAccepted) void unarchiveSessionAfterSend(sessionId, deviceId, invoke);
       if (!sendScopeStillAlive()) return messageAccepted;
       if (enqueueAccepted) setFollowUpEngaged(followUpScope);
+      // 默认插话:先照常入队(沿用入队的重试与对账),再走排队菜单同一条插话路径;
+      // 只在这条仍排在队里、且菜单此刻也允许插话时进行,插不进就留在队列里。
+      if (enqueueAccepted && steerWhileRunning) {
+        const latest = remoteSessionStore.getInputProjection(sessionId);
+        const originalIndex = latest.pendingQueue.findIndex((entry) => entry.clientId === queued.clientId);
+        const target = latest.pendingQueue[originalIndex];
+        if (target && !buildQueueRowPresentation({
+          busy: false, item: target, originalIndex, projection: latest,
+          queueLength: latest.pendingQueue.length,
+          readOnlyReason: queueAvailabilityReason,
+        }).actions.steer.disabled) {
+          steerQueueItemLatestRef.current?.(target);
+        }
+      }
       if (sessionAtSend.permissionMode === 'plan') {
         // 一次性语义(对齐桌面 PR#494 / 产品决策):计划模式只对本条消息生效,发送后
         // 自动恢复进入前的权限档;本条消息通常已按 plan 派发,切换只影响后续消息。
@@ -7969,6 +7994,42 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       return accepted;
     });
   }, [deviceId, invoke, maker, runQueueAction, sessionId, showTransientNotice, t]);
+  // 发送收尾在 await 之后才插话,要用最新一帧的 queueBusy,不用发送开始那一帧的。
+  const steerQueueItemLatestRef = useRef(steerQueueItem);
+  useEffect(() => {
+    steerQueueItemLatestRef.current = steerQueueItem;
+  });
+  // Default steer for outbox sends: once the host has queued the message, take the
+  // same queue-menu steer path. One attempt per message; if steering is not allowed it
+  // stays queued, and an entry that leaves the queue (sent with the next turn) is dropped.
+  useEffect(() => {
+    const pending = autoSteerClientIdsRef.current;
+    if (pending.size === 0) return;
+    if (!remoteSessionRunning && !currentTurnStreaming) {
+      pending.clear();
+      return;
+    }
+    const queue = inputProjection.pendingQueue;
+    for (const [clientId, seen] of pending) {
+      const originalIndex = queue.findIndex((entry) => entry.clientId === clientId);
+      if (originalIndex < 0) {
+        if (seen) pending.delete(clientId);
+        continue;
+      }
+      pending.set(clientId, true);
+      if (queueBusy) return;
+      const target = queue[originalIndex]!;
+      pending.delete(clientId);
+      if (!buildQueueRowPresentation({
+        busy: false, item: target, originalIndex, projection: inputProjection,
+        queueLength: queue.length,
+        readOnlyReason: queueAvailabilityReason,
+      }).actions.steer.disabled) {
+        steerQueueItem(target);
+      }
+      return;
+    }
+  }, [currentTurnStreaming, inputProjection, queueAvailabilityReason, queueBusy, remoteSessionRunning, steerQueueItem]);
 
   const moveQueueItem = useCallback((clientId: string, direction: 'up' | 'down') => {
     // 菜单打开期间队列可能变化：按最新位置重新判断方向和目标。

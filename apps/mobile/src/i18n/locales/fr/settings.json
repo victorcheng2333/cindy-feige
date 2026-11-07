@@ -351,5 +351,16 @@
     "title": "Développeur",
     "identity": "Identifiants",
     "updateInfo": "Infos de mise à jour"
+  },
+  "composer": {
+    "title": "Saisie des messages",
+    "runningSend": {
+      "label": "Pendant l’exécution d’une tâche",
+      "hint": "Comment le bouton d’envoi transmet les nouveaux messages pendant l’exécution d’une tâche. Avec Réorienter, le message entre dans le tour en cours ; sinon, il reste dans la file d’attente.",
+      "options": {
+        "queue": "File d’attente",
+        "steer": "Réorienter"
+      }
+    }
   }
 }

@@ -351,5 +351,16 @@
     "title": "Programador",
     "identity": "Identificadores",
     "updateInfo": "Informações da atualização"
+  },
+  "composer": {
+    "title": "Introdução de mensagens",
+    "runningSend": {
+      "label": "Enquanto uma tarefa está em curso",
+      "hint": "Como o botão de enviar entrega novas mensagens enquanto uma tarefa está em curso. Com Orientar, a mensagem é encaminhada para o turno atual; se não for possível, fica na fila.",
+      "options": {
+        "queue": "Colocar em fila",
+        "steer": "Orientar"
+      }
+    }
   }
 }

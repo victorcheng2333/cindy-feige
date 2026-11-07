@@ -46,6 +46,7 @@ import {
   simpleScrollScreenSafeAreaEdges,
   usesNativePullDownMenu,
 } from '@/platform/chrome';
+import { AnchoredPullDownMenu } from '@/platform/chrome/AnchoredPullDownMenu';
 import {
   APP_BINARY_VERSION,
   AUTH_API_BASE_URL,
@@ -107,6 +108,10 @@ import {
   subscribeMobileSpeakerFilter,
 } from '@/session/mobileSpeakerFilter';
 import { useSettingsDeviceDirectory } from '@/session/settingsDeviceDirectory';
+import {
+  COMPOSER_RUNNING_SEND_OPTIONS,
+  useComposerRunningSendPreference,
+} from '@/session/composerRunningSendPreference';
 import { confirmLogout } from '@/session/confirmLogout';
 import { THEME_PREFERENCES, useTheme, useThemedStyles, type ThemeColors } from '@/theme';
 import { fontWeight, lineHeight, radius, spacing, typeScale } from '@/theme/tokens';
@@ -144,6 +149,9 @@ export default function SettingsScreen() {
   const styles = useThemedStyles(makeStyles);
   const rowStyles = useSettingsRowStyles();
   const { preference: themePreference, setPreference: setThemePreference } = useTheme();
+  const { preference: runningSendPreference, setPreference: setRunningSendPreference } =
+    useComposerRunningSendPreference();
+  const RunningSendMenu = usesNativePullDownMenu() ? NativePullDownMenu : AnchoredPullDownMenu;
   const router = useRouter();
   const push = useGuardedPush();
   const auth = useAuth();
@@ -863,6 +871,33 @@ export default function SettingsScreen() {
             onPress={() => router.push({ pathname: '/shared-session', params: { mode: 'manage' } })}
             testID="settings.sharedTasks.row"
           />
+        </SettingsGroup>
+
+        {/* 任务运行时点发送:默认排队;选插话后直接插进当前这一轮(对齐桌面同名设置) */}
+        <SettingsGroup
+          footer={t('settings.composer.runningSend.hint')}
+          title={t('settings.composer.title')}
+        >
+          <RunningSendMenu
+            actions={COMPOSER_RUNNING_SEND_OPTIONS.map((option) => ({
+              id: option,
+              state: option === runningSendPreference ? 'on' : 'off',
+              title: t(`settings.composer.runningSend.options.${option}`),
+            }))}
+            onAction={(id) => {
+              const next = COMPOSER_RUNNING_SEND_OPTIONS.find((option) => option === id);
+              if (next) void setRunningSendPreference(next).catch(() => undefined);
+            }}
+            testID="settings.runningSend.menu"
+          >
+            <ChoicePickerRow
+              expanded={false}
+              label={t('settings.composer.runningSend.label')}
+              onPress={() => undefined}
+              testID="settings.runningSend.picker"
+              value={t(`settings.composer.runningSend.options.${runningSendPreference}`)}
+            />
+          </RunningSendMenu>
         </SettingsGroup>
 
         {/* 显示模式:默认跟随系统,手动选择浅色 / 深色即持久化 override(恢复跟随系统 = 清除 override) */}

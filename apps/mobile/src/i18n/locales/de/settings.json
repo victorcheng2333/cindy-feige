@@ -351,5 +351,16 @@
     "title": "Entwickler",
     "identity": "Kennungen",
     "updateInfo": "Update-Infos"
+  },
+  "composer": {
+    "title": "Nachrichteneingabe",
+    "runningSend": {
+      "label": "Während eine Aufgabe läuft",
+      "hint": "Wie die Senden-Schaltfläche neue Nachrichten zustellt, während eine Aufgabe läuft. Mit Steuern wird die Nachricht direkt in den aktuellen Durchlauf eingebracht; klappt das nicht, bleibt sie in der Warteschlange.",
+      "options": {
+        "queue": "Einreihen",
+        "steer": "Steuern"
+      }
+    }
   }
 }

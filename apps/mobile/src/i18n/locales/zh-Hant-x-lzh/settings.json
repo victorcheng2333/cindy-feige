@@ -351,5 +351,16 @@
     "title": "開發者",
     "identity": "識別資訊",
     "updateInfo": "更新之訊"
+  },
+  "composer": {
+    "title": "書訊",
+    "runningSend": {
+      "label": "差事行時遣新訊",
+      "hint": "差事行時，點遣鈕默以此法遣之。擇「插言」，則訊徑入當輪；不得入者，留於隊中。",
+      "options": {
+        "queue": "排隊",
+        "steer": "插言"
+      }
+    }
   }
 }

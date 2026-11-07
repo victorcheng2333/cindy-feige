@@ -351,5 +351,16 @@
     "title": "Desarrollador",
     "identity": "Identificadores",
     "updateInfo": "Actualizar información"
+  },
+  "composer": {
+    "title": "Entrada de mensaje",
+    "runningSend": {
+      "label": "Mientras una tarea está en curso",
+      "hint": "Cómo envía el botón de enviar los mensajes nuevos mientras una tarea está en curso. Con Orientar, el mensaje se incorpora al turno actual; si no puede, se queda en la cola.",
+      "options": {
+        "queue": "Poner en cola",
+        "steer": "Orientar"
+      }
+    }
   }
 }

@@ -88,6 +88,13 @@ let didWarnRealDataLoad = false;
 const deletedDeviceIds = new Set<string>();
 const renamedDevices = new Map<string, string>();
 const modelSelectionPatches = new Map<string, Partial<RemoteSession>>();
+// 本进程内的发送写入:运行中任务的入队留在队列里,插话或空闲任务的发送进消息列表。
+const mockQueued = new Map<string, InputProjection['pendingQueue']>();
+const mockSent = new Map<string, RemoteMessage[]>();
+function mockDeliver(sessionId: string, item: InputProjection['pendingQueue'][number]) {
+  const content = typeof item.chatMessage?.content === 'string' ? item.chatMessage.content : item.text;
+  mockSent.set(sessionId, [...(mockSent.get(sessionId) ?? []), message(sessionId, item.clientId, 'user', content, 0)]);
+}
 
 export function visualMockDevices(): DeviceView[] {
   const realData = realDataSnapshot;
@@ -353,17 +360,43 @@ async function visualMockInvoke<T = unknown>(
       const radius = Math.max(0, Number((args[2] as { radius?: number } | undefined)?.radius ?? 0));
       return (index < 0 ? [] : rows.slice(Math.max(0, index - radius), index + radius + 1)) as T;
     }
-    case 'local-db:messages:list':
-      return visualMockMessages(String(args[0] ?? VISUAL_MOCK_SESSION_ID)) as T;
+    case 'local-db:messages:list': {
+      const sessionId = String(args[0] ?? VISUAL_MOCK_SESSION_ID);
+      return [...visualMockMessages(sessionId), ...(mockSent.get(sessionId) ?? [])] as T;
+    }
     case 'local-db:messages:view': {
       const sessionId = String(args[0] ?? VISUAL_MOCK_SESSION_ID);
-      return { version: 1, items: projectHistoryView(visualMockMessages(sessionId),
+      return { version: 1, items: projectHistoryView([...visualMockMessages(sessionId), ...(mockSent.get(sessionId) ?? [])],
         sessionId.includes('running')), hasMore: false, nextCursor: null } as T;
     }
     case 'maker:get-pending-interactions':
       return visualMockPendingInteractions(String(args[0] ?? VISUAL_MOCK_SESSION_ID)) as T;
     case 'maker:input:get-projection':
       return visualMockProjection(String(args[0] ?? VISUAL_MOCK_SESSION_ID)) as T;
+    case 'maker:input:enqueue': {
+      const sessionId = String(args[0]);
+      const item = args[1] as InputProjection['pendingQueue'][number];
+      console.info('[visual-mock] input:enqueue', sessionId, item.clientId);
+      if (sessionId.includes('running')) {
+        mockQueued.set(sessionId, [...(mockQueued.get(sessionId) ?? []).filter((entry) => entry.clientId !== item.clientId), item]);
+      } else {
+        mockDeliver(sessionId, item);
+      }
+      return visualMockProjection(sessionId) as T;
+    }
+    case 'maker:input:steer': {
+      const sessionId = String(args[0]);
+      const item = args[1] as InputProjection['pendingQueue'][number];
+      console.info('[visual-mock] input:steer', sessionId, item.clientId);
+      mockQueued.set(sessionId, (mockQueued.get(sessionId) ?? []).filter((entry) => entry.clientId !== item.clientId));
+      mockDeliver(sessionId, item);
+      return true as T;
+    }
+    case 'maker:input:remove': {
+      const sessionId = String(args[0]);
+      mockQueued.set(sessionId, (mockQueued.get(sessionId) ?? []).filter((entry) => entry.clientId !== args[1]));
+      return visualMockProjection(sessionId) as T;
+    }
     case 'maker:list-active':
       return [
         { sessionId: 'visual-running', agentKind: 'cc', isTurnRunning: true },
@@ -861,8 +894,8 @@ function visualMockProjection(sessionId: string): InputProjection {
             content: 'Review the visual baseline queue item before sending.',
             createdAt: ISO_NOW,
           },
-        }]
-      : [],
+        }, ...(mockQueued.get(sessionId) ?? [])]
+      : (mockQueued.get(sessionId) ?? []),
     steeringQueueClientIds: [],
     queuePaused: false,
     queueExpanded: sessionId === 'visual-queue',
