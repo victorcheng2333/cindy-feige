@@ -78,6 +78,18 @@ pnpm package:install -- --region cn --dry-run  # 只做预检，不替换
 `status.json`（`ok`／`rolled_back`／`failed`）。替换期间本机 Cindy 和远程连接会中断，
 新版启动后需等它重新连上；Agent 回复用户时要说明这一点，重开后可读 `status.json` 核对结果。
 
+`status.json` 的 `warning` 非空时，要原样告诉用户，不能只报 `ok`：`ok` 只代表新版连续运行了
+10 秒。macOS 的 loginwindow 会向后台任务管理（BTM）询问 App 是否可在后台运行；Cindy 被拒绝时，
+它转入非前台约 2 分钟后，只要系统认定它「从未对用户可见」就会被强杀，日志是
+`has never been user-visible`。这在进程已运行十几小时后也可能发生，而 worker 早已退出，不会重新
+拉起 Cindy。实测无人值守替换后，App 即使成为最前台进程也可能被这样判定，所以补一次激活不能解决；
+日志里唯一的放行路径是 BTM 允许后台运行，需要用户在系统设置里打开。排查时用：
+
+```bash
+log show --last 1d --style compact --info --predicate \
+  'process == "loginwindow" AND category == "quitsupport" AND eventMessage CONTAINS "Cindy"'
+```
+
 需要正式发布产物或完整打包验收时使用原有 `pnpm release:package`，其默认行为保持不变。
 `--local` 不接受 `--version`，避免把未验收的个人包混入版本化发布流程。
 

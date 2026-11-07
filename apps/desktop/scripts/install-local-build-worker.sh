@@ -14,8 +14,19 @@ QUIT_TIMEOUT=60     # seconds Cindy gets to finish its graceful quit
 START_TIMEOUT=60    # seconds the new app gets to appear
 STAY_UP=10          # seconds the new app must keep running
 
+WARNING=""
+APP_NAME="$(basename "$TARGET" .app)"
+
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
-status() { printf '{"state":"%s","message":"%s","at":"%s","app":"%s","backup":"%s"}\n' "$1" "$2" "$(date '+%F %T')" "$TARGET" "$BACKUP" > "$STATUS"; }
+status() { printf '{"state":"%s","message":"%s","warning":"%s","at":"%s","app":"%s","backup":"%s"}\n' "$1" "$2" "$WARNING" "$(date '+%F %T')" "$TARGET" "$BACKUP" > "$STATUS"; }
+# loginwindow asks BTM about the app as soon as the old instance quits. A denial
+# means macOS may force quit the new instance later, long after this health check.
+# `command` skips the log() function above.
+background_denied() {
+  command log show --last 3m --style compact --info \
+    --predicate 'process == "loginwindow" AND category == "quitsupport" AND eventMessage CONTAINS "BTM said this application is not allowed"' \
+    2>/dev/null | grep -Fq "\"$APP_NAME\" BTM said"
+}
 finish() { rm -f "$LOCK"; rm -rf "$STAGING"; exit "$1"; }
 main_pids() { ps -axo pid=,comm= | awk -v p="$MAIN_EXE" '{ pid=$1; $1=""; sub(/^ +/, ""); if ($0 == p) print pid }'; }
 # Poll every 0.5s; argument is a timeout in seconds.
@@ -78,6 +89,11 @@ open "$TARGET"
 if wait_up; then
   log "new app is running"
   status ok "新版已启动"
+  if background_denied; then
+    WARNING="macOS 未允许 $APP_NAME 在后台运行，它可能在转入非前台约 2 分钟后被系统强杀且不会自动重开；请在系统设置的登录项与扩展里允许它在后台运行"
+    log "warning: BTM denied background for $APP_NAME"
+    status ok "新版已启动"
+  fi
   # Keep the two newest backups.
   ls -1dt "$STATE"/backups/Cindy-*.app 2>/dev/null | tail -n +3 | while IFS= read -r old; do rm -rf "$old"; done
   finish 0
