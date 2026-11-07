@@ -820,6 +820,7 @@ const COMPOSER_CONTROL_HIT_SLOP = { bottom: 8, left: 8, right: 8, top: 8 };
  * options in a layout effect.
  */
 const COMPANION_NATIVE_HEADER_OPTIONS = { headerShown: false, headerTitle: '' } as const;
+const HIDDEN_HEADER_SCREEN_OPTIONS = { headerShown: false } as const;
 const COMPOSER_INPUT_SINGLE_LINE_CONTENT_HEIGHT = MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT;
 const COMPOSER_INPUT_MULTILINE_CONTENT_THRESHOLD = 34;
 const COMPOSER_INPUT_LINE_HEIGHT = MOBILE_COMPOSER_INPUT_LINE_HEIGHT;
@@ -10288,9 +10289,15 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     && (sessionOperationLayout.composerSlot === 'editable' || pendingInteractionDock)
     && !shareSelectionActive && !isSharedTaskAccessRevoked;
   const companionHeaderShown = companionChat && !!companionResource && !shareSelectionActive;
+  // Stack.Screen calls setOptions whenever this object changes. A fresh object per
+  // render re-rendered the whole native stack on every streamed text flush.
+  const gestureScreenOptions = useMemo(
+    () => ({ gestureEnabled: !sessionListDrawerOverlayMounted }),
+    [sessionListDrawerOverlayMounted],
+  );
   const headerNode = (
     <>
-    <Stack.Screen options={{ gestureEnabled: !sessionListDrawerOverlayMounted }} />
+    <Stack.Screen options={gestureScreenOptions} />
     {companionHeaderShown ? (
         <>
       {horizontalSystemHeader ? null : (
@@ -11873,45 +11880,87 @@ function SessionHeaderBar({
     </HomeHeaderGlassButton>
   ) : null;
 
+  // The system header registers its options and toolbar items with the native stack;
+  // every new object re-renders the whole stack. The parent passes fresh closures on
+  // each render (streamed text flushes included), so the system header calls the
+  // latest handlers through stable wrappers and rebuilds only when shown data changes.
+  const latestHeaderHandlers = useRef({ actionHandlers, liveScreen, onBack, onOpenRemoteDesktop,
+    onOpenSessionList, onOpenSettings, titleDoubleTap });
+  latestHeaderHandlers.current = { actionHandlers, liveScreen, onBack, onOpenRemoteDesktop,
+    onOpenSessionList, onOpenSettings, titleDoubleTap };
+  const stableHeaderHandlers = useMemo(() => ({
+    action: (id: SessionActionStripActionId) => latestHeaderHandlers.current.actionHandlers[id](),
+    back: () => latestHeaderHandlers.current.onBack(),
+    desktop: () => latestHeaderHandlers.current.onOpenRemoteDesktop(),
+    liveScreen: () => latestHeaderHandlers.current.liveScreen?.onPress(),
+    sessionList: () => latestHeaderHandlers.current.onOpenSessionList?.(),
+    settings: () => latestHeaderHandlers.current.onOpenSettings(),
+    titleDoubleTap: () => latestHeaderHandlers.current.titleDoubleTap?.(),
+  }), []);
+  const systemHeaderShown = horizontalSystemHeader && !systemBarHidden;
+  const nativeFiles = systemHeaderShown ? overview?.actions.find((action) => action.id === 'files') : undefined;
+  const nativeFilesKey = JSON.stringify(nativeFiles ?? null);
+  const pinned = !messageOnly && !!currentSession?.pinnedAt;
+  const nativeTags = isDeviceAccessRevoked ? undefined : currentSession?.tags;
+  const hasTitleDoubleTap = !!titleDoubleTap;
+  const hasSessionList = !!onOpenSessionList;
+  const liveScreenLabel = liveScreen?.label;
+  const sessionAvailable = !!currentSession;
+  const systemHeaderOptions = useMemo(() => systemHeaderShown ? {
+    headerShown: true, headerTransparent: true,
+    headerShadowVisible: false, headerBackVisible: false, headerTitleAlign: 'center' as const,
+    headerStyle: { backgroundColor: 'transparent' }, headerTintColor: colors.textPrimary,
+    // Route-owned options survive the title component's unmount during a pop transition.
+    headerTitle: () => (
+      <View style={{ width: nativeTitleMaxWidth, height: navigationChrome.target,
+        // Reserve the toolbar gaps in the width budget, outside the title.
+        minWidth: 0, flexShrink: 1, overflow: 'hidden', justifyContent: 'center' }}>
+        <SessionHeaderNativeTitle title={title} pinned={pinned}
+          tags={nativeTags} onTagsPress={stableHeaderHandlers.settings}
+          onTitleDoubleTap={hasTitleDoubleTap ? stableHeaderHandlers.titleDoubleTap : undefined}
+          syncing={syncing} syncingImmediately={syncingImmediately} notice={notice} />
+      </View>
+    ),
+  } : null, [colors.textPrimary, hasTitleDoubleTap, nativeTags, nativeTitleMaxWidth, notice, pinned,
+    stableHeaderHandlers, syncing, syncingImmediately, systemHeaderShown, title]);
+  // Stack.Toolbar reads its direct children as items and does not unwrap fragments.
+  const systemHeaderLeftItems = useMemo(() => systemHeaderShown ? [
+    <Stack.Toolbar.View key="back" hidesSharedBackground>
+      <SessionHeaderNativeBack label={t('shared.back')} onPress={stableHeaderHandlers.back} />
+    </Stack.Toolbar.View>,
+    hasSessionList ? (
+      <Stack.Toolbar.View key="session-list" hidesSharedBackground>
+        <HomeHeaderGlassButton accessibilityLabel={t('home.drawer.openA11y')}
+          onPress={stableHeaderHandlers.sessionList} testID="session.sessionListButton">
+          <Menu color={colors.textPrimary} size={iconSize.action} strokeWidth={iconStroke.regular} />
+        </HomeHeaderGlassButton>
+      </Stack.Toolbar.View>
+    ) : null,
+  ] : null, [colors.textPrimary, hasSessionList, stableHeaderHandlers, systemHeaderShown, t]);
+  const systemHeaderRightItems = useMemo(() => systemHeaderShown ? (
+    <Stack.Toolbar.View hidesSharedBackground>
+      <SessionHeaderNativeActions available={sessionAvailable}
+        desktopLabel={t('remoteDesktop.title')}
+        filesLabel={t('session.presentation.overview.actions.files.a11y')}
+        moreLabel={t('session.menu.details')}
+        files={JSON.parse(nativeFilesKey) ?? undefined} detailsOnly={workerHeader}
+        onDetails={stableHeaderHandlers.settings} onDesktop={stableHeaderHandlers.desktop}
+        screen={liveScreenLabel === undefined ? undefined
+          : { label: liveScreenLabel, onPress: stableHeaderHandlers.liveScreen }}
+        onAction={stableHeaderHandlers.action} />
+    </Stack.Toolbar.View>
+  ) : null, [liveScreenLabel, nativeFilesKey, sessionAvailable, stableHeaderHandlers, systemHeaderShown,
+    t, workerHeader]);
+
   // Let UINavigationBar align controls with the system status area, including Duo portrait.
   if (horizontalSystemHeader) {
     // Stack.Toolbar left/right forces headerShown: true; drop them while the bar is hidden.
-    if (systemBarHidden) return <Stack.Screen options={{ headerShown: false }} />;
-    const files = overview?.actions.find((action) => action.id === 'files');
+    if (systemBarHidden || !systemHeaderOptions) return <Stack.Screen options={HIDDEN_HEADER_SCREEN_OPTIONS} />;
     return (
       <>
-      <Stack.Screen options={{ headerShown: true, headerTransparent: true,
-        headerShadowVisible: false, headerBackVisible: false, headerTitleAlign: 'center',
-        headerStyle: { backgroundColor: 'transparent' }, headerTintColor: colors.textPrimary,
-        // Route-owned options survive the title component's unmount during a pop transition.
-        headerTitle: () => (
-          <View style={{ width: nativeTitleMaxWidth, height: navigationChrome.target,
-            // Reserve the toolbar gaps in the width budget, outside the title.
-            minWidth: 0, flexShrink: 1, overflow: 'hidden', justifyContent: 'center' }}>
-            <SessionHeaderNativeTitle title={title} pinned={!messageOnly && !!currentSession?.pinnedAt}
-              tags={isDeviceAccessRevoked ? undefined : currentSession?.tags} onTagsPress={onOpenSettings}
-              onTitleDoubleTap={titleDoubleTap}
-              syncing={syncing} syncingImmediately={syncingImmediately} notice={notice} />
-          </View>
-        ),
-      }} />
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.View hidesSharedBackground>
-          <SessionHeaderNativeBack label={t('shared.back')} onPress={onBack} />
-        </Stack.Toolbar.View>
-        {sessionListButton ? <Stack.Toolbar.View hidesSharedBackground>{sessionListButton}</Stack.Toolbar.View> : null}
-      </Stack.Toolbar>
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.View hidesSharedBackground>
-          <SessionHeaderNativeActions available={!!currentSession}
-            desktopLabel={t('remoteDesktop.title')}
-            filesLabel={t('session.presentation.overview.actions.files.a11y')}
-            moreLabel={t('session.menu.details')} files={files} detailsOnly={workerHeader}
-            onDetails={onOpenSettings} onDesktop={onOpenRemoteDesktop}
-            screen={liveScreen}
-            onAction={(id) => actionHandlers[id]()} />
-        </Stack.Toolbar.View>
-      </Stack.Toolbar>
+      <Stack.Screen options={systemHeaderOptions} />
+      <Stack.Toolbar placement="left">{systemHeaderLeftItems}</Stack.Toolbar>
+      <Stack.Toolbar placement="right">{systemHeaderRightItems}</Stack.Toolbar>
     </>
     );
   }
@@ -11927,7 +11976,7 @@ function SessionHeaderBar({
         ]}
         testID="session.summary"
       >
-        <Stack.Screen options={{ headerShown: false }} />
+        <Stack.Screen options={HIDDEN_HEADER_SCREEN_OPTIONS} />
         {shareSelectAllNode}
       </View>
     );

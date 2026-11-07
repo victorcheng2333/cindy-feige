@@ -6049,7 +6049,7 @@ function MarkdownBodyBase({
   boundTextRuns = false,
   markdownImageCacheKey,
   layout,
-  onOpenPayload,
+  onOpenPayload: latestOnOpenPayload,
   onOpenSessionLink,
   pinContentWidth = false,
   selectable,
@@ -6087,6 +6087,15 @@ function MarkdownBodyBase({
   const styles = useThemedStyles(makeStyles);
   const chatFilePathContext = useContext(ChatFilePathContext);
   const resolveMarkdownMedia = useContext(MarkdownRemoteMediaContext);
+  // The task page recreates onOpenPayload on every streamed text flush. Calling the
+  // latest one through a stable wrapper keeps the block renderers below stable, so
+  // finished blocks skip re-rendering instead of redrawing the whole reply each flush.
+  const latestOnOpenPayloadRef = useRef(latestOnOpenPayload);
+  latestOnOpenPayloadRef.current = latestOnOpenPayload;
+  const hasOpenPayload = latestOnOpenPayload !== undefined;
+  const onOpenPayload = useMemo(() => hasOpenPayload
+    ? (payload: MessagePayload) => latestOnOpenPayloadRef.current?.(payload)
+    : undefined, [hasOpenPayload]);
   // iOS UITextView 在 stretch/百分比宽度下会偶发只量出部分高度,LegendList 按这次
   // 偏矮的 onLayout 裁切 agent 回复;点分享会换上确定宽度的容器从而完整显示。
   // 外层始终 stretch 测可用宽,内层再钉像素宽:测宽不能钉在自己身上,否则旋转/
