@@ -5,10 +5,21 @@
 + (void)start:(NSString *)appKey production:(BOOL)production {
   static BOOL started = NO;
   if (!started) {
-    [JPUSHService setLogOFF];
+    // Cindy only needs APNs alias delivery; turn the SDK's optional collectors and
+    // features off before setup so they do no background work.
+    JPushCollectControl *collect = [[JPushCollectControl alloc] init];
+    collect.ssid = NO;
+    collect.bssid = NO;
+    collect.cell = NO;
+    collect.gps = NO;
+    [JPUSHService setCollectControl:collect];
+    [JPUSHService setLocationEanable:NO];
+    [JPUSHService setSmartPushEnable:NO];
     [JPUSHService setBackgroundEnable:NO];
     [JPUSHService setDataInsightsEnable:NO];
     [JPUSHService setupWithOption:nil appKey:appKey channel:@"personal" apsForProduction:production];
+    // The header requires log level changes after setup.
+    [JPUSHService setLogOFF];
     started = YES;
   }
   [JPUSHService turnOnPush];

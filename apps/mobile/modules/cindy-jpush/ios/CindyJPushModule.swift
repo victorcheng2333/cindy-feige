@@ -11,6 +11,11 @@ public final class CindyJPushModule: Module {
   }
 
   static func receiveToken(_ token: Data) {
+    // JPush's registerDeviceToken asks iOS to register for remote notifications again,
+    // and iOS answers with the same token. Forwarding every delivery looped forever
+    // and kept the SDK writing caches at over one CPU core (2026-11-07). bind() still
+    // forwards the stored token explicitly whenever it (re)starts the SDK.
+    if token == deviceToken { return }
     deviceToken = token
     if started { CindyJPushSDK.registerToken(token) }
   }

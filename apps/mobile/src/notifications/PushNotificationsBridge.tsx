@@ -111,7 +111,14 @@ export function PushNotificationsBridge() {
   useEffect(() => {
     if (!isPushSupported()) return;
     if (!auth.initialized || !auth.isAuthenticated) return;
-    const sub = Notifications.addPushTokenListener(() => {
+    let lastToken: string | null = null;
+    const sub = Notifications.addPushTokenListener((token) => {
+      // syncPushRegistration asks iOS for the token again, and iOS redelivers the same
+      // token through this listener. Resyncing on an unchanged token looped forever
+      // and kept the phone hot (2026-11-07); only a real rotation needs a resync.
+      const value = typeof token.data === 'string' ? token.data : JSON.stringify(token.data);
+      if (value === lastToken) return;
+      lastToken = value;
       void (async () => {
         const enabled = await readPushEnabled();
         if (!enabled) return;
