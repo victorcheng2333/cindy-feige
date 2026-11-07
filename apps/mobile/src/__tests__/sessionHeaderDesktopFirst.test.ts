@@ -29,10 +29,11 @@ describe('mobile session header desktop-first surface', () => {
       .map((branch) => branch.slice(0, branch.indexOf('/>')));
     // 竖屏原生标题栏与横屏／折叠屏系统标题栏都要带标签,不能只有一条分支显示。
     expect(titles).toHaveLength(2);
-    for (const title of titles) {
-      expect(title).toContain('tags={isDeviceAccessRevoked ? undefined : currentSession?.tags}');
-      expect(title).toContain('onTagsPress={onOpenSettings}');
-    }
+    expect(titles[0]).toContain('tags={nativeTags} onTagsPress={stableHeaderHandlers.settings}');
+    expect(source).toContain('const nativeTags = isDeviceAccessRevoked ? undefined : currentSession?.tags;');
+    expect(source).toContain('settings: () => latestHeaderHandlers.current.onOpenSettings()');
+    expect(titles[1]).toContain('tags={isDeviceAccessRevoked ? undefined : currentSession?.tags}');
+    expect(titles[1]).toContain('onTagsPress={onOpenSettings}');
     const native = readTextLf(resolve(process.cwd(), 'src/session/SessionHeaderNativeControls.ios.tsx'), 'utf8');
     const titleRow = native.slice(native.indexOf('{label}'), native.indexOf('<QuietSyncIndicator'));
     expect(titleRow).toContain('<TaskTagDots');
@@ -106,7 +107,7 @@ describe('mobile session header desktop-first surface', () => {
     expect(source).toContain(']), sessionListDrawerOverlayMounted);');
     expect(source).toContain('systemBarHidden={sessionListDrawerOverlayMounted}');
     // Stack.Toolbar 左右栏会强制 headerShown: true,收起期间整组不渲染。
-    expect(source).toContain('if (systemBarHidden) return <Stack.Screen options={{ headerShown: false }} />;');
+    expect(source).toContain('if (systemBarHidden || !systemHeaderOptions) return <Stack.Screen options={HIDDEN_HEADER_SCREEN_OPTIONS} />;');
     expect(chromeStyle).toContain("position: 'absolute'");
     // Let native glass press feedback extend beyond the 44pt iOS header.
     expect(chromeStyle).toContain("overflow: Platform.OS === 'ios' ? 'visible' : 'hidden'");
@@ -135,7 +136,12 @@ describe('mobile session header desktop-first surface', () => {
     expect(source).toContain('setSessionListDrawerOverlayMounted(true);');
     expect(source).toContain('setSessionListDrawerOpen(true);');
     expect(source).toContain('session.sessionListButton');
-    expect(source).toContain('{sessionListButton ? <Stack.Toolbar.View hidesSharedBackground>{sessionListButton}</Stack.Toolbar.View> : null}');
+    expect(source).toContain('const hasSessionList = !!onOpenSessionList;');
+    expect(source).toContain('hasSessionList ? (');
+    expect(source).toContain('<Stack.Toolbar.View key="session-list" hidesSharedBackground>');
+    expect(source).toContain('onPress={stableHeaderHandlers.sessionList} testID="session.sessionListButton"');
+    expect(source).toContain('sessionList: () => latestHeaderHandlers.current.onOpenSessionList?.()');
+    expect(source).toContain('<Stack.Toolbar placement="left">{systemHeaderLeftItems}</Stack.Toolbar>');
     expect(source).toContain("import { buildWideSessionNavLayout } from '@/session/wideSessionNav';");
     expect(source).toContain("import { SessionListDrawer, useSessionListDrawerMotion, useSessionListDrawerOpenGesture } from '@/session/SessionListDrawer';");
     expect(source).toContain('switchDrawerSessionInPlace,');

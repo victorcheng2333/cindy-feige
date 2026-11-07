@@ -116,9 +116,10 @@ it('edits an initial selection without answering until the user selects the row'
 });
 it('discards engine and favorite edits on cancellation and starts the next request cleanly', async () => {
   await mount();
+  await act(async () => state.view.onBrowseAgent('claude-code'));
   await act(async () => state.view.onOptions(ordinaryRow()));
   await act(async () => state.view.options.onChange({
-    ...state.view.options.row.config, agent: 'claude-code', modelId: 'model', effort: 'high',
+    ...state.view.options.row.config, effort: 'high',
   }));
   expect(ordinaryRow().config).toMatchObject({ agent: 'claude-code', effort: 'high' });
   await act(async () => state.view.options.onFavorite());

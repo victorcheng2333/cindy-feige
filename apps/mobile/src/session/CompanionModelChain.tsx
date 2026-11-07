@@ -45,7 +45,9 @@ export function CompanionModelChain({ deviceId, values, onChange, onPick, disabl
     const providerId = route.providerId ?? buildMobileModelSections({ providers: routeProviders, agentKind: agent, selectedModelId: route.model, selectedProviderId: null, existingSessionRoute: true, visibilityOverrides: catalog.modelVisibilityOverrides }).activeSourceId;
     const provider = routeProviders.find(item => item.id === providerId);
     const model = provider ? findCatalogModel(provider, route.model, agent) : undefined;
-    const source = [provider ? mobileProviderAccountTitle(provider) : route.providerId, remote?.name].filter(Boolean).join(' · ');
+    const sourceTitle = provider ? mobileProviderAccountTitle(provider) : route.providerId;
+    const identity = provider?.openAiAccount?.identity?.trim() || provider?.subscriptionAccount?.identity?.trim();
+    const source = [sourceTitle, identity && !sourceTitle?.includes(identity) ? identity : null, remote?.name].filter(Boolean).join(' · ');
     return <View key={JSON.stringify([route.agentDeviceId ?? null, route.harness, route.providerId, route.model])} style={styles.row}>
       <Pressable accessibilityRole="button" disabled={disabled || following} onPress={() => onPick(index)} style={[styles.row, { flex: 1 }]}>
         <Text style={{ ...styles.value, color: colors.textSecondary }}>{index + 1}</Text><View style={{ flex: 1 }}><Text style={{ ...styles.title, color: colors.textPrimary }}>{model?.name ?? route.model}</Text><Text style={{ color: colors.textSecondary, fontSize: typeScale.footnote, lineHeight: lineHeight.caption }}>{[source, route.harness === 'claude' ? 'Claude Code' : route.harness === 'codex' ? 'Codex' : 'Pi', route.effort ? t(`models.options.effortLevels.${route.effort}`, { defaultValue: route.effort }) : '', route.fastMode ? t(route.fastMode === 'ultrafast' ? 'models.options.speed.ultrafast' : 'models.options.fastMode') : ''].filter(Boolean).join(' · ')}</Text></View><ChevronRight size={iconSize.lg} color={colors.textTertiary} strokeWidth={iconStroke.regular} />

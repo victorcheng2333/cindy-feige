@@ -14,12 +14,15 @@ vi.mock('electron', () => ({
 
 // Budget reconciliation does not exercise native account credential IO.
 vi.mock('../subscription-account-auth.js', () => ({ subscriptionAccountKind: () => null }));
-
-vi.mock('../logger-adapter.js', () => ({
-  desktopMakerLogger: {
-    child: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() }),
-  },
-}));
+vi.mock('../runtime-configs.js', () => ({ claudeUpstreamEndpoint: () => 'https://gateway.example.invalid' }));
+vi.mock('../active-catalog.js', () => ({ getActiveCatalog: () => BUNDLED_CATALOG }));
+vi.mock('../logger-adapter.js', () => {
+  const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  return {
+    desktopMakerLogger: { child: () => log },
+    createMakerLogger: () => log,
+  };
+});
 
 vi.mock('../../appSessionState.js', () => ({
   getActiveAppSession: () => ({ mode: 'cloud', dataOwnerId: ownerId, generation: 1 }),

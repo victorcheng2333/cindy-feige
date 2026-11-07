@@ -80,11 +80,13 @@ vi.mock('../../maker-host/codex-thread-storage.js', () => ({
 }));
 const configDirCandidatesRef = { dirs: [path.join(tmpRoot, 'claude-home')] };
 const readBoundClaudeConfigDirMock = vi.fn<(_sdkSessionId: string) => string | undefined>();
+const readClaudeHistoryHomeMock = vi.fn<(_sdkSessionId: string) => string | undefined>();
 vi.mock('../../subscription-accounts/store.js', () => ({
   readBoundClaudeConfigDir: readBoundClaudeConfigDirMock,
 }));
-vi.mock('../../maker-orchestration/claudeTranscriptAnchors.js', () => ({
-  defaultClaudeConfigDirCandidates: () => configDirCandidatesRef.dirs,
+vi.mock('../../maker-host/claude-history-home.js', () => ({
+  readClaudeHistoryHome: readClaudeHistoryHomeMock,
+  claudeHistoryHomeCandidates: () => configDirCandidatesRef.dirs,
 }));
 const imagePathRef = { path: path.join(tmpRoot, 'img.png') };
 vi.mock('../../imageCacheStore.js', () => ({
@@ -178,6 +180,7 @@ async function unzipOf(filePath: string, password?: string): Promise<JSZip> {
 describe('exportSessionShare', () => {
   beforeEach(async () => {
     readBoundClaudeConfigDirMock.mockReset();
+    readClaudeHistoryHomeMock.mockReset();
     sessionRowRef.row = baseSession();
     messagesRef.rows = baseMessages();
     activeTeamRef.row = null;
@@ -204,11 +207,16 @@ describe('exportSessionShare', () => {
     rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  // Standard regression: export must include histories outside the default CLI home.
-  it.each([false, true])('cc full export: transcripts + media + manifest roundtrip (encrypted, secondary=%s)', async (secondary) => {
-    if (secondary) {
+  // Unit regression: exports include pool histories and retain a managed-history
+  // transfer over a stale pool binding; default/pool cases do not cover that conflict.
+  it.each(['default', 'pool', 'managed'] as const)('cc full export: transcripts + media + manifest roundtrip (encrypted, profile=%s)', async (profile) => {
+    if (profile !== 'default') {
       readBoundClaudeConfigDirMock.mockReturnValue(path.join(tmpRoot, 'claude-home'));
       configDirCandidatesRef.dirs = [path.join(tmpRoot, 'empty-default-home')];
+    }
+    if (profile === 'managed') {
+      readClaudeHistoryHomeMock.mockReturnValue(path.join(tmpRoot, 'claude-home'));
+      readBoundClaudeConfigDirMock.mockReturnValue(path.join(tmpRoot, 'stale-pool-home'));
     }
     const target = path.join(tmpRoot, 'out-full.xdtshare');
     const outcome = await exportSessionShare({

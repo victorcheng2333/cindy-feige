@@ -4259,7 +4259,17 @@
         "groupLocal": "此機模型",
         "metaLocalRecommended": "薦 · 於 Cindy 內取下",
         "metaLocalConnect": "連方行之此機服務",
-        "moreLocal": "更多此機服務"
+        "moreLocal": "更多此機服務",
+        "vertex": {
+          "chooseFile": "擇服務帳號 JSON 檔案",
+          "invalidFile": "未能讀取有效之 Google 服務帳號 JSON 檔案",
+          "project": "專案 ID",
+          "location": "區域",
+          "useApiKey": "改用 API 金鑰",
+          "fileNote": "憑據存於此機原檔案，請勿移置。",
+          "configured": "已設服務帳號檔案認證",
+          "serviceAccount": "服務帳號檔案"
+        }
       },
       "local": {
         "title": "Ollama",
@@ -4471,7 +4481,8 @@
         "custom": "續自訂之設，可取模型清單或親增之。",
         "configure": "往設之",
         "keepCustom": "續自訂"
-      }
+      },
+      "claudeCleanupPending": "連線已刪，然 Claude Code 尚未盡退獨立帳號目錄。Cindy 將於下次啟動再試，任務歷史仍存。"
     },
     "experimental": {
       "title": "試行之術",
@@ -9244,7 +9255,9 @@
     },
     "closing": {
       "title": "方闔…"
-    }
+    },
+    "goBack": "後退",
+    "goForward": "前進"
   },
   "contentHeader": {
     "toggleSidebar": "啟閉側欄",

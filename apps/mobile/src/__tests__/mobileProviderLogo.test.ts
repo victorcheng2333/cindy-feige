@@ -59,21 +59,21 @@ describe('MobileProviderMark', () => {
     expect(source).toContain('color ? { color } : null');
     expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}/);
     expect(session).toContain('composerSelectedSourceDisconnected');
-    expect(session).toContain('color={composerSelectedSourceDisconnected ? colors.statusError : undefined}');
-    expect(session).toContain('providerId={composerPillSourceId}');
+    expect(session).toContain('color={composerSelectedSourceDisconnected ? colors.statusError : colors.textSecondary}');
+    expect(session).toContain('agentKind={composerDisplayAgentKind}');
   });
 
-  it('passes provider branding through model rows and both current-model entries', () => {
+  it('keeps provider branding in model rows and engine identity in both current-model entries', () => {
     const list = readSource('src/session/MobileModelPickerList.tsx');
     const draft = readSource('app/sessions/new.tsx');
     const session = readSource('app/sessions/[sessionId].tsx');
 
     expect(list).toContain('routing={row.provider.routing}');
     expect(list).toContain('logoKind={row.provider.logoKind}');
-    expect(draft).toContain('routing={activeSourceProvider.routing}');
-    expect(draft).toContain('logoKind={activeSourceProvider.logoKind}');
-    expect(session).toContain('routing={composerPillSourceProvider?.routing}');
-    expect(session).toContain('logoKind={composerPillSourceProvider?.logoKind}');
+    expect(draft).toContain('<MobileAgentMark agentKind={remoteAgentPick.agentKind}');
+    expect(draft).toContain('<MobileAgentMark agentKind={draft.agentKind}');
+    expect(session).toContain('<MobileAgentMark agentKind={composerDisplayAgentKind}');
+    expect(session).toContain('<RemoteSourceMark size={iconSize.sm}');
   });
 
   it('advertises the full-logo capability on refresh and subscription frames', () => {

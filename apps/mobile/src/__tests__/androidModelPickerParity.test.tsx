@@ -402,6 +402,9 @@ function unifiedProps(overrides: AnyProps = {}): AnyProps {
     testID: "modelSheet",
     query: "",
     onQuery: vi.fn(),
+    agents: ["codex", "pi", "claude-code"],
+    browsingAgent: "codex",
+    onBrowseAgent: vi.fn(),
     filter: "all",
     onFilter: vi.fn(),
     filters: [
@@ -443,20 +446,15 @@ function unifiedProps(overrides: AnyProps = {}): AnyProps {
 }
 
 describe("Android unified model picker follows the iOS structure", () => {
-  it("pins a labelled search field with a clear action and preserves the query value", () => {
+  it("keeps engine browsing in the pinned header without a model search field", () => {
     const props = unifiedProps({ query: "gpt" });
     render(createElement(UnifiedModelPickerView, props as never));
-    const input = byId("modelSheet.search") as HTMLInputElement;
-    expect(input.getAttribute("aria-label")).toBe(
-      "models.picker.searchAccessibility",
-    );
-    expect(input.value).toBe("gpt");
-    const clear = byId("modelSheet.search.clear")!;
-    expect(clear.getAttribute("aria-label")).toBe(
-      "devices.detail.search.clearA11y",
-    );
-    click("modelSheet.search.clear");
-    expect(props.onQuery).toHaveBeenCalledWith("");
+    expect(byId("modelSheet.search")).toBeNull();
+    expect(byId("modelSheet.search.clear")).toBeNull();
+    expect(byId("modelSheet.agent.codex")!.getAttribute("aria-selected")).toBe("true");
+    click("modelSheet.agent.pi");
+    expect(props.onBrowseAgent).toHaveBeenCalledExactlyOnceWith("pi");
+    expect(props.onQuery).not.toHaveBeenCalled();
   });
 
   it("replaces chip filters with a Source entry that opens a secondary page with quota bars", () => {
@@ -467,8 +465,8 @@ describe("Android unified model picker follows the iOS structure", () => {
     expect(byId("modelSheet")!.getAttribute("data-title")).toBe(
       "models.unified.source",
     );
-    // 列表保持挂载以保留位置，但来源页打开时不能访问隐藏的搜索框。
-    expect(byId("modelSheet.search")!.closest('[aria-hidden="true"]')).not.toBeNull();
+    // 列表保持挂载以保留位置，但来源页打开时不能访问隐藏的模型列表。
+    expect(byId("modelSheet.group.p1")!.closest('[aria-hidden="true"]')).not.toBeNull();
     const quota = byId("modelSheet.source.p1.quota")!;
     expect(quota.getAttribute("role")).toBe("progressbar");
     expect(quota.getAttribute("aria-valuenow")).toBe("40");
@@ -480,7 +478,7 @@ describe("Android unified model picker follows the iOS structure", () => {
     expect(byId("modelSheet")!.getAttribute("data-title")).toBe(
       "models.picker.title",
     );
-    expect(byId("modelSheet.search")).not.toBeNull();
+    expect(byId("modelSheet.group.p1")!.closest('[aria-hidden="true"]')).toBeNull();
   });
 
   it("renders titled groups in the given order with selection state and separate settings targets", () => {
@@ -527,8 +525,8 @@ describe("Android unified model picker follows the iOS structure", () => {
     });
   }
 
-  it("opens Harness as a secondary page and returns to settings after choosing", () => {
-    const props = optionsProps();
+  it("opens Harness while editing a favorite and returns to settings after choosing", () => {
+    const props = optionsProps({ editingFavorite: true });
     render(createElement(UnifiedModelPickerView, props as never));
     expect(byId("modelSheet.harness")!.textContent).toContain("agent:codex");
     click("modelSheet.harness");
@@ -553,22 +551,20 @@ describe("Android unified model picker follows the iOS structure", () => {
     expect(byId("modelSheet.harness")).not.toBeNull();
   });
 
-  it("uses a pull-down menu for effort, a switch for Fast and standalone favorite / reset rows", () => {
+  it("uses effort and speed segments with standalone favorite / reset rows", () => {
     const props = optionsProps();
     render(createElement(UnifiedModelPickerView, props as never));
-    const menu = native.menus.get("modelSheet.effortMenu")!;
-    expect(menu.actions.map((action) => [action.id, action.state])).toEqual([
-      ["low", "on"],
-      ["high", "off"],
-    ]);
-    act(() => menu.onAction("high"));
+    expect(byId("modelSheet.harness")).toBeNull();
+    expect(byId("modelSheet.effort.low")!.getAttribute("aria-selected")).toBe("true");
+    expect(byId("modelSheet.effort.high")!.getAttribute("aria-selected")).toBe("false");
+    click("modelSheet.effort.high");
     expect(props.options.onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ effort: "high" }),
     );
-    act(() => menu.onAction("unknown"));
     expect(props.options.onChange).toHaveBeenCalledTimes(1);
-    expect(byId("modelSheet.fast")!.getAttribute("aria-checked")).toBe("false");
-    click("modelSheet.fast");
+    expect(byId("modelSheet.speed.standard")!.getAttribute("aria-selected")).toBe("true");
+    expect(byId("modelSheet.speed.fast")!.getAttribute("aria-selected")).toBe("false");
+    click("modelSheet.speed.fast");
     expect(props.options.onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ fast: true }),
     );
@@ -579,12 +575,11 @@ describe("Android unified model picker follows the iOS structure", () => {
     expect(byId("modelSheet.price")!.textContent).toContain("Input $1");
   });
 
-  it("falls back to inline effort rows when the build has no native menu", () => {
+  it("keeps effort segments usable when the build has no native menu", () => {
     native.menu = false;
     const props = optionsProps();
     render(createElement(UnifiedModelPickerView, props as never));
-    expect(byId("modelSheet.effort.high")).toBeNull();
-    click("modelSheet.effort");
+    expect(native.menus.has("modelSheet.effortMenu")).toBe(false);
     expect(byId("modelSheet.effort.low")!.getAttribute("aria-selected")).toBe(
       "true",
     );
@@ -592,7 +587,7 @@ describe("Android unified model picker follows the iOS structure", () => {
     expect(props.options.onChange).toHaveBeenCalledWith(
       expect.objectContaining({ effort: "high" }),
     );
-    expect(byId("modelSheet.effort.high")).toBeNull();
+    expect(byId("modelSheet.effort.high")).not.toBeNull();
   });
 
   it("offers reset for customized parameters even when opened from favorites", () => {
@@ -1041,20 +1036,10 @@ describe("Android legacy model sheet exposes permissions as a standalone row lik
     expect(byId("modelSheet.permissionTrigger")).toBeNull();
   });
 
-  it("adds a clear action to the search field", () => {
+  it("keeps the legacy model sheet free of search controls", () => {
     render(createElement(ModelPickerSheet, sheetProps() as never));
+    expect(byId("modelSheet.search")).toBeNull();
     expect(byId("modelSheet.search.clear")).toBeNull();
-    act(() => {
-      const input = byId("modelSheet.search") as HTMLInputElement;
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )!.set!;
-      setter.call(input, "gpt");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect((byId("modelSheet.search") as HTMLInputElement).value).toBe("gpt");
-    click("modelSheet.search.clear");
-    expect((byId("modelSheet.search") as HTMLInputElement).value).toBe("");
+    expect(byId("modelSheet.permissionTrigger")).not.toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ts from 'typescript';
-import { act, createElement, Fragment, useState } from 'react';
+import { act, createElement, Fragment, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useHostManagedSession } from '@/session/hostManagedSession';
@@ -159,12 +159,13 @@ function PageHost({ bindings }) {
   const deviceName = 'PC', remoteUnavailableReason = null, sessionListDrawerOverlayMounted = false, sessionListDrawerFloating = false;
   ${statements.slice(stateStart, stateEnd).map(n => n.getText(source)).join('\n')}
   ${statements[declaration('companionHeaderShown')].getText(source)}
+  ${statements[declaration('gestureScreenOptions')].getText(source)}
   ${relevantJsx(header)}
   return <div data-testid="page-route">{headerNode}</div>;
 }`, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
 function StackScreen({ options }: { options: Record<string, unknown> }) { h.screenOptions.push(options); return null; }
-const PageHost = new Function('React', 'useState', 'useHostManagedSession', 'CompanionHeader', 'StackScreen',
-  `${compiled}; return PageHost;`)({ createElement, Fragment }, useState, useHostManagedSession, CompanionHeader, StackScreen);
+const PageHost = new Function('React', 'useState', 'useMemo', 'useHostManagedSession', 'CompanionHeader', 'StackScreen',
+  `${compiled}; return PageHost;`)({ createElement, Fragment }, useState, useMemo, useHostManagedSession, CompanionHeader, StackScreen);
 const pageBindings = () => ({ auth: h.auth, deviceId: 'pc', sessionId: 'session-a', shareSelectionActive: false, nativeHeader: false,
   companionEntry: { ready: true },
   companionResource: { ref: { kind: 'bot', collectionId: 'bots', id: 'bot-a' }, display: { title: 'Cindy' } } as RemoteResource | null,

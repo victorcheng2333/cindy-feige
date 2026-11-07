@@ -159,7 +159,8 @@ describe('session Agent switch UI wiring', () => {
 
     // 模型药丸按 Agent 所在电脑的目录显示,带远程标记;读屏标签读出那台电脑。
     expect(source).toContain('providers: composerAgentCatalog.providers,');
-    expect(source).toContain('remote={Boolean(nextAgentDeviceId)}');
+    expect(source).toContain('leading={nextAgentDeviceId ? (');
+    expect(source).toContain('<RemoteSourceMark size={iconSize.sm}');
     expect(source).toContain('accessibilityLabel={composerRuntimeAccessibilityLabel}');
   });
 
@@ -173,7 +174,8 @@ describe('session Agent switch UI wiring', () => {
     expect(source).toContain('...(agentLocationMovable || orcaRemoteAgentDeviceId');
     expect(source).toContain('remoteAgentCatalogs.filter((catalog) => catalog.deviceId === orcaRemoteAgentDeviceId)');
     expect(source).toContain('selectedProviderId={modelSheetSelection.providerId}');
-    expect(source).toContain('agentKind={agentSwitchIntent.targetAgentKind}');
+    expect(source).toContain('agentKind={composerDisplayAgentKind}');
+    expect(source).toContain('mobileAgentLabel(agentSwitchIntent.targetAgentKind)');
   });
 
   it('preflights legacy hosts and isolates only rebuild-unsupported preconditions', () => {

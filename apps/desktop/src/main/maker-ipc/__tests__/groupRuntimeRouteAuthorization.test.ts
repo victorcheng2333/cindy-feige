@@ -79,7 +79,7 @@ it.each(['catalog', 'harness-read', 'native-preview', 'valid-harness', 'valid-mo
         const mutationDeps = {
           applyRuntimeSetModelChange, maker, internalOptions: options, sessionId: 'route-child', model,
           effectiveProviderId: providerId, assertRuntimeOwnerCurrent: vi.fn(), assertSharedTaskCurrent: { admit: vi.fn() },
-          piConfigurationRefresh: false, canTransferThread: false, atomicSelection: { effort: null, fastMode: false },
+          piConfigurationRefresh: false, canTransferThread: false, canPrepareClaudeResume: false, atomicSelection: { effort: null, fastMode: false },
           rebuildLiveOrcaWorker: false, runtimeAgentKind: 'pi', runtimeRouteChanged: true,
           isSessionInTurn: () => false, registerPendingCredentialSwitchForSession: vi.fn(),
           clearPendingCredentialSwitchForSession: vi.fn(), getPendingCredentialSwitchTarget: () => null,

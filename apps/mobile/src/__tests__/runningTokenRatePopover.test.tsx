@@ -18,6 +18,7 @@ import {
 } from "@cindy/maker-shared/usage-format";
 import { useRunningTokenRateHistory } from "../session/useRunningTokenRateHistory";
 import { RunningTokenRatePopover } from "@/session/RunningTokenRatePopover";
+import { taskWorkingPhase } from "@/session/companionWorkingPhase";
 import {
   keyboardControlRegion,
   type ReservedRegion,
@@ -135,6 +136,8 @@ let root: Root;
 let host: HTMLDivElement;
 const base = {
   sessionKey: "account/device/task",
+  status: "thinking",
+  messages: [],
   startedAt: 1,
   outputTokens: 0,
   generationDurationMs: 0,
@@ -195,6 +198,7 @@ const bindings = {
   iconStroke: {},
   RunningTokenRatePopover,
   useRunningTokenRateHistory,
+  taskWorkingPhase,
   formatComposerActivityElapsed: () => "1s",
   formatComposerActivityTokenCount: () => "100",
 };
@@ -616,6 +620,6 @@ it('keeps a slow new-task send in the activity row, then continues as thinking',
   await show('sending');
   expect(pill()).toBe('session.new.slowSend.sending');
   await show(null);
-  expect(pill()).toBe('session.screen.thinking');
+  expect(pill()).toBe('devices.companions.working.thinking');
   expect(pillNode()?.getAttribute('aria-live')).toBeNull();
 });

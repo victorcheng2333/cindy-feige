@@ -4358,7 +4358,17 @@
         "groupLocal": "Modelos locales",
         "metaLocalRecommended": "Recomendado · descargar en Cindy",
         "metaLocalConnect": "Conecte un servidor local en ejecución",
-        "moreLocal": "Más servidores locales"
+        "moreLocal": "Más servidores locales",
+        "vertex": {
+          "chooseFile": "Elegir JSON de cuenta de servicio",
+          "invalidFile": "No se pudo leer un archivo JSON válido de cuenta de servicio de Google",
+          "project": "ID del proyecto",
+          "location": "Ubicación",
+          "useApiKey": "Usar una clave de API en su lugar",
+          "fileNote": "Las credenciales permanecen en el archivo original de este equipo. Mantén el archivo en su ubicación.",
+          "configured": "La autenticación mediante archivo de cuenta de servicio está configurada",
+          "serviceAccount": "Archivo de cuenta de servicio"
+        }
       },
       "local": {
         "title": "Ollama",
@@ -4570,7 +4580,8 @@
         "custom": "Continúe con la configuración personalizada. Puede buscar modelos o agregarlos manualmente.",
         "configure": "Configurar proveedor",
         "keepCustom": "Continuar con la configuración personalizada"
-      }
+      },
+      "claudeCleanupPending": "La conexión se eliminó, pero Claude Code no pudo terminar de cerrar la sesión en algunas carpetas de cuentas independientes. Cindy lo reintentará al iniciar de nuevo. Se conserva el historial de tareas."
     },
     "experimental": {
       "title": "Experimental",
@@ -9358,7 +9369,9 @@
     },
     "closing": {
       "title": "Cerrando…"
-    }
+    },
+    "goBack": "Atrás",
+    "goForward": "Adelante"
   },
   "contentHeader": {
     "toggleSidebar": "Mostrar u ocultar la barra lateral",

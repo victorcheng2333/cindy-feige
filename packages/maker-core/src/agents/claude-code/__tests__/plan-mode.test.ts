@@ -1064,7 +1064,7 @@ describe('ClaudeCodeAgent plan mode', () => {
         sessionId: 'session-implicit-claude', model: 'claude-opus-4-6', workingDir, permissionMode: 'acceptEdits',
       }));
       expect(getState).toHaveBeenLastCalledWith({ model: 'claude-opus-4-6' });
-      expect(getAuthEnv).toHaveBeenLastCalledWith({ model: 'claude-opus-4-6' });
+      expect(getAuthEnv).toHaveBeenLastCalledWith({ credentialMode: 'oauth-bearer' });
       const nativeEnv = sdkMock.query.mock.calls.at(-1)?.[0]?.options?.env as Record<string, string | undefined>;
       expect(nativeEnv.ANTHROPIC_BASE_URL).toBeUndefined();
       expect(nativeEnv.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBeUndefined();

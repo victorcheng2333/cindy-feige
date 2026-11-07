@@ -1,5 +1,6 @@
 vi.mock('@/session/useRemoteAgentCatalogs', () => ({ useRemoteAgentCatalogs: () => [] }));
 // @vitest-environment jsdom
+vi.mock('@/i18n', () => ({ i18n: { t: (key: string) => key } }));
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

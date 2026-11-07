@@ -118,7 +118,11 @@ describe('catalog invalidation under a slow device link', () => {
     await flush();
     expect(pageRead).not.toHaveBeenCalled();
     expect(readProviders).toHaveBeenCalledTimes(2);
-    expect(readCapabilities).toHaveBeenCalledTimes(8);
+    // The shared cache makes one physical read per engine in each generation.
+    expect(readCapabilities.mock.calls).toEqual([
+      ['a', 'claude-code'], ['a', 'codex'], ['a', 'pi'],
+      ['a', 'claude-code'], ['a', 'codex'], ['a', 'pi'],
+    ]);
     last.resolve(catalog('latest'));
     await flush();
     expect(published).toHaveBeenCalledExactlyOnceWith(catalog('latest'));
