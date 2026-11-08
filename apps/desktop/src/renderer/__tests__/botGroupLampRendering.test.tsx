@@ -71,7 +71,7 @@ function props(groupDevice: boolean): ProjectsSectionProps {
     },
     collapsed: new Set(), isAllCollapsed: false, runningSessionIds: new Set(), attachedSessionIds: new Set(),
     notifications: new Set(), scheduleSessionIndex: new Map(),
-    remoteDeviceIndex: new Map([['remote', { name: 'Remote device', online: true }]]),
+    remoteDeviceIndex: new Map([['remote', { name: 'Remote device', online: true, connected: true }]]),
     onSessionClick: vi.fn(), onAction: vi.fn(), onRename: vi.fn(), onTogglePin: vi.fn(), onScheduleAction: vi.fn(),
     onToggleProject: vi.fn(), onToggleProjectPin: vi.fn(), onRenameProject: vi.fn(), onRemoveFromSidebar: vi.fn(),
     onCollapseAll: vi.fn(), onExpandAll: vi.fn(), onCreateInProject: vi.fn(), onOpenConversationSearch: vi.fn(),
@@ -546,7 +546,7 @@ function multiDeviceProps(): ProjectsSectionProps {
     { ...bot.sessions[1], id: 'b-idle', deviceLinkDeviceId: 'b' },
     { ...bot.sessions[2], id: 'lit', deviceLinkDeviceId: 'b' },
   ] }];
-  p.remoteDeviceIndex = new Map([['a', { name: 'Device A', online: true }], ['b', { name: 'Device B', online: true }]]);
+  p.remoteDeviceIndex = new Map([['a', { name: 'Device A', online: true, connected: true }], ['b', { name: 'Device B', online: true, connected: true }]]);
   p.onOpenBot = vi.fn();
   return p;
 }

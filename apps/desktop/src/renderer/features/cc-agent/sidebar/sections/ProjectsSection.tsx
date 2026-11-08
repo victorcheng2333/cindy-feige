@@ -101,6 +101,7 @@ import {
 } from '../../lib/mainListModel';
 import { useMainListEntries } from '../../hooks/useMainListEntries';
 import { sidebarPriorityContext } from '../../lib/sidebarPriorityContext';
+import type { SidebarDeviceInfo } from '../../lib/sidebarDeviceGrouping';
 import { useViewedPriorityHold } from '../../hooks/useViewedPriorityHold';
 import { projectKeyComparisonKey, type BotGroupNode } from '../../lib/projectGrouping';
 import { buildSessionSourceLabelMap } from '../../lib/sessionSourceLabel';
@@ -283,7 +284,7 @@ export interface ProjectsSectionProps {
    * E 期「按设备分组」:远程设备的展示顺序与名称/在线状态(设备切换栏同源)。
    * 含断线缓存设备；null / 空 map = 没有可选远程设备 → 设备分组选项隐藏、不切段。
    */
-  remoteDeviceIndex?: ReadonlyMap<string, { name: string; online: boolean }> | null;
+  remoteDeviceIndex?: ReadonlyMap<string, SidebarDeviceInfo> | null;
   /**
    * 「对话」组行右侧的新建入口(与项目行 SquarePen 等位):新建不绑项目的对话任务。
    * 按设备分组时对话组隶属于某个设备段,这里显式给出该段的设备作为创建目标
@@ -1070,15 +1071,15 @@ export function ProjectsSection({
       const isMake = entry.kind === 'cindy-make-group';
       const groupKey = isMake ? `${CINDY_MAKE_GROUP_KEY}:${dialogueGroupKey}` : dialogueGroupKey;
       const isCollapsed = collapsedDialogueGroups.has(groupKey);
-      // 目标设备离线时不能在它上面新建(被控端才是真正的创建方)——与远程项目行的
+      // 目标设备尚未同步就绪时不能在它上面新建(被控端才是真正的创建方)——与远程项目行的
       // 新建同款保护(isDeviceLinkWriteBlocked / actionsUnavailable 文案)。
-      const targetDeviceOffline = Boolean(
-        dialogueDeviceTarget && !remoteDeviceIndex?.get(dialogueDeviceTarget.deviceId)?.online,
+      const targetDeviceUnavailable = Boolean(
+        dialogueDeviceTarget && !remoteDeviceIndex?.get(dialogueDeviceTarget.deviceId)?.connected,
       );
       // 显式目标下不看作用域解析的 pending:目标已定,无需等设备目录 settle。
       const createDisabled =
         (dialogueDeviceTarget === undefined ? isCreateDialogueDisabled : false) ||
-        targetDeviceOffline;
+        targetDeviceUnavailable;
       // The settings dialog creates on this computer; never expose it on a remote-only group.
       const canCreateMake = entry.sessions.some((session) => !session.deviceLinkDeviceId);
       const actionSessions = isMake
@@ -1123,7 +1124,7 @@ export function ProjectsSection({
           createLabel={isMake ? t('settings.cindyMake.create.title') : undefined}
           isCreateDisabled={isMake ? false : createDisabled}
           createDisabledReason={
-            targetDeviceOffline ? t('ccAgent.remoteSession.actionsUnavailable') : undefined
+            targetDeviceUnavailable ? t('ccAgent.remoteSession.actionsUnavailable') : undefined
           }
           parentSectionCollapsed={false}
           disableSessionCollapse={disableSessionCollapse}
@@ -1231,13 +1232,14 @@ export function ProjectsSection({
                   ? deviceDisplayName(section.deviceId, device?.name ?? cachedDeviceNames.get(section.deviceId), deviceNameSources)
                   : t('ccAgent.sidebar.deviceGroup.local');
                 const online = section.deviceId ? (device?.online ?? false) : true;
+                const connecting = Boolean(section.deviceId && online && !device?.connected);
                 const sectionCollapsed = collapsedDevices.has(key);
                 // 设备层聚合灯:聚合本段全部条目的会话(与段内渲染一致)。
                 // 仅收起时显示运行态与未读点,展开后由下层内容提示。
                 const sectionLamp = lampAgg(section.entries.flatMap(entrySessions));
                 return (
                   <div key={key} className="flex flex-col">
-                    {/* 设备分组头:可折叠。在线设备不画状态点;离线设备保留灰点与文字提示。 */}
+                    {/* 设备分组头:可折叠。已同步不画状态;连接中只加文字;确认离线保留灰点与文字。 */}
                     <DeviceSectionHeader deviceId={section.deviceId} name={name}>
                       <button
                         type="button"
@@ -1289,9 +1291,11 @@ export function ProjectsSection({
                           {sectionCollapsed && sectionLamp.dotTone && (
                             <AttentionDot size={6} tone={sectionLamp.dotTone} />
                           )}
-                          {!online && (
+                          {(!online || connecting) && (
                             <span className="shrink-0 text-xs text-[var(--cmd-palette-item-meta)]">
-                              {t('ccAgent.sidebar.deviceGroup.offline')}
+                              {t(connecting
+                                ? 'ccAgent.sidebar.machineSwitcher.connecting'
+                                : 'ccAgent.sidebar.deviceGroup.offline')}
                             </span>
                           )}
                         </span>

@@ -438,6 +438,10 @@ describe('sidebar device grouping across disconnection', () => {
           ],
           revoked: new Set(),
         }),
+        ['a', 'b'].map((deviceId) => ({
+          deviceId,
+          connectionStatus: connected ? 'connected' as const : 'disconnected' as const,
+        })),
       ),
     );
     for (const index of snapshots) {
@@ -460,14 +464,16 @@ describe('sidebar device grouping across disconnection', () => {
         ],
         revoked: new Set(['rejected']),
       }),
+      [{ deviceId: 'rejected', connectionStatus: 'disconnected' }],
     );
-    expect([...index]).toEqual([['connecting', { name: 'CONNECTING', online: false }]]);
+    // Online but not yet synced: shown as connecting, not offline, and not creatable yet.
+    expect([...index]).toEqual([['connecting', { name: 'CONNECTING', online: true, connected: false }]]);
   });
 
   it('removes grouping availability when the retained device is removed', () => {
-    expect(buildSidebarDeviceIndex([]).size).toBe(0);
+    expect(buildSidebarDeviceIndex([], []).size).toBe(0);
     expect(
-      buildSidebarDeviceIndex([{ deviceId: 'rejected', name: 'Rejected', status: 'rejected' }])
+      buildSidebarDeviceIndex([{ deviceId: 'rejected', name: 'Rejected', status: 'rejected' }], [])
         .size,
     ).toBe(0);
   });
@@ -552,7 +558,7 @@ describe('shouldWaitForRemoteSessionBootstrap', () => {
         deviceListSettled: true,
         devices: connecting,
         syncedDevices: [
-          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 0, connected: false },
+          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 0, connected: false, connectionStatus: 'connecting' },
         ],
         bootstrapFailedDeviceIds: noBootstrapFailures,
       }),
@@ -566,7 +572,7 @@ describe('shouldWaitForRemoteSessionBootstrap', () => {
         deviceListSettled: false,
         devices: connecting,
         syncedDevices: [
-          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 0, connected: false },
+          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 0, connected: false, connectionStatus: 'connecting' },
         ],
         bootstrapFailedDeviceIds: noBootstrapFailures,
       }),
@@ -631,7 +637,7 @@ describe('shouldWaitForRemoteSessionBootstrap', () => {
         deviceListSettled: true,
         devices: connecting,
         syncedDevices: [
-          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: false },
+          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: false, connectionStatus: 'connecting' },
         ],
         bootstrapFailedDeviceIds: noBootstrapFailures,
       }),
@@ -759,7 +765,7 @@ describe('shouldShowSelectedMachineConnectingPlaceholder', () => {
         rawSelection: ['dev-a'],
         devices: [{ deviceId: 'dev-a', name: 'Mac A', status: 'connecting' }],
         syncedDevices: [
-          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: false },
+          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: false, connectionStatus: 'connecting' },
         ],
         bootstrapFailedDeviceIds: noBootstrapFailures,
       }),
@@ -772,7 +778,7 @@ describe('shouldShowSelectedMachineConnectingPlaceholder', () => {
         rawSelection: ['dev-a'],
         devices: [{ deviceId: 'dev-a', name: 'Mac A', status: 'connecting' }],
         syncedDevices: [
-          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 0, connected: false },
+          { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 0, connected: false, connectionStatus: 'connecting' },
         ],
         bootstrapFailedDeviceIds: noBootstrapFailures,
       }),
@@ -832,8 +838,8 @@ describe('remoteProjectsStore.getDeviceList', () => {
     remoteProjectsStore.setDeviceSessions('dev-a', 'Mac A', [mkSession('s1'), mkSession('s2')]);
 
     expect(remoteProjectsStore.getDeviceList()).toEqual([
-      { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: true },
-      { deviceId: 'dev-b', deviceName: 'PC B', sessionCount: 1, connected: true },
+      { deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: true, connectionStatus: 'connected' },
+      { deviceId: 'dev-b', deviceName: 'PC B', sessionCount: 1, connected: true, connectionStatus: 'connected' },
     ]);
   });
 

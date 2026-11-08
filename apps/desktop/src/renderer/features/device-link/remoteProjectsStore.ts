@@ -219,6 +219,11 @@ export interface RemoteDeviceSummary {
   sessionCount: number;
   /** true = 当前在线可控;false = 仅保留最近一次会话快照,用于断线时稳定侧边栏。 */
   connected: boolean;
+  /**
+   * 分片的三态连接:connecting(冷启动缓存 / relay 重连 / 首拉在途)与 disconnected(确认断开)
+   * 都是 connected=false,但侧栏必须分开呈现——前者画成「离线」就是 #9329。
+   */
+  connectionStatus: DeviceLinkConnectionStatus;
 }
 
 /** 设备列表快照(缓存引用,内容不变时不换引用 → 满足 useSyncExternalStore getSnapshot 引用稳定性)。 */
@@ -235,7 +240,8 @@ function sameDeviceList(a: RemoteDeviceSummary[], b: RemoteDeviceSummary[]): boo
       a[i].deviceId !== b[i].deviceId ||
       a[i].deviceName !== b[i].deviceName ||
       a[i].sessionCount !== b[i].sessionCount ||
-      a[i].connected !== b[i].connected
+      a[i].connected !== b[i].connected ||
+      a[i].connectionStatus !== b[i].connectionStatus
     ) {
       return false;
     }
@@ -532,6 +538,7 @@ function recompute(): void {
         deviceName: shard.deviceName,
         sessionCount: shard.sessions.length,
         connected: shard.connectionStatus === 'connected',
+        connectionStatus: shard.connectionStatus,
       }))
       .sort(
         (a, b) => a.deviceName.localeCompare(b.deviceName) || a.deviceId.localeCompare(b.deviceId),

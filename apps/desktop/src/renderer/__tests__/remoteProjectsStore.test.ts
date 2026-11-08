@@ -586,7 +586,7 @@ describe('remoteProjectsStore', () => {
     // 在线索引清掉:useRemoteSessionConnection 会显示 host-offline。
     expect(remoteProjectsStore.getDeviceIds()).toEqual([]);
     expect(remoteProjectsStore.getDeviceList()).toEqual([
-      { deviceId: 'dev-B', deviceName: 'B', sessionCount: 3, connected: false },
+      { deviceId: 'dev-B', deviceName: 'B', sessionCount: 3, connected: false, connectionStatus: 'disconnected' },
     ]);
   });
 
@@ -626,7 +626,7 @@ describe('remoteProjectsStore', () => {
     );
     expect(remoteProjectsStore.getDeviceIds()).toEqual(['dev-B']);
     expect(remoteProjectsStore.getDeviceList()).toEqual([
-      { deviceId: 'dev-B', deviceName: 'B', sessionCount: 1, connected: true },
+      { deviceId: 'dev-B', deviceName: 'B', sessionCount: 1, connected: true, connectionStatus: 'connected' },
     ]);
   });
 

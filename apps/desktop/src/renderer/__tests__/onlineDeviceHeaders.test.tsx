@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@/lib/ccAgent.types';
 import type { ProjectNode } from '../features/cc-agent/lib/projectGrouping';
 import { remoteProjectsStore } from '../features/device-link/remoteProjectsStore';
+import { buildSwitcherDevices } from '../features/device-link/switcherDevices';
+import { buildSidebarDeviceIndex } from '../features/cc-agent/lib/sidebarDeviceGrouping';
 import {
   ProjectsSection,
   type ProjectsSectionProps,
@@ -118,7 +120,7 @@ function props(groupDevice: boolean): ProjectsSectionProps {
     attachedSessionIds: new Set(),
     notifications: new Set(),
     scheduleSessionIndex: new Map(),
-    remoteDeviceIndex: new Map([['remote', { name: 'Remote device', online: true }]]),
+    remoteDeviceIndex: new Map([['remote', { name: 'Remote device', online: true, connected: true }]]),
     onSessionClick: vi.fn(),
     onAction: vi.fn(),
     onRename: vi.fn(),
@@ -164,8 +166,8 @@ describe('Online device headers without tasks', () => {
   // was covered, but two ID-as-name hosts previously had indistinguishable labels.
   it('distinguishes unnamed device headers and folds only the selected device', () => {
     render(<ProjectsSection {...props(true)} remoteDeviceIndex={new Map([
-      ['host-b', { name: 'host-b', online: true }],
-      ['host-a', { name: '', online: true }],
+      ['host-b', { name: 'host-b', online: true, connected: true }],
+      ['host-a', { name: '', online: true, connected: true }],
     ])} />);
     const first = screen.getByText('another computer (1)').closest('button')!;
     const second = screen.getByText('another computer (2)').closest('button')!;
@@ -184,7 +186,7 @@ describe('Online device headers without tasks', () => {
     view.rerender(
       <ProjectsSection
         {...p}
-        remoteDeviceIndex={new Map([['remote', { name: 'Remote device', online: false }]])}
+        remoteDeviceIndex={new Map([['remote', { name: 'Remote device', online: false, connected: false }]])}
       />,
     );
     expect(screen.queryByText('Remote device')).toBeNull();
@@ -253,6 +255,31 @@ describe('Device collapse state after remounting', () => {
 });
 
 describe('Offline device header names', () => {
+  // #9329, unit: the real switcher + sidebar projections feeding the real header. The old
+  // projection collapsed the task-sync shard's three states into one boolean, so a shard that
+  // was only connecting (cold-start cache, relay reconnect, first read in flight) said offline.
+  it.each([
+    { shard: 'connecting', loading: false, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
+    { shard: 'disconnected', loading: true, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
+    { shard: 'disconnected', loading: false, label: 'ccAgent.sidebar.deviceGroup.offline' },
+    { shard: 'connected', loading: false, label: null },
+  ] as const)('labels a $shard task shard (first read in flight: $loading)', ({ shard, loading, label }) => {
+    const index = buildSidebarDeviceIndex(
+      buildSwitcherDevices({
+        fullList: null,
+        syncedDevices: [{ deviceId: 'offline', deviceName: 'Remote Mac', sessionCount: 1, connected: shard === 'connected' }],
+        revoked: new Set(),
+      }),
+      [{ deviceId: 'offline', connectionStatus: shard }],
+      new Set(loading ? ['offline'] : []),
+    );
+    render(<ProjectsSection {...cachedProjectProps()} remoteDeviceIndex={index} />);
+    const labels = ['ccAgent.sidebar.machineSwitcher.connecting', 'ccAgent.sidebar.deviceGroup.offline'];
+    for (const text of labels) expect(screen.queryByText(text) !== null).toBe(text === label);
+    // Cached tasks stay visible in every state.
+    expect(screen.getByText('Cached project')).toBeTruthy();
+  });
+
   function cachedProjectProps(): ProjectsSectionProps {
     const p = props(true);
     p.projects = [
@@ -289,7 +316,7 @@ describe('Offline device header names', () => {
     remoteProjectsStore.setDeviceSessions('offline', 'Saved computer', []);
     const p = cachedProjectProps();
     const onlineIndex = new Map(p.remoteDeviceIndex);
-    onlineIndex.set('offline', { name: 'Current computer', online: true });
+    onlineIndex.set('offline', { name: 'Current computer', online: true, connected: true });
     const view = render(<ProjectsSection {...p} remoteDeviceIndex={onlineIndex} />);
     expect(screen.getByText('Current computer')).toBeTruthy();
     expect(screen.queryByText('Saved computer')).toBeNull();

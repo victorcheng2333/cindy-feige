@@ -28,7 +28,7 @@ export interface BuildSwitcherDevicesInput {
   /** 全量同账号设备(device-link:list-devices);null = 尚未加载。 */
   fullList: readonly DeviceLinkDeviceView[] | null;
   /** 已同步或保留断线缓存的被控设备(remoteProjectsStore)。 */
-  syncedDevices: readonly RemoteDeviceSummary[];
+  syncedDevices: readonly Omit<RemoteDeviceSummary, 'connectionStatus'>[];
   /** 被对方撤销了本机访问权限的设备 id 集合(revokedDevicesStore)。 */
   revoked: ReadonlySet<string>;
 }
@@ -59,7 +59,7 @@ export function buildSwitcherDevices({
     if (d.online && d.remoteControlEnabled && d.controlEnabled) onlineControllable.add(d.deviceId);
   }
 
-  const cached = new Map<string, RemoteDeviceSummary>();
+  const cached = new Map<string, BuildSwitcherDevicesInput['syncedDevices'][number]>();
   for (const s of syncedDevices) {
     cached.set(s.deviceId, s);
     // 已连接设备的名字以同步分片(remoteProjectsStore)为准:REST 改名只更新它、不广播 presence,

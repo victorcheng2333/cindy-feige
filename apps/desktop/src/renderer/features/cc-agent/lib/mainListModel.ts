@@ -555,12 +555,12 @@ export function onlineDeviceSectionIds(
  * (单机范围选中一台正在加载的远程设备时尤其如此)。
  */
 export function hasSettledOnlineDeviceSection(
-  devices: ReadonlyMap<string, { online: boolean }> | null | undefined,
+  devices: ReadonlyMap<string, { online: boolean; connected: boolean }> | null | undefined,
   selection: MachineSelection,
   unsettledDeviceIds: ReadonlySet<string>,
 ): boolean {
   return onlineDeviceSectionIds(devices, selection).some(
-    (id) => id === null || !unsettledDeviceIds.has(id),
+    (id) => id === null || (devices?.get(id)?.connected === true && !unsettledDeviceIds.has(id)),
   );
 }
 

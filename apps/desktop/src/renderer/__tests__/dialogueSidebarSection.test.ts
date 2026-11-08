@@ -213,9 +213,9 @@ describe('Mixed main list (sidebar-redesign D 期)', () => {
     // still route creation to the owning device.
     expect(projectsSectionSource).toContain('setMakeCreateOpen(true)');
     expect(projectsSectionSource).toContain('onCreateDialogue(dialogueDeviceTarget)');
-    // 目标设备离线 → 禁用新建并复用远程写保护文案(被控端才是真正的创建方)。
+    // 目标设备任务未同步(连接中或离线)→ 禁用新建并复用远程写保护文案(被控端才是真正的创建方)。
     expect(projectsSectionSource).toContain("t('ccAgent.remoteSession.actionsUnavailable')");
-    expect(projectsSectionSource).toMatch(/const targetDeviceOffline = Boolean\(/);
+    expect(projectsSectionSource).toMatch(/const targetDeviceUnavailable = Boolean\(/);
     // 显式目标不受作用域解析 pending 影响(目标已定,无需等设备目录 settle)。
     expect(projectsSectionSource).toContain(
       'dialogueDeviceTarget === undefined ? isCreateDialogueDisabled : false',

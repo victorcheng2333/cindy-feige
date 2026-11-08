@@ -1133,8 +1133,9 @@ describe('splitEntriesByDevice — 拆段后按本段重排', () => {
 
   it('does not count empty sections of remote devices still loading or failed', () => {
     const devices = new Map([
-      ['a', { online: true }],
-      ['b', { online: true }],
+      ['a', { online: true, connected: true }],
+      ['b', { online: true, connected: true }],
+      ['c', { online: true, connected: false }],
     ]);
     // 单机范围选中一台正在首次读取 / 读取失败的远程设备:空段头不能遮掉整屏提示。
     expect(hasSettledOnlineDeviceSection(devices, ['a'], new Set(['a']))).toBe(false);
@@ -1142,6 +1143,8 @@ describe('splitEntriesByDevice — 拆段后按本段重排', () => {
     // 读取就绪后,在线空段照常算作已有内容。
     expect(hasSettledOnlineDeviceSection(devices, ['a'], new Set())).toBe(true);
     expect(hasSettledOnlineDeviceSection(devices, ['a', 'b'], new Set(['a']))).toBe(true);
+    // 连接中(任务还没同步)的设备只有一个「连接中」段头,同样不算已有内容。
+    expect(hasSettledOnlineDeviceSection(devices, ['c'], new Set())).toBe(false);
     // 本机段不受远程读取状态影响。
     expect(hasSettledOnlineDeviceSection(devices, ['local'], new Set(['a']))).toBe(true);
     expect(hasSettledOnlineDeviceSection(devices, 'all', new Set(['a', 'b']))).toBe(true);

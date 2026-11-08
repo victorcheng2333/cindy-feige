@@ -283,6 +283,7 @@ import {
   useRemoteArchivedFailedDeviceIds,
   useRemoteArchivedLoadedDeviceIds,
   useRemoteArchivedLoadingDeviceIds,
+  useRemoteBootstrapLoadingDeviceIds,
   useRemoteDevices,
   useRemoteProjectSessions,
 } from '@/features/device-link/remoteProjectsStore';
@@ -1446,11 +1447,13 @@ function ExpandedView({
   });
   const { orders: remoteHostProjectOrders } = useRemoteHostProjectOrders(selectedMachineId);
   const switcherDevices = useSwitcherDevices();
-  // E 期「按设备分组」:远程设备顺序 + 名称/在线状态(设备切换栏同序同源)。
+  const syncedRemoteDevices = useRemoteDevices();
+  const remoteBootstrapLoadingDeviceIds = useRemoteBootstrapLoadingDeviceIds();
+  // E 期「按设备分组」:远程设备顺序 + 名称(设备切换栏同序同源);状态取任务同步分片的三态。
   // 空 map = 没有远程设备 → ProjectsSection 隐藏该分组选项、不切段。
   const remoteDeviceIndex = useMemo(
-    () => buildSidebarDeviceIndex(switcherDevices),
-    [switcherDevices],
+    () => buildSidebarDeviceIndex(switcherDevices, syncedRemoteDevices, remoteBootstrapLoadingDeviceIds),
+    [switcherDevices, syncedRemoteDevices, remoteBootstrapLoadingDeviceIds],
   );
   const deviceListSettled = useDeviceLinkDeviceListSettled();
   const selectedDialogueDeviceResolution = useMemo(
