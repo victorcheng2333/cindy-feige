@@ -131,13 +131,13 @@ describe('伙伴行的间距基线', () => {
     expect(code).not.toContain('overflow-y-auto');
   });
 
-  it('段头与置顶 / 全部任务段头同款,收起后的头像行与行内正文左缘对齐', () => {
+  it('段头与置顶 / 全部任务段头同款', () => {
     // 段头:高 24,左 24 / 右 12,与 PinnedSection 段头一致。
     expect(source).toContain(
       '<div className="group/sidebar-header flex h-6 items-center justify-between pr-3 pl-6">',
     );
-    // 头像行起点 = 列表容器 12px + 行内边距 10px。
-    expect(source).toContain('<div ref={avatarRowRef} className="flex flex-nowrap items-center gap-1 overflow-hidden py-1 pr-0 pl-[22px]">');
+    // 收起后整个列表隐藏，已不再渲染头像条；真实收起、记忆与重开行为由
+    // teammatesSection.test.tsx 的 “hides all teammate content” 用例覆盖。
     // 段头动作是 20px 图标钮,与其它段头动作同尺寸。
     expect(source).toContain('<BotCreateMenu variant="header" />');
     // 加入群聊收进「+」菜单的「输入邀请链接…」(#6013),段头不再有单独的加群按钮。
