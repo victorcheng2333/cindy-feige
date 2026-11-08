@@ -345,7 +345,7 @@ describe('ChatInput model source switching wiring', () => {
     // 会话内:同引擎过滤 + 跨引擎交给 performAgentSwitch。
     expect(selectorBlock).toContain('sessionEngineFilter={sessionEngineFilter}');
     // 新会话:选中直通(草稿),仅无 sessionId 时下发。
-    expect(selectorBlock).toContain('!sessionId && unifiedPanelActive && onUnifiedDraftSelect');
+    expect(selectorBlock).toContain('!sessionId && (unifiedPanelActive || remoteAgentOptions) && onUnifiedDraftSelect');
     // 收藏锚点:草稿取调用方持有的那一份,会话取本组件的内存态(2026-08-17 review 第三轮 G4)。
     expect(selectorBlock).toContain('selectedFavoriteUid={effectiveSelectedFavoriteUid}');
     expect(selectorBlock).toContain('onSessionFavoriteAnchorChange={');
@@ -589,7 +589,7 @@ describe('ChatInput model source switching wiring', () => {
       chatInputSource.indexOf('/>', selectorStart) + 2,
     );
     expect(selectorBlock).toContain(
-      '!sessionId && unifiedPanelActive && onUnifiedDraftSelect\n                        ? handleUnifiedDraftSelect',
+      '!sessionId && (unifiedPanelActive || remoteAgentOptions) && onUnifiedDraftSelect\n                        ? handleUnifiedDraftSelect',
     );
   });
 

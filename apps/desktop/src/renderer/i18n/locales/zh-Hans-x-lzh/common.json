@@ -1738,6 +1738,7 @@
       "sourcesShown": "{{a}} / {{b}} 显",
       "statusIcon": "菜单栏图标",
       "statusIconMode": {
+        "account": "所选名籍",
         "icon": "唯图标",
         "lowest": "余量最寡",
         "today": "今日耗",
@@ -8669,8 +8670,6 @@
     "controlledTooltip": "此诸设备所连者乃 Cindy 之差事，非谓正操控桌面之鼠标与键盘。君可撤其访问之权。",
     "revokeAccess": "撤权",
     "viewControllers": "观",
-    "collapseControlledNotice": "收远程控制之示",
-    "expandControlledNotice": "展远程控制之示：{{label}}",
     "versionMismatch": "彼方版本不一，部分功能或受限"
   },
   "accountDeletion": {
@@ -9269,7 +9268,9 @@
       "title": "方阖…"
     },
     "goBack": "后退",
-    "goForward": "前进"
+    "goForward": "前进",
+    "noBackHistory": "无页可退",
+    "noForwardHistory": "无页可进"
   },
   "contentHeader": {
     "toggleSidebar": "启闭侧栏",
@@ -10088,7 +10089,6 @@
       "settingsLink": "规制，当前用户：{{name}}",
       "settingsLinkBeta": "规制，当前用户：{{name}}，Beta 测试管道已启",
       "moreLabel": "余者，当前用户：{{name}}",
-      "menuSettings": "规制",
       "menuAddAccount": "另登一名籍",
       "canaryBadge": "先试之士",
       "regionCodeCn": "CN",

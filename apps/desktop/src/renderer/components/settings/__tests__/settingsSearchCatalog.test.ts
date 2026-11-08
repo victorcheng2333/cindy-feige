@@ -357,6 +357,11 @@ describe('settings discoverability regressions', () => {
     const documents = buildSettingsSearchDocuments(searchI18n.t, TAB_IDS, { ...searchContext, platform });
     const result = searchSettings(documents, shortcut).find(({ entry }) => entry.id === 'settings.composer.sendShortcut.label');
     expect(result?.title).toBe(searchI18n.t('settings.composer.sendShortcut.label', { shortcut }));
+    // The running-send hint contains the same shortcut; it must remain searchable
+    // before the page mounts (configuration-and-overrides §6, unit regression).
+    expect(searchSettings(documents, shortcut).some(({ entry }) =>
+      entry.id === 'settings.composer.runningSend.label',
+    )).toBe(true);
   });
 });
 

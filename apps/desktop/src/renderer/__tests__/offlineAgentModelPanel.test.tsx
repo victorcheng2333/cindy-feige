@@ -133,7 +133,8 @@ function renderRemoteAgentPicker(onRelocate: (selection: RemoteAgentRelocation) 
 
 function renderRemoteDevicePicker(deviceId = 'cloud-device') {
   return render(
-    <ModelSelector remoteAgent={undefined}
+    // Favorites sync status belongs to the opt-in unified panel, not the legacy list.
+    <ModelSelector unifiedPanel remoteAgent={undefined}
       modelId="cloud-model"
       effort="medium"
       vendorKey="cc"
@@ -151,7 +152,11 @@ async function openPicker() {
   await screen.findByRole('listbox');
 }
 
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
 beforeEach(() => {
+  // Radix source selection scrolls the focused option; jsdom has no layout API.
+  HTMLElement.prototype.scrollIntoView = vi.fn();
   fixtures.cloudOnline = false;
   fixtures.favoritesErrorCode = null;
   fixtures.invoke.mockReset().mockImplementation(async (deviceId: string, channel: string) => {
@@ -192,6 +197,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   for (const deviceId of ['cloud-device', 'task-device']) {
     evictDeviceCapabilities(deviceId);
     evictDeviceProviders(deviceId);
@@ -199,7 +205,7 @@ afterEach(() => {
 });
 
 describe('Agent 所在电脑离线时的真实模型面板(协同任务与普通任务同一套)', () => {
-  it('云端目录超时后显示错误与重试；点本机供应商格选本机模型，切换 IPC 带 agentDeviceId=null', async () => {
+  it('云端目录超时后显示错误与重试；切回任务所在电脑选模型，切换 IPC 带 agentDeviceId=null', async () => {
     const relocate = vi.fn(async (selection) => {
       await makerApiForDevice('task-device').switchSessionAgent(
         'session-1',
@@ -228,11 +234,11 @@ describe('Agent 所在电脑离线时的真实模型面板(协同任务与普通
       ),
     );
 
-    const taskProviderCell = await screen.findByRole('button', { name: 'Task computer provider' });
-    expect(taskProviderCell.getAttribute('data-rail-item')).toBe('provider:task-provider');
-    fireEvent.click(taskProviderCell);
-    const localModel = await within(screen.getByRole('listbox')).findByText('Local model');
-    fireEvent.click(localModel.closest('[data-unified-anchor]') as HTMLElement);
+    // The default panel uses a source dropdown rather than the old provider rail.
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'newChat.modelSelector.source.railLabel' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('option', { name: 'providerGroup.member.local' }));
+    const localModel = await within(screen.getByRole('listbox')).findByRole('option', { name: /Local model/ });
+    fireEvent.click(localModel);
 
     await waitFor(() => expect(relocate).toHaveBeenCalledWith(expect.objectContaining({
       providerId: 'task-provider',

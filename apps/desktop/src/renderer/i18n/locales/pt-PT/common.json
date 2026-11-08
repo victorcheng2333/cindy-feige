@@ -1800,6 +1800,7 @@
       "sourcesShown": "{{a}} de {{b}} visíveis",
       "statusIcon": "Ícone da barra de menus",
       "statusIconMode": {
+        "account": "Conta selecionada",
         "icon": "Apenas ícone",
         "lowest": "Menor quantidade restante",
         "today": "Utilização de hoje",
@@ -8782,8 +8783,6 @@
     "controlledTooltip": "Estes dispositivos estão ligados a sessões de Cindy. Esta contagem não indica quem controla o rato e o teclado do computador. Pode revogar o acesso.",
     "revokeAccess": "Revogar",
     "viewControllers": "Ver",
-    "collapseControlledNotice": "Recolher aviso de controlo remoto",
-    "expandControlledNotice": "Expandir aviso de controlo remoto: {{label}}",
     "versionMismatch": "A versão não corresponde à do outro dispositivo; algumas funcionalidades podem estar limitadas"
   },
   "accountDeletion": {
@@ -9383,7 +9382,9 @@
       "title": "A fechar…"
     },
     "goBack": "Anterior",
-    "goForward": "Seguinte"
+    "goForward": "Seguinte",
+    "noBackHistory": "Sem página anterior",
+    "noForwardHistory": "Sem página seguinte"
   },
   "contentHeader": {
     "toggleSidebar": "Alternar barra lateral",
@@ -10211,7 +10212,6 @@
       "settingsLink": "Definições, utilizador atual: {{name}}",
       "settingsLinkBeta": "Definições, utilizador atual: {{name}}, canal Beta ativado",
       "moreLabel": "Mais, utilizador atual: {{name}}",
-      "menuSettings": "Definições",
       "menuAddAccount": "Iniciar sessão noutra conta",
       "canaryBadge": "Utilizador Canary",
       "regionCodeCn": "CN",

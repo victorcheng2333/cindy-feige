@@ -7,7 +7,6 @@ import { Switch } from '@/components/ui/switch';
 import {
   DEFAULT_COMPOSER_RUNNING_SEND,
   useComposerRunningSendPreference,
-  type ComposerRunningSendPreference,
 } from '@/hooks/useComposerRunningSendPreference';
 import {
   getComposerModifierShortcutLabel,
@@ -24,8 +23,6 @@ import {
   SETTINGS_SECTION_TITLE_CLASS,
 } from './settingsRowClasses';
 
-const RUNNING_SEND_OPTIONS: readonly ComposerRunningSendPreference[] = ['queue', 'steer'];
-
 function ComposerRunningSendRow() {
   const { t } = useTranslation();
   const { preference, isCustomized, setPreference } = useComposerRunningSendPreference();
@@ -40,22 +37,23 @@ function ComposerRunningSendRow() {
     <div className="cindy-segmented-row px-4 py-4">
       <div className="flex min-w-0 flex-col gap-1">
         <p className={SETTINGS_ROW_LABEL_CLASS} style={{ letterSpacing: '0.12px' }}>
-          {t('settings.composer.runningSend.label')}
+          {t(personalizationDetailsSettings.composerRunningSendLabel.titleKey)}
         </p>
         <p className={SETTINGS_ROW_HINT_CLASS}>
-          {t('settings.composer.runningSend.hint', { shortcut })}
+          {t(personalizationDetailsSettings.composerRunningSendLabel.descriptionKey, { shortcut })}
         </p>
       </div>
 
       <div className="cindy-segmented-row-actions">
         <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
         <SegmentedControl
+          data-setting-id={personalizationDetailsSettings.composerRunningSendLabel.id}
           aria-label={t('settings.composer.runningSend.ariaLabel')}
           value={preference}
           onValueChange={setPreference}
-          options={RUNNING_SEND_OPTIONS.map((value) => ({
+          options={personalizationDetailsSettings.composerRunningSendLabel.options.map(({ value, labelKey }) => ({
             value,
-            label: t(`settings.composer.runningSend.options.${value}`),
+            label: t(labelKey),
           }))}
         />
       </div>

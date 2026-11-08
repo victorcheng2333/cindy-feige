@@ -293,6 +293,9 @@ describe('remote agent round trip', () => {
     });
     let handle: AgentSessionHandle | undefined;
     try {
+      // rgPath supplies Grep, not Bash's PATH. CI need not have a global rg;
+      // use the same bundled binary while retaining the reviewed bare-rg commands.
+      vi.stubEnv('PATH', path.dirname(RG) + path.delimiter + (process.env.PATH ?? ''));
       handle = await start({ agentKind: 'claude-code', deviceId: 'my-other-computer', options: {
         sessionId: 'same-account-approval', workingDir: project, model: 'm', permissionMode: 'auto',
       } });
@@ -344,7 +347,10 @@ describe('remote agent round trip', () => {
       expect((await callTool('Write', { file_path: 'ask-mode.txt', content: 'denied' })).isError).toBe(true);
       expect(fs.existsSync(path.join(project, 'ask-mode.txt'))).toBe(false);
       expect(remoteModes).toEqual(['default']);
-    } finally { await handle?.close(); await host.dispose(); }
+    } finally {
+      try { await handle?.close(); await host.dispose(); }
+      finally { vi.unstubAllEnvs(); }
+    }
   });
 
   // Existing wire only: an unchanged supplier uses default permission callbacks;

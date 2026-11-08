@@ -270,7 +270,9 @@ describe('统一入口保留远程模型偏好', () => {
     // A matching local provider/model must not borrow this device's memory.
     memory.setEffort('claude-code', 'a-local', 'a-model', 'low');
     const onUnifiedSelect = vi.fn(async () => true);
+    // This regression exercises the opt-in unified rail, not the default source dropdown.
     render(<ModelRouteSelectorContent
+      unifiedPanel
       agentDeviceId={agentDeviceId}
       vendorKey="codex" modelId="" effort="high" fastMode={false}
       onModelChange={vi.fn()} onEffortChange={vi.fn()}

@@ -28,6 +28,11 @@ export const personalizationDetailsSettings = defineSettings({
     fallbackTargetId: 'settings-composer', tab: 'general', targetId: 'settings-composer',
     titleKey: 'settings.composer.runningSend.label', sectionKey: 'settings.sections.composer',
     descriptionKey: 'settings.composer.runningSend.hint', aliases: ['steer', 'queue', '插话', '排队'],
+    textValues: (context) => ({ shortcut: getComposerModifierShortcutLabel(context?.platform) }),
+    options: [
+      { value: 'queue', labelKey: 'settings.composer.runningSend.options.queue' },
+      { value: 'steer', labelKey: 'settings.composer.runningSend.options.steer' },
+    ],
   },
   memoryMakerLabel: {
     id: 'settings.memory.maker.label',

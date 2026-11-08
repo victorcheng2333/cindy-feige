@@ -250,7 +250,10 @@ vi.mock('electron', () => ({
 vi.mock('../../logger.js', () => ({
   createLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('../../appSessionState.js', () => ({ activeOwnerScopeKey: () => h.ownerScope }));
+vi.mock('../../appSessionState.js', () => ({
+  onAppSessionInvalidated: () => () => {},
+  activeOwnerScopeKey: () => h.ownerScope,
+}));
 vi.mock('../../localDb/client/current.js', () => ({
   getDbClient: () => ({
     drizzle: {

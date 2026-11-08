@@ -1913,7 +1913,11 @@ export function AddProviderWizard({
                 ))}
                 {/* Fork-managed Claude connections remain explicitly selectable outside the pool. */}
                 {sel.provider.id === 'anthropic' && (
-                  <Button variant="secondary" size="lg" type="button" disabled={loggingIn} onClick={() => void handleAuthorize()}>
+                  <Button
+                    data-settings-search-action="Create a separate fork-managed Claude connection from this sign-in wizard"
+                    variant="secondary" size="lg" type="button" disabled={loggingIn}
+                    onClick={() => void handleAuthorize()}
+                  >
                     {t('settings.providers.openai.addIndependentAccount')}
                   </Button>
                 )}

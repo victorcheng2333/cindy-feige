@@ -26,7 +26,11 @@ const modelViewerPackage = vi.hoisted(() => ({ fail: false }));
 vi.mock('@google/model-viewer', () => {
   if (modelViewerPackage.fail) throw new Error('model-viewer chunk failed to load');
   if (!customElements.get('model-viewer')) {
-    customElements.define('model-viewer', class extends HTMLElement {});
+    // React 19 writes src as a property once the custom element is registered.
+    // Match the public model-viewer property without starting WebGL or network IO.
+    customElements.define('model-viewer', class extends HTMLElement {
+      src: string | null = null;
+    });
   }
   return {};
 });
@@ -66,7 +70,7 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
       await vi.dynamicImportSettled();
     });
     const viewer = await waitForModelViewer();
-    expect(viewer.getAttribute('src')).toBe(url);
+    expect(viewer).toHaveProperty('src', url);
     expect(screen.queryByText('chat.media.modelLoadFailed')).toBeNull();
   });
 
@@ -89,7 +93,7 @@ describe('ChatImageView 键盘交互(真实 ImageLightbox / ModelLightbox)', () 
     expect(toast.error).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(viewer.isConnected).toBe(true);
-    expect(viewer.getAttribute('src')).toBe(url);
+    expect(viewer).toHaveProperty('src', url);
   });
 
   it('Enter 打开图片预览:焦点进入 lightbox,Esc 延迟关闭后回到触发器', async () => {

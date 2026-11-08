@@ -1768,6 +1768,7 @@
       "sourcesShown": "{{a}} von {{b}} angezeigt",
       "statusIcon": "Menüleistensymbol",
       "statusIconMode": {
+        "account": "Ausgewähltes Konto",
         "icon": "Nur Symbol",
         "lowest": "Geringster Rest",
         "today": "Heutige Nutzung",
@@ -8712,8 +8713,6 @@
     "controlledTooltip": "Diese Geräte sind mit Cindy-Sitzungen verbunden. Diese Anzahl gibt nicht an, wer Maus und Tastatur des Desktops steuert. Du kannst den Zugriff widerrufen.",
     "revokeAccess": "Widerrufen",
     "viewControllers": "Anzeigen",
-    "collapseControlledNotice": "Fernsteuerungshinweis einklappen",
-    "expandControlledNotice": "Fernsteuerungshinweis ausklappen: {{label}}",
     "versionMismatch": "Versionskonflikt mit dem anderen Gerät; einige Funktionen sind möglicherweise eingeschränkt"
   },
   "accountDeletion": {
@@ -9312,7 +9311,9 @@
       "title": "Wird geschlossen…"
     },
     "goBack": "Zurück",
-    "goForward": "Vorwärts"
+    "goForward": "Vorwärts",
+    "noBackHistory": "Keine vorherige Seite",
+    "noForwardHistory": "Keine nächste Seite"
   },
   "contentHeader": {
     "toggleSidebar": "Seitenleiste umschalten",
@@ -10131,7 +10132,6 @@
       "settingsLink": "Einstellungen, aktueller Nutzer: {{name}}",
       "settingsLinkBeta": "Einstellungen, aktueller Nutzer: {{name}}, Beta-Kanal aktiviert",
       "moreLabel": "Mehr, aktueller Nutzer: {{name}}",
-      "menuSettings": "Einstellungen",
       "menuAddAccount": "Bei einem anderen Konto anmelden",
       "canaryBadge": "Canary-Nutzer",
       "regionCodeCn": "CN",

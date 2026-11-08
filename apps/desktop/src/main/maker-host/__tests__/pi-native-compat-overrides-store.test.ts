@@ -1,20 +1,22 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { PI_CACHE_RECOVERY_SOURCE } from '../../../../../../packages/maker-core/src/agents/pi/cache-recovery-source.js';
 import { withCrossProcessLock } from '../../device-link/crossProcessLock.js';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const root = vi.hoisted(() => ({ path: '' }));
 vi.mock('electron', () => ({ app: { getPath: () => root.path } }));
 vi.mock('../logger-adapter.js', () => ({ desktopMakerLogger: { child: () => ({ info: vi.fn(), warn: vi.fn() }) } }));
 import { readPiNativeCompatOverride as read, recordPiNativeCompatOverride as record } from '../pi-native-compat-overrides-store.js';
 let file: string;
 const fixtureDirs: string[] = [];
+const childStops = new Set<() => Promise<void>>();
 const a = 'a'.repeat(64), b = 'b'.repeat(64);
 const fix = { supportsLongCacheRetention: false };
+afterEach(async () => { await Promise.all([...childStops].map(stop => stop())); });
 afterAll(() => {
   for (const dir of fixtureDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -184,6 +186,10 @@ process.send({ event: 'ready', key });
   const scriptFile = path.join(root.path, 'child-' + id + '.mjs');
   fs.writeFileSync(scriptFile, script);
   const child = spawn(process.execPath, [scriptFile], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const progress = new EventEmitter();
+  let spawnError: Error | undefined;
+  child.on('error', error => { spawnError = error; progress.emit('progress'); });
+  child.on('exit', () => progress.emit('progress'));
   let stderr = '';
   child.stderr!.on('data', data => { stderr += data; });
   const messages: any[] = [];
@@ -193,24 +199,43 @@ process.send({ event: 'ready', key });
     let newline;
     while ((newline = stdout.indexOf('\n')) >= 0) {
       messages.push(JSON.parse(stdout.slice(0, newline))); stdout = stdout.slice(newline + 1);
+      progress.emit('progress');
     }
   });
   const send = (command: string) => child.stdin!.write(command + '\n');
+  let stopping: Promise<void> | undefined;
+  const stop = () => stopping ??= (async () => {
+    try {
+      fs.writeFileSync(release, 'release');
+      if (child.pid && child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, 'exit'); child.kill(); await exited;
+      }
+      fs.rmSync(release, { force: true });
+    } finally { childStops.delete(stop); }
+  })();
+  childStops.add(stop);
   return {
     child, release, send,
-    async event(name: string, occurrence = 1) {
-      await vi.waitFor(() => {
-        expect(child.exitCode, stderr).toBeNull();
-        expect(messages.find(message => message.event === 'error'), stderr).toBeUndefined();
-        expect(messages.filter(message => message.event === name).length, stderr).toBeGreaterThanOrEqual(occurrence);
-      }, { timeout: 2000 });
-      return messages.filter(message => message.event === name)[occurrence - 1];
+    event(name: string, occurrence = 1): Promise<any> {
+      // Windows CI can spend the old 2s polling deadline scheduling the real
+      // child and its bounded persistence attempt. Await its protocol event;
+      // the existing platform test deadline still detects a hung writer.
+      return new Promise((resolve, reject) => {
+        const check = () => {
+          const failure = messages.find(message => message.event === 'error');
+          const closed = child.exitCode !== null || child.signalCode !== null;
+          const message = messages.filter(message => message.event === name)[occurrence - 1];
+          if (!spawnError && !failure && !closed && !message) return;
+          progress.off('progress', check);
+          if (spawnError || failure || closed) {
+            reject(new Error(`Waiting for ${name} #${occurrence}: ${spawnError?.message ?? failure?.message ?? 'child exited'} ${stderr}`));
+          } else resolve(message);
+        };
+        progress.on('progress', check);
+        check();
+      });
     },
-    async stop() {
-      fs.writeFileSync(release, 'release');
-      if (child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
-      fs.rmSync(release, { force: true });
-    },
+    stop,
   };
 }
 
