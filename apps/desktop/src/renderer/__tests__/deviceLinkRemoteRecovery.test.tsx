@@ -447,6 +447,50 @@ describe('multi-device recovery lifecycle', () => {
   });
 });
 
+// 2026-11-08: after a long local outage the directory REST still failed when the relay came
+// back, so listDevices served the bounded stale snapshot. Main cannot prove presence for the new
+// relay connection yet, so every stale row reads offline. The hook dropped the live peer from
+// task sync and no later event re-added it until restart. Existing recovery cases only used a
+// fresh directory. Unit tier: real hook, store and refresh with a fake transport.
+describe('relay recovery with a stale device directory', () => {
+  // Only the fields the hook reads; the full device view is irrelevant here.
+  const staleOffline = () => ({
+    devices: peers.map((peer) => ({ ...peer, online: false })) as never[],
+    stale: true as const,
+  });
+  const connected = (deviceId: string) =>
+    remoteProjectsStore.getDeviceList().find((device) => device.deviceId === deviceId)?.connected;
+
+  it('keeps a live peer syncing when the reconnect directory is stale', async () => {
+    renderHook(() => useDeviceLinkRemoteProjects());
+    await settle();
+    expect(connected('slow')).toBe(true);
+    vi.mocked(window.electronAPI.deviceLink.listDevices).mockResolvedValue(staleOffline());
+    act(() => listeners.onStatusChanged({ status: 'connecting' }));
+    act(() => listeners.onStatusChanged({ status: 'online' }));
+    await settle();
+    expect(connected('slow')).toBe(true);
+  });
+
+  it('retries a stale directory until a fresh read brings the peer into sync', async () => {
+    const listDevices = vi.mocked(window.electronAPI.deviceLink.listDevices);
+    listDevices.mockResolvedValueOnce(staleOffline()).mockResolvedValueOnce(staleOffline());
+    renderHook(() => useDeviceLinkRemoteProjects());
+    await settle();
+    expect(subscribe).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(connected('slow')).toBe(true);
+    // A fresh answer ends the retry; the directory is not polled afterwards.
+    const reads = listDevices.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180_000);
+    });
+    expect(listDevices.mock.calls.length).toBe(reads);
+  });
+});
+
 // Review (#8381): a cache read that lands after getState() seeds `connecting` shards. They must
 // be settled against what the link will do: a standby instance (another Cindy owns the link)
 // shows them offline immediately; an instance that will connect gets the normal grace and then

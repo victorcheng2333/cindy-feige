@@ -137,6 +137,7 @@ import {
 import {
   applyControllerPresenceDirectorySnapshot,
   createControllerPresenceFreshnessTracker,
+  createDirectoryRefreshRetry,
   markControllerPresenceFresh,
   isVerifiedControllerDataPath,
   projectDirectDataDeviceIds,
@@ -233,6 +234,12 @@ let latestControllerDisplayNameDirectoryRefresh: {
   sequence: number;
   promise: Promise<void>;
 } | null = null;
+/** 重连后的目录补齐失败时退避重读;任一新目录装入(含 renderer 的 listDevices)即取消。 */
+const directoryPeerRefreshRetry = createDirectoryRefreshRetry({
+  baseMs: 5_000,
+  maxMs: 60_000,
+  refresh: () => void refreshControllerDisplayNamesFromDirectory(controllerDisplayNameRefreshGeneration),
+});
 
 export function captureControllerDisplayNameRequestEpoch(): number {
   return controllerDisplayNameFreshness.epoch;
@@ -305,6 +312,8 @@ export function applyControllerPresenceListSnapshot(
   const evidence = new Map<string, ControllerPresenceEvidence>();
   if (linkTornDown || !client || client.getStatus() === 'stopped') return evidence;
   const signalingOnline = client.getStatus() === 'online';
+  // 本连接代的 peer 视图已由这份新目录补齐,不再需要失败后的重读。
+  if (signalingOnline) directoryPeerRefreshRetry.reset();
   applyControllerPresenceDirectorySnapshot({
     devices,
     requestEpoch,
@@ -398,8 +407,13 @@ async function runControllerDisplayNamesFromDirectory(
     });
     applyControllerPresenceListSnapshot(result.devices ?? [], presenceRequestEpoch);
   } catch (err) {
-    // 目录补齐是 best-effort；失败时展示名仍有回退，peer 状态仍可由后续 presence 补上。
+    // 展示名有回退，但重连后一直在线的设备不会再发 presence:peer 状态只能靠目录补齐，
+    // 失败后按退避重读，直到装上新目录或连接代结束。
     log.warn(`device directory peer refresh failed (non-fatal): ${String(err)}`);
+    directoryPeerRefreshRetry.schedule(() =>
+      generation === controllerDisplayNameRefreshGeneration &&
+      !linkTornDown &&
+      client?.getStatus() === 'online');
   }
 }
 
@@ -1032,6 +1046,7 @@ export function initDeviceLinkService(options: DeviceLinkServiceOptions = {}): v
       // Cross-account peers on their own connection are outside this fault.
       deactivateAllControllers('relay-disconnected', hasSeparateCrossAccountConnection() ? 'same-account' : 'all', hasOfflineDirectPath);
       controllerDisplayNameRefreshGeneration += 1;
+      directoryPeerRefreshRetry.reset();
       // 不清 openLinkInFlight:登记生命周期的唯一判据是 promise settle(每个
       // 请求 settle 时自清理,closeRemoteLink 的显式删除有取消代次兜底)。建链
       // 可能正 park 在上线等待里,状态抖动时提前删登记会让同设备的下一次调用
@@ -1063,6 +1078,7 @@ export function initDeviceLinkService(options: DeviceLinkServiceOptions = {}): v
       // 本地 last-known 先同步种入，覆盖 REST 返回前的 link-open 竞态；随后用
       // 当前设备目录刷新，补齐本连接代没有历史 presence 的已在线设备。
       seedControllerDisplayNamesFromLastKnown();
+      directoryPeerRefreshRetry.reset();
       const displayNameGeneration = ++controllerDisplayNameRefreshGeneration;
       void refreshControllerDisplayNamesFromDirectory(displayNameGeneration);
       // 断线前攒的 maker:event 批最先出去:它在时间上早于离线积压与重连后的
@@ -1609,6 +1625,7 @@ function teardownActiveLink(): void {
   linkTornDown = true;
   invalidateProviderMetadataContinuity();
   controllerDisplayNameRefreshGeneration += 1;
+  directoryPeerRefreshRetry.reset();
   mobileNotifyGeneration += 1;
   if (relayAuthRecoveryRetryTimer !== null) {
     clearTimeout(relayAuthRecoveryRetryTimer);

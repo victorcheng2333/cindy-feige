@@ -138,6 +138,13 @@ export function startSessionListTokenRefresh(
 
 /** sessions:created reseed 防抖(被控端短时间多次创建会话 / orca 起多 worker 时合并重拉)。 */
 const RESEED_DEBOUNCE_MS = 300;
+/**
+ * relay 在线但目录 REST 仍失败(listDevices 抛错或只给有界旧快照)时重读目录的退避。
+ * presence 是增量流,已在线设备不会补发；不重读的话,目录失败期间没进同步名单的设备
+ * 要等到下次重连才会被发现。只在 relay 在线时排程,拿到新目录即停。
+ */
+const DIRECTORY_RETRY_BASE_MS = 5_000;
+const DIRECTORY_RETRY_MAX_MS = 60_000;
 // Limit only the startup route's discovery wait, not the request or peer lifetime.
 // Matches the background device directory's 10s budget; late results still apply.
 const INITIAL_DISCOVERY_WAIT_MS = 10_000;
@@ -485,6 +492,13 @@ export function useDeviceLinkRemoteProjects(
      * 这些信号时据此收口,避免留下一个没有宽限计时器、永远「检测中」的分片。
      */
     let linkExpectedToConnect: boolean | null = null;
+    let directoryRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let directoryRetryAttempt = 0;
+    const clearDirectoryRetry = (): void => {
+      if (directoryRetryTimer) clearTimeout(directoryRetryTimer);
+      directoryRetryTimer = null;
+      directoryRetryAttempt = 0;
+    };
     const clearConnectingGrace = (): void => {
       if (connectingGraceTimer) clearTimeout(connectingGraceTimer);
       connectingGraceTimer = null;
@@ -792,6 +806,16 @@ export function useDeviceLinkRemoteProjects(
       }
     };
 
+    const scheduleDirectoryRetry = (): void => {
+      if (disposed || linkOnline !== true || directoryRetryTimer) return;
+      const delay = Math.min(DIRECTORY_RETRY_BASE_MS * 2 ** directoryRetryAttempt, DIRECTORY_RETRY_MAX_MS);
+      directoryRetryAttempt += 1;
+      directoryRetryTimer = setTimeout(() => {
+        directoryRetryTimer = null;
+        if (!disposed && linkOnline === true) void reseed();
+      }, delay);
+    };
+
     /** 全量重播(初始 + WS 重连):listDevices 带 isSelf,权威。 */
     const reseed = (): Promise<void> => {
       const generation = directoryGeneration;
@@ -799,7 +823,13 @@ export function useDeviceLinkRemoteProjects(
         .listDevices()
         .then(({ devices, stale }) => {
           if (disposed || generation !== directoryGeneration) return;
+          if (stale) scheduleDirectoryRetry();
+          else clearDirectoryRetry();
           for (const d of devices) {
+            // 旧快照里的 offline 不是 presence 证据:relay 刚重连时 main 还没拿到本连接代的
+            // presence,旧快照把每台设备都投影成 offline。据此降级会把仍连着的设备踢出同步名单,
+            // 而之后没有事件再把它加回来(2026-11-08)。离线由 relay 状态与新目录判定。
+            if (stale && !d.online) continue;
             applyDevice({
               deviceId: d.deviceId,
               name: d.name,
@@ -839,7 +869,10 @@ export function useDeviceLinkRemoteProjects(
             }
           }
         })
-        .catch((err) => log.debug('listDevices reseed failed', err));
+        .catch((err) => {
+          log.debug('listDevices reseed failed', err);
+          if (generation === directoryGeneration) scheduleDirectoryRetry();
+        });
     };
 
     // 冷启动首屏:用上次落盘的列表快照把侧边栏画出来(标 disconnected),不等 bootstrap 往返。
@@ -1106,6 +1139,8 @@ export function useDeviceLinkRemoteProjects(
         return; // One data path changes no other peer's retry/grace lifetime.
       }
       if (p.status !== 'online') {
+        // 重新上线时会再 reseed 一次,离线期间的目录重读只会白白失败。
+        clearDirectoryRetry();
         clearAllArchivedSessionRetries();
         for (const deviceId of eligible.keys()) if (!directDataDevices.has(deviceId)) remoteProjectAliases.suspend(deviceId);
         // relay 瞬时重连(connecting):保留远程会话镜像,只标记 disconnected,让 All Sessions
@@ -1230,6 +1265,7 @@ export function useDeviceLinkRemoteProjects(
       for (const { timer } of scheduleEventRefreshes.values()) clearTimeout(timer);
       scheduleEventRefreshes.clear();
       clearConnectingGrace();
+      clearDirectoryRetry();
       setRemoteReseedImpl(null);
       setRemoteSessionBootstrapRetryImpl(null);
       wakeRemoteReconcileRef.current = () => undefined;

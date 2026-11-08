@@ -65,6 +65,47 @@ export function resolveControllerPresence(
   return { directOnline, online, available };
 }
 
+export interface DirectoryRefreshRetry {
+  /** 本连接代的目录补齐失败:按退避排一次重读;已有计时器时不叠加。 */
+  schedule(isCurrent: () => boolean): void;
+  /** 已装上新目录,或连接代结束:取消计时并从头计退避。 */
+  reset(): void;
+}
+
+/**
+ * 目录补齐失败后的退避重读。presence 是增量流,重连后一直在线的设备不会再发 presence,
+ * 本连接代的 peer 视图只能由目录补齐；只失败一次就放弃,整个连接代都会缺这些设备
+ * (2026-11-08:5 小时内远程任务一直连不上)。重读时连接代已失效或不在线则停止。
+ */
+export function createDirectoryRefreshRetry(options: {
+  baseMs: number;
+  maxMs: number;
+  refresh: () => void;
+  setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
+}): DirectoryRefreshRetry {
+  const setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  return {
+    schedule(isCurrent) {
+      if (timer || !isCurrent()) return;
+      const delay = Math.min(options.baseMs * 2 ** attempt, options.maxMs);
+      attempt += 1;
+      timer = setTimer(() => {
+        timer = null;
+        if (isCurrent()) options.refresh();
+      }, delay);
+    },
+    reset() {
+      if (timer) clearTimer(timer);
+      timer = null;
+      attempt = 0;
+    },
+  };
+}
+
 export function createControllerPresenceFreshnessTracker(): ControllerPresenceFreshnessTracker {
   return {
     epoch: 0,

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   applyControllerPresenceDirectorySnapshot,
   createControllerPresenceFreshnessTracker,
+  createDirectoryRefreshRetry,
   isVerifiedControllerDataPath,
   markControllerPresenceFresh,
   projectDirectDataDeviceIds,
@@ -520,5 +521,44 @@ describe('Main presence-list control evidence', () => {
     expect(h.client.noteRemoteControlDisabled).not.toHaveBeenCalled();
     expect(h.retire).not.toHaveBeenCalled();
     expect(h.disabled.has('host')).toBe(false);
+  });
+});
+
+// 2026-11-08: the reconnect directory refresh failed once and was never retried, so main had
+// no presence for peers that stayed online for the whole relay connection (no later presence
+// event exists for them). Unit tier: the production retry with fake timers.
+describe('directory refresh retry after a failed reconnect read', () => {
+  it('backs off to the cap with one timer, stops once stale, and restarts after a fresh read', () => {
+    vi.useFakeTimers();
+    try {
+      const refresh = vi.fn();
+      let current = true;
+      const retry = createDirectoryRefreshRetry({ baseMs: 5_000, maxMs: 20_000, refresh });
+      const fail = () => retry.schedule(() => current);
+      fail();
+      fail(); // a second failure while a retry is pending must not add another timer
+      vi.advanceTimersByTime(5_000);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      for (const delay of [10_000, 20_000, 20_000]) {
+        fail();
+        vi.advanceTimersByTime(delay - 1);
+        const before = refresh.mock.calls.length;
+        vi.advanceTimersByTime(1);
+        expect(refresh).toHaveBeenCalledTimes(before + 1);
+      }
+      // A new relay generation (or teardown) makes the pending read obsolete.
+      fail();
+      current = false;
+      vi.advanceTimersByTime(60_000);
+      expect(refresh).toHaveBeenCalledTimes(4);
+      // A fresh directory resets the backoff for the next connection generation.
+      current = true;
+      retry.reset();
+      fail();
+      vi.advanceTimersByTime(5_000);
+      expect(refresh).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
