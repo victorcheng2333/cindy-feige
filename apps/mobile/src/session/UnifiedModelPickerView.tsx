@@ -706,7 +706,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
                     windowSize={3}
                     removeClippedSubviews={false}
                     ListHeaderComponent={
-                      p.error ? <ErrorNotice message={p.error} /> : null
+                      (p.error ? <ErrorNotice message={p.error} /> : null) ?? undefined
                     }
                     ListEmptyComponent={
                       <Text style={styles.empty} testID={`${p.testID}.empty`}>

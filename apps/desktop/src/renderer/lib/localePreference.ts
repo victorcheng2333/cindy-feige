@@ -6,7 +6,7 @@ import {
 import { CURRENT_CINDY_REGION } from '../../shared/brandRegion';
 import { defaultLocalePreference, DEFAULT_LOCALE, SUPPORTED_LOCALES, type LocalePreference, type SupportedLocale } from '../../shared/locale';
 
-const LOCALE_STORAGE_KEY = 'language';
+export const LOCALE_STORAGE_KEY = 'language';
 let unpersistedPreference: LocalePreference | undefined;
 
 export function writeStoredLocale(preference: LocalePreference): void {

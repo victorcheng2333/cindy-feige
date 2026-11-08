@@ -149,7 +149,7 @@ export function ControlledBanner() {
     <Tip text={tooltipContent}>
       <div
         data-controlled-banner-chip="true"
-        className="pointer-events-auto flex h-7 min-w-0 max-w-full select-none items-center gap-2 overflow-hidden rounded-full border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3 py-0 shadow-[var(--shadow-menu)]"
+        className="pointer-events-auto flex h-7 min-w-0 max-w-full select-none items-center gap-2 overflow-hidden rounded-full border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3 py-0 shadow-[shadow:var(--shadow-menu)]"
       >
         <span
           className="session-status-breathing h-1.5 w-1.5 rounded-full"

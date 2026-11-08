@@ -308,6 +308,12 @@ it.each(['openrouter', 'minimax-cn', 'minimax-global', 'moonshot-kimi-code', 'gi
 beforeEach(() => {
   testI18n.language = 'zh-CN';
   (window as unknown as { electronAPI: unknown }).electronAPI = {
+    subscriptionAccounts: { command: vi.fn(async () => ({
+      providerId: 'anthropic', configured: false, strategy: 'least', accounts: [{
+        id: 'default', status: 'signed-out', directory: '/default',
+        running: 0, paused: false, limit: 4, weight: 1,
+      }],
+    })) },
     maker: {
       selectVertexServiceAccount: vi.fn(async () => ({ selectionId: 'opaque-selection', fileName: 'service.json', project: 'project-test' })),
       createVertexServiceAccountProvider: vi.fn(async () => ({ ok: true })),
