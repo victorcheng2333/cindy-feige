@@ -113,6 +113,27 @@ describe('buildTurnUsageTooltipLines — 按模型成本明细', () => {
   });
 });
 
+// Unit regression for the usage screenshot: the displayed input must include
+// cache reads/writes so input + output explains the total. Existing cases only
+// checked that the token line existed, not its input accounting.
+describe('buildTurnUsageTooltipLines — 输入展示口径', () => {
+  it('includes both cache buckets in displayed input while preserving their breakdown', () => {
+    const details = buildTurnUsageDetails({
+      inputTokens: 3,
+      outputTokens: 616,
+      cacheReadTokens: 102_500,
+      cacheCreateTokens: 1_700,
+    })!;
+    const out = buildTurnUsageTooltipLines({ details, t, usageOnly: true });
+    expect(out).toContain(
+      'usageDetails.tokenLine|{"total":"104.8k","input":"104.2k","output":"616"}',
+    );
+    expect(out).toContain(
+      'usageDetails.cacheLine|{"read":"102.5k","create":"1.7k","rate":"98.4%"}',
+    );
+  });
+});
+
 describe('buildTurnUsageTooltipLines — 建议行 (只在真正有价值时出现)', () => {
   function suggestionLines(tokens: {
     inputTokens?: number;

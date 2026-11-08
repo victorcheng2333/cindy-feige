@@ -756,7 +756,7 @@ describe('TodaySpendChip Claude subscription popover', () => {
     expect(screen.getByRole('progressbar')).toBeTruthy();
     expect(screen.getByText('本轮消耗：$0.46')).toBeTruthy();
     expect(screen.getByText(/^74\.0k/)).toBeTruthy();
-    expect(screen.getByText('（输入 2 · 输出 16）')).toBeTruthy();
+    expect(screen.getByText('（输入 74.0k · 输出 16）')).toBeTruthy();
     expect(screen.getByText('读 0 · 写 74.0k · 命中 0%')).toBeTruthy();
     const performance = screen.getByTestId('quota-performance');
     expect(within(performance).getByText('耗时')).toBeTruthy();
@@ -768,13 +768,17 @@ describe('TodaySpendChip Claude subscription popover', () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  it('把输入与输出 Token 分别压缩后再传入卡片', () => {
+  // Unit/jsdom, real chip → card: cached input used to be omitted from the
+  // input subtotal. The old compact-input case only covered uncached input.
+  it.each([
+    { inputTokens: 74_000, cacheReadTokens: 0, cacheCreateTokens: 0 },
+    { inputTokens: 3, cacheReadTokens: 72_297, cacheCreateTokens: 1_700 },
+  ])('把包含缓存的完整输入与输出 Token 分别压缩后传入卡片 %j', (tokens) => {
     setLatestUsageMessage({
       turnUsageDetails: {
         ...TURN_USAGE_DETAILS,
-        inputTokens: 74_000,
+        ...tokens,
         outputTokens: 16,
-        cacheCreateTokens: 0,
         totalTokens: 74_016,
       },
     });
@@ -797,7 +801,7 @@ describe('TodaySpendChip Claude subscription popover', () => {
     renderClaudeSubscriptionChip();
     openCardFromHover();
     expect(screen.queryByText('速度')).toBeNull();
-    expect(screen.getByText('（输入 2 · 输出 16）')).toBeTruthy();
+    expect(screen.getByText('（输入 74.0k · 输出 16）')).toBeTruthy();
   });
 
   it('只有整轮耗时时直接显示耗时，不显示缺失速度占位', () => {

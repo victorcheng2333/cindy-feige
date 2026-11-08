@@ -105,6 +105,7 @@ import { makerChatStore, type ChatMessage } from '@/lib/makerChatStore';
 import {
   formatOutputTokenRate,
   formatTurnDuration,
+  getTurnUsageInputTokens,
   getTurnUsageSuggestion,
 } from '@/lib/turnUsageTooltip';
 import { aggregateAssistantTurnUsageDetails } from '@/lib/userTurnUsage';
@@ -639,7 +640,7 @@ function toQuotaHoverCardTurnUsage(
     costIsEstimate: summary.isEstimate,
     isUserTurnTotal: summary.isUserTurnTotal,
     totalTokensText: formatCompactTokens(Math.max(0, Math.floor(details.totalTokens))),
-    inputTokensText: formatCompactTokens(details.inputTokens),
+    inputTokensText: formatCompactTokens(getTurnUsageInputTokens(details)),
     outputTokensText: formatCompactTokens(details.outputTokens),
     outputRateText: formatOutputTokenRate(details),
     turnDurationText:

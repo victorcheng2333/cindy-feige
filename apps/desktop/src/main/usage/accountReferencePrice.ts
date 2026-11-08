@@ -1,4 +1,4 @@
-import { providerCatalogId } from '@cindy/model-providers';
+import { providerCatalogId, sourceProviderForPreset } from '@cindy/model-providers';
 import { providerReferencePriceQuote } from '../../shared/modelPriceQuote.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
 
@@ -8,9 +8,9 @@ export const accountReferencePriceQuote: typeof providerReferencePriceQuote = (
 ) => {
   const provider = getActiveCatalog().providers.find(provider => provider.id === providerId);
   let catalogId = provider ? providerCatalogId(provider) : providerId;
-  // API-key subscriptions have account-local IDs. Resolve their public tariff
+  // API-key connections have account-local IDs. Resolve their public tariff
   // from the selected engine/model's preset, never from another account.
-  if (provider?.access?.kind === 'subscription' && provider.auth.method === 'apiKey') {
+  if (provider?.auth.method === 'apiKey') {
     const models = options?.agent
       ? provider.models[options.agent] ?? []
       : Object.values(provider.models).flat();
@@ -19,8 +19,15 @@ export const accountReferencePriceQuote: typeof providerReferencePriceQuote = (
       .map(model => model.catalogPresetId!));
     if (presetIds.size === 1) catalogId = [...presetIds][0];
   }
-  const quote = providerReferencePriceQuote(
+  let quote = providerReferencePriceQuote(
     catalogId, modelId, registry, options,
   );
-  return quote && catalogId !== providerId ? { ...quote, providerId, modelId } : quote;
+  // Official API presets and native subscriptions use different catalog IDs.
+  // Only an explicit preset mapping may supply a manufacturer reference; do not
+  // infer a price from the model name or borrow another account's overrides.
+  if (!quote && provider?.auth.method === 'apiKey') {
+    const sourceId = sourceProviderForPreset(catalogId);
+    if (sourceId !== catalogId) quote = providerReferencePriceQuote(sourceId, modelId, registry, options);
+  }
+  return quote && quote.providerId !== providerId ? { ...quote, providerId, modelId } : quote;
 };

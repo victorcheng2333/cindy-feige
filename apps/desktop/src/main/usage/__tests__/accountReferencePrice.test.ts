@@ -7,7 +7,10 @@ import { providerReferencePriceQuote, getModelPriceQuote, modelPricingKey } from
 const accountCatalog = { ...BUNDLED_CATALOG, providers: [buildUserProvider({
     id: 'openai-account', name: 'Account', auth: { method: 'oauth', native: 'codex' },
     runtimes: { codex: { baseUrl: 'https://chatgpt.com/backend-api/codex', models: [{ id: 'gpt-5.6-luna', name: 'Luna' }] } },
-  }), buildUserProvider({ id: 'router-account', name: 'Router', runtimes: {
+  }), buildUserProvider({ id: 'openai-api-account', name: 'API', runtimes: {
+    codex: { baseUrl: 'https://api.openai.com/v1', catalogPresetId: 'openai-api',
+      models: [{ id: 'gpt-6.1-sol', name: 'Sol' }] },
+  } }), buildUserProvider({ id: 'router-account', name: 'Router', runtimes: {
     pi: { baseUrl: 'https://openrouter.ai/api/v1', wireProtocol: 'openai-chat', models: [
       { id: 'aion-labs/aion-3.0-mini', name: 'Aion' },
       { id: 'new/model', name: 'New', discoveredCost: { input: 0, output: 0.5 } },
@@ -48,6 +51,19 @@ import { accountReferencePriceQuote } from '../accountReferencePrice.js';
 import { getReferenceModelPricing, getCodexProviderSubscriptionValuePrice } from '../referenceModelPricing.js';
 
 describe('independent subscription account reference prices', () => {
+  // Regression: API connections with a newly catalogued model had tokens but no value.
+  // Existing tests cover subscription identities/imported costs, not an API preset without cost.
+  // Unit: real reference projection must resolve the exact model, retaining account attribution.
+  it('projects dated official prices for an API preset without a static model cost', () => {
+    const at = '2026-11-07';
+    const base = providerReferencePriceQuote('openai', 'gpt-6.1-sol', BUNDLED_CATALOG.modelRegistry, { at, agent: 'codex' });
+    expect(base).toBeDefined();
+    expect(accountReferencePriceQuote('openai-api-account', 'gpt-6.1-sol', BUNDLED_CATALOG.modelRegistry, { at, agent: 'codex' }))
+      .toEqual({ ...base, providerId: 'openai-api-account' });
+    expect(getModelPriceQuote(getReferenceModelPricing({ at }), 'openai-api-account', 'gpt-6.1-sol', 'codex'))
+      .toEqual({ ...base, providerId: 'openai-api-account' });
+    expect(accountReferencePriceQuote('openai-api-account', 'unknown-model', BUNDLED_CATALOG.modelRegistry, { at, agent: 'codex' })).toBeUndefined();
+  });
   it.each(['claude-code', 'codex', 'pi'] as const)(
     'resolves MiMo %s prices through the preset while retaining account ownership', (agent) => {
       const model = 'mimo-v2.6-pro';

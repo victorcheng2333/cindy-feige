@@ -32,6 +32,11 @@ function formatTokens(value: number): string {
   return formatCompactTokens(Math.max(0, Math.floor(value)));
 }
 
+/** 展示的输入包含缓存；原始互斥计费桶保持不变，避免重算费用时重复计入。 */
+export function getTurnUsageInputTokens(details: TurnUsageDetails): number {
+  return details.inputTokens + details.cacheReadTokens + details.cacheCreateTokens;
+}
+
 export function formatOutputTokenRateValue(
   outputTokens: number,
   durationMs: number,
@@ -120,7 +125,7 @@ const LOW_CACHE_MAX_HIT_RATE = 0.2;
 export function getTurnUsageSuggestion(details: TurnUsageDetails, t: TFunction): string | null {
   // 第一轮没有可复用的缓存，命中率为 0 是必然，不是可避免的浪费。
   if (details.firstUserRound) return null;
-  const inputTotal = details.inputTokens + details.cacheReadTokens + details.cacheCreateTokens;
+  const inputTotal = getTurnUsageInputTokens(details);
   if (
     inputTotal >= LOW_CACHE_MIN_INPUT_TOKENS &&
     details.cacheHitRate !== null &&
@@ -167,7 +172,7 @@ export function buildTurnUsageTooltipLines({
   }
   lines.push(t('usageDetails.tokenLine', {
     total: formatTokens(details.totalTokens),
-    input: formatTokens(details.inputTokens),
+    input: formatTokens(getTurnUsageInputTokens(details)),
     output: formatTokens(details.outputTokens),
   }));
   const hitRate = formatPercent(details.cacheHitRate);

@@ -50,7 +50,11 @@ export function getReferenceModelPricing(
       for (const [agent, models] of Object.entries(provider.models)) {
         for (const model of models ?? []) {
           const cost = model.cost;
-          if (cost?.input === undefined || cost.output === undefined) continue;
+          if (cost?.input === undefined || cost.output === undefined) {
+            const quote = providerReferencePriceQuote(provider.id, model.id, registry, { agent: agent as AgentKind, at });
+            if (quote) (pricing[provider.id] ??= {})[modelPricingKey(model.id, agent as AgentKind)] = quote;
+            continue;
+          }
           if (![cost.input, cost.output].every(value => Number.isFinite(value) && value >= 0)) continue;
           (pricing[provider.id] ??= {})[modelPricingKey(model.id, agent as AgentKind)] = {
             providerId: provider.id, modelId: model.id, currency: 'USD',
