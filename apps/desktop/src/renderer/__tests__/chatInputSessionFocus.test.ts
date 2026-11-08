@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
-import { WORKLOUDER_CREATOR_LIT_TASK_KEY_COUNT } from '../../shared/workLouderCodex';
+import { boundWorkLouderTaskTitle, WORKLOUDER_CREATOR_LIT_TASK_KEY_COUNT } from '../../shared/workLouderCodex';
 
 const chatInputSource = readFileSync(
   resolve(__dirname, '..', 'components', 'new-chat', 'ChatInput.tsx'),
@@ -463,6 +463,7 @@ it.each([
         useCallback: (publish: () => void) => publish,
         publishedTaskKeyRef: { current: '' },
         WORKLOUDER_CREATOR_LIT_TASK_KEY_COUNT,
+        boundWorkLouderTaskTitle,
         window: { electronAPI: { workLouderCodex: { publishTasks } } },
       },
     );

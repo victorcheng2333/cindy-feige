@@ -1738,6 +1738,7 @@
       "sourcesShown": "{{a}} / {{b}} 顯",
       "statusIcon": "選單列圖示",
       "statusIconMode": {
+        "account": "所選名籍",
         "icon": "唯圖示",
         "lowest": "餘量最寡",
         "today": "今日耗",
@@ -8669,8 +8670,6 @@
     "controlledTooltip": "此諸裝置所連者乃 Cindy 之差事，非謂正操控桌面之滑鼠與鍵盤。君可撤其存取之權。",
     "revokeAccess": "撤權",
     "viewControllers": "觀",
-    "collapseControlledNotice": "收遠端控制之示",
-    "expandControlledNotice": "展遠端控制之示：{{label}}",
     "versionMismatch": "彼方版本不一，部分功能或受限"
   },
   "accountDeletion": {
@@ -9269,7 +9268,9 @@
       "title": "方闔…"
     },
     "goBack": "後退",
-    "goForward": "前進"
+    "goForward": "前進",
+    "noBackHistory": "無頁可退",
+    "noForwardHistory": "無頁可進"
   },
   "contentHeader": {
     "toggleSidebar": "啟閉側欄",
@@ -10088,7 +10089,6 @@
       "settingsLink": "規制，當前使用者：{{name}}",
       "settingsLinkBeta": "規制，當前使用者：{{name}}，Beta 測試管道已啟",
       "moreLabel": "餘者，當前使用者：{{name}}",
-      "menuSettings": "規制",
       "menuAddAccount": "另登一名籍",
       "canaryBadge": "先試之士",
       "regionCodeCn": "CN",

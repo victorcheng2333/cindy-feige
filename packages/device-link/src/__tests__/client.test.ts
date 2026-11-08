@@ -11671,7 +11671,7 @@ describe('automatic LAN connection through platform bridges', () => {
 });
 
 describe('直连优先、中继兜底(Device Link direct path)', () => {
-  it('replays a partially written large head while an older relay tail is still in flight', async () => {
+  it('replays a partially written large head after moving unacknowledged relay messages to direct', async () => {
     vi.useFakeTimers();
     const info = vi.fn();
     const h = makeHarness({ logger: { info, debug: vi.fn(), warn: vi.fn(), error: vi.fn() }, timing: { pingIntervalMs: 1_000_000, transportRetryIntervalMs: 1_000 } });
@@ -11687,6 +11687,8 @@ describe('直连优先、中继兜底(Device Link direct path)', () => {
       });
       const initial = h.current().sent.slice();
       const initialHead = initial.filter(env => env.id === 'head');
+      expect(initialHead.length).toBeGreaterThan(TRANSPORT_RETRY_PASS_BUDGET);
+      expect(initial.some(env => env.id === 'tail')).toBe(true);
       let writes = 0;
       h.client.attachDirectPath('dev-b', {
         send() { if (++writes > TRANSPORT_RETRY_PASS_BUDGET) throw new Error('direct write interrupted'); },
@@ -11701,11 +11703,13 @@ describe('直连优先、中继兜底(Device Link direct path)', () => {
         .map(([s]) => JSON.parse(s.slice('device-link diagnostic '.length)));
       const pathRows = rows.filter(row => row.stage === 'path');
       const snapshot = Object.assign({}, ...pathRows.map(row => row.transport ?? {}));
-      // Capture before detach clears the path: later fallback logs cannot show
-      // which unacknowledged prefix was still on the relay.
+      // Attaching migrates every unacknowledged relay message, including the tail.
+      // Capture before detach clears the failed direct head and its unsent tail.
       const heads = snapshot.head ?? pathRows.find(row => row['transport.head'])?.['transport.head'];
-      expect(heads).toEqual(expect.arrayContaining([expect.objectContaining({ seq: expect.any(Number),
-        bytes: expect.any(Number), path: 'relay', sent: true })]));
+      expect(heads).toEqual([
+        expect.objectContaining({ seq: 1, bytes: expect.any(Number), path: 'direct', sent: true }),
+        expect.objectContaining({ seq: 2, bytes: expect.any(Number), path: 'unsent', sent: false }),
+      ]);
       expect(pathRows[0]).toMatchObject({ reason: 'send-failed' });
       const fallbackHead = h.current().sent.slice(initial.length).filter(env => env.id === 'head');
       expect(fallbackHead).toHaveLength(initialHead.length);

@@ -39,6 +39,7 @@ vi.mock('../resolveAuxiliaryModelChain.js', () => ({
 }));
 
 vi.mock('../../appSessionState.js', () => ({
+  onAppSessionInvalidated: () => () => {},
   activeOwnerScopeKey: () => ownerState.key,
   isAppSessionBoundaryPending: () => ownerState.pending,
 }));

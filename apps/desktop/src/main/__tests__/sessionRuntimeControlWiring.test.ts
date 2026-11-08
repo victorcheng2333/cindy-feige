@@ -726,7 +726,7 @@ describe('session runtime control wiring', () => {
       patchFast,
     );
     const normalWakeGuard = setModel.indexOf(
-      'if (!internalOptions.applyingPiCredentialPending && (rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||',
+      'if (!internalOptions.applyingNativeCredentialPending && (preparedClaudeResume || rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||',
       persistSelection,
     );
     const wakeQueue = setModel.indexOf(
@@ -794,7 +794,7 @@ describe('session runtime control wiring', () => {
     expect(registerSource).toContain("return isDeviceLinkInvoke() ? 'PRECONDITION_FAILED' : code;");
     expect(setModel).toContain('await maker.getSessionMeta(sessionId)');
     expect(setModel).toContain(
-      'internalOptions.previousPiRoute?.model ?? persistedSessionMeta?.model',
+      'internalOptions.previousNativeRoute?.model ?? persistedSessionMeta?.model',
     );
     expect(setModel).not.toContain(
       'if (liveSessionBeforeRouteChange && runtimeAgentKind && runtimeRouteChanged)',
@@ -822,7 +822,7 @@ describe('session runtime control wiring', () => {
     expect(setModel).toContain('sessionRuntimeControlOwnerEpochMatches(runtimeOwnerEpoch)');
     expect(setModel).toContain('modelWindowRebuilt ||');
     expect(setModel).toContain('patch.contextWindow = targetContextWindow;');
-    expect(setModel).toContain('(rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||');
+    expect(setModel).toContain('(preparedClaudeResume || rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||');
     expect(setModel).toContain('wakeSessionInputAfterCredentialSwitch(sessionId);');
   });
 
@@ -843,7 +843,7 @@ describe('session runtime control wiring', () => {
     const requested = setModel.indexOf('const requestedProviderId = normalizeSessionProviderId(');
     const restore = setModel.indexOf('if (!hasSessionProvider(sessionId)) {');
     const hydrate = setModel.indexOf('hydrateSessionProvider(sessionId, persistedProviderId);');
-    const current = setModel.indexOf('const currentProviderId = internalOptions.previousPiRoute');
+    const current = setModel.indexOf('const currentProviderId = internalOptions.previousNativeRoute');
     const catalogCurrent = setModel.indexOf('const catalogCurrentWindow =');
     expect(requested).toBeGreaterThan(-1);
     expect(restore).toBeGreaterThan(requested);
@@ -1603,8 +1603,8 @@ describe('session runtime control wiring', () => {
     expect(setModel).not.toContain('busy Pi task cannot change runtime selection');
     expect(setModel).toContain('finalPiWindow < verifiedCurrentWindow!');
     expect(setModel).not.toContain('finalPiWindow < targetContextWindow');
-    expect(setModel).toContain('internalOptions.previousPiRoute.providerId');
-    expect(setModel).toContain('setSessionProvider(sessionId, internalOptions.previousPiRoute.providerId)');
+    expect(setModel).toContain('internalOptions.previousNativeRoute.providerId');
+    expect(setModel).toContain('setSessionProvider(sessionId, internalOptions.previousNativeRoute.providerId)');
     expect(setModel).toContain('coldPiRouteWithoutLiveWindowCheck = true');
   });
 
@@ -1792,7 +1792,7 @@ describe('session runtime control wiring', () => {
     expect(setModel).toContain('forceSessionRebuild:');
     expect(setModel).toContain('rebuildLiveOrcaWorker ||');
     expect(setModel).toContain(
-      'if (!internalOptions.applyingPiCredentialPending && (rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||',
+      'if (!internalOptions.applyingNativeCredentialPending && (preparedClaudeResume || rebuildLiveOrcaWorker || modelWindowRebuilt || atomicSelection ||',
     );
   });
 });

@@ -1800,6 +1800,7 @@
       "sourcesShown": "{{a}} sur {{b}} affichées",
       "statusIcon": "Icône de la barre des menus",
       "statusIconMode": {
+        "account": "Compte sélectionné",
         "icon": "Icône seule",
         "lowest": "Plus faible restant",
         "today": "Consommation du jour",
@@ -8782,8 +8783,6 @@
     "controlledTooltip": "Ces appareils sont connectés à des sessions Cindy. Ce nombre n'indique pas qui contrôle la souris et le clavier de l'ordinateur. Vous pouvez révoquer leur accès.",
     "revokeAccess": "Révoquer",
     "viewControllers": "Afficher",
-    "collapseControlledNotice": "Réduire l'avis de contrôle à distance",
-    "expandControlledNotice": "Développer l'avis de contrôle à distance : {{label}}",
     "versionMismatch": "Version différente de celle de l'autre appareil ; certaines fonctionnalités peuvent être limitées"
   },
   "accountDeletion": {
@@ -9383,7 +9382,9 @@
       "title": "Fermeture…"
     },
     "goBack": "Précédent",
-    "goForward": "Suivant"
+    "goForward": "Suivant",
+    "noBackHistory": "Aucune page précédente",
+    "noForwardHistory": "Aucune page suivante"
   },
   "contentHeader": {
     "toggleSidebar": "Afficher/masquer la barre latérale",
@@ -10211,7 +10212,6 @@
       "settingsLink": "Paramètres, utilisateur actuel : {{name}}",
       "settingsLinkBeta": "Paramètres, utilisateur actuel : {{name}}, canal Bêta activé",
       "moreLabel": "Plus, utilisateur actuel : {{name}}",
-      "menuSettings": "Paramètres",
       "menuAddAccount": "Se connecter à un autre compte",
       "canaryBadge": "Utilisateur Canary",
       "regionCodeCn": "CN",

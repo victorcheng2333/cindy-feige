@@ -5,7 +5,7 @@
  * 附件与矢量笔迹原样回到输入框,用户可直接重试。脚手架与 chatInputModelLoading
  * 相同:外部宿主服务全部惰性,编辑器、输入框状态与发送派发真实运行。
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ComponentProps, ReactNode } from 'react';
 import type { Editor } from '@tiptap/react';
@@ -588,7 +588,14 @@ it.each(['draft', 'session'] as const)('selects a shared provider through the le
   await waitFor(() => expect(h.editor).not.toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'newChat.modelSelector.trigger.ariaWithEffort' }));
   expect(screen.queryByRole('combobox')).toBeNull();
-  expect(screen.queryByRole('tablist')).toBeNull();
+  // Existing tasks retain the explicit Harness browser (model-selector-unified.md §1.2).
+  // Drafts choose their Harness outside this compact provider list.
+  if (kind === 'session') {
+    expect(within(screen.getByRole('tablist')).getByRole('tab', { name: 'Claude' })
+      .getAttribute('aria-selected')).toBe('true');
+  } else {
+    expect(screen.queryByRole('tablist')).toBeNull();
+  }
   expect(screen.queryByRole('textbox', { name: 'newChat.modelSelector.search.placeholderAll' })).toBeNull();
   expect(screen.getByRole('option', { name: /local-model/ })).toBeTruthy();
   const sharedModel = screen.getByRole('option', { name: /shared-model/ });

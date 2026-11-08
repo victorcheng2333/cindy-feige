@@ -230,7 +230,8 @@ describe('模型列表里供应商组那一项的用量', () => {
     const key = modelCatalogKey('device-d', 'device-c')!;
     catalogs.byDevice[key] = catalogs.byDevice['device-d'];
     try {
-      render(<ModelSelectorContent modelId="opus" effort="high" onModelChange={vi.fn()}
+      // Like the other quota-rail cases, explicitly select the unified panel.
+      render(<ModelSelectorContent unifiedPanel modelId="opus" effort="high" onModelChange={vi.fn()}
         onEffortChange={vi.fn()} currentProviderId="d-solo" onProviderChange={vi.fn()} vendorKey="cc"
         remoteAgent={{ devices: [{ deviceId: 'device-d', name: 'A' }], selectedDeviceId: 'device-d',
           homeDeviceId: 'device-c', catalogHostDeviceId: 'device-c', selfDeviceId: 'device-d',

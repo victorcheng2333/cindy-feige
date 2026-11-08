@@ -116,6 +116,7 @@ vi.mock('@cindy/maker-core/pi-subagent-runs', () => ({
   clearPiSubagentDeletedTombstone: h.clearPiSubagentDeletedTombstone,
 }));
 vi.mock('../../../appSessionState', () => ({
+  onAppSessionInvalidated: () => () => {},
   getActiveAppSession: () => ({ dataOwnerId: 'owner-a', generation: 1 }),
   ownerScopedUserDataPath: (...parts: string[]) => path.join(h.userDataDir!, ...parts),
 }));

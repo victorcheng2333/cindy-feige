@@ -134,7 +134,9 @@ it('reviews a symlink write against its real destination and binds execution to 
   const outside = path.join(root, 'outside'); fs.mkdirSync(outside);
   fs.symlinkSync(outside, path.join(f.project, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
   expect((await f.call('Write', { file_path: '/virtual/project/link/new.txt', content: 'denied' })).body.result.isError).toBe(true);
-  expect(f.review.mock.calls[0][0].action).toMatchObject({ kind: 'file-write', resolvedPath: path.join(outside, 'new.txt') });
+  // native realpath expands Windows 8.3 temp paths, as does production target
+  // resolution. The new file does not exist: canonicalize its existing parent.
+  expect(f.review.mock.calls[0][0].action).toMatchObject({ kind: 'file-write', resolvedPath: path.join(fs.realpathSync.native(outside), 'new.txt') });
   expect(fs.existsSync(path.join(outside, 'new.txt'))).toBe(false);
 });
 

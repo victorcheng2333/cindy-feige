@@ -537,7 +537,7 @@ describe('OrcaWorkflowRoute source invariants', () => {
   });
 
   it('uses a request id so repeated jumps to the same message re-run focus', () => {
-    expect(sessionViewSource).toContain('requestFocusMessage(searchJump.messageClientId)');
+    expect(sessionViewSource).toContain('requestFocusMessage(searchJump.messageClientId, searchJump.highlight)');
     expect(sessionViewSource).toContain('focusMessageRequestId={focusedMessageTarget?.requestId ?? 0}');
     expect(messageStreamSource).toContain('focusMessageRequestId?: number;');
     expect(messageStreamSource).toContain('lastAppliedFocusRef.current === focusRequestKey');

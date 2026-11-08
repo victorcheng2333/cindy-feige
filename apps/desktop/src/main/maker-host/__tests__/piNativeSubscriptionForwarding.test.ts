@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../appSessionState.js', () => ({
+  onAppSessionInvalidated: () => () => {},
   isAppSessionBoundaryPending: () => ownerState.pending,
   activeOwnerScopeKey: () => ownerState.scope,
 }));

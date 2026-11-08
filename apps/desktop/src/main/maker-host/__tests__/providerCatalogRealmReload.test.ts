@@ -102,6 +102,7 @@ vi.mock('../../authManager.js', () => ({
   getAuthState: () => ({ mode: 'signed-out', user: null }),
 }));
 vi.mock('../../appSessionState.js', () => ({
+  onAppSessionInvalidated: () => () => {},
   getActiveAppSession: () => ({ mode: 'signed-out', dataOwnerId: h.owner }),
   activeOwnerScopeKey: () => `signed-out:${h.owner ?? 'none'}`,
   isAppSessionBoundaryPending: () => false,
