@@ -15,16 +15,16 @@ index a26d125..ddf5b9d 100644
 +                      menuAction:(RNSBarButtonMenuItemAction)menuAction
 +                     imageLoader:(RCTImageLoader *)imageLoader;
  #endif // defined(__cplusplus)
-
+ 
  @end
 diff --git a/ios/RNSBarButtonItem.mm b/ios/RNSBarButtonItem.mm
 index c435fdd..bc4ed79 100644
 --- a/ios/RNSBarButtonItem.mm
 +++ b/ios/RNSBarButtonItem.mm
 @@ -6,9 +6,63 @@
-
+ 
  static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
-
+ 
 +// Cindy patch: identity of a bar button (plain button or menu) is its whole config except the
 +// menu. Every item of the toolbar must be reusable: one freshly allocated sibling makes the
 +// header reassign the whole item array, which dismisses an open menu. Press handlers route
@@ -83,7 +83,7 @@ index c435fdd..bc4ed79 100644
 +  NSDictionary *_reuseKey;
 +  id _menuShapeKey;
  }
-
+ 
  - (instancetype)initWithConfig:(NSDictionary<NSString *, id> *)dict
 @@ -131,10 +185,13 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
      NSDictionary *menu = dict[@"menu"];
@@ -93,7 +93,7 @@ index c435fdd..bc4ed79 100644
      }
    }
  #endif
-
+ 
 +  _reuseKey = RNSBarButtonReuseKey(dict);
 +
    NSString *buttonId = dict[@"buttonId"];
@@ -102,7 +102,7 @@ index c435fdd..bc4ed79 100644
 @@ -145,6 +202,180 @@ static UIMenuOptions RNSMakeUIMenuOptionsFromConfig(NSDictionary *config);
    return self;
  }
-
+ 
 +- (BOOL)rns_canReuseWithConfig:(NSDictionary<NSString *, id> *)dict
 +{
 +  NSDictionary *key = RNSBarButtonReuseKey(dict);
@@ -285,7 +285,7 @@ index c435fdd..bc4ed79 100644
  {
    NSString *menuId = dict[@"menuId"];
 +  BOOL togglesInPlace = [dict[@"keepsMenuPresented"] boolValue];
-
+ 
 +  // Cindy patch: identify actions by menuId so the visible copy of an open menu can be found.
    UIAction *actionElement = [UIAction actionWithTitle:dict[@"title"]
                                                  image:nil
@@ -302,7 +302,7 @@ index c435fdd..bc4ed79 100644
 +                                                }
                                                  menuAction(menuId);
                                                }];
-
+ 
 diff --git a/ios/RNSScreenStack.mm b/ios/RNSScreenStack.mm
 index 5da1196..b2b93eb 100644
 --- a/ios/RNSScreenStack.mm
@@ -327,13 +327,13 @@ index 5da1196..b2b93eb 100644
 +  if (!moving) {
 +    [screenChildComponent.controller addSnapshotToView];
 +  }
-
+ 
    RCTAssert(screenChildComponent.reactSuperview == self,
              @"Attempt to unmount a view which is mounted inside different view. (parent: %@, child: %@, index: %@)",
 @@ -1419,7 +1426,7 @@ RNS_IGNORE_SUPER_CALL_END
    screenChildComponent.reactSuperview = nil;
    [_reactSubviews removeObject:screenChildComponent];
-
+ 
 -  if (screenChildComponent.window == nil) {
 +  if (!moving && screenChildComponent.window == nil) {
      [screenChildComponent removeFromSuperview];
@@ -354,7 +354,6 @@ index 5da1196..b2b93eb 100644
      if (mutation.type == react::ShadowViewMutation::Delete) {
        RNSScreenView *_Nullable toBeRemovedChild = [self childScreenForTag:mutation.oldChildShadowView.tag];
        if (toBeRemovedChild != nil) {
-
 diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
 index 9b66012dc8db1e3af0cb5457f8dad86e7f2fe5e3..b158bd573bbbba236daaf206c00180e385743fb4 100644
 --- a/ios/RNSScreen.mm
@@ -396,7 +395,7 @@ index 12f2272..b71579b 100644
 +  NSArray<UIBarButtonItem *> *previousRightItems = navitem.rightBarButtonItems ?: @[];
 +  NSMutableArray<UIBarButtonItem *> *leftItems = [NSMutableArray new];
 +  NSMutableArray<UIBarButtonItem *> *rightItems = [NSMutableArray new];
-
+ 
  #if !TARGET_OS_TV
    // We want to set navitem.searchController to nil only if we are sure
 @@ -690,22 +696,16 @@ RNS_IGNORE_SUPER_CALL_END
@@ -428,7 +427,7 @@ index 12f2272..b71579b 100644
 @@ -762,13 +762,26 @@ RNS_IGNORE_SUPER_CALL_END
    }
  #endif /* !TARGET_OS_TV */
-
+ 
 +  // A missing title still removes the old view; an unchanged one stays attached.
 +  if (navitem.titleView != nextTitleView) {
 +    navitem.titleView = nextTitleView;
@@ -453,11 +452,11 @@ index 12f2272..b71579b 100644
 +  if (![nextRightItems isEqualToArray:previousRightItems]) {
 +    navitem.rightBarButtonItems = nextRightItems;
 +  }
-
+ 
    // Setting navigation bar visibility is split to mitigate iOS 26 bug with bar button items
    // (setting nav bar visibility should be done after `navitem.*BarButtonItems`).
 @@ -901,6 +914,7 @@ RNS_IGNORE_SUPER_CALL_END
-
+ 
  - (NSArray<UIBarButtonItem *> *)barButtonItemsFromConfigs:(NSArray<NSDictionary<NSString *, id> *> *)dicts
                                           withCurrentItems:(NSArray<UIBarButtonItem *> *)currentItems
 +                                            reusableItems:(NSArray<UIBarButtonItem *> *)reusableItems
