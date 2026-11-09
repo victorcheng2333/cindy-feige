@@ -83,6 +83,43 @@ screen that was already locked when the setting was turned on stays locked. Logi
 `apps/desktop/src/main/remote-desktop/awayGuard.ts` (unit-tested state machine) and
 `awayGuardService.ts`; shared-userData passive instances do not run it.
 
+## System Screen Sharing between Macs (macOS, 2026-11-09)
+
+Settings → Remote control → **Use Screen Sharing between Macs** (default off, macOS
+controllers only, owner-scoped `remote-desktop-system-sharing.json`). When on, opening
+another Mac's whole-desktop view tries the built-in Screen Sharing app first; 代输入
+window views and an already open Cindy viewer are unaffected.
+
+A macOS host with remote desktop allowed adds `systemScreenSharing` to its post-auth
+capabilities: whether `127.0.0.1:5900` accepts connections, its `<LocalHostName>.local`
+name and IPv4 addresses, the login name, and whether it supports High Performance
+(Apple silicon, macOS 14+). The controller waits up to 4 s for capabilities, then probes
+reported `.local` names in parallel (1.2 s) and uses the first reachable one in reported
+order. Bare IP addresses are not tried, even on a matching local subnet: independent
+networks can reuse both the subnet and IP, directing sign-in to a different computer.
+If Bonjour lookup or connection fails, Cindy's viewer opens instead. Bonjour names
+still rely on local-network name resolution, not cryptographic VNC endpoint identity;
+same-name collisions or spoofed mDNS are not ruled out. VPN/overlay IPs fall back.
+This integration targets local-network use; VPN route support is deferred by the
+maintainer's decision (2026-11-09), not because VPN screen sharing is inherently unusable.
+
+When both Macs support High Performance, Cindy opens it directly by default without a
+mode-selection prompt. An explicitly saved `mode: "standard"` override in the same
+settings file is preserved; if either Mac lacks High Performance support, Standard is
+used for this connection without overwriting the preference. Cindy opens
+`vnc://<login>@<host>?quality=5&numVirtualDisplays=1`
+(High Performance, one virtual display) or `?quality=adaptive&numVirtualDisplays=0`
+(Standard) with `shell.openExternal`. These query values come from Screen Sharing's own
+saved `.vncloc` files and are not documented by Apple. The password never passes through
+Cindy or the URL: the first sign-in uses Screen Sharing's prompt and its "remember in
+keychain" option; prefer the stable `.local` name so the saved item keeps matching.
+
+Every failure before Screen Sharing opens — not a Mac, older host, sharing off, no
+reachable address, capabilities timeout or a failed URL open — opens Cindy's viewer
+instead. Failures inside Screen Sharing after it opens (wrong password, High Performance
+rejected) are shown by Screen Sharing and do not fall back. Screen Sharing sessions do not
+use Cindy's lease, privacy screen, lock-on-exit, idle lock or host Disconnect banner.
+
 ## Desktop viewer
 
 The desktop interaction hierarchy follows a canvas-first approach: device and

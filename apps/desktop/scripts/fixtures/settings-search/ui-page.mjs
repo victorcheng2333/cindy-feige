@@ -41,6 +41,13 @@ export default {
     const panel = page.getByRole('tabpanel');
     await panel.waitFor();
     assert.equal(await panel.getAttribute('id'), `settings-panel-${ui.data.tab}`);
+    // Real switch + response handling; the fixture never writes local preferences.
+    if (ui.data.tab === 'remote-control' && ui.data.cloud && ui.platform === 'darwin') {
+      const sharing = panel.getByRole('switch', { name: await ui.t('settings.remoteControl.systemSharing.toggleAria') });
+      await sharing.click();
+      await page.waitForFunction(() => document.querySelector('[data-setting-id="remoteControl.systemScreenSharing"]')?.getAttribute('aria-checked') === 'true');
+      await ui.capture('system-screen-sharing-enabled');
+    }
     if (ui.data.previewBackground) {
       const label = ui.data.previewBackground === 'none' ? 'desktopVisibilityLabel' : 'visibilityLabel';
       const slider = panel.getByRole('slider', { name: await ui.t(`settings.appearance.wallpaper.${label}`) });

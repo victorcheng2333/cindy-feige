@@ -1330,7 +1330,14 @@
     "handoffEnded": "Ce transfert de saisie est déjà terminé ; il n'y a donc aucune fenêtre à afficher.",
     "handoffUnavailable": "Cet ordinateur ne peut pas afficher uniquement cette fenêtre. Mettez-y Cindy à jour, ou activez-y le bureau à distance.",
     "handoffWindow": "Transfert de saisie · {{app}}",
-    "idleMinutes_many": "{{count}} minutes"
+    "idleMinutes_many": "{{count}} minutes",
+    "systemSharing": {
+      "chooseTitle": "Se connecter à « {{name}} » avec Partage d’écran",
+      "chooseDetail": "Hautes performances : jusqu’à 60 i/s, latence réduite et un écran virtuel. Idéal sur un réseau local filaire ou rapide.\nStandard : adapte la qualité au réseau.\nLa première fois, saisissez le mot de passe de session de l’autre Mac dans Partage d’écran et choisissez de l’enregistrer dans le trousseau. Ensuite, la connexion est directe.",
+      "high": "Hautes performances",
+      "standard": "Standard",
+      "cancel": "Annuler"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "Cette tâche SSH ne peut pas changer de Harness. Choisissez un modèle dans son Harness actuel, ou créez une nouvelle tâche SSH avec le Harness souhaité.",
@@ -6559,6 +6566,12 @@
         "title": "Révoquer l'accès ?",
         "description": "Une fois l'accès révoqué, cet appareil est immédiatement déconnecté et ne peut plus contrôler cette machine à distance. Vous devrez rétablir son accès dans Paramètres → Connexion à distance avant qu'il puisse se reconnecter.",
         "confirm": "Révoquer l'accès"
+      },
+      "systemSharing": {
+        "title": "Utiliser le Partage d’écran entre Mac",
+        "description": "Lorsque vous ouvrez le bureau à distance d’un autre Mac depuis ce Mac, l’app intégrée Partage d’écran est utilisée pour une image plus fluide. L’autre Mac doit avoir activé Réglages Système → Général → Partage → Partage d’écran, et les deux ordinateurs doivent être sur le même réseau. Sinon, le bureau à distance Cindy s’ouvre.",
+        "toggleAria": "Utiliser le Partage d’écran entre Mac",
+        "saveFailed": "Impossible d’enregistrer ce réglage. Réessayez."
       }
     },
     "tina": {

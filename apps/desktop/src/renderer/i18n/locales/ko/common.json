@@ -1299,7 +1299,14 @@
     "credentialRequired": "Mac 암호를 확인하세요. 확인할 수 없으면 두 컴퓨터에서 Cindy를 업데이트하세요.",
     "handoffEnded": "이 대리 입력은 이미 끝나서 표시할 창이 없습니다.",
     "handoffUnavailable": "이 컴퓨터에서는 이 창만 표시할 수 없습니다. 해당 컴퓨터에서 Cindy를 업데이트하거나 원격 데스크톱을 켜세요.",
-    "handoffWindow": "대리 입력 · {{app}}"
+    "handoffWindow": "대리 입력 · {{app}}",
+    "systemSharing": {
+      "chooseTitle": "화면 공유로 「{{name}}」에 연결",
+      "chooseDetail": "고성능: 최대 60fps, 낮은 지연 시간, 가상 디스플레이 1개를 사용합니다. 유선 또는 빠른 로컬 네트워크에 적합합니다.\n표준: 네트워크에 맞춰 화질을 조정합니다.\n처음 연결할 때 화면 공유 창에 상대 Mac의 로그인 암호를 입력하고 키체인에 저장하세요. 이후에는 바로 연결됩니다.",
+      "high": "고성능",
+      "standard": "표준",
+      "cancel": "취소"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "이 SSH 작업에서는 Harness를 전환할 수 없습니다. 현재 Harness의 모델을 선택하거나 필요한 Harness로 새 SSH 작업을 만드세요.",
@@ -6452,6 +6459,12 @@
         "title": "액세스 권한을 철회할까요?",
         "description": "철회하면 이 기기는 즉시 연결이 끊기고 더 이상 이 컴퓨터를 원격으로 제어할 수 없습니다. 다시 연결하려면 설정 → 원격 연결에서 액세스 권한을 복원해야 합니다.",
         "confirm": "액세스 권한 철회"
+      },
+      "systemSharing": {
+        "title": "Mac 간에는 화면 공유 사용",
+        "description": "이 Mac에서 다른 Mac의 원격 데스크톱을 열 때 내장 「화면 공유」 앱을 사용해 더 부드럽게 표시합니다. 상대 Mac에서 「시스템 설정 → 일반 → 공유 → 화면 공유」를 켜야 하며 두 컴퓨터가 같은 네트워크에 있어야 합니다. 그렇지 않으면 Cindy 원격 데스크톱이 열립니다.",
+        "toggleAria": "Mac 간에는 화면 공유 사용",
+        "saveFailed": "설정을 저장하지 못했습니다. 다시 시도하세요."
       }
     },
     "tina": {

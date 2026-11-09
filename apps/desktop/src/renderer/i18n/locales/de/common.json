@@ -1312,7 +1312,14 @@
     "credentialRequired": "Schließe die Überprüfung des Mac-Passworts ab. Falls sie nicht verfügbar ist, aktualisiere Cindy auf beiden Computern.",
     "handoffEnded": "Diese Eingabeübergabe ist bereits abgeschlossen. Es gibt kein Fenster mehr zum Anzeigen.",
     "handoffUnavailable": "Dieser Computer kann nicht nur dieses Fenster anzeigen. Aktualisiere Cindy darauf oder aktiviere dort den Remotedesktop.",
-    "handoffWindow": "Eingabeübergabe · {{app}}"
+    "handoffWindow": "Eingabeübergabe · {{app}}",
+    "systemSharing": {
+      "chooseTitle": "Mit „{{name}}“ über die Bildschirmfreigabe verbinden",
+      "chooseDetail": "Hohe Leistung: bis zu 60 fps, geringere Latenz und ein virtueller Bildschirm. Am besten im kabelgebundenen oder schnellen lokalen Netzwerk.\nStandard: passt die Qualität an das Netzwerk an.\nGib beim ersten Mal das Anmeldepasswort des anderen Mac in der Bildschirmfreigabe ein und sichere es im Schlüsselbund. Danach wird direkt verbunden.",
+      "high": "Hohe Leistung",
+      "standard": "Standard",
+      "cancel": "Abbrechen"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "Bei dieser SSH-Aufgabe lässt sich der Harness nicht wechseln. Wähle ein Modell im aktuellen Harness oder erstelle eine neue SSH-Aufgabe mit dem benötigten Harness.",
@@ -6494,6 +6501,12 @@
         "title": "Zugriff widerrufen?",
         "description": "Nach dem Widerruf wird dieses Gerät sofort getrennt und kann diesen Computer nicht mehr fernsteuern. Du musst den Zugriff unter Einstellungen → Remote-Verbindung wiederherstellen, bevor es sich erneut verbinden kann.",
         "confirm": "Zugriff widerrufen"
+      },
+      "systemSharing": {
+        "title": "Zwischen Macs die Bildschirmfreigabe verwenden",
+        "description": "Wenn du von diesem Mac aus den Remote-Desktop eines anderen Mac öffnest, wird die integrierte App „Bildschirmfreigabe“ für ein flüssigeres Bild verwendet. Auf dem anderen Mac muss „Systemeinstellungen → Allgemein → Teilen → Bildschirmfreigabe“ aktiviert sein, und beide Computer müssen im selben Netzwerk sein. Andernfalls öffnet sich der Cindy-Remote-Desktop.",
+        "toggleAria": "Zwischen Macs die Bildschirmfreigabe verwenden",
+        "saveFailed": "Die Einstellung konnte nicht gespeichert werden. Versuche es erneut."
       }
     },
     "tina": {

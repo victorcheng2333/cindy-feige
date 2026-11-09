@@ -1,5 +1,15 @@
 # 跨端协议兼容
 
+## 远程桌面能力新增 `systemScreenSharing`（2026-11-09，未发布）
+
+macOS 被控端在允许远程桌面时，于鉴权后的 `capabilities` 回复中增加可选对象
+`systemScreenSharing`（`listening`、`hosts`、`user`、`highPerformance`），供 Mac 控制端决定
+是否改用系统「屏幕共享」直连。只增字段，不改请求、租约或握手：旧控制端与手机端忽略它；
+新控制端遇到旧被控端（无此字段）、非 Mac 或校验不通过的地址，一律回退到原 WebRTC 查看器。
+控制端只尝试目标上报的 `.local` 名称，不回退到裸 IP，避免不同网络重叠私网地址导致误连；
+Bonjour 仍依赖局域网名称解析，不构成 VNC 端点的密码学身份认证。登录名按 macOS 短名校验后才放进 URL。
+自建中转透明转发既有 invoke，无需适配或升级。行为说明见 `docs/remote-desktop.md`。
+
 ## Cursor 引擎退役（2026-11-05）
 
 Desktop、iOS、Android 和独立额度客户端移除 Cursor 执行、登录、模型选择、预热及额度查询。

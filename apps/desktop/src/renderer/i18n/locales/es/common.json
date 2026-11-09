@@ -1330,7 +1330,14 @@
     "handoffEnded": "Esta transferencia de entrada ya finalizó, por lo que no hay ninguna ventana para mostrar.",
     "handoffUnavailable": "Esta computadora no puede mostrar solo esta ventana. Actualice Cindy o active el escritorio remoto allí.",
     "handoffWindow": "Transferencia de entrada · {{app}}",
-    "idleMinutes_many": "minutos {{count}}"
+    "idleMinutes_many": "minutos {{count}}",
+    "systemSharing": {
+      "chooseTitle": "Conectar con «{{name}}» mediante Compartir pantalla",
+      "chooseDetail": "Alto rendimiento: hasta 60 fps, menor latencia y una pantalla virtual. Ideal en una red local por cable o rápida.\nEstándar: ajusta la calidad a la red.\nLa primera vez, introduce la contraseña de inicio de sesión del otro Mac en Compartir pantalla y elige guardarla en el llavero. Después se conectará directamente.",
+      "high": "Alto rendimiento",
+      "standard": "Estándar",
+      "cancel": "Cancelar"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "Esta tarea SSH no permite cambiar de Harness. Elige un modelo en su Harness actual o crea otra tarea SSH con el Harness que necesitas.",
@@ -6559,6 +6566,12 @@
         "title": "¿Revocar el acceso?",
         "description": "Una vez revocado el acceso, este dispositivo se desconectará de inmediato y ya no podrá controlar esta computadora de forma remota. Deberás restablecer su acceso en Configuración → Conexión remota para que pueda volver a conectarse.",
         "confirm": "Revocar acceso"
+      },
+      "systemSharing": {
+        "title": "Usar Compartir pantalla entre Macs",
+        "description": "Al abrir el escritorio remoto de otro Mac desde este Mac, usa la app integrada Compartir pantalla para una imagen más fluida. El otro Mac debe tener activado Ajustes del Sistema → General → Compartir → Compartir pantalla, y ambos ordenadores deben estar en la misma red. Si no, se abre el escritorio remoto de Cindy.",
+        "toggleAria": "Usar Compartir pantalla entre Macs",
+        "saveFailed": "No se pudo guardar el ajuste. Inténtalo de nuevo."
       }
     },
     "tina": {

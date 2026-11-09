@@ -212,6 +212,20 @@ export interface RemoteDesktopWindow {
   title: string;
   app: string;
 }
+/**
+ * macOS host: how a Mac controller can reach the system Screen Sharing service
+ * (`vnc://`) directly. Only informs the controller's choice; Cindy never relays it.
+ */
+export interface RemoteDesktopSystemScreenSharing {
+  /** The host's Screen Sharing service accepts connections on port 5900. */
+  listening: boolean;
+  /** Addresses to try in order: the Bonjour `.local` name, then IPv4 addresses. */
+  hosts: string[];
+  /** Login name prefilled in the Screen Sharing sign-in prompt. */
+  user: string;
+  /** Apple silicon on macOS 14 or later, as High Performance requires. */
+  highPerformance: boolean;
+}
 export interface RemoteDesktopCapabilities {
   version: 1;
   enabled: boolean;
@@ -282,6 +296,8 @@ export interface RemoteDesktopCapabilities {
    * new input kinds, so viewers send neither without this flag.
    */
   liveScreens?: boolean;
+  /** macOS hosts with remote desktop allowed; absent on older hosts. */
+  systemScreenSharing?: RemoteDesktopSystemScreenSharing;
 }
 export type LiveScreenPlatform =
   "ios" | "ipados" | "tvos" | "visionos" | "android";

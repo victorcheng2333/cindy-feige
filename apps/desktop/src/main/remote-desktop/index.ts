@@ -59,6 +59,7 @@ import {
 import { encodeDesktopFrame, encodeNativeRelayFrame } from './frame';
 import { transferDesktopClipboard, transferDesktopClipboardContent } from './clipboard';
 import { NativeDesktopCapture } from './nativeCapture';
+import { readSystemScreenSharing } from './systemScreenSharing';
 import { HyprlandCapture, supportsHyprlandCapture } from './hyprlandCapture';
 import { readLinuxDesktopInputSupport, isX11Desktop } from './linuxInput';
 import { LinuxDesktopAudio, supportsLinuxAudio } from './linuxAudio';
@@ -881,6 +882,9 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
         (enabled && (await readLinuxDesktopInputSupport())),
       platform: process.platform,
       ...(enabled ? { permissions: await permissions.read() } : {}),
+      ...(enabled && process.platform === 'darwin'
+        ? { systemScreenSharing: await readSystemScreenSharing() }
+        : {}),
       displays:
         linuxDisplays ??
         (enabled && wayland()

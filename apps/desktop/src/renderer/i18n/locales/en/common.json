@@ -1312,7 +1312,14 @@
     "credentialRequired": "Complete Mac password verification. If unavailable, update Cindy on both computers.",
     "handoffEnded": "This input handoff has already finished, so there is no window to show.",
     "handoffUnavailable": "This computer can't show just this window. Update Cindy on it, or turn on remote desktop there.",
-    "handoffWindow": "Input handoff · {{app}}"
+    "handoffWindow": "Input handoff · {{app}}",
+    "systemSharing": {
+      "chooseTitle": "Connect to “{{name}}” with Screen Sharing",
+      "chooseDetail": "High Performance: up to 60 fps with lower latency and one virtual display. Best on a wired or fast local network.\nStandard: adjusts quality to the network.\nThe first time, enter the other Mac's login password in the Screen Sharing prompt and choose to remember it in your keychain. After that it connects directly.",
+      "high": "High Performance",
+      "standard": "Standard",
+      "cancel": "Cancel"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "This SSH task cannot switch Harness. Choose a model in its current Harness, or create a new SSH task with the Harness you need.",
@@ -6495,6 +6502,12 @@
         "title": "Revoke access?",
         "description": "Once revoked, this device is disconnected immediately and can no longer control this machine remotely. You will need to restore its access under Settings → Remote Connection before it can reconnect.",
         "confirm": "Revoke access"
+      },
+      "systemSharing": {
+        "title": "Use Screen Sharing between Macs",
+        "description": "When you open another Mac's remote desktop from this Mac, use the built-in Screen Sharing app for smoother video. The other Mac needs System Settings → General → Sharing → Screen Sharing turned on, and both computers must be on the same network. Otherwise Cindy remote desktop opens instead.",
+        "toggleAria": "Use Screen Sharing between Macs",
+        "saveFailed": "Couldn’t save this setting. Try again."
       }
     },
     "tina": {

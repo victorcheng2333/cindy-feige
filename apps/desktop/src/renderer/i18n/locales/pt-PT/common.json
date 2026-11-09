@@ -1330,7 +1330,14 @@
     "handoffEnded": "Esta transferência de controlo já terminou, pelo que não há nenhuma janela para mostrar.",
     "handoffUnavailable": "Este computador não consegue mostrar apenas esta janela. Atualize o Cindy nesse computador ou ative aí o ambiente de trabalho remoto.",
     "handoffWindow": "Transferência de controlo · {{app}}",
-    "idleMinutes_many": "{{count}} minutos"
+    "idleMinutes_many": "{{count}} minutos",
+    "systemSharing": {
+      "chooseTitle": "Ligar a “{{name}}” com a Partilha de ecrã",
+      "chooseDetail": "Alto desempenho: até 60 fps, menor latência e um ecrã virtual. Ideal numa rede local por cabo ou rápida.\nPadrão: ajusta a qualidade à rede.\nNa primeira vez, introduza a palavra-passe de início de sessão do outro Mac na Partilha de ecrã e escolha guardá-la no porta-chaves. Depois, a ligação é direta.",
+      "high": "Alto desempenho",
+      "standard": "Padrão",
+      "cancel": "Cancelar"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "Esta tarefa SSH não pode mudar de Harness. Escolhe um modelo no Harness atual ou cria uma nova tarefa SSH com o Harness de que precisas.",
@@ -6559,6 +6566,12 @@
         "title": "Revogar acesso?",
         "description": "Após a revogação, este dispositivo é desligado imediatamente e deixa de poder controlar esta máquina remotamente. Terá de restaurar o acesso em Definições → Ligação remota para que possa voltar a ligar-se.",
         "confirm": "Revogar acesso"
+      },
+      "systemSharing": {
+        "title": "Usar a Partilha de ecrã entre Macs",
+        "description": "Ao abrir o ambiente de trabalho remoto de outro Mac a partir deste Mac, usa a app integrada Partilha de ecrã para uma imagem mais fluida. O outro Mac tem de ter Definições do Sistema → Geral → Partilha → Partilha de ecrã ativada, e os dois computadores têm de estar na mesma rede. Caso contrário, abre o ambiente de trabalho remoto do Cindy.",
+        "toggleAria": "Usar a Partilha de ecrã entre Macs",
+        "saveFailed": "Não foi possível guardar a definição. Tente novamente."
       }
     },
     "tina": {

@@ -1299,7 +1299,14 @@
     "credentialRequired": "請完成 Mac 密碼驗證。如果無法驗證，請更新兩台電腦上的 Cindy。",
     "handoffEnded": "這次代輸入已經結束，沒有可顯示的視窗。",
     "handoffUnavailable": "這台電腦暫時無法只顯示這個視窗。請在那台電腦上更新 Cindy，或開啟遠端桌面。",
-    "handoffWindow": "代輸入 · {{app}}"
+    "handoffWindow": "代輸入 · {{app}}",
+    "systemSharing": {
+      "chooseTitle": "用螢幕共享連線「{{name}}」",
+      "chooseDetail": "高效能：最高 60 fps，延遲更低，使用一個虛擬顯示器，適合有線或高速區域網路。\n標準：依網路自動調整畫質。\n第一次連線時，請在系統視窗中輸入對方 Mac 的登入密碼，並選擇在鑰匙圈中記住密碼，之後會直接連線。",
+      "high": "高效能",
+      "standard": "標準",
+      "cancel": "取消"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "此 SSH 任務暫不支援切換 Harness。請選擇目前 Harness 下的模型，或使用所需 Harness 建立新的 SSH 任務。",
@@ -6452,6 +6459,12 @@
         "title": "撤銷訪問權限？",
         "description": "撤銷後，該裝置會立即斷開，並且無法再遠端連線本機。之後需在「設定 → 遠端連線」中恢復其訪問權限，對方才能重新連線。",
         "confirm": "撤銷訪問權限"
+      },
+      "systemSharing": {
+        "title": "Mac 之間使用系統螢幕共享",
+        "description": "從這台 Mac 開啟其他 Mac 的遠端桌面時，改用系統內建的「螢幕共享」，畫面更流暢。需要對方 Mac 開啟「系統設定 → 一般 → 共享 → 螢幕共享」，且兩台電腦在同一網路；否則自動使用 Cindy 遠端桌面。",
+        "toggleAria": "Mac 之間使用系統螢幕共享",
+        "saveFailed": "無法儲存設定，請再試一次。"
       }
     },
     "tina": {

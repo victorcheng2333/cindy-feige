@@ -1330,7 +1330,14 @@
     "handoffEnded": "Esta transferência de controle de entrada já terminou, então não há janela para mostrar.",
     "handoffUnavailable": "Este computador não pode mostrar apenas esta janela. Atualize o Cindy nele ou ative a área de trabalho remota.",
     "handoffWindow": "Transferência de controle de entrada · {{app}}",
-    "idleMinutes_many": "{{count}} minutos"
+    "idleMinutes_many": "{{count}} minutos",
+    "systemSharing": {
+      "chooseTitle": "Conectar a “{{name}}” com o Compartilhamento de Tela",
+      "chooseDetail": "Alto desempenho: até 60 fps, menor latência e uma tela virtual. Ideal em rede local cabeada ou rápida.\nPadrão: ajusta a qualidade à rede.\nNa primeira vez, digite a senha de login do outro Mac no Compartilhamento de Tela e escolha salvá-la no Acesso às Chaves. Depois disso, a conexão é direta.",
+      "high": "Alto desempenho",
+      "standard": "Padrão",
+      "cancel": "Cancelar"
+    }
   },
   "ipcError": {
     "SSH_HARNESS_SWITCH_UNSUPPORTED": "Esta tarefa SSH não pode trocar de Harness. Escolha um modelo no Harness atual ou crie uma nova tarefa SSH com o Harness necessário.",
@@ -6559,6 +6566,12 @@
         "title": "Revogar acesso?",
         "description": "Após a revogação, este dispositivo será desconectado imediatamente e não poderá mais controlar esta máquina remotamente. Você precisará restaurar o acesso dele em Configurações → Conexão remota antes que ele possa se reconectar.",
         "confirm": "Revogar acesso"
+      },
+      "systemSharing": {
+        "title": "Usar o Compartilhamento de Tela entre Macs",
+        "description": "Ao abrir a área de trabalho remota de outro Mac a partir deste Mac, usa o app integrado Compartilhamento de Tela para uma imagem mais fluida. O outro Mac precisa ter Ajustes do Sistema → Geral → Compartilhamento → Compartilhamento de Tela ativado, e os dois computadores precisam estar na mesma rede. Caso contrário, abre a área de trabalho remota do Cindy.",
+        "toggleAria": "Usar o Compartilhamento de Tela entre Macs",
+        "saveFailed": "Não foi possível salvar o ajuste. Tente novamente."
       }
     },
     "tina": {
