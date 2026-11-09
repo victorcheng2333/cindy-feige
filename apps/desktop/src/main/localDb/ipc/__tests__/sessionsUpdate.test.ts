@@ -1,3 +1,5 @@
+import { configureUserDataDir } from '../../../userDataPath.js';
+import { configureOwnerContext } from '../../../ownerContext.js';
 import { registerMakerSessionCreateHandler } from '../../../maker-ipc/sessionCreateHandler';
 import { MAKER_INVOKE } from '../../../maker-ipc/channels';
 import { withSendToSessionLock } from '../../../maker-ipc/sendToSessionLock';
@@ -117,6 +119,7 @@ vi.mock('@cindy/maker-core/pi-subagent-runs', () => ({
 }));
 vi.mock('../../../appSessionState', () => ({
   getActiveAppSession: () => ({ dataOwnerId: 'owner-a', generation: 1 }),
+  onAppSessionInvalidated: () => () => {},
   ownerScopedUserDataPath: (...parts: string[]) => path.join(h.userDataDir!, ...parts),
 }));
 vi.mock('../../../logger', () => ({
@@ -392,6 +395,11 @@ beforeEach(() => {
   h.withRehydrateCloseSuppressed.mockImplementation(async (_sessionId, task) => task());
   h.getMakerIfReady.mockReturnValue({ isSessionAlive: () => false, closeSession: h.closeSession });
   h.userDataDir = mkdtempSync(path.join(os.tmpdir(), 'cindy-sessions-update-'));
+  configureUserDataDir(h.userDataDir);
+  configureOwnerContext({
+    read: () => ({ dataOwnerId: 'owner-a', generation: 1, boundaryPending: false }),
+    fallbackBaseDir: () => h.userDataDir!,
+  });
   createDb();
   setSessionRouteLockImplementation(h.routeLock);
   setSessionRuntimeCleanup(h.runtimeCleanup);

@@ -34,6 +34,8 @@ export interface SwitcherDevice {
    * 设备目录说它在线,就是在线(哪怕还没同步出任务来)。
    */
   online: boolean;
+  /** false 表示目录尚无该设备且没有活分片，不能将未知 presence 当作确认离线。 */
+  presenceKnown?: boolean;
 }
 
 export interface BuildSwitcherDevicesInput {
@@ -57,7 +59,9 @@ export function buildSwitcherDevices({
   const onlineControllable = new Set<string>();
   // presence 单独一套:设备目录说它在线就是在线,不受「本机是否允许控它」这类本地偏好影响。
   const presenceOnline = new Set<string>();
+  const directoryDeviceIds = new Set<string>();
   for (const d of list) {
+    directoryDeviceIds.add(d.deviceId);
     nameById.set(d.deviceId, d.name);
     if (d.isSelf) {
       selfIds.add(d.deviceId);
@@ -107,8 +111,9 @@ export function buildSwitcherDevices({
       // presence 与 status 分开表达:
       // - 设备目录上报它在线 → 在线(哪怕还没同步出任务来);
       // - 同步分片是活的(relay 已连上)→ 同样是在线(设备目录还没加载时也只有这条路)。
-      // 真正离线的缓存设备两者都不满足 → online: false。
+      // 两者都不满足时，由 presenceKnown 区分确认离线与尚未知晓。
       online: presenceOnline.has(deviceId) || cachedDevice?.connected === true,
+      presenceKnown: directoryDeviceIds.has(deviceId) || cachedDevice?.connected === true,
     });
   }
 

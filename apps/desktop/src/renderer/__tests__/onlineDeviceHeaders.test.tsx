@@ -258,15 +258,22 @@ describe('Offline device header names', () => {
   // #9329, unit: the real switcher + sidebar projections feeding the real header. The old
   // projection collapsed the task-sync shard's three states into one boolean, so a shard that
   // was only connecting (cold-start cache, relay reconnect, first read in flight) said offline.
+  // 合并接缝：原用例只有未知 presence，补目录已知在线/离线且首拉在途，防止同步状态覆盖明确 presence。
   it.each([
-    { shard: 'connecting', loading: false, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
-    { shard: 'disconnected', loading: true, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
-    { shard: 'disconnected', loading: false, label: 'ccAgent.sidebar.deviceGroup.offline' },
-    { shard: 'connected', loading: false, label: null },
-  ] as const)('labels a $shard task shard (first read in flight: $loading)', ({ shard, loading, label }) => {
+    { shard: 'connecting', loading: false, presence: null, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
+    { shard: 'disconnected', loading: true, presence: null, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
+    { shard: 'disconnected', loading: false, presence: null, label: 'ccAgent.sidebar.deviceGroup.offline' },
+    { shard: 'connected', loading: false, presence: null, label: null },
+    { shard: 'disconnected', loading: true, presence: false, label: 'ccAgent.sidebar.deviceGroup.offline' },
+    { shard: 'disconnected', loading: true, presence: true, label: 'ccAgent.sidebar.machineSwitcher.connecting' },
+  ] as const)('labels a $shard task shard (first read in flight: $loading, presence: $presence)', ({ shard, loading, presence, label }) => {
     const index = buildSidebarDeviceIndex(
       buildSwitcherDevices({
-        fullList: null,
+        fullList: presence === null ? null : [{
+          deviceId: 'offline', name: 'Remote Mac', platform: 'darwin', appVersion: null,
+          lastSeenAt: null, online: presence, busy: false, remoteControlEnabled: true,
+          controlEnabled: true, isSelf: false,
+        }],
         syncedDevices: [{ deviceId: 'offline', deviceName: 'Remote Mac', sessionCount: 1, connected: shard === 'connected' }],
         revoked: new Set(),
       }),

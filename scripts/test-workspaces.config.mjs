@@ -351,6 +351,8 @@ export default {
       },
     },
     requiredUnitWorkspace('remote-mac-usage', 'apps/remote-mac-usage'),
+    noCollectableWorkspace('@cindy/host', 'apps/host',
+      'Uses node:test and runs in the dedicated Host regressions CI job on macOS, Windows and Linux (pnpm --dir apps/host test).'),
     {
       name: 'desktop',
       cwd: 'apps/desktop',

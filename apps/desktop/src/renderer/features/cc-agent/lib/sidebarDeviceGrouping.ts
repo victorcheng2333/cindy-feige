@@ -34,9 +34,8 @@ export function buildSidebarDeviceIndex(
           : (shardStatus.get(device.deviceId) ?? 'connecting');
     index.set(device.deviceId, {
       name: device.name,
-      // 用设备 presence,不拿同步状态顶替:「在线但还没同步出任务」不是离线,
-      // 否则侧栏分组标题会给一台明明在线的设备挂上「离线」。
-      online: device.online,
+      // 已知 presence 始终优先；目录尚无该设备时，连接中/首拉在途不能被误标为离线。
+      online: device.presenceKnown === false ? status !== 'disconnected' : device.online,
       connected: status === 'connected',
     });
   }

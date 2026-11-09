@@ -358,7 +358,7 @@ describe('buildSwitcherDevices', () => {
       revoked: new Set(['dev-x']),
     });
     expect(result).toEqual([
-      { deviceId: 'dev-x', name: 'DEV-X', status: 'rejected', online: true },
+      { deviceId: 'dev-x', name: 'DEV-X', status: 'rejected', online: true, presenceKnown: true },
     ]);
   });
 
@@ -387,7 +387,7 @@ describe('buildSwitcherDevices', () => {
       revoked: new Set(['gone-dev']),
     });
     expect(result).toEqual([
-      { deviceId: 'gone-dev', name: 'another computer', status: 'rejected', online: false },
+      { deviceId: 'gone-dev', name: 'another computer', status: 'rejected', online: false, presenceKnown: false },
     ]);
   });
 
@@ -397,7 +397,7 @@ describe('buildSwitcherDevices', () => {
       syncedDevices: [{ deviceId: 'dev-a', deviceName: 'Mac A', sessionCount: 2, connected: true }],
       revoked: new Set(),
     });
-    expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connected', online: true }]);
+    expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connected', online: true, presenceKnown: true }]);
   });
 
   it('仅有断线缓存的设备仍显示,但状态为 connecting', () => {
@@ -408,7 +408,7 @@ describe('buildSwitcherDevices', () => {
       ],
       revoked: new Set(),
     });
-    expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connecting', online: false }]);
+    expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connecting', online: false, presenceKnown: false }]);
   });
 
   it('已连接设备名以同步分片为准(覆盖 fullList 滞后的旧名;REST 改名不广播 presence)', () => {
@@ -417,7 +417,7 @@ describe('buildSwitcherDevices', () => {
       syncedDevices: [{ deviceId: 'dev-a', deviceName: '新名', sessionCount: 1, connected: true }],
       revoked: new Set(),
     });
-    expect(result).toEqual([{ deviceId: 'dev-a', name: '新名', status: 'connected', online: true }]);
+    expect(result).toEqual([{ deviceId: 'dev-a', name: '新名', status: 'connected', online: true, presenceKnown: true }]);
   });
 
   it('同步分片名为空 → 回退 fullList 既有名(不被空名覆盖)', () => {
@@ -426,7 +426,7 @@ describe('buildSwitcherDevices', () => {
       syncedDevices: [{ deviceId: 'dev-a', deviceName: '', sessionCount: 0, connected: true }],
       revoked: new Set(),
     });
-    expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connected', online: true }]);
+    expect(result).toEqual([{ deviceId: 'dev-a', name: 'Mac A', status: 'connected', online: true, presenceKnown: true }]);
   });
 });
 
@@ -944,6 +944,6 @@ describe('applyDeviceRename(切换栏全量设备就地改名)', () => {
       syncedDevices: [],
       revoked: new Set(),
     });
-    expect(devices).toEqual([{ deviceId: 'dev-c', name: 'New C', status: 'connecting', online: true }]);
+    expect(devices).toEqual([{ deviceId: 'dev-c', name: 'New C', status: 'connecting', online: true, presenceKnown: true }]);
   });
 });

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppShellCover } from '@/contexts/AppShellCoverContext';
 import { useEnvCheck } from '@/contexts/EnvCheckContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 
 // 运行期端点清单(dev/packaged 都在启动阻断后有真值,烘焙兜底已退役)
@@ -106,8 +105,7 @@ export function useSplash() {
     resetSignal,
     checkEnvironment,
   } = useEnvCheck();
-  const { isInitializing: authInitializing } = useAuth();
-  const { coverHeld } = useAppShellCover();
+  const { startupTarget } = useAppShellCover();
   const { errorCode: updateErrorCode } = useUpdateStatus();
 
   const [phase, setPhase] = useState<SplashPhase>('init');
@@ -155,13 +153,15 @@ export function useSplash() {
   }, [updateErrorCode, phase]);
 
   // ── Effect 3: fade-out trigger ──
-  // coverHeld:已登录但 LocalDbGate 还不能画主界面。splash 必须继续盖住
-  // (DESIGN.md §10),避免准备完成前露出空白底。
+  // The shell owns auth/database readiness. Preserve immediate exit once it is ready.
   useEffect(() => {
-    if (phase === 'splash_passed' && !authInitializing && !coverHeld) {
+    if (envStatus !== 'passed') return;
+    if (phase === 'fading_out' && startupTarget === 'splash') {
+      setPhase('splash_passed');
+    } else if (phase === 'splash_passed' && startupTarget !== 'splash') {
       setPhase('fading_out');
     }
-  }, [phase, authInitializing, coverHeld]);
+  }, [envStatus, phase, startupTarget]);
 
   // ── Effect 4: fading_out fallback ──
   useEffect(() => {
@@ -175,7 +175,7 @@ export function useSplash() {
         : FADE_FALLBACK_MS;
 
     fallbackTimerRef.current = setTimeout(() => {
-      setPhase('splash_done');
+      setPhase((current) => current === 'fading_out' ? 'splash_done' : current);
     }, delay);
 
     return () => {
@@ -311,7 +311,7 @@ export function useSplash() {
   const onTransitionEnd = useCallback(
     (e: React.TransitionEvent) => {
       if (e.propertyName === 'opacity' && phase === 'fading_out') {
-        setPhase('splash_done');
+        setPhase((current) => current === 'fading_out' ? 'splash_done' : current);
       }
     },
     [phase],
