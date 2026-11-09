@@ -65,5 +65,6 @@ export async function readSystemScreenSharing(): Promise<RemoteDesktopSystemScre
     hosts: [...(name ? [`${name}.local`] : []), ...ipv4Addresses()].slice(0, MAX_HOSTS),
     user: os.userInfo().username,
     highPerformance: supportsHighPerformance(),
+    addressVerification: 1,
   };
 }

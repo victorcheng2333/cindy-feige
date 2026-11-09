@@ -203,6 +203,7 @@ export class RemoteDesktopViewerWindows {
       const outcome = await openWithSystemScreenSharing({
         caps,
         current,
+        requestProbe: (request) => requestRemote(target.deviceId, request, check),
       });
       if (outcome !== 'fallback' || !current()) return;
     } finally {
@@ -412,8 +413,13 @@ export class RemoteDesktopViewerWindows {
       assertTrustedAppRendererEvent(event);
       return readSystemScreenSharingSettings();
     });
-    ipcMain.handle(REMOTE_VIEWER.SET_SYSTEM_SHARING, (event, enabled: unknown) => {
+    ipcMain.handle(REMOTE_VIEWER.SET_SYSTEM_SHARING, (event, enabled: unknown, mode?: unknown) => {
       assertTrustedAppRendererEvent(event);
+      if (mode !== undefined) {
+        if (enabled !== undefined || (mode !== 'high' && mode !== 'standard'))
+          throwIpcError('INVALID_PARAMS', 'Invalid screen sharing mode');
+        return writeSystemScreenSharingSettings({ mode });
+      }
       if (typeof enabled !== 'boolean') throwIpcError('INVALID_PARAMS', 'Invalid setting');
       return writeSystemScreenSharingSettings({ enabled });
     });

@@ -48,6 +48,16 @@ export const remoteControlSettings = defineSettings({
       '远程桌面',
     ],
   },
+  systemScreenSharingMode: {
+    id: 'remoteControl.systemScreenSharingMode',
+    isVisible: ({ mode, platform }) => mode === 'cloud' && platform === 'darwin',
+    tab: 'remote-control',
+    targetId: 'settings-search-target-remote-system-sharing-mode',
+    titleKey: 'settings.remoteControl.systemSharing.modeTitle',
+    descriptionKey: 'settings.remoteControl.systemSharing.modeDescription',
+    sectionKey: 'settings.sections.remoteControl',
+    aliases: ['High Performance', 'Standard', '高性能', '标准', '屏幕共享模式'],
+  },
   ssh: {
     id: 'remoteControl.ssh',
     tab: 'remote-control',

@@ -2,6 +2,12 @@ import type { RemoteDesktopCapabilities } from '@cindy/device-link';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { dialog, shell } from 'electron';
 import { probeTcp, supportsHighPerformance } from '../../remote-desktop/systemScreenSharing';
+import { verifySystemScreenSharingHost } from '../../remote-desktop/systemScreenSharingProbe';
+
+vi.mock('../../remote-desktop/systemScreenSharingProbe', async (original) => ({
+  ...(await original<typeof import('../../remote-desktop/systemScreenSharingProbe')>()),
+  verifySystemScreenSharingHost: vi.fn(),
+}));
 
 const settings = vi.hoisted(() => ({
   value: { enabled: true, mode: 'high' as 'high' | 'standard' },
@@ -44,6 +50,38 @@ beforeEach(() => {
   vi.mocked(supportsHighPerformance).mockReturnValue(true);
   vi.mocked(shell.openExternal).mockResolvedValue();
   vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 2, checkboxChecked: false });
+  vi.mocked(verifySystemScreenSharingHost).mockResolvedValue(true);
+});
+
+function expectDynamicConnection(host: string) {
+  expect(shell.openExternal).toHaveBeenCalledWith(
+    `vnc://victor@${host}?quality=high&numVirtualDisplays=1&scaled=dynamic`,
+  );
+}
+
+it.each([true, false])('opens a VPN IP only after a successful peer proof: %s', async (valid) => {
+  vi.mocked(verifySystemScreenSharingHost).mockResolvedValue(valid);
+  const requestProbe = vi.fn(async (request) =>
+    request.action === 'begin' ? { id: request.id } : null,
+  );
+  const result = await openWithSystemScreenSharing({
+    caps: mac({
+      listening: true,
+      hosts: ['172.26.203.43'],
+      user: 'victor',
+      highPerformance: true,
+      addressVerification: 1,
+    }),
+    current: () => true,
+    requestProbe,
+  });
+  expect(result).toBe(valid ? 'opened' : 'fallback');
+  if (valid) expectDynamicConnection('172.26.203.43');
+  else {
+    expect(probeTcp).not.toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  }
+  expect(requestProbe.mock.calls.map(([request]) => request.action)).toEqual(['begin', 'end']);
 });
 
 const mac = (systemScreenSharing: RemoteDesktopCapabilities['systemScreenSharing']) =>
@@ -78,8 +116,10 @@ it('tries only the reported Bonjour name, never bare IP addresses', () => {
 // Unit: the owner requested High Performance by default without a mode prompt.
 // Prior tests only covered planning/URL helpers, not the actual launch behavior.
 // Minimum input: two capable Macs, a reachable reported host and default settings.
-// The old implementation prompts (cancelled here) instead of launching immediately.
-it('opens High Performance by default without asking or saving another choice', async () => {
+// Regression: .plist restorationAttributes only initialize scaling; Apple's later
+// saved-state restore can override them. URL options apply after that restore.
+// Lock the external launch contract here; the real Apple parser is checked separately.
+it('requests dynamic resolution in the High Performance URL without another prompt', async () => {
   const result = await openWithSystemScreenSharing({
     caps: mac({
       listening: true,
@@ -90,11 +130,25 @@ it('opens High Performance by default without asking or saving another choice', 
     current: () => true,
   });
   expect(result).toBe('opened');
-  expect(shell.openExternal).toHaveBeenCalledWith(
-    'vnc://victor@Test-Mac.local?quality=5&numVirtualDisplays=1',
-  );
+  expectDynamicConnection('Test-Mac.local');
   expect(dialog.showMessageBox).not.toHaveBeenCalled();
   expect(settings.write).not.toHaveBeenCalled();
+});
+
+// Unit: an OS launch failure must retain the existing Cindy viewer fallback.
+it('falls back when Apple cannot be launched', async () => {
+  vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error('failed'));
+  expect(
+    await openWithSystemScreenSharing({
+      caps: mac({
+        listening: true,
+        hosts: ['Test-Mac.local'],
+        user: 'victor',
+        highPerformance: true,
+      }),
+      current: () => true,
+    }),
+  ).toBe('fallback');
 });
 
 it.each([
@@ -172,7 +226,7 @@ it('selects High Performance only when both ends support it and builds the Scree
     user: null,
   });
   expect(systemScreenSharingUrl('M3-Air.local', 'victor', 'high')).toBe(
-    'vnc://victor@M3-Air.local?quality=5&numVirtualDisplays=1',
+    'vnc://victor@M3-Air.local?quality=high&numVirtualDisplays=1&scaled=dynamic',
   );
   expect(systemScreenSharingUrl('192.168.1.20', null, 'standard')).toBe(
     'vnc://192.168.1.20?quality=adaptive&numVirtualDisplays=0',

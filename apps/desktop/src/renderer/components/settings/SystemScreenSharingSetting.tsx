@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SettingsCard, SettingsRow } from '@/components/ui/settings-rows';
 import { Switch } from '@/components/ui/switch';
+import { Select } from '@/components/ui/select';
+import type { SystemScreenSharingMode } from '../../../shared/remoteDesktopViewer';
 import { toast } from '@/lib/toast';
 import { remoteControlSettings } from './RemoteControlSection.settings-search';
 import { useSettingDefinition } from './useSettingDefinition';
@@ -9,17 +11,22 @@ import { useSettingDefinition } from './useSettingDefinition';
 /** macOS controller preference: open other Macs in system Screen Sharing when reachable. */
 export function SystemScreenSharingSetting() {
   const setting = useSettingDefinition(remoteControlSettings.systemScreenSharing);
+  const modeSetting = useSettingDefinition(remoteControlSettings.systemScreenSharingMode);
   const { t } = useTranslation();
   const api = window.electronAPI?.remoteDesktop;
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<SystemScreenSharingMode>('high');
   useEffect(() => {
     if (!api?.systemSharing) return;
     let active = true;
     void api
       .systemSharing()
       .then((value) => {
-        if (active) setEnabled(value.enabled);
+        if (active) {
+          setEnabled(value.enabled);
+          setMode(value.mode);
+        }
       })
       .catch(() => {
         if (active) setEnabled(false);
@@ -46,6 +53,32 @@ export function SystemScreenSharingSetting() {
               void api
                 .setSystemSharing(next)
                 .then((value) => setEnabled(value.enabled))
+                .catch(() => toast.error(t('settings.remoteControl.systemSharing.saveFailed')))
+                .finally(() => setBusy(false));
+            }}
+          />
+        }
+      />
+      <SettingsRow
+        {...modeSetting.anchorProps}
+        title={modeSetting.title}
+        hint={modeSetting.description}
+        trailing={
+          <Select
+            {...modeSetting.controlProps}
+            label={modeSetting.title}
+            value={mode}
+            disabled={busy || enabled !== true || !api.setSystemSharingMode}
+            options={[
+              { value: 'high', label: t('remoteDesktop.systemSharing.high') },
+              { value: 'standard', label: t('remoteDesktop.systemSharing.standard') },
+            ]}
+            onValueChange={(next) => {
+              if (next !== 'high' && next !== 'standard') return;
+              setBusy(true);
+              void api
+                .setSystemSharingMode(next)
+                .then((value) => setMode(value.mode))
                 .catch(() => toast.error(t('settings.remoteControl.systemSharing.saveFailed')))
                 .finally(() => setBusy(false));
             }}

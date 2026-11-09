@@ -6569,9 +6569,11 @@
       },
       "systemSharing": {
         "title": "Usar o Compartilhamento de Tela entre Macs",
-        "description": "Ao abrir a área de trabalho remota de outro Mac a partir deste Mac, usa o app integrado Compartilhamento de Tela para uma imagem mais fluida. O outro Mac precisa ter Ajustes do Sistema → Geral → Compartilhamento → Compartilhamento de Tela ativado, e os dois computadores precisam estar na mesma rede. Caso contrário, abre a área de trabalho remota do Cindy.",
+        "description": "Ao abrir a área de trabalho remota de outro Mac a partir deste Mac, usa o app integrado Compartilhamento de Tela para uma imagem mais fluida. O outro Mac precisa ter Ajustes do Sistema → Geral → Compartilhamento → Compartilhamento de Tela ativado, e os dois computadores precisam estar acessíveis por uma rede local ou VPN. Caso contrário, abre a área de trabalho remota do Cindy.",
         "toggleAria": "Usar o Compartilhamento de Tela entre Macs",
-        "saveFailed": "Não foi possível salvar o ajuste. Tente novamente."
+        "saveFailed": "Não foi possível salvar o ajuste. Tente novamente.",
+        "modeTitle": "Modo de conexão",
+        "modeDescription": "Usado ao conectar a partir deste Mac. Alto desempenho por padrão; Padrão se um dos Macs não oferecer suporte."
       }
     },
     "tina": {

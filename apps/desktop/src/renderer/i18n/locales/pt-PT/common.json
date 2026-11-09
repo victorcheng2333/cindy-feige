@@ -6569,9 +6569,11 @@
       },
       "systemSharing": {
         "title": "Usar a Partilha de ecrã entre Macs",
-        "description": "Ao abrir o ambiente de trabalho remoto de outro Mac a partir deste Mac, usa a app integrada Partilha de ecrã para uma imagem mais fluida. O outro Mac tem de ter Definições do Sistema → Geral → Partilha → Partilha de ecrã ativada, e os dois computadores têm de estar na mesma rede. Caso contrário, abre o ambiente de trabalho remoto do Cindy.",
+        "description": "Ao abrir o ambiente de trabalho remoto de outro Mac a partir deste Mac, usa a app integrada Partilha de ecrã para uma imagem mais fluida. O outro Mac tem de ter Definições do Sistema → Geral → Partilha → Partilha de ecrã ativada, e os dois computadores têm de estar acessíveis através de uma rede local ou VPN. Caso contrário, abre o ambiente de trabalho remoto do Cindy.",
         "toggleAria": "Usar a Partilha de ecrã entre Macs",
-        "saveFailed": "Não foi possível guardar a definição. Tente novamente."
+        "saveFailed": "Não foi possível guardar a definição. Tente novamente.",
+        "modeTitle": "Modo de ligação",
+        "modeDescription": "Usado nas ligações a partir deste Mac. Alto desempenho por predefinição; Padrão se algum dos Macs não o suportar."
       }
     },
     "tina": {

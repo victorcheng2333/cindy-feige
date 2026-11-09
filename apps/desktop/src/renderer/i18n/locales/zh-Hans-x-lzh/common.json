@@ -6461,9 +6461,11 @@
       },
       "systemSharing": {
         "title": "Mac 相通，用系统屏幕共享",
-        "description": "自此 Mac 启他 Mac 之远程桌面，改用系统所附「屏幕共享」，画面愈流畅。须彼 Mac 启「系统设置 → 通用 → 共享 → 屏幕共享」，且两机同在一网；不然，自用 Cindy 远程桌面。",
+        "description": "自此 Mac 启他 Mac 之远程桌面，改用系统所附「屏幕共享」，画面愈流畅。须彼 Mac 启「系统设置 → 通用 → 共享 → 屏幕共享」，且两机可经局域网或 VPN 互通；不然，自用 Cindy 远程桌面。",
         "toggleAria": "Mac 相通，用系统屏幕共享",
-        "saveFailed": "设置未存，请再试。"
+        "saveFailed": "设置未存，请再试。",
+        "modeTitle": "连接模式",
+        "modeDescription": "自此 Mac 发起连接所用。默用高性能；任一端不支持，则用标准。"
       }
     },
     "tina": {

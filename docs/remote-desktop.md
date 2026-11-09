@@ -95,22 +95,71 @@ capabilities: whether `127.0.0.1:5900` accepts connections, its `<LocalHostName>
 name and IPv4 addresses, the login name, and whether it supports High Performance
 (Apple silicon, macOS 14+). The controller waits up to 4 s for capabilities, then probes
 reported `.local` names in parallel (1.2 s) and uses the first reachable one in reported
-order. Bare IP addresses are not tried, even on a matching local subnet: independent
-networks can reuse both the subnet and IP, directing sign-in to a different computer.
-If Bonjour lookup or connection fails, Cindy's viewer opens instead. Bonjour names
-still rely on local-network name resolution, not cryptographic VNC endpoint identity;
-same-name collisions or spoofed mDNS are not ruled out. VPN/overlay IPs fall back.
-This integration targets local-network use; VPN route support is deferred by the
-maintainer's decision (2026-11-09), not because VPN screen sharing is inherently unusable.
+order. Bonjour names still rely on local-network name resolution, not cryptographic
+VNC endpoint identity; same-name collisions or spoofed mDNS are not ruled out.
+
+If Bonjour fails, upgraded peers advertising `addressVerification: 1` can use reported
+private IPv4 addresses (RFC 1918 or `100.64.0.0/10`), including company networks reached
+through VPN. No VPN-interface-name guessing, subnet scan or hard-coded company range.
+The controller asks the selected peer over the existing authenticated Device Link
+channel to begin `systemSharingProbe` with a fresh 128-bit ID. The peer opens a random
+TCP port and returns an ephemeral Ed25519 public key. The private key remains in memory.
+At each reported address the controller sends a fresh 256-bit challenge; the peer signs
+the protocol/version, probe ID, challenge and the socket's actual local IPv4 address.
+The controller verifies the signature using the public key from the authenticated reply,
+then probes TCP 5900. An unrelated machine reusing the same private IP cannot answer
+the challenge. This verifies the Cindy process at that address, not the Apple VNC
+service or routes after URL handoff; it is not a cryptographic tunnel for screen sharing.
+
+The optional verification costs one begin/end exchange per attempted connection, no
+background polling. Up to eight unique reported private IPs are checked concurrently;
+begin waits at most 2 s, verification 1.6 s and TCP 5900 1.2 s. Listeners expire after
+10 s, are replaced per controller, and close on matching end, host stop, account boundary
+or shutdown. Late cleanup includes the probe ID so it cannot close a newer attempt.
+Host resource budgets are 16 outstanding listeners and 16 sockets per listener, with
+512-byte frames and socket timeouts. No OS password, private key or probe payload is
+logged or persisted. Cancelled controller requests release best-effort; lost/late cleanup
+relies on the host's deadline. Failures do not reset shared Device Link connections.
+
+The VPN must allow the temporary TCP verification port as well as Apple's screen-sharing
+traffic. If it does not, or the remote Cindy lacks the capability, the viewer keeps the
+old Bonjour-only behavior and falls back to Cindy; it never silently accepts an unverified
+IP. Enabling VPN address selection requires both Macs to update. IPv6-only VPNs and
+port-mapped endpoints are not supported by this first implementation. High Performance's
+UDP availability is not established by the TCP probe; failures after opening remain in
+Apple's Screen Sharing app. A successful manual VPN test motivated this addition; it
+does not establish that every VPN permits the extra verification port.
 
 When both Macs support High Performance, Cindy opens it directly by default without a
-mode-selection prompt. An explicitly saved `mode: "standard"` override in the same
-settings file is preserved; if either Mac lacks High Performance support, Standard is
-used for this connection without overwriting the preference. Cindy opens
-`vnc://<login>@<host>?quality=5&numVirtualDisplays=1`
-(High Performance, one virtual display) or `?quality=adaptive&numVirtualDisplays=0`
-(Standard) with `shell.openExternal`. These query values come from Screen Sharing's own
-saved `.vncloc` files and are not documented by Apple. The password never passes through
+mode-selection prompt. The initiating Mac selects High Performance or Standard in
+Settings → Remote control → Screen Sharing → Connection mode. The default is High
+Performance; the chosen mode is saved only on that controller and applies to later
+connections. The receiving Mac does not choose again. The existing `mode: "standard"`
+override in the same settings file is preserved; if either Mac lacks High Performance support, Standard is
+used for this connection without overwriting the preference. Standard opens
+`vnc://<login>@<host>?quality=adaptive&numVirtualDisplays=0` with `shell.openExternal`.
+High Performance uses `shell.openExternal` with
+`vnc://<login>@<host>?quality=high&numVirtualDisplays=1&scaled=dynamic`.
+This requests one virtual display and dynamic resolution on each new connection;
+the viewer can still turn dynamic resolution off during that connection.
+These query options are implemented by Apple but not a documented public API.
+On macOS 27.2, a standalone probe of the real `SSAddress.addressFromString:` parser
+and `SSConnectionOptions.applyURLOptions:` verified that `scaled=dynamic` changes
+an existing scalingMode of 1 to 2, while retaining screenQualityMode 5. Without
+that query, scalingMode remains 1. Apple's session-ready path applies URL options
+after restoring saved connection state, so the URL is the final override.
+An earlier temporary-plist approach initialized dynamic resolution, but its
+initialization log did not establish that the setting survived connection setup.
+A later apparent failure was traced to the viewer still running the older URL-only
+build, so it was not evidence that the plist flag itself failed. Prefer the simpler
+URL override and do not consider an initialization log an end-to-end display test. No temporary connection
+files or Apple preference writes are needed with the URL approach. The diagnostic
+`dynamicResolutionRequested` means requested, not verified active.
+On 2026-11-09, a manual test on an Apple-silicon viewer confirmed that opening this URL through Finder
+automatically enables dynamic resolution and resizing the viewer stays sharp.
+The Cindy rebuild with this URL and older macOS versions still need validation.
+Apple documents dynamic resolution only for one virtual display in a High
+Performance connection. The password never passes through
 Cindy or the URL: the first sign-in uses Screen Sharing's prompt and its "remember in
 keychain" option; prefer the stable `.local` name so the saved item keeps matching.
 

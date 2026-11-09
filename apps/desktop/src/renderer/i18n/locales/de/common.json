@@ -6504,9 +6504,11 @@
       },
       "systemSharing": {
         "title": "Zwischen Macs die Bildschirmfreigabe verwenden",
-        "description": "Wenn du von diesem Mac aus den Remote-Desktop eines anderen Mac öffnest, wird die integrierte App „Bildschirmfreigabe“ für ein flüssigeres Bild verwendet. Auf dem anderen Mac muss „Systemeinstellungen → Allgemein → Teilen → Bildschirmfreigabe“ aktiviert sein, und beide Computer müssen im selben Netzwerk sein. Andernfalls öffnet sich der Cindy-Remote-Desktop.",
+        "description": "Wenn du von diesem Mac aus den Remote-Desktop eines anderen Mac öffnest, wird die integrierte App „Bildschirmfreigabe“ für ein flüssigeres Bild verwendet. Auf dem anderen Mac muss „Systemeinstellungen → Allgemein → Teilen → Bildschirmfreigabe“ aktiviert sein, und beide Computer müssen über ein lokales Netzwerk oder VPN erreichbar sein. Andernfalls öffnet sich der Cindy-Remote-Desktop.",
         "toggleAria": "Zwischen Macs die Bildschirmfreigabe verwenden",
-        "saveFailed": "Die Einstellung konnte nicht gespeichert werden. Versuche es erneut."
+        "saveFailed": "Die Einstellung konnte nicht gespeichert werden. Versuche es erneut.",
+        "modeTitle": "Verbindungsmodus",
+        "modeDescription": "Gilt für Verbindungen von diesem Mac. Standardmäßig wird „Hohe Leistung“ verwendet; unterstützt einer der Macs dies nicht, wird „Standard“ verwendet."
       }
     },
     "tina": {
