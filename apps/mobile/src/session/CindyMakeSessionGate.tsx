@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Redirect, useIsFocused } from 'expo-router';
+import { Redirect, useIsFocused, useRouter } from 'expo-router';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { isSharedTaskPeer } from '@cindy/device-link';
@@ -27,6 +27,7 @@ export function CindyMakeSessionGate({ sessionId, deviceId: routeDeviceId, child
   ownsSessionSubscription?: boolean;
 }) {
   const { t } = useTranslation();
+  const router = useRouter();
   const { user, accountGeneration } = useAuth();
   const { openLink, connectionEpoch, unsubscribe, status: relayStatus, getPresenceAvailability } = useDeviceLink();
   const focused = useIsFocused();
@@ -36,6 +37,9 @@ export function CindyMakeSessionGate({ sessionId, deviceId: routeDeviceId, child
     return () => subscription.remove();
   }, []);
   const sessions = useSyncExternalStore(remoteSessionStore.subscribe, remoteSessionStore.getSessions);
+  // Ownership can change while display deduplication preserves the same list reference.
+  const uniqueOwner = useSyncExternalStore(remoteSessionStore.subscribe,
+    () => remoteSessionStore.getUniqueSessionDeviceId(sessionId));
   const deviceId = routeDeviceId ?? remoteSessionStore.getSessionDeviceId(sessionId) ?? '';
   const cachedCompanion = useCachedCompanionSession(deviceId, sessionId);
   const cachedRef = useRef(cachedCompanion); cachedRef.current = cachedCompanion;
@@ -59,6 +63,18 @@ export function CindyMakeSessionGate({ sessionId, deviceId: routeDeviceId, child
   const key = JSON.stringify([sessionId, deviceId, accountGeneration, connectionEpoch, relayStatus, presence, focused, foreground, attempt]);
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [blockedScope, setBlockedScope] = useState<string | null>(null);
+  const [missingKey, setMissingKey] = useState<string | null>(null);
+  const repairedScope = useRef<string | null>(null);
+  useEffect(() => {
+    // Old controllers used their own ID in phone pushes. Repair the route itself
+    // so the chat, history, composer and file links all use the same task owner.
+    // Only an explicit metadata miss permits this; never redirect a denied read.
+    if (!ownsSessionSubscription || !routeDeviceId || isSharedTaskPeer(deviceId)
+      || !focused || !foreground || missingKey !== key || repairedScope.current === scope) return;
+    if (!uniqueOwner || uniqueOwner === deviceId || isSharedTaskPeer(uniqueOwner)) return;
+    repairedScope.current = scope;
+    router.setParams({ deviceId: uniqueOwner, deviceName: undefined });
+  }, [uniqueOwner, deviceId, routeDeviceId, scope, key, missingKey, focused, foreground, ownsSessionSubscription, router]);
   // Reconnecting must not unmount content whose source was already confirmed for this owner.
   const [loaded, setLoaded] = useState<{ scope: string; source: string | null } | null>(null);
 
@@ -77,6 +93,8 @@ export function CindyMakeSessionGate({ sessionId, deviceId: routeDeviceId, child
     }
     const controller = new AbortController();
     const cancelled = () => controller.signal.aborted;
+    let readingMetadata = false;
+    setMissingKey(null);
     setLookup({ key, status: 'loading' });
     // This deadline only closes this read attempt; it never tears down the shared link.
     const timeout = setTimeout(() => {
@@ -92,13 +110,16 @@ export function CindyMakeSessionGate({ sessionId, deviceId: routeDeviceId, child
       return () => { controller.abort(); clearTimeout(timeout); };
     }
     void retryRemoteSyncRead({ signal: controller.signal, isStale: cancelled }, async () => {
+      readingMetadata = false;
       await openLink(deviceId);
       // Do not issue metadata reads after a late accept for an abandoned route.
       if (cancelled()) return null;
+      readingMetadata = true;
       return maker.getSession(sessionId);
     })
       .then(session => {
         if (cancelled()) return;
+        if (session == null) setMissingKey(key);
         if (session?.id === sessionId) { setBlockedScope(null); setLoaded({ scope, source: session.source ?? null }); }
         else if (cachedRef.current) {
           setBlockedScope(scope);
@@ -111,6 +132,7 @@ export function CindyMakeSessionGate({ sessionId, deviceId: routeDeviceId, child
       .catch(error => {
         if (cancelled()) return;
         const code = (error as { code?: string })?.code;
+        if (readingMetadata && (code === 'NOT_FOUND' || (!code && String(error).includes('[NOT_FOUND]')))) setMissingKey(key);
         const deniedCodes = ['NOT_FOUND', 'FORBIDDEN', 'PERMISSION_DENIED', 'ACCESS_REVOKED', 'DEVICE_REVOKED'];
         const denied = deniedCodes.includes(code ?? '') || deniedCodes.some(value => String(error).includes(`[${value}]`));
         if (denied) {

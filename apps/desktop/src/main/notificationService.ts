@@ -118,6 +118,8 @@ const CLIENT_NOTIFICATION_NAME = 'Cindy';
 
 interface ShowSessionEventPayload {
   sessionId: string;
+  /** Task owner, not the computer forwarding this notification. */
+  remoteDeviceId?: string;
   title: string;
   kind: SessionEventKind;
   /** Local handoff event identity, verified against Main's request-scoped notice record. */
@@ -269,12 +271,12 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
       // 不来自 renderer(main 侧读库),relay 有 per-user 频控、main 侧另有 5s
       // 去重与「被远程观看则不推」收口。
       assertValidSessionEventPayload(payload);
-      const { sessionId, title, kind, channels } = payload;
+      const { sessionId, title, kind, channels, remoteDeviceId } = payload;
       const markAttention = payload.markAttention !== false;
       const generation = getMobileNotifyGeneration();
       // Capture at IPC arrival, not after the asynchronous preview: a newer
       // turn can begin while the current completion waits on persistence.
-      const signal = kind === 'done' ? getSessionNotificationTurnSignal(sessionId) : undefined;
+      const signal = kind === 'done' && !remoteDeviceId ? getSessionNotificationTurnSignal(sessionId) : undefined;
       // A late idle for the previous turn must not claim the identity of a
       // newer turn that is still running, even if preview persistence stalls.
       if (signal && !signal.ended) return;
@@ -299,7 +301,7 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
         let postDrainPreviewReady = false;
         let detail: string | undefined;
         let avatarJpeg: string | undefined;
-        if (kind === 'done' || wantDesktop || channels?.mobile === true) {
+        if (!remoteDeviceId && (kind === 'done' || wantDesktop || channels?.mobile === true)) {
           let finished = false;
           let timer: ReturnType<typeof setTimeout> | undefined;
           // Resolve identity and artwork within the same bounded enrichment window.
@@ -353,7 +355,7 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
         if (!isDataOwnerBroadcastScopeCurrent(ownerScope)) return;
         // Preview enrichment can outlive an entire later turn. Never send that
         // later reply under the terminal signal captured for this IPC event.
-        const currentSignal = kind === 'done' ? getSessionNotificationTurnSignal(sessionId) : undefined;
+        const currentSignal = kind === 'done' && !remoteDeviceId ? getSessionNotificationTurnSignal(sessionId) : undefined;
         if (kind === 'done') {
           if (currentSignal?.id !== signal?.id || (currentSignal && !currentSignal.ended)) return;
         }
@@ -370,19 +372,20 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
         // A device-link handoff advances only the mobile send generation. It
         // must not make an already accepted desktop/Feishu reply eligible again.
         const ownerKey = ownerScope.ownerScopeKey ?? JSON.stringify(ownerScope.ownerStamp ?? null);
-        const desktopKey = replyNotificationKey(ownerKey, sessionId, 'desktop');
-        const mobileKey = replyNotificationKey(generation, sessionId, 'mobile');
-        const feishuKey = replyNotificationKey(ownerKey, sessionId, 'feishu');
+        const notificationSessionId = remoteDeviceId ? JSON.stringify([remoteDeviceId, sessionId]) : sessionId;
+        const desktopKey = replyNotificationKey(ownerKey, notificationSessionId, 'desktop');
+        const mobileKey = replyNotificationKey(generation, notificationSessionId, 'mobile');
+        const feishuKey = replyNotificationKey(ownerKey, notificationSessionId, 'feishu');
         if (kind === 'done' && notifiedReplies.get(desktopKey)?.handledByTeammate && wasReplyNotified(desktopKey, eventId)) return;
         // Decide at the send boundary, after preview enrichment. The native
         // receipt and durable completion handoff are authoritative, never titles.
-        const handledByTeammate = kind === 'done' && deps.isCompletionHandledByTeammate
+        const handledByTeammate = kind === 'done' && !remoteDeviceId && deps.isCompletionHandledByTeammate
           ? await deps.isCompletionHandledByTeammate(sessionId).catch((error) => {
               log.warn('delegation completion notification check failed', { error: String(error) });
               return false;
             }) : false;
         if (!isDataOwnerBroadcastScopeCurrent(ownerScope)) return;
-        if (kind === 'done' && deps.isCompletionHandledByTeammate) {
+        if (kind === 'done' && !remoteDeviceId && deps.isCompletionHandledByTeammate) {
           const afterHandoffSignal = getSessionNotificationTurnSignal(sessionId);
           if (afterHandoffSignal?.id !== signal?.id || (afterHandoffSignal && !afterHandoffSignal.ended)) return;
         }
@@ -403,6 +406,7 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
           try {
             const accepted = showDesktopSessionEvent(getWindow, {
               sessionId, title: notificationTitle, kind, teammate, markAttention, avatarJpeg,
+              ...(remoteDeviceId ? { deviceId: remoteDeviceId } : {}),
               messageClientId: preview?.reply?.clientId,
               body: teammate ? notificationPreview(detail ?? '', 240, getNotificationImageLabel()) || fallbackBody : undefined,
             });
@@ -417,6 +421,7 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
           try {
             const accepted = sendMobileSessionNotify({
               sessionId, title: notificationTitle, kind, generation, ...(detail ? { detail } : {}),
+              ...(remoteDeviceId ? { remoteDeviceId } : {}),
               ...(fallbackBody ? { fallbackBody } : {}), ...(mobileEventId ? { eventId: mobileEventId } : {}),
               ...(mobileTeammateBotId ? { teammateBotId: mobileTeammateBotId } : {}),
               ...(preview?.teammateAvatar ? { teammateAvatar: preview.teammateAvatar } : {}),
@@ -487,6 +492,10 @@ function assertValidSessionEventPayload(
     !SESSION_EVENT_KINDS.has(p.kind) ||
     (p.channels !== undefined && (typeof p.channels !== 'object' || p.channels === null)) ||
     (p.markAttention !== undefined && typeof p.markAttention !== 'boolean') ||
+    (p.remoteDeviceId !== undefined && (
+      typeof p.remoteDeviceId !== 'string' || !p.remoteDeviceId.trim()
+      || p.remoteDeviceId.length > 256 || p.markAttention !== false
+    )) ||
     (p.inputHandoffRequestId !== undefined && (
       p.kind !== 'needs-reply' || typeof p.inputHandoffRequestId !== 'string'
       || p.inputHandoffRequestId.length === 0 || p.inputHandoffRequestId.length > 256

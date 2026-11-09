@@ -50,6 +50,20 @@ describe('personal JPush delivery', () => {
 });
 
 describe('buildSessionNotifyPayload', () => {
+  // #9423, unit: prior fixtures always made the sender and task owner the same device.
+  // A forwarded frame must open the owner and share its APNs merge key, across both push transports.
+  // Standalone vitest run: 0.68s (2026-11-09).
+  it('uses the task owner for links, sender identity and merging forwarded pushes', () => {
+    const opts = { sessionId: 'task', title: 'Task', kind: 'done' as const, selfDeviceId: 'host-b', fallbackBody: 'Done', teammateBotId: 'bot' };
+    const direct = buildSessionNotifyPayload(opts);
+    const forwarded = buildSessionNotifyPayload({ ...opts, selfDeviceId: 'controller-a', remoteDeviceId: 'host-b' });
+    expect(forwarded).toEqual(direct);
+    expect(forwarded.deepLink).toContain('deviceId=host-b');
+    expect(buildSessionNotifyPayload({ ...opts, selfDeviceId: 'controller-a' }).collapseId).not.toBe(direct.collapseId);
+    const registration = { appKey: 'a'.repeat(24), alias: `cindy_${'b'.repeat(32)}`, production: false, preview: true };
+    expect(buildJPushRequest(registration, forwarded).notification.ios.extras.deepLink).toBe(direct.deepLink);
+  });
+
   it('identifies only teammate replies and isolates the same bot on different hosts', () => {
     const opts = { sessionId: 's1', title: 'Mika', kind: 'done' as const, selfDeviceId: 'd1', fallbackBody: 'Reply', teammateBotId: 'b1', teammateAvatar: { kind: 'symbol' as const, value: '🐸' } };
     const first = buildSessionNotifyPayload(opts);

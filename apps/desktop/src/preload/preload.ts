@@ -4108,6 +4108,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // mobile = 手机推送(经 device-link relay 下发 APNs;桌面侧无独立开关,防打扰在 main 收口)。
   notificationShowSessionEvent: (payload: {
     sessionId: string;
+    remoteDeviceId?: string;
     title: string;
     kind: 'done' | 'error' | 'needs-reply';
     inputHandoffRequestId?: string;

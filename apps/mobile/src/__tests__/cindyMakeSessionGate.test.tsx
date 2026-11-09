@@ -5,9 +5,12 @@ import { sharedTaskHostPeer } from '@cindy/device-link';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CindyMakeSessionGate, SESSION_ENTRY_LOOKUP_TIMEOUT_MS } from '@/session/CindyMakeSessionGate';
 import type { NewSessionCreationTask } from '@/session/newSessionCreation';
+import { remoteSessionStore } from '@/session/remoteSessionStore';
+import type { RemoteSession } from '@/session/types';
 import type { MainWindowAction } from '@/components/MobilePrimitives';
 
 const state = vi.hoisted(() => ({
+  realStore: false,
   cachedCompanion: false,
   sessions: [] as Array<{ id: string; source?: string; deviceLinkDeviceId?: string }>,
   listeners: new Set<() => void>(),
@@ -22,14 +25,17 @@ const state = vi.hoisted(() => ({
   appListeners: new Set<(value: string) => void>(),
   accountGeneration: 1,
   task: null as NewSessionCreationTask | null,
-  router: { canGoBack: vi.fn(() => true), back: vi.fn(), replace: vi.fn() },
+  router: { canGoBack: vi.fn(() => true), back: vi.fn(), replace: vi.fn(), setParams: vi.fn() },
 }));
 vi.mock('@/session/useCachedCompanionSession', () => ({ useCachedCompanionSession: () => state.cachedCompanion ? { ref: { id: 'bot-a' } } : null }));
 vi.mock('@/device-link/remoteResourceCache', () => ({ forgetRemoteResource: vi.fn() }));
 vi.mock('@/session/newSessionCreation', () => ({
   useNewSessionCreationTask: () => state.task,
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', async importOriginal => ({
+  ...await importOriginal<typeof import('react-i18next')>(),
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 vi.mock('@/device-link/remoteStatus', () => ({ formatRemoteError: (error: Error) => error.message }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ colors: {} }), useThemedStyles: () => ({}) }));
 vi.mock('react-native', () => ({
@@ -54,11 +60,27 @@ vi.mock('@/components/MobilePrimitives', () => ({
     'data-testid': action.testID, disabled: action.disabled || action.busy, onClick: action.onPress,
   }, action.label),
 }));
-vi.mock('@/session/remoteSessionStore', () => ({ remoteSessionStore: {
-  getSessions: () => state.sessions,
-  getSessionDeviceId: (sessionId: string) => state.sessions.find(session => session.id === sessionId)?.deviceLinkDeviceId,
-  subscribe: (listener: () => void) => { state.listeners.add(listener); return () => { state.listeners.delete(listener); }; },
-} }));
+vi.mock('@/session/remoteSessionStore', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/session/remoteSessionStore')>();
+  return { ...actual, remoteSessionStore: {
+    ...actual.remoteSessionStore,
+    getSessions: () => state.realStore ? actual.remoteSessionStore.getSessions() : state.sessions,
+    getSessionDeviceId: (sessionId: string) => state.realStore
+      ? actual.remoteSessionStore.getSessionDeviceId(sessionId)
+      : state.sessions.find(session => session.id === sessionId)?.deviceLinkDeviceId,
+    getUniqueSessionDeviceId: (sessionId: string) => {
+      if (state.realStore) return actual.remoteSessionStore.getUniqueSessionDeviceId(sessionId);
+      const owners = new Set(state.sessions.filter(session => session.id === sessionId)
+        .map(session => session.deviceLinkDeviceId).filter(Boolean));
+      return owners.size === 1 ? [...owners][0] : undefined;
+    },
+    subscribe: (listener: () => void) => {
+      state.listeners.add(listener);
+      const off = actual.remoteSessionStore.subscribe(listener);
+      return () => { state.listeners.delete(listener); off(); };
+    },
+  } };
+});
 vi.mock('@/auth/AuthContext', () => ({ useAuth: () => ({ accountGeneration: state.accountGeneration }) }));
 vi.mock('@/device-link/DeviceLinkContext', () => ({ useDeviceLink: () => ({
   openLink: state.openLink,
@@ -81,6 +103,7 @@ let originalActEnvironment: boolean | undefined;
 beforeEach(() => {
   originalActEnvironment = reactActEnvironment.IS_REACT_ACT_ENVIRONMENT;
   reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+  state.realStore = false; remoteSessionStore.clear();
   state.sessions = []; state.cachedCompanion = false;
   state.maker.getSession.mockReset().mockResolvedValue(null);
   state.openLink.mockReset().mockResolvedValue(undefined);
@@ -96,18 +119,111 @@ beforeEach(() => {
   state.router.canGoBack.mockReset().mockReturnValue(true);
   state.router.back.mockReset();
   state.router.replace.mockReset();
+  state.router.setParams.mockReset();
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
 });
 afterEach(() => {
   act(() => root.unmount());
+  remoteSessionStore.clear();
   vi.useRealTimers();
   container.remove(); state.listeners.clear();
   reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = originalActEnvironment;
 });
 
 describe('mobile Cindy Make links', () => {
+  // #9423 review, unit: mock arrays hid production's cross-device deduplication.
+  // Exercise the real store and gate with two raw owners or a re-linked old shard.
+  // The visible result is route repair (or refusal), including later identity changes.
+  // Standalone vitest run: 2.64s (2026-11-09).
+  const mirrorTask = (): RemoteSession => ({
+    id: 'old-task', userId: 'user-1', title: 'Task', workingDir: '/repo', workspaceKind: 'project',
+    model: 'claude', effort: 'medium', permissionMode: 'default', fastMode: false, status: 'active',
+    agentKind: 'cc', userSendAt: null, createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z', source: 'desktop',
+  });
+  it.each([false, true])('does not choose among real distinct owners (reverse=%s)', async reverse => {
+    state.realStore = true;
+    remoteSessionStore.setDeviceIdentity([{ deviceId: 'device-b', name: 'B' }, { deviceId: 'device-c', name: 'C' }]);
+    const devices = reverse ? ['device-c', 'device-b'] : ['device-b', 'device-c'];
+    for (const device of devices) remoteSessionStore.setDeviceSessions(device, device, [mirrorTask()]);
+    expect(remoteSessionStore.getSessions()).toHaveLength(1);
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-a" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.router.setParams).not.toHaveBeenCalled();
+    // Removing the losing shard does not change the deduplicated list reference.
+    const snapshot = remoteSessionStore.getSessions();
+    act(() => remoteSessionStore.setDeviceSessions(devices[1], devices[1], []));
+    expect(remoteSessionStore.getSessions()).toBe(snapshot);
+    expect(state.router.setParams).toHaveBeenCalledExactlyOnceWith({ deviceId: devices[0], deviceName: undefined });
+  });
+  it.each([false, true])('repairs to the canonical owner after re-link (current shard=%s)', async currentShard => {
+    state.realStore = true;
+    remoteSessionStore.setDeviceIdentity([{ deviceId: 'current-b', name: 'B' }]);
+    remoteSessionStore.setDeviceSessions('stale-b', 'B', [mirrorTask()]);
+    if (currentShard) remoteSessionStore.setDeviceSessions('current-b', 'B', [mirrorTask()]);
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-a" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.router.setParams).toHaveBeenCalledExactlyOnceWith({ deviceId: 'current-b', deviceName: undefined });
+  });
+
+  it('does not reinterpret a shared host with an own-device name as an own task', async () => {
+    state.realStore = true;
+    remoteSessionStore.setDeviceIdentity([{ deviceId: 'device-b', name: 'B' }]);
+    remoteSessionStore.setDeviceSessions(sharedTaskHostPeer('share-1', 'host-1'), 'B', [mirrorTask()]);
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-a" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.router.setParams).not.toHaveBeenCalled();
+  });
+
+  // #9423, unit: old tests never combined a wrong deep-link host with a known task on another host.
+  // Mount the production gate; both null and NOT_FOUND must repair the actual route, not only its lookup.
+  // Standalone vitest run: 1.55s (2026-11-09).
+  it.each(['null', 'NOT_FOUND'])('repairs an old notification after %s from the wrong host', async outcome => {
+    state.sessions = [{ id: 'old-task', source: 'desktop', deviceLinkDeviceId: 'device-b' }];
+    if (outcome === 'NOT_FOUND') state.maker.getSession.mockRejectedValue(Object.assign(new Error('[NOT_FOUND] missing'), { code: 'NOT_FOUND' }));
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-a" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.openLink).toHaveBeenCalledWith('device-a');
+    expect(state.router.setParams).toHaveBeenCalledWith({ deviceId: 'device-b', deviceName: undefined });
+    expect(container.textContent).not.toContain('Composer');
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-b" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(container.textContent).toBe('Composer');
+    expect(state.unsubscribe).toHaveBeenCalledWith('session:old-task', 'device-a', ['sessions', 'session:old-task']);
+  });
+
+  it.each(['FORBIDDEN', 'PERMISSION_DENIED', 'ACCESS_REVOKED', 'DEVICE_REVOKED', 'NETWORK_ERROR'])('does not reroute on %s', async code => {
+    state.sessions = [{ id: 'old-task', source: 'desktop', deviceLinkDeviceId: 'device-b' }];
+    state.maker.getSession.mockRejectedValue(Object.assign(new Error(`[${code}] failed`), { code }));
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-a" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.router.setParams).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Composer');
+  });
+
+  it('repairs only once when the mirror arrives after a missing response on cold launch', async () => {
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId="device-a" ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.router.setParams).not.toHaveBeenCalled();
+    act(() => {
+      state.sessions = [{ id: 'old-task', source: 'desktop', deviceLinkDeviceId: 'device-b' }];
+      for (const listener of state.listeners) listener();
+    });
+    expect(state.router.setParams).toHaveBeenCalledExactlyOnceWith({ deviceId: 'device-b', deviceName: undefined });
+    act(() => {
+      state.sessions = [...state.sessions];
+      for (const listener of state.listeners) listener();
+    });
+    expect(state.router.setParams).toHaveBeenCalledTimes(1);
+    expect(state.maker.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['ambiguous', 'shared-source', 'shared-target', 'link-missing', 'wrong-record'])('does not guess a task owner for %s', async scenario => {
+    const sharedPeer = sharedTaskHostPeer('share-1', 'host-1');
+    state.sessions = [{ id: 'old-task', source: 'desktop', deviceLinkDeviceId: scenario === 'shared-target' ? sharedPeer : 'device-b' }];
+    if (scenario === 'ambiguous') state.sessions.push({ id: 'old-task', source: 'desktop', deviceLinkDeviceId: 'device-c' });
+    if (scenario === 'link-missing') state.openLink.mockRejectedValue(new Error('[NOT_FOUND] link'));
+    if (scenario === 'wrong-record') state.maker.getSession.mockResolvedValue({ id: 'other-task', source: 'desktop' });
+    await act(async () => root.render(<CindyMakeSessionGate sessionId="old-task" deviceId={scenario === 'shared-source' ? sharedPeer : 'device-a'} ownsSessionSubscription><span>Composer</span></CindyMakeSessionGate>));
+    expect(state.router.setParams).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Composer');
+  });
+
   const Content = vi.fn(() => createElement('span', {}, 'Composer'));
   const renderGate = () => act(async () => root.render(
     <CindyMakeSessionGate sessionId="new-task" deviceId="device-a" ownsSessionSubscription><Content /></CindyMakeSessionGate>,
@@ -376,7 +492,8 @@ describe('mobile Cindy Make links', () => {
     expect(state.maker.getSession).not.toHaveBeenCalled();
     const input = container.querySelector('input')!;
     input.value = 'draft edited before reconnect';
-    state.sessions = []; state.cachedCompanion = false;
+    state.realStore = false; remoteSessionStore.clear();
+  state.sessions = []; state.cachedCompanion = false;
     state.connectionEpoch += 1;
     if (result === 'missing') state.maker.getSession.mockResolvedValue(null);
     else if (result === 'failed') state.maker.getSession.mockRejectedValue(new Error('offline'));
@@ -392,7 +509,8 @@ describe('mobile Cindy Make links', () => {
     state.sessions = [{ id: 'new-task', deviceLinkDeviceId: 'device-a', source: 'desktop' }];
     await renderGate();
     expect(container.textContent).toBe('Composer');
-    state.sessions = []; state.cachedCompanion = false;
+    state.realStore = false; remoteSessionStore.clear();
+  state.sessions = []; state.cachedCompanion = false;
     if (changed === 'account') state.accountGeneration += 1;
     state.maker.getSession.mockReturnValue(new Promise(() => {}));
     await act(async () => root.render(
@@ -412,7 +530,8 @@ describe('mobile Cindy Make links', () => {
     state.sessions = [{ id: 'new-task', deviceLinkDeviceId: 'device-a', source: 'cindy-make' }];
     await renderGate();
     expect(container.textContent).toBe('redirect:/');
-    state.sessions = []; state.cachedCompanion = false;
+    state.realStore = false; remoteSessionStore.clear();
+  state.sessions = []; state.cachedCompanion = false;
     state.connectionEpoch += 1;
     state.maker.getSession.mockReturnValue(new Promise(() => {}));
     await renderGate();

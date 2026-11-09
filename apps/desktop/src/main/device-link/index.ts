@@ -2421,6 +2421,8 @@ function sendPersonalAndOfficialNotify(payload: NotifyPayload): boolean {
  */
 export function sendMobileSessionNotify(payload: {
   sessionId: string;
+  /** Task owner for a forwarded notification; absent for local tasks. */
+  remoteDeviceId?: string;
   title: string;
   kind: MobileSessionEventKind;
   /** 内容摘要(最近一条 assistant 内容 / 定时任务结果),缺省回退终态短文案 */
@@ -2445,7 +2447,7 @@ export function sendMobileSessionNotify(payload: {
   if (!client) return false;
   // 「消息免打扰」任务不推手机。放在这里而不是各调用方:代输入等旁路不经过
   // notification:show-session-event,这里是所有发起方的唯一出口。
-  if (!payload.muteExempt && isSessionNotificationsMutedSync(payload.sessionId)) return false;
+  if (!payload.remoteDeviceId && !payload.muteExempt && isSessionNotificationsMutedSync(payload.sessionId)) return false;
   if (payload.generation !== undefined && payload.generation !== mobileNotifyGeneration) {
     log.debug(
       `mobile notify dropped: link generation changed (account/ownership boundary), session=${payload.sessionId.slice(0, 8)}`,
@@ -2454,19 +2456,22 @@ export function sendMobileSessionNotify(payload: {
   }
   const selfDeviceId = client.getSelfDeviceId();
   if (!selfDeviceId) return false;
-  if (getControllersForTopic(`session:${payload.sessionId}`).length > 0) {
+  // This registry describes tasks hosted here, not tasks mirrored from another computer.
+  if (!payload.remoteDeviceId && getControllersForTopic(`session:${payload.sessionId}`).length > 0) {
     log.debug(
       `mobile notify skipped: session ${payload.sessionId.slice(0, 8)} is being watched remotely`,
     );
     return false;
   }
   const now = Date.now();
-  if (!mobileNotifyDeduper.shouldSend(payload.sessionId, payload.kind, now, payload.eventId)) return false;
+  const notificationSessionId = JSON.stringify([payload.remoteDeviceId ?? selfDeviceId, payload.sessionId]);
+  if (!mobileNotifyDeduper.shouldSend(notificationSessionId, payload.kind, now, payload.eventId)) return false;
   const notify = buildSessionNotifyPayload({
     sessionId: payload.sessionId,
     title: payload.title,
     kind: payload.kind,
     selfDeviceId,
+    ...(payload.remoteDeviceId ? { remoteDeviceId: payload.remoteDeviceId } : {}),
     fallbackBody: payload.fallbackBody ?? getSessionNotificationBody(payload.kind),
     detail: payload.detail,
     imageFallback: getNotificationImageLabel(),
@@ -2475,7 +2480,7 @@ export function sendMobileSessionNotify(payload: {
   });
   const sent = sendPersonalAndOfficialNotify(notify);
   if (sent) {
-    mobileNotifyDeduper.recordSent(payload.sessionId, payload.kind, now, payload.eventId);
+    mobileNotifyDeduper.recordSent(notificationSessionId, payload.kind, now, payload.eventId);
     log.debug(`mobile notify sent: session=${payload.sessionId.slice(0, 8)} kind=${payload.kind}`);
   }
   return sent;

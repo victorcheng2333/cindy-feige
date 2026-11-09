@@ -220,6 +220,34 @@ const baseDeps = (feishuIm: FakeFeishuIM) => ({
 });
 
 describe('notificationService — channels 分发', () => {
+  // #9423, unit: existing remote fixtures omitted the host and did not collide with local task data.
+  // The real IPC handler must forward the owner without leaking local previews or suppressing another host.
+  // Standalone vitest run: 3.35s (2026-11-09).
+  it('isolates forwarded task notifications from local content, completion state and other hosts', async () => {
+    const { initNotificationService } = await freshService();
+    const isCompletionHandledByTeammate = vi.fn(async () => true);
+    initNotificationService({ ...baseDeps(makeFeishuIm(null)), isCompletionHandledByTeammate });
+    readSessionNotificationPreview.mockResolvedValue({ teammateName: 'Local bot', reply: { clientId: 'local-reply', text: 'Local private text' } });
+    getSessionNotificationTurnSignal.mockReturnValue({ id: 'local-turn', fallbackEventId: 'local-event', ended: false });
+    isSessionNotificationsMutedSync.mockReturnValue(true);
+    for (const remoteDeviceId of ['host-b', 'host-c']) {
+      await invokeHandler({ sessionId: 'same-id', title: 'Remote task', kind: 'done', remoteDeviceId,
+        markAttention: false, channels: { desktop: false, mobile: true } });
+      expect(sendMobileSessionNotify).toHaveBeenLastCalledWith({ sessionId: 'same-id', title: 'Remote task',
+        kind: 'done', remoteDeviceId, generation: 7, muteExempt: true });
+    }
+    expect(sendMobileSessionNotify).toHaveBeenCalledTimes(2);
+    expect(readSessionNotificationPreview).not.toHaveBeenCalled();
+    expect(isCompletionHandledByTeammate).not.toHaveBeenCalled();
+    expect(markSessionNeedsAttention).not.toHaveBeenCalled();
+    for (const remoteDeviceId of ['', ' ', 42, 'x'.repeat(257)]) {
+      await expect(invokeHandler({ sessionId: 'task', title: 'Task', kind: 'done', remoteDeviceId, markAttention: false }))
+        .rejects.toThrow('invalid session event payload');
+    }
+    await expect(invokeHandler({ sessionId: 'task', title: 'Task', kind: 'done', remoteDeviceId: 'host-b' }))
+      .rejects.toThrow('invalid session event payload');
+  });
+
   // Regression: OS click must keep host + original task + reply anchor through reload,
   // and a notification from the previous account must not navigate the new account.
   it('routes desktop notification clicks with their original host and message, fenced by owner', async () => {

@@ -20,6 +20,7 @@ import {
   SESSION_ACTIVITY_CHANNEL,
   SESSION_SYNC_CHANNEL,
   expandMakerEventBatchPayload,
+  isSharedTaskPeer,
   type SessionActivityPayload,
 } from '@cindy/device-link';
 import {
@@ -734,6 +735,9 @@ const sessionGoalStatus = new Map<string, MobileGoalStatusPayload | null>();
 // 这份边界,构成闭环:孤儿只在 maker turn 运行中渲染,而 maker turn start 必然先清 stale。
 const sessionMakerTurnRunning = new Map<string, boolean>();
 const sessionDeviceIndex = new Map<string, string>();
+// Routing recovery needs every raw owner, before the display list deduplicates IDs.
+// null means distinct canonical owners; old/current shards of one device count once.
+const uniqueSessionDeviceIndex = new Map<string, string | null>();
 // 已收到 error-persisted 脏信号且缓存消息仍在的会话集合。session 页面监听此 Set,
 // 检测到自身 sessionId 被加入时调 load() 触发整窗刷新(含 error 行),避免先清空导致空白帧。
 const pendingRefreshSessions = new Set<string>();
@@ -1682,6 +1686,7 @@ function recomputeSessions(): void {
     mergedSessions.map((session) => [session.id, retentionForSession(session.id)] as const),
   );
   sessionDeviceIndex.clear();
+  uniqueSessionDeviceIndex.clear();
   // 跨 shard 去重 + 设备身份归一化。re-link 后同一 session.id 可能同时存在于 stale / current 两个 shard;
   // 保留「物理 deviceId 是当前已知设备」的那条(current shard 优先,它路由正确且是真身),都不是已知设备
   // 时保留先遇到的。canonicalDeviceId 写展示用规范 id(认领回当前设备),deviceLinkDeviceId 保物理不动。
@@ -1697,7 +1702,12 @@ function recomputeSessions(): void {
       ? resolveCanonicalDeviceId(shard.deviceId, shard.deviceName, identity) ?? shard.deviceId
       : shard.deviceId;
     const known = identity ? identity.knownDeviceIds.has(shard.deviceId) : false;
+    // A guest handle must never be claimed as an own device by a matching name.
+    const recoveryDeviceId = isSharedTaskPeer(shard.deviceId) ? shard.deviceId : canonicalDeviceId;
     for (const session of shard.sessions) {
+      const previousOwner = uniqueSessionDeviceIndex.get(session.id);
+      uniqueSessionDeviceIndex.set(session.id,
+        previousOwner === undefined || previousOwner === recoveryDeviceId ? recoveryDeviceId : null);
       const existing = byId.get(session.id);
       // 已有记录时,只有「当前 shard 已知、而已存条来自未知 shard」才覆盖(current 顶掉 stale);否则保留先到。
       if (existing && !(known && !existing.known)) continue;
@@ -5583,6 +5593,7 @@ export const remoteSessionStore = {
     nextSessionAccessOrder = 0;
     sessionsOpenedInDetail.clear();
     sessionDeviceIndex.clear();
+    uniqueSessionDeviceIndex.clear();
     reseedHandlers.clear();
     sessionListRefreshArmed.clear();
     sessionListRefreshSeen.clear();
@@ -5638,6 +5649,11 @@ export const remoteSessionStore = {
 
   getSessionDeviceId(sessionId: string): string | undefined {
     return sessionDeviceIndex.get(sessionId);
+  },
+
+  /** Unique canonical owner across raw shards, never the display deduplication winner. */
+  getUniqueSessionDeviceId(sessionId: string): string | undefined {
+    return uniqueSessionDeviceIndex.get(sessionId) ?? undefined;
   },
 
   getSessions(): RemoteSession[] {

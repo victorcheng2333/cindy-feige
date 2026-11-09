@@ -178,7 +178,7 @@ describe('shared session event notifications', () => {
       inputHandoff: true, remoteDevice: true, remoteDeviceId: 'host',
     });
     expect(showSessionEvent).toHaveBeenCalledExactlyOnceWith({
-      sessionId: 'remote-handoff', title: 'Task', kind: 'needs-reply', markAttention: false,
+      sessionId: 'remote-handoff', title: 'Task', kind: 'needs-reply', markAttention: false, remoteDeviceId: 'host',
       channels: { desktop: false, feishu: false, mobile: false },
     });
     expect(getSession).not.toHaveBeenCalled();
@@ -199,19 +199,29 @@ describe('shared session event notifications', () => {
     );
   });
 
-  it('leaves the desktop toast of a remote device task to the main-process scope filter', () => {
+  // #9423, unit: the old remote-only fixture missed the lost host ID in the IPC payload.
+  // Standalone vitest run: 0.79s (2026-11-09).
+  it('keeps the task host in remote notifications and leaves desktop delivery to main', () => {
     gates.feishu = true;
 
-    sendSessionEventNotification('remote-1', 'Fix login', 'done', { remoteDevice: true });
+    sendSessionEventNotification('remote-1', 'Fix login', 'error', { remoteDevice: true, remoteDeviceId: 'host-b' });
 
     // 未读归属那台设备:本机 Dock 角标两条标记路径都不记。
     expect(markAttention).not.toHaveBeenCalled();
     expect(showSessionEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         markAttention: false,
+        remoteDeviceId: 'host-b',
         channels: { desktop: false, feishu: true, mobile: true },
       }),
     );
+  });
+
+  it('does not send a phone link for a remote task whose owner is unknown', () => {
+    sendSessionEventNotification('remote-unknown', 'Task', 'error', { remoteDevice: true });
+    expect(showSessionEvent).toHaveBeenCalledWith(expect.objectContaining({
+      markAttention: false, channels: expect.objectContaining({ mobile: false }),
+    }));
   });
 
   it.each([true, false])('uses the execution host decision for remote mobile/Feishu completion calls (%s)', async handled => {
@@ -235,7 +245,7 @@ describe('shared session event notifications', () => {
     resolve(handled);
     await relay.waitForCompletionNotification('remote-task');
     expect(showSessionEvent).toHaveBeenCalledTimes(handled ? 0 : 1);
-    if (!handled) expect(showSessionEvent).toHaveBeenCalledWith({ sessionId: 'remote-task', title: 'Task', kind: 'done', markAttention: false, channels: { desktop: false, feishu: true, mobile: true } });
+    if (!handled) expect(showSessionEvent).toHaveBeenCalledWith({ sessionId: 'remote-task', title: 'Task', kind: 'done', markAttention: false, remoteDeviceId: 'host', channels: { desktop: false, feishu: true, mobile: true } });
     expect(markAttention).not.toHaveBeenCalled();
     expect(getRemoteSessionActivity('remote-task', 'host')).toMatchObject({ phase: 'completed', attention: true, compactDetail: 'Final result' });
     relay.replay([completed]);

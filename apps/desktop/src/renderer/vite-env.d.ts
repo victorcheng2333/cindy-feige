@@ -3005,6 +3005,8 @@ interface ElectronAPI {
    */
   notificationShowSessionEvent: (payload: {
     sessionId: string;
+    /** Task-owning computer when forwarding a device-link event. */
+    remoteDeviceId?: string;
     title: string;
     kind: 'done' | 'error' | 'needs-reply';
     inputHandoffRequestId?: string;

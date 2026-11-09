@@ -203,7 +203,7 @@ function deliverSessionEventNotification(
   title: string,
   kind: SessionEventNotificationKind,
   remoteDevice: boolean,
-  options: { mobile?: boolean; feishu?: boolean },
+  options: { mobile?: boolean; feishu?: boolean; remoteDeviceId?: string | null },
 ): void {
   // A handoff can finish after the user has opened Cindy or changed preferences.
   if (typeof document !== 'undefined' && document.hasFocus()) return;
@@ -215,12 +215,13 @@ function deliverSessionEventNotification(
     title,
     kind,
     ...(remoteDevice ? { markAttention: false } : {}),
+    ...(remoteDevice && options.remoteDeviceId ? { remoteDeviceId: options.remoteDeviceId } : {}),
     channels: {
       desktop: !remoteDevice && getNotificationsEnabled() && !islandActive,
       feishu: options.feishu !== false && getFeishuNotificationsEnabled(),
       // Mobile owns registration/unregistration of its push token. There is
       // deliberately no second desktop setting for the same channel.
-      mobile: options.mobile !== false,
+      mobile: options.mobile !== false && (!remoteDevice || !!options.remoteDeviceId),
     },
   });
 }
