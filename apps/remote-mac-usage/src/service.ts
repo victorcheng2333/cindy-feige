@@ -13,7 +13,7 @@ interface Dependencies {
   publish: (snapshot: Snapshot) => void; auth?: CindyAuthClient;
   fetch?: typeof fetch; createLink?: (getToken: () => Promise<string | null>) => Link;
 }
-const initial = (): Snapshot => ({ signedIn: false, busy: false, error: null, login: { kind: 'idle' }, devices: [], updatedAt: null, demo: false, selectedDeviceId: null });
+const initial = (): Snapshot => ({ signedIn: false, busy: false, error: null, login: { kind: 'idle' }, devices: [], updatedAt: null, demo: false, selectedDeviceIds: [], deviceOrder: [] });
 export class UsageService {
   private state = initial();
   private tokens: AuthTokenPair | null = null;
@@ -28,7 +28,7 @@ export class UsageService {
   private pending: LoginOutcome | null = null;
   private codeSentTo: string | null = null;
   private codeAfter = 0;
-  private viewRevision = 0;
+  private viewJob: Promise<void> = Promise.resolve();
   private auth: CindyAuthClient;
   private fetcher: typeof fetch;
   constructor(private readonly deps: Dependencies) {
@@ -44,7 +44,10 @@ export class UsageService {
       this.tokens = await this.deps.store.load(); this.state.signedIn = !!this.tokens;
       if (this.tokens) {
         const view = await this.deps.store.loadView();
-        if (view?.ownerId === this.tokens.membership.id) this.state.selectedDeviceId = view.deviceId;
+        if (view?.ownerId === this.tokens.membership.id) {
+          this.state.selectedDeviceIds = view.deviceIds;
+          this.state.deviceOrder = view.deviceOrder;
+        }
       }
     }
     catch { this.state.error = '无法恢复登录。请解锁钥匙串后重新打开，或退出登录清除本机记录。'; }
@@ -106,7 +109,7 @@ export class UsageService {
       const devices = parseDevices(await response.json(), this.deps.deviceId); this.check(epoch);
       const old = new Map(this.state.devices.map(d => [d.deviceId, d]));
       this.state.devices = devices.map(d => ({ ...d, accounts: old.get(d.deviceId)?.accounts ?? [], checkedAt: old.get(d.deviceId)?.checkedAt ?? null }));
-      if (this.state.selectedDeviceId && !devices.some(d => d.deviceId === this.state.selectedDeviceId)) this.state.selectedDeviceId = null;
+      this.state.selectedDeviceIds = this.state.selectedDeviceIds.filter(id => devices.some(d => d.deviceId === id));
       this.emit();
       const targets = this.state.devices.filter(d => d.online && d.remoteControlEnabled);
       if (targets.length) {
@@ -202,16 +205,26 @@ export class UsageService {
       return this.snapshot();
     }
     if (c.kind === 'refresh') { await this.refresh(); return this.snapshot(); }
-    if (c.kind === 'select-device') {
-      const ownerId = this.tokens?.membership.id, epoch = this.epoch, revision = ++this.viewRevision;
+    if (c.kind === 'select-devices' || c.kind === 'reorder-devices') {
+      const ownerId = this.tokens?.membership.id, epoch = this.epoch;
       if (!ownerId) return this.snapshot();
-      if (c.deviceId !== null && !this.state.devices.some(d => d.deviceId === c.deviceId)) return this.snapshot();
-      try {
-        await this.deps.store.saveView({ ownerId, deviceId: c.deviceId });
-        if (epoch === this.epoch && revision === this.viewRevision) {
-          this.state.selectedDeviceId = c.deviceId; this.state.error = null; this.emit();
-        }
-      } catch { if (epoch === this.epoch && revision === this.viewRevision) { this.state.error = '无法保存所选电脑，请重试'; this.emit(); } }
+      const job = this.viewJob.catch(() => {}).then(async () => {
+        if (epoch !== this.epoch || !c.deviceIds.every(id => this.state.devices.some(d => d.deviceId === id))) return;
+        const ids = [...new Set(c.deviceIds)];
+        const deviceIds = c.kind === 'select-devices' ? ids : this.state.selectedDeviceIds;
+        const deviceOrder = c.kind === 'reorder-devices' ? ids : this.state.deviceOrder;
+        try {
+          await this.deps.store.saveView({ ownerId, deviceIds, deviceOrder });
+          if (epoch === this.epoch) {
+            const selected = c.kind === 'select-devices' ? deviceIds : this.state.selectedDeviceIds;
+            this.state.selectedDeviceIds = selected.filter(id => this.state.devices.some(d => d.deviceId === id));
+            this.state.deviceOrder = deviceOrder;
+            this.state.error = null; this.emit();
+          }
+        } catch { if (epoch === this.epoch) { this.state.error = '无法保存电脑选择或顺序，请重试'; this.emit(); } }
+      });
+      this.viewJob = job;
+      await job;
       return this.snapshot();
     }
     if (this.actionJob || this.state.signedIn) return this.snapshot();

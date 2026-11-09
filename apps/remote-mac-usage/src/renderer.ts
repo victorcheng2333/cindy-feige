@@ -2,7 +2,13 @@ import { poolPercent, currentQuota, missingResetText, quotaLabel, type Account, 
 import { demoSnapshot } from './demo';
 
 const root = document.getElementById('app')!;
-let snapshot: Snapshot, latest: Snapshot, preview = false, deviceFilter = 'all';
+let snapshot: Snapshot, latest: Snapshot, preview = false;
+let pendingSelection: string[] | null = null, selectionRevision = 0;
+let pendingOrder: string[] | null = null, orderRevision = 0, draggedDevice: string | null = null;
+function orderedDevices() {
+  const rank = new Map(snapshot.deviceOrder.map((id, i) => [id, i]));
+  return [...snapshot.devices].sort((a, b) => (rank.get(a.deviceId) ?? rank.size) - (rank.get(b.deviceId) ?? rank.size));
+}
 let fields: Record<string, string> = { org: 'xd', identifier: '', code: '' };
 let codeSent = false, uiError = '';
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -36,7 +42,7 @@ function account(a: Account, d: Device) {
 }
 function device(d: Device) {
   const status = !d.online ? '离线' : !d.remoteControlEnabled ? '未开放远程连接' : d.error ? '读取失败' : '在线';
-  return `<section class="device ${!d.online || !d.remoteControlEnabled ? 'offline' : ''}"><div class="device-title"><h2>${escape(d.name)}</h2><span class="status">${status}</span></div>
+  return `<section data-device-section="${escape(d.deviceId)}" class="device ${!d.online || !d.remoteControlEnabled ? 'offline' : ''}"><div class="device-title"><div class="device-name"><button type="button" class="drag-handle" draggable="true" data-drag-device="${escape(d.deviceId)}" aria-label="调整 ${escape(d.name)} 的排序" title="拖动排序，也可聚焦后按上下方向键">⠿</button><h2>${escape(d.name)}</h2></div><span class="status">${status}</span></div>
     ${d.error ? `<p class="empty">${escape(d.error)}</p>` : ''}
     ${d.accounts.map(a => account(a, d)).join('')}
     ${d.accounts.length ? '' : `<p class="empty">${!d.online ? '电脑上线后会自动读取额度。' : !d.remoteControlEnabled ? '请在这台电脑上开启 Cindy 远程连接。' : snapshot.busy ? '正在读取订阅账号…' : d.error ? '可点击刷新重新读取。' : '未找到可读取的 Claude / ChatGPT 订阅账号。'}</p>`}</section>`;
@@ -62,27 +68,34 @@ function login() {
 }
 function alert() { const error = uiError || snapshot.error; return error ? `<div class="alert" role="alert">${escape(error)}</div>` : ''; }
 function dashboard() {
-  const filtered = snapshot.devices.filter(d => deviceFilter === 'all' || d.deviceId === deviceFilter);
+  const selected = snapshot.selectedDeviceIds;
+  const filtered = orderedDevices().filter(d => !selected.length || selected.includes(d.deviceId));
+  const selectionLabel = !selected.length ? '全部电脑' : selected.length === 1
+    ? snapshot.devices.find(d => d.deviceId === selected[0])?.name ?? '已选 1 台电脑' : `已选 ${selected.length} 台电脑`;
   return `<div class="top"><div><h1>订阅额度</h1><p class="subhead">远端还有多少，一眼看清。</p></div><img class="cat" src="icon.svg" alt="猫猫"></div>
     ${snapshot.demo ? `<div class="demo">演示模式 · 以下数据均为虚构${preview ? ' ' + button('退出演示', 'leave-demo') : ''}</div>` : ''}${alert()}
-    <div class="filters"><select id="devices" aria-label="筛选电脑"><option value="all">全部电脑</option>${snapshot.devices.map(d => `<option value="${escape(d.deviceId)}" ${deviceFilter === d.deviceId ? 'selected' : ''}>${escape(d.name)}</option>`).join('')}</select>${button(snapshot.busy ? '刷新中…' : '刷新', 'refresh', snapshot.busy ? 'disabled' : '')}</div>
+    <div class="filters"><details class="device-picker" data-key="device-picker"><summary id="devices" aria-label="筛选电脑" title="${escape(selectionLabel)}">${escape(selectionLabel)}</summary>
+      <div class="device-options" role="group" aria-label="选择要显示的电脑（可多选）"><label class="device-option"><input id="device-all" type="checkbox" data-device="all" ${!selected.length ? 'checked' : ''}><span>全部电脑</span></label>
+      ${orderedDevices().map((d, i) => `<label class="device-option"><input id="device-option-${i}" type="checkbox" data-device-id="${escape(d.deviceId)}" ${selected.includes(d.deviceId) ? 'checked' : ''}><span>${escape(d.name)}</span></label>`).join('')}</div></details>${button(snapshot.busy ? '刷新中…' : '刷新', 'refresh', snapshot.busy ? 'disabled' : '')}</div>
     ${filtered.map(device).join('') || `<p class="empty">${snapshot.busy ? '正在查找你的电脑…' : '还没有可显示的电脑。在远端 Cindy 登录同一账号并开启远程连接后，它会出现在这里。'}</p>`}
     <footer class="footer"><div class="row"><span>${snapshot.updatedAt ? `最近检查 ${date(snapshot.updatedAt)}` : '等待刷新'}</span>${!snapshot.demo ? button('退出登录', 'logout') : ''}</div>
       <p>窗口打开时每 30 秒刷新。相同订阅在多台电脑共享额度，不能相加。</p><p>关闭窗口后，点击菜单栏猫猫即可再次打开。</p></footer>`;
 }
 function render(next: Snapshot) {
   const focus = document.activeElement as HTMLInputElement | null;
-  const focusedId = focus?.id, start = focus?.selectionStart, end = focus?.selectionEnd;
+  const focusedId = focus?.id, focusedDevice = focus?.dataset.dragDevice, start = focus?.selectionStart, end = focus?.selectionEnd;
   root.querySelectorAll<HTMLInputElement>('input').forEach(el => fields[el.name] = el.value);
   const opened = new Set(Array.from(root.querySelectorAll<HTMLDetailsElement>('details[open]')).map(el => el.dataset.key));
-  snapshot = next;
-  deviceFilter = snapshot.selectedDeviceId ?? 'all';
-  if (deviceFilter !== 'all' && !snapshot.devices.some(d => d.deviceId === deviceFilter)) deviceFilter = 'all';
+  snapshot = next.signedIn && !next.demo ? { ...next,
+    selectedDeviceIds: pendingSelection ?? next.selectedDeviceIds,
+    deviceOrder: pendingOrder ?? next.deviceOrder,
+  } : next;
   root.innerHTML = snapshot.signedIn ? dashboard() : login();
   root.setAttribute('aria-busy', String(snapshot.busy));
   root.querySelectorAll<HTMLDetailsElement>('details').forEach(el => { el.open = opened.has(el.dataset.key); });
-  const input = focusedId ? document.getElementById(focusedId) as HTMLInputElement | null : null;
-  if (input && input.tagName === 'INPUT' && !input.disabled) { input.focus(); if (start !== null && start !== undefined) input.setSelectionRange(start, end ?? start); }
+  const input = (focusedId ? document.getElementById(focusedId) : focusedDevice
+    ? Array.from(root.querySelectorAll<HTMLElement>('[data-drag-device]')).find(el => el.dataset.dragDevice === focusedDevice) : null) as HTMLInputElement | null;
+  if (input && !input.hasAttribute('disabled')) { input.focus(); if (input.tagName === 'INPUT' && start !== null && start !== undefined) input.setSelectionRange(start, end ?? start); }
 }
 async function command(c: Command) {
   uiError = '';
@@ -98,8 +111,8 @@ root.addEventListener('click', event => {
   const b = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
   if (!b || b.disabled) return;
   const action = b.dataset.action;
-  if (action === 'demo') { preview = true; deviceFilter = 'all'; render(demoSnapshot()); return; }
-  if (action === 'leave-demo') { preview = false; deviceFilter = 'all'; render(latest); return; }
+  if (action === 'demo') { preview = true; render(demoSnapshot()); return; }
+  if (action === 'leave-demo') { preview = false; render(latest); return; }
   if (action === 'connection' || action === 'account') void command({ kind: action, id: b.dataset.id! });
   else if (action === 'send-code') void command({ kind: 'send-code', identifier: (document.getElementById('identifier') as HTMLInputElement).value });
   else void command({ kind: action } as Command);
@@ -113,14 +126,77 @@ root.addEventListener('submit', event => {
   if (form.dataset.form === 'sso-verify') void command({ kind: 'sso-verify', code: value('code') });
 });
 root.addEventListener('change', event => {
-  const target = event.target as HTMLSelectElement;
-  if (target.id === 'devices') {
-    const deviceId = target.value === 'all' ? null : target.value;
-    if (snapshot.demo) render({ ...snapshot, selectedDeviceId: deviceId });
-    else void command({ kind: 'select-device', deviceId });
-  }
+  const target = event.target as HTMLInputElement;
+  if (!target.matches('.device-option input')) return;
+  const id = target.dataset.deviceId;
+  const deviceIds = id === undefined ? [] : target.checked
+    ? [...new Set([...snapshot.selectedDeviceIds, id])]
+    : snapshot.selectedDeviceIds.filter(selected => selected !== id);
+  if (snapshot.demo) { render({ ...snapshot, selectedDeviceIds: deviceIds }); return; }
+  const revision = ++selectionRevision;
+  pendingSelection = deviceIds;
+  render(snapshot);
+  void command({ kind: 'select-devices', deviceIds }).finally(() => {
+    if (revision === selectionRevision) { pendingSelection = null; render(latest); }
+  });
+});
+async function moveDevice(source: string, target: string) {
+  const ids = orderedDevices().map(d => d.deviceId);
+  const from = ids.indexOf(source), to = ids.indexOf(target);
+  if (from < 0 || to < 0 || from === to) return;
+  ids.splice(from, 1); ids.splice(to, 0, source);
+  if (snapshot.demo) { render({ ...snapshot, deviceOrder: ids }); return; }
+  const revision = ++orderRevision;
+  pendingOrder = ids; render(snapshot);
+  await command({ kind: 'reorder-devices', deviceIds: ids });
+  if (revision === orderRevision) { pendingOrder = null; render(latest); }
+}
+function clearDrag() {
+  draggedDevice = null;
+  root.querySelectorAll('.drag-target').forEach(el => el.classList.remove('drag-target'));
+}
+root.addEventListener('dragstart', event => {
+  const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-drag-device]');
+  if (!handle || !event.dataTransfer) return;
+  draggedDevice = handle.dataset.dragDevice!;
+  event.dataTransfer.setData('text/plain', draggedDevice);
+  event.dataTransfer.effectAllowed = 'move';
+});
+root.addEventListener('dragover', event => {
+  const section = (event.target as HTMLElement).closest<HTMLElement>('[data-device-section]');
+  if (!draggedDevice || !section) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  root.querySelectorAll('.drag-target').forEach(el => el.classList.remove('drag-target'));
+  if (section.dataset.deviceSection !== draggedDevice) section.classList.add('drag-target');
+});
+root.addEventListener('drop', event => {
+  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-device-section]')?.dataset.deviceSection;
+  if (!draggedDevice || !target) return;
+  event.preventDefault();
+  const source = draggedDevice; clearDrag(); void moveDevice(source, target);
+});
+root.addEventListener('dragend', clearDrag);
+root.addEventListener('keydown', event => {
+  const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-drag-device]');
+  if (!handle || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  event.preventDefault();
+  const visible = orderedDevices().filter(d => !snapshot.selectedDeviceIds.length || snapshot.selectedDeviceIds.includes(d.deviceId));
+  const index = visible.findIndex(d => d.deviceId === handle.dataset.dragDevice);
+  const target = visible[index + (event.key === 'ArrowUp' ? -1 : 1)];
+  if (target) void moveDevice(handle.dataset.dragDevice!, target.deviceId).then(() => {
+    Array.from(root.querySelectorAll<HTMLElement>('[data-drag-device]')).find(el => el.dataset.dragDevice === handle.dataset.dragDevice)?.focus();
+  });
 });
 root.addEventListener('input', event => { if ((event.target as HTMLInputElement).name === 'identifier') codeSent = false; });
-document.addEventListener('keydown', event => { if (event.key === 'Escape') void command({ kind: 'hide' }); });
+document.addEventListener('click', event => {
+  if (!(event.target as HTMLElement).closest('.device-picker')) root.querySelector<HTMLDetailsElement>('.device-picker')?.removeAttribute('open');
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const picker = root.querySelector<HTMLDetailsElement>('.device-picker[open]');
+  if (picker) { picker.open = false; document.getElementById('devices')?.focus(); }
+  else void command({ kind: 'hide' });
+});
 window.cat.subscribe(next => { latest = next; if (!preview) render(next); });
 void command({ kind: 'state' });

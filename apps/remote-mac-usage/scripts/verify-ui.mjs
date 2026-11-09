@@ -89,13 +89,43 @@ try {
       await check(`${theme}-${width}`);
     }
   }
-  await page.locator('details').first().locator('summary').click();
+  await page.locator('.account details').first().locator('summary').click();
   await page.getByText('Sonnet · 每周',{exact:true}).waitFor();
   await check('dark-details');
-  await page.getByLabel('筛选电脑').selectOption('demo-studio');
+  // Multi-select through the production renderer: keep the picker open for the second
+  // choice, filter to one after unchecking, and restore All on the last removal.
+  await page.getByLabel('筛选电脑', { exact:true }).click();
+  await page.locator('[data-device-id="demo-studio"]').check();
   assert.equal(await page.locator('section.device').count(),1);
   await page.getByText('离线',{exact:true}).waitFor(); await check('dark-offline');
-  await page.getByLabel('筛选电脑').selectOption('all');
+  await page.locator('[data-device-id="demo-mbp"]').check();
+  assert.equal(await page.locator('section.device').count(),2);
+  await page.getByLabel('筛选电脑', { exact:true }).getByText('已选 2 台电脑').waitFor();
+  for (const theme of ['light','dark']) {
+    await page.emulateMedia({colorScheme:theme}); await check(`${theme}-multi-select`);
+  }
+  await page.locator('[data-device-id="demo-studio"]').uncheck();
+  assert.equal(await page.locator('section.device').count(),1);
+  await page.locator('[data-device-id="demo-mbp"]').uncheck();
+  assert.equal(await page.locator('section.device').count(),2);
+  await page.locator('[data-device="all"]').check();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.device-picker').getAttribute('open'),null);
+  // Exercise real HTML drag/drop, then keyboard reordering on the same production handle.
+  await electron.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].setSize(468,1400));
+  await page.locator('[data-drag-device="demo-mbp"]').dragTo(page.locator('[data-drag-device="demo-studio"]'));
+  assert.deepEqual(await page.locator('[data-device-section]').evaluateAll(els => els.map(el => el.dataset.deviceSection)), ['demo-studio', 'demo-mbp']);
+  await page.locator('[data-drag-device="demo-mbp"]').focus();
+  await page.keyboard.press('ArrowUp');
+  assert.deepEqual(await page.locator('[data-device-section]').evaluateAll(els => els.map(el => el.dataset.deviceSection)), ['demo-mbp', 'demo-studio']);
+  const refreshedState = await page.evaluate(() => window.cat.command({ kind:'state' }));
+  refreshedState.busy = true;
+  await page.locator('[data-drag-device="demo-mbp"]').focus();
+  await electron.evaluate(({BrowserWindow}, state) => BrowserWindow.getAllWindows()[0].webContents.send('cat:state', state), refreshedState);
+  await page.waitForFunction(() => document.getElementById('app').getAttribute('aria-busy') === 'true');
+  assert.equal(await page.locator('[data-drag-device="demo-mbp"]').evaluate(el => el === document.activeElement), true);
+  reports.push({ name:'drag-and-keyboard-device-order', passed:true });
+  await electron.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].setSize(390,728));
   // Closing hides the same renderer; activating the application reuses it.
   const id=await electron.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];const id=w.id;w.close();return id;});
   assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false);
@@ -105,7 +135,7 @@ try {
   assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true);
   assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].id),id);
   await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',{
-    signedIn:true,busy:false,error:null,login:{kind:'idle'},updatedAt:Date.now(),demo:true,selectedDeviceId:null,
+    signedIn:true,busy:false,error:null,login:{kind:'idle'},updatedAt:Date.now(),demo:true,selectedDeviceIds:[],deviceOrder:[],
     devices:[{deviceId:'missing-reset-demo',name:'演示电脑',online:true,remoteControlEnabled:true,platform:'darwin',error:null,checkedAt:Date.now(),
       accounts:[{id:'claude-demo',name:'演示 Claude',service:'Claude',plan:'Pro',failed:false,updatedAt:Date.now(),windows:[
         {minutes:300,remaining:100,resetsAt:null},{minutes:10080,remaining:69,resetsAt:Date.now()/1000+43200}
@@ -115,7 +145,7 @@ try {
   for (const theme of ['light','dark']) { await page.emulateMedia({colorScheme:theme}); await check(`${theme}-missing-reset`); }
   // Render a secret-free login snapshot through the real preload subscription.
   await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',{
-    signedIn:false,busy:false,error:null,login:{kind:'idle'},devices:[],updatedAt:null,demo:false,
+    signedIn:false,busy:false,error:null,login:{kind:'idle'},devices:[],updatedAt:null,demo:false,selectedDeviceIds:[],deviceOrder:[],
   }));
   await page.getByRole('heading',{name:'额度，抬眼就看到。'}).waitFor();
   for (const theme of ['light','dark']) { await page.emulateMedia({colorScheme:theme}); await check(`${theme}-login`); }

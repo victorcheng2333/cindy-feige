@@ -37,25 +37,56 @@ function harness(saved: AuthTokenPair | null = tokens) {
   return { service, store, auth, link, fetcher, stored: () => value };
 }
 describe('standalone remote quota service', () => {
-  it('remembers a chosen device or All across service restarts, scoped to its account', async () => {
+  it('remembers multiple chosen devices or All across restarts, scoped to its account', async () => {
     const h = harness(); await h.service.restore(); await h.service.refresh();
-    await h.service.command({ kind: 'select-device', deviceId: 'a' });
+    await h.service.command({ kind: 'select-devices', deviceIds: ['a', 'b'] });
     const next = harness(); next.store.loadView.mockResolvedValueOnce(await h.store.loadView());
     await next.service.restore(); await next.service.refresh();
-    expect(next.service.snapshot().selectedDeviceId).toBe('a');
-    await next.service.command({ kind: 'select-device', deviceId: null });
-    expect(await next.store.loadView()).toMatchObject({ deviceId: null });
+    expect(next.service.snapshot().selectedDeviceIds).toEqual(['a', 'b']);
+    await next.service.command({ kind: 'select-devices', deviceIds: [] });
+    expect(await next.store.loadView()).toMatchObject({ deviceIds: [] });
     const other = harness({ ...tokens, membership: { ...tokens.membership, id: 'other' } });
     other.store.loadView.mockResolvedValue(await h.store.loadView()); await other.service.restore();
-    expect(other.service.snapshot().selectedDeviceId).toBeNull();
+    expect(other.service.snapshot().selectedDeviceIds).toEqual([]);
     h.service.dispose(); next.service.dispose(); other.service.dispose();
   });
+  // Requested ordering: previous tests persisted selection only. The real service must
+  // merge rapid selection + ordering writes and restore both after restart. Tier: unit.
+  it('persists drag order without losing a concurrent selection change', async () => {
+    const h = harness(); await h.service.restore(); await h.service.refresh();
+    await Promise.all([
+      h.service.command({ kind: 'select-devices', deviceIds: ['a', 'b'] }),
+      h.service.command({ kind: 'reorder-devices', deviceIds: ['b', 'a'] }),
+    ]);
+    const next = harness(); next.store.loadView.mockResolvedValueOnce(await h.store.loadView());
+    await next.service.restore(); await next.service.refresh();
+    expect(next.service.snapshot()).toMatchObject({ selectedDeviceIds: ['a', 'b'], deviceOrder: ['b', 'a'] });
+    await next.service.command({ kind: 'select-devices', deviceIds: [] });
+    expect(await next.store.loadView()).toMatchObject({ deviceIds: [], deviceOrder: ['b', 'a'] });
+    h.service.dispose(); next.service.dispose();
+  });
+  // Review regression: a delayed reorder save must not resurrect a choice removed
+  // by the live directory refresh. Existing concurrent-write test has no refresh; tier: unit.
+  it('does not restore removed selections when an earlier reorder save finishes', async () => {
+    const h = harness(); await h.service.restore(); await h.service.refresh();
+    await h.service.command({ kind: 'select-devices', deviceIds: ['a'] });
+    const saving = deferred<void>(), started = deferred<void>();
+    h.store.saveView.mockImplementationOnce(async () => { started.resolve(); await saving.promise; });
+    const reorder = h.service.command({ kind: 'reorder-devices', deviceIds: ['b', 'a'] });
+    await started.promise;
+    h.fetcher.mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [device('b')] }) });
+    await h.service.refresh();
+    expect(h.service.snapshot().selectedDeviceIds).toEqual([]);
+    saving.resolve(); await reorder;
+    expect(h.service.snapshot().selectedDeviceIds).toEqual([]);
+    h.service.dispose();
+  });
   it('keeps an offline device selected but falls back to All when the device is removed', async () => {
-    const h = harness(); h.store.loadView.mockResolvedValue({ ownerId: tokens.membership.id, deviceId: 'a' });
+    const h = harness(); h.store.loadView.mockResolvedValue({ ownerId: tokens.membership.id, deviceIds: ['a', 'b'], deviceOrder: ['b', 'a'] });
     h.fetcher.mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [{ ...device('a'), online: false }] }) });
-    await h.service.restore(); await h.service.refresh(); expect(h.service.snapshot().selectedDeviceId).toBe('a');
+    await h.service.restore(); await h.service.refresh(); expect(h.service.snapshot().selectedDeviceIds).toEqual(['a']);
     h.fetcher.mockResolvedValueOnce({ ok: true, json: async () => ({ devices: [] }) });
-    await h.service.refresh(); expect(h.service.snapshot().selectedDeviceId).toBeNull(); h.service.dispose();
+    await h.service.refresh(); expect(h.service.snapshot().selectedDeviceIds).toEqual([]); h.service.dispose();
   });
   it('restores a saved login and reads each peer through only the fixed quota channels', async () => {
     const h = harness(); await h.service.restore(); expect(h.service.snapshot().signedIn).toBe(true);
@@ -159,7 +190,7 @@ describe('quota and local command boundaries', () => {
       codex: { limitId: 'codex', primary: { usedPercent: 20, windowMinutes: 300 } } } });
     expect(a.windows[0]).toMatchObject({ remaining: 80, minutes: 300 });
   });
-  it.each([{ kind: 'invoke', channel: 'maker:send' }, { kind: 'refresh', deviceId: 'other' }, { kind: 'sso', org: '' }])('rejects arbitrary privileged commands: %j', value => {
+  it.each([{ kind: 'invoke', channel: 'maker:send' }, { kind: 'refresh', deviceId: 'other' }, { kind: 'sso', org: '' }, { kind: 'select-devices', deviceIds: 'a' }, { kind: 'reorder-devices', deviceIds: [null] }])('rejects arbitrary privileged commands: %j', value => {
     expect(() => validateCommand(value)).toThrow();
   });
   it('does not put verifier or polling secret into the authorization URL', () => {

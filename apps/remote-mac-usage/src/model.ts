@@ -16,12 +16,12 @@ export type LoginView =
   | { kind: 'verification'; target: string };
 export interface Snapshot {
   signedIn: boolean; busy: boolean; error: string | null; login: LoginView;
-  devices: Device[]; updatedAt: number | null; demo: boolean; selectedDeviceId: string | null;
+  devices: Device[]; updatedAt: number | null; demo: boolean; selectedDeviceIds: string[]; deviceOrder: string[];
 }
 export type Command =
   | { kind: 'state' | 'refresh' | 'cancel' | 'logout' | 'hide' | 'quit' }
   | { kind: 'sso'; org: string }
-  | { kind: 'select-device'; deviceId: string | null }
+  | { kind: 'select-devices' | 'reorder-devices'; deviceIds: string[] }
   | { kind: 'connection' | 'account'; id: string }
   | { kind: 'send-code'; identifier: string }
   | { kind: 'verify-code'; identifier: string; code: string }
@@ -111,11 +111,14 @@ export function validateCommand(value: unknown): Command {
   if (typeof kind !== 'string') throw Error('操作格式不正确');
   const fields: Record<string, string[]> = { state: [], refresh: [], cancel: [], logout: [], hide: [], quit: [], sso: ['org'],
     connection: ['id'], account: ['id'], 'send-code': ['identifier'], 'verify-code': ['identifier', 'code'],
-    'sso-send-code': [], 'sso-verify': ['code'], 'select-device': ['deviceId'] };
+    'sso-send-code': [], 'sso-verify': ['code'], 'select-devices': ['deviceIds'], 'reorder-devices': ['deviceIds'] };
   if (!Object.hasOwn(fields, kind)) throw Error('不支持的操作');
   if (Object.keys(c).some(k => k !== 'kind' && !fields[kind].includes(k))) throw Error('操作格式不正确');
   for (const key of fields[kind]) {
-    if (kind === 'select-device' && key === 'deviceId' && c[key] === null) continue;
+    if ((kind === 'select-devices' || kind === 'reorder-devices') && key === 'deviceIds') {
+      if (!Array.isArray(c[key]) || !c[key].every(id => typeof id === 'string' && id.trim() && id.length <= 254)) throw Error('请选择有效的电脑');
+      continue;
+    }
     if (typeof c[key] !== 'string' || !c[key].trim() || c[key].length > 254) throw Error('请填写有效的登录信息');
   }
   return c as unknown as Command;

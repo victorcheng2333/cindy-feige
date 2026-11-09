@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { tokenPairSchema, type AuthTokenPair } from '../../../packages/auth-client/src/index';
 
-export interface SavedView { ownerId: string; deviceId: string | null }
+export interface SavedView { ownerId: string; deviceIds: string[]; deviceOrder: string[] }
 export interface SessionStore {
   load(): Promise<AuthTokenPair | null>; save(value: AuthTokenPair | null): Promise<void>;
   loadView(): Promise<SavedView | null>; saveView(value: SavedView): Promise<void>;
@@ -16,7 +16,13 @@ export class EncryptedSessionStore implements SessionStore {
     await this.queue.catch(() => {});
     try {
       const value = JSON.parse(await readFile(join(this.directory, 'view.json'), 'utf8'));
-      return value && typeof value.ownerId === 'string' && (value.deviceId === null || typeof value.deviceId === 'string') ? value : null;
+      if (!value || typeof value.ownerId !== 'string') return null;
+      // Older versions stored a single device; keep that explicit choice on upgrade.
+      const ids = value.deviceIds ?? (typeof value.deviceId === 'string' ? [value.deviceId] : value.deviceId === null ? [] : null);
+      const order = value.deviceOrder ?? [];
+      const validIds = (list: unknown): list is string[] => Array.isArray(list) && list.every(id => typeof id === 'string' && id.trim() && id.length <= 254);
+      return validIds(ids) && validIds(order)
+        ? { ownerId: value.ownerId, deviceIds: [...new Set(ids)], deviceOrder: [...new Set(order)] } : null;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT' || e instanceof SyntaxError) return null;
       throw Error('无法读取上次选择的电脑');

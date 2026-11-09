@@ -1,7 +1,7 @@
 import type { Snapshot } from './model';
 export function demoSnapshot(): Snapshot {
   const now = Date.now(), reset = (hours: number) => now / 1000 + hours * 3600;
-  return { signedIn: true, busy: false, error: null, demo: true, login: { kind: 'idle' }, updatedAt: now, selectedDeviceId: null,
+  return { signedIn: true, busy: false, error: null, demo: true, login: { kind: 'idle' }, updatedAt: now, selectedDeviceIds: [], deviceOrder: [],
     devices: [
       { deviceId: 'demo-mbp', name: 'M5 MacBook Pro', platform: 'darwin', online: true, remoteControlEnabled: true, error: null, checkedAt: now,
         accounts: [

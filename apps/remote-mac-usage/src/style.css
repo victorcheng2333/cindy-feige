@@ -17,10 +17,24 @@ h1,h2,h3,p { margin:0; } h1 { font-size:24px; line-height:1.3; font-weight:600; 
 .top,.row,.device-title,.account-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .top { margin-bottom:18px; align-items:flex-start; }
 .cat { width:48px; height:48px; border-radius:12px; flex:none; }
-.filters { display:flex; gap:8px; margin:20px 0; } .filters select { flex:1; }
+.filters { display:flex; gap:8px; margin:20px 0; align-items:flex-start; }
+.device-picker { position:relative; flex:1; min-width:0; }
+.device-picker > summary { list-style:none; min-height:40px; border:1px solid var(--line); border-radius:9999px; background:var(--card); padding:8px 36px 8px 14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.device-picker > summary::-webkit-details-marker { display:none; }
+.device-picker > summary::after { content:'⌄'; position:absolute; right:14px; }
+.device-options { position:absolute; top:calc(100% + 6px); left:0; width:100%; z-index:3; max-height:min(320px,50vh); overflow:auto; border:1px solid var(--line); border-radius:12px; padding:6px; background:var(--card); }
+.device-option { display:flex; align-items:center; gap:10px; min-height:36px; padding:6px 8px; border-radius:8px; color:var(--ink); font-size:14px; cursor:pointer; }
+.device-option:hover { background:var(--chip); }
+.device-option input { appearance:auto; accent-color:var(--ink); min-height:0; width:16px; height:16px; margin:0; padding:0; flex:none; }
+.device-option span { overflow-wrap:anywhere; }
+.device-option:has(input:checked) { font-weight:500; }
 .alert,.demo { background:var(--chip); border-radius:12px; padding:10px 14px; margin:14px 0; font-size:12px; }
 .alert { color:var(--ink); } .demo { color:var(--warn); }
 .device { margin-top:26px; } .device-title { margin-bottom:10px; align-items:baseline; }
+.device-name { display:flex; align-items:center; gap:6px; min-width:0; }
+.drag-handle { flex:none; cursor:grab; min-height:28px; width:28px; padding:0; border:0; color:var(--muted); font-size:20px; }
+.drag-handle:active { cursor:grabbing; }
+.drag-target { outline:1px solid var(--fill); outline-offset:6px; border-radius:12px; }
 .device-title h2 { overflow-wrap:anywhere; } .status { white-space:nowrap; color:var(--muted); font-size:12px; }
 .account { border:1px solid var(--line); background:var(--card); border-radius:12px; padding:16px; margin-top:10px; }
 .account-heading { align-items:flex-start; } .brand { color:var(--muted); font-size:12px; flex:none; text-align:right; }

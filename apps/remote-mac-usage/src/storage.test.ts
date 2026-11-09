@@ -16,6 +16,14 @@ async function fixture(run: (path: string) => Promise<void>) {
   const path = await mkdtemp(join(tmpdir(), 'quota-cat-storage-test-'));
   try { await run(path); } finally { await rm(path, { recursive: true, force: true }); }
 }
+// Upgrade compatibility: legacy view.json must restore the old selection without touching login.
+// Existing tests only write the current schema. Minimal input: one legacy deviceId; tier: unit.
+it.each(['fake-mac', null])('restores legacy single-device selection %s', async deviceId => fixture(async path => {
+  await writeFile(join(path, 'view.json'), JSON.stringify({ ownerId: 'fake-member', deviceId }));
+  expect(await new EncryptedSessionStore(path, cipher()).loadView()).toEqual({
+    ownerId: 'fake-member', deviceIds: deviceId ? [deviceId] : [], deviceOrder: [],
+  });
+}));
 const cipher = () => ({ isEncryptionAvailable: () => true, encryptString: vi.fn(() => Buffer.from('fake-encrypted-bytes')),
   decryptString: vi.fn(() => JSON.stringify(token)) });
 it('writes only cipher output and restores the same session', async () => fixture(async path => {
@@ -38,13 +46,15 @@ it('serializes clear after an in-flight save so logout survives restart', async 
   await Promise.all([store.save(token), store.save(null)]);
   expect(await new EncryptedSessionStore(path, cipher()).load()).toBeNull();
 }));
+// Multi-select regression: the existing single-device case could not detect a dropped second ID.
+// Production store + restart must preserve both IDs; tier: unit with isolated temporary files.
 it('persists device selection separately from credentials and clears it with logout', async () => fixture(async path => {
   const store = new EncryptedSessionStore(path, cipher());
   await store.save(token);
-  await store.saveView({ ownerId: 'fake-member', deviceId: 'fake-mac' });
+  await store.saveView({ ownerId: 'fake-member', deviceIds: ['fake-mac', 'fake-air'], deviceOrder: ['fake-air', 'fake-mac'] });
   const restarted = new EncryptedSessionStore(path, cipher());
-  expect(await restarted.loadView()).toEqual({ ownerId: 'fake-member', deviceId: 'fake-mac' });
+  expect(await restarted.loadView()).toEqual({ ownerId: 'fake-member', deviceIds: ['fake-mac', 'fake-air'], deviceOrder: ['fake-air', 'fake-mac'] });
   expect(await restarted.load()).toEqual(token);
-  await Promise.all([store.saveView({ ownerId: 'fake-member', deviceId: null }), store.save(null)]);
+  await Promise.all([store.saveView({ ownerId: 'fake-member', deviceIds: [], deviceOrder: [] }), store.save(null)]);
   expect(await restarted.loadView()).toBeNull();
 }));
