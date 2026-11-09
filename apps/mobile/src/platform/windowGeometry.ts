@@ -116,8 +116,11 @@ function trailingStatusRegions(g: WindowGeometry): ReservedRegion[] {
  * reports its status area at the trailing corner, but its bar sits below it (as in
  * floatingTopRow): reserving there shrank the iPhone home title to its first character.
  */
-export function sharedStatusRowTrailingReserve(g: WindowGeometry): number {
-  if (!g.reservedRegionsSupported || !g.regularWidth || g.barEdge !== 'none') return 0;
+export function sharedStatusRowTrailingReserve(g: WindowGeometry, nativeHeaderHeight: number): number {
+  // The measured header includes the safe-area top. A full toolbar below that area
+  // does not share its horizontal space; subtracting it again can collapse a phone title.
+  if (!(nativeHeaderHeight > 0) || nativeHeaderHeight >= g.insets.top + navigationChrome.target) return 0;
+  if (!g.reservedRegionsSupported || g.barEdge !== 'none') return 0;
   const status = trailingStatusRegions(g);
   if (!status.length) return 0;
   return Math.max(0, g.width - Math.min(...status.map(r => r.x)) + spacing.lg);

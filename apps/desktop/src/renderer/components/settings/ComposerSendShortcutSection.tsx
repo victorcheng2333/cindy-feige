@@ -14,15 +14,8 @@ import {
   useComposerSendShortcutPreference,
 } from '@/hooks/useComposerSendShortcutPreference';
 import { toast } from '@/lib/toast';
+import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
-import {
-  SETTINGS_CARD_CLASS,
-  SETTINGS_ROW_CLASS,
-  SETTINGS_ROW_DIVIDER_CLASS,
-  SETTINGS_ROW_HINT_CLASS,
-  SETTINGS_ROW_LABEL_CLASS,
-  SETTINGS_SECTION_TITLE_CLASS,
-} from './settingsRowClasses';
 
 const RUNNING_SEND_OPTIONS: readonly ComposerRunningSendPreference[] = ['queue', 'steer'];
 
@@ -37,29 +30,24 @@ function ComposerRunningSendRow() {
   }, [setPreference, t]);
 
   return (
-    <div className="cindy-segmented-row px-4 py-4">
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className={SETTINGS_ROW_LABEL_CLASS} style={{ letterSpacing: '0.12px' }}>
-          {t('settings.composer.runningSend.label')}
-        </p>
-        <p className={SETTINGS_ROW_HINT_CLASS}>
-          {t('settings.composer.runningSend.hint', { shortcut })}
-        </p>
-      </div>
-
-      <div className="cindy-segmented-row-actions">
-        <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
-        <SegmentedControl
-          aria-label={t('settings.composer.runningSend.ariaLabel')}
-          value={preference}
-          onValueChange={setPreference}
-          options={RUNNING_SEND_OPTIONS.map((value) => ({
-            value,
-            label: t(`settings.composer.runningSend.options.${value}`),
-          }))}
-        />
-      </div>
-    </div>
+    <SettingsRow
+      title={t('settings.composer.runningSend.label')}
+      hint={t('settings.composer.runningSend.hint', { shortcut })}
+      trailing={
+        <div className="cindy-segmented-row-actions">
+          <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
+          <SegmentedControl
+            aria-label={t('settings.composer.runningSend.ariaLabel')}
+            value={preference}
+            onValueChange={setPreference}
+            options={RUNNING_SEND_OPTIONS.map((value) => ({
+              value,
+              label: t(`settings.composer.runningSend.options.${value}`),
+            }))}
+          />
+        </div>
+      }
+    />
   );
 }
 
@@ -74,37 +62,29 @@ export function ComposerSendShortcutSection() {
   }, [setPreference, t]);
 
   return (
-    <div className="flex flex-col gap-[14px]">
-      <h2 className={SETTINGS_SECTION_TITLE_CLASS}>{t('settings.composer.title')}</h2>
-
-      <div className={SETTINGS_CARD_CLASS}>
-        <div className={SETTINGS_ROW_CLASS}>
-          <div className="flex min-w-0 flex-col gap-1">
-            <p className={SETTINGS_ROW_LABEL_CLASS} style={{ letterSpacing: '0.12px' }}>
-              {t(personalizationDetailsSettings.composerSendShortcutLabel.titleKey, { shortcut })}
-            </p>
-            <p className={SETTINGS_ROW_HINT_CLASS}>
-              {t(personalizationDetailsSettings.composerSendShortcutLabel.descriptionKey, { shortcut })}
-            </p>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
-            <Switch data-setting-id={personalizationDetailsSettings.composerSendShortcutLabel.id}
-              checked={preference === 'modifier-enter'}
-              onCheckedChange={(enabled) => {
-                const result = setPreference(enabled ? 'modifier-enter' : 'enter');
-                if (!result.ok && result.conflict === 'composer-voice-input') {
-                  toast.error(t('settings.shortcuts.errors.composerVoiceConflict'));
-                }
-              }}
-              aria-label={t('settings.composer.sendShortcut.ariaLabel', { shortcut })}
-            />
-          </div>
-        </div>
-        <div className={SETTINGS_ROW_DIVIDER_CLASS} />
+    <SettingsSection title={t('settings.composer.title')}>
+      <SettingsCard>
+        <SettingsRow
+          title={t(personalizationDetailsSettings.composerSendShortcutLabel.titleKey, { shortcut })}
+          hint={t(personalizationDetailsSettings.composerSendShortcutLabel.descriptionKey, { shortcut })}
+          trailing={
+            <div className="flex shrink-0 items-center gap-2">
+              <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
+              <Switch data-setting-id={personalizationDetailsSettings.composerSendShortcutLabel.id}
+                checked={preference === 'modifier-enter'}
+                onCheckedChange={(enabled) => {
+                  const result = setPreference(enabled ? 'modifier-enter' : 'enter');
+                  if (!result.ok && result.conflict === 'composer-voice-input') {
+                    toast.error(t('settings.shortcuts.errors.composerVoiceConflict'));
+                  }
+                }}
+                aria-label={t('settings.composer.sendShortcut.ariaLabel', { shortcut })}
+              />
+            </div>
+          }
+        />
         <ComposerRunningSendRow />
-      </div>
-    </div>
+      </SettingsCard>
+    </SettingsSection>
   );
 }
