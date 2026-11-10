@@ -86,6 +86,35 @@ afterEach(() => {
 });
 
 describe('mapAnthropicSdkModels', () => {
+  // 测试价值：生产 mapper 决定选择器成员；2.1.321 的简称改用 resolvedModel，
+  // 原有用例只覆盖 description 含版本号，导致真实 Fable 5.2 条目被丢弃。
+  // 最小输入为 fable + resolvedModel + 无版本说明；tier=unit，无网络或真实等待。
+  // 本文件单独运行实测 4.58s。
+  it('采用 SDK resolvedModel 解析简称,优先于陈旧说明并归一去重', () => {
+    const out = mapAnthropicSdkModels([
+      { value: 'fable', resolvedModel: 'claude-fable-5-2', displayName: 'Fable 5.2', description: 'For your toughest challenges' },
+      { value: 'default', resolvedModel: 'claude-opus-5-5', description: 'Opus 5 · Previous default' },
+      { value: 'sonnet', resolvedModel: 'claude-sonnet-5-5-20261001[1m]', description: 'Most efficient for simpler tasks' },
+    ]);
+    expect(out.map(({ model }) => [model.id, model.name])).toEqual([
+      ['claude-fable-5-2', 'Fable 5.2'],
+      ['claude-opus-5-5', 'Opus 5.5'],
+      ['claude-sonnet-5-5', 'Sonnet 5.5'],
+    ]);
+    expect(mapAnthropicSdkModels([
+      { value: 'fable', resolvedModel: 'claude-fable-5-2' },
+      { value: 'claude-fable-5-2[1m]' },
+    ]).map(({ model }) => model.id)).toEqual(['claude-fable-5-2']);
+  });
+
+  it.each([undefined, null, '', 'fable', 'gpt-6', 'claude-fable'])('resolvedModel 无效(%s)时兼容旧版说明解析', (resolvedModel) => {
+    const out = mapAnthropicSdkModels([
+      { value: 'fable', resolvedModel, description: 'Fable 5.2 · Newest' },
+      { value: 'opus', resolvedModel, description: 'For complex work' },
+    ]);
+    expect(out.map(({ model }) => model.id)).toEqual(['claude-fable-5-2']);
+  });
+
   it('映射 value/displayName/efforts/fastMode;能力字段在场 = SDK 是权威', () => {
     const out = mapAnthropicSdkModels([
       {

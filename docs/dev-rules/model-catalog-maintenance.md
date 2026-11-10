@@ -219,6 +219,9 @@ Codex 在实际 `turn/start` 请求中省略该档位字段，计划模式的 `r
 隔离内存/磁盘结果；恢复缓存也核对同一代次。空或损坏结果不撤销既有清单，单个账号元数据损坏
 不能清空其他供应商。后台目录重载有节流，用户显式刷新可立即重试；旧探测结果不可写入新登录。
 可用成员来自 SDK，模型能力和说明继续复用现有 Registry，不复制一套按账号维护的模型定义。
+SDK 返回 `resolvedModel` 时优先采用其中的具体型号；旧 SDK 才从 `value` 或带版本号的说明
+解析。不能要求新版说明继续包含版本号，否则 `fable` 等简称会被丢弃，新型号无法进入选择器。
+实现与回归见 `model-discovery/anthropic.ts`、`anthropicModelDiscovery.test.ts`。
 `buildUserProvider` 将独立 Claude 连接声明为仅支持 `claude-code`，原生认证策略为
 `oauth-passthrough`；实际可用性仍取决于该连接登录。`active-catalog` 分别采用每个 providerId
 的发现成员，不从默认 `anthropic` 或其它账号借模型，也不为 Codex / Pi 扩展 Claude 订阅。

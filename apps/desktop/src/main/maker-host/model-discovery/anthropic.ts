@@ -120,7 +120,8 @@ const unresolvedAliasLogged = new Set<string>();
 /**
  * SDK 条目 → 目录模型 id;无法确定时返回 null(该条目不进清单)。
  *
- * 显式 `claude-*` id 原样归一化。SDK 对每个系列的当前型号常只报简称
+ * 优先采用 SDK 的 `resolvedModel` 具体 id,不从会变化的展示文案反推型号。
+ * 旧 SDK 没有该字段时,显式 `claude-*` id 原样归一化。SDK 对每个系列的当前型号常只报简称
  * (`default` / `opus` / `sonnet` …),具体版本只写在 description 开头
  * (如 "Opus 5.5 · …" / "Opus 4.7 with 1M context · …")。简称按说明里的系列与版本
  * 拼出 `claude-<系列>-<主>-<次>`(Anthropic 的 id 规则)。目录尚未登记的新版本
@@ -128,7 +129,11 @@ const unresolvedAliasLogged = new Set<string>();
  * 只有无法从说明确定版本时才放弃:简称与说明的系列不一致(opus 却写 Sonnet)、
  * 版本号多于两段或说明缺失。
  */
-function resolveSdkModelId(value: string, description: unknown): string | null {
+function resolveSdkModelId(value: string, description: unknown, resolvedModel: unknown): string | null {
+  if (typeof resolvedModel === 'string') {
+    const resolved = normalizeModelId(resolvedModel);
+    if (/^claude-[a-z]+-\d+(?:-[a-z0-9]+)*$/.test(resolved)) return resolved;
+  }
   const normalized = normalizeModelId(value);
   if (normalized.startsWith('claude')) return normalized;
   const alias = normalized.toLowerCase();
@@ -262,7 +267,8 @@ function fallbackEffortBaseline(id: string): { efforts: Effort[]; defaultEffort:
 /**
  * SDK `supportedModels()` 条目 → 映射结果。只读目录,无副作用(除一次性日志)。
  * 目录只收显式版本 id(规则 10:禁止 opus/sonnet 裸别名进目录):SDK 简称条目经
- * resolveSdkModelId 按说明里的版本解析为具体 id,确定不了版本才跳过。这份清单是 Anthropic
+ * resolveSdkModelId 优先读取 resolvedModel,旧 SDK 才按说明里的版本解析为具体 id,
+ * 确定不了版本才跳过。这份清单是 Anthropic
  * 成员的唯一来源,目录不再补入 SDK 没返回的型号。
  * 名称:SDK 的 displayName 写出与 id 相同的版本号才采用;否则用目录名称,目录未登记则按 id 推导。
  * ModelInfo 的能力字段全部 optional:字段在场时 SDK 是能力权威(supportsEffort=false =
@@ -277,6 +283,7 @@ export function mapAnthropicSdkModels(raw: unknown): SdkMappedModel[] {
     if (!entry || typeof entry !== 'object') continue;
     const e = entry as {
       value?: unknown;
+      resolvedModel?: unknown;
       displayName?: unknown;
       description?: unknown;
       supportsEffort?: unknown;
@@ -284,7 +291,7 @@ export function mapAnthropicSdkModels(raw: unknown): SdkMappedModel[] {
       supportsFastMode?: unknown;
     };
     if (typeof e.value !== 'string' || e.value.length === 0) continue;
-    const id = resolveSdkModelId(e.value, e.description);
+    const id = resolveSdkModelId(e.value, e.description, e.resolvedModel);
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const reportedName =
