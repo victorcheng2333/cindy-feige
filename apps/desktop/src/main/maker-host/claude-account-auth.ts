@@ -13,7 +13,7 @@ import {
   beginClaudeCliLogin, cancelClaudeCliLogin, invalidateClaudeCliLoginStatus,
   logoutManagedClaudeCli, peekClaudeCliLoginStatus, readClaudeCliLoginStatus,
   runClaudeCliLogin, type ClaudeCliLoginStatus,
-} from './claude-native-cli.js';
+} from './claude-native-cli.desktop.js';
 
 export interface ClaudeAccountRecord {
   version: 1;

@@ -161,8 +161,8 @@ describe.skipIf(!available)('remote agent with a real Claude Code', () => {
         logout: async () => {},
         getAuthEnv: async () => ({ ANTHROPIC_API_KEY: 'fake-test-key' }),
       },
-      // This scripted gateway chooses tool calls directly; it does not implement
-      // Claude's deferred-tool discovery. Keep the real MCP execution path eager.
+      // This synthetic upstream implements tool_use, not Anthropic deferred tool
+      // discovery. Keep the real CLI on the same non-deferred provider route.
       runtimeConfig: { endpoint: proxyEndpoint, behaviorFlags: { ENABLE_TOOL_SEARCH: 'false' } },
       binaryPath: CLAUDE,
       logger: noopLogger,
@@ -282,11 +282,14 @@ describe.skipIf(!available)('remote agent with a real Claude Code', () => {
     steps = [
       { name: 'mcp__cindy_exec__Bash', input: { command: 'pwd; ls', description: 'Show location' } },
       { name: 'mcp__cindy_exec__Write', input: { file_path: path.join(projectPath, 'made.txt'), content: 'one\n' } },
-      { name: 'mcp__cindy_exec__Read', input: { file_path: path.join(projectPath, 'hello.txt') } },
+      // The model sees the hosted workspace; a relative path stays within that
+      // authorized root. The controller's absolute path is outside that scope.
+      { name: 'mcp__cindy_exec__Read', input: { file_path: 'hello.txt' } },
       { name: 'mcp__cindy_exec__Edit', input: { file_path: path.join(projectPath, 'made.txt'), old_string: 'one', new_string: 'two' } },
     ];
     requests.length = 0;
     const { project, hostRoot, events, captured, asked } = await run('bypassPermissions');
+    expect(requests.length, 'Claude did not send a request with the controller tools').toBeGreaterThan(0);
     expect(asked).toEqual([]);
     const first = requests[0];
     // 模型看不到只能操作本机的自带文件与命令工具。

@@ -18,6 +18,7 @@ import {
   patchDraft,
   resetDraftWorkspaceTargets,
   resetDraftWorkspaceAfterSend,
+  setNewMakerDraftOwner,
 } from '@/state/newMakerDraft';
 
 beforeEach(() => {
@@ -106,5 +107,18 @@ describe('resetDraftWorkspaceTargets', () => {
     const first = getDraft();
     resetDraftWorkspaceTargets();
     expect(getDraft()).toEqual(first);
+  });
+
+  it('记住明确选择的无项目对话，功能引导保留而发送复位清除该选择', () => {
+    setNewMakerDraftOwner('explicit-dialogue-owner');
+    patchDraft({ workingDir: null, explicitNoProject: true });
+    setNewMakerDraftOwner('other-owner');
+    setNewMakerDraftOwner('explicit-dialogue-owner');
+    expect(getDraft().explicitNoProject).toBe(true);
+
+    resetDraftWorkspaceTargets();
+    expect(getDraft().explicitNoProject).toBe(true);
+    resetDraftWorkspaceTargets({ explicitNoProject: false });
+    expect(getDraft().explicitNoProject).toBe(false);
   });
 });

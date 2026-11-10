@@ -31,7 +31,7 @@ vi.mock('../../appSessionState.js', () => ({
 vi.mock('../../device-link/crossProcessLock.js', () => ({
   withCrossProcessLock: async (_path: string, _options: unknown, run: (s: { held: true }) => unknown) => run({ held: true }),
 }));
-vi.mock('../claude-native-cli.js', () => ({
+vi.mock('../claude-native-cli.desktop.js', () => ({
   beginClaudeCliLogin: () => new AbortController().signal,
   cancelClaudeCliLogin: vi.fn(), invalidateClaudeCliLoginStatus: vi.fn(),
   logoutManagedClaudeCli: h.logout,

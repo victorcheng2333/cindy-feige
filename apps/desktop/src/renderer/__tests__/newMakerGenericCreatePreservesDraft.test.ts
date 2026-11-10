@@ -56,7 +56,7 @@ describe('通用「新建」保留 newMakerDraft 选择', () => {
 
   it('草稿保留与目标迁移共用包含 SSH 身份的同机判据', () => {
     expect(draftRouteSource).toContain(
-      '!isSameNewMakerDevice(dialogueTargetRequest.deviceId, getDraft())',
+      'const sameDevice = isSameNewMakerDevice(dialogueTargetRequest.deviceId, currentDraft)',
     );
     expect(draftRouteSource).toContain(
       'const deviceChanged = !isSameNewMakerDevice(req.deviceId, {',
@@ -93,9 +93,9 @@ describe('通用「新建」保留 newMakerDraft 选择', () => {
     expect(block).toContain('target = selectedDialogueDeviceResolution.target;');
     expect(block).toContain("selectedDialogueDeviceResolution.status === 'pending'");
     expect(block).not.toContain('resetDraftWorkspaceTargets');
-    expect(draftRouteSource).toMatch(
-      /applyDraftTarget\(\{\s*deviceId: dialogueTargetRequest\.deviceId,\s*deviceName: dialogueTargetRequest\.deviceName,\s*workingDir: null,/,
-    );
+    // The local default is restricted to generic requests; dialogue still passes null.
+    expect(draftRouteSource).toContain("workspacePrompt === 'generic'");
+    expect(draftRouteSource).toContain('workingDir: defaultDir,');
   });
 
   // 保留与清空的分界(2026-07-25 用户定稿):workingDir / 文本 / 模型是便利性

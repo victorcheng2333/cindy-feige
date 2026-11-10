@@ -89,7 +89,7 @@ vi.mock('../../maker-host/claude-history-home.js', () => ({
   claudeHistoryHomeCandidates: () => configDirCandidatesRef.dirs,
 }));
 const imagePathRef = { path: path.join(tmpRoot, 'img.png') };
-vi.mock('../../imageCacheStore.js', () => ({
+vi.mock('../../imageCacheStore.desktop.js', () => ({
   resolveSafe: (url: string) => {
     if (!url.startsWith('xdt-image://')) throw new Error('bad url');
     return { absPath: imagePathRef.path, mimeType: 'image/png' };

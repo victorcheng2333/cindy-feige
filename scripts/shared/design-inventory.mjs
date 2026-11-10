@@ -261,7 +261,8 @@ function parseRouteObject(body) {
   if (elementAt === undefined && lazyAt !== undefined) {
     // Inline React Router lazy routes return their component after import().
     // Bound the scan to this function so a child/sibling cannot supply it.
-    const lazy = body.slice(lazyAt);
+    const nextKeyAt = Math.min(body.length, ...[...keys.values()].filter(at => at > lazyAt));
+    const lazy = body.slice(lazyAt, nextKeyAt);
     const header = /^\s*(?:async\s+)?\(\s*\)\s*=>\s*\{/.exec(lazy);
     if (header) {
       const open = header[0].length - 1;
@@ -270,6 +271,11 @@ function parseRouteObject(body) {
         route.component = /\breturn\s*\{\s*Component:\s*([A-Za-z][\w.]*)\s*,?\s*\};?\s*$/
           .exec(lazy.slice(open + 1, close))?.[1];
       }
+    } else {
+      // The production router also returns components from import().then().
+      // Match that expression itself, never a Component in its children.
+      route.component = /^\s*(?:async\s+)?\(\s*\)\s*=>\s*import\(\s*(['"])[^'"]+\1\s*\)\s*\.then\(\s*\(\s*\{[^{}]*\}\s*\)\s*=>\s*\(\s*\{\s*Component:\s*([A-Za-z][\w.]*)\s*,?\s*\}\s*\)\s*\)/
+        .exec(lazy)?.[2];
     }
   }
 
@@ -1564,6 +1570,7 @@ export function mobileRouteCoverage(repoRoot, catalog = mobileCatalogSurfaces())
     ['+native-intent.ts', 'native intent routing; no screen'],
     ['automations/[deviceId].tsx', 'legacy automation link redirect; no screen'],
     ['splash-preview.tsx', 'MOBILE_VISUAL_MOCK_ENABLED preview; not production UI'],
+    ['group-execution-preview.tsx', 'MOBILE_VISUAL_MOCK_ENABLED group execution fixture; not production UI'],
     ['plugin-management-preview.tsx', 'gated plugin settings visual fixture; not production UI'],
     ['listperf.tsx', '__DEV__ list performance harness; not production UI'],
   ]);
@@ -1574,7 +1581,8 @@ export function mobileRouteCoverage(repoRoot, catalog = mobileCatalogSurfaces())
     const source = stripJsComments(fs.readFileSync(path.join(repoRoot, ...file.split('/')), 'utf8'));
     if (excluded.has(route)) {
       // Keep dev exclusions honest: removing their gate cannot silently hide a screen.
-      if (route === 'splash-preview.tsx' && !source.includes('if (!MOBILE_VISUAL_MOCK_ENABLED)')) missing.push(file);
+      if ((route === 'splash-preview.tsx' || route === 'group-execution-preview.tsx') &&
+        !source.includes('if (!MOBILE_VISUAL_MOCK_ENABLED)')) missing.push(file);
       if (route === 'plugin-management-preview.tsx' &&
         (!source.includes('if (!MOBILE_VISUAL_MOCK_ENABLED && !demosEnabled)') ||
           !source.includes('__DEV__ && process.env.EXPO_PUBLIC_CINDY_PLUGIN_DEMOS === "1"'))) missing.push(file);

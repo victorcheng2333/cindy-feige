@@ -194,6 +194,8 @@ test('extractRouterFacts: 注释插在 { 与 path 之间仍能抽出;Navigate �
 });
 
 test('extractRouterFacts: lazy Component 保留页面身份且不跨函数绑定', () => {
+  // Governance §2.1: lazy expression routes must remain in the inventory,
+  // while a loader-only parent cannot borrow its child's component identity.
   const fixture = `
     createHashRouter([
       {
@@ -208,12 +210,22 @@ test('extractRouterFacts: lazy Component 保留页面身份且不跨函数绑定
         lazy: async () => { return { loader: loadData }; },
         children: [{ path: 'child', element: <ChildView /> }],
       },
+      {
+        path: 'expression',
+        lazy: () => import('./ExpressionView').then(({ ExpressionView }) => ({ Component: ExpressionView })),
+      },
+      {
+        path: 'expression-loader',
+        lazy: () => import('./loader').then(({ loadData }) => ({ loader: loadData })),
+        children: [{ path: 'child', lazy: () => import('./ChildView').then(({ ChildView }) => ({ Component: ChildView })) }],
+      },
       { path: 'other', element: <OtherView /> },
       { path: 'billing', element: <Navigate to="/settings?tab=billing" replace /> },
     ]);
   `;
   const { production, redirects } = extractRouterFacts(fixture);
   assert.deepEqual(production.map((row) => `${row.path}:${row.component}`), [
+    '/expression:ExpressionView', '/expression-loader/child:ChildView',
     '/loader-only/child:ChildView', '/other:OtherView', '/settings:SettingsView',
   ]);
   assert.deepEqual(redirects.map((row) => `${row.path}->${row.to}`), [
@@ -1321,6 +1333,11 @@ test('Mobile new, removed, renamed routes and missing dev gates cannot silently 
   assert.ok(mobileRouteCoverage(temp,catalog).missing.includes('apps/mobile/app/plugin-management-preview.tsx'));
   fs.writeFileSync(pluginPreview, 'const demosEnabled = __DEV__ && process.env.EXPO_PUBLIC_CINDY_PLUGIN_DEMOS === "1"; export default function Preview() { if (!MOBILE_VISUAL_MOCK_ENABLED && !demosEnabled) return <Redirect href="/" />; return <View />; }');
   assert.equal(mobileRouteCoverage(temp,catalog).missing.includes('apps/mobile/app/plugin-management-preview.tsx'), false);
+  const groupPreview = path.join(app, 'group-execution-preview.tsx');
+  fs.writeFileSync(groupPreview, 'export default function Preview() { return <View />; }');
+  assert.ok(mobileRouteCoverage(temp,catalog).missing.includes('apps/mobile/app/group-execution-preview.tsx'));
+  fs.writeFileSync(groupPreview, 'export default function Preview() { if (!MOBILE_VISUAL_MOCK_ENABLED) return <Redirect href="/" />; return <View />; }');
+  assert.equal(mobileRouteCoverage(temp,catalog).missing.includes('apps/mobile/app/group-execution-preview.tsx'), false);
 });
 
 test('Mobile reexports, embedded viewer HTML, platform variants and codepoint ordering survive closure', async (t) => {

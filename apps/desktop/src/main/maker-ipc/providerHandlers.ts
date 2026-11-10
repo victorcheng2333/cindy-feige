@@ -3,6 +3,7 @@ import { dialog } from 'electron';
 import { createVertexServiceAccountSelections } from '../maker-host/vertex-service-account.js';
 import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
 import type { VertexServiceAccountSave } from '../../shared/vertexServiceAccount.js';
+import { withoutProviderHeaderCredentials } from '../maker-host/provider-public-view.js';
 import { withAvailabilityPolicyMutation } from '../device-link/providerShareAvailabilityPolicy.js';
 import { bindModelSourceSnapshot, acceptsModelSourceSnapshot, modelSourceRequestSignature, issueModelSourceSnapshot } from '../maker-host/model-source-snapshots.js';
 import { buildModelsFetchRequest } from '../maker-host/provider-model-fetch.js';
@@ -10,7 +11,7 @@ import { getProviderRouteCredentialRevision } from '../maker-host/provider-route
 import { appendSpeechModels, missingSpeechReference } from '../../shared/speechProviderSetup.js';
 import { setProviderPresentation, retainProviderPresentationAfterAuthChange } from '../maker-host/provider-presentation-store.js';
 import type { DeploymentDetectionResult } from '../../shared/providerDetection.js';
-import { pruneProviderGroupBindings } from '../provider-group/bindings.js';
+import { pruneProviderGroupBindings } from '../provider-group/bindings.desktop.js';
 import { writeProviderGroup } from '../provider-group/store.js';
 /**
  * provider:* IPC handlers。
@@ -277,19 +278,6 @@ function oauthRuntimeEndpointSignature(config: CustomProviderConfig | null): str
   }));
 }
 
-/** Never expose runtime header credentials to WebViews or synthetic remote events. */
-function withoutProviderHeaderCredentials(provider: ProviderView): ProviderView {
-  if (!provider.routing) return provider;
-  const routing = Object.fromEntries(
-    Object.entries(provider.routing).map(([agent, descriptor]) => {
-      if (!descriptor) return [agent, descriptor];
-      const safeDescriptor = { ...descriptor };
-      delete safeDescriptor.headerOverride;
-      return [agent, safeDescriptor];
-    }),
-  ) as ProviderView['routing'];
-  return { ...provider, routing };
-}
 
 export interface ProviderHandlerDeps {
   /**
@@ -459,6 +447,9 @@ export interface ProviderHandlerDeps {
   /** Per-provider opt-in for remote Agent use; absent means disabled. */
   getRemoteProviderInvocationEnabled?(providerId: string): boolean;
   setRemoteProviderInvocationEnabled?(providerId: string, enabled: boolean): void | Promise<void>;
+  /** 供应商「运行于」：用户改选过的电脑(deviceId 或 'local')。 */
+  getProviderRunLocation?(providerId: string): string | undefined;
+  setProviderRunLocation?(providerId: string, location: string | null): void;
   /**
    * 「恢复默认」= 删除该供应商的整组停用 override(供应商级 + 全部逐模型条目,含
    * 指向已下架模型的陈旧条目)。语义遵循 docs/dev-rules/configuration-and-overrides.md
@@ -1271,9 +1262,11 @@ export function registerProviderHandlers(
               ),
             } : {}),
           };
+          const runLocation = deps.getProviderRunLocation?.(provider.id);
+          const located = runLocation ? { ...view, runLocation } : view;
           return remoteAccess
-            ? { ...view, remoteInvocationEnabled: remoteAccess(provider.id) }
-            : view;
+            ? { ...located, remoteInvocationEnabled: remoteAccess(provider.id) }
+            : located;
         }),
         providerOrder,
         modelVisibilityOverrides,
@@ -1842,6 +1835,24 @@ export function registerProviderHandlers(
     }
     deps.broadcastChanged();
     return { ok: true, enabled: value.enabled };
+  });
+
+  registry.handle(MAKER_INVOKE.PROVIDER_RUN_LOCATION_SET, async (event, input: unknown) => {
+    assertTrustedProviderMutationSender(event);
+    const ownerAtIngress = captureProviderOwnerSession();
+    if (!deps.setProviderRunLocation) throwIpcError('INTERNAL', 'provider run location is not wired');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throwIpcError('INVALID_PARAMS', 'invalid input');
+    const value = input as Record<string, unknown>;
+    if (typeof value.providerId !== 'string' || value.providerId.length === 0 || value.providerId.length > 256) {
+      throwIpcError('INVALID_PARAMS', 'providerId required');
+    }
+    if (value.location !== null && (typeof value.location !== 'string' || !value.location || value.location.length > 256)) {
+      throwIpcError('INVALID_PARAMS', 'location must be a computer id, "local" or null');
+    }
+    assertProviderMutationOwner(ownerAtIngress, 'active account changed before persisting provider run location');
+    deps.setProviderRunLocation(value.providerId, value.location as string | null);
+    deps.broadcastChanged();
+    return { ok: true };
   });
 
   const parsePriceTarget = (value: unknown): ModelPriceOverrideTarget => {

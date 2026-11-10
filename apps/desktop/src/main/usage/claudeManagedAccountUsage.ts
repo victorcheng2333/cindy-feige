@@ -5,7 +5,7 @@ import type { ClaudeRuntimeEventContext } from '@cindy/maker-core';
 import { activeOwnerScopeKey, onAppSessionInvalidated, ownerScopedUserDataPath } from '../appSessionState.js';
 import { readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { isManagedClaudeEventCurrent } from '../maker-host/claude-account-models.js';
-import { readClaudeCliPlanUsage } from '../maker-host/claude-native-cli.js';
+import { readClaudeCliPlanUsage } from '../maker-host/claude-native-cli.desktop.js';
 import { createClaudeSubscriptionUsageReader } from './claudeSubscriptionUsageRefresh.js';
 import {
   parseClaudeOAuthUsageResponse, parseClaudeSdkRateLimitInfo,

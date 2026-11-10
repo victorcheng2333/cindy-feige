@@ -143,6 +143,7 @@ it.each(['PageUp', 'Home', 'scrollbar'])('keeps explicit %s browsing while conte
   vi.stubGlobal('ResizeObserver', class {
     constructor(private callback: ResizeObserverCallback) {}
     observe(element: Element) { observed.set(element, this.callback); }
+    unobserve(element: Element) { observed.delete(element); }
     disconnect() {}
   });
   renderView();
@@ -412,7 +413,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('BotGroupChatView', () => {
   // Review 4362888100: main group and thread timelines own separate scroll roots.
   it.each(['group', 'thread'])('sanitizes selection copy in the real %s timeline', async (timeline) => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     renderView();
     let message = await screen.findByText('@小满 帮我查余票');
@@ -751,7 +752,7 @@ describe('BotGroupChatView', () => {
   it.each(['200ms', '0ms'])('opens and closes with motion token %s, restoring focus and ignoring duplicate close', async duration => {
     const motion = mockThreadMotion(duration);
     try {
-      vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+      vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
       mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
       const user = userEvent.setup();
       renderView();
@@ -791,7 +792,7 @@ describe('BotGroupChatView', () => {
   it('cancels an interrupted close and does not animate or later close the newly selected thread', async () => {
     const motion = mockThreadMotion('200ms');
     try {
-      vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+      vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
       mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
       const user = userEvent.setup();
       renderView();
@@ -813,7 +814,7 @@ describe('BotGroupChatView', () => {
   it('cancels closing when Enter reopens the same thread and restores its input and draft', async () => {
     const motion = mockThreadMotion('200ms');
     try {
-      vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+      vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
       mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
       const user = userEvent.setup();
       renderView();
@@ -853,6 +854,7 @@ describe('BotGroupChatView', () => {
       vi.stubGlobal('ResizeObserver', class {
         constructor(private callback: ResizeObserverCallback) {}
         observe(element: Element) { observed.set(element, this.callback); }
+        unobserve(element: Element) { observed.delete(element); }
         disconnect() {}
       });
       vi.stubGlobal('PointerEvent', class extends MouseEvent {
@@ -971,7 +973,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('expands a sibling thread panel, keeps the group usable, switches threads and restores the layout on close', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1002,7 +1004,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('focuses the reply input without trapping Tab; closes by keyboard and ignores IME Escape', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1030,7 +1032,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('closes the thread with Escape after clicking or tabbing into the main group, respecting IME and consumed events', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1060,7 +1062,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('closes with Escape after clicking message text or empty timeline space, respecting IME and consumed events', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1085,7 +1087,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('keeps main composer focus and both drafts when leaving thread image sharing', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1107,7 +1109,7 @@ describe('BotGroupChatView', () => {
   });
 
   it.each(['main', 'thread'])('lets %s image selection consume Escape before the thread', async scope => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1130,7 +1132,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('closes with Escape from the separate group header, yielding to consumed and IME events', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1158,7 +1160,7 @@ describe('BotGroupChatView', () => {
   });
 
   it.each(['image', 'text-trigger', 'text-control', 'text-body'])('lets %s attachment preview close first with Escape and retains the thread draft', async kind => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true, messages: [msg({
       attachments: [{ id: 'attachment', name: kind === 'image' ? 'photo.png' : 'note.md', category: kind === 'image' ? 'image' : 'text',
         mimeType: kind === 'image' ? 'image/png' : 'text/markdown', size: 10,
@@ -1218,7 +1220,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('lets the actual Mermaid preview consume Escape before the thread and preserves its draft', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -1243,7 +1245,7 @@ describe('BotGroupChatView', () => {
   });
 
   it('lets Escape dismiss a portalled reaction picker without closing the thread', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     const user = userEvent.setup();
     renderView();
@@ -2414,7 +2416,7 @@ describe('BotGroupChatView', () => {
       return within(row).getByRole('button', { name: 'bots.groupChat.server.quoteReply' });
     };
     beforeEach(() => {
-      vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+      vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
       mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
     });
     afterEach(() => { vi.unstubAllGlobals(); });
@@ -2558,6 +2560,7 @@ describe('BotGroupChatView', () => {
       vi.stubGlobal('ResizeObserver', class {
         constructor(private callback: ResizeObserverCallback) {}
         observe(element: Element) { observed.set(element, this.callback); }
+        unobserve(element: Element) { observed.delete(element); }
         disconnect() {}
       });
       const messages = [
@@ -3541,7 +3544,7 @@ describe('BotGroupChatView', () => {
 });
 
 it('keeps copy/share in each author row\'s more menu and shares only message content through the standard selection flow', async () => {
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ messages: [
     msg({ id: 'bot-share', authorKind: 'bot', authorName: '咪咪', content: 'Share this answer' }),
     msg({ id: 'mine-share', sequence: 2, content: 'My question' }),
@@ -3905,7 +3908,7 @@ describe('Telegram / Slack-grade timeline', () => {
   });
 
   it('shows a 话题 reply at once and keeps one copy when the server’s reply arrives', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
     const sent = deferred<{ ok: true; messageId: string }>();
     const reply = vi.fn(() => sent.promise);
     Object.assign((window.electronAPI as unknown as { maker: { chatServer: Record<string, unknown> } }).maker.chatServer, { reply });
@@ -3939,7 +3942,7 @@ describe('thread previews and posting to the main chat', () => {
   function group(messages: BotGroupMessageView[]) {
     return detail({ serverBacked: true, messages });
   }
-  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); });
+  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); });
 
   async function renderProcessScroller(context: string) {
     const root = msg({ id: 'root', content: 'Root' });
@@ -3965,6 +3968,7 @@ describe('thread previews and posting to the main chat', () => {
       vi.stubGlobal('ResizeObserver', class {
         constructor(private callback: ResizeObserverCallback) {}
         observe(element: Element) { observed.set(element, this.callback); }
+        unobserve(element: Element) { observed.delete(element); }
         disconnect() {}
       });
       const scroller = await renderProcessScroller(context);
@@ -3995,6 +3999,7 @@ describe('thread previews and posting to the main chat', () => {
     vi.stubGlobal('ResizeObserver', class {
       constructor(private callback: ResizeObserverCallback) {}
       observe(element: Element) { observed.set(element, this.callback); }
+      unobserve(element: Element) { observed.delete(element); }
       disconnect() {}
     });
     const scroller = await renderProcessScroller(context);
@@ -4040,6 +4045,7 @@ describe('thread previews and posting to the main chat', () => {
     vi.stubGlobal('ResizeObserver', class {
       constructor(private callback: ResizeObserverCallback) {}
       observe(element: Element) { observed.set(element, this.callback); }
+      unobserve(element: Element) { observed.delete(element); }
       disconnect() {}
     });
     const scroller = await renderProcessScroller(context);
@@ -4074,6 +4080,7 @@ describe('thread previews and posting to the main chat', () => {
     vi.stubGlobal('ResizeObserver', class {
       constructor(private callback: ResizeObserverCallback) {}
       observe(element: Element) { observed.set(element, this.callback); }
+      unobserve(element: Element) { observed.delete(element); }
       disconnect() {}
     });
     const scroller = await renderProcessScroller(context);
@@ -4106,6 +4113,7 @@ describe('thread previews and posting to the main chat', () => {
     vi.stubGlobal('ResizeObserver', class {
       constructor(private callback: ResizeObserverCallback) {}
       observe(element: Element) { observed.set(element, this.callback); }
+      unobserve(element: Element) { observed.delete(element); }
       disconnect() {}
     });
     const scroller = await renderProcessScroller(context);
@@ -4580,7 +4588,7 @@ describe('thread share follow-ups', () => {
   const share = (overrides: Partial<NonNullable<BotGroupMessageView['threadShare']>> = {}): NonNullable<BotGroupMessageView['threadShare']> => ({
     messageId: 'reply-x', threadRootId: 'u1', status: 'available', authorKind: 'bot', authorBotId: 'xiaoman', authorName: '小满',
     sharedByAuthor: false, content: '服务器上的原文', attachments: [], createdAt: 1_700_000_000_000, edited: false, ...overrides });
-  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); });
+  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); });
 
   it('shows a loading placeholder, never the card text, while the reply is read', async () => {
     mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true, messages: [
@@ -4756,7 +4764,7 @@ describe('thread share follow-ups', () => {
 
 describe('shares on older pages', () => {
   const t = (name: string) => `bots.groupChat.server.thread.${name}`;
-  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); });
+  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); });
 
   it('follows the reply after an edit or deletion without a click or reopen', async () => {
     const oldShare = msg({ id: 'old-share', sequence: 1, authorKind: 'user', isSelf: false, authorBotId: 'alice-actor', authorName: 'Alice', content: '↪ 冒充: 卡片文字',
@@ -4856,7 +4864,7 @@ describe('shares on older pages', () => {
 
 describe('more older shares than one refresh re-reads', () => {
   const t = (name: string) => `bots.groupChat.server.thread.${name}`;
-  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); });
+  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); });
 
   it.each(['source', 'attachment'] as const)('settles every older %s after overlapping completion pushes', { timeout: 20_000 }, async (pending) => {
     const older = Array.from({ length: 201 }, (_, i) => msg({ id: `share-${i}`, sequence: i + 1, content: 'card fallback',
@@ -4954,7 +4962,7 @@ describe('more older shares than one refresh re-reads', () => {
 
 describe('pending main-chat copies across accounts', () => {
   const t = (name: string) => `bots.groupChat.server.thread.${name}`;
-  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }); });
+  beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} }); });
   afterEach(() => { mocks.ownerGeneration = { dataOwnerId: 'account-a', generation: 1 }; });
 
   it('does not offer one account\'s failed copy to the next account in the same group', async () => {
@@ -5214,7 +5222,7 @@ it('sends a rich control to the group outbox without consuming the composer draf
 
 // Unit: an explicit rich submit must use the open thread and ignore composer-only flags.
 it('sends a rich control only to its thread and keeps the thread draft and main-share choice', async () => {
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   const content = '```cindy-ui\n' + JSON.stringify({ seq: 1, version: 1, op: 'create', id: 'submit', kind: 'button', props: { label: 'Rich thread submit', send: 'Reply from the card' } }) + '\n```';
   mocks.getBotGroup.mockResolvedValue({ ok: true, group: detail({ serverBacked: true }) });
   mocks.thread.mockResolvedValue({ ok: true, root: msg({ id: 'u1', content: 'Thread root' }), hasMore: false,
@@ -5262,7 +5270,7 @@ it('renders a verified shared bot answer with its send action disabled', async (
 // PR #8439 P1: simulate a committed reply whose receipt is lost. Existing happy-path
 // routing coverage did not detect a second server-side reply after retry/remount (unit tier).
 it('reuses a rich thread reply attempt after a lost receipt and panel remount', async () => {
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   const content = '```cindy-ui\n' + [
     { seq: 1, version: 1, op: 'create', id: 'text', kind: 'input', props: { label: 'Retry reply text', default: 'First reply' } },
     { seq: 2, op: 'create', id: 'send', kind: 'button', props: { label: 'Retry rich reply', send: { ref: 'text' } } },

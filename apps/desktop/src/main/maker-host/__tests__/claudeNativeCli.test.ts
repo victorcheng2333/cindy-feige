@@ -72,7 +72,7 @@ import {
   beginClaudeCliLogin,
   cancelClaudeCliLogin,
   invalidateClaudeCliLoginStatus,
-} from '../claude-native-cli.js';
+} from '../claude-native-cli.desktop.js';
 import path from 'node:path';
 import { claudeCliLoginRevision, publishClaudeCliLoginStatus } from '../claude-native-cli-status.js';
 

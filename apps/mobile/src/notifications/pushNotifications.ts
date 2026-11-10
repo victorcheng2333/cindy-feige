@@ -1,3 +1,4 @@
+import { setAndroidPushAvailability } from './androidPushAvailability';
 import { i18n } from '@/i18n';
 import { mobileDebugLog } from '@/debug/mobileDebugLog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -201,23 +202,29 @@ function pushTargets(realm: ClientEndpointRegion, method: 'PUT' | 'DELETE' = 'DE
   const skipDeviceLink = method === 'PUT' && getActiveSelfHostedRelay() !== null;
   const targets = skipDeviceLink
     ? []
-    : [{ baseUrl: deviceLinkBaseForRealm(realm), path: PUSH_TOKEN_PATH, optional: false }];
+    : [{ baseUrl: deviceLinkBaseForRealm(realm), path: PUSH_TOKEN_PATH, optional: false, service: 'task' }];
   try {
     const baseUrl = getMobileEndpointForRealm(realm, 'chatApiBaseUrl');
-    if (baseUrl) targets.push({ baseUrl, path: '/v1/push-token', optional: true });
+    if (baseUrl) targets.push({ baseUrl, path: '/v1/push-token', optional: true, service: 'chat' });
   } catch { /* Older endpoint snapshots do not advertise chat. */ }
   return targets;
 }
 async function mutatePushTokens(apiFetch: AuthedApiFetch, realm: ClientEndpointRegion, method: 'PUT' | 'DELETE', body?: unknown) {
   const results = await Promise.allSettled(pushTargets(realm, method).map(async target => {
-    try { await apiFetch(target.path, { baseUrl: target.baseUrl, method, headers: { 'Accept-Language': i18n.language || 'en' }, ...(body ? { body } : {}) }); }
+    try {
+      await apiFetch(target.path, { baseUrl: target.baseUrl, method, headers: { 'Accept-Language': i18n.language || 'en' }, ...(body ? { body } : {}) });
+      return { service: target.service, registered: true };
+    }
     catch (error) {
       // An older chat server can roll forward independently of existing task pushes.
-      if (target.optional && [404, 405].includes((error as { status?: number }).status ?? 0)) return;
+      if (target.optional && [404, 405].includes((error as { status?: number }).status ?? 0)) return { service: target.service, registered: false };
       throw error;
     }
   }));
   for (const result of results) if (result.status === 'rejected') throw result.reason;
+  const registered = (service: string) => results.some(result => result.status === 'fulfilled'
+    && result.value.service === service && result.value.registered);
+  return { task: registered('task'), chat: registered('chat') };
 }
 
 function pushDeleteBody(token: string | null): { token: string } | undefined {
@@ -329,6 +336,7 @@ async function syncPushRegistrationInternal(
   opts: {
     enabled: boolean;
     apiFetch: AuthedApiFetch;
+    onPermissionGranted?: () => Promise<void>;
   },
   lifecycleGeneration: number,
 ): Promise<PushSyncResult> {
@@ -380,6 +388,10 @@ async function syncPushRegistrationInternal(
     if (lifecycleGeneration !== pushLifecycleGeneration) return 'skipped';
     return await jpushLifecycle!.sync(await readPushPreviewEnabled()) ? 'registered' : 'skipped';
   }
+  // Android direct delivery must start while the Activity is visible, without
+  // waiting for Google. iOS keeps its existing register-before-enable behavior.
+  if (Platform.OS === 'android') await opts.onPermissionGranted?.();
+  if (lifecycleGeneration !== pushLifecycleGeneration) return 'skipped';
 
   let deviceToken;
   try { deviceToken = await Notifications.getDevicePushTokenAsync(); }
@@ -408,9 +420,14 @@ async function syncPushRegistrationInternal(
     await addPushRealm(PUSH_PENDING_UNREGISTER_KEY, realm, stateScope);
     return 'skipped';
   }
+  let registration: { task: boolean; chat: boolean };
   try {
-    await mutatePushTokens(opts.apiFetch, realm, 'PUT', { ...body, preview: await readPushPreviewEnabled() });
+    registration = await mutatePushTokens(opts.apiFetch, realm, 'PUT', { ...body, preview: await readPushPreviewEnabled() });
   } catch (error) {
+    if (lifecycleGeneration === pushLifecycleGeneration && Platform.OS === 'android') {
+      setAndroidPushAvailability('unavailable');
+      return 'local-only';
+    }
     if (lifecycleGeneration !== pushLifecycleGeneration) {
       await addPushRealm(PUSH_PENDING_UNREGISTER_KEY, realm, stateScope).catch(
         () => undefined,
@@ -433,6 +450,9 @@ async function syncPushRegistrationInternal(
     return 'skipped';
   }
   await removePushRealm(PUSH_PENDING_UNREGISTER_KEY, realm, stateScope);
+  if (lifecycleGeneration !== pushLifecycleGeneration) return 'skipped';
+  // The shared native service may stop only when both notification consumers have cloud delivery.
+  if (Platform.OS === 'android') setAndroidPushAvailability(registration.task && registration.chat ? 'available' : 'unavailable');
   mobileDebugLog('info', 'network', 'push registration', { stage: 'registered', realm,
     appVariant: body.appVariant, apnsEnv: body.apnsEnv });
   return 'registered';
@@ -441,6 +461,8 @@ async function syncPushRegistrationInternal(
 export function syncPushRegistration(opts: {
   enabled: boolean;
   apiFetch: AuthedApiFetch;
+  /** Android settings opt-in, after system permission and before token acquisition. */
+  onPermissionGranted?: () => Promise<void>;
 }): Promise<PushSyncResult> {
   const lifecycleGeneration = pushLifecycleGeneration;
   return runPushMutation(() =>
@@ -452,6 +474,23 @@ export function syncPushRegistration(opts: {
       throw error;
     }),
   );
+}
+
+/** User opt-in: activate Android's independent receiver as soon as permission allows. */
+export async function enablePushNotifications(opts: {
+  apiFetch: AuthedApiFetch;
+  onEnabled: () => void;
+}): Promise<PushSyncResult> {
+  let enabledLocally = false;
+  const enableLocally = async () => {
+    await writePushEnabled(true);
+    opts.onEnabled();
+    enabledLocally = true;
+  };
+  const result = await syncPushRegistration({ enabled: true, apiFetch: opts.apiFetch,
+    onPermissionGranted: enableLocally });
+  if (result !== 'permission-denied' && !enabledLocally) await enableLocally();
+  return result;
 }
 
 /**
@@ -496,6 +535,7 @@ export function unregisterPushTokenBestEffort(
     // Revoke locally before waiting for the SDK; network cleanup must never block logout.
     void jpushLifecycle.disable().catch(() => undefined);
   }
+  if (Platform.OS === 'android') setAndroidPushAvailability('unknown');
   for (const listener of pushPreferenceListeners) listener(true);
   // Asking Expo for a native token here would re-register APNs while JPush is stopping it.
   if (jpushEnabled) return Promise.resolve();

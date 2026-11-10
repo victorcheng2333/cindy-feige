@@ -1891,6 +1891,8 @@ function CCAgentSessionContent({
     pendingPermission,
     respondToPermission,
     pendingAskUser,
+    pendingAskUserQueue,
+    selectAskUserQuestion,
     answerUserQuestion,
     pendingPluginSetup,
     pluginSetupViewerState,
@@ -6045,6 +6047,8 @@ function CCAgentSessionContent({
                     workingDir={session?.workingDir ?? ''}
                     remoteHostId={session?.remoteHostId}
                     pending={pendingAskUser}
+                    pendingQuestions={pendingAskUserQueue}
+                    onSelectQuestion={selectAskUserQuestion}
                     onAnswer={answerUserQuestion}
                     viewerState={askUserViewerState}
                     onViewerStateChange={setAskUserViewerState}
@@ -6402,8 +6406,8 @@ function CCAgentSessionContent({
                     </WorkingDirectoryTip>
                   )}
 
-                  {/* Right: Context capacity indicator */}
-                  <div className="flex shrink-0 items-center gap-3">
+                  {/* Right: quota segments may wrap before the context indicator. */}
+                  <div className="flex min-w-0 max-w-full items-center gap-3">
                     {session?.usedProjectContext && (
                       <Tip text={t('ccAgent.layout.projectContextLoaded')} side="top">
                         <Brain

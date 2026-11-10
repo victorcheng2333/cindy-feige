@@ -1,4 +1,6 @@
 import { claudeAccountState, loginClaudeAccount, cancelClaudeAccountLogin, disconnectClaudeAccount, disconnectClaudeAccountReversibly } from './claude-account-auth.js';
+import { subscriptionAccountKind } from './subscription-account-kind.js';
+export { subscriptionAccountKind, isClaudeSubscriptionProviderId, isXaiSubscriptionProviderId } from './subscription-account-kind.js';
 import { activeOwnerScopeKey, isAppSessionBoundaryPending, ownerScopedUserDataPath } from '../appSessionState.js';
 import { genericOAuthSecretIo } from '../secrets/providerSecretStore.js';
 import { getActiveCatalog, setDiscoveredProviderModels, setXaiDiscoveredModels } from './active-catalog.js';
@@ -10,7 +12,7 @@ import {
   grokAccountIdentity,
   logoutGrok,
   resetGrokOAuthMemoryCache,
-} from './grok-oauth-login.js';
+} from './grok-oauth-login.desktop.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('subscription-account-auth');
@@ -23,11 +25,6 @@ export function setSubscriptionAccountInvalidatedHandler(handler: typeof onInval
  * 保留连接 id、名称与历史；不把旧令牌复制到新的 CLI 凭证库。
  */
 export const CLAUDE_ACCOUNT_RETIRED_REASON = 'claude_account_retired';
-
-export function subscriptionAccountKind(providerId?: string | null): 'claude' | 'xai' | null {
-  const native = getActiveCatalog().providers.find((p) => p.id === providerId)?.auth.native;
-  return native === 'claude' || native === 'xai' ? native : null;
-}
 /** Account replacement/removal invalidates membership, never another connection's catalog. */
 export function clearSubscriptionAccountDiscoveredModels(providerId: string): Promise<void> {
   setDiscoveredProviderModels(providerId, 'claude-code', []);
@@ -40,12 +37,6 @@ export function clearSubscriptionAccountDiscoveredModels(providerId: string): Pr
     });
   }
   return Promise.resolve();
-}
-export function isClaudeSubscriptionProviderId(providerId?: string | null): boolean {
-  return providerId === 'anthropic' || subscriptionAccountKind(providerId) === 'claude';
-}
-export function isXaiSubscriptionProviderId(providerId?: string | null): boolean {
-  return providerId === 'xai' || subscriptionAccountKind(providerId) === 'xai';
 }
 export function subscriptionAccountState(providerId: string): {
   authenticated: boolean;
