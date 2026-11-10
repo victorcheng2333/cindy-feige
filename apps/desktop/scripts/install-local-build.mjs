@@ -139,8 +139,28 @@ function launchWorker(staging, workerArgs) {
   const bundle = path.join(staging, 'CindyLocalInstall.app');
   const macosDir = path.join(bundle, 'Contents', 'MacOS');
   fs.mkdirSync(macosDir, { recursive: true });
-  fs.copyFileSync(WORKER_TEMPLATE, path.join(macosDir, 'cindy-local-install'));
-  fs.chmodSync(path.join(macosDir, 'cindy-local-install'), 0o755);
+  fs.copyFileSync(WORKER_TEMPLATE, path.join(macosDir, 'worker.sh'));
+  // LaunchServices requires a native executable on newer macOS releases.
+  // Keep the existing worker and its backup/rollback protocol behind that entry.
+  const launcherSource = path.join(staging, 'launcher.c');
+  fs.writeFileSync(launcherSource, `#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <limits.h>
+#include <mach-o/dyld.h>
+int main(int argc, char **argv) {
+  char worker[PATH_MAX]; uint32_t size = sizeof(worker);
+  if (_NSGetExecutablePath(worker, &size) != 0) return 1;
+  char *slash = strrchr(worker, '/'); if (!slash) return 1;
+  strcpy(slash + 1, "worker.sh");
+  char **args = calloc(argc + 2, sizeof(char *)); if (!args) return 1;
+  args[0] = "/bin/bash"; args[1] = worker;
+  for (int i = 1; i < argc; i++) args[i + 1] = argv[i];
+  execv(args[0], args); perror("execv"); return 1;
+}
+`);
+  run('/usr/bin/xcrun', ['clang', launcherSource, '-o', path.join(macosDir, 'cindy-local-install')]);
   fs.writeFileSync(
     path.join(bundle, 'Contents', 'Info.plist'),
     `<?xml version="1.0" encoding="UTF-8"?>

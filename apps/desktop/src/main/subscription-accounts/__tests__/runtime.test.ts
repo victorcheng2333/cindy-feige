@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   login: vi.fn(),
   bound: true,
   shared: true,
+  boundaryPending: false,
   historyHome: vi.fn(),
   legacyRead: vi.fn(),
   legacyLogin: vi.fn(),
@@ -29,7 +30,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../../maker-host/claude-history-home.js', () => ({ readClaudeHistoryHome: h.historyHome }));
 vi.mock('../../appSessionState.js', () => ({
   activeOwnerScopeKey: () => h.owner,
-  isAppSessionBoundaryPending: () => false,
+  isAppSessionBoundaryPending: () => h.boundaryPending,
 }));
 vi.mock('../../maker-host/nativeProviderAuthBinding.js', () => ({
   bindNativeProviderAuth: vi.fn(),
@@ -85,17 +86,26 @@ import {
   readSubscriptionPoolAccountUsages,
   runSubscriptionAccountCommand,
   observeSubscriptionAccountUsage,
+  observeDefaultClaudeSubscriptionStatus,
+  hasConnectedSubscriptionPool,
 } from '../runtime.js';
 import { providerGroupMemberUsageState, providerGroupCodexUsageFromReads, providerGroupUsageSnapshot } from '../../provider-group/usage.js';
 import { readLegacySubscriptionQuota } from '../legacyQuota.js';
 import { withSubscriptionAccounts } from '../agent.js';
 import { getSessionSubscriptionAccount } from '../session.js';
+import {
+  onClaudeCliLoginStatusChange,
+  publishClaudeCliLoginStatus,
+  resetClaudeCliLoginStatusForTest,
+} from '../../maker-host/claude-native-cli-status.js';
 const account = (id: string) => ({ id, paused: false, limit: 1, weight: 1 });
 let generation = 0;
 beforeEach(() => {
   h.owner = 'owner-a:' + ++generation;
   h.bound = true;
   h.shared = true;
+  h.boundaryPending = false;
+  resetClaudeCliLoginStatusForTest();
   h.pools = { anthropic: { strategy: 'least', accounts: [account('default'), account('second')] } };
   h.bindings.clear();
   h.historyHome.mockReset();
@@ -111,6 +121,129 @@ beforeEach(() => {
 });
 
 describe('native account assignment on the executing computer', () => {
+  // 测试价值：真实账号池读入口决定设置页“已连接”；启动期 CLI 未就绪的
+  // false 快照不能在稍后的官方登录态 true 到达后继续遮住默认账号。
+  // 既有用例没有覆盖 CLI 状态通知与池快照的时序；最小输入为一次 false
+  // 缓存、一条 true 通知及一趟更早开始的迟到读取。tier=unit。
+  // 单文件实测：vitest run src/main/subscription-accounts/__tests__/runtime.test.ts，3.16 秒。
+  it('replaces a startup signed-out snapshot when the default Claude CLI login arrives', async () => {
+    h.pools.anthropic = { strategy: 'least', accounts: [account('default')] };
+    h.read.mockResolvedValueOnce({ authenticated: false });
+    expect((await readSubscriptionPool('anthropic')).accounts[0].status).toBe('signed-out');
+    expect(hasConnectedSubscriptionPool('anthropic')).toBe(false);
+
+    observeDefaultClaudeSubscriptionStatus({ loggedIn: true, email: 'current@example.com', subscriptionType: 'pro' });
+    expect(hasConnectedSubscriptionPool('anthropic')).toBe(true);
+    h.read.mockResolvedValueOnce({ authenticated: true, identity: 'current@example.com', plan: 'pro' });
+    h.usage.mockResolvedValueOnce({ claudeUsage: {
+      updatedAt: Date.now(), fiveHour: { utilization: 100, resetsAt: Date.now() / 1000 + 3600 },
+      sevenDay: null, scoped: [],
+    } });
+    expect((await readSubscriptionPool('anthropic')).accounts[0]).toMatchObject({
+      status: 'limited', identity: 'current@example.com', plan: 'pro',
+    });
+  });
+
+  it('does not let a late startup read overwrite a newer CLI login notification', async () => {
+    h.pools.anthropic = { strategy: 'least', accounts: [account('default')] };
+    let finishRead!: (value: { authenticated: boolean }) => void;
+    h.read.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
+    const pending = readSubscriptionPool('anthropic');
+    await vi.waitFor(() => expect(h.read).toHaveBeenCalledTimes(1));
+    observeDefaultClaudeSubscriptionStatus({ loggedIn: true, email: 'current@example.com' });
+    finishRead({ authenticated: false });
+    expect((await pending).accounts[0].status).toBe('ready');
+    expect(hasConnectedSubscriptionPool('anthropic')).toBe(true);
+  });
+
+  // Unit regression: pool reads must retain fetched quota and apply logout despite
+  // concurrent notifications. The startup cases above omit these interleavings.
+  // Minimal inputs: one login notification inside a read, or one quota event while
+  // a logout read is pending. Assertions cover the public pool status, not cache internals.
+  it('retains exhausted quota when a native read publishes its own login notification', async () => {
+    h.pools.anthropic = { strategy: 'least', accounts: [account('default')] };
+    const unsubscribe = onClaudeCliLoginStatusChange(observeDefaultClaudeSubscriptionStatus);
+    h.read.mockImplementationOnce(async () => {
+      publishClaudeCliLoginStatus({ loggedIn: true, email: 'account' });
+      return { authenticated: true, identity: 'account' };
+    });
+    h.usage.mockResolvedValueOnce({ claudeUsage: {
+      updatedAt: Date.now(), fiveHour: { utilization: 100, resetsAt: Date.now() / 1000 + 3600 },
+      sevenDay: null, scoped: [],
+    } });
+    try {
+      expect((await readSubscriptionPool('anthropic')).accounts[0].status).toBe('limited');
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([false, true])('keeps auth and concurrent quota results independent (authenticated=%s)', async authenticated => {
+    h.pools.openai = { strategy: 'order', accounts: [account('default')] };
+    const lease = await acquireSubscriptionAccount('openai', 'gpt-6', []);
+    const later = Date.now() + 31000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      let finishRead!: (value: { authenticated: boolean; identity: string }) => void;
+      let markStarted!: () => void;
+      const started = new Promise<void>(resolve => { markStarted = resolve; });
+      h.read.mockImplementationOnce(() => {
+        markStarted();
+        return new Promise(resolve => { finishRead = resolve; });
+      });
+      const pending = readSubscriptionPool('openai');
+      await started;
+      observeSubscriptionAccountUsage(lease!.account, {
+        limitId: 'codex',
+        primary: { usedPercent: 100, windowMinutes: 300, resetsAt: later / 1000 + 3600 },
+      });
+      finishRead({ authenticated, identity: 'account' });
+      expect((await pending).accounts[0].status).toBe(authenticated ? 'limited' : 'signed-out');
+    } finally {
+      clock.mockRestore();
+      lease!.release();
+    }
+  });
+
+  // A notification during quota IO must fence that read's old identity; neither
+  // logout nor an account switch may acquire the previous account's usage (unit).
+  it.each([false, true])('fences quota arriving after a Claude auth change (loggedIn=%s)', async loggedIn => {
+    h.pools.anthropic = { strategy: 'least', accounts: [account('default')] };
+    let finishUsage!: (value: unknown) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>(resolve => { markStarted = resolve; });
+    h.usage.mockImplementationOnce(() => {
+      markStarted();
+      return new Promise(resolve => { finishUsage = resolve; });
+    });
+    const pending = readSubscriptionPool('anthropic');
+    await started;
+    observeDefaultClaudeSubscriptionStatus({ loggedIn, ...(loggedIn ? { email: 'new@example.com' } : {}) });
+    finishUsage({ claudeUsage: {
+      updatedAt: Date.now(), fiveHour: { utilization: 100, resetsAt: Date.now() / 1000 + 3600 },
+      sevenDay: null, scoped: [],
+    } });
+    const result = (await pending).accounts[0];
+    expect(result.status).toBe(loggedIn ? 'ready' : 'signed-out');
+    expect(result.identity).toBe(loggedIn ? 'new@example.com' : undefined);
+    expect(result.usage).toBeUndefined();
+    if (loggedIn) {
+      h.read.mockResolvedValueOnce({ authenticated: true, identity: 'new@example.com' });
+      await readSubscriptionPool('anthropic');
+      expect(h.usage).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  // CLI observations are global; owner transitions and explicit disconnection
+  // must not populate an authorized dispatch cache (unit, minimal true notification).
+  it.each(['boundary', 'disconnected', 'unbound'] as const)('ignores login across the %s boundary', async boundary => {
+    h.pools.anthropic = { strategy: 'least', accounts: [account('default')], disconnected: boundary === 'disconnected' };
+    h.boundaryPending = boundary === 'boundary';
+    h.bound = boundary !== 'unbound';
+    observeDefaultClaudeSubscriptionStatus({ loggedIn: true, email: 'account' });
+    expect(hasConnectedSubscriptionPool('anthropic')).toBe(false);
+  });
+
   // Merge regression (unit): API discovery and subscription discovery share the
   // agent wrapper. A configured pool must not change the explicit API route.
   it('keeps an API capability probe outside the subscription account pool', async () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { ClaudeCliLoginStatus } from '../maker-host/claude-native-cli-status.js';
 import { getCodexHome } from '../maker-host/codex-home-path.js';
 import { mkdir } from 'node:fs/promises';
 import { type AuthState, type NativeSubscriptionAccount } from '@cindy/maker-core';
@@ -55,6 +56,8 @@ interface AccountSnapshot {
   auth: AuthState & { plan?: string };
   usage?: Usage;
   unavailable?: boolean;
+  /** A login notification is not a completed account/quota read. */
+  authOnly?: boolean;
   at: number;
   usageAt?: number;
 }
@@ -66,6 +69,8 @@ interface OwnerRuntime {
   lastPicked: Map<SubscriptionProvider, string>;
   logins: Map<string, { abort: AbortController; accountId: string }>;
   invalidated: Map<string, { token: string; reason: string }>;
+  /** Only CLI login notifications advance this observation, never quota events. */
+  defaultClaudeAuth?: AccountSnapshot['auth'];
 }
 let runtime: OwnerRuntime | undefined;
 const listeners = new Set<(providerId: SubscriptionProvider) => void>();
@@ -134,6 +139,31 @@ function defaultAccountBound(provider: SubscriptionProvider): boolean {
       legacyCodexDefault(provider) ||
       isNativeProviderAuthSharedSystemCredential(provider))
   );
+}
+
+/** The default Claude account shares the CLI login. Reconcile its pool snapshot when
+ * a startup status read completes, including reads that began before binary readiness. */
+export function observeDefaultClaudeSubscriptionStatus(status: ClaudeCliLoginStatus): void {
+  if (isAppSessionBoundaryPending()) return;
+  const provider = 'anthropic';
+  const pool = readPool(provider);
+  if (!pool || pool.disconnected || !pool.accounts.some(account => account.id === 'default')) return;
+  const state = currentRuntime();
+  const key = keyOf(provider, 'default');
+  const previous = state.cache.get(key);
+  const authenticated = status.loggedIn && defaultAccountBound(provider);
+  const sameIdentity = authenticated && previous?.auth.authenticated && previous.auth.identity === status.email;
+  const auth: AccountSnapshot['auth'] = authenticated
+    ? { authenticated: true, authSource: 'oauth', identity: status.email, plan: status.subscriptionType }
+    : { authenticated: false };
+  state.defaultClaudeAuth = auth;
+  state.cache.set(key, {
+    auth,
+    ...(sameIdentity && previous?.usage ? { usage: previous.usage, usageAt: previous.usageAt } : {}),
+    authOnly: authenticated && (!sameIdentity || previous?.authOnly === true),
+    at: Date.now(),
+  });
+  changed(provider);
 }
 /** Explicit reconnect of the existing default CLI route; private legacy Codex logins do not call this. */
 export async function attachDefaultSubscriptionPool(provider: SubscriptionProvider): Promise<void> {
@@ -207,10 +237,12 @@ async function snapshot(
   assertOwner(state);
   const key = keyOf(provider, id);
   const cached = state.cache.get(key);
-  if (!force && cached && Date.now() - cached.at < 30_000) return cached;
+  if (!force && cached && !cached.authOnly && Date.now() - cached.at < 30_000) return cached;
   const pending = state.flights.get(key);
   if (pending) return pending;
   const directory = directoryFor(provider, id);
+  const observesDefaultClaude = provider === 'anthropic' && id === 'default';
+  let observedAuth = state.defaultClaudeAuth;
   const flight = (async (): Promise<AccountSnapshot> => {
     let result: AccountSnapshot;
     if (id === 'default' && !defaultAccountBound(provider)) {
@@ -221,6 +253,12 @@ async function snapshot(
           id === 'default' && legacyCodexDefault(provider)
             ? await readLegacyCodexAccount()
             : await readNativeAccount(provider, directory);
+        // The CLI publishes synchronously before returning its read. Use that
+        // notification (or one superseding a startup fallback), then still read quota.
+        if (observesDefaultClaude && state.defaultClaudeAuth !== observedAuth) {
+          observedAuth = state.defaultClaudeAuth;
+          if (observedAuth) auth = observedAuth;
+        }
         const invalidated = state.invalidated.get(key);
         if (provider === 'openai' && invalidated && auth.authenticated) {
           const current = await readNativeCodexTokens(directory);
@@ -250,6 +288,18 @@ async function snapshot(
       }
     }
     assertOwner(state);
+    // Only a login notification supersedes auth, not an unrelated quota event.
+    const newer = state.cache.get(key);
+    if (observesDefaultClaude && state.defaultClaudeAuth !== observedAuth && state.defaultClaudeAuth) {
+      return newer ?? { auth: state.defaultClaudeAuth, authOnly: true, at: Date.now() };
+    }
+    // Keep live quota updates for the same identity without discarding a logout
+    // or applying the previous account's quota to a newly read account.
+    if (result.auth.authenticated && newer?.auth.authenticated &&
+        newer.auth.identity === result.auth.identity && newer.usage !== cached?.usage) {
+      result.usage = { ...result.usage, ...newer.usage };
+      result.usageAt = newer.usageAt;
+    }
     state.cache.set(key, result);
     return result;
   })();

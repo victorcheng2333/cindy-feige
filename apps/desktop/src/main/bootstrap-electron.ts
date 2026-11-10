@@ -691,7 +691,7 @@ import { registerProviderShareIpc } from './device-link/providerShareRuntime.js'
 import { registerSelfHostedRelayIpc } from './device-link/selfHostedRelayRuntime.js';
 import { registerProviderGroupIpc } from './provider-group/ipc.js';
 import { registerSubscriptionAccountsIpc } from './subscription-accounts/ipc.js';
-import { attachDefaultSubscriptionPool, disconnectSubscriptionPool } from './subscription-accounts/runtime.js';
+import { attachDefaultSubscriptionPool, disconnectSubscriptionPool, observeDefaultClaudeSubscriptionStatus } from './subscription-accounts/runtime.js';
 import { registerProviderGroupRemoteHandler } from './provider-group/remoteRegistration.js';
 import { providerGroupReshare, registerProviderGroupReshare } from './provider-group/reshareRuntime.js';
 import {
@@ -5732,6 +5732,7 @@ const registerIpcHandlers = () => {
       }).catch(() => { /* CLI observations are retried; they must not disrupt other accounts. */ });
       return;
     }
+    observeDefaultClaudeSubscriptionStatus(status);
     void broadcastClaudeAuthStateChanged();
     syncClaudeSubscriptionUsageForAuthChange();
     if (!status.loggedIn) resetProviderModelAutoRefreshCooldowns('anthropic');
