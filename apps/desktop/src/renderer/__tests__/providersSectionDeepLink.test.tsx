@@ -13,6 +13,7 @@ import React from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useCodexAuth } from '@/hooks/useCodexAuth';
 import type { ProviderShareReceived } from '@cindy/device-link';
 import type { ProviderView } from '@cindy/model-providers';
 
@@ -69,10 +70,10 @@ vi.mock('@/contexts/AuthContext', () => ({
 vi.mock('@/hooks/useCodexAuth', () => ({
   isChatGptConnectionConnected: (state: { kind?: string; authSource?: string }) =>
     state.kind === 'authenticated' && state.authSource === 'oauth',
-  useCodexAuth: () => ({
+  useCodexAuth: vi.fn(() => ({
     ...codexAuthState,
     ...codexAuthActions,
-  }),
+  })),
 }));
 
 vi.mock('@/hooks/useApiKey', () => ({
@@ -741,6 +742,47 @@ describe('ProvidersSection — 深链定位', () => {
       expect(setModelVisibilitiesSpy).not.toHaveBeenCalled();
       expect(screen.getByText('settings.providers.models.manage.connectionRequired')).toBeTruthy();
     }
+  });
+
+  // Unit regression: the existing invalidation cases omit a configured pool with a
+  // stale ready default. A verified login must also beat a delayed catalog refresh.
+  it('keeps the OpenAI rail and pooled header in sync through default account recovery', async () => {
+    providersState.providers = [makeProvider('openai', { name: 'OpenAI', connected: true,
+      openAiAccount: { source: 'local', reconnectRequired: true }, agents: ['codex'] })];
+    const pool = {
+      providerId: 'openai', configured: true, strategy: 'least',
+      accounts: [{ id: 'default', paused: true, limit: 4, weight: 1,
+        directory: '/fixture/default', status: 'ready', running: 0 }],
+    } satisfies Awaited<ReturnType<typeof window.electronAPI.subscriptionAccounts.command>>;
+    let loggedIn = false;
+    vi.mocked(window.electronAPI.subscriptionAccounts.command).mockImplementation(async command => {
+      if (command.action === 'login') loggedIn = true;
+      return pool;
+    });
+    Object.assign(window.electronAPI.maker.auth, {
+      getState: async () => loggedIn ? { authenticated: true, authSource: 'oauth' }
+        : { authenticated: false, errorReason: 'token_revoked' },
+      onStateChanged: () => () => {},
+      onLoginProgress: () => () => {},
+    });
+    let finishVerification!: () => void;
+    const getCodexRateLimits = vi.fn(() => new Promise<void>(resolve => { finishVerification = resolve; }));
+    Object.assign(window.electronAPI.maker, { usage: { getCodexRateLimits } });
+    const actual = await vi.importActual<typeof import('@/hooks/useCodexAuth')>('@/hooks/useCodexAuth');
+    await vi.mocked(useCodexAuth).withImplementation(actual.useCodexAuth, async () => {
+      renderAt('?tab=providers&connect=openai');
+      const reconnect = await screen.findByRole('button', { name: 'subscriptionAccounts.loginAgain' });
+      const actions = within(screen.getByTestId('provider-detail-actions'));
+      const row = screen.getByRole('button', { name: /OpenAI/ });
+      expect(row.textContent).toContain('settings.providers.openai.reconnectRequired');
+      expect(actions.queryByText('settings.providers.pill.connected')).toBeNull();
+      fireEvent.click(reconnect);
+      await waitFor(() => expect(getCodexRateLimits).toHaveBeenCalled());
+      expect(row.textContent).toContain('settings.providers.openai.reconnectRequired');
+      await act(async () => finishVerification());
+      await waitFor(() => expect(actions.getByText('settings.providers.pill.connected')).toBeTruthy());
+      expect(row.textContent).not.toContain('settings.providers.openai.reconnectRequired');
+    });
   });
 
   it('ChatGPT 系统共享登录失效时显示来源说明并打开 ChatGPT App', async () => {

@@ -76,10 +76,12 @@ function AccountTag({ children }: { children: ReactNode }) {
 export function SubscriptionAccountsSection({
   providerId,
   defaultUsage,
+  onDefaultLogin,
   dashboard,
 }: {
   providerId: SubscriptionProvider;
   defaultUsage?: ReactNode;
+  onDefaultLogin?: () => void;
   dashboard?: { label: string; onOpen: () => void };
 }) {
   const { t, i18n } = useTranslation();
@@ -136,6 +138,7 @@ export function SubscriptionAccountsSection({
     if (command.action === 'add' || command.action === 'login') login.current = command.loginKey;
     try {
       await window.electronAPI.subscriptionAccounts.command(command);
+      if (command.action === 'login' && command.accountId === 'default') onDefaultLogin?.();
       await refresh();
     } catch (error) {
       const code = extractIpcError(error)?.code;

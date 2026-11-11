@@ -97,7 +97,7 @@ import { resolveXdAssetModuleState } from './providerAssetModule';
 import { useProviderSubscriptionCard } from './useProviderSubscriptionCard';
 import { SubscriptionAccountsSection } from './SubscriptionAccountsSection';
 import { isSubscriptionProvider } from '../../../shared/subscriptionAccounts';
-import type { SubscriptionProvider } from '../../../shared/subscriptionAccounts';
+import type { SubscriptionPoolView, SubscriptionProvider } from '../../../shared/subscriptionAccounts';
 import { ProviderAccountUsageModule } from './ProviderAccountUsageModule';
 import { QuotaHoverCard } from '../status/QuotaHoverCard';
 import { ProviderConnectionDialog } from './ProviderConnectionDialog';
@@ -674,6 +674,7 @@ function DetailHeader({
   menuItems,
   menuFooter,
   assetModule,
+  onDefaultLogin,
 }: {
   children?: ReactNode;
   icon: ReactNode;
@@ -697,6 +698,7 @@ function DetailHeader({
    * 见 DESIGN §2 layer rule）。判定见 providerAssetModule.ts。
    */
   assetModule?: ReactNode;
+  onDefaultLogin?: () => void;
 }) {
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
@@ -944,6 +946,7 @@ function DetailHeader({
           <SubscriptionAccountsSection
             key={subscriptionPool}
             providerId={subscriptionPool}
+            onDefaultLogin={onDefaultLogin}
             defaultUsage={usageCard}
             dashboard={dashboard ?? undefined}
           />
@@ -970,37 +973,51 @@ function DetailHeader({
 // Anthropic —— OAuth(Claude.ai 订阅),复用 maker.claudeOAuth*。
 // ---------------------------------------------------------------------------
 
-function NativeSubscriptionHeader({ provider, onChanged, children, providerId, onPoolConnectionChange }: {
-  provider?: ProviderView; onChanged: () => void; children?: ReactNode; providerId: SubscriptionProvider;
+function NativeSubscriptionHeader({
+  provider, onChanged, children, providerId, onPoolConnectionChange,
+  fallback, reconnectRequired = false, onDefaultLogin,
+}: {
+  provider?: ProviderView;
+  onChanged: () => void;
+  children?: ReactNode;
+  providerId: SubscriptionProvider;
+  fallback: ReactNode;
+  reconnectRequired?: boolean;
+  onDefaultLogin?: () => void;
   onPoolConnectionChange?: (connected: boolean | null) => void;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
-  const [pooled, setPooled] = useState(false);
-  const [poolConnected, setPoolConnected] = useState(false);
+  const [pool, setPool] = useState<SubscriptionPoolView | null>(null);
   const [busy, setBusy] = useState(false);
   const login = useRef<string | null>(null);
   useEffect(() => {
-    let current = true;
-    const refresh = () => void window.electronAPI.subscriptionAccounts.command({ action: 'read', providerId })
-      .then(view => { if (current) {
-        const connected = view.accounts.some(account => account.status === 'ready' || account.status === 'limited');
-        setPooled(view.configured);
-        setPoolConnected(connected);
-        onPoolConnectionChange?.(view.configured ? connected : null);
-      } }).catch(() => {});
+    let revision = 0;
+    const refresh = async () => {
+      const requested = ++revision;
+      try {
+        const view = await window.electronAPI.subscriptionAccounts.command({ action: 'read', providerId });
+        if (requested === revision) setPool(view);
+      } catch { /* Keep the last known pool state. */ }
+    };
     refresh();
     const off = window.electronAPI.subscriptionAccounts.onChanged(event => { if (event.providerId === providerId) refresh(); });
     return () => {
-      current = false; off();
-      onPoolConnectionChange?.(null);
+      ++revision;
+      off();
       if (login.current) void window.electronAPI.subscriptionAccounts.command({ action: 'cancel', providerId, loginKey: login.current }).catch(() => {});
     };
-  }, [providerId, onPoolConnectionChange]);
-  if (!pooled) return providerId === 'anthropic'
-    ? <AnthropicHeader provider={provider} onChanged={onChanged}>{children}</AnthropicHeader>
-    : <OpenAiHeader provider={provider} onChanged={onChanged}>{children}</OpenAiHeader>;
-  const connected = poolConnected;
+  }, [providerId]);
+  // An invalid default needs recovery even when another account can still serve models.
+  const poolConnected = pool?.accounts.some(account =>
+    !(account.id === 'default' && reconnectRequired) &&
+    (account.status === 'ready' || account.status === 'limited')) ?? false;
+  useEffect(() => {
+    onPoolConnectionChange?.(pool?.configured ? poolConnected : null);
+    return () => onPoolConnectionChange?.(null);
+  }, [pool?.configured, poolConnected, onPoolConnectionChange]);
+  if (!pool?.configured) return fallback;
+  const connected = poolConnected && !reconnectRequired;
   const act = async () => {
     if (login.current) {
       await window.electronAPI.subscriptionAccounts.command({ action: 'cancel', providerId, loginKey: login.current }).catch(() => {});
@@ -1014,6 +1031,7 @@ function NativeSubscriptionHeader({ provider, onChanged, children, providerId, o
       else {
         login.current = crypto.randomUUID();
         await window.electronAPI.subscriptionAccounts.command({ action: 'login', providerId, accountId: 'default', loginKey: login.current });
+        onDefaultLogin?.();
       }
       onChanged();
     } catch (error) {
@@ -1024,12 +1042,12 @@ function NativeSubscriptionHeader({ provider, onChanged, children, providerId, o
           : 'subscriptionAccounts.failed'));
     } finally { login.current = null; setBusy(false); }
   };
-  return <DetailHeader provider={provider ? { ...provider, connected } : provider} children={children}
+  return <DetailHeader provider={provider ? { ...provider, connected: poolConnected } : provider} onDefaultLogin={onDefaultLogin} children={children}
     icon={providerId === 'anthropic' ? <AnthropicMark size={18} /> : <OpenAIMark size={18} />}
     title={provider?.name ?? (providerId === 'anthropic' ? 'Anthropic' : 'OpenAI')}
     subtitle={t('subscriptionAccounts.title')}
-    status={{ kind: connected ? 'connected' : 'neutral', label: t(busy ? 'settings.providers.pill.connecting' : 'settings.providers.pill.disconnected') }}
-    primaryAction={{ label: t(login.current ? 'settings.providers.button.cancel' : connected ? 'settings.providers.button.disconnect' : 'subscriptionAccounts.login'), onClick: () => void act(), disabled: busy && !login.current }} />;
+    status={{ kind: reconnectRequired ? 'reconnect-required' : connected ? 'connected' : 'neutral', label: t(busy ? 'settings.providers.pill.connecting' : 'settings.providers.pill.disconnected') }}
+    primaryAction={{ label: t(login.current ? 'settings.providers.button.cancel' : reconnectRequired ? 'subscriptionAccounts.loginAgain' : connected ? 'settings.providers.button.disconnect' : 'subscriptionAccounts.login'), onClick: () => void act(), disabled: busy && !login.current }} />;
 }
 
 function AnthropicHeader({
@@ -1177,6 +1195,8 @@ function LocalProviderNameInput({
 }
 
 function OpenAiHeader({
+  auth,
+  reconnectRequired,
   children,
   provider,
   onChanged,
@@ -1184,6 +1204,8 @@ function OpenAiHeader({
   children?: ReactNode;
   provider?: ProviderView;
   onChanged: () => void;
+  auth: ReturnType<typeof useCodexAuth>;
+  reconnectRequired: boolean;
 }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -1194,11 +1216,10 @@ function OpenAiHeader({
     refresh,
     triggerLogin,
     cancelLogin,
-  } = useCodexAuth();
-  const reconnectRequired = state.kind === 'reconnect-required';
+  } = auth;
   const loggingIn = state.kind === 'login-pending';
-  const connected = isChatGptConnectionConnected(state, provider?.connected ?? false);
-  const credentialScope = reconnectRequired
+  const connected = !reconnectRequired && isChatGptConnectionConnected(state, provider?.connected ?? false);
+  const credentialScope = state.kind === 'reconnect-required'
     ? (state.credentialScope ?? 'unknown')
     : (reconnectCredentialScope ?? 'unknown');
   const oauthWritesBlocked = state.oauthWritesBlocked === true;
@@ -1308,6 +1329,7 @@ function OpenAiHeader({
       status={status}
       primaryAction={primaryAction}
       provider={provider}
+      onDefaultLogin={refresh}
       detail={recoveryDetail}
     />
   );
@@ -2579,7 +2601,10 @@ export function ProvidersSection() {
   );
   const [shareManageProviderId, setShareManageProviderId] = useState<string | null>(null);
   const [shareManageRemote, setShareManageRemote] = useState<OwnRemoteProvider | null>(null);
-  const openaiReconnectRequired = codexAuth.state.kind === 'reconnect-required';
+  const openaiReconnectRequired = codexAuth.state.kind === 'reconnect-required' || (
+    providers.find(provider => provider.id === 'openai')?.openAiAccount?.reconnectRequired === true &&
+    !isChatGptConnectionConnected(codexAuth.state, false)
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // 左栏里选中的另一台电脑上的供应商：「分享给我的」一条，或自己其他电脑上的一个(两者互斥)；
@@ -3200,10 +3225,29 @@ export function ProvidersSection() {
     if (isOrganizationManagedProvider(p)) return <ManagedProviderHeader key={p.id} provider={p} children={children} />;
     if (p.id === 'xd')
       return <XdGatewayHeader children={children} provider={p} onChanged={refetch} />;
-    if (p.id === 'anthropic')
-      return <NativeSubscriptionHeader key={p.id} children={children} provider={p} providerId="anthropic" onChanged={refetch} />;
-    if (p.id === 'openai')
-      return <NativeSubscriptionHeader key={p.id} children={children} provider={p} providerId="openai" onChanged={refetch} onPoolConnectionChange={onOpenaiPoolConnectionChange} />;
+    if (p.id === 'anthropic' || p.id === 'openai') {
+      const openai = p.id === 'openai';
+      return (
+        <NativeSubscriptionHeader
+          key={`${p.id}:${dataOwnerId ?? ''}`}
+          provider={p}
+          providerId={p.id}
+          onChanged={refetch}
+          onPoolConnectionChange={openai ? onOpenaiPoolConnectionChange : undefined}
+          reconnectRequired={openai && openaiReconnectRequired}
+          onDefaultLogin={openai ? codexAuth.refresh : undefined}
+          fallback={openai ? (
+            <OpenAiHeader auth={codexAuth} reconnectRequired={openaiReconnectRequired} provider={p} onChanged={refetch}>
+              {children}
+            </OpenAiHeader>
+          ) : (
+            <AnthropicHeader provider={p} onChanged={refetch}>{children}</AnthropicHeader>
+          )}
+        >
+          {children}
+        </NativeSubscriptionHeader>
+      );
+    }
     if (p.id === 'xai') return <XaiHeader children={children} provider={p} onChanged={refetch} />;
     if (p.source === 'builtin' && p.auth.method === 'apiKey' && isBuiltinApiKeyProviderId(p.id)) {
       return (
@@ -3283,8 +3327,7 @@ export function ProvidersSection() {
           provider={provider}
           selected={!otherDeviceSelected && !cindySigninActive && effectiveSelected?.id === provider.id}
           reconnectRequired={
-            (provider.id === 'openai' && openaiReconnectRequired) ||
-            provider.openAiAccount?.reconnectRequired === true
+            provider.id === 'openai' ? openaiReconnectRequired : provider.openAiAccount?.reconnectRequired === true
           }
           onSelect={() => {
             setFocusedModel(null);
