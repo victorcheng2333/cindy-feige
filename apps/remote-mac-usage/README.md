@@ -2,7 +2,7 @@
 
 > 2026-11-05：已移除 Cursor 额度入口，保留 Claude / ChatGPT 账号、登录和设备筛选。下方 Cursor 验证条目为旧版本记录。
 
-独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.1.8。
+独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.1.9。
 当前 Mac 不需要运行 Cindy；提供额度的电脑需要运行 Cindy、在线并允许相应远程访问。
 中国大陆版，独立 Bundle ID `com.chengfei.quotacat.cn`。
 
@@ -46,6 +46,7 @@ pnpm --dir apps/remote-mac-usage package
 
 构建脚本显式传入 `--region cn`，输出到 `dist/`。独立 Electron 外壳只打包额度客户端，
 不打包 Cindy 主应用、Agent 二进制或数据库。构建依赖与仓库现有版本一致。
+macOS 打包使用 Node 22；Node 26 会使 electron-packager 解压 Electron 时提前退出。
 
 `package` 生成当前 Mac 架构的 `.app` 和 ZIP，使用本机 Developer ID Application 证书，
 启用 hardened runtime 和 Electron fuses，严格校验签名后重新压缩。没有合适证书时拒绝交付未签名包。
@@ -62,6 +63,8 @@ pnpm --dir apps/remote-mac-usage package
   只暴露固定登录／查看命令，Main 校验参数和窗口来源；页面无 Node、无网络能力，导航和下载关闭。
 - 复用 `@cindy/auth-client`、`@cindy/device-link` 与共享 Codex 限额桶选择逻辑，沿用现有加密 invoke 协议，不修改服务端或中转。
   额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`。
+  内置 Claude / OpenAI 卡片使用既有 `default-subscription-account` 可选作用域，读取默认账号自身额度；
+  暂停任务分配不影响查看，不借用账号池中其他账号的额度。旧 Cindy 忽略附加作用域，仍读取原默认账号。
   Cursor 通道要求新版 Cindy；旧端返回不支持时明确提示更新。
   独立账号必须收到匹配的 providerId；旧端忽略账号参数时不借用默认账号额度。
 - 使用既有后台 link 能力，远端未确认支持时关闭该 peer 并提示更新，不降级为前台控制。
@@ -71,6 +74,11 @@ pnpm --dir apps/remote-mac-usage package
 - 不持久化额度历史、日志或完整网络响应。演示使用虚构数据；`--demo` 使用独立临时 profile，退出后回收。
 
 ## 验证记录
+
+- 2026-11-11 / 0.1.9：默认账号额度查询补齐已有的账号作用域，修复远端暂停分配后卡片为空的问题；
+  独立连接的查询方式不变，不增加请求次数。回归先复现默认 Claude / OpenAI 的空额度，再验证修复；
+  39 项单测、类型检查和文档检查通过。Developer ID 签名及 ZIP 完整性校验通过，
+  已替换本机独立猫猫并保留原登录、设备筛选与旧版备份，实测已能显示暂停分配账号的真实周额度。
 
 - 多选与排序：35 项单测、类型检查和 15 项 Electron 检查通过；覆盖多选恢复、旧单选记录兼容、
   账号隔离、选择／排序并发保存、刷新移除电脑时的迟到保存、离线及移除、真实拖放与键盘排序及刷新后焦点保留。深浅色及 390px 窄窗检查通过，

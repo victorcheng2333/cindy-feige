@@ -29,7 +29,7 @@ function harness(saved: AuthTokenPair | null = tokens) {
     verifyCode: vi.fn(async () => ({ status: 'ok' as const, ...tokens })) };
   const link = { start: vi.fn(), stop: vi.fn(), waitUntilOnline: vi.fn(async () => {}),
     openLink: vi.fn(async (_id: string) => ({ capabilities: [DEVICE_LINK_CAPABILITY_BACKGROUND_LINK_V1] })), closeLink: vi.fn(),
-    invoke: vi.fn(async (_id: string, request: { channel: string }) => ({ ok: true as const,
+    invoke: vi.fn(async (_id: string, request: { channel: string; args: unknown[] }): Promise<{ ok: true; result: unknown }> => ({ ok: true as const,
       result: request.channel === 'maker:provider:list' ? { providers: [provider()] } : quota })) };
   const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ devices: [device('a'), device('b')] }) }));
   const service = new UsageService({ deviceId: 'self', store, auth: auth as unknown as CindyAuthClient,
@@ -94,6 +94,34 @@ describe('standalone remote quota service', () => {
     expect(h.service.snapshot().devices.map(d => d.accounts[0].windows[0].remaining)).toEqual([68, 68]);
     expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription']));
     expect(JSON.stringify(h.service.snapshot())).not.toContain('fake-access'); h.service.dispose();
+  });
+  // Unit regression: a paused default OpenAI account returned null through
+  // the pool query despite having quota. Existing tests only returned quota for
+  // every argument list. Exercise refresh with a host that distinguishes the
+  // default-account scope, while preserving named-account calls and results.
+  it.each([
+    ['anthropic', 'claude', ['anthropic', false, 'default-subscription-account']],
+    ['openai', 'codex', ['openai', 'default-subscription-account']],
+    ['claude-second', 'claude', ['claude-second']],
+    ['openai-second', 'codex', ['openai-second']],
+  ] as const)('reads %s quota independently of account-pool scheduling', async (id, native, args) => {
+    const h = harness();
+    h.link.invoke.mockImplementation(async (_device, request) => {
+      if (request.channel === 'maker:provider:list') return { ok: true, result: {
+        providers: [{ ...provider(id), auth: { method: 'oauth', native } }],
+      } };
+      const scoped = JSON.stringify(request.args) === JSON.stringify(args);
+      const payload = native === 'claude' ? { ...quota, providerId: id } : {
+        providerId: id, rateLimits: { primary: { usedPercent: 32, windowMinutes: 300, resetsAt: 4_000_000_000 } },
+      };
+      return { ok: true, result: scoped ? payload : null };
+    });
+    try {
+      await h.service.restore(); await h.service.refresh();
+      const account = h.service.snapshot().devices[0].accounts[0];
+      expect(account).toMatchObject({ id, failed: false });
+      expect(account.windows[0]).toMatchObject({ remaining: 68, minutes: 300, resetsAt: 4_000_000_000 });
+    } finally { h.service.dispose(); }
   });
   it('keeps saved login on a transient refresh error, but clears a revoked login', async () => {
     const h = harness(); await h.service.restore(); h.auth.refresh.mockRejectedValueOnce(Error('offline'));
