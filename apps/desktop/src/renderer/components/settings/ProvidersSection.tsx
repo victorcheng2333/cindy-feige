@@ -1214,10 +1214,11 @@ function OpenAiHeader({
     reconnectCredentialScope,
     recoveryCheck,
     refresh,
-    triggerLogin,
-    cancelLogin,
   } = auth;
-  const loggingIn = state.kind === 'login-pending';
+  // Release a pending login when the user leaves this provider detail.
+  const login = useCodexAuth();
+  const { triggerLogin, cancelLogin } = login;
+  const loggingIn = login.state.kind === 'login-pending' || state.kind === 'login-pending';
   const connected = !reconnectRequired && isChatGptConnectionConnected(state, provider?.connected ?? false);
   const credentialScope = state.kind === 'reconnect-required'
     ? (state.credentialScope ?? 'unknown')
@@ -1247,6 +1248,7 @@ function OpenAiHeader({
       reconnectRequired && credentialScope !== 'system-shared' ? 'browser' : 'local',
     );
     if (outcome === 'authenticated') {
+      void refresh();
       onChanged();
     } else if (outcome === 'unverified') {
       toast.error(t('chatgptAuthRecovery.verificationFailed'));
@@ -1255,7 +1257,7 @@ function OpenAiHeader({
     } else if (outcome === 'failed') {
       toast.error(t('settings.connections.codex.toast.loginFailed'));
     }
-  }, [triggerLogin, reconnectRequired, credentialScope, onChanged, t]);
+  }, [triggerLogin, reconnectRequired, credentialScope, refresh, onChanged, t]);
 
   const handleRecovery = useCallback(async () => {
     if (recoveryCheck === 'checking' || loggingIn) return;

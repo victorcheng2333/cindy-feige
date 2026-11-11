@@ -823,6 +823,31 @@ describe('ProvidersSection — 深链定位', () => {
     expect(window.electronAPI.openChatGPTApp).not.toHaveBeenCalled();
   });
 
+  // Unit regression: the provider list stays mounted when switching details,
+  // so a list-owned browser login would outlive the OpenAI recovery button.
+  it('releases pending browser login when switching away from OpenAI', async () => {
+    providersState.providers.push(makeProvider('openai', { name: 'OpenAI', removed: false }));
+    let finish!: (result: { authenticated: boolean }) => void;
+    const triggerLogin = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    const cancelLogin = vi.fn(async () => { finish({ authenticated: false }); });
+    Object.assign(window.electronAPI.maker.auth, {
+      triggerLogin, cancelLogin,
+      getState: async () => ({ authenticated: false, errorReason: 'token_revoked', credentialScope: 'instance-isolated' }),
+      onStateChanged: () => () => {},
+      onLoginProgress: () => () => {},
+    });
+    const actual = await vi.importActual<typeof import('@/hooks/useCodexAuth')>('@/hooks/useCodexAuth');
+    await vi.mocked(useCodexAuth).withImplementation(actual.useCodexAuth, async () => {
+      renderAt('?tab=providers&connect=openai');
+      fireEvent.click(await screen.findByRole('button', { name: 'chatgptAuthRecovery.relogin' }));
+      await waitFor(() => expect(triggerLogin).toHaveBeenCalledOnce());
+      fireEvent.click(screen.getByRole('button', { name: 'settings.providers.xd.title' }));
+      await waitFor(() => expect(cancelLogin).toHaveBeenCalledWith('codex', {
+        ownerId: expect.any(String), releaseOwner: true,
+      }));
+    });
+  });
+
   it('ChatGPT 主动断开后仍使用本机账号连接', async () => {
     providersState.providers = [makeProvider('openai', { name: 'OpenAI', connected: false, removed: false })];
     renderAt('?tab=providers&connect=openai');
