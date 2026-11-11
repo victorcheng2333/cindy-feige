@@ -14,6 +14,9 @@ interface Dependencies {
   fetch?: typeof fetch; createLink?: (getToken: () => Promise<string | null>) => Link;
 }
 const initial = (): Snapshot => ({ signedIn: false, busy: false, error: null, login: { kind: 'idle' }, devices: [], updatedAt: null, demo: false, selectedDeviceIds: [], deviceOrder: [] });
+// Existing remote quota scope: older hosts ignore it; pooled hosts keep these
+// account cards independent of whether the default account accepts new work.
+const DEFAULT_ACCOUNT_USAGE_SCOPE = 'default-subscription-account';
 export class UsageService {
   private state = initial();
   private tokens: AuthTokenPair | null = null;
@@ -134,8 +137,10 @@ export class UsageService {
               const providers = subscriptionProviders(await read('maker:provider:list'));
               const accounts = await Promise.all(providers.map(async p => {
                 const a = emptyAccount(p), builtin = a.service === 'Claude' ? 'anthropic' : 'openai';
+                const args = a.id !== builtin ? [a.id] : a.service === 'Claude'
+                  ? [a.id, false, DEFAULT_ACCOUNT_USAGE_SCOPE] : [a.id, DEFAULT_ACCOUNT_USAGE_SCOPE];
                 try { return parseAccount(p, await read(a.service === 'Claude' ? 'maker:usage:claude-subscription' : 'maker:usage:codex-rate-limits',
-                  a.id === builtin ? [] : [a.id])); }
+                  args)); }
                 catch { return { ...a, failed: true }; }
               }));
               this.check(epoch);
