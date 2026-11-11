@@ -4,7 +4,7 @@ export default {
   name: 'ask-user-question',
   entry: './ask-user-question-fixture.tsx',
   viewport: { width: 800, height: 600 },
-  real: 'AskUserQuestionPrompt, voice choice draft/confirmation, CompanionVoiceToolbar, question references, prompt shell and themes',
+  real: 'AskUserQuestionPrompt, UserMessage question replies, voice choice draft/confirmation, CompanionVoiceToolbar, question references, prompt shell and themes',
   notCovered: 'Actual microphone/ASR/TTS, task execution, host file contents, browser navigation and remote connectivity',
   // Keep the real dictation hook/state UI; microphone capture and its worklet
   // are outside this fixture, so only the microphone and host are fake.
@@ -17,6 +17,14 @@ export default {
     }`,
   },
   cases: {
+    // Regression: native replies decoded to Markdown but UserMessage displayed
+    // their quote markers literally. These browser cases mount the real bubble;
+    // the existing resolver unit test only checks the projected string.
+    'reply-default': { about: 'Answered question uses a subdued quote and a separate answer', viewport: { width: 800, height: 360 } },
+    'reply-multiple': { about: 'Multiple questions retain their paired answers at 320 px', viewport: { width: 320, height: 600 } },
+    'reply-legacy': { about: 'Legacy host-generated question replies render their quote', viewport: { width: 800, height: 360 } },
+    'reply-literal': { about: 'An ordinary user-written quote marker remains literal', viewport: { width: 800, height: 360 } },
+    'reply-malformed': { about: 'Malformed reply envelopes remain visible', viewport: { width: 800, height: 360 } },
     'input-free': { about: 'Full-width free answer with inset voice and icon send', viewport: { width: 320, height: 620 }, data: { question: '请补充你看到的现象。', free: true } },
     'input-custom': { about: 'Full-width custom choice with inset controls', viewport: { width: 320, height: 620 }, data: { question: '你希望怎样处理？' } },
     'input-multi': { about: 'Multi-select custom answer uses one inset submit', viewport: { width: 320, height: 700 }, data: { question: '你希望保留哪些选项？', multi: true } },
@@ -41,6 +49,21 @@ export default {
     await page.locator('main').waitFor();
   },
   async check(page, ui) {
+    if (ui.case.startsWith('reply-')) {
+      const body = page.locator('[data-selection-quote-body]');
+      const quotes = body.locator('blockquote');
+      if (ui.case === 'reply-literal' || ui.case === 'reply-malformed') {
+        assert.equal(await quotes.count(), 0);
+        assert.ok((await body.innerText()).startsWith(ui.case === 'reply-literal' ? '> ' : '<send_user_message_question_reply>'));
+      } else {
+        assert.equal(await quotes.count(), ui.case === 'reply-multiple' ? 2 : 1);
+        assert.equal(await quotes.first().innerText(), '请解锁手机，并保持屏幕亮着。');
+        assert.ok(!(await body.innerText()).startsWith('>'));
+        assert.equal(await body.locator(':scope > .msg-markdown > p').first().innerText(), '已解锁');
+        if (ui.case === 'reply-multiple') assert.ok((await body.innerText()).includes('保留原有任务。'));
+      }
+      return;
+    }
     const checkComposer = async () => {
       const frame = page.getByTestId('interaction-answer-composer');
       const field = frame.locator('textarea');

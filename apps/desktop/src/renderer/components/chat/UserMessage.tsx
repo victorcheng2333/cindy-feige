@@ -121,6 +121,7 @@ import { MessageSourceLabels } from './MessageSourceLabels';
 import { UserMessageUrlLink } from './UserMessageUrlLink';
 import { InlineReferenceChip } from './InlineReferenceChip';
 import { QuoteChip } from './QuoteChip';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { SentAgentReferenceChip, sentAgentReferenceDisplayLabel } from './SentAgentReferenceChip';
 import {
   parseOrcaCommunicationContent,
@@ -922,6 +923,12 @@ export function UserMessage({
   const forwardedDraftBody = resolveUserCanonicalDraftText(
     { content, clientId: messageClientId, hookSource, automationOrigin }, displayContent, orcaCommunication,
   );
+  // Host-generated question replies use Markdown to pair the quoted question
+  // with its answer. Ordinary user text (including a literal ">") stays plain.
+  // Undecodable native envelopes also stay visible instead of being read as HTML.
+  const questionReplyMarkdown = !orcaCommunication && !hookSource
+    && automationOrigin?.kind !== 'session' && messageClientId?.startsWith('question-reply:')
+    && (forwardedDraftBody !== undefined || content.startsWith('> '));
   const groupContext = useMemo(
     () => resolveHookGroupContext({ content, hookSource }),
     [content, hookSource],
@@ -1651,12 +1658,20 @@ export function UserMessage({
                       <div
                         data-selection-quote-body=""
                         className={cn(
-                          'whitespace-pre-wrap [overflow-wrap:anywhere]',
+                          '[overflow-wrap:anywhere]',
+                          questionReplyMarkdown ? 'whitespace-normal' : 'whitespace-pre-wrap',
                           longMessageCollapsed &&
                             (isScheduledAutomation ? 'line-clamp-3' : 'line-clamp-10'),
                         )}
                       >
-                        {longMessageCollapsed
+                        {questionReplyMarkdown ? (
+                          <MarkdownRenderer
+                            content={displayBubbleBody}
+                            workingDir={workingDir}
+                            currentSessionId={sessionId}
+                            allowPrivilegedLinks={allowPrivilegedLinks && !longMessageCollapsed}
+                          />
+                        ) : longMessageCollapsed
                           ? renderContent(
                               displayBubbleBody,
                               workingDir,

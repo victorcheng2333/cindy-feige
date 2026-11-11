@@ -7,6 +7,22 @@ import { AskUserQuestionBubble } from '../../../src/renderer/components/chat/Ask
 import type { ChatMessage, AskUserDraft, AskUserViewerState } from '../../../src/renderer/lib/makerChatStore';
 import type { VoiceQuestionTarget } from '../../../src/renderer/components/new-chat/voiceQuestionSelection';
 import { CompanionVoiceToolbar } from '../../../src/renderer/features/bots/voice/CompanionVoiceToolbar';
+import { UserMessage } from '../../../src/renderer/components/chat/UserMessage';
+import { formatAsyncQuestionSupplement } from '@cindy/maker-shared/interaction';
+
+function QuestionReplyFixture({ kind }: { kind: string }) {
+  const question = '请解锁手机，并保持屏幕亮着。';
+  const id = JSON.stringify(['request_user_input_async', 'fixture', 0]);
+  const questions = [{ id, question }, ...(kind === 'reply-multiple'
+    ? [{ id: JSON.stringify(['request_user_input_async', 'fixture', 1]), question: '你希望保留哪些内容？' }] : [])];
+  const content = kind === 'reply-malformed' ? '<send_user_message_question_reply>broken'
+    : kind === 'reply-literal' ? `> ${question}\n\n已解锁`
+    : kind === 'reply-legacy' ? formatAsyncQuestionSupplement([{ question }], { [question]: '已解锁' })
+    : formatAsyncQuestionSupplement(questions, { [id]: '已解锁', [questions[1]?.id ?? '']: '保留登录。\n\n保留原有任务。' });
+  return <main className="mx-auto w-full max-w-[720px] min-w-0 p-4" data-ui-page-subject>
+    <UserMessage workingDir="" content={content} messageClientId={kind === 'reply-literal' ? 'ordinary-user' : 'question-reply:fixture:answer'} />
+  </main>;
+}
 
 function Fixture({ question, voice, multi, form = false, speakerFiltered = false, withdrawn = false, free = false }: {
   question: string;
@@ -50,7 +66,11 @@ function Fixture({ question, voice, multi, form = false, speakerFiltered = false
 }
 
 void mountPage({
+  route: '/cc-agent/question-evidence',
   host: {
+    maker: {
+      getCapabilities: async () => ({ availableModels: [], effortLevels: [], permissionModes: [], fork: { supported: false }, rewind: { supported: false } }),
+    },
     voiceInput: {
       getDataSnapshot: () => ({ settings: { ...getDefaultVoiceInputSettings('darwin'), playInteractionSound: false, muteSystemAudio: false } }),
       getMicrophonePermissionCached: () => ({ ok: true, status: 'granted' }),
@@ -69,7 +89,7 @@ void mountPage({
         : { status: 'unique', candidates: [href.startsWith('/') ? href : '/project/' + href], kind: 'file' },
     ])),
   },
-  render: (ctx) => ctx.case === 'input-plan' ? <main className="w-full p-4"><PlanActionCard requestId="plan" onRespond={forbid('respond plan')} /></main> : ctx.case === 'unanswered' ? <main className="p-4"><AskUserQuestionBubble message={{
+  render: (ctx) => ctx.case.startsWith('reply-') ? <QuestionReplyFixture kind={ctx.case} /> : ctx.case === 'input-plan' ? <main className="w-full p-4"><PlanActionCard requestId="plan" onRespond={forbid('respond plan')} /></main> : ctx.case === 'unanswered' ? <main className="p-4"><AskUserQuestionBubble message={{
     clientId: 'question-history', role: 'ask_user', content: '', timestamp: Date.now(),
     askUserStatus: 'expired', askUserQuestions: [{ question: String(ctx.data.question) }],
   } as ChatMessage} /></main> : <Fixture question={String(ctx.data.question)} voice={ctx.data.voice === true} multi={ctx.data.multi === true}
