@@ -1,4 +1,5 @@
 import { forwardedRequestDisplayText } from '@cindy/maker-shared/message-source';
+import { asyncQuestionSupplementDisplayText } from '@cindy/maker-shared/interaction';
 import { captureImContext, type ImMessageSource } from '../../../shared/imMessageSource';
 /**
  * userMessageDisplayText
@@ -76,9 +77,21 @@ export function resolveHookGroupContext(source: {
  * 两者都结构性满足;也让本模块保持零依赖可单测。
  */
 export interface UserDisplayTextSource {
+  clientId?: string;
   content: string;
   hookSource?: { userText?: string } | null;
   automationOrigin?: { kind: string };
+}
+
+/** Fork, rewind and unedited resend keep the canonical input behind a decoded bubble. */
+export function resolveUserCanonicalDraftText(
+  source: UserDisplayTextSource,
+  displayContent: string,
+  orcaCommunication: OrcaCommunicationContent | null = parseOrcaCommunicationContent(source.content),
+): string | undefined {
+  return !source.hookSource && !orcaCommunication && displayContent !== source.content
+    && (source.automationOrigin?.kind === 'session' || source.clientId?.startsWith('question-reply:'))
+    ? source.content : undefined;
 }
 
 export function resolveUserDisplayText(
@@ -92,7 +105,7 @@ export function resolveUserDisplayText(
 ): string {
   const rawDisplayContent = orcaCommunication?.content ?? source.content;
   if (!source.hookSource) return source.automationOrigin?.kind === 'session'
-    ? forwardedRequestDisplayText(rawDisplayContent) : rawDisplayContent;
+    ? forwardedRequestDisplayText(rawDisplayContent) : asyncQuestionSupplementDisplayText(rawDisplayContent, source.clientId);
   return (
     source.hookSource.userText ?? rawDisplayContent.replace(THREAD_CONTEXT_PREFIX_RE, '').trim()
   );

@@ -14,6 +14,7 @@ import {
   projectLargeSettledToolInputs,
 } from '@/session/messageToolPayloadProjection';
 import type { RemoteMessage } from '@/session/types';
+import { formatAsyncQuestionSupplement } from '@cindy/maker-shared/interaction';
 
 function message(patch: Partial<RemoteMessage> & Pick<RemoteMessage, 'id' | 'role' | 'content'>): RemoteMessage {
   return {
@@ -27,6 +28,18 @@ function message(patch: Partial<RemoteMessage> & Pick<RemoteMessage, 'id' | 'rol
 }
 
 describe('normalizeRemoteMessages', () => {
+  // Same remote history as the desktop regression: the user sees prose, while
+  // draft restoration and replay retain the original input. Existing cases only
+  // covered forwarded requests, not native async question supplements (unit).
+  // Standalone wall time: 3.15 s (2026-11-11).
+  it('projects a native question supplement without changing its stored input', () => {
+    const question = { id: '["request_user_input_async","item",0]', question: 'Check M5?' };
+    const content = formatAsyncQuestionSupplement([question], { [question.id]: 'Yes' }, { late: true });
+    const row = message({ id: 'reply', clientId: 'question-reply:request:answer', role: 'user', content });
+    expect(normalizeRemoteMessages([row])[0]).toMatchObject({
+      body: '> Check M5?\n\nYes', draftBody: content, source: { content },
+    });
+  });
   it('localizes reasoning usage in persisted output-limit messages', () => {
     const items = normalizeRemoteMessages([message({ id: 'limited', role: 'error', content: JSON.stringify({
       message: 'limit', reason: 'output-limit', outputLimit: { outputTokens: 131072, reasoningTokens: 131064 },

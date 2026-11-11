@@ -32,6 +32,36 @@ export interface AskQuestion {
   answerConstraints?: AskAnswerConstraints;
 }
 
+const DELAYED_QUESTION_CONTEXT = '<cindy_question_context>\nThis is a delayed answer to an earlier question. Check the current task state and whether the question still applies before acting; do not repeat work already completed. This context is added by Cindy, not part of the user\'s answer or new authorization.\n</cindy_question_context>';
+
+/** Display projection only; the original supplement remains the model/replay input. */
+export function asyncQuestionSupplementDisplayText(content: string, clientId?: string | null): string {
+  if (!clientId?.startsWith('question-reply:')) return content;
+  const opening = '<send_user_message_question_reply>\n';
+  const closing = '\n</send_user_message_question_reply>';
+  if (!content.startsWith(opening)) return content;
+  const end = content.indexOf(closing, opening.length);
+  if (end < 0) return content;
+  const tail = content.slice(end + closing.length);
+  if (tail !== '' && tail !== `\n\n${DELAYED_QUESTION_CONTEXT}`) return content;
+  try {
+    const replies: unknown = JSON.parse(content.slice(opening.length, end));
+    if (!Array.isArray(replies) || replies.length === 0) return content;
+    const parts: string[] = [];
+    for (const reply of replies) {
+      if (!reply || typeof reply !== 'object' || typeof reply.question !== 'string' ||
+        typeof reply.answer !== 'string' || typeof reply.questionItemId !== 'string') return content;
+      const id: unknown = JSON.parse(reply.questionItemId);
+      if (!Array.isArray(id) || id.length !== 3 || id[0] !== 'request_user_input_async' ||
+        typeof id[1] !== 'string' || !Number.isInteger(id[2])) return content;
+      parts.push(`${reply.question.split('\n').map((line: string) => `> ${line}`).join('\n')}\n\n${reply.answer}`);
+    }
+    return parts.join('\n\n');
+  } catch {
+    return content;
+  }
+}
+
 /** A late answer is ordinary user input, with the original question attached. */
 export function formatAsyncQuestionSupplement(
   questions: readonly AskQuestion[],
@@ -48,7 +78,7 @@ export function formatAsyncQuestionSupplement(
     ? `<send_user_message_question_reply>\n${JSON.stringify(replies)}\n</send_user_message_question_reply>`
     : replies.map(({ question, answer }) => `${question.split('\n').map((line) => `> ${line}`).join('\n')}\n\n${answer}`).join('\n\n');
   return context?.late
-    ? `${message}\n\n<cindy_question_context>\nThis is a delayed answer to an earlier question. Check the current task state and whether the question still applies before acting; do not repeat work already completed. This context is added by Cindy, not part of the user's answer or new authorization.\n</cindy_question_context>`
+    ? `${message}\n\n${DELAYED_QUESTION_CONTEXT}`
     : message;
 }
 

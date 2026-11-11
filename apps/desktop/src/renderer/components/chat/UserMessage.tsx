@@ -126,6 +126,7 @@ import {
   parseOrcaCommunicationContent,
   resolveHookGroupContext,
   resolveUserDisplayText,
+  resolveUserCanonicalDraftText,
 } from './userMessageDisplayText';
 
 /**
@@ -916,10 +917,11 @@ export function UserMessage({
   // 显示文本推导(Orca JSON 解包 / hook 消息取 userText 或剥 <thread_context>)
   // 与提问导航条预览共用同一实现,规则见 userMessageDisplayText.ts;上面已
   // 解析过的 Orca 结果传入复用,渲染热路径不重复 JSON.parse(Copilot review)。
-  const displayContent = resolveUserDisplayText({ content, hookSource, automationOrigin }, orcaCommunication);
+  const displayContent = resolveUserDisplayText({ content, clientId: messageClientId, hookSource, automationOrigin }, orcaCommunication);
   // Only the bubble is decoded. Draft restoration must retain the canonical envelope.
-  const forwardedDraftBody = !hookSource && !orcaCommunication
-    && automationOrigin?.kind === 'session' && displayContent !== content ? content : undefined;
+  const forwardedDraftBody = resolveUserCanonicalDraftText(
+    { content, clientId: messageClientId, hookSource, automationOrigin }, displayContent, orcaCommunication,
+  );
   const groupContext = useMemo(
     () => resolveHookGroupContext({ content, hookSource }),
     [content, hookSource],

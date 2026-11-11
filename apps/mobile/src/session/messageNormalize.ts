@@ -1,4 +1,4 @@
-import { normalizeAskQuestions, answerKey } from "@cindy/maker-shared/interaction";
+import { normalizeAskQuestions, answerKey, asyncQuestionSupplementDisplayText } from "@cindy/maker-shared/interaction";
 import { readChatReplyQuote, type ChatReplyQuote } from '@cindy/maker-shared/chat-reply-quote';
 import { forwardedRequestDisplayText } from '@cindy/maker-shared/message-source';
 import { formatDuration } from '@cindy/maker-shared/message-render';
@@ -611,7 +611,8 @@ export function normalizeRemoteMessages(
     const body = hookSource && !hookSource.userTextContent
       ? hookSource.userText
       : message.role === 'assistant' ? stripGoalVerdictBlock(rawBody)
-        : readRecord(message.agentMeta?.origin)?.kind === 'session' ? forwardedRequestDisplayText(rawBody) : rawBody;
+        : readRecord(message.agentMeta?.origin)?.kind === 'session' ? forwardedRequestDisplayText(rawBody)
+          : message.role === 'user' ? asyncQuestionSupplementDisplayText(rawBody, message.clientId) : rawBody;
     const turnCost = readTurnCost(message);
     result.push({
       key: messageNormalizeKey(message),

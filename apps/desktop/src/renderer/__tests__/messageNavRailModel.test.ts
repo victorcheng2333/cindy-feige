@@ -1,4 +1,5 @@
-import { resolveUserDisplayText } from '@/components/chat/userMessageDisplayText';
+import { resolveUserDisplayText, resolveUserCanonicalDraftText } from '@/components/chat/userMessageDisplayText';
+import { formatAsyncQuestionSupplement } from '@cindy/maker-shared/interaction';
 /**
  * messageNavRailModel 纯逻辑单测:条目派生过滤 / 当前提问判定 / 空间与截断规划。
  * 全部 node 环境,无 DOM(组件侧几何测量不在此覆盖,见 MessageNavRail.tsx 注释)。
@@ -33,6 +34,26 @@ function msg(
 ): ChatMessage {
   return { content: '', ...partial } as ChatMessage;
 }
+
+// Regression: late native answers appeared as XML/JSON bubbles on a remote Mac.
+// Existing hook/Orca cases never exercised question-reply inputs. Unit tier:
+// use the bubble/nav production resolver with one host-generated supplement.
+// Standalone wall time: 1.09 s (2026-11-11).
+it('displays native question supplements as readable questions and answers, preserving ordinary examples', () => {
+  const question = { id: '["request_user_input_async","item",0]', question: 'Check M5?\nRead only.' };
+  for (const late of [false, true]) {
+    const content = formatAsyncQuestionSupplement([question], { [question.id]: 'Yes' }, { late });
+    const source = { clientId: 'question-reply:request:answer', content };
+    expect(resolveUserDisplayText(source)).toBe('> Check M5?\n> Read only.\n\nYes');
+    expect(resolveUserCanonicalDraftText(source, resolveUserDisplayText(source))).toBe(content);
+    expect(resolveUserDisplayText({ ...source, clientId: 'ordinary' })).toBe(content);
+    expect(resolveUserCanonicalDraftText({ ...source, clientId: 'ordinary' }, content)).toBeUndefined();
+    expect(resolveUserDisplayText({ ...source, content: `${content}\nUser added text` }))
+      .toBe(`${content}\nUser added text`);
+  }
+  expect(resolveUserDisplayText({ clientId: 'question-reply:r:a', content: '<send_user_message_question_reply>broken' }))
+    .toBe('<send_user_message_question_reply>broken');
+});
 
 describe('deriveNavRailEntries', () => {
   it('只收真实用户提问,跳过 assistant / tool / 合成行 / 系统卡', () => {
