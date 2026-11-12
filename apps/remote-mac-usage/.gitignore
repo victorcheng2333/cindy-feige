@@ -1,4 +1,9 @@
 dist/
+dist-tauri/
 out/
+out-rust/
 node_modules/
 qa/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/

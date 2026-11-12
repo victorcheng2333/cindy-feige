@@ -1,0 +1,18 @@
+"$schema" = "../gen/schemas/desktop-schema.json"
+
+[[permission]]
+identifier = "allow-cat-ready"
+description = "Allow the Quota Cat window to signal readiness."
+commands.allow = ["cat_ready"]
+
+[[permission]]
+identifier = "allow-cat-command"
+description = "Allow the Quota Cat window to execute validated commands."
+commands.allow = ["cat_command"]
+
+[default]
+description = "Minimal command set for Quota Cat UI."
+permissions = [
+  "allow-cat-ready",
+  "allow-cat-command",
+]

@@ -2,7 +2,7 @@
 
 > 2026-11-05：已移除 Cursor 额度入口，保留 Claude / ChatGPT 账号、登录和设备筛选。下方 Cursor 验证条目为旧版本记录。
 
-独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.1.9。
+独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.2.0（Rust / Tauri 2 + `WKWebView` 原生构建）。
 当前 Mac 不需要运行 Cindy；提供额度的电脑需要运行 Cindy、在线并允许相应远程访问。
 中国大陆版，独立 Bundle ID `com.chengfei.quotacat.cn`。
 
@@ -40,25 +40,26 @@ Cursor 使用独立双池卡片：Cursor 模型、其他模型分别显示剩余
 ```sh
 pnpm --dir apps/remote-mac-usage start
 pnpm --dir apps/remote-mac-usage demo
+pnpm --dir apps/remote-mac-usage test:rust
 pnpm --dir apps/remote-mac-usage test
 pnpm --dir apps/remote-mac-usage typecheck
 pnpm --dir apps/remote-mac-usage verify:ui
 pnpm --dir apps/remote-mac-usage package
 ```
 
-构建脚本显式传入 `--region cn`，输出到 `dist/`。独立 Electron 外壳只打包额度客户端，
-不打包 Cindy 主应用、Agent 二进制或数据库。构建依赖与仓库现有版本一致。
-macOS 打包使用 Node 22；Node 26 会使 electron-packager 解压 Electron 时提前退出。
+默认 `start`、`demo`、`package` 已切换为 `src-tauri/` 下的 Rust（Tauri 2 + `WKWebView`）原生外壳，
+直接内嵌 `dist-tauri/` 前端产物（复用 `src/renderer.ts` 与 `src/style.css`）；旧 Electron 入口仍保留在
+`start:electron` / `demo:electron` / `package:electron` 供回退与 Playwright UI 回归（`verify:ui`）使用。
 
-`package` 生成当前 Mac 架构的 `.app` 和 ZIP，使用本机 Developer ID Application 证书，
-启用 hardened runtime 和 Electron fuses，严格校验签名后重新压缩。没有合适证书时拒绝交付未签名包。
-不做 Apple 公证。输出为 `out/quota-cat-cn-<arch>-developer-id.zip`，旁边 JSON 记录签名身份与 SHA256。
+`package` 生成当前 Mac 架构的 `.app`（约 5.1 MB）和 ZIP（约 1.9 MB），使用本机 Developer ID Application
+证书与 hardened runtime 严格签名校验后压缩。没有合适证书时拒绝交付未签名包，不做 Apple 公证。
+输出为 `out/quota-cat-cn-<arch>-developer-id.zip`，旁边 JSON 记录签名身份与 SHA256。
 
 ## 数据与协议边界
 
-- 登录状态：`~/Library/Application Support/QuotaCatCN/session.enc`，由 Electron `safeStorage`
-  加密，钥匙串身份为 `QuotaCatCN Safe Storage`；不可用时不降级明文。串行原子写入，退出登录删除，
-  解密失败保留原文件并提示。设备随机标识存同目录 `device-id`。
+- 登录状态：`~/Library/Application Support/QuotaCatCN/session.enc`，钥匙串身份为 `QuotaCatCN Safe Storage`
+  （账号键 `QuotaCatCN Key`），Rust 版直接兼容读写原 Electron `safeStorage` 的 OSCrypt `v10` 密文格式，升级或
+  回退无需重新登录；不可用时不降级明文。串行原子写入，退出登录删除，解密失败保留原文件并提示。设备随机标识存同目录 `device-id`。
 - 设备筛选：同目录 `view.json`，仅含账号归属 ID、所选设备 ID 列表与排序 ID 列表，串行原子写入，
   退出登录清除，不保存令牌、额度数值或电脑名称，不跨账号恢复。
 - 不读取 Cindy 的 userData、登录文件或 Claude / ChatGPT 凭证。Renderer 不接收 token 或授权 ticket。
@@ -76,6 +77,13 @@ macOS 打包使用 Node 22；Node 26 会使 electron-packager 解压 Electron �
 - 不持久化额度历史、日志或完整网络响应。演示使用虚构数据；`--demo` 使用独立临时 profile，退出后回收。
 
 ## 验证记录
+
+- 2026-11-12 / 0.2.0：独立猫猫主进程、认证、Device Link 协议与安全存储切换为纯 Rust（Tauri 2 + `WKWebView`），
+  沿用 `com.chengfei.quotacat.cn`、`~/Library/Application Support/QuotaCatCN` 与 `QuotaCatCN Safe Storage`
+  钥匙串身份，实现 Chromium OSCrypt `v10` 密文双向兼容以无缝保留原登录、设备筛选与排序。`.app` 体积由 276 MB
+  降至 5.1 MB，签名 ZIP 由 113 MB 降至 1.9 MB。10 项 Rust 单测、39 项 TS 单测、类型检查和文档检查通过；
+  Developer ID 签名及严格校验通过，已备份旧版至 `/Applications/猫猫.backup-20261112-172609.app` 并替换
+  `/Applications/猫猫.app`，实测新版进程正常驻留、原登录自动解密刷新并连上远端 Device Link。
 
 - 2026-11-11 / 0.1.9：默认账号额度查询补齐已有的账号作用域，修复远端暂停分配后卡片为空的问题；
   独立连接的查询方式不变，不增加请求次数。回归先复现默认 Claude / OpenAI 的空额度，再验证修复；

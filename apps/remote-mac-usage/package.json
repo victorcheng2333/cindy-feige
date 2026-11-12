@@ -1,7 +1,7 @@
 {
   "name": "remote-mac-usage",
   "productName": "Quota Cat",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "猫猫：独立的 macOS 远程订阅额度菜单栏应用",
@@ -26,11 +26,19 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs --region cn",
-    "start": "pnpm build && electron dist",
-    "demo": "pnpm build && electron dist --demo",
+    "start": "pnpm start:rust",
+    "demo": "pnpm demo:rust",
+    "start:electron": "pnpm build && electron dist",
+    "demo:electron": "pnpm build && electron dist --demo",
     "verify:ui": "pnpm build && node scripts/verify-ui.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "package": "pnpm build && node scripts/package.mjs --region cn"
+    "package": "node scripts/package-rust.mjs --region cn",
+    "package:electron": "pnpm build && node scripts/package.mjs --region cn",
+    "build:rust": "node scripts/build-rust-ui.mjs --region cn && cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "start:rust": "pnpm build:rust && ./src-tauri/target/release/quota-cat-rust",
+    "demo:rust": "pnpm build:rust && ./src-tauri/target/release/quota-cat-rust --demo",
+    "test:rust": "node scripts/build-rust-ui.mjs --region cn && cargo test --manifest-path src-tauri/Cargo.toml",
+    "package:rust": "node scripts/package-rust.mjs --region cn"
   }
 }
