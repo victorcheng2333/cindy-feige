@@ -32,10 +32,10 @@ function quota(q: Quota | undefined, label: string, available: boolean) {
 }
 function account(a: Account, d: Device) {
   const available = d.online && d.remoteControlEnabled && !d.error && !a.failed;
-  const windows = [300, 10080].map(minutes => a.windows.find(q => q.minutes === minutes && !q.label));
+  const windows = a.windows.filter(q => !q.label).sort((a, b) => (a.minutes ?? Infinity) - (b.minutes ?? Infinity));
   const title = a.failed ? '暂未获取额度' : a.updatedAt ? `数据更新于 ${date(a.updatedAt)}` : d.checkedAt ? `读取于 ${date(d.checkedAt)} · 数据更新时间未知` : '等待首次读取';
   return `<article class="account"><div class="account-heading"><h3>${escape(a.name)}</h3><span class="brand">${escape(a.service)}${a.plan ? `<br>${escape(a.plan)}` : ''}</span></div>
-    <div class="quotas">${quota(windows[0], '5 小时', !!available)}${quota(windows[1], '每周', !!available)}</div>
+    <div class="quotas">${windows.length ? windows.map(q => quota(q, quotaLabel(q), !!available)).join('') : quota(undefined, '订阅额度', !!available)}</div>
     <details data-key="${escape(d.deviceId + ':' + a.id)}"><summary>${escape(title)} · 详情</summary>
       ${a.windows.length ? a.windows.map(q => `<div class="detail-row"><span>${escape(quotaLabel(q))}</span><span>${available && currentQuota(q) ? `剩余 ${Math.round(q.remaining)}%` : '等待有效额度'}<br>${q.resetsAt ? escape(date(q.resetsAt * 1000) + ' 重置') : escape(missingResetText(q))}</span></div>`).join('') : '<p>远端暂未返回有效额度，请确认账号登录状态和 Cindy 版本。</p>'}
     </details></article>`;

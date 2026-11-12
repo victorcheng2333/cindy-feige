@@ -143,6 +143,26 @@ try {
   }));
   await page.getByText('当前未使用 · 来源未返回重置时间',{exact:true}).waitFor();
   for (const theme of ['light','dark']) { await page.emulateMedia({colorScheme:theme}); await check(`${theme}-missing-reset`); }
+  // Regression (Electron integration): real accounts can return only a weekly
+  // window in primary. The old renderer invented an empty five-hour column and
+  // hid other durations from the main card. Existing fixtures all had both periods.
+  const weeklyOnly = await page.evaluate(() => window.cat.command({ kind:'state' }));
+  weeklyOnly.demo = true;
+  weeklyOnly.devices = [{ deviceId:'weekly-demo', name:'演示电脑', online:true, remoteControlEnabled:true,
+    platform:'darwin', error:null, checkedAt:Date.now(), accounts:[{
+      id:'weekly-account', name:'演示 ChatGPT', service:'ChatGPT', plan:'Pro', failed:false, updatedAt:null,
+      windows:[{minutes:10080,remaining:65,resetsAt:Date.now()/1000+86400}]
+    }] }];
+  weeklyOnly.selectedDeviceIds = []; weeklyOnly.deviceOrder = [];
+  await electron.evaluate(({BrowserWindow},state)=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',state),weeklyOnly);
+  await page.getByRole('heading',{name:'演示 ChatGPT',exact:true}).waitFor();
+  assert.equal(await page.locator('.quota').count(),1,'weekly-only account must not invent a five-hour column');
+  assert.equal(await page.locator('.quota .label').textContent(),'每周 · 剩余');
+  for (const theme of ['light','dark']) { await page.emulateMedia({colorScheme:theme}); await check(`${theme}-weekly-only`); }
+  weeklyOnly.devices[0].accounts[0].windows[0].minutes = 180;
+  await electron.evaluate(({BrowserWindow},state)=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',state),weeklyOnly);
+  await page.getByText('3 小时 · 剩余',{exact:true}).waitFor();
+  assert.equal(await page.locator('.quota .number').textContent(),'65%');
   // Render a secret-free login snapshot through the real preload subscription.
   await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',{
     signedIn:false,busy:false,error:null,login:{kind:'idle'},devices:[],updatedAt:null,demo:false,selectedDeviceIds:[],deviceOrder:[],
