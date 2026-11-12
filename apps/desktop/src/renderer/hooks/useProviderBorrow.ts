@@ -1,7 +1,8 @@
-import type { ProviderView } from '@cindy/model-providers';
+import { remoteInvocationModels, type ProviderView } from '@cindy/model-providers';
 
 import { useControllableDevices } from '@/hooks/useControllableDevices';
 import { useDevicesProviders } from '@/hooks/useDevicesProviders';
+import { remoteProviderEntryKey } from '@/lib/remoteProviderGroups';
 import {
   effectiveRunLocation,
   RUN_LOCATION_LOCAL,
@@ -30,5 +31,17 @@ export function useProviderBorrow(provider: ProviderView | null | undefined) {
   const borrowed = !localUsable && location !== RUN_LOCATION_LOCAL
     ? candidates.find((candidate) => candidate.deviceId === location) ?? null
     : null;
-  return { candidates, location, borrowed };
+  const device = candidates.find((candidate) => candidate.deviceId === location);
+  const catalog = device ? catalogs.get(device.deviceId) : undefined;
+  const offered = catalog?.providers.find((entry) => entry.id === provider?.id);
+  // Keep the executing computer's identity, exposed models and visibility together.
+  // The local provider still owns the run-location preference and local sign-in actions.
+  const remote = device && offered ? {
+    key: remoteProviderEntryKey(device.deviceId, offered.id),
+    deviceId: device.deviceId,
+    deviceName: device.name,
+    provider: remoteInvocationModels(offered),
+    modelVisibilityOverrides: catalog?.modelVisibilityOverrides,
+  } : null;
+  return { candidates, location, borrowed, remote };
 }

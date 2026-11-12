@@ -32,6 +32,7 @@ const snapshot = {
 };
 const refreshControl = { defer: false, pending: false, release: (): void => {} };
 const keySaveControl = { pending: false, release: (): void => {} };
+const recoveryControl = { retries: 0 };
 // Example quota snapshots in the host's own formats: 5 hours, weekly and one model-specific window.
 const accountUsage = (providerId: string, [session, week, model]: number[]) => {
   const now = Date.now();
@@ -58,6 +59,7 @@ Object.assign(window, { providerSourcesFixture: {
   snapshot,
   refreshControl,
   keySaveControl,
+  recoveryControl,
   subscriptionControl,
   devices: [] as { deviceId: string; name: string; platform: string }[],
   catalogs: new Map<string, { providers: typeof entries; loading: boolean; error: null }>(),
@@ -76,6 +78,27 @@ mountPage({
     if (ctx.case === 'borrowing') snapshot.providers[0] = { ...snapshot.providers[0], connected: false };
     // Anthropic was never signed in here (no removed flag): it must still be listed, borrowed from another computer.
     if (ctx.case === 'never-signed-in') snapshot.providers[1] = { ...snapshot.providers[1], connected: false };
+    if (ctx.case === 'renamed-remote') {
+      snapshot.providers[1] = { ...snapshot.providers[1], connected: false, models: { 'claude-code': [] } };
+      fixture.catalogs.set('mbp', {
+        providers: [provider('openai'), {
+          ...provider('anthropic', 'Claude-6'),
+          models: { 'claude-code': [
+            { id: 'opus', name: 'Opus 5.5' },
+            { id: 'sonnet', name: 'Sonnet 5.5' },
+            { id: 'fable', name: 'Fable 5.2' },
+          ] },
+        }], loading: false, error: null,
+      });
+    }
+    if (ctx.case === 'borrowed-xd-recovery') {
+      snapshot.providers.unshift({ ...provider('xd'), connected: false });
+      snapshot.providerOrder.unshift('xd');
+      fixture.catalogs.set('mbp', {
+        providers: [{ ...provider('xd'), models: { 'claude-code': [{ id: 'remote-xd', name: 'Remote Cindy model' }] } }],
+        loading: false, error: null,
+      });
+    }
     if (ctx.case === 'pinned') snapshot.providers[0] = { ...snapshot.providers[0], runLocation: 'mbp' } as typeof snapshot.providers[0];
     refreshControl.defer = ctx.case === 'wizard-reopen';
     if (ctx.case === 'builtin-save-guard') snapshot.providers.push({
@@ -83,6 +106,7 @@ mountPage({
       agents: [], auth: { method: 'apiKey' }, audioModels: [{ id: 'fixture-media', name: 'Fixture' }],
     });
     return {
+      modelAccess: { retry: async () => { recoveryControl.retries += 1; } },
       subscriptionAccounts: {
         command: async (command: SubscriptionAccountCommand) => {
           subscriptionControl.commands.push(command);
@@ -93,7 +117,8 @@ mountPage({
             });
             subscriptionControl.connected = true;
           }
-          const configured = ctx.case !== 'borrowing' && !(ctx.case === 'never-signed-in' && command.providerId === 'anthropic');
+          const configured = ctx.case !== 'borrowing'
+            && !(['never-signed-in', 'renamed-remote'].includes(ctx.case) && command.providerId === 'anthropic');
           const directory = command.providerId === 'anthropic' ? '/Users/alex/.claude' : '/Users/alex/.codex';
           const defaultAccount = { id: 'default', identity: 'alex@example.com',
             plan: command.providerId === 'anthropic' ? 'Max' : 'Plus', status: 'ready', directory,

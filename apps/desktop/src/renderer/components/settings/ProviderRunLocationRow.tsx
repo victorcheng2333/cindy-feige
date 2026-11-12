@@ -36,7 +36,7 @@ function ProviderRunLocationPicker({
   const remote = candidates.find((candidate) => candidate.deviceId === location);
   const hint = !remote
     ? t('settings.providers.detail.runLocation.local')
-    : standalone
+    : !localUsable
       ? t('settings.providers.detail.runLocation.autoBorrowing', { device: remote.name })
       : t('settings.providers.detail.runLocation.pinned', { device: remote.name });
   const choose = (next: string) => {
@@ -81,20 +81,19 @@ function ProviderRunLocationPicker({
 }
 
 /**
- * 供应商详情头的副标题，带「运行于」。借用另一台电脑时副标题只剩「运行于 <电脑>」：不提本机的登录状态，
- * 也不置灰任何东西。
+ * 供应商详情头的副标题，带「运行于」。运行在另一台电脑时只显示运行位置，本机身份留在本机详情。
  */
 export function ProviderRunLocationSubtitle({ provider, subtitle }: { provider: ProviderView; subtitle: ReactNode }) {
-  const { candidates, location, borrowed } = useProviderBorrow(provider);
+  const { candidates, location, remote } = useProviderBorrow(provider);
   return (
     <>
-      {borrowed ? null : <span className="min-w-0 truncate">{subtitle}</span>}
+      {remote ? null : <span className="min-w-0 truncate">{subtitle}</span>}
       <ProviderRunLocationPicker
         key={provider.id}
         provider={provider as LocatedProvider}
         candidates={candidates}
         location={location}
-        standalone={borrowed !== null}
+        standalone={remote !== null}
       />
     </>
   );

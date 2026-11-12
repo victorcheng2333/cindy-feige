@@ -106,10 +106,12 @@ import type { DetectedProviderDraft } from '../../../shared/providerDetection';
 import { OllamaProviderDetail } from './OllamaProviderDetail';
 import {
   OwnRemoteProviderDetail,
+  OwnRemoteProviderContent,
   OwnRemoteProviderRows,
   useOwnRemoteProviderList,
   type OwnRemoteProvider,
 } from './OwnRemoteProviders';
+import { readOnlyProviderModels } from './ReadOnlyProviderModels';
 import { LlamaCppProviderDetail } from './LlamaCppProviderDetail';
 import { MANAGED_LLAMACPP_PROVIDER_ID } from '../../../shared/llamaCpp';
 import {
@@ -703,7 +705,10 @@ function DetailHeader({
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
   // Borrowing another computer's sign-in: this computer's own accounts and "not connected" do not apply.
-  const borrowing = useProviderBorrow(provider).borrowed !== null;
+  const { borrowed, remote } = useProviderBorrow(provider);
+  const borrowing = borrowed !== null;
+  const displayProvider = remote?.provider ?? provider;
+  const displayName = displayProvider ? providerDisplayName(displayProvider, t) : title;
   const canRename = !!provider && provider.id !== 'xd' && !isOrganizationManagedProvider(provider);
   const resolvedDelete =
     deleteAction ??
@@ -713,8 +718,8 @@ function DetailHeader({
           onClick: () => void management.removeBuiltin(),
         }
       : undefined);
-  const subscription = useProviderSubscriptionCard(provider);
-  const resetEnabled = Boolean(provider && providerWeeklyQuotaSource({ ...provider, suspended: false }) === 'codex');
+  const subscription = useProviderSubscriptionCard(remote ? undefined : provider);
+  const resetEnabled = Boolean(!remote && provider && providerWeeklyQuotaSource({ ...provider, suspended: false }) === 'codex');
   const { snapshot: resetSnapshot, refresh: refreshResets } = useCodexRateLimits(resetEnabled, provider?.id ?? 'openai');
   const manualReset = useCodexRateLimitReset(resetSnapshot, refreshResets, provider?.id ?? 'openai');
   const detailScrollRef = useRef<HTMLDivElement>(null);
@@ -724,15 +729,15 @@ function DetailHeader({
     if (hasDetail && detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
   }, [hasDetail]);
   const subscriptionProduct =
-    provider?.access?.kind === 'subscription' ? provider.access.product : null;
+    displayProvider?.access?.kind === 'subscription' ? displayProvider.access.product : null;
   // 单 agent 供应商在头部统一说明(行级不再逐条标注,见 UnifiedModelList 头注释)。
   const singleAgentNote =
-    provider && provider.agents.length === 1
+    displayProvider && displayProvider.agents.length === 1
       ? t('settings.providers.detail.singleAgentNote', {
           agent:
-            provider.agents[0] === 'claude-code'
+            displayProvider.agents[0] === 'claude-code'
               ? 'Claude Code'
-              : provider.agents[0] === 'pi'
+              : displayProvider.agents[0] === 'pi'
                 ? 'Pi'
                 : 'Codex',
         })
@@ -793,7 +798,7 @@ function DetailHeader({
                 color: 'var(--settings-integration-avatar-icon)',
               }}
             >
-              {icon}
+              {remote ? providerIcon(remote.provider, 18) : icon}
             </div>
 
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -803,12 +808,12 @@ function DetailHeader({
               >
                 <span
                   className="min-w-0 truncate text-14 font-medium leading-tight"
-                  title={provider ? providerDisplayName(provider, t) : title}
+                  title={displayName}
                   style={{ color: 'var(--settings-section-title)' }}
                 >
-                  {provider ? providerDisplayName(provider, t) : title}
+                  {displayName}
                 </span>
-                {identityBadge}
+                {!remote && identityBadge}
                 {subscriptionProduct && (
                   <CustomTag
                     label={
@@ -827,11 +832,11 @@ function DetailHeader({
                 {provider?.suspended && (
                   <CustomTag label={t('settings.providers.pill.suspended')} />
                 )}
-                {badge}
+                {!remote && badge}
               </div>
               <span
                 className="flex min-w-0 items-center gap-1 text-13 leading-tight"
-                title={[subtitle, singleAgentNote].filter(Boolean).join(' · ')}
+                title={remote ? remote.deviceName : [subtitle, singleAgentNote].filter(Boolean).join(' · ')}
                 style={{ color: 'var(--settings-integration-subtitle)' }}
               >
                 {provider ? (
@@ -854,7 +859,7 @@ function DetailHeader({
               data-testid="provider-detail-actions"
               className="flex shrink-0 items-center gap-2.5"
             >
-              {borrowing ? null : status?.kind === 'connected' ? (
+              {remote ? null : status?.kind === 'connected' ? (
                 <ConnectedPill />
               ) : status?.kind === 'reconnect-required' ? (
                 <ReconnectRequiredPill />
@@ -863,11 +868,11 @@ function DetailHeader({
                   {status.label}
                 </span>
               ) : null}
-              {primaryAction && !borrowing && <PillButton {...primaryAction} />}
+              {primaryAction && !remote && <PillButton {...primaryAction} />}
             </div>
             {/* 供应商级低频动作(停用/启用):所有供应商详情头统一入口。停用 = 保留凭证、
               整体不可路由(model-disable-store);恢复入口在菜单与下方的已停用条带都有。 */}
-            {provider && (
+            {provider && (!remote || (borrowing && primaryAction)) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Tip text={t('settings.providers.detail.moreActionsAria')}>
@@ -882,7 +887,7 @@ function DetailHeader({
                   </Tip>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {canRename && (
+                  {!remote && canRename && (
                     <DropdownMenuItem
                       onClick={() => void management.rename()}
                       disabled={management.busy}
@@ -891,7 +896,7 @@ function DetailHeader({
                       {t('settings.providers.pill.rename')}
                     </DropdownMenuItem>
                   )}
-                  {editAction && !provider?.auth.native && (
+                  {!remote && editAction && !provider?.auth.native && (
                     <DropdownMenuItem onClick={editAction.onClick} disabled={editAction.disabled}>
                       <Pencil size={18} className="mr-2.5" />
                       {editAction.label}
@@ -902,30 +907,34 @@ function DetailHeader({
                       {t('settings.providers.detail.runLocation.signInHere')}
                     </DropdownMenuItem>
                   )}
-                  {menuItems}
-                  <DropdownMenuItem
-                    onClick={() =>
-                      writeProviderDisabled(
-                        provider.id,
-                        !provider.suspended,
-                        t('settings.providers.models.accessWriteFailed'),
-                      )
-                    }
-                  >
-                    {t(
-                      provider.suspended
-                        ? 'settings.providers.menu.enableProvider'
-                        : 'settings.providers.menu.disableProvider',
-                    )}
-                  </DropdownMenuItem>
-                  {menuFooter}
-                  {resolvedDelete && (
+                  {!remote && (
                     <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="danger" onClick={resolvedDelete.onClick} disabled={management.busy}>
-                        <Trash2 size={18} className="mr-2.5" />
-                        {resolvedDelete.label}
+                      {menuItems}
+                      <DropdownMenuItem
+                        onClick={() =>
+                          writeProviderDisabled(
+                            provider.id,
+                            !provider.suspended,
+                            t('settings.providers.models.accessWriteFailed'),
+                          )
+                        }
+                      >
+                        {t(
+                          provider.suspended
+                            ? 'settings.providers.menu.enableProvider'
+                            : 'settings.providers.menu.disableProvider',
+                        )}
                       </DropdownMenuItem>
+                      {menuFooter}
+                      {resolvedDelete && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="danger" onClick={resolvedDelete.onClick} disabled={management.busy}>
+                            <Trash2 size={18} className="mr-2.5" />
+                            {resolvedDelete.label}
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </>
                   )}
                 </DropdownMenuContent>
@@ -940,30 +949,36 @@ function DetailHeader({
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain [&>*]:shrink-0"
       >
         {detail && <div className="px-5 pb-4">{detail}</div>}
-        {provider?.subscriptionFastPolicy && <div className="px-5 pb-4"><SubscriptionFastSetting key={provider.id} provider={provider} /></div>}
-        {/* Pooled subscription accounts show the provider card in the default account's row. */}
-        {subscriptionPool && !borrowing && (
-          <SubscriptionAccountsSection
-            key={subscriptionPool}
-            providerId={subscriptionPool}
-            onDefaultLogin={onDefaultLogin}
-            defaultUsage={usageCard}
-            dashboard={dashboard ?? undefined}
-          />
+        {remote ? (
+          <OwnRemoteProviderContent entry={remote} />
+        ) : (
+          <>
+            {provider?.subscriptionFastPolicy && <div className="px-5 pb-4"><SubscriptionFastSetting key={provider.id} provider={provider} /></div>}
+            {/* Pooled subscription accounts show the provider card in the default account's row. */}
+            {subscriptionPool && !borrowing && (
+              <SubscriptionAccountsSection
+                key={subscriptionPool}
+                providerId={subscriptionPool}
+                onDefaultLogin={onDefaultLogin}
+                defaultUsage={usageCard}
+                dashboard={dashboard ?? undefined}
+              />
+            )}
+            {assetModule ??
+              (subscriptionPool ? null : usageCard ? (
+                <div
+                  data-testid="provider-usage-module"
+                  className="border-t px-1 py-2"
+                  style={{ borderColor: 'var(--settings-theme-card-border)' }}
+                >
+                  {usageCard}
+                </div>
+              ) : (
+                <ProviderAccountUsageModule provider={provider} />
+              ))}
+            {children}
+          </>
         )}
-        {assetModule ??
-          (subscriptionPool ? null : usageCard ? (
-            <div
-              data-testid="provider-usage-module"
-              className="border-t px-1 py-2"
-              style={{ borderColor: 'var(--settings-theme-card-border)' }}
-            >
-              {usageCard}
-            </div>
-          ) : (
-            <ProviderAccountUsageModule provider={provider} />
-          ))}
-        {children}
       </div>
     </div>
   );
@@ -1859,6 +1874,7 @@ function XdGatewayHeader({
   const { key, hasSavedKey, clearKey } = useApiKey();
   const syncStatus = useModelAccessStatus();
   const connected = provider?.connected ?? false;
+  const { borrowed } = useProviderBorrow(provider);
   const [rotating, setRotating] = useState(false);
 
   // 余额 / 充值 / 用量入口一律走同一判据:cloud + personal。org 账号是**不渲染**
@@ -2171,6 +2187,10 @@ function XdGatewayHeader({
       }
       subtitle={t('settings.providers.xd.simpleSubtitle')}
       status={status}
+      primaryAction={borrowed && assetState.kind === 'fault' ? {
+        label: t('settings.providers.xd.sync.retry'),
+        onClick: handleRetry,
+      } : undefined}
       provider={provider}
       menuItems={menuItems}
       menuFooter={menuFooter}
@@ -2411,13 +2431,15 @@ function ListRow({
 }) {
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
-  const borrowing = useProviderBorrow(provider).borrowed !== null;
+  const { remote } = useProviderBorrow(provider);
   const localLive = useManagedLocalRuntimeLive(provider.id);
   const modelCount = useMemo(
-    () => (providerHasModels(provider) ? buildUnionRows(provider).length : null),
-    [provider],
+    () => remote
+      ? readOnlyProviderModels(remote.provider, remote.modelVisibilityOverrides).length
+      : providerHasModels(provider) ? buildUnionRows(provider).length : null,
+    [provider, remote],
   );
-  const title = providerDisplayName(provider, t);
+  const title = providerDisplayName(remote?.provider ?? provider, t);
   return (
     <div
       className={cn(
@@ -2451,7 +2473,7 @@ function ListRow({
         <button data-settings-search-action="Select the provider whose details are displayed"
           type="button"
           onClick={onSelect}
-          onDoubleClick={provider.id === 'xd' ? undefined : () => void management.rename()}
+          onDoubleClick={remote || provider.id === 'xd' ? undefined : () => void management.rename()}
           aria-current={selected}
           className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-3 pr-2.5 text-left"
         >
@@ -2463,7 +2485,7 @@ function ListRow({
               color: 'var(--settings-integration-avatar-icon)',
             }}
           >
-            {providerIcon(provider, 14)}
+            {providerIcon(remote?.provider ?? provider, 14)}
           </div>
           <span
             className="min-w-0 flex-1 truncate text-13 font-medium"
@@ -2473,7 +2495,7 @@ function ListRow({
           >
             {title}
           </span>
-          {reconnectRequired ? (
+          {reconnectRequired && !remote ? (
             <span
               className="shrink-0 select-none text-11"
               style={{ color: 'var(--settings-integration-warning)' }}
@@ -2502,13 +2524,13 @@ function ListRow({
           <span
             className="h-1.5 w-1.5 shrink-0 rounded-full"
             style={{
-              backgroundColor: reconnectRequired
+              backgroundColor: reconnectRequired && !remote
                 ? 'var(--remote-status-failed)'
                 : isManagedLocalProvider(provider.id)
                   ? localLive
                     ? 'var(--remote-status-ready)'
                     : 'var(--border-default)'
-                  : (provider.connected || borrowing) && !provider.suspended
+                  : (provider.connected || remote) && !provider.suspended
                     ? 'var(--remote-status-ready)'
                     : 'var(--border-default)',
             }}
@@ -3046,7 +3068,6 @@ export function ProvidersSection() {
         }
       : selected;
   }, [selectedId, listProviders, codexAuth.state, openaiPoolState, dataOwnerId]);
-  const selectedBorrow = useProviderBorrow(effectiveSelected);
 
   const handleDelete = useCallback(
     async (p: ProviderView) => {
@@ -3635,7 +3656,7 @@ export function ProvidersSection() {
                           />
                         )}
                         <UnifiedModelList
-                          provider={selectedBorrow.borrowed ? { ...effectiveSelected, connected: true } : effectiveSelected}
+                          provider={effectiveSelected}
                           onAddSpeechModels={providerSpeechSetup(effectiveSelected) ? () => {
                             setSpeechProvider({ provider: effectiveSelected, owner: dataOwnerId, generation: ownerGeneration });
                           } : undefined}

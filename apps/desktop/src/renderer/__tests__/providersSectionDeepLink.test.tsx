@@ -14,6 +14,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useCodexAuth } from '@/hooks/useCodexAuth';
+import { useApiKey } from '@/hooks/useApiKey';
 import type { ProviderShareReceived } from '@cindy/device-link';
 import type { ProviderView } from '@cindy/model-providers';
 
@@ -62,6 +63,13 @@ vi.mock('@/hooks/useProviders', () => ({
   }),
 }));
 
+const remoteSources = vi.hoisted(() => ({
+  devices: [] as { deviceId: string; name: string }[],
+  catalogs: new Map<string, { providers: ProviderView[]; modelVisibilityOverrides?: Record<string, boolean> }>(),
+}));
+vi.mock('@/hooks/useControllableDevices', () => ({ useControllableDevices: () => remoteSources.devices }));
+vi.mock('@/hooks/useDevicesProviders', () => ({ useDevicesProviders: () => remoteSources.catalogs }));
+
 vi.mock('@/contexts/AuthContext', () => ({
   useOptionalAuthUser: () => null,
   useAuth: () => ({ mode: 'local', exitLocalMode: vi.fn(async () => undefined) }),
@@ -77,7 +85,7 @@ vi.mock('@/hooks/useCodexAuth', () => ({
 }));
 
 vi.mock('@/hooks/useApiKey', () => ({
-  useApiKey: () => ({ key: '', hasSavedKey: false, clearKey: vi.fn() }),
+  useApiKey: vi.fn(() => ({ key: '', hasSavedKey: false, clearKey: vi.fn() })),
 }));
 
 vi.mock('@/hooks/useModelAccessStatus', () => ({
@@ -105,7 +113,8 @@ vi.mock('@/lib/customProviders', () => ({
   updateCustomProvider: vi.fn(),
 }));
 
-vi.mock('@/lib/providerModels', () => ({
+vi.mock('@/lib/providerModels', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/providerModels')>(),
   providerMonogram: () => 'X',
 }));
 
@@ -140,12 +149,13 @@ vi.mock('@/components/settings/AddProviderWizard', () => ({
 import { updateCustomProvider } from '@/lib/customProviders';
 
 import { ProvidersSection } from '@/components/settings/ProvidersSection';
-import { useProviderSubscriptionCard } from '@/components/settings/useProviderSubscriptionCard';
+import { useDeviceProviderSubscriptionCard, useProviderSubscriptionCard } from '@/components/settings/useProviderSubscriptionCard';
 import { __testing as localProviderGroupsTesting } from '@/features/provider-group/useLocalProviderGroups';
 import { resetProviderShareStoreForTests } from '@/features/provider-share/providerShareStore';
 
 vi.mock('@/components/settings/useProviderSubscriptionCard', () => ({
   useProviderSubscriptionCard: vi.fn(() => null),
+  useDeviceProviderSubscriptionCard: vi.fn(() => null),
 }));
 
 vi.mock('@/components/settings/LlamaCppProviderDetail', () => ({ LlamaCppProviderDetail: () => null }));
@@ -190,8 +200,12 @@ function renderAt(search: string) {
 }
 
 beforeEach(() => {
+  vi.mocked(useApiKey).mockReturnValue({ key: '', hasSavedKey: false, canReadKey: true, isReconciling: false, clearKey: vi.fn(async () => true) });
+  remoteSources.devices = [];
+  remoteSources.catalogs = new Map();
   providerRefetch.mockReset().mockResolvedValue(undefined);
   vi.mocked(useProviderSubscriptionCard).mockReset().mockReturnValue(null);
+  vi.mocked(useDeviceProviderSubscriptionCard).mockReset().mockReturnValue(null);
   confirmSpy.mockReset().mockResolvedValue(true);
   codexAuthState.state = { kind: 'unauthenticated' };
   codexAuthState.reconnectCredentialScope = undefined;
@@ -237,6 +251,75 @@ afterEach(() => {
 });
 
 describe('ProvidersSection — 深链定位', () => {
+  // The remote detail must retain recovery of a failed local managed credential.
+  // Existing local asset tests never mount an available remote XD provider.
+  it('recovers local Cindy AI credentials while showing its borrowed remote models', async () => {
+    vi.mocked(useApiKey).mockReturnValue({ key: 'fixture-key', hasSavedKey: true, canReadKey: true, isReconciling: false, clearKey: vi.fn(async () => true) });
+    providersState.providers = [makeProvider('xd', { auth: { method: 'managed' }, connected: false })];
+    remoteSources.devices = [{ deviceId: 'remote-mac', name: 'Remote Mac' }];
+    remoteSources.catalogs.set('remote-mac', { providers: [makeProvider('xd', {
+      auth: { method: 'managed' }, connected: true, remoteInvocationEnabled: true,
+      models: { 'claude-code': [{ id: 'remote-model', name: 'Remote model', contextWindow: 200_000, efforts: [], defaultEffort: null }] },
+    })] });
+    const retry = vi.fn(async () => undefined);
+    window.electronAPI.modelAccess = { retry } as unknown as Window['electronAPI']['modelAccess'];
+    renderAt('?tab=providers&connect=xd');
+    expect(screen.getByText('Remote model')).toBeTruthy();
+    fireEvent.pointerDown(await screen.findByRole('button', { name: 'settings.providers.detail.moreActionsAria' }), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.providers.detail.runLocation.signInHere' }));
+    await waitFor(() => expect(retry).toHaveBeenCalledOnce());
+    expect(screen.getByText('Remote model')).toBeTruthy();
+    expect(screen.queryByTestId('cindy-ai-asset-module')).toBeNull();
+  });
+
+  // Unit regression for the Nov 10 run-location fold: existing local-only cases cannot
+  // catch a renamed remote builtin disappearing behind an empty local catalog.
+  // Exercise the real section, borrowing hook and remote model list with one remote host.
+  it.each([false, true])('shows the selected computer’s name and models (local connected=%s)', async (connected) => {
+    vi.mocked(useDeviceProviderSubscriptionCard).mockImplementation((provider, deviceId) =>
+      provider?.id === 'anthropic' && deviceId === 'remote-mac'
+        ? { title: 'Claude-6', windows: [{ key: 'weekly', title: 'Remote weekly', window: { utilization: 37 } }] }
+        : null);
+    providersState.providers = [{
+      ...makeProvider('anthropic', {
+        name: 'Anthropic', connected,
+        models: { 'claude-code': connected ? [
+          { id: 'local-model', name: 'Local model', contextWindow: 200_000, efforts: [], defaultEffort: null },
+        ] : [] },
+      }),
+      runLocation: connected ? 'remote-mac' : undefined,
+    }];
+    remoteSources.devices = [{ deviceId: 'remote-mac', name: 'Remote Mac' }];
+    remoteSources.catalogs.set('remote-mac', { modelVisibilityOverrides: {}, providers: [makeProvider('anthropic', {
+      name: 'Claude-6', connected: true, remoteInvocationEnabled: true,
+      models: { 'claude-code': [
+        { id: 'remote-model', name: 'Remote Opus', contextWindow: 200_000, efforts: [], defaultEffort: null },
+        { id: 'hidden-model', name: 'Hidden model', contextWindow: 200_000, efforts: [], defaultEffort: null, defaultEnabled: false },
+      ] },
+    })] });
+    const view = renderAt('?tab=providers&connect=anthropic');
+    expect(await screen.findByRole('button', { name: /^Claude-6/ })).toBeTruthy();
+    expect(within(screen.getByTestId('provider-detail-identity')).getByText('Claude-6')).toBeTruthy();
+    expect(screen.getByText('Remote Opus')).toBeTruthy();
+    expect(screen.queryByText('Hidden model')).toBeNull();
+    expect(screen.queryByText('Local model')).toBeNull();
+    expect(screen.queryByText('settings.providers.detail.emptyModelsDisconnected')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'settings.providers.models.refreshBuiltinAria' })).toBeNull();
+    expect(screen.queryByTestId('subscription-accounts')).toBeNull();
+    expect(screen.getByRole('progressbar', { name: 'Remote weekly' }).getAttribute('aria-valuenow')).toBe('63');
+    fireEvent.doubleClick(screen.getByRole('button', { name: /^Claude-6/ }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    // Local controls return when the selected remote source goes away.
+    remoteSources.devices = [];
+    remoteSources.catalogs.clear();
+    view.rerender(<MemoryRouter initialEntries={['/settings?tab=providers']}><ProvidersSection /></MemoryRouter>);
+    if (connected) {
+      expect(await screen.findByRole('button', { name: /^Anthropic/ })).toBeTruthy();
+      expect(screen.getByText('Local model')).toBeTruthy();
+    }
+    expect(screen.queryByText('Remote Opus')).toBeNull();
+  });
+
   // #9517 review, unit: exercise the real provider header's default-account
   // reconnect. Wizard/account-list tests do not cover this independent catch.
   it.each([

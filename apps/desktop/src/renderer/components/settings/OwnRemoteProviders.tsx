@@ -213,10 +213,6 @@ export function OwnRemoteProviderDetail({ entry, pendingShareRequests = 0, onMan
 }) {
   const { t } = useTranslation();
   const name = providerDisplayName(entry.provider, t);
-  const models = useMemo(
-    () => readOnlyProviderModels(entry.provider, entry.modelVisibilityOverrides),
-    [entry.provider, entry.modelVisibilityOverrides],
-  );
   return (
     <div data-testid="own-remote-provider-detail" className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-5 py-4">
@@ -265,31 +261,42 @@ export function OwnRemoteProviderDetail({ entry, pendingShareRequests = 0, onMan
         data-testid="provider-detail-scroll"
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
       >
-        <div
-          className="shrink-0 border-t px-5 py-3"
-          style={{ borderColor: 'var(--settings-theme-card-border)' }}
-        >
-          <p className="text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
-            {t(entry.group ? 'settings.providers.remote.groupNote' : 'settings.providers.remote.detailNote', {
-              device: entry.deviceName,
-            })}
-          </p>
-        </div>
-
-        {!entry.group && <OwnRemoteProviderQuota key={entry.key} entry={entry} />}
-
-        {entry.group && (
-          <RemoteProviderGroupMembers deviceId={entry.deviceId} providerId={entry.provider.id} config={entry.group} />
-        )}
-
-        <ReadOnlyProviderModelSection
-          title={t('settings.providers.remote.modelsTitle')}
-          models={models}
-          note={models.length === 0 ? t('settings.providers.remote.modelsEmpty') : null}
-          testId="own-remote-provider-models"
-        />
+        <OwnRemoteProviderContent entry={entry} />
       </div>
     </div>
+  );
+}
+
+/** Shared by a standalone remote entry and a provider folded into its run location. */
+export function OwnRemoteProviderContent({ entry }: { entry: OwnRemoteProvider }) {
+  const { t } = useTranslation();
+  const models = readOnlyProviderModels(entry.provider, entry.modelVisibilityOverrides);
+  return (
+    <>
+      <div
+        className="shrink-0 border-t px-5 py-3"
+        style={{ borderColor: 'var(--settings-theme-card-border)' }}
+      >
+        <p className="text-13 leading-[1.5]" style={{ color: 'var(--settings-section-desc)' }}>
+          {t(entry.group ? 'settings.providers.remote.groupNote' : 'settings.providers.remote.detailNote', {
+            device: entry.deviceName,
+          })}
+        </p>
+      </div>
+
+      {!entry.group && <OwnRemoteProviderQuota key={entry.key} entry={entry} />}
+
+      {entry.group && (
+        <RemoteProviderGroupMembers deviceId={entry.deviceId} providerId={entry.provider.id} config={entry.group} />
+      )}
+
+      <ReadOnlyProviderModelSection
+        title={t('settings.providers.remote.modelsTitle')}
+        models={models}
+        note={models.length === 0 ? t('settings.providers.remote.modelsEmpty') : null}
+        testId="own-remote-provider-models"
+      />
+    </>
   );
 }
 
