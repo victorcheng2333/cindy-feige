@@ -14,6 +14,9 @@ import { createRnWebSocket } from "./socket";
 import { selectCodexUsageForModel } from "../../../packages/maker-shared/src/codexUsageBuckets";
 const SESSION_KEY = "usage-cn-session";
 const LAST_DEVICE_KEY = "usage-cn-last-device-v1";
+// Existing optional scope: read the default account itself even when the host
+// pauses its pool scheduling. Older hosts ignore the appended argument.
+const DEFAULT_ACCOUNT_USAGE_SCOPE = "default-subscription-account";
 let storageQueue: Promise<unknown> = Promise.resolve();
 function store(action: () => Promise<void>) {
   const result = storageQueue.catch(() => {}).then(action);
@@ -260,7 +263,7 @@ export class Remote {
         if (isOpenAi) {
           const raw = await read(
             "maker:usage:codex-rate-limits",
-            p.id === "openai" ? [] : [p.id],
+            p.id === "openai" ? [p.id, DEFAULT_ACCOUNT_USAGE_SCOPE] : [p.id],
           );
           if (
             (raw?.providerId !== undefined && raw.providerId !== p.id) ||
@@ -302,7 +305,7 @@ export class Remote {
         }
         const raw = await read(
           "maker:usage:claude-subscription",
-          p.id === "anthropic" ? [] : [p.id],
+          p.id === "anthropic" ? [p.id, false, DEFAULT_ACCOUNT_USAGE_SCOPE] : [p.id],
         );
         if (p.id !== "anthropic" && raw?.providerId !== p.id)
           throw Error("账号作用域不支持");

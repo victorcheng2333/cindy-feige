@@ -32,6 +32,8 @@ pnpm --dir apps/remote-ios-usage exec expo export --platform ios
 
 使用 `@cindy/auth-client`、`@cindy/device-link` 既有协议和中国大陆公开端点。
 仅调用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`，按连接 ID 校验独立账号。
+默认 Claude / OpenAI 查询附加既有 `default-subscription-account` 作用域，读取账号自身额度，
+不受暂停任务分配影响，也不借用池内其他账号额度。旧 Cindy 忽略附加参数，独立连接仍按原连接 ID 查询。
 Cursor 额度由专用只读接口发现，不开放 Cursor 的远程执行能力；旧端不支持时明确提示更新，不借用其他账号或本机额度。
 界面只提供只读功能，不代表服务端为这个客户端颁发了只读权限。
 
@@ -69,6 +71,12 @@ SSO 检查：xd 已识别为心动公司；mobile 授权请求被现网接受并
 不跨账号恢复。旧版未记录过停留位置，升级后首次仍进入首页，从新版选过设备后开始记忆。
 
 ## 验证
+
+0.1.0（14）：默认 Claude / OpenAI 查询明确读取默认账号自身额度，兼容远端账号暂停分配的情况；
+旧端仍忽略附加作用域，独立连接按原 ID 查询，请求次数不变。最小回归先复现两个默认账号的空窗口，
+修复后 41 项定向测试、类型检查和文档检查通过。Release 开发签名构建成功，
+已按原 Bundle ID 覆盖安装到既有真机，设备清单回读构建号 14，启动后进程仍在运行。
+本次未完成额度页面的真机目检；屏幕共享已停止并退出 Device Hub。
 
 ```sh
 pnpm exec vitest run apps/remote-ios-usage/src --config apps/mobile/vitest.config.ts

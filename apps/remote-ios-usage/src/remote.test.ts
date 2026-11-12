@@ -25,6 +25,27 @@ const make = () => {
   r.connect = vi.fn(async () => ({ openLink: vi.fn(), invoke }) as any);
   return { r, invoke };
 };
+// Unit regression: usage() must show a paused default account's own quota.
+// Existing cases always returned quota for default calls, hiding the pool's null
+// reply. Minimal input: one default provider whose pool is unavailable, but whose
+// existing explicit account scope still returns a five-hour window.
+it.each([
+  ["anthropic", "claude", ["anthropic", false, "default-subscription-account"]],
+  ["openai", "codex", ["openai", "default-subscription-account"]],
+] as const)("reads the %s default account quota when pool scheduling is paused", async (id, native, args) => {
+  const { r, invoke } = make();
+  invoke.mockImplementation(async (_device, request) => {
+    if (request.channel === "maker:provider:list") return {
+      ok: true, result: { providers: [{ id, connected: true, auth: { method: "oauth", native } }] },
+    };
+    const payload = native === "claude"
+      ? { providerId: id, fiveHour: { utilization: 32 } }
+      : { providerId: id, rateLimits: { primary: { usedPercent: 32, windowMinutes: 300 } } };
+    return { ok: true, result: JSON.stringify(request.args) === JSON.stringify(args) ? payload : null };
+  });
+  const accounts = await r.usage("mac");
+  expect(accounts[0]).toMatchObject({ id, failed: false, windows: [{ minutes: 300, left: 68 }] });
+});
 it("keeps two Claude accounts separate and rejects an unscoped legacy reply", async () => {
   const { r, invoke } = make();
   invoke.mockImplementation(async (_d, p) => ({
@@ -164,7 +185,7 @@ it("reads ChatGPT generic quota instead of the most recent model-specific bucket
               auth: { method: "oauth", native: "codex" },
             })),
           }
-        : p.args.length
+        : p.args[0] === "second"
           ? { providerId: "openai", rateLimits: generic }
           : {
               account: { planType: "pro" },
@@ -188,7 +209,7 @@ it("reads ChatGPT generic quota instead of the most recent model-specific bucket
       .filter((c) => c[1].channel !== "maker:provider:list")
       .map((c) => c[1]),
   ).toEqual([
-    { channel: "maker:usage:codex-rate-limits", args: [] },
+    { channel: "maker:usage:codex-rate-limits", args: ["openai", "default-subscription-account"] },
     { channel: "maker:usage:codex-rate-limits", args: ["second"] },
   ]);
 });
