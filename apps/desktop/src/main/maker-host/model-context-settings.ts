@@ -148,9 +148,8 @@ export function resolveSessionContextWindowBounds(input: {
     defaultEffectiveWindow: resolveConfiguredContextWindow(
       input.catalog, input.agent, source, input.modelId, null,
     ),
-    // main 会施加的物理上限。用同一支 resolveVerifiedContextWindow 传一个极大的预算取回它的
-    // `contextWindowMax ?? contextWindow`（不为任何值做第二套推导）；路由不唯一/未核实 → null。
-    maxEffectiveWindow: resolveVerifiedContextWindow(
+    // 显式模型设置可覆盖目录窗口；菜单必须使用运行时接受的上限。
+    maxEffectiveWindow: bounds && modelLimit !== null ? modelLimit : resolveVerifiedContextWindow(
       input.catalog, input.agent, source, input.modelId, Number.MAX_SAFE_INTEGER,
     ),
     // 本进程就是这两个字段的权威来源：显式申报，调用方据此区分「未核实 → 无这道夹」与
@@ -179,7 +178,7 @@ export function resolveDesktopModelEfforts(
     ?.models[agent]?.find((model) => model.id === modelId)?.efforts ?? null;
 }
 
-/** Working budgets can tighten history protection, but never raise its verified ceiling. */
+/** Resolve the configured working window, with explicit model settings above catalog defaults. */
 export function resolveConfiguredContextWindow(
   catalog: Pick<Catalog, 'providers'>,
   agent: AgentKind,
@@ -192,6 +191,11 @@ export function resolveConfiguredContextWindow(
   const rows = catalog.providers
     .filter(provider => provider.id === source && provider.routing[agent]?.disabled !== true)
     .flatMap(provider => (provider.models[agent] ?? []).filter(model => model.id === modelId));
+  // 模型设置是用户对目录窗口的显式覆盖，任务档位在该覆盖内收紧。
+  // 仍须匹配唯一可用路由，避免已移除或停用的模型借旧设置恢复执行。
+  if (rows.length === 1 && modelLimit !== null) {
+    return tighterBudget(sessionBudget, modelLimit);
+  }
   const declaredMax = rows.length === 1
     && typeof rows[0]!.contextWindowMax === 'number'
     && Number.isFinite(rows[0]!.contextWindowMax)
@@ -201,8 +205,7 @@ export function resolveConfiguredContextWindow(
   // 任务预算是用户可写的设置，对外承诺「不越过目录声明的物理上限」：即使路由**未核实**
   // （contextWindowVerified !== true）也要夹一次 —— 未核实但声明了 max_context_window
   // 的目录形态真实存在（发现流程只拿到 max 时就是 verified=false + contextWindowMax 有值）。
-  // 模型级上限刻意不夹：它同时是「路由把窗口配错时用户强行解开」的逃生口
-  // （见 model-context-limit-store 头注），两者作用域不同。
+  // 显式模型覆盖已在上面处理；没有覆盖时才使用目录上限。
   const requested = typeof sessionBudget === 'number' && Number.isFinite(sessionBudget) && sessionBudget > 0
     ? Math.round(sessionBudget) : null;
   const clampedByCatalog = requested !== null && declaredMax !== null

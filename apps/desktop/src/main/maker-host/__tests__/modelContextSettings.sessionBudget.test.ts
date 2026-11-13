@@ -38,6 +38,7 @@ vi.mock('../catalog-to-descriptors.js', async () => {
 
 import { resolveConfiguredContextWindow, contextWindowBudgetChangesEffectiveWindow, resolveDesktopModelContextProviderId, resolveSessionContextWindowBounds, applySessionContextWindowBudgetToCreateOpts } from '../model-context-settings';
 import { writeSessionContextWindowBudget } from '../session-context-budget-store';
+import { buildContextWindowBudgetOptions } from '../../../shared/sessionContextWindowBudget';
 
 /** 目录里 1M 物理上限、默认工作窗口 200K 的路由（服务端压低过默认值）。 */
 const catalog: Pick<Catalog, 'providers'> = {
@@ -212,10 +213,10 @@ describe('resolveSessionContextWindowBounds', () => {
       modelLimit: 800_000,
       budget: null,
       budgetCustomized: false,
-      // 默认档（清掉任务预算）= min(模型级上限 800K, 物理上限 1M)；已核实路由由 main 夹一次。
+      // 清掉任务预算后跟随显式模型设置。
       defaultEffectiveWindow: 800_000,
-      // 物理上限 = contextWindowMax（1M）。
-      maxEffectiveWindow: 1_000_000,
+      // 显式模型设置决定菜单与运行时的有效上限。
+      maxEffectiveWindow: 800_000,
       effectiveWindowsReported: true,
     });
   });
@@ -297,8 +298,7 @@ describe('resolveSessionContextWindowBounds', () => {
       budget: null,
       budgetCustomized: false,
       defaultEffectiveWindow: 1_000_000,
-      // 未核实路由没有「物理上限」这道夹（预算就是工作上限）。
-      maxEffectiveWindow: null,
+      maxEffectiveWindow: 1_000_000,
       effectiveWindowsReported: true,
     });
   });
@@ -323,6 +323,30 @@ describe('applySessionContextWindowBudgetToCreateOpts', () => {
     providerId?: string | null;
     model?: string | null;
   };
+
+  // 用户实测：目录 272K + 显式 1M 只显示一档。已有测试仅覆盖低于目录的覆盖值。
+  // unit：从边界查询生成实际菜单档位，再验证创建参数使用所选 500K。
+  it.each([undefined, 272_000])('uses the model override for tiers and runtime with catalog max %s', async (contextWindowMax) => {
+    const overriddenCatalog = structuredClone(catalog);
+    const model = overriddenCatalog.providers[0]!.models['claude-code']![0]!;
+    model.contextWindow = 272_000;
+    model.contextWindowMax = contextWindowMax;
+    mockModelLimit = 1_000_000;
+    const bounds = resolveSessionContextWindowBounds({
+      catalog: overriddenCatalog, agent: 'claude-code', providerId: 'xd', modelId: model.id,
+    });
+    expect(buildContextWindowBudgetOptions({
+      defaultWindow: bounds.defaultEffectiveWindow,
+      maxWindow: bounds.maxEffectiveWindow,
+      modelLimit: bounds.modelLimit,
+    }).map(option => option.tokens)).toEqual([250_000, 500_000, 1_000_000]);
+    const opts = optsFor({ contextWindowBudget: 500_000 });
+    await applySessionContextWindowBudgetToCreateOpts('override-session', opts, overriddenCatalog);
+    expect(opts.contextWindowBudget).toBe(500_000);
+    mockModelLimit = null;
+    expect(resolveConfiguredContextWindow(overriddenCatalog, 'claude-code', 'xd', model.id, 500_000))
+      .toBe(272_000);
+  });
 
   it('读已存档位并按目录上限收敛后写进创建参数', async () => {
     // worker 唤醒 / 进程重启后的恢复路径靠这一步把预算带回引擎：缺了它，Pi 的

@@ -8,8 +8,8 @@
  *
  * 约束（与 `model-context-limit-store` 同一口径）：
  *   - 预算可以低于模型路由默认（更省），也可以在目录声明的物理上限内提高；
- *   - **绝不越过目录声明的 `contextWindowMax`**，也不越过用户在同一路由上设过的
- *     模型级「上下文上限」（两者取更紧者，见 `maker-host/model-context-settings.ts`）；
+ *   - 用户显式模型上限优先于目录；任务预算不越过该上限。没有模型覆盖时，
+ *     按目录声明的容量收敛（见 `maker-host/model-context-settings.ts`）；
  *   - NULL / undefined = 未自定义，跟随模型路由默认（老任务零影响）。
  *
  * 本模块只做取值合法性收敛与档位推导，不读取目录、不读 DB。

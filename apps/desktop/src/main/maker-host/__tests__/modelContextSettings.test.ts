@@ -69,11 +69,11 @@ describe('implicit context settings use the startup source in history protection
     expect(resolveConfiguredContextWindow(catalog, agent, 'xd', 'shared-model')).toBe(120_000);
   });
 
-  it.each(['claude-code', 'codex', 'pi'] as const)('%s keeps the physical ceiling below a larger working override', (agent) => {
+  it.each(['claude-code', 'codex', 'pi'] as const)('%s honors an explicit working override above the catalog window', (agent) => {
     const catalog = dualCatalog(agent);
     state.limits.set(`${agent}:xd:shared-model`, 1_000_000);
-    expect(resolveConfiguredContextWindow(catalog, agent, null, 'shared-model')).toBe(128_000);
-    // Stored/native budget stays untouched by the history ceiling.
+    expect(resolveConfiguredContextWindow(catalog, agent, null, 'shared-model')).toBe(1_000_000);
+    expect(resolveConfiguredContextWindow(catalog, agent, null, 'shared-model', 500_000)).toBe(500_000);
     expect(state.limits.get(`${agent}:xd:shared-model`)).toBe(1_000_000);
   });
 
