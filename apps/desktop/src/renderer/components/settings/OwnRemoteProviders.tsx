@@ -12,9 +12,9 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ProviderView } from '@cindy/model-providers';
-import { remoteInvocationModels } from '@cindy/model-providers';
+import { providerCatalogId, remoteInvocationModels } from '@cindy/model-providers';
 
-import { hasProviderLogo, ProviderLogoMark } from '@/components/icons/ProviderLogoMark';
+import { ProviderLogoMark } from '@/components/icons/ProviderLogoMark';
 import { RemoteSourceMark } from '@/components/icons/RemoteSourceMark';
 import { remoteAgentProviders } from '@/components/new-chat/unifiedModelSelection';
 import { QuotaHoverCard } from '@/components/status/QuotaHoverCard';
@@ -121,11 +121,13 @@ export function useOwnRemoteProviders(): readonly OwnRemoteProvider[] {
 function RemoteProviderIcon({ provider, size }: { provider: ProviderView; size: number }) {
   return (
     <RemoteSourceMark markSize={size}>
-      {hasProviderLogo(provider.id, provider.routing) ? (
-        <ProviderLogoMark providerId={provider.id} routing={provider.routing} logoKind={provider.logoKind} size={size} />
-      ) : (
-        <span className="text-15 font-medium leading-none">{providerMonogram(provider.name)}</span>
-      )}
+      <ProviderLogoMark
+        providerId={providerCatalogId(provider)}
+        routing={provider.routing}
+        logoKind={provider.logoKind}
+        size={size}
+        fallback={<span className="text-15 font-medium leading-none">{providerMonogram(provider.name)}</span>}
+      />
     </RemoteSourceMark>
   );
 }
