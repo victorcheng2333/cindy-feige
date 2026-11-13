@@ -1443,6 +1443,7 @@ export function NewMakerDraftRoute() {
     () => (effectiveAgentDeviceId ? remoteAgentProviders(deviceProviders) : deviceProviders),
     [effectiveAgentDeviceId, deviceProviders],
   );
+  const remoteDraftProviders = deviceProvidersUnsupported ? undefined : agentCatalogProviders;
   // 保留原始选择器和独立引擎下拉。老被控端只有 capabilities、没有供应商目录时，
   // 仍走兼容列表与引擎下拉；否则联合列表会为空，也无法切换引擎。
   const unifiedModelPanelEnabled = !catalogDeviceId || !deviceProvidersUnsupported;
@@ -1485,7 +1486,7 @@ export function NewMakerDraftRoute() {
     // 选中那个来源 —— 于是 providerId 落 null、main 解析到同一个被用户排除的默认来源，
     // effort / fast 也从错误的条目推导(PR #548 review)。
     // 排除口径按「停用」轴(m.disabled)+ 非 agent 分组的能力模型;「隐藏」不排除 ——
-    // 隐藏只是陈列过滤,兜底路由仍可选中(2026-07 启用/显示双轴拆分,用户裁决)。
+    // 草稿校准时再按当前电脑的可见性过滤，SSH 目录不读取本机开关。
     return base
       .map((p) => {
         const models = p.models[capabilityAgentKind] ?? [];
@@ -1676,7 +1677,7 @@ export function NewMakerDraftRoute() {
   // seed dlSel:等被控端 capabilities + 草稿值都就绪后播种。切设备 / vendor 必须重种；同一目标
   // 在被控端明确未选过模型且控制端未编辑时，允许 capabilities 刷新重新校准区域默认。
   useRemoteDraftSelection({
-    remoteDefaults, usesDeviceCatalog, catalogDeviceId, capabilityAgentKind, agentCatalogProviders,
+    remoteDefaults, usesDeviceCatalog, catalogDeviceId, capabilityAgentKind, agentCatalogProviders: remoteDraftProviders,
     capabilities, capabilitiesLoading, deviceProvidersLoading, deviceProvidersUnsupported,
     deviceDraftDefaultsReady, deviceDraftDefaults, isAgentDeviceDraft,
   });
@@ -1699,7 +1700,7 @@ export function NewMakerDraftRoute() {
         null,
         undefined,
         capabilityAgentKind,
-        agentCatalogProviders,
+        remoteDraftProviders,
       );
     }
     return null;
@@ -1708,7 +1709,7 @@ export function NewMakerDraftRoute() {
     dlSel,
     capabilities,
     capabilityAgentKind,
-    agentCatalogProviders,
+    remoteDraftProviders,
   ]);
 
   // ── device-link 草稿列表「纯显示镜像」(非选中行的 effort/fast) ──────────────────
@@ -1737,7 +1738,7 @@ export function NewMakerDraftRoute() {
   // 订阅被控端草稿全量变更 push:被控端本地改 / 应用控制端写穿后回流 → 刷新 remoteDraftState
   // (驱动镜像 effect + 选中行还原)。控制端是纯显示,这里只更新显示态、不回写被控端。
   useRemoteDraftPush({
-    remoteDefaults, isDeviceLinkDraft, effectiveDeviceLinkDeviceId, effectiveAgentDeviceId, capabilityAgentKind, capabilities, agentCatalogProviders, wtPreferenceTransactionRef
+    remoteDefaults, isDeviceLinkDraft, effectiveDeviceLinkDeviceId, effectiveAgentDeviceId, capabilityAgentKind, capabilities, agentCatalogProviders: remoteDraftProviders, wtPreferenceTransactionRef
   });
 
   // ── worktree 勾选 = 工作端记忆的镜像(2026-07-29 用户裁决:状态只属于用户) ────
@@ -2841,7 +2842,7 @@ export function NewMakerDraftRoute() {
           deviceDraftDefaults,
           newModelId,
           capabilityAgentKind,
-          agentCatalogProviders,
+          remoteDraftProviders,
         );
         setDlSel((prev) => ({
           ...resolved,
@@ -2863,7 +2864,7 @@ export function NewMakerDraftRoute() {
       deviceDraftDefaults,
       patchActiveTuplePrefs,
       capabilityAgentKind,
-      agentCatalogProviders,
+      remoteDraftProviders,
     ],
   );
   const handleFastModeChange = useCallback(
@@ -3126,7 +3127,7 @@ export function NewMakerDraftRoute() {
                 },
                 selection.modelId,
                 capabilityAgentKind,
-                agentCatalogProviders,
+                remoteDraftProviders,
               )
             : previous;
           // 能力与镜像都还没到:推不出任何一档,保持原状而不是编一个默认值。
@@ -3213,7 +3214,7 @@ export function NewMakerDraftRoute() {
       capabilities,
       deviceDraftDefaults,
       capabilityAgentKind,
-      agentCatalogProviders,
+      remoteDraftProviders,
       pushActiveDraftPref,
     ],
   );

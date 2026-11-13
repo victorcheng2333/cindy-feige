@@ -16,6 +16,8 @@
  */
 
 import {
+  connectedProvidersForAgent,
+  isModelSelectableForNewRoute,
   effectiveSourceIdForModel,
   getModel,
   type ProviderView,
@@ -125,7 +127,7 @@ export function resolveDeviceLinkWorktreeEnabled(
 /**
  * 把被控端草稿值(或 null=回落)按被控端 capabilities 校准成可 seed 的选择。
  *   - model:要解析的模型 = targetModel(用户在草稿里切模型)优先,否则 remoteDraft.model(初始 seed);
- *     该 id 在被控端清单内则用它,否则被控端 availableModels[0]。
+ *     优先使用被控端供应商目录中仍可选的模型。仅旧端无目录时使用 availableModels。
  *   - 传 agentKind(New Maker 正式路径)时,effort/fast 优先读 `${agent}:*` 全局模型预设——首页
  *     没有运行中会话,当前显示模型也不受保护。兼容调用未传 agentKind 时保留旧顺序:
  *       · 当前模型 → 草稿激活值 remoteDraft.effort / remoteDraft.fastMode;
@@ -142,8 +144,16 @@ export function resolveDeviceLinkDraftDefaults(
   agentKind?: AgentKind,
   providers?: ProviderView[],
 ): DeviceLinkDraftSelection {
-  const models = capabilities.availableModels;
+  // The host projects visibility into provider:list. Its flat capability snapshot can
+  // still include hidden models or omit models added since the runtime started.
   const providerId = remoteDraft?.providerId ?? null;
+  const catalogModels = agentKind && providers
+    ? connectedProvidersForAgent(providers, agentKind)
+        .filter(source => !providerId || source.id === providerId)
+        .flatMap(source => (source.models[agentKind] ?? []).filter(model =>
+          isModelSelectableForNewRoute(model, { userProvider: source.source === 'user' })))
+    : undefined;
+  const models = catalogModels ?? capabilities.availableModels;
   const permissionMode = pickPermissionMode(capabilities, remoteDraft?.permissionMode);
 
   // 要解析哪个模型:控制端本次显式 targetModel(切模型)永远优先。初始 seed 只有在**新端明确
@@ -171,7 +181,7 @@ export function resolveDeviceLinkDraftDefaults(
 
   if (models.length === 0) {
     return {
-      model: wantedModelId ?? '',
+      model: catalogModels ? '' : wantedModelId ?? '',
       effort: (remoteDraft?.effort as Effort | null | undefined) ?? 'high',
       fastMode: false,
       permissionMode,

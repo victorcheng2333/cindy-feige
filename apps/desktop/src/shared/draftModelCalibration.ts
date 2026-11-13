@@ -6,9 +6,8 @@
  * 一个没有任何已连接来源的模型上，Send 被禁用、只能弹「当前模型没有已连接的来源」，用户还没
  * 开始用就先撞墙。这里负责把默认落到**真正可用**的模型上。
  *
- * 这里只校准**用户从没显式选过模型**的默认值（`modelChosenByVendor` 区分「真选过」与
- * 「默认回填」）。已有来源偏好时，校准候选收窄到该来源，保证模型与来源成对变化；用户自己
- * 选过模型则一律不动。静默改写比撞墙更糟——那会让「我明明选了 Anthropic」变成无法自查。
+ * 本地新任务保留仍可见、可用的手选模型；已隐藏的旧选择与自动种子都要重新校准。
+ * 已有来源偏好时在该来源内选，不因模型隐藏悄悄切换供应商。
  */
 
 import {
@@ -227,13 +226,13 @@ export interface DraftModelCalibrationInput {
   preferredProviderId?: string | null;
   /** 供应商清单是否仍在加载：加载期不校准，避免首帧把默认模型闪成别的。 */
   providersLoading: boolean;
-  /** Use the startup model switches for factory recommendations; hidden fallback remains available. */
+  /** Live visibility for new drafts, including remembered choices and fallbacks. */
   isModelEnabled?: ModelEnabledPredicate;
 }
 
 /** 校准结果：草稿应当展示 / 发送的模型，以及（若校准出了结论）它该走哪家来源。 */
 export interface DraftModelCalibrationResult {
-  /** 草稿应当展示 / 发送的模型 id（不可校准时原样返回，绝不为空）。 */
+  /** 草稿应当展示 / 发送的模型 id；按本机可见性筛完没有候选时为空。 */
   model: string;
   /**
    * 建议来源。`null` = 本次没给出结论（用户已显式选过 / 清单还在加载 / 一个来源都没有），
@@ -244,7 +243,7 @@ export interface DraftModelCalibrationResult {
 }
 
 export function calibrateDraftModel({
-  providers,
+  providers: catalog,
   agent,
   model,
   chosenByUser,
@@ -252,7 +251,24 @@ export function calibrateDraftModel({
   providersLoading,
   isModelEnabled,
 }: DraftModelCalibrationInput): DraftModelCalibrationResult {
-  if (chosenByUser || providersLoading) return { model, providerId: null };
+  if (providersLoading) return { model, providerId: null };
+  // Apply the draft owner’s switches before restoring a choice, following a catalog
+  // marker or falling back by order. Keep the provider even if all its models are hidden.
+  const providers = isModelEnabled ? catalog.map(provider => {
+    const models = provider.models[agent] ?? [];
+    const visible = models.filter(candidate => isModelEnabled(agent, provider.id, candidate));
+    return visible.length === models.length ? provider : {
+      ...provider, models: { ...provider.models, [agent]: visible },
+    };
+  }) : catalog;
+  if (chosenByUser) {
+    if (!isModelEnabled) return { model, providerId: null };
+    const source = effectiveSourceIdForModel([...providers], preferredProviderId, model, agent);
+    if (source) {
+      const originalSource = effectiveSourceIdForModel([...catalog], preferredProviderId, model, agent);
+      return { model, providerId: source === originalSource ? null : source };
+    }
+  }
   const connectedPreferred = preferredProviderId
     ? connectedProvidersForAgent([...providers], agent).find(
         (provider) => provider.id === preferredProviderId,
@@ -289,7 +305,7 @@ export function calibrateDraftModel({
   }
   const candidates = connectedPreferred ? [connectedPreferred] : providers;
   const picked = pickConnectedModelForAgent(candidates, agent, model, isModelEnabled);
-  return picked ?? { model, providerId: null };
+  return picked ?? { model: isModelEnabled ? '' : model, providerId: null };
 }
 
 /** 新建任务里某个 Harness 当前的模型选择（renderer 草稿，或 main 侧的草稿镜像）。 */

@@ -143,7 +143,7 @@ export function useRemoteDraftSelection({
   usesDeviceCatalog: boolean;
   catalogDeviceId: string | undefined;
   capabilityAgentKind: AgentKind;
-  agentCatalogProviders: ProviderView[];
+  agentCatalogProviders: ProviderView[] | undefined;
   capabilities: AgentCapabilities | null;
   capabilitiesLoading: boolean;
   deviceProvidersLoading: boolean;
@@ -153,6 +153,8 @@ export function useRemoteDraftSelection({
   isAgentDeviceDraft: boolean;
 }) {
   const { dlSeedKeyRef, dlSeedCapabilitiesRef, dlSeedDefaultsRef, dlRuntimeTouchedRef, setDlSel } = remoteDefaults;
+  const catalog = deviceProvidersUnsupported ? undefined : agentCatalogProviders;
+  const previousCatalog = useRef(catalog);
   useEffect(() => {
     if (!usesDeviceCatalog || !catalogDeviceId) {
       dlSeedKeyRef.current = null;
@@ -175,7 +177,9 @@ export function useRemoteDraftSelection({
     ) return;
     const key = `${catalogDeviceId}:${capabilityAgentKind}`;
     const newTarget = dlSeedKeyRef.current !== key;
-    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities;
+    const capabilitiesChanged = dlSeedCapabilitiesRef.current !== capabilities ||
+      previousCatalog.current !== catalog;
+    previousCatalog.current = catalog;
     if (
       !shouldReseedDeviceLinkDraftDefaults({
         currentSeedKey: dlSeedKeyRef.current,
@@ -204,7 +208,7 @@ export function useRemoteDraftSelection({
                 },
                 current.model,
                 capabilityAgentKind,
-                agentCatalogProviders,
+                catalog,
               )
             : current,
         );
@@ -221,14 +225,14 @@ export function useRemoteDraftSelection({
         deviceDraftDefaults,
         undefined,
         capabilityAgentKind,
-        agentCatalogProviders,
+        catalog,
       ),
     );
   }, [
     usesDeviceCatalog,
     catalogDeviceId,
     capabilityAgentKind,
-    agentCatalogProviders,
+    catalog,
     capabilities,
     capabilitiesLoading,
     deviceProvidersLoading,
@@ -248,7 +252,7 @@ export function useRemoteDraftPush({
   effectiveAgentDeviceId: string | undefined;
   capabilityAgentKind: AgentKind;
   capabilities: AgentCapabilities | null;
-  agentCatalogProviders: ProviderView[];
+  agentCatalogProviders: ProviderView[] | undefined;
   wtPreferenceTransactionRef: MutableRefObject<Parameters<typeof rememberRemoteDraftDefaults>[3]>;
 }) {
   const { remoteDraftRevisionRef, setRemoteDraftState, setDlSel } = remoteDefaults;

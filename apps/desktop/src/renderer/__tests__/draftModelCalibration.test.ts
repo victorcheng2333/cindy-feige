@@ -461,6 +461,15 @@ describe('calibrateDraftModel', () => {
     expect(calibratedId({ ...base, chosenByUser: true })).toBe('claude-opus-4-8');
   });
 
+  it.each([true, false])('skips a hidden Claude default when restoring a saved choice or catalog marker (chosen=%s)', chosenByUser => {
+    const hidden = model('google/gemini-4-carbon', { newSessionDefault: ['claude-code'] });
+    const tap = provider('tapsvc', true, { 'claude-code': [hidden, model('claude-opus-5-5')] });
+    const input = { ...base, providers: [tap], preferredProviderId: tap.id, model: hidden.id, chosenByUser };
+    expect(calibrateDraftModel({ ...input, isModelEnabled: (_agent, _source, m) => m.id !== hidden.id }))
+      .toEqual({ model: 'claude-opus-5-5', providerId: tap.id });
+    expect(calibrateDraftModel({ ...input, isModelEnabled: () => false })).toEqual({ model: '', providerId: null });
+  });
+
   it('供应商清单加载期不校准,避免首帧闪模型', () => {
     expect(calibratedId({ ...base, chosenByUser: false, providersLoading: true })).toBe(
       'claude-opus-4-8',
@@ -920,12 +929,12 @@ describe('factory defaults survive send-time calibration', () => {
     // Reopening the switch makes the factory recommendation eligible again.
     expect(calibrateDraftModel({ ...input, isModelEnabled: () => true }))
       .toEqual({ model: 'gpt-6.1-sol', providerId: 'openai' });
-    // A hidden model explicitly selected by the user still wins.
+    // A later hide also applies to a previously selected model in a new draft.
     expect(calibrateDraftModel({ ...input, model: 'gpt-6.1-sol', chosenByUser: true, isModelEnabled }))
-      .toEqual({ model: 'gpt-6.1-sol', providerId: null });
-    // Hiding every model must not disable the existing usable-route fallback.
-    expect(calibrateDraftModel({ ...input, isModelEnabled: () => false }))
       .toEqual({ model: 'gpt-6-astra', providerId: 'openai' });
+    // With no visible route the new draft requires a selection.
+    expect(calibrateDraftModel({ ...input, isModelEnabled: () => false }))
+      .toEqual({ model: '', providerId: null });
   });
 
   const gateway = provider('xd', true, { pi: [
