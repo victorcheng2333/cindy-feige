@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  visibleRemoteDraftProviders,
   resolveDeviceLinkDraftDefaults,
   resolveDeviceLinkWorktreeEnabled,
   shouldReseedDeviceLinkDraftDefaults,
@@ -83,6 +84,10 @@ describe('resolveDeviceLinkDraftDefaults', () => {
     const host = { ...provider('xd', haiku), agents: ['claude-code'] as AgentKind[],
       routing: { 'claude-code': { upstream: 'https://example.test', authStrategy: 'none' as const } },
       models: { 'claude-code': [haiku] } };
+    // Older hosts return unfiltered models plus a separate visibility map.
+    const oldHost = { ...host, models: { 'claude-code': [providerModel(qwen, [], null), haiku] } };
+    const oldCatalog = visibleRemoteDraftProviders([oldHost], 'claude-code', { ['claude-code:xd:' + qwen]: false });
+    expect(resolveDeviceLinkDraftDefaults(capabilities, { model: qwen, providerId: 'xd' }, undefined, 'claude-code', oldCatalog).model).toBe(haiku.id);
     for (const draft of [null, { model: qwen, modelChosenByUser: false }, { model: qwen, providerId: 'xd' }]) {
       expect(resolveDeviceLinkDraftDefaults(capabilities, draft, undefined, 'claude-code', [host]).model).toBe(haiku.id);
     }

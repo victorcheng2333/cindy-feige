@@ -18,6 +18,7 @@
 import {
   connectedProvidersForAgent,
   isModelSelectableForNewRoute,
+  isModelVisible,
   effectiveSourceIdForModel,
   getModel,
   type ProviderView,
@@ -122,6 +123,23 @@ export function resolveDeviceLinkWorktreeEnabled(
     return remotePreference;
   }
   return deviceChanged ? false : null;
+}
+
+/** Older hosts send visibility alongside the catalog instead of removing hidden rows. */
+export function visibleRemoteDraftProviders(
+  providers: ProviderView[],
+  agent: AgentKind,
+  overrides: Record<string, boolean> | undefined,
+): ProviderView[] {
+  if (!overrides) return providers;
+  return providers.map(provider => {
+    const rows = provider.models[agent] ?? [];
+    const visible = rows.filter(model =>
+      isModelVisible(overrides[`${agent}:${provider.id}:${model.id}`], model.defaultEnabled));
+    return visible.length === rows.length ? provider : {
+      ...provider, models: { ...provider.models, [agent]: visible },
+    };
+  });
 }
 
 /**

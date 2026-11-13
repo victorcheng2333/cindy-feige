@@ -276,7 +276,7 @@ export function useRemoteDraftPush({
           if (!prev) return prev;
           const re = resolveDeviceLinkDraftDefaults(
             capabilities,
-            next,
+            { ...next, providerId: prev.providerId },
             prev.model,
             capabilityAgentKind,
             agentCatalogProviders,

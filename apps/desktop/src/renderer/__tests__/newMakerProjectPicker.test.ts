@@ -1649,7 +1649,7 @@ describe('Shared create project picker', () => {
     );
     const modelSwitchBlock = newMakerDraftRouteSource.slice(
       modelSwitchStart,
-      newMakerDraftRouteSource.indexOf('setDlSel((prev) =>', modelSwitchStart),
+      newMakerDraftRouteSource.indexOf('return { ...resolved', modelSwitchStart),
     );
     const unifiedStart = newMakerDraftRouteSource.indexOf('const baseline = capabilities');
     const unifiedBlock = newMakerDraftRouteSource.slice(
@@ -1657,9 +1657,9 @@ describe('Shared create project picker', () => {
       newMakerDraftRouteSource.indexOf('// 能力与镜像都还没到', unifiedStart),
     );
 
-    for (const block of [pushBlock, modelSwitchBlock, unifiedBlock]) {
-      expect(block).toContain('agentCatalogProviders,');
-    }
+    expect(pushBlock).toContain('agentCatalogProviders,');
+    expect(modelSwitchBlock).toContain('remoteDraftProviders,');
+    expect(unifiedBlock).toContain('remoteDraftProviders,');
     expect(unifiedBlock).toContain('providerId: selection.providerId,');
   });
 

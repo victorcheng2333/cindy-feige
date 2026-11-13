@@ -314,6 +314,7 @@ import {
 } from '@cindy/model-providers';
 import { isSubscriptionDirectModel } from '../../../shared/subscriptionModels';
 import {
+  visibleRemoteDraftProviders,
   resolveDeviceLinkDraftDefaults,
   resolveDeviceLinkWorktreeEnabled,
   type DeviceLinkDraftSelection,
@@ -1395,6 +1396,7 @@ export function NewMakerDraftRoute() {
   ]);
   const {
     providers: deviceProviders,
+    modelVisibilityOverrides: deviceVisibility,
     loading: deviceProvidersLoading,
     error: deviceProvidersError,
     unsupported: deviceProvidersUnsupported,
@@ -1443,7 +1445,9 @@ export function NewMakerDraftRoute() {
     () => (effectiveAgentDeviceId ? remoteAgentProviders(deviceProviders) : deviceProviders),
     [effectiveAgentDeviceId, deviceProviders],
   );
-  const remoteDraftProviders = deviceProvidersUnsupported ? undefined : agentCatalogProviders;
+  const remoteDraftProviders = useMemo(() => deviceProvidersUnsupported ? undefined :
+    visibleRemoteDraftProviders(agentCatalogProviders, capabilityAgentKind, deviceVisibility),
+  [deviceProvidersUnsupported, agentCatalogProviders, capabilityAgentKind, deviceVisibility]);
   // 保留原始选择器和独立引擎下拉。老被控端只有 capabilities、没有供应商目录时，
   // 仍走兼容列表与引擎下拉；否则联合列表会为空，也无法切换引擎。
   const unifiedModelPanelEnabled = !catalogDeviceId || !deviceProvidersUnsupported;
@@ -2601,7 +2605,10 @@ export function NewMakerDraftRoute() {
           ]) as Promise<AgentCapabilities>,
           window.electronAPI.deviceLink.invoke(target.deviceId, 'maker:provider:list', []),
         ]);
-        const freshProviders = parseDeviceProvidersPayload(freshProviderPayload).providers;
+        const freshCatalog = parseDeviceProvidersPayload(freshProviderPayload);
+        const freshProviders = visibleRemoteDraftProviders(
+          freshCatalog.providers, capabilityAgentKind, freshCatalog.modelVisibilityOverrides,
+        );
         // 只有旧版被控端明确不支持 defaults channel 时才回落 capabilities 默认；网络失败
         // 仍然是连接失败，必须让 dialog 保持打开，不能把 null 当成权威空配置。
         const freshDefaults = await window.electronAPI.deviceLink
@@ -2837,18 +2844,16 @@ export function NewMakerDraftRoute() {
         // 切到 newModelId:从被控端整张草稿(含 per-model 记忆 effort/fastModeByModel)按目标模型解析,
         // 即「还原被控端为该模型记的 effort/fast」,而非沿用上一个模型 / capabilities 默认。
         // permission/source 非按模型记 → 保留草稿里的当前选择(prev),不被切模型重置。
-        const resolved = resolveDeviceLinkDraftDefaults(
-          capabilities,
-          deviceDraftDefaults,
-          newModelId,
-          capabilityAgentKind,
-          remoteDraftProviders,
-        );
-        setDlSel((prev) => ({
-          ...resolved,
-          permissionMode: prev?.permissionMode,
-          providerId: prev?.providerId ?? null,
-        }));
+        setDlSel((prev) => {
+          const resolved = resolveDeviceLinkDraftDefaults(
+            capabilities,
+            { ...deviceDraftDefaults, providerId: prev ? prev.providerId : deviceDraftDefaults?.providerId },
+            newModelId,
+            capabilityAgentKind,
+            remoteDraftProviders,
+          );
+          return { ...resolved, permissionMode: prev?.permissionMode ?? resolved.permissionMode };
+        });
         return;
       }
       markDefaultTupleCustomized();
