@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 export const REPOSITORY = 'victorcheng2333/cindy-feige';
+const OWNER = REPOSITORY.split('/')[0];
 const IDENTITY = 'Developer ID Application: Tools UG (KQY8A3BNVG)';
 const TEAM = 'KQY8A3BNVG';
 const ARCHS = ['arm64', 'x64'];
@@ -31,13 +32,28 @@ export function parseArgs(argv) {
   return options;
 }
 
-function run(command, args, capture = false) {
+function run(command, args, capture = false, env = process.env) {
   return execFileSync(command, args, {
     cwd: ROOT,
+    env,
     encoding: 'utf8',
     stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     maxBuffer: 16 * 1024 * 1024,
   })?.trim();
+}
+
+/**
+ * GitHub API calls run as the fork owner. `gh` may hold several accounts and always uses
+ * the active one, while the tag push goes over SSH; with a company account active the tag
+ * landed but the release failed (2026-11-08). The token applies only to this script.
+ */
+export function githubEnv(readToken, env = process.env) {
+  let token = '';
+  try { token = readToken(OWNER)?.trim() ?? ''; } catch { /* reported below */ }
+  if (!token) {
+    throw new Error(`gh has no ${OWNER} account; add it with \`gh auth login\` (it need not be active).`);
+  }
+  return { ...env, GH_TOKEN: token };
 }
 
 function json(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
@@ -145,11 +161,15 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   if (process.platform !== 'darwin') throw new Error('Run on macOS with Xcode and a Developer ID certificate.');
+  let ghEnv = process.env;
   if (!options.prepareOnly) {
     validateOrigin(run('git', ['remote', 'get-url', 'origin'], true));
     validateOrigin(run('git', ['remote', 'get-url', '--push', '--all', 'origin'], true));
-    const repo = JSON.parse(run('gh', ['repo', 'view', REPOSITORY, '--json', 'nameWithOwner'], true));
-    if (repo.nameWithOwner !== REPOSITORY) throw new Error('Unexpected GitHub repository');
+    ghEnv = githubEnv((owner) => run('gh', ['auth', 'token', '-u', owner], true));
+    // Check write access before building or pushing the tag, not when creating the release.
+    const repo = JSON.parse(run('gh', ['api', `repos/${REPOSITORY}`], true, ghEnv));
+    if (repo.full_name !== REPOSITORY) throw new Error('Unexpected GitHub repository');
+    if (repo.permissions?.push !== true) throw new Error(`${OWNER} cannot push to ${REPOSITORY}`);
     // A new tag is required. Never overwrite a release, even after an interrupted upload.
     if (run('git', ['ls-remote', '--tags', 'origin', `refs/tags/${options.tag}`], true)) {
       throw new Error(`Tag already exists: ${options.tag}. Use a new tag or inspect the existing release.`);
@@ -180,8 +200,8 @@ export async function main(argv = process.argv.slice(2)) {
     run('gh', ['release', 'create', options.tag, ...assets, sums,
       '--repo', REPOSITORY, '--verify-tag', '--prerelease', '--latest=false',
       '--title', `Cindy 中国大陆版 · macOS arm64 / x64 · ${options.tag}`,
-      '--notes-file', notes]);
-    const remote = JSON.parse(run('gh', ['api', `repos/${REPOSITORY}/releases/tags/${options.tag}`], true));
+      '--notes-file', notes], false, ghEnv);
+    const remote = JSON.parse(run('gh', ['api', `repos/${REPOSITORY}/releases/tags/${options.tag}`], true, ghEnv));
     if (remote.draft || !remote.prerelease) throw new Error('Release was not published as a prerelease');
     for (const assetPath of [...assets, sums]) {
       const asset = remote.assets.find((item) => item.name === path.basename(assetPath));

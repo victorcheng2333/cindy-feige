@@ -7,8 +7,9 @@ Tools UG (KQY8A3BNVG) 签名，不做 Apple 公证；应用保持 0.0.0，不参
 
 ## 使用
 
-在 macOS 上准备 Xcode、项目依赖、可用签名证书，以及已登录的 `gh` 和 GitHub Git
-推送权限。`origin` 必须指向本 fork。运行：
+在 macOS 上准备 Xcode、项目依赖、可用签名证书，以及 GitHub Git 推送权限。`gh` 里需要
+登录 fork 所有者 `victorcheng2333`，但不必是活跃账号：脚本只对自己的 GitHub 调用使用该
+账号的 token，并在构建和推标签之前确认它对 fork 有写权限。`origin` 必须指向本 fork。运行：
 
 ```bash
 node scripts/release-personal-macos.mjs --tag personal-cn-2026-10-13

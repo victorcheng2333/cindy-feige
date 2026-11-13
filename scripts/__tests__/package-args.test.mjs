@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { parseArgs as parsePersonalReleaseArgs, validateMetadata, commonSource, validateOrigin, REPOSITORY } from '../release-personal-macos.mjs';
+import { parseArgs as parsePersonalReleaseArgs, validateMetadata, commonSource, validateOrigin, githubEnv, REPOSITORY } from '../release-personal-macos.mjs';
 
 test('personal release is restricted to the fork and rejects accidental publishing options', () => {
   assert.equal(REPOSITORY, 'victorcheng2333/cindy-feige');
@@ -28,6 +28,19 @@ test('personal release is restricted to the fork and rejects accidental publishi
   for (const url of ['git@github.com:makecindy/cindy.git', `https://example.com/${REPOSITORY}.git`,
     `git@github.com:${REPOSITORY}.git\ngit@github.com:makecindy/cindy.git`]) {
     assert.throws(() => validateOrigin(url));
+  }
+});
+
+// 2026-11-08: with a company gh account active, the tag was pushed over SSH but the release
+// could not be created. GitHub calls must use the fork owner's token, never the active account.
+test('personal release talks to GitHub as the fork owner, not the active gh account', () => {
+  const asked = [];
+  const env = githubEnv((owner) => { asked.push(owner); return 'owner-token\n'; }, { GH_TOKEN: 'active', PATH: '/bin' });
+  assert.deepEqual(asked, ['victorcheng2333']);
+  assert.equal(env.GH_TOKEN, 'owner-token');
+  assert.equal(env.PATH, '/bin');
+  for (const read of [() => '', () => { throw new Error('no account'); }]) {
+    assert.throws(() => githubEnv(read), /gh has no victorcheng2333 account/);
   }
 });
 
