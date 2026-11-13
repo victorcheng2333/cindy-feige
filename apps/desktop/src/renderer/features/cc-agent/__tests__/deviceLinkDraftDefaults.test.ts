@@ -5,7 +5,7 @@ import {
   resolveDeviceLinkWorktreeEnabled,
   shouldReseedDeviceLinkDraftDefaults,
 } from '../deviceLinkDraftDefaults';
-import type { AgentCapabilities } from '@/hooks/useAgentCapabilities';
+import type { AgentCapabilities, AgentKind } from '@/hooks/useAgentCapabilities';
 import type { CatalogModel, ProviderView } from '@cindy/model-providers';
 
 function providerModel(
@@ -75,6 +75,21 @@ function caps(overrides: Partial<AgentCapabilities> = {}): AgentCapabilities {
 }
 
 describe('resolveDeviceLinkDraftDefaults', () => {
+  it('remote Claude defaults use the host’s selectable models even when its capability snapshot still recommends Qwen', () => {
+    const capabilities = caps();
+    const qwen = 'qwen/qwen4:beta';
+    capabilities.availableModels[0] = { ...capabilities.availableModels[0]!, id: qwen, newSessionDefault: ['claude-code'] };
+    const haiku = providerModel('claude-haiku-4-5', [], null);
+    const host = { ...provider('xd', haiku), agents: ['claude-code'] as AgentKind[],
+      routing: { 'claude-code': { upstream: 'https://example.test', authStrategy: 'none' as const } },
+      models: { 'claude-code': [haiku] } };
+    for (const draft of [null, { model: qwen, modelChosenByUser: false }, { model: qwen, providerId: 'xd' }]) {
+      expect(resolveDeviceLinkDraftDefaults(capabilities, draft, undefined, 'claude-code', [host]).model).toBe(haiku.id);
+    }
+    expect(resolveDeviceLinkDraftDefaults(capabilities, { model: qwen }, undefined, 'claude-code', []).model).toBe('');
+    expect(resolveDeviceLinkDraftDefaults(capabilities, null, undefined, 'claude-code').model).toBe(qwen);
+  });
+
   it('被控端草稿值在清单内 → 原样镜像(model/effort/fast/permission/source)', () => {
     const sel = resolveDeviceLinkDraftDefaults(caps(), {
       model: 'claude-opus-4-8',

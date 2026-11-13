@@ -2158,6 +2158,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       ? getModel(currentModelProvider, modelId, currentAgentKind)
       : undefined;
   const isCurrentModelHidden =
+    actualRoute &&
     !browsing &&
     !!currentAgentKind &&
     !!currentModelProvider &&
@@ -2309,7 +2310,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     const grouped = agents.flatMap((agent) => buildProviderSections({
       providers: filterChatBridgedCodexProviders(orderedSectionProviders, agent, excludeChatBridgedCodex === true),
       agent,
-      selectedModelId: browsingSelectedCatalog || browsingBoundGroupEntry ? modelId : '',
+      selectedModelId: actualRoute && (browsingSelectedCatalog || browsingBoundGroupEntry) ? modelId : '',
       selectedProviderId: browsingBoundGroupEntry ? boundEntry!.providerId : browsingSelectedCatalog ? activeSourceId : null,
       isVisible: (pid, mid) => {
         if (!restrictSuspended(pid, mid)) return false;
@@ -2337,6 +2338,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     // visibilityVersion 仅作刷新触发器(设置页改显示开关后强制重算);deviceId 切换需重算分段。
   }, [
     sourcesEnabled,
+    actualRoute,
     sectionProviders,
     orderedSectionProviders,
     suspendedActiveSourceId,

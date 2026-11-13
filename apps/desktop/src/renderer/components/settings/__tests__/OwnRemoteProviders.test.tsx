@@ -11,6 +11,7 @@ import {
   type OwnRemoteProvider,
 } from '../OwnRemoteProviders';
 import { useOwnedProviderShares } from '@/features/provider-share/useOwnedProviderShares';
+import { ANTHROPIC_MARK_PATH } from '../../../../shared/brandMarkPaths';
 import { setDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 
 vi.mock('react-i18next', () => ({
@@ -316,6 +317,22 @@ describe('OwnRemoteProviderRows / OwnRemoteProviderDetail', () => {
     expect(row.querySelector('[data-remote-source-mark]')).not.toBeNull();
     fireEvent.click(row);
     expect(onSelect).toHaveBeenCalledWith(entry.key);
+  });
+
+  // A remote account may have a custom ID and no upstream in its projected routing.
+  it.each([
+    { logoKind: 'anthropic' as const },
+    { auth: { method: 'oauth' as const, native: 'claude' as const } },
+  ])('shows the Anthropic mark for a renamed remote account identified by %o', (identity) => {
+    const account = { ...entry, provider: { ...entry.provider, id: 'account-8', name: 'Claude-8', ...identity } };
+    render(<>
+      <OwnRemoteProviderRows entries={[account]} selectedKey={account.key} onSelect={() => undefined} />
+      <OwnRemoteProviderDetail entry={account} />
+    </>);
+    for (const surface of ['own-remote-provider-row', 'own-remote-provider-detail']) {
+      const mark = screen.getByTestId(surface).querySelector('[data-remote-source-mark]');
+      expect(mark?.querySelector('path')?.getAttribute('d')).toBe(ANTHROPIC_MARK_PATH);
+    }
   });
 
   it('shows the models that computer leaves visible, read-only', () => {

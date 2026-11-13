@@ -5,6 +5,8 @@
  * 间共享；本组件只负责把共享品牌数据渲染成 currentColor SVG。
  */
 
+import type { ReactNode } from 'react';
+
 import {
   hasProviderLogo,
   isProviderLogoKind,
@@ -27,6 +29,7 @@ interface ProviderLogoMarkProps {
   routing?: ProviderLogoRouting;
   /** Device-link projection resolved this before stripping private routing details. */
   logoKind?: ProviderLogoKind;
+  fallback?: ReactNode;
   size?: number;
   className?: string;
 }
@@ -36,13 +39,14 @@ export function ProviderLogoMark({
   providerId,
   routing,
   logoKind,
+  fallback = null,
   size = 14,
   className,
 }: ProviderLogoMarkProps) {
   const kind = isProviderLogoKind(logoKind)
     ? logoKind
     : resolveProviderLogoKind(providerId, routing);
-  if (!kind) return null;
+  if (!kind) return <>{fallback}</>;
   if (kind === 'anthropic') return <AnthropicMark size={size} className={className} />;
   if (kind === 'openai') return <OpenAIMark size={size} className={className} />;
   if (kind === 'cindy') return <CindyMark size={size} className={className} />;

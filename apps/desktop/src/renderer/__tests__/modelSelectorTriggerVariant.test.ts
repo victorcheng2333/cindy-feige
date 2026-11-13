@@ -2152,8 +2152,19 @@ describe('ModelSelector trigger variants', () => {
     modelVisibilityRef.isEnabled = () => false;
 
     try {
+      const draft = render(
+        React.createElement(ModelSelectorContent, {
+          remoteAgent: undefined,
+          modelId: 'claude-opus-4-8', currentProviderId: 'anthropic', vendorKey: 'cc',
+          effort: 'high', onModelChange: vi.fn(), onEffortChange: vi.fn(), onProviderChange: vi.fn(),
+        }),
+      );
+      expect(screen.queryByRole('option', { name: /Opus 4\.8/ })).toBeNull();
+      draft.unmount();
+
       render(
         React.createElement(ModelSelectorContent, {
+          actualRoute: true,
           remoteAgent: undefined,
           modelId: 'claude-opus-4-8',
           effort: 'high',
@@ -2195,6 +2206,7 @@ describe('ModelSelector trigger variants', () => {
 
     render(
       React.createElement(ModelSelectorContent, {
+        actualRoute: true,
         remoteAgent: undefined,
         modelId: 'claude-opus-4-8',
         effort: 'high',
@@ -2226,6 +2238,7 @@ describe('ModelSelector trigger variants', () => {
     try {
       render(
         React.createElement(ModelSelectorContent, {
+          actualRoute: true,
           remoteAgent: undefined,
           modelId: 'claude-opus-4-8',
           effort: 'high',
@@ -2265,6 +2278,7 @@ describe('ModelSelector trigger variants', () => {
     try {
       render(
         React.createElement(ModelSelectorContent, {
+          actualRoute: true,
           remoteAgent: undefined,
           modelId: 'claude-opus-4-8',
           effort: 'high',
