@@ -293,6 +293,14 @@ describe('managed Claude accounts', () => {
       rateLimitStatus: 'allowed',
     }));
     await noteManagedClaudeRateLimit({ status: 'allowed', rateLimitType: 'five_hour', utilization: 0.42 }, { providerId: 'claude-a', runtime });
+    // A partial SDK event cannot replace the active endpoint window's percentage.
+    expect(publish).toHaveBeenLastCalledWith('claude-a', expect.objectContaining({
+      fiveHour: expect.objectContaining({ utilization: 7, utilizationSource: 'oauth-endpoint' }),
+      sevenDay: expect.objectContaining({ utilization: 21 }),
+    }));
+    // An explicit window rollover updates that window without clearing the weekly one.
+    await noteManagedClaudeRateLimit({ status: 'allowed', rateLimitType: 'five_hour', utilization: 0.42,
+      resetsAt: Date.parse('2099-01-01T05:00:00Z') / 1000 }, { providerId: 'claude-a', runtime });
     expect(publish).toHaveBeenLastCalledWith('claude-a', expect.objectContaining({
       fiveHour: expect.objectContaining({ utilization: 42 }),
       sevenDay: expect.objectContaining({ utilization: 21 }),

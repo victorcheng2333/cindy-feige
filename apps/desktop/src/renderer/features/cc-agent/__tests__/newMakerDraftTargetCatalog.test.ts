@@ -12,6 +12,7 @@ import { dbToMakerAgentKind, normalizeDbAgentKind } from '../../../../shared/age
 import { modelCatalogKey } from '../../../../shared/controlledModelCatalog';
 import { isProviderShareAgentDeviceId } from '../../../../shared/providerShare';
 import {
+  visibleRemoteDraftProviders,
   resolveDeviceLinkDraftDefaults,
   shouldReseedDeviceLinkDraftDefaults,
   type DeviceLinkDraftSelection,
@@ -118,7 +119,7 @@ function harness(options: {
     effectiveAgentDeviceId: options.separateAgent ? 'agent-device' : undefined,
     capabilityAgentKind: 'pi',
     agentCatalogProviders: [provider('source', ['low'])],
-    isSameNewMakerDevice, normalizeDbAgentKind, resolveDeviceLinkDraftDefaults,
+    isSameNewMakerDevice, normalizeDbAgentKind, visibleRemoteDraftProviders, resolveDeviceLinkDraftDefaults,
     parseDeviceProvidersPayload, extractIpcError, patchDraft, setRemoteDraftState,
     rememberRemoteDraftDefaults, wtPreferenceTransactionRef: { current: null },
     window: { electronAPI: { deviceLink: { invoke } } },

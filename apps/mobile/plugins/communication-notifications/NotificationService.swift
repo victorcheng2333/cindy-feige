@@ -19,6 +19,17 @@ final class NotificationService: UNNotificationServiceExtension {
     completionLock.unlock()
 
     var content = request.content
+    if let link = content.userInfo["deepLink"] as? String, link.hasPrefix("cindy://agent-net-notification") {
+      guard let payload = AgentNetNotifications.open(link), let next = content.mutableCopy() as? UNMutableNotificationContent else {
+        finish(UNMutableNotificationContent()); return
+      }
+      next.title = payload["title"] as? String ?? "Cindy"
+      next.body = payload["body"] as? String ?? ""
+      next.threadIdentifier = payload["collapseId"] as? String ?? ""
+      next.userInfo = payload
+      content = next
+      completionLock.lock(); original = next; completionLock.unlock()
+    }
     if let alias = content.userInfo["cindyPushAlias"] as? String {
       // The original APNs alert is generic. Never put sensitive detail in the timeout fallback.
       guard let gate = readPushGate(),
@@ -96,7 +107,7 @@ final class NotificationService: UNNotificationServiceExtension {
     handler = nil
     original = nil
     completionLock.unlock()
-    callback?(delivered)
+    callback?(NotificationRetirement.isRetired(delivered.userInfo) ? UNMutableNotificationContent() : delivered)
   }
 
   private func readPushGate() -> [String: Any]? {

@@ -588,7 +588,8 @@ it.each(['draft', 'session'] as const)('selects a shared provider through the le
   await waitFor(() => expect(h.editor).not.toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'newChat.modelSelector.trigger.ariaWithEffort' }));
   expect(screen.queryByRole('combobox')).toBeNull();
-  expect(screen.queryByRole('tablist')).toBeNull();
+  if (kind === 'session') expect(screen.getAllByRole('tablist')).toHaveLength(1);
+  else expect(screen.queryByRole('tablist')).toBeNull();
   expect(screen.queryByRole('textbox', { name: 'newChat.modelSelector.search.placeholderAll' })).toBeNull();
   expect(screen.getByRole('option', { name: /local-model/ })).toBeTruthy();
   const sharedModel = screen.getByRole('option', { name: /shared-model/ });

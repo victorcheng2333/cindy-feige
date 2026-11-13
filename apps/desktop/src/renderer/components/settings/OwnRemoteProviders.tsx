@@ -8,7 +8,7 @@
  * 供应商组(provider-groups.md §10)：另一台电脑把某个供应商建成了组时，组里的电脑与分享不再单独
  * 列出，组所在电脑那一项标成供应商组，详情列出组内电脑与状态，并提供同账号管理入口。规则与模型列表同一份。
  */
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ProviderView } from '@cindy/model-providers';
@@ -270,7 +270,7 @@ export function OwnRemoteProviderDetail({ entry, pendingShareRequests = 0, onMan
 }
 
 /** Shared by a standalone remote entry and a provider folded into its run location. */
-export function OwnRemoteProviderContent({ entry }: { entry: OwnRemoteProvider }) {
+export function OwnRemoteProviderContent({ entry, modelSection }: { entry: OwnRemoteProvider; modelSection?: ReactNode }) {
   const { t } = useTranslation();
   const models = readOnlyProviderModels(entry.provider, entry.modelVisibilityOverrides);
   return (
@@ -292,12 +292,12 @@ export function OwnRemoteProviderContent({ entry }: { entry: OwnRemoteProvider }
         <RemoteProviderGroupMembers deviceId={entry.deviceId} providerId={entry.provider.id} config={entry.group} />
       )}
 
-      <ReadOnlyProviderModelSection
+      {modelSection ?? <ReadOnlyProviderModelSection
         title={t('settings.providers.remote.modelsTitle')}
         models={models}
         note={models.length === 0 ? t('settings.providers.remote.modelsEmpty') : null}
         testId="own-remote-provider-models"
-      />
+      />}
     </>
   );
 }

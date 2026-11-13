@@ -63,10 +63,12 @@ type Page = "sources" | "harness" | null;
 /** 分组:可选小标题 + 行间 hairline(与 ContextSheetGroup 的安卓分组行同一套节奏)。 */
 function Group({
   title,
+  heading,
   children,
   testID,
 }: {
   title?: string;
+  heading?: ReactNode;
   children: ReactNode;
   testID?: string;
 }) {
@@ -74,7 +76,7 @@ function Group({
   const rows = flatten(children);
   return (
     <View style={styles.group} testID={testID}>
-      {title ? <Text style={styles.groupLabel}>{title}</Text> : null}
+      {heading ?? (title ? <Text style={styles.groupLabel}>{title}</Text> : null)}
       {rows.map((row, index) => (
         <View key={index}>
           {index > 0 ? <View style={styles.separator} /> : null}
@@ -100,6 +102,7 @@ function flatten(children: ReactNode): ReactNode[] {
 function Row({
   title,
   subtitle,
+  subtitleLines = 1,
   value,
   leading,
   trailing,
@@ -111,6 +114,7 @@ function Row({
 }: {
   title: string;
   subtitle?: string | null;
+  subtitleLines?: number;
   value?: string | null;
   leading?: ReactNode;
   trailing?: ReactNode;
@@ -145,7 +149,7 @@ function Row({
           {title}
         </Text>
         {subtitle ? (
-          <Text numberOfLines={1} style={styles.rowSubtitle}>
+          <Text numberOfLines={subtitleLines} style={styles.rowSubtitle}>
             {subtitle}
           </Text>
         ) : null}
@@ -297,13 +301,16 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             item,
             item.id === "favorites" && p.filter === "favorites",
           )}
-          {item.quota ? (
+          {typeof item.quota?.remaining === 'number' ? (
             <ModelQuotaBar
               label={item.quota.label}
               remaining={item.quota.remaining}
               testID={`${p.testID}.source.${item.id}.quota`}
             />
           ) : null}
+          {item.quota?.members?.map((member, index) => typeof member.remaining === 'number' ?
+            <ModelQuotaBar key={index} label={member.label} remaining={member.remaining}
+              testID={`${p.testID}.source.${item.id}.quota.${index}`} /> : null)}
         </View>
       }
       onPress={() => {
@@ -312,6 +319,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       }}
       selected={p.filter === item.id}
       subtitle={item.quota?.label}
+      subtitleLines={item.quota?.members?.length ? 0 : 1}
       testID={`${p.testID}.source.${item.id}`}
       title={item.remote?.providerLabel ?? item.label}
     />
@@ -646,6 +654,23 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
     );
   };
 
+  const groupHeading = (group: UnifiedMobilePickerViewProps['groups'][number]) => (
+    <View style={styles.quotaHeading}>
+      <Text style={styles.groupLabel}>{group.title}</Text>
+      {group.quota?.summary && <Pressable hitSlop={8} accessibilityRole="button"
+        accessibilityLabel={[group.quota.summary, group.quota.resetSoon ? t('models.unified.quotaResetSoon') : null, group.quota.resetDescription].filter(Boolean).join(' · ')}
+        testID={`${p.testID}.group.${group.key}.quota`} onPress={() => setPage('sources')}
+        style={{flexShrink:1,flexDirection:'row',flexWrap:'wrap',justifyContent:'flex-end',alignItems:'center',gap:4}}>
+        <Text style={styles.quotaText}>{typeof group.quota.remaining === 'number' ? `${group.quota.remaining}%` : group.quota.summary}</Text>
+        {group.quota.reset && <View style={{flexDirection:'row',flexWrap:'wrap',alignItems:'center',gap:4}}>
+          <Text style={styles.quotaText}>· {group.quota.reset.remaining}%</Text>
+          {!!group.quota.resetParts?.[0] && <Text style={styles.quotaText}>{group.quota.resetParts[0]}</Text>}
+          <Text style={[styles.quotaText,group.quota.reset.level === 'crit' ? styles.quotaResetCrit : group.quota.reset.level === 'warn' ? styles.quotaResetWarn : null]}>{group.quota.reset.time}</Text>
+          {!!group.quota.resetParts?.[1] && <Text style={styles.quotaText}>{group.quota.resetParts[1]}</Text>}
+        </View>}
+      </Pressable>}
+    </View>
+  );
   const listPage =
     Platform.OS === "android" ? null : (
       <>
@@ -653,7 +678,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
           <Group
             key={group.key}
             testID={`${p.testID}.group.${group.key}`}
-            title={group.title}
+            heading={groupHeading(group)}
           >
             {group.rows.map(modelRow)}
           </Group>
@@ -721,13 +746,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
                           style={styles.group}
                           testID={`${p.testID}.group.${item.group.key}`}
                         >
-                          <Text style={styles.groupLabel}>
-                            {item.group.title}
-                          </Text>
-                          {item.group.quota ? <View style={styles.sourceToolbar}>
-                            <Text style={styles.footnote}>{item.group.quota.label}</Text>
-                            <ModelQuotaBar remaining={item.group.quota.remaining} label={item.group.quota.label} />
-                          </View> : null}
+                          {groupHeading(item.group)}
                         </View>
                       ) : (
                         <View>
@@ -856,6 +875,9 @@ function makeStyles(colors: ThemeColors) {
     group: {
       paddingTop: spacing.lg,
     },
+    quotaHeading: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm,
+    },
     groupLabel: {
       color: colors.textTertiary,
       fontSize: typeScale.footnote,
@@ -941,6 +963,8 @@ function makeStyles(colors: ThemeColors) {
       fontWeight: fontWeight.regular,
       lineHeight: lineHeight.caption,
     },
+    quotaResetWarn: { color: colors.quotaBarWarn },
+    quotaResetCrit: { color: colors.quotaBarCrit },
     quotaText: {
       color: colors.textTertiary,
       fontSize: typeScale.caption,

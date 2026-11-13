@@ -43,7 +43,7 @@ export default {
     if (ui.case === 'renamed-remote') {
       await page.getByRole('button', { name: /^Claude-6/ }).first().click();
       await page.getByTestId('provider-detail-identity').getByText('Claude-6', { exact: true }).waitFor();
-      assert.equal(await page.getByTestId('own-remote-provider-models').getByRole('listitem').count(), 3);
+      assert.equal(await page.getByTestId('borrowed-provider-models').getByRole('listitem').count(), 3);
       assert.match(await row.textContent() ?? '', /MBP-M5/);
       assert.equal(await page.getByTestId('subscription-accounts').count(), 0);
       await ui.capture('remote-models');

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readTeammatesViewMode } from '../teammatesSectionPrefs';
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -375,7 +376,7 @@ describe('TeammatesSection group chats', () => {
     expect(screen.queryByRole('button', { name: 'bots.groupChat.server.join' })).toBeNull();
     fireEvent.keyDown(screen.getByRole('button', { name: 'bots.list.createMenu' }), { key: 'Enter' });
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      'bots.market.heading', 'bots.list.createTeammate', 'bots.groupChat.create.title', 'bots.list.joinWithLink',
+      'bots.list.createTeammate', 'bots.groupChat.create.title', 'bots.list.joinWithLink',
     ]);
     expect(screen.getAllByRole('separator')).toHaveLength(1);
     fireEvent.click(screen.getByRole('menuitem', { name: 'bots.list.joinWithLink' }));
@@ -558,6 +559,166 @@ it.each([false, true])('shows the executing teammate rather than a queued teamma
   expect(row.textContent).toContain('小满');
   expect(row.textContent).not.toContain('咪咪');
   expect(row.textContent).not.toContain('bots.groupChat.header.queued');
+});
+
+describe('icon strip mentions', () => {
+  const mentionLabel = 'bots.groupChat.server.thread.hintMentioned';
+  // Icon/list is independent of collapse; preserve the existing status/overflow coverage.
+  const switchView = () => {
+    const wasIcons = readTeammatesViewMode('owner') === 'icons';
+    fireEvent.keyDown(screen.getByRole('button', { name: 'ccAgent.sidebar.viewStyle' }), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('menuitem', { name: wasIcons ? 'ccAgent.sidebar.viewStyleListWide' : 'bots.list.viewIcons' }));
+  };
+  afterEach(() => window.localStorage.clear());
+
+  it('keeps one orange running point for mentions without an @ glyph', async () => {
+    mocks.groups = [
+      group({ speakingBotIds: ['mimi'], serverUnread: { count: 2, mentioned: true } }),
+      group({ id: 'g2', name: '读书会', teammateActivity: { phase: 'idle' }, serverUnread: { count: 1, mentioned: false } }),
+    ];
+    mocks.islandActivity = new Map([['lane-mimi', { sessionId: 'lane-mimi', phase: 'running' }]]);
+    const view = await renderSidebar();
+    switchView();
+    // The running point itself carries the @: one indicator, status color kept.
+    const marked = screen.getByRole('button', { name: `周末出游 · bots.avatarStatus.running · ${mentionLabel}` });
+    expect(marked.querySelectorAll('[data-teammate-status]')).toHaveLength(1);
+    const point = marked.querySelector<HTMLElement>('[data-teammate-mention]');
+    expect(point?.getAttribute('data-teammate-status')).toBe('running');
+    expect((point?.firstElementChild as HTMLElement)?.style.backgroundColor).toBe('var(--warning-accent)');
+    // Ordinary group unread uses blue in icon mode.
+    const plain = screen.getByRole('button', { name: /^读书会 · / });
+    expect(plain.getAttribute('aria-label')).not.toContain(mentionLabel);
+    expect(plain.querySelector<HTMLElement>('[data-teammate-status] > span')?.style.backgroundColor).toBe('var(--bot-unread-bg)');
+    expect(view.container.querySelectorAll('[data-teammate-mention]')).toHaveLength(1);
+  });
+
+  it.each([false, true])('keeps a gray unread count alongside running progress (mentioned: %s)', async mentioned => {
+    mocks.profiles = [];
+    mocks.groups = [group({ speakingBotIds: ['mimi'], serverUnread: { count: 2, mentioned } })];
+    mocks.islandActivity = new Map([['lane-mimi', { sessionId: 'lane-mimi', phase: 'running' }]]);
+    const view = await renderSidebar();
+    const row = view.container.querySelector('[data-bot-group-id="g1"]')!;
+    expect(screen.getByTestId('bot-group-running')).toBeTruthy();
+    expect(row.querySelector('[data-teammate-unread-count]')?.textContent).toBe('2');
+    expect(row.querySelector('[data-teammate-unread-count] > span')?.className).not.toContain('bg-[var(--bot-unread-bg)]');
+    expect(row.querySelector('[data-teammate-status]')).toBeNull();
+    mocks.groups = [group({ speakingBotIds: ['mimi'], serverUnread: { count: 0, mentioned: false } })];
+    view.rerender(<TeammatesSection />);
+    expect(row.querySelector('[data-teammate-unread-count]')).toBeNull();
+    expect(screen.getByTestId('bot-group-running')).toBeTruthy();
+    switchView();
+    expect(view.container.querySelector<HTMLElement>('[data-teammate-status="running"] > span')?.style.backgroundColor).toBe('var(--warning-accent)');
+  });
+
+  it.each(['completed', 'idle'] as const)('uses a blue count for list group mentions and a blue point in icon mode (%s)', async phase => {
+    mocks.profiles = [];
+    mocks.groups = [group({ teammateActivity: { phase }, serverUnread: { count: 12, mentioned: true } })];
+    const view = await renderSidebar();
+    const count = view.container.querySelector('[data-teammate-unread-count]')!;
+    expect(count.textContent).toBe('12');
+    expect(count.firstElementChild?.className).toContain('bg-[var(--bot-unread-bg)]');
+    expect(count.firstElementChild?.className).toContain('text-[var(--bot-unread-fg)]');
+    expect(count.firstElementChild?.getAttribute('aria-label')).toBe(
+      `${translate('sidebar.teammateUnreadCount', { count: 12 })} · ${translate('bots.groupChat.server.thread.hintMentioned')}`,
+    );
+    expect(view.container.querySelector('[data-teammate-status]')).toBeNull();
+    switchView();
+    const point = screen.getByRole('button', { name: /^周末出游 ·/ }).querySelector<HTMLElement>('[data-teammate-mention]');
+    expect((point?.firstElementChild as HTMLElement)?.style.backgroundColor).toBe('var(--bot-unread-bg)');
+    expect(screen.getByRole('button', { name: /^周末出游 ·/ }).querySelector('[data-teammate-unread-count]')).toBeNull();
+    mocks.groups = [group({ teammateActivity: { phase }, serverUnread: { count: 0, mentioned: false } })];
+    view.rerender(<TeammatesSection />);
+    switchView();
+    expect(view.container.querySelector('[data-teammate-unread-count]')).toBeNull();
+    expect(view.container.querySelector('[data-teammate-status]')).toBeNull();
+  });
+
+  it('shows ordinary group unread as an list count and icon blue point, clearing on read', async () => {
+    mocks.groups = [group({ teammateActivity: { phase: 'idle' }, serverUnread: { count: 12, mentioned: false } })];
+    const view = await renderSidebar();
+    expect(view.container.querySelector('[data-teammate-unread-count]')?.textContent).toBe('12');
+    switchView();
+    const avatar = screen.getByRole('button', { name: /^周末出游 · / });
+    expect(avatar.querySelector<HTMLElement>('[data-teammate-status] > span')?.style.backgroundColor).toBe('var(--bot-unread-bg)');
+    expect(avatar.textContent).not.toContain('12');
+    mocks.groups = [group({ teammateActivity: { phase: 'idle' }, serverUnread: { count: 0, mentioned: false } })];
+    view.rerender(<TeammatesSection />);
+    expect(view.container.querySelector('[data-teammate-status]')).toBeNull();
+  });
+
+  it('keeps only a green point for completed group unread in both layouts and clears on read', async () => {
+    mocks.profiles = [];
+    mocks.groups = [group({ teammateActivity: { phase: 'completed' }, serverUnread: { count: 3, mentioned: false } })];
+    const view = await renderSidebar();
+    const row = view.container.querySelector('[data-bot-group-id="g1"]')!;
+    const status = row.querySelector('[data-teammate-row-status]')!;
+    expect(status.querySelector('[data-teammate-unread-count]')).toBeNull();
+    expect(status.querySelector<HTMLElement>('[data-teammate-status="done"] > span')?.style.backgroundColor).toBe('var(--card-status-done)');
+    expect(row.querySelectorAll('[data-teammate-status]')).toHaveLength(1);
+    switchView();
+    const avatar = screen.getByRole('button', { name: /^周末出游 · / });
+    expect(avatar.querySelector<HTMLElement>('[data-teammate-status="done"] > span')?.style.backgroundColor).toBe('var(--card-status-done)');
+    expect(avatar.querySelector('[data-teammate-unread-count]')).toBeNull();
+    mocks.groups = [group({ teammateActivity: { phase: 'completed' }, serverUnread: { count: 0, mentioned: false } })];
+    view.rerender(<TeammatesSection />);
+    expect(view.container.querySelector('[data-teammate-status]')).toBeNull();
+    switchView();
+    expect(view.container.querySelector('[data-teammate-unread-count]')).toBeNull();
+  });
+
+  it.each([['completed', 'done', 'var(--card-status-done)'], ['idle', 'unread', 'var(--bot-unread-bg)']] as const)('keeps %s unread groups visible in overflow and clears on read', async (phase, status, color) => {
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() { this.callback([{ contentRect: { width: 48 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      mocks.groups = [group({ teammateActivity: { phase }, serverUnread: { count: 3, mentioned: false } })];
+      const view = await renderSidebar();
+      switchView();
+      const more = screen.getByRole('button', { name: 'bots.list.sectionExpand · +3' });
+      expect(more.querySelector<HTMLElement>(`[data-teammate-status="${status}"] > span`)?.style.backgroundColor).toBe(color);
+      mocks.groups = [group({ teammateActivity: { phase }, serverUnread: { count: 0, mentioned: false } })];
+      view.rerender(<TeammatesSection />);
+      expect(more.querySelector('[data-teammate-status]')).toBeNull();
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  it('drops the mark once the mention is no longer unread', async () => {
+    mocks.groups = [group({ serverUnread: { count: 0, mentioned: true } })];
+    const view = await renderSidebar();
+    switchView();
+    expect(screen.getByRole('button', { name: '周末出游' })).toBeTruthy();
+    expect(view.container.querySelector('[data-teammate-mention]')).toBeNull();
+  });
+
+  it('carries a hidden group mention onto the +N overflow entry', async () => {
+    const original = globalThis.ResizeObserver;
+    // One slot: every chat folds into +N.
+    globalThis.ResizeObserver = class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() { this.callback([{ contentRect: { width: 48 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      mocks.groups = [group({ serverUnread: { count: 1, mentioned: true } })];
+      await renderSidebar();
+      switchView();
+      const more = screen.getByRole('button', { name: `bots.list.sectionExpand · +3 · ${mentionLabel}` });
+      expect(more.querySelector('[data-teammate-mention]')).not.toBeNull();
+      // Mouse users read the same words as the accessible name.
+      fireEvent.pointerEnter(more);
+      fireEvent.pointerMove(more, { pointerType: 'mouse' });
+      expect(await screen.findByRole('tooltip', { name: `bots.list.sectionExpand · +3 · ${mentionLabel}` })).toBeTruthy();
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
 });
 
 describe('expanded group status with collapsed header', () => {

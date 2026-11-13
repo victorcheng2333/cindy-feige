@@ -17,6 +17,7 @@ vi.mock('../../maker-host/subscription-account-auth.js', () => ({
 vi.mock('../../maker-host/grok-oauth-login.desktop.js', () => ({
   hasGrokOAuthLogin: (id: string) => state.tokens.has(id),
   getGrokAccessToken: async (id: string) => state.tokens.get(id),
+  peekGrokAccessToken: (id: string) => state.tokens.get(id),
 }));
 vi.mock('../../maker-host/provider-route.js', () => ({
   isProviderRouteMutationInProgress: () => false,

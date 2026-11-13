@@ -1,5 +1,11 @@
+import { isProviderLogoKind } from '@cindy/model-providers/branding';
 import { providersSettings } from './ProvidersSection.settings-search';
-import { ProviderRunLocationSubtitle } from './ProviderRunLocationRow';
+import {
+  BorrowedProviderModels,
+  borrowedProviderModelCount,
+  ProviderOwnComputersStatus,
+  ProviderRunLocationSubtitle,
+} from './ProviderRunLocationRow';
 import { useProviderBorrow } from '@/hooks/useProviderBorrow';
 import { AddSpeechModelsDialog } from './AddSpeechModelsDialog';
 import { providerSpeechSetup } from '../../../shared/speechProviderSetup';
@@ -154,6 +160,7 @@ import {
 import { localCliDisplayName, type LocalCliDetection } from '../../../shared/localCliDetect';
 import { isBuiltinRefreshableProviderId } from '../../../shared/providerModelRefresh';
 import { SettingsPageHeader } from '@/components/ui/settings-rows';
+import { LocalProviderImportButton } from './LocalProviderImportButton';
 import { providerGroupDeviceCount } from '../../../shared/providerGroup';
 import { applyProviderOrder } from '../../../shared/providerOrder';
 import type { AgentKind, CustomProviderConfig, ProviderView } from '@cindy/model-providers';
@@ -325,7 +332,7 @@ function useRemoteControlEnabled(): boolean | null {
 
 /** 供应商行图标(内置品牌 mark / 首字母 monogram)。 */
 function providerIcon(p: ProviderView, size: number): ReactNode {
-  if (hasProviderLogo(p.id, p.routing)) {
+  if (isProviderLogoKind(p.logoKind) || hasProviderLogo(p.id, p.routing)) {
     return <ProviderLogoMark providerId={p.id} routing={p.routing} logoKind={p.logoKind} size={size} />;
   }
   return <span className="text-15 font-medium leading-none">{providerMonogram(p.name)}</span>;
@@ -705,7 +712,7 @@ function DetailHeader({
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
   // Borrowing another computer's sign-in: this computer's own accounts and "not connected" do not apply.
-  const { borrowed, remote } = useProviderBorrow(provider);
+  const { borrowed, borrowedCatalog, remote } = useProviderBorrow(provider);
   const borrowing = borrowed !== null;
   const displayProvider = remote?.provider ?? provider;
   const displayName = displayProvider ? providerDisplayName(displayProvider, t) : title;
@@ -851,6 +858,11 @@ function DetailHeader({
                   </span>
                 )}
               </span>
+              {provider ? (
+                <span className="flex min-w-0" style={{ color: 'var(--settings-integration-subtitle)' }}>
+                  <ProviderOwnComputersStatus provider={provider} />
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -950,7 +962,9 @@ function DetailHeader({
       >
         {detail && <div className="px-5 pb-4">{detail}</div>}
         {remote ? (
-          <OwnRemoteProviderContent entry={remote} />
+          <OwnRemoteProviderContent entry={remote} modelSection={borrowed && borrowedCatalog ? (
+            <BorrowedProviderModels key={remote.key} device={borrowed} catalog={borrowedCatalog} showNote={false} />
+          ) : undefined} />
         ) : (
           <>
             {provider?.subscriptionFastPolicy && <div className="px-5 pb-4"><SubscriptionFastSetting key={provider.id} provider={provider} /></div>}
@@ -2431,13 +2445,16 @@ function ListRow({
 }) {
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
-  const { remote } = useProviderBorrow(provider);
+  const { borrowed, borrowedCatalog, remote } = useProviderBorrow(provider);
+  const borrowing = borrowed !== null;
   const localLive = useManagedLocalRuntimeLive(provider.id);
+  // 借用另一台电脑时数那台开放的模型；本机目录此时可能是空的(本机没登录)。
   const modelCount = useMemo(
     () => remote
       ? readOnlyProviderModels(remote.provider, remote.modelVisibilityOverrides).length
+      : borrowedCatalog ? borrowedProviderModelCount(borrowedCatalog)
       : providerHasModels(provider) ? buildUnionRows(provider).length : null,
-    [provider, remote],
+    [provider, borrowedCatalog, remote],
   );
   const title = providerDisplayName(remote?.provider ?? provider, t);
   return (
@@ -2765,7 +2782,8 @@ export function ProvidersSection() {
   const visibleProviders = useMemo(() => {
     const rows: ProviderView[] = [];
     for (const p of providers) {
-      if (p.removed) continue;
+      // Existing shares still need their original, selectively revocable management entry.
+      if (p.removed || (p.subscriptionPoolAlias && !ownedShares.get(null)?.has(p.id))) continue;
       if (p.source === 'builtin') {
         // reconnect-required 视同占行:凭证失效 ≠ 用户断开,重连入口必须保留。
         // OpenAI 图像 key 与 ChatGPT OAuth 两套凭证解耦:imageModels 已声明时,
@@ -2801,7 +2819,7 @@ export function ProvidersSection() {
       }
     }
     return rows;
-  }, [providers, openaiReconnectRequired, borrowableIds]);
+  }, [providers, openaiReconnectRequired, borrowableIds, ownedShares]);
 
   const orderedVisibleProviders = useMemo(
     () => applyProviderOrder(visibleProviders, providerOrder),
@@ -3068,6 +3086,11 @@ export function ProvidersSection() {
         }
       : selected;
   }, [selectedId, listProviders, codexAuth.state, openaiPoolState, dataOwnerId]);
+  const selectedBorrow = useProviderBorrow(effectiveSelected);
+  // 借用时模型区整块换成「运行于」那台电脑的清单；本机目录、发现失败与刷新都不适用。
+  const selectedBorrowedModels = selectedBorrow.borrowed && selectedBorrow.borrowedCatalog
+    ? { device: selectedBorrow.borrowed, catalog: selectedBorrow.borrowedCatalog }
+    : null;
 
   const handleDelete = useCallback(
     async (p: ProviderView) => {
@@ -3494,6 +3517,7 @@ export function ProvidersSection() {
                 key={`${dataOwnerId}:${ownerGeneration}`}
                 onImported={setProviderImportId}
               />
+              <LocalProviderImportButton key={`local:${dataOwnerId}:${ownerGeneration}`} onImported={setProviderImportId} />
             </div>
           </div>
 
@@ -3599,6 +3623,7 @@ export function ProvidersSection() {
                     (DESIGN.md「Errors = what happened + what to do」)。有清单时以条带形式
                     置于列表上方,无清单时走下面的空态居中版。 */}
                   {!effectiveSelected.suspended &&
+                    !selectedBorrowedModels &&
                     effectiveSelected.modelDiscoveryFailure &&
                     providerHasModels(effectiveSelected) && (
                       <div
@@ -3629,10 +3654,11 @@ export function ProvidersSection() {
                       本机未允许远程控制时整行仍显示，但开关不可用(provider-sharing.md §3)；入口始终可用，
                       只给本机用时也可以建组(provider-groups.md §10)。 */}
                   {remoteControlEnabled !== null &&
-                    !effectiveSelected.suspended &&
+                    ((!effectiveSelected.suspended &&
                     effectiveSelected.connected &&
                     effectiveSelected.agents.length > 0 &&
-                    effectiveSelected.remoteInvocationEnabled !== undefined && (
+                    effectiveSelected.remoteInvocationEnabled !== undefined) ||
+                    (effectiveSelected.subscriptionPoolAlias && ownedShares.get(null)?.has(effectiveSelected.id))) && (
                       <RemoteProviderAccessRow
                         key={effectiveSelected.id}
                         provider={effectiveSelected}
@@ -3642,6 +3668,7 @@ export function ProvidersSection() {
                       />
                     )}
                   {!effectiveSelected.suspended &&
+                    !selectedBorrowedModels &&
                     (providerHasModels(effectiveSelected) ||
                       isCustomRoutedProvider(effectiveSelected) ||
                       (isBuiltinRefreshableProviderId(effectiveSelected.id) &&
@@ -3704,6 +3731,7 @@ export function ProvidersSection() {
                       </>
                     )}
                   {!effectiveSelected.suspended &&
+                    !selectedBorrowedModels &&
                     !providerHasModels(effectiveSelected) &&
                     !isCustomRoutedProvider(effectiveSelected) &&
                     !isManagedLocalProvider(effectiveSelected.id) &&

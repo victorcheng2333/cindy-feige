@@ -91,7 +91,8 @@ import { HOOK_CHAT_WORKSPACE_ALIAS } from '../../shared/hookControlIpc.js';
 import { captureImContext, type ImContextSnapshot } from '../../shared/imMessageSource.js';
 import type { GroupHistoryAccessScope } from '../im/shared/groupHistoryAccess.js';
 import { hookReplyTarget } from '../im/shared/autoReviewReferences.js';
-import { QUOTA_FAILURE_NOTICE_PREFIX } from '../im/shared/turnRetryNotice.js';
+import { quotaFailureNoticePrefix } from '../im/shared/turnRetryNotice.js';
+import { imText } from '../im/shared/imText.js';
 import { groupHistoryAccessForExternalKey } from './groupHistoryScope.js';
 import { isPathWithin } from './paths.js';
 import { createAckReactions, type AckReactionTask } from './ackReactions.js';
@@ -194,6 +195,12 @@ export interface HookContinuationWatchRequest {
 export interface HookRunRequest {
   /** Host-resolved companion channel lane; never accepted from the wire. */
   companionBotId?: string;
+  /**
+   * 取消探针(dispatcher 侧 task.cancel 账本):runner 在回收/重建等长窗口后、
+   * 发送前查询 —— 喊停若落在窗口内, 中止信号对旧实例无目标、对新实例未登记,
+   * 只有这个账本能告诉 runner「用户已喊停」。未注入 = 无取消通道。
+   */
+  isCancelRequested?: () => boolean;
   /** Untruncated user body for persistence; source.userText is only a bounded display preview. */
   userText?: string;
   /** Local display snapshot; not part of the server wire protocol. */
@@ -520,7 +527,7 @@ export const HOOK_ROUTE_UNAVAILABLE_PREFIX = 'hook session route unavailable:';
 function hookFailureReasonForLog(errorMessage: string | null | undefined): string {
   const message = errorMessage ?? '';
   // 额度说明里带供应商名与上游原文, 日志只记类别。
-  if (message.startsWith(QUOTA_FAILURE_NOTICE_PREFIX)) return 'provider-quota-exhausted';
+  if (message.startsWith(quotaFailureNoticePrefix())) return 'provider-quota-exhausted';
   if (!message.startsWith(HOOK_ROUTE_UNAVAILABLE_PREFIX)) return 'unclassified';
   return message.replace(/\s+/g, ' ').slice(0, 300);
 }
@@ -2007,8 +2014,7 @@ export function createHookDispatcher(deps: HookDispatcherDeps): HookDispatcher {
       outcome = {
         status: 'error',
         finalText: '',
-        errorMessage:
-          '这个任务所在的目录已不在工作目录映射里，本条消息没有执行。把它所在的目录加进 设置 → 远程连接 → 工作目录映射 后再发一次。',
+        errorMessage: imText('imBot.text.hook.dispatch.dirUnmapped'),
         durationMs: 0,
       };
     } else {
@@ -2016,6 +2022,8 @@ export function createHookDispatcher(deps: HookDispatcherDeps): HookDispatcher {
         outcome = await runner.run({
           ...task.run,
           ...xVideoRelayOption(task, runningEntry),
+          // 取消探针:runner 在回收/重建窗口后发送前查询,喊停不落进新进程执行。
+          isCancelRequested: () => cancelRequested.has(requestKey),
           onTurnTerminal: () => { runningEntry.observing = false; },
           onProgress,
           ...(task.run.source?.im === 'telegram' ? {

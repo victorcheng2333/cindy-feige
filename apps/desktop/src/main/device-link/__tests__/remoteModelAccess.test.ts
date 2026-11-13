@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../../appSessionState.js', () => ({ activeOwnerScopeKey: vi.fn(), ownerScopedUserDataPath: vi.fn() }));
+vi.mock('../../appSessionState.js', () => ({ activeOwnerScopeKey: vi.fn(), ownerScopedUserDataPath: vi.fn(), onAppSessionInvalidated: () => () => {} }));
 vi.mock('../../logger.js', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn() }) }));
 import * as locks from '../crossProcessLock';
 import { createRemoteModelAccessStore } from '../remoteModelAccess';

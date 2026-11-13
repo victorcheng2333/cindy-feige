@@ -49,7 +49,7 @@ export type ClaudeCliLoginResult =
   | { ok: true; status: ClaudeCliLoginStatus }
   | {
       ok: false;
-      reason: 'login_cancelled' | 'timeout' | 'local_unavailable' | 'login_failed' | 'not_a_subscription';
+      reason: 'login_cancelled' | 'timeout' | 'local_unavailable' | 'login_failed' | 'not_a_subscription' | 'account_mismatch';
     };
 /** Shared official CLI lifecycle; launchers supply binary discovery and status IO. */
 export function createClaudeNativeCli(ports: {
@@ -197,14 +197,25 @@ function invalidateClaudeCliLoginStatus(configDir?: string): void {
 }
 
 /** Each physical CLI home owns its cache, in-flight read and failure backoff. */
-function refreshClaudeCliLoginStatus(options?: { force?: boolean; configDir?: string }): Promise<ClaudeCliLoginStatus> {
+function refreshClaudeCliLoginStatus(options?: { force?: boolean; configDir?: string; requireFresh?: boolean }): Promise<ClaudeCliLoginStatus> {
   const configDir = options?.configDir;
   const key = configDir ?? '';
+  const requireFresh = options?.requireFresh === true;
+  const force = options?.force === true || requireFresh;
   let state = statusReads.get(key);
   if (!state) { state = {}; statusReads.set(key, state); }
-  if (state.inflight) return state.inflight;
-  if (!cliBinaryPath()) return Promise.resolve(statusFallback(configDir));
-  if (!options?.force && state.failureAt !== undefined && Date.now() - state.failureAt < STATUS_FAILURE_BACKOFF_MS)
+  if (state.inflight) {
+    if (!force) return state.inflight;
+    const waitingState = state;
+    return state.inflight.catch(() => {}).then(() => {
+      if (requireFresh && statusReads.get(key) !== waitingState) throw new Error('claude auth status unavailable');
+      return refreshClaudeCliLoginStatus({ ...options, force: true });
+    });
+  }
+  if (!cliBinaryPath()) return requireFresh
+    ? Promise.reject(new Error('claude cli unavailable'))
+    : Promise.resolve(statusFallback(configDir));
+  if (!force && state.failureAt !== undefined && Date.now() - state.failureAt < STATUS_FAILURE_BACKOFF_MS)
     return Promise.resolve(statusFallback(configDir));
   const captured = state;
   const current = () => statusReads.get(key) === captured;
@@ -232,8 +243,11 @@ function refreshClaudeCliLoginStatus(options?: { force?: boolean; configDir?: st
     }
   })();
   captured.inflight = flight;
-  void flight.finally(() => { if (captured.inflight === flight) delete captured.inflight; });
-  return flight;
+  void flight.finally(() => { if (captured.inflight === flight) delete captured.inflight; }).catch(() => {});
+  return requireFresh ? flight.then(status => {
+    if (!current() || captured.failureAt !== undefined) throw new Error('claude auth status unavailable');
+    return status;
+  }) : flight;
 }
 
 async function readClaudeCliLoginStatus(options?: {
@@ -406,22 +420,34 @@ async function logoutManagedClaudeCli(configDir: string): Promise<void> {
 
 
 /**
- * 已登录则直接返回;否则拉起 `claude auth login --claudeai`,由 CLI 打开浏览器并等待
+ * 普通连接已登录则直接返回；明确续签始终拉起官方登录，由 CLI 打开浏览器并等待
  * 授权回调。CLI 退出后重读登录态作为结论。
  *
  * CLI 已用非订阅方式登录(API Key、中转 token 等)时直接返回 not_a_subscription,不替用户
  * 改 CLI 的登录:这类配置在 CLI 里优先于订阅登录,改了也用不上,还会影响终端里的 claude。
  */
-async function runClaudeCliLogin(signal: AbortSignal, options?: { configDir?: string; force?: boolean } | string): Promise<ClaudeCliLoginResult> {
-  options = typeof options === 'string' ? { configDir: options } : options;
-  const before = await refreshClaudeCliLoginStatus({ force: true, configDir: options?.configDir });
+async function runClaudeCliLogin(
+  signal: AbortSignal,
+  profile?: string | { configDir?: string; force?: boolean },
+  options: { renew?: boolean; expectedEmail?: string } = {},
+): Promise<ClaudeCliLoginResult> {
+  const configDir = typeof profile === 'string' ? profile : profile?.configDir;
+  const forceLogin = typeof profile === 'object' && profile.force === true;
+  let before: ClaudeCliLoginStatus;
+  try {
+    before = await refreshClaudeCliLoginStatus({ force: true, configDir, requireFresh: options.renew });
+  } catch {
+    return { ok: false, reason: 'local_unavailable' };
+  }
   if (signal.aborted) return { ok: false, reason: 'login_cancelled' };
-  if (before.loggedIn && !options?.force) return { ok: true, status: before };
+  if (before.loggedIn && !options.renew && !forceLogin) return { ok: true, status: before };
   if (before.notSubscription) return { ok: false, reason: 'not_a_subscription' };
   if (!cliBinaryPath()) return { ok: false, reason: 'local_unavailable' };
+  const expectedEmail = options.expectedEmail?.trim() || (options.renew ? before.email : undefined);
   try {
-    const result = await runCli(['auth', 'login', '--claudeai'], {
-      env: await cliEnv({ network: true, configDir: options?.configDir }),
+    // --email is only a browser hint. Verify the returned identity below as well.
+    const result = await runCli(['auth', 'login', '--claudeai', ...(expectedEmail ? ['--email', expectedEmail] : [])], {
+      env: await cliEnv({ network: true, configDir }),
       timeoutMs: LOGIN_TIMEOUT_MS,
       signal,
     });
@@ -429,13 +455,22 @@ async function runClaudeCliLogin(signal: AbortSignal, options?: { configDir?: st
     if (result.reason === 'timeout') return { ok: false, reason: 'timeout' };
     if (result.code !== 0) {
       log.warn('claude auth login exited with an error', { code: result.code });
+      if (options.renew) return { ok: false, reason: 'login_failed' };
     }
   } catch (err) {
     log.warn('claude auth login failed to start', { error: err instanceof Error ? err.message : String(err) });
     return { ok: false, reason: 'local_unavailable' };
   }
-  const after = await refreshClaudeCliLoginStatus({ force: true, configDir: options?.configDir });
+  let after: ClaudeCliLoginStatus;
+  try {
+    // Cached display metadata is never proof of a successful browser login.
+    after = await refreshClaudeCliLoginStatus({ requireFresh: true, configDir });
+  } catch {
+    return { ok: false, reason: 'local_unavailable' };
+  }
   if (signal.aborted) return { ok: false, reason: 'login_cancelled' };
+  if (after.loggedIn && expectedEmail && after.email?.toLowerCase() !== expectedEmail.toLowerCase())
+    return { ok: false, reason: 'account_mismatch' };
   if (after.loggedIn) return { ok: true, status: after };
   return { ok: false, reason: after.notSubscription ? 'not_a_subscription' : 'login_failed' };
 }

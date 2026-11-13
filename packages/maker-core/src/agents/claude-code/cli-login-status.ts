@@ -22,6 +22,8 @@ export interface ClaudeCliLoginStatus {
   email?: string;
   orgId?: string;
   orgName?: string;
+  /** Official CLI estimate for the end of this login's refresh chain, not an auth verdict. */
+  loginExpiresAt?: string;
 }
 
 /** The single read-only status query; never a login, session or model call. */
@@ -57,6 +59,10 @@ export function parseClaudeCliLoginStatus(stdout: string): ClaudeCliLoginStatus 
   const email = optionalString(record.email);
   const orgId = optionalString(record.orgId);
   const orgName = optionalString(record.orgName);
+  const expiry = optionalString(record.loginExpiresAt);
+  const loginExpiresAt = expiry && expiry.length <= 64 && Number.isFinite(Date.parse(expiry))
+    ? new Date(expiry).toISOString()
+    : undefined;
   return {
     loggedIn: true,
     ...(authMethod ? { authMethod } : {}),
@@ -64,6 +70,7 @@ export function parseClaudeCliLoginStatus(stdout: string): ClaudeCliLoginStatus 
     ...(email ? { email } : {}),
     ...(orgId ? { orgId } : {}),
     ...(orgName ? { orgName } : {}),
+    ...(loginExpiresAt ? { loginExpiresAt } : {}),
   };
 }
 

@@ -304,7 +304,9 @@ describe('ProvidersSection — 深链定位', () => {
     expect(screen.queryByText('Hidden model')).toBeNull();
     expect(screen.queryByText('Local model')).toBeNull();
     expect(screen.queryByText('settings.providers.detail.emptyModelsDisconnected')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'settings.providers.models.refreshBuiltinAria' })).toBeNull();
+    const refresh = screen.queryByRole('button', { name: 'settings.providers.models.refreshBuiltinAria' });
+    if (connected) expect(refresh).toBeNull();
+    else expect(refresh).toBeTruthy();
     expect(screen.queryByTestId('subscription-accounts')).toBeNull();
     expect(screen.getByRole('progressbar', { name: 'Remote weekly' }).getAttribute('aria-valuenow')).toBe('63');
     fireEvent.doubleClick(screen.getByRole('button', { name: /^Claude-6/ }));

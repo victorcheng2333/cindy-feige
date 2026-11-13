@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
 import { formatSessionDuration } from '@/lib/sessionDurationFormat';
+import { RunningTokenCount } from '@/features/cc-agent/RunningTokenCount';
 import {
   RunningTokenRatePopover,
   useRunningTokenRateHistory,
@@ -46,7 +47,7 @@ const deps = {
   useState,
   useTranslation: () => ({ t: (key: string) => key }),
   useReducedMotion: () => true,
-  useAnimatedNumber: (value: number) => value,
+  RunningTokenCount,
   localizeAgentStatus: (status: string) => status,
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
   Check: Icon,
@@ -228,3 +229,18 @@ it.each([true, false])(
     expect(container.childElementCount).toBe(0);
   },
 );
+
+// 回合已结束、只有后台命令在跑:有命令仍在工作(跑测试、构建)时写「正在后台工作」并保留呼吸;
+// 只剩长驻服务(本地预览服务等)时任务已做完,写「后台服务运行中」且不再呼吸。
+it.each([
+  ['commands still working', 2, 1, 'chat.backgroundActivity.bashWorkStatus', true],
+  ['only long-lived services left', 2, 0, 'chat.backgroundActivity.bashServiceStatus', false],
+] as const)('background commands: %s', (_label, total, working, statusKey, shimmers) => {
+  const Bar = RunningStatusBar as React.ComponentType<Record<string, unknown>>;
+  const { container } = render(<Bar
+    visible status="Done" startedAt={1} tokenUsage={0} outputTokens={0} generationDurationMs={0}
+    backgroundTasksRunning backgroundBashOnlyCount={total} backgroundBashWorkCount={working}
+  />);
+  expect(screen.getByText(statusKey)).toBeTruthy();
+  expect(container.querySelector('.status-bar-shimmer') !== null).toBe(shimmers);
+});

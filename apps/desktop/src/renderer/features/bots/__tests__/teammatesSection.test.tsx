@@ -98,7 +98,7 @@ vi.mock('../BotDeleteDialog', () => ({
 import { TeammatesSection } from '../TeammatesSection';
 import { BotConnectionStatus } from '../BotConnectionStatus';
 import { markBotRead, resetBotReadStateForTests } from '../botReadState';
-import { readTeammatesSectionCollapsed } from '../teammatesSectionPrefs';
+import { readTeammatesSectionCollapsed, writeTeammatesSectionCollapsed, writeTeammatesViewMode } from '../teammatesSectionPrefs';
 import { setDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 
 interface BotFixture {
@@ -540,6 +540,153 @@ describe('TeammatesSection header', () => {
     expect(window.localStorage.getItem('sidebar.teammatesSection.v1.owner.fixture-owner')).toBe('expanded');
   });
 
+  // Fork collapse contract: all chats disappear, including unread and pending feedback
+  // and remain hidden after their status changes (real component, unit tier).
+  it('collapses fully while hiding unread and pending feedback across remounts', async () => {
+    mocks.profiles = [bot({ id: 'idle', name: 'Idle' }), bot({ id: 'unread', name: 'Unread' }), bot({ id: 'waiting', name: 'Waiting' })];
+    mocks.unread = { unread: 1 };
+    mocks.islandActivity = new Map([['waiting-chat', { sessionId: 'waiting-chat', phase: 'needs-interaction' }]]);
+    const view = await renderSidebar();
+    vi.useFakeTimers();
+    fireEvent.click(header());
+    act(() => vi.advanceTimersByTime(200));
+    vi.useRealTimers();
+    expect(screen.queryByText('Idle')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText('Unread')).toBeNull();
+      expect(screen.queryByText('Waiting')).toBeNull();
+    });
+    expect(readTeammatesSectionCollapsed('fixture-owner')).toBe(true);
+    mocks.unread = {};
+    mocks.islandActivity = new Map();
+    view.rerender(<TeammatesSection />);
+    await waitFor(() => expect(screen.queryByText('Waiting')).toBeNull());
+    cleanup();
+    await renderSidebar();
+    expect(screen.queryByText('Idle')).toBeNull();
+    fireEvent.click(header());
+    expect(screen.getByText('Idle')).toBeTruthy();
+  });
+
+  // Regression: reading the open chat must not remove its navigation target.
+  // Existing collapse coverage only checks unselected chats. Unit: clear unread
+  // while selected, then switch route; exercise both production presentations.
+  it.each(['list', 'icons'] as const)('keeps collapsed content hidden across read acknowledgements and navigation in %s mode', async (mode) => {
+    mocks.profiles = [bot({ id: 'reader', name: 'Reader' }), bot({ id: 'other', name: 'Other' })];
+    mocks.unread = { reader: 1 };
+    mocks.params = { botId: 'reader' };
+    writeTeammatesViewMode('fixture-owner', mode);
+    const view = await renderSidebar();
+    const toggleAndSettle = () => {
+      vi.useFakeTimers();
+      fireEvent.click(header());
+      act(() => vi.advanceTimersByTime(200));
+      vi.useRealTimers();
+    };
+    toggleAndSettle();
+    const reader = () => mode === 'icons'
+      ? screen.queryByRole('button', { name: /^Reader(?: ·|$)/ })
+      : screen.queryByText('Reader');
+    expect(reader()).toBeNull();
+    mocks.unread = {};
+    view.rerender(<TeammatesSection />);
+    expect(reader()).toBeNull();
+    // Explicitly expand and collapse while still selected: the read row must hide.
+    fireEvent.click(header());
+    toggleAndSettle();
+    expect(reader()).toBeNull();
+    // A new unread event does not override the saved collapsed state.
+    mocks.unread = { reader: 1 };
+    view.rerender(<TeammatesSection />);
+    expect(reader()).toBeNull();
+    mocks.unread = {};
+    view.rerender(<TeammatesSection />);
+    expect(reader()).toBeNull();
+    mocks.params = { botId: 'other' };
+    view.rerender(<TeammatesSection />);
+    expect(reader()).toBeNull();
+    // A pending chat does not override the saved collapsed state.
+    mocks.params = { botId: 'reader' };
+    mocks.islandActivity = new Map([['reader-chat', { sessionId: 'reader-chat', phase: 'needs-interaction' }]]);
+    view.rerender(<TeammatesSection />);
+    mocks.params = { botId: 'other' };
+    view.rerender(<TeammatesSection />);
+    expect(reader()).toBeNull();
+  });
+
+  it('keeps the icon row on one line and folds the rest into +N', async () => {
+    const original = globalThis.ResizeObserver;
+    // 5 slots: 4 avatars + the +N chip (40px target, 4px gap).
+    globalThis.ResizeObserver = class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() { this.callback([{ contentRect: { width: 216 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      mocks.profiles = Array.from({ length: 6 }, (_, index) => bot({ id: `bot-${index}`, name: `Mate ${index}` }));
+      mocks.unread = { 'bot-5': 1 };
+      mocks.params = { botId: 'bot-4' };
+      writeTeammatesViewMode('fixture-owner', 'icons');
+      await renderSidebar();
+      const avatars = screen.getAllByRole('button', { name: /^Mate \d$/ });
+      expect(avatars).toHaveLength(4);
+      // The open chat keeps a slot even when it sorts past the cut.
+      expect(screen.getByRole('button', { name: 'Mate 4' }).getAttribute('aria-current')).toBe('page');
+      const more = screen.getByRole('button', { name: 'bots.list.sectionExpand · +2' });
+      fireEvent.click(more);
+      expect(header().getAttribute('aria-expanded')).toBe('true');
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  // Unit regression: the real section must measure each newly mounted icon row.
+  // Existing capacity coverage starts with a mounted row; six read buddies and an
+  // initially collapsed section reproduce the missing +N entry after expansion.
+  it('measures icon rows after empty states and list-mode remounts', async () => {
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() { this.callback([{ contentRect: { width: 216 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      mocks.profiles = Array.from({ length: 6 }, (_, index) => bot({ id: `bot-${index}`, name: `Mate ${index}` }));
+      writeTeammatesViewMode('fixture-owner', 'icons');
+      writeTeammatesSectionCollapsed('fixture-owner', true);
+      const view = await renderSidebar();
+      expect(screen.queryByRole('button', { name: 'Mate 0' })).toBeNull();
+      fireEvent.click(header());
+      expect(screen.getByRole('button', { name: 'bots.list.sectionExpand · +2' })).not.toBeNull();
+      // +N replaces the icon row with the list; switching back must measure again.
+      fireEvent.click(screen.getByRole('button', { name: 'bots.list.sectionExpand · +2' }));
+      fireEvent.keyDown(screen.getByRole('button', { name: 'ccAgent.sidebar.viewStyle' }), { key: 'Enter' });
+      fireEvent.click(screen.getByRole('menuitem', { name: 'bots.list.viewIcons' }));
+      expect(screen.getByRole('button', { name: 'bots.list.sectionExpand · +2' })).not.toBeNull();
+      // The roster can also become empty and return without changing view mode.
+      mocks.profiles = [];
+      view.rerender(<TeammatesSection />);
+      mocks.profiles = Array.from({ length: 6 }, (_, index) => bot({ id: `bot-${index}`, name: `Mate ${index}` }));
+      view.rerender(<TeammatesSection />);
+      expect(screen.getByRole('button', { name: 'bots.list.sectionExpand · +2' })).not.toBeNull();
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  it('marks the open chat in icon mode', async () => {
+    mocks.profiles = [bot({ id: 'bot-1', name: 'PR steward' }), bot({ id: 'bot-2', name: 'Writer' })];
+    mocks.unread = { 'bot-1': 2 };
+    mocks.params = { botId: 'bot-1' };
+    writeTeammatesViewMode('fixture-owner', 'icons');
+    await renderSidebar();
+    // Routing alone does not acknowledge a reply; the existing read receipt owns clearing.
+    expect(screen.getByRole('button', { name: 'PR steward · bots.avatarStatus.unread' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'Writer' }).hasAttribute('aria-current')).toBe(false);
+  });
+
   it('keeps a completed unread reply green after the live snapshot is removed, then clears on read', async () => {
     mocks.profiles = [{ ...bot({ id: 'bot-1', name: 'Writer' }), lastMessageRole: 'assistant' }];
     mocks.unread = { 'bot-1': 1 };
@@ -565,6 +712,27 @@ describe('TeammatesSection header', () => {
     view.rerender(<TeammatesSection />);
     expect(view.container.querySelector('[data-teammate-status="awaiting"]')).not.toBeNull();
     expect(view.container.querySelector('[data-teammate-status="error"]')).toBeNull();
+  });
+
+  it('keeps pending attention ahead of errors in the icon overflow', async () => {
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() { this.callback([{ contentRect: { width: 48 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      mocks.profiles = [bot({ id: 'waiting', name: 'Waiting' }), bot({ id: 'failed', name: 'Failed', needsAttention: true })];
+      mocks.islandActivity = new Map([['waiting-chat', { sessionId: 'waiting-chat', phase: 'needs-interaction' }]]);
+      writeTeammatesViewMode('fixture-owner', 'icons');
+      await renderSidebar();
+      const overflow = screen.getByRole('button', { name: 'bots.list.sectionExpand · +2' });
+      expect(overflow.querySelector('[data-teammate-status="awaiting"]')).not.toBeNull();
+      expect(overflow.querySelector('[data-teammate-status="error"]')).toBeNull();
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
   });
 
   it('leaves session notifications to the task sidebar', async () => {
@@ -946,7 +1114,7 @@ describe('TeammatesSection rows', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     mocks.profiles = [bot({ id: 'bot-1', name: 'PR steward' })];
     const view = render(<UnreadSync />);
-    mocks.profiles = [bot({ id: 'bot-2', name: 'New teammate' })];
+    mocks.profiles = [bot({ id: 'bot-2', name: "New buddy" })];
     view.rerender(<UnreadSync />);
     mocks.refreshBotProfiles.mockClear();
     act(() => {

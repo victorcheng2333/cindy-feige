@@ -113,7 +113,7 @@ const capabilities = (modelId: string, modelName: string) => ({
 
 function renderRemoteAgentPicker(onRelocate: (selection: RemoteAgentRelocation) => Promise<boolean>) {
   return render(
-    <ModelSelector
+    <ModelSelector unifiedPanel
       modelId="cloud-model"
       effort="medium"
       vendorKey="cc"
@@ -133,7 +133,7 @@ function renderRemoteAgentPicker(onRelocate: (selection: RemoteAgentRelocation) 
 
 function renderRemoteDevicePicker(deviceId = 'cloud-device') {
   return render(
-    <ModelSelector remoteAgent={undefined}
+    <ModelSelector unifiedPanel remoteAgent={undefined}
       modelId="cloud-model"
       effort="medium"
       vendorKey="cc"

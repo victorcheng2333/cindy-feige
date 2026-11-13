@@ -75,6 +75,11 @@
     "cancel": "Ne rien changer"
   },
   "unified": {
+    "accountUnassigned": "Compte non attribué",
+    "accountCount_one": "{{count}} compte",
+    "accountCount_other": "{{count}} comptes",
+    "accountFallback": "Compte {{index}}",
+    "accountCount_many": "{{count}} comptes",
     "favoriteConfiguration": "Ajouter cette configuration aux favoris",
     "savedConfiguration": "En favori · Touchez pour retirer",
     "currentConfiguration": "Configuration actuelle",
@@ -106,8 +111,7 @@
     "groupBadge_other": "Groupe de fournisseurs · {{count}} ordinateurs",
     "harness": "Harness",
     "restoreRecommended": "Rétablir les paramètres recommandés",
-    "useConfiguration": "Utiliser cette configuration",
-    "saveFailed": "Impossible d'enregistrer. Veuillez réessayer.",
+    "saveFailed": "Impossible d'enregistrer. Réessayez.",
     "configure": "Configurer",
     "syncFailed": "Impossible de synchroniser les favoris. Rouvrez le sélecteur pour réessayer ; l'ordinateur distant a peut-être besoin d'une mise à jour.",
     "timeUnit": {
@@ -116,6 +120,13 @@
       "minute": "min",
       "second": "s"
     },
-    "groupBadge_many": "Groupe de fournisseurs · {{count}} ordinateurs"
+    "groupBadge_many": "Groupe de fournisseurs · {{count}} ordinateurs",
+    "quotaAverage": "Moyenne restante : {{percent}} %",
+    "quotaUpdating": "Quota en attente de mise à jour",
+    "quotaResetSoon": "Réinitialisation proche",
+    "quotaResetIn": "Réinitialisation dans {{duration}}",
+    "quotaAverageHint": "Quota hebdomadaire · Poids égal par compte",
+    "quotaResetHint": "Au rythme actuel, il pourrait rester du quota au moment de la réinitialisation : jaune sous 24 heures, rouge sous 6 heures.",
+    "useConfiguration": "Utiliser cette configuration"
   }
 }

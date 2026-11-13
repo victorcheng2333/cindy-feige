@@ -26,7 +26,12 @@ import {
   type LocalePreference,
   type SupportedLocale,
 } from '@/i18n';
-import type { ClassicalReplyStyleId } from '@cindy/maker-shared/classical-reply';
+import {
+  classicalReplyStyleContextOf,
+  defaultClassicalReplyStyleFor,
+  type ClassicalReplyStyleContext,
+  type ClassicalReplyStyleId,
+} from '@cindy/maker-shared/classical-reply';
 import {
   readStoredClassicalStyle,
   readStoredLocale,
@@ -45,7 +50,7 @@ interface LocaleContextValue {
   setLocale: (next: LocalePreference) => void;
   /** Follow a host broadcast in this window without changing the user's preference. */
   followLocale: (next: SupportedLocale) => void;
-  /** 古典界面（文言）下 AI 作答的输出风格。 */
+  /** AI 作答文风（文言、唐诗……）；现代中文界面下也可选，默认照常作答。 */
   classicalStyle: ClassicalReplyStyleId;
   setClassicalStyle: (next: ClassicalReplyStyleId) => void;
 }
@@ -92,12 +97,22 @@ export function bootstrapInitialLocale(syncHost = true): SupportedLocale {
 export function LocaleProvider({ children, syncHost = true }: { children: ReactNode; syncHost?: boolean }) {
   const [locale, setLocaleState] = useState<LocalePreference>(readStoredLocale);
   const [effectiveLocale, setEffectiveLocale] = useState<SupportedLocale>(getEffectiveLocale);
-  const [classicalStyle, setClassicalStyleState] = useState<ClassicalReplyStyleId>(readStoredClassicalStyle);
+  // 文言界面与简体 / 繁體中文界面的文风分开记忆:在文言界面选的唐诗不带进现代中文界面，
+  // 每个语境各自从未选状态起步(默认见 defaultClassicalReplyStyleFor)。
+  const [storedStyles, setStoredStyles] = useState<Record<ClassicalReplyStyleContext, ClassicalReplyStyleId | null>>(() => ({
+    classical: readStoredClassicalStyle('classical'),
+    modern: readStoredClassicalStyle('modern'),
+  }));
+  const styleContext = classicalReplyStyleContextOf(effectiveLocale);
+  const classicalStyle = storedStyles[styleContext] ?? defaultClassicalReplyStyleFor(effectiveLocale);
 
-  const setClassicalStyle = useCallback((next: ClassicalReplyStyleId) => {
-    setClassicalStyleState(next);
-    writeStoredClassicalStyle(next);
-  }, []);
+  const setClassicalStyle = useCallback(
+    (next: ClassicalReplyStyleId) => {
+      setStoredStyles((prev) => ({ ...prev, [styleContext]: next }));
+      writeStoredClassicalStyle(styleContext, next);
+    },
+    [styleContext],
+  );
 
   // Main builds each turn's reply note, so it keeps the current style too.
   useEffect(() => {

@@ -162,7 +162,9 @@ describe('mobile endpoint overrides after Expo bundle transform', () => {
     'bundles %s without requiring or embedding private dev endpoints (production=%s)',
     (region, isProd) => {
       vi.stubEnv('EXPO_PUBLIC_CINDY_AUTH_REGION', region);
-      const { dependencies } = collectDependencies(transformEnv(isProd).ast!, {
+      // Babel and Metro resolve different patch versions of the AST declarations;
+      // the real collector still consumes the actual transformed File unchanged.
+      const { dependencies } = collectDependencies(transformEnv(isProd).ast! as Parameters<typeof collectDependencies>[0], {
         asyncRequireModulePath: 'metro-runtime/src/modules/asyncRequire',
         dependencyMapName: null,
         dynamicRequires: 'reject',

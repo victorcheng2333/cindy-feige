@@ -47,7 +47,7 @@ import { isDefaultDraftSessionTitle } from '@cindy/maker-shared/session-title';
 import { CINDY_MAKE_ENABLED, isCindyMakeSource } from '@cindy/maker-shared/cindy-make-feature';
 import { EMPTY_INPUT_PROJECTION, normalizeInputProjection } from '@/session/inputProjection';
 import { sortPendingInteractions } from '@/session/interactionModel';
-import { clearAskUserDraft } from '@/session/interactionDraftStore';
+import { clearAskUserDraft, clearIssueConfirmDraft, clearAllInteractionDrafts } from '@/session/interactionDraftStore';
 import { applySessionModelPrefPush } from '@/session/sessionModelMirror';
 import {
   createLatestWriteGuard,
@@ -740,9 +740,9 @@ const sessionDeviceIndex = new Map<string, string>();
 // Routing recovery needs every raw owner, before the display list deduplicates IDs.
 // null means distinct canonical owners; old/current shards of one device count once.
 const uniqueSessionDeviceIndex = new Map<string, string | null>();
-// 已收到 error-persisted 脏信号且缓存消息仍在的会话集合。session 页面监听此 Set,
+// 已收到历史脏信号且缓存消息仍在的会话。token 让多个历史读取者各自观察每次失效,
 // 检测到自身 sessionId 被加入时调 load() 触发整窗刷新(含 error 行),避免先清空导致空白帧。
-const pendingRefreshSessions = new Set<string>();
+const pendingRefreshSessions = new Map<string, object>();
 const reseedHandlers = new Map<string, Set<() => void>>();
 // A whole-list read after app start or a reconnect reseed may follow a gap in live pushes.
 // Listeners read changed tasks ahead; ordinary list refreshes while pushes flow do not fire.
@@ -1195,7 +1195,7 @@ function invalidateSessionMessageWindowState(
   changed = sessionLiveStreamAcked.delete(sessionId) || changed;
   sessionLastAccessOrder.delete(sessionId);
   if (requestRefresh && !pendingRefreshSessions.has(sessionId)) {
-    pendingRefreshSessions.add(sessionId);
+    pendingRefreshSessions.set(sessionId, {});
     changed = true;
   } else if (!requestRefresh) {
     changed = pendingRefreshSessions.delete(sessionId) || changed;
@@ -4112,6 +4112,11 @@ export const remoteSessionStore = {
     return pendingRefreshSessions.has(sessionId);
   },
 
+  /** Non-consuming signal: group histories must not steal the task page's repair. */
+  getHistoryInvalidationToken(sessionId: string): object | undefined {
+    return pendingRefreshSessions.get(sessionId);
+  },
+
   /** 消费 pending refresh 标记,返回 true 表示确实有待刷新,由调用方触发 load()。 */
   consumePendingRefresh(sessionId: string): boolean {
     if (!pendingRefreshSessions.has(sessionId)) return false;
@@ -4757,7 +4762,7 @@ export const remoteSessionStore = {
         invalidateHistory: (sessionId) => {
           sessionMessageSyncMarkers.delete(sessionId);
           narrowWindowCoverageToStart(sessionId);
-          pendingRefreshSessions.add(sessionId);
+          pendingRefreshSessions.set(sessionId, {});
           bumpMessageVersion(sessionId);
           emit();
         },
@@ -4861,7 +4866,7 @@ export const remoteSessionStore = {
           // 连续性结论随窗口一起失效:rewind 可能删掉中间的行,清空/回收更是整窗重来。
           // 重置为未知,下一次最新窗口同步会重建(见 sessionWindowCoverage)。
           forgetWindowCoverage(sessionId);
-          pendingRefreshSessions.add(sessionId);
+          pendingRefreshSessions.set(sessionId, {});
         } else {
           // 未缓存:清 sync marker + 标记待刷新。
           // 若 session 页面正在首次 listMessages(messages 尚未填充),需要 pendingRefreshSessions
@@ -4874,7 +4879,7 @@ export const remoteSessionStore = {
           // 连续性结论随窗口一起失效:rewind 可能删掉中间的行,清空/回收更是整窗重来。
           // 重置为未知,下一次最新窗口同步会重建(见 sessionWindowCoverage)。
           forgetWindowCoverage(sessionId);
-          pendingRefreshSessions.add(sessionId);
+          pendingRefreshSessions.set(sessionId, {});
         }
         bumpMessageVersion(sessionId);
         emit();
@@ -5026,6 +5031,7 @@ export const remoteSessionStore = {
           this.confirmProtectedQuestion(sessionId, requestId);
           clearAskUserDraft(requestId);
         }
+        clearIssueConfirmDraft(requestId);
         // 注意:这里**不**提前回收延长抑制条目——push 到达只说明被控端已确认,
         // 不排除仍有「决定提交前发出、此刻还在途」的旧 getPendingInteractions
         // 快照晚于本 push 返回(弱网高发);提前回收会让那份旧快照把已解决的卡
@@ -5553,6 +5559,7 @@ export const remoteSessionStore = {
   },
 
   clear(): void {
+    clearAllInteractionDrafts();
     clearRemoteHistoryViews();
     deviceSessionListMutationEpochFloor = ++nextDeviceSessionListMutationEpoch;
     deviceSessionListMutationEpochs.clear();
@@ -5592,6 +5599,7 @@ export const remoteSessionStore = {
     sessionMakerActivityEpochs.clear();
     makerActivityEpoch = 0;
     sessionMessageSyncMarkers.clear();
+    pendingRefreshSessions.clear();
     sessionWindowCoverage.clear();
     sessionLiveStreamAcked.clear();
     sessionTaskUpdates.clear();

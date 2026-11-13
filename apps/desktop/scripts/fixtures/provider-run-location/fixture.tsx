@@ -99,6 +99,10 @@ mountPage({
         loading: false, error: null,
       });
     }
+    // provider-own-computers 页：OpenAI 只有 own-provider 场景单独打开了「允许被远程调用」。
+    if (ctx.page === 'provider-own-computers') {
+      snapshot.providers[0] = { ...snapshot.providers[0], remoteInvocationEnabled: ctx.case === 'own-provider' };
+    }
     if (ctx.case === 'pinned') snapshot.providers[0] = { ...snapshot.providers[0], runLocation: 'mbp' } as typeof snapshot.providers[0];
     refreshControl.defer = ctx.case === 'wizard-reopen';
     if (ctx.case === 'builtin-save-guard') snapshot.providers.push({
@@ -139,6 +143,8 @@ mountPage({
         requestProviderModelsAutoRefresh: async () => ({ ok: true }),
         setProviderOrder: forbid('setProviderOrder'),
         setProviderRunLocation: async () => ({ ok: true }),
+        // provider-own-computers 页：「远程连接」里的「让我的其他电脑用本机模型」开没开。
+        getOwnComputerModelUse: async () => ({ enabled: ctx.case === 'own-on' || ctx.case === 'own-remote-off' }),
         listProviderPresets: async () => ({ presets: BUNDLED_CATALOG.presets ?? [] }),
         localModelList: async () => ({ status: { kind: 'ready' }, models: [], memoryGb: 0 }),
         localModelStatus: async () => ({ kind: 'ready' }),
@@ -146,7 +152,7 @@ mountPage({
         onLocalModelStatus: subscription('localModelStatus'),
         onProviderOAuthProgress: subscription('providerOAuthProgress'),
       },
-      deviceLink: { getState: async () => ({ remoteControlEnabled: true }) },
+      deviceLink: { getState: async () => ({ remoteControlEnabled: ctx.case !== 'own-remote-off' }) },
       providerShare: {
         command: async () => ({ ready: true, providerIds: [] }),
         onOwnedChanged: subscription('ownedChanged'),

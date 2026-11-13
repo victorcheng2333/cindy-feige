@@ -10,6 +10,9 @@ const accountCatalog = { ...BUNDLED_CATALOG, providers: [buildUserProvider({
   }), buildUserProvider({ id: 'openai-api-account', name: 'API', runtimes: {
     codex: { baseUrl: 'https://api.openai.com/v1', catalogPresetId: 'openai-api',
       models: [{ id: 'gpt-6.1-sol', name: 'Sol' }] },
+  } }), buildUserProvider({ id: 'openai-api-discovered', name: 'API discovery price', runtimes: {
+    codex: { baseUrl: 'https://api.openai.com/v1', catalogPresetId: 'openai-api',
+      models: [{ id: 'gpt-6.1-sol', name: 'Sol', discoveredCost: { input: 0, output: 0.5 } }] },
   } }), buildUserProvider({ id: 'router-account', name: 'Router', runtimes: {
     pi: { baseUrl: 'https://openrouter.ai/api/v1', wireProtocol: 'openai-chat', models: [
       { id: 'aion-labs/aion-3.0-mini', name: 'Aion' },
@@ -62,6 +65,14 @@ describe('independent subscription account reference prices', () => {
       .toEqual({ ...base, providerId: 'openai-api-account' });
     expect(getModelPriceQuote(getReferenceModelPricing({ at }), 'openai-api-account', 'gpt-6.1-sol', 'codex'))
       .toEqual({ ...base, providerId: 'openai-api-account' });
+    // An explicit connection discovery quote still wins over the public tariff.
+    expect(getModelPriceQuote(getReferenceModelPricing({ at }), 'openai-api-discovered', 'gpt-6.1-sol', 'codex'))
+      .toEqual({ providerId: 'openai-api-discovered', modelId: 'gpt-6.1-sol', currency: 'USD',
+        source: 'provider-reference', approximate: true, inputPerMtok: 0, outputPerMtok: 0.5 });
+    const beforeRelease = getReferenceModelPricing({ at: '2020-01-01' });
+    expect(getModelPriceQuote(beforeRelease, 'openai-api-account', 'gpt-6.1-sol', 'codex')).toBeUndefined();
+    expect(getModelPriceQuote(beforeRelease, 'openai-api-discovered', 'gpt-6.1-sol', 'codex'))
+      .toMatchObject({ inputPerMtok: 0, outputPerMtok: 0.5 });
     expect(accountReferencePriceQuote('openai-api-account', 'unknown-model', BUNDLED_CATALOG.modelRegistry, { at, agent: 'codex' })).toBeUndefined();
   });
   it.each(['claude-code', 'codex', 'pi'] as const)(

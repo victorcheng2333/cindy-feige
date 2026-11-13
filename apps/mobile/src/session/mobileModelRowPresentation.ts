@@ -122,7 +122,14 @@ export function quotaCountdown(reset: number, now: number, unitLabel: (unit: Quo
   return `${Math.max(1, Math.ceil(remaining / 1000))}${unitLabel("second")}`;
 }
 
-/** Keep the host's connection title; account identity belongs in the row subtitle. */
-export function mobileProviderAccountTitle(provider: ProviderView): string {
-  return providerDisplayTitle(provider);
+/** Model rows keep the connection title; source filters explicitly supply identity. */
+export function mobileProviderAccountTitle(provider: ProviderView, accountIdentity?: string): string {
+  const name = providerDisplayTitle(provider);
+  const identity = accountIdentity?.trim();
+  if (!identity || name === identity) return name;
+  const base = name.replace(/ \(\d+\)$/, '');
+  if (base.endsWith(` · ${identity}`)) return name;
+  const separator = base.indexOf(' · ');
+  if (separator >= 0 && base.length === 50 && `${base.slice(0, separator)} · ${identity}`.slice(0, 50) === base) return name;
+  return `${name} · ${identity}`;
 }
