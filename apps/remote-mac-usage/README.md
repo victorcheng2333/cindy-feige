@@ -1,7 +1,5 @@
 # 猫猫 Mac
 
-> 2026-11-05：已移除 Cursor 额度入口，保留 Claude / ChatGPT 账号、登录和设备筛选。下方 Cursor 验证条目为旧版本记录。
-
 独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.2.0（Rust / Tauri 2 + `WKWebView` 原生构建）。
 当前 Mac 不需要运行 Cindy；提供额度的电脑需要运行 Cindy、在线并允许相应远程访问。
 中国大陆版，独立 Bundle ID `com.chengfei.quotacat.cn`。
@@ -65,7 +63,7 @@ pnpm --dir apps/remote-mac-usage package
 - 不读取 Cindy 的 userData、登录文件或 Claude / ChatGPT 凭证。Renderer 不接收 token 或授权 ticket。
   只暴露固定登录／查看命令，Main 校验参数和窗口来源；页面无 Node、无网络能力，导航和下载关闭。
 - 复用 `@cindy/auth-client`、`@cindy/device-link` 与共享 Codex 限额桶选择逻辑，沿用现有加密 invoke 协议，不修改服务端或中转。
-  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`。
+  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`、`maker:usage:cursor-subscription`。
   内置 Claude / OpenAI 卡片使用既有 `default-subscription-account` 可选作用域，读取默认账号自身额度；
   暂停任务分配不影响查看，不借用账号池中其他账号的额度。旧 Cindy 忽略附加作用域，仍读取原默认账号。
   Cursor 通道要求新版 Cindy；旧端返回不支持时明确提示更新。

@@ -354,12 +354,13 @@ function isExternalDispatchOwner(agentMeta: Record<string, unknown> | null | und
   return typeof kind === 'string' && kind.length > 0;
 }
 
-function normalizeOverflowDbAgentKind(value: string): 'cc' | 'codex' | 'pi' {
-  if (value === 'codex' || value === 'pi') return value;
+function normalizeOverflowDbAgentKind(value: string): 'cc' | 'codex' | 'pi' | 'cursor' {
+  if (value === 'cursor' || value === 'codex' || value === 'pi') return value;
   return 'cc';
 }
 
 export function engineLabelForOverflow(agentKind: string): string {
+  if (agentKind === 'cursor') return 'Cursor';
   if (agentKind === 'codex') return 'Codex';
   if (agentKind === 'pi') return 'Pi';
   return 'Claude Code';
@@ -460,7 +461,7 @@ export interface ContextOverflowRolloverDeps {
     meta: {
       reason: ContextRebuildReason;
       sourceUserClientId: string | null;
-      sourceAgentKind?: 'cc' | 'codex' | 'pi';
+      sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
       sourceModel?: string | null;
       sourceProviderId?: string | null;
       expectedClearedAt?: number | null;
@@ -1110,7 +1111,12 @@ export function createContextOverflowRollover(deps: ContextOverflowRolloverDeps)
     const window = effectiveContextWindow(sessionRow.model, reportedWindow, verified);
     // Native compaction owns healthy contexts. Keep the existing full-window
     // recovery guard shared with ordinary Sessions (Codex manages its own limit).
-    const pressure = sessionRow.agentKind !== 'codex' && shouldRebuildForContextPressure(usedTokens, window);
+    // Cursor summarizes natively and reports native checkpoint usage without
+    // host-controlled rollover discarding its native history.
+    const pressure =
+      sessionRow.agentKind !== 'codex' &&
+      sessionRow.agentKind !== 'cursor' &&
+      shouldRebuildForContextPressure(usedTokens, window);
     const compactFailed = liveUsage?.needsRollover === true;
     const piByteRecoveryFailed = sessionRow.agentKind === 'pi' && isPiRequestBodyRecoveryExhausted(lastError);
     const tokenViolated =

@@ -822,6 +822,7 @@ setSessionOpeningModelAdmission(async body => {
     providerRouting: buildLocalProviderRoutingContext(snapshot.providers),
     hasCindyAiApiKey: currentGateway() !== null,
   });
+  if (execution.agentKind === 'cursor') throw new Error('Cursor is not supported on headless host');
   return { ...body, ...execution, effort: execution.effort ?? '',
     agentKind: execution.agentKind === 'claude-code' ? 'cc' : execution.agentKind };
 });
@@ -839,6 +840,7 @@ const readSessionForRun = async (sessionId: string) => {
   if (!row || row.status !== 'active') throw new Error('session is not active');
   const [botLink] = await db.drizzle.select({ botId: botSessionLinks.botId })
     .from(botSessionLinks).where(eq(botSessionLinks.sessionId, sessionId)).limit(1);
+  if (row.agentKind === 'cursor') throw new Error('Cursor is not supported on headless host');
   const agentKind = row.agentKind === 'codex' ? 'codex' : row.agentKind === 'pi' ? 'pi' : 'claude-code';
   return {
     id: row.id,
@@ -1313,6 +1315,7 @@ const serverDeps = {
       .where(eq(sessionTable.id, sessionId)).limit(1);
     if (!rows[0]) throw new Error('session not found');
     if (!model) throw new Error('model is required');
+    if (targetAgentKind === 'cursor') throw new Error('Cursor is not supported on headless host');
     const intent = {
       targetAgentKind: targetAgentKind === 'codex' ? 'codex' : targetAgentKind === 'pi' ? 'pi' : 'claude-code',
       model,
@@ -1474,6 +1477,7 @@ const serverDeps = {
   interactions,
   agentCommands: async (input: { agentKind?: string }) => {
     const rawKind = String(input.agentKind ?? '');
+    if (rawKind === 'cursor') return { success: false, error: `Agent 'cursor' is not registered` };
     const kind = rawKind === 'codex' ? 'codex' : rawKind === 'pi' ? 'pi' : 'claude-code';
     const agent = agentGraph?.instances?.[kind];
     if (!agent) return { success: false, error: `Agent '${kind}' is not registered` };
@@ -1481,6 +1485,7 @@ const serverDeps = {
   },
   agentSkills: async (input: { agentKind?: string; workingDir?: string; sessionId?: string }) => {
     const rawKind = String(input.agentKind ?? '');
+    if (rawKind === 'cursor') return { success: false, error: `Agent 'cursor' is not registered` };
     const kind = rawKind === 'codex' ? 'codex' : rawKind === 'pi' ? 'pi' : 'claude-code';
     const agent = agentGraph?.instances?.[kind];
     if (!agent) return { success: false, error: `Agent '${kind}' is not registered` };
@@ -1492,6 +1497,7 @@ const serverDeps = {
     return { success: true, skills: result.skills ?? [] };
   },
   capabilities: async (agentKind: string) => {
+    if (agentKind === 'cursor') throw new Error(`Agent 'cursor' is not registered`);
     const kind = agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'claude-code';
     const baseCaps = agentGraph?.capabilitiesByAgent?.[kind];
     if (!baseCaps) throw new Error(`Agent '${kind}' is not registered`);

@@ -60,6 +60,11 @@ function deviceProvider(
 }
 
 describe('buildDeviceLinkCreateArgs', () => {
+  // Tier: unit. A persisted local Cursor choice must never become an unsupported remote payload.
+  it('rejects a local Cursor choice before constructing the remote payload', () => {
+    expect(() => buildDeviceLinkCreateArgs({ agentKind: 'cursor', model: 'fixture-model', effort: null,
+      permissionMode: 'auto', fastMode: false })).toThrow('local desktop');
+  });
   it.each([undefined, '/remote/project'])('carries initial plan mode through creation and provisional UI (%s)', (workingDir) => {
     const args = resolveDeviceLinkSubmission({
       agentKind: 'codex', workingDir, capabilityAgentKind: 'codex', deviceProviders: [],

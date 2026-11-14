@@ -1,6 +1,7 @@
 /** Ordinary task creation, shared by local IPC and authenticated Host clients.
  * Entry adapters validate caller identity; this service owns identical task data,
  * draft lifecycle, directory grants and model admission on every launcher. */
+import { assertCursorTaskCreationAllowed } from './cursorTaskCreation.js';
 import { eq } from 'drizzle-orm';
 import { getCurrentDbClientSnapshot } from '../client/current.js';
 import { sessions } from '../schema.js';
@@ -62,7 +63,8 @@ export async function createUserSession(body: unknown, ports: UserSessionCreateP
     }
     const createBody = bodyWithoutProvisional as Parameters<typeof sessionCreateToRow>[1];
     // M16: agentKind 白名单校验（防止 renderer 传非法值）
-    const ALLOWED_AGENT_KINDS = new Set<string>(['cc', 'codex', 'pi']);
+    const ALLOWED_AGENT_KINDS = new Set<string>(['cc', 'codex', 'pi', 'cursor']);
+    if (bodyObj.agentKind === 'cursor') assertCursorTaskCreationAllowed(bodyObj);
     if (bodyObj.agentKind !== undefined && !ALLOWED_AGENT_KINDS.has(bodyObj.agentKind as string)) {
       throwIpcError('INVALID_PARAMS', `invalid agentKind: ${String(bodyObj.agentKind)}`);
     }

@@ -1,3 +1,4 @@
+import { cursorAccount } from "./cursorQuota";
 import {
   CindyAuthClient,
   AuthApiError,
@@ -40,7 +41,9 @@ export type Account = {
   id: string;
   name: string;
   plan: string;
-  service: "Claude" | "ChatGPT";
+  service: "Claude" | "ChatGPT" | "Cursor";
+  error?: string;
+  noticeOnly?: boolean;
   windows: Quota[];
   updated: number | null;
   failed: boolean;
@@ -331,8 +334,19 @@ export class Remote {
       }
       accounts.push(account);
     }
-    return accounts.sort(
-      (a, b) => Number(a.service !== "Claude") - Number(b.service !== "Claude"),
-    );
+    // Cursor execution remains local-only, so its quota has a dedicated discovery read.
+    try {
+      const cursor = cursorAccount(await read("maker:usage:cursor-subscription"));
+      if (cursor) accounts.push(cursor);
+    } catch (error) {
+      if (generation !== this.generation) throw Error("连接已结束");
+      accounts.push({ id: 'cursor-status', name: 'Cursor', service: 'Cursor', plan: '', windows: [], updated: null, failed: true, noticeOnly: true,
+        error: error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED'
+          ? '这台电脑尚不支持 Cursor 额度读取，更新 Cindy 后可显示。'
+          : '暂时无法检查 Cursor 额度，请稍后刷新。' });
+    }
+    if (generation !== this.generation) throw Error("连接已结束");
+    const order = { Claude: 0, ChatGPT: 1, Cursor: 2 };
+    return accounts.sort((a, b) => order[a.service] - order[b.service]);
   }
 }

@@ -1497,6 +1497,19 @@
     }
   },
   "menubar": {
+    "cursor": {
+      "pools": "分池",
+      "auto": "Cursor 模型",
+      "api": "其他模型",
+      "total": "套餐额度",
+      "remaining": "各池剩余",
+      "separate": "Cursor 的额度池独立计算。",
+      "explanation": "一个池用完，不代表其他池也用完；各池百分比不能相加。",
+      "resetUnknown": "重置时间未知",
+      "extra": "额外消费",
+      "notRead": "暂未读取",
+      "extraHint": "在 Cursor 账单查看"
+    },
     "shared": {
       "label": "共用",
       "note": "此乃名籍共用之额度，非专分予君者。",
@@ -4597,7 +4610,19 @@
         "configure": "往设之",
         "keepCustom": "续自订"
       },
-      "claudeCleanupPending": "连接已删，然 Claude Code 尚未尽退独立账号目录。Cindy 将于下次启动再试，任务历史仍存。"
+      "claudeCleanupPending": "连接已删，然 Claude Code 尚未尽退独立账号目录。Cindy 将于下次启动再试，任务历史仍存。",
+      "cursor": {
+        "description": "以 Cursor 账号行本机差事，由 Cursor 计费。可自动、全权、谋划；询问、回退、分叉尚未备。",
+        "connect": "连接 Cursor",
+        "disconnect": "断开 Cursor",
+        "waiting": "请于浏览器登入，至多候五分钟。",
+        "stopWarning": "Cursor 方行之差事将止，旧录仍存。",
+        "loginFailed": "Cursor 登入未成，请察浏览器与网络。",
+        "legacyPermission": "Cursor 无询问权限之式，此任务以 Cursor 自动审阅。",
+        "windowsSandbox": "Cursor 于 Windows 之沙箱未经验证；自动模式仍由 Cursor 自动审阅。",
+        "historyReset": "目前账号下未见此差事之 Cursor 历史，旧参照已清除。再次传送将用新上下文，差事讯仍保留。",
+        "historyUnavailable": "目前账号无法还原此差事之 Cursor 历史。请确认账号及差事状态后重试。"
+      }
     },
     "experimental": {
       "title": "试行之术",
@@ -13977,6 +14002,17 @@
       "listAria": "权柄模式",
       "autoFallback": "自动审批暂不可用，已切换为预设权柄；需时将询问君。",
       "modes": {
+        "cursor": {
+          "auto": {
+            "label": "自审"
+          },
+          "bypassPermissions": {
+            "label": "完全访问"
+          },
+          "plan": {
+            "label": "谋定模式"
+          }
+        },
         "claude-code": {
           "ask": {
             "label": "预设权柄",

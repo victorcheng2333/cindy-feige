@@ -158,8 +158,8 @@ export interface ScheduleFormState {
   webhookSigned?: boolean;
   /** 自定义格式的 JSON 文本，原样保留用户输入。 */
   webhookFormat?: string;
-  agentKind: 'claude-code' | 'codex' | 'pi';
-  modelAgentKind?: 'claude-code' | 'codex' | 'pi';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor';
   modelAgentDeviceId?: string;
   /** The bound task's baseline, independent of the editable model choice. Form-only. */
   boundAgent?: { sessionId: string; agentKind: ScheduleFormState['agentKind'] };
@@ -418,7 +418,7 @@ export function applyRunMode(
 
 /** renderer Session.agentKind('cc'|'codex')→ schedule agentKind 映射。 */
 export function sessionAgentKindToScheduleAgentKind(
-  kind: 'cc' | 'codex' | 'pi',
+  kind: 'cc' | 'codex' | 'pi' | 'cursor',
 ): ScheduleFormState['agentKind'] {
   if (kind === 'codex') return 'codex';
   if (kind === 'pi') return 'pi';
@@ -660,6 +660,8 @@ export function validGithubRepositories(text: string | undefined): boolean {
 }
 
 export function buildScheduleInput(form: ScheduleFormState): CreateScheduleInput {
+  const selectedAgent = scheduleAgentKindForForm(form);
+  if (selectedAgent === 'cursor' || form.modelAgentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
   const isHeartbeat = !!form.targetSessionId.trim();
   const isScript = (form.executionMode ?? 'agent') === 'script';
   const cronExpr = form.cronExpr.trim();
@@ -677,7 +679,7 @@ export function buildScheduleInput(form: ScheduleFormState): CreateScheduleInput
     // 恒带 key：编辑 Cron 任务时 undefined 会沿 storage patch 契约清空旧 intervalMs；
     // 相对间隔任务则原样保留权威值，不能从可能陈旧的 cronExpr 重新推导。
     intervalMs: form.intervalMs,
-    agentKind: scheduleAgentKindForForm(form),
+    agentKind: selectedAgent,
     modelAgentKind: !isScript ? form.modelAgentKind : undefined,
     modelAgentDeviceId: !isScript && (form.model.trim() || form.modelAgentKind) ? form.modelAgentDeviceId : undefined,
     // 恒带 key:运行位置与模型 / 来源成对,update 时 undefined 清回本机。只有每次新建任务

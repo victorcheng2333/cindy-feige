@@ -9384,6 +9384,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!location || deviceIdRef.current !== deviceId) return false;
     const relocates = location.agentDeviceId !== undefined;
     if (config.agent !== sessionAgentKind) {
+      if (config.agent === 'cursor') return false;
       if (!sessionAgentSwitchSupported) return false;
       // 换电脑与换引擎是同一份交接风险:换电脑那一步已经确认过,不再叠一层换引擎确认。
       if (!relocates && modelSheetApprovedAgentRef.current !== config.agent && agentSwitchIntent?.targetAgentKind !== config.agent && !(await confirmMobileSessionAgentSwitch(config.agent, !!agentSwitchIntent,
@@ -9394,6 +9395,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       return applied;
     }
     if (relocates || orcaModelSelectionUsesIntent) {
+      if (config.agent === 'cursor') return false;
       // 同引擎换电脑或 Orca 换模型均走下一条消息生效的切换意图。
       if (!canStageOrcaModelSelection(config.agent, capability.contextWindow,
         targetCapabilities.supportsModelWindowSwitchGuard === true, relocates)) return false;
@@ -11015,7 +11017,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                 selectedFastMode: collab.workerForm.form.model.fast,
               } : undefined,
               scope: JSON.stringify([auth.user?.id, collabWorkerDeviceId, 'orca-worker']),
-              agents: collab.workerForm.pickerAgents,
+              agents: collab.workerForm.pickerAgents.filter(agent => agent !== 'cursor'),
               loadCapabilities: async (agent) => {
                 const result = normalizeMobileAgentCapabilities(await collab.workerForm.maker.getCapabilities(agent));
                 if (!result) throw new Error('Capabilities unavailable');

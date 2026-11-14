@@ -3270,7 +3270,7 @@ function sweepStaleTaskUpdates(sessionId: string): boolean {
 function recallParkedTaskUpdates(
   sessionId: string,
   data: unknown,
-  source: 'claude-code' | 'codex' | 'pi' | undefined,
+  source: 'claude-code' | 'codex' | 'pi' | 'cursor' | undefined,
   prevMap: ReadonlyMap<string, AgentTaskUpdate> | undefined,
 ): ReadonlyMap<string, AgentTaskUpdate> | undefined {
   const parkedMap = sessionParkedTaskUpdates.get(sessionId);
@@ -5289,7 +5289,7 @@ export const remoteSessionStore = {
         return;
       }
       const rawSource = readString(event, 'source');
-      const source = rawSource === 'codex' || rawSource === 'claude-code' || rawSource === 'pi'
+      const source = rawSource === 'cursor' || rawSource === 'codex' || rawSource === 'claude-code' || rawSource === 'pi'
         ? rawSource
         : undefined;
       const next = applyAgentTaskUpdateEvent(
@@ -5377,6 +5377,17 @@ export const remoteSessionStore = {
       }
       const rawTokenUsage = readNumber(data, 'tokenUsage');
       const rawStatus = readString(data, 'status');
+      // The menu reads session counters, not the streaming run-status object.
+      // Native occupancy can decrease after compaction; lifetime usage is separate.
+      const contextTokens = readNumber(data, 'contextTokens');
+      const contextWindow = readNumber(data, 'contextWindow');
+      const ownerDevice = sessionDeviceIndex.get(sessionId);
+      if (ownerDevice) {
+        const patch: Partial<RemoteSession> = {};
+        if (contextTokens !== null && Number.isSafeInteger(contextTokens) && contextTokens >= 0) patch.contextTokens = contextTokens;
+        if (contextWindow !== null && Number.isSafeInteger(contextWindow) && contextWindow > 0) patch.contextWindow = contextWindow;
+        if (Object.keys(patch).length > 0) this.applySessionPatch(ownerDevice, sessionId, patch);
+      }
       // turn-start 检测用 maker 自己的边界(不用 current.isRunning):activity 推送 / 活跃
       // 快照会先把 sessionRunning 置 true,重连场景首个 status 到达时宽状态已是 true,按它
       // 判定会漏掉真 turn start,stale 清理被跳过。

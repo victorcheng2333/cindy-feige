@@ -7,7 +7,7 @@ use crate::device_link::{
 };
 use crate::model::{
     current_quota, missing_reset_text, parse_account, parse_devices, tray_window_position,
-    validate_command, Command, IntRect,
+    validate_command, Command, IntRect, ServiceKind,
 };
 use crate::service::{UsageService, UsageServiceDeps};
 use crate::storage::{
@@ -598,4 +598,151 @@ async fn logout_discards_in_flight_quota_response() {
     handle.await.unwrap();
     assert!(!svc.snapshot().await.signed_in);
     assert!(svc.snapshot().await.devices.is_empty());
+}
+
+struct CursorMockLink {
+    channel_not_allowed: AtomicBool,
+    calls: StdMutex<Vec<(String, Vec<Value>)>>,
+}
+
+#[async_trait]
+impl DeviceLinkSession for CursorMockLink {
+    async fn wait_until_online(&self, _timeout: Duration) -> Result<(), String> {
+        Ok(())
+    }
+    async fn open_link(&self, _dst: &str, _timeout: Duration) -> Result<LinkAccept, String> {
+        Ok(LinkAccept {
+            capabilities: vec![CAPABILITY_BACKGROUND_LINK_V1.to_string()],
+            transport_stream_id: None,
+            transport_base_seq: None,
+        })
+    }
+    async fn invoke(
+        &self,
+        _dst: &str,
+        channel: &str,
+        args: Vec<Value>,
+        _timeout: Duration,
+    ) -> Result<InvokeOutcome, String> {
+        self.calls.lock().unwrap().push((channel.to_string(), args));
+        if channel == "maker:provider:list" {
+            return Ok(InvokeOutcome::Ok(json!({
+                "providers": [
+                    { "id": "openai", "name": "OpenAI", "connected": true, "auth": { "method": "oauth", "native": "codex" } },
+                    { "id": "anthropic", "name": "Claude", "connected": true, "auth": { "method": "oauth", "native": "claude" } }
+                ]
+            })));
+        }
+        if channel == "maker:usage:cursor-subscription" {
+            if self.channel_not_allowed.load(Ordering::SeqCst) {
+                return Ok(InvokeOutcome::Err {
+                    code: "CHANNEL_NOT_ALLOWED".to_string(),
+                    message: "old host".to_string(),
+                });
+            }
+            return Ok(InvokeOutcome::Ok(json!({
+                "providerId": "cursor",
+                "connected": true,
+                "status": "ready",
+                "snapshot": {
+                    "pools": [
+                        { "id": "auto", "usedPercent": 0.262 },
+                        { "id": "api", "usedPercent": 100.0 }
+                    ],
+                    "fetchedAtMs": 1_793_750_400_000.0,
+                    "resetsAtMs": 4_102_444_800_000.0
+                }
+            })));
+        }
+        if channel == "maker:usage:claude-subscription" {
+            return Ok(InvokeOutcome::Ok(json!({
+                "providerId": "anthropic",
+                "fiveHour": { "utilization": 32, "resetsAt": 4_000_000_000_i64 }
+            })));
+        }
+        Ok(InvokeOutcome::Ok(json!({
+            "providerId": "openai",
+            "rateLimits": { "primary": { "usedPercent": 20, "windowMinutes": 300 } }
+        })))
+    }
+    fn close_link(&self, _dst: &str, _reason: &str) {}
+    fn stop(&self) {}
+}
+
+#[tokio::test]
+async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
+    let cursor_provider = serde_json::from_value::<serde_json::Map<String, Value>>(json!({
+        "id": "cursor",
+        "name": "Cursor"
+    }))
+    .unwrap();
+    let unavailable = parse_account(
+        &cursor_provider,
+        &json!({ "providerId": "cursor", "status": "unavailable", "snapshot": null }),
+        1_700_000_000_000.0,
+    )
+    .unwrap();
+    assert!(unavailable.failed);
+    assert!(unavailable.windows.is_empty());
+    assert!(parse_account(
+        &cursor_provider,
+        &json!({ "providerId": "other", "status": "ready" }),
+        1_700_000_000_000.0,
+    )
+    .is_err());
+
+    let store = Arc::new(MockStore {
+        tokens: StdMutex::new(Some(fake_tokens("fake-member"))),
+        view: StdMutex::new(None),
+    });
+    let auth = Arc::new(MockAuth {
+        devices: StdMutex::new(json!({
+            "devices": [
+                { "deviceId": "a", "name": "Mac A", "online": true, "remoteControlEnabled": true, "platform": "darwin" }
+            ]
+        })),
+        offline_once: AtomicBool::new(false),
+        revoked: AtomicBool::new(false),
+    });
+    let link = Arc::new(CursorMockLink {
+        channel_not_allowed: AtomicBool::new(false),
+        calls: StdMutex::new(Vec::new()),
+    });
+    let link_for_factory = link.clone();
+    let svc = UsageService::new(UsageServiceDeps {
+        device_id: "self".to_string(),
+        device_link_base_url: "https://example.invalid".to_string(),
+        store,
+        auth,
+        open_url: Box::new(|_| Box::pin(async { Ok(()) })),
+        publish: Box::new(|_| {}),
+        create_link: Some(Box::new(move |_| link_for_factory.clone())),
+    });
+
+    svc.restore().await;
+    svc.refresh().await;
+    let snap = svc.snapshot().await;
+    assert_eq!(
+        snap.devices[0]
+            .accounts
+            .iter()
+            .map(|a| a.service)
+            .collect::<Vec<_>>(),
+        vec![ServiceKind::Claude, ServiceKind::ChatGPT, ServiceKind::Cursor]
+    );
+    let cursor_acc = &snap.devices[0].accounts[2];
+    assert!(!cursor_acc.failed);
+    assert_eq!(cursor_acc.windows.len(), 2);
+    assert_eq!(cursor_acc.windows[0].label.as_deref(), Some("Cursor 模型"));
+    assert!((cursor_acc.windows[0].remaining - 99.738).abs() < 1e-6);
+    assert_eq!(cursor_acc.windows[0].resets_at, Some(4_102_444_800.0));
+    assert_eq!(cursor_acc.windows[1].label.as_deref(), Some("其他模型"));
+    assert_eq!(cursor_acc.windows[1].remaining, 0.0);
+    assert_eq!(snap.devices[0].cursor_unsupported, None);
+
+    link.channel_not_allowed.store(true, Ordering::SeqCst);
+    svc.refresh().await;
+    let snap2 = svc.snapshot().await;
+    assert_eq!(snap2.devices[0].cursor_unsupported, Some(true));
+    assert_eq!(snap2.devices[0].error, None);
 }

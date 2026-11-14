@@ -6,7 +6,7 @@ export interface RemoteModelFavorite {
   uid: string;
   providerId: string;
   modelId: string;
-  agent: "cc" | "codex" | "pi";
+  agent: "cc" | "codex" | "pi" | "cursor";
   effort?: string;
   fast?: true | "ultrafast";
 }
@@ -105,6 +105,7 @@ export function parseRemoteModelFavorite(
   value: unknown,
   needsUid = true,
   providerIdMaxLength = MODEL_FAVORITE_TEXT_MAX_LENGTH,
+  allowLocalCursor = false,
 ): RemoteModelFavorite {
   if (!value || typeof value !== "object")
     throw new Error("Invalid model favorite");
@@ -114,7 +115,7 @@ export function parseRemoteModelFavorite(
     !text(p.providerId, providerIdMaxLength) ||
     p.providerId === "*" ||
     !text(p.modelId) ||
-    !["cc", "codex", "pi"].includes(p.agent) ||
+    (!(allowLocalCursor && p.agent === "cursor") && !["cc", "codex", "pi"].includes(p.agent)) ||
     (p.effort !== undefined &&
       !["minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(
         p.effort,
@@ -135,17 +136,18 @@ export function parseModelFavoriteMutation(
   value: unknown,
   // Local composite source keys may be longer; wire callers retain the default.
   providerIdMaxLength = MODEL_FAVORITE_TEXT_MAX_LENGTH,
+  allowLocalCursor = false,
 ): ModelFavoriteMutation {
   if (!value || typeof value !== "object")
     throw new Error("Invalid favorite operation");
   const p = value as ModelFavoriteMutation;
   if (p.kind === "add")
-    return { kind: p.kind, item: parseRemoteModelFavorite(p.item, false, providerIdMaxLength) };
+    return { kind: p.kind, item: parseRemoteModelFavorite(p.item, false, providerIdMaxLength, allowLocalCursor) };
   if (p.kind === "remove")
-    return { kind: p.kind, expected: parseRemoteModelFavorite(p.expected, true, providerIdMaxLength) };
+    return { kind: p.kind, expected: parseRemoteModelFavorite(p.expected, true, providerIdMaxLength, allowLocalCursor) };
   if (p.kind === "update") {
-    const expected = parseRemoteModelFavorite(p.expected, true, providerIdMaxLength),
-      item = parseRemoteModelFavorite(p.item, false, providerIdMaxLength);
+    const expected = parseRemoteModelFavorite(p.expected, true, providerIdMaxLength, allowLocalCursor),
+      item = parseRemoteModelFavorite(p.item, false, providerIdMaxLength, allowLocalCursor);
     if (
       expected.providerId !== item.providerId ||
       expected.modelId !== item.modelId
@@ -155,10 +157,10 @@ export function parseModelFavoriteMutation(
   }
   throw new Error("Invalid favorite operation");
 }
-export function parseModelFavorites(value: unknown): RemoteModelFavorite[] {
+export function parseModelFavorites(value: unknown, includeCursor = false): RemoteModelFavorite[] {
   if (!Array.isArray(value) || value.length > 4096)
     throw new Error("Invalid favorites snapshot");
-  const items = value.map((item) => parseRemoteModelFavorite(item));
+  const items = value.map((item) => parseRemoteModelFavorite(item, true, MODEL_FAVORITE_TEXT_MAX_LENGTH, includeCursor));
   if (new Set(items.map((item) => item.uid)).size !== items.length)
     throw new Error("Duplicate favorite identity");
   return items;

@@ -296,6 +296,7 @@ export function ModelGroupsSection() {
                       <ModelSelector
                         data-setting-id={modelGroupsSettings.routes.id}
                         remoteAgent={routeDevices.devices && { devices: routeDevices.devices, selectedDeviceId: null }}
+                        unifiedAgents={['claude-code', 'codex', 'pi']}
                         disabled={full}
                         modelId=""
                         effort=""
@@ -308,6 +309,7 @@ export function ModelGroupsSection() {
                         ariaContext={t('modelGroups.settings.addSource')}
                         fallbackOption={{ active: true, label: t('modelGroups.settings.chooseModel'), onSelect: () => undefined }}
                         onUnifiedSelect={({ engine, providerId, modelId, agentDevice }) => {
+                          if (engine === 'cursor') return false;
                           const added: ModelGroupCandidate = {
                             agentKind: engine, providerId, model: modelId,
                             ...(agentDevice ? { agentDeviceId: agentDevice.deviceId } : {}),

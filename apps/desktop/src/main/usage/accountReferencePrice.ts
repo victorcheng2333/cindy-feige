@@ -27,7 +27,7 @@ export function accountHasReferencePriceDeclaration(
   const { provider, catalogId } = accountReferenceSource(providerId, modelId, options);
   const sourceId = provider?.auth.method === 'apiKey' ? sourceProviderForPreset(catalogId) : catalogId;
   return [...new Set([catalogId, sourceId])].some(id => {
-    const matched = findModelRegistryRoute(registry, id, modelId, options?.agent === 'pi' ? undefined : options?.agent);
+    const matched = findModelRegistryRoute(registry, id, modelId, options?.agent === 'pi' || options?.agent === 'cursor' ? undefined : options?.agent);
     return matched !== undefined && (matched.route.referencePrices !== undefined || matched.route.referencePriceGroup !== undefined);
   });
 }

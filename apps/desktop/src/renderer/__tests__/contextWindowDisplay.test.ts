@@ -109,6 +109,22 @@ describe('makerChatStore context window refresh', () => {
     makerChatStore.purgeSession(sessionId);
   });
 
+  // Tier: unit. Real crash: a context refresh frame without status text replaced the
+  // displayed status with undefined, and every render of the task view then threw.
+  it('keeps the visible status when a running refresh frame omits its text', () => {
+    const sessionId = 'status-text-missing';
+    const base = { sessionId, tokenUsage: 0, contextTokens: 0, contextWindow: 0, isRunning: true };
+    makerChatStore.__applyStatusUpdateForTest(sessionId, { ...base, status: 'Working…' });
+    makerChatStore.__applyStatusUpdateForTest(sessionId, {
+      ...base, contextTokens: 48_000, contextWindow: 200_000,
+    } as unknown as CCAgentStatusUpdate);
+
+    const { agentStatus } = makerChatStore.getSnapshot(sessionId);
+    expect(agentStatus.status).toBe('Working…');
+    expect(agentStatus.contextTokens).toBe(48_000);
+    makerChatStore.purgeSession(sessionId);
+  });
+
   it('updates the displayed context window without waiting for the next turn', () => {
     const sessionId = 'context-window-switch-test';
     makerChatStore.purgeSession(sessionId);

@@ -1183,6 +1183,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         }
       } else {
         if (resolvedSelection) {
+          if (resolvedSelection.agentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
           schedule = {
             ...schedule,
             agentKind: resolvedSelection.agentKind,
@@ -1455,6 +1456,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       resolvedSelection = freshAgentDeviceId
         ? await this.deps.resolveModelSelection(selection, { agentDeviceId: freshAgentDeviceId })
         : await this.deps.resolveModelSelection(selection);
+      if (resolvedSelection.agentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
       createProviderId = resolvedSelection.providerId;
       fastMode = resolvedSelection.fastMode;
       schedule = {

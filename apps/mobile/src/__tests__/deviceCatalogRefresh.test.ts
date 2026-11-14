@@ -101,7 +101,9 @@ describe('catalog invalidation under a slow device link', () => {
     for (let i = 0; i < 4; i++) { refresh.notify('a'); await vi.advanceTimersByTimeAsync(2); }
     await flush();
     expect(readProviders).toHaveBeenCalledTimes(1);
-    expect(readCapabilities).toHaveBeenCalledTimes(3);
+    expect(readCapabilities).toHaveBeenCalledTimes(4);
+    // Cursor had its cache invalidated but was never reloaded after a host catalog push.
+    expect(readCapabilities).toHaveBeenCalledWith('a', 'cursor');
     // A mounted page joins the same capability read as the push refresh.
     const pageRead = vi.fn();
     const joined = caps.fetchAgentCapabilities('a', 'codex', pageRead);
@@ -120,8 +122,8 @@ describe('catalog invalidation under a slow device link', () => {
     expect(readProviders).toHaveBeenCalledTimes(2);
     // The shared cache makes one physical read per engine in each generation.
     expect(readCapabilities.mock.calls).toEqual([
-      ['a', 'claude-code'], ['a', 'codex'], ['a', 'pi'],
-      ['a', 'claude-code'], ['a', 'codex'], ['a', 'pi'],
+      ['a', 'claude-code'], ['a', 'codex'], ['a', 'pi'], ['a', 'cursor'],
+      ['a', 'claude-code'], ['a', 'codex'], ['a', 'pi'], ['a', 'cursor'],
     ]);
     last.resolve(catalog('latest'));
     await flush();

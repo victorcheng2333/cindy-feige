@@ -94,3 +94,12 @@ it("encodes a shared provider favorite with the same share and member identity D
   expect(parseProviderShareFavoriteSource("provider-share-favorite:[\"only\"]")).toBeNull();
   expect(() => providerShareFavoriteSource({ ...source, shareId: "" })).toThrow("Invalid shared favorite source");
 });
+
+// Metadata opt-in preserves old readers; it does not negotiate remote engine execution.
+it("keeps Cursor off legacy snapshots while accepting explicit metadata opt-in", () => {
+  const cursor = { ...item, agent: "cursor" };
+  expect(() => parseModelFavorites([cursor])).toThrow();
+  expect(parseModelFavorites([cursor], true)).toEqual([cursor]);
+  expect(() => parseModelFavoriteMutation({ kind: "add", item: cursor })).toThrow();
+  expect(parseModelFavoriteMutation({ kind: "add", item: cursor }, 512, true)).toMatchObject({ item: { agent: "cursor" } });
+});

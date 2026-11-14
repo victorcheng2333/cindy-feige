@@ -1861,6 +1861,30 @@ describe('createContextOverflowRollover', () => {
     expect(deps.replayUserMessage).not.toHaveBeenCalled();
   });
 
+  // Cursor regression 2026-11-04: an estimated occupancy (from per-run aggregate usage)
+  // forced a rebuild that discarded Cursor's native history on a ~75k context.
+  it('lets Codex and Cursor handle full-window pressure natively without forced pre-rebuild', async () => {
+    for (const agentKind of ['codex', 'cursor'] as const) {
+      const deps = makeDeps([msg('user', '继续', 'u1'), msg('assistant', '好', 'a1')]);
+      deps.getSessionRow.mockResolvedValue({
+        status: 'active',
+        agentKind,
+        remoteHostId: null,
+        clearedAt: null,
+        sdkSessionId: `/tmp/dead-${agentKind}`,
+        contextTokens: 500_000,
+        contextWindow: 500_000,
+        model: 'x-ai/grok-4.6',
+        providerId: 'xai',
+      });
+      const rollover = createContextOverflowRollover(deps);
+      await expect(rollover.prepareUnhealthySession('s1')).resolves.toBe(false);
+      expect(deps.closeSession).not.toHaveBeenCalled();
+      expect(deps.commitRebuild).not.toHaveBeenCalled();
+      expect(deps.replayUserMessage).not.toHaveBeenCalled();
+    }
+  });
+
   it.each(['pi compact failed: 413', 'pi rpc timeout after 1000ms: compact', 'pi compact failed: upstream connection closed'])(
     'recovers a persisted Pi byte-limit compaction failure after its runtime closed: %s', async error => {
     const deps = makeDeps([

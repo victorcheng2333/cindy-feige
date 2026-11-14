@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLED_CATALOG } from '@cindy/model-providers';
+import { cursorApiValue } from '../cursorApiValue.js';
 import { modelPricingKey, providerReferencePriceQuote, subscriptionDirectPriceQuote } from '../../../shared/modelPriceQuote';
 
 import type { ModelUsageDeltaEntry } from '../modelUsageDelta';
@@ -30,6 +31,31 @@ const XD_GATEWAY: TurnPricingContext = {
   billingRoute: 'xd-gateway',
   region: 'global',
 };
+
+// Unit regression: the installed Cursor adapter produced token rows but no API
+// value when its server bill was unavailable. Exercise manufacturer tariffs using
+// the two observed token-only runs, and refuse ambiguous identities/price bands.
+describe('Cursor API equivalent without a native bill', () => {
+  const tokens = { inputTokens: 21592, outputTokens: 79, cacheReadTokens: 1536, cacheCreateTokens: 0 };
+  it.each([
+    [tokens, 0.044426],
+    [{ inputTokens: 21738, outputTokens: 36, cacheReadTokens: 21504, cacheCreateTokens: 0 }, 0.054444],
+  ])('prices observed cache buckets independently', (usage, amount) => {
+    expect(cursorApiValue(BUNDLED_CATALOG.modelRegistry, 'grok-4.6', usage, 'USD', '2026-11-04'))
+      .toMatchObject({ amount: expect.closeTo(amount, 8), currency: 'USD', kind: 'value-estimate' });
+  });
+  it('does not treat aggregate run tokens as one long-context request or invent a cache-write price', () => {
+    for (const usage of [{ ...tokens, inputTokens: 210000 }, { ...tokens, cacheCreateTokens: 1 }]) {
+      expect(cursorApiValue(BUNDLED_CATALOG.modelRegistry, 'grok-4.6', usage, 'USD', '2026-11-04')).toBeNull();
+    }
+  });
+  it('rejects unknown and ambiguous base identities', () => {
+    expect(cursorApiValue(BUNDLED_CATALOG.modelRegistry, 'unlisted-cursor-model', tokens, 'USD')).toBeNull();
+    const registry = BUNDLED_CATALOG.modelRegistry!;
+    const base = registry.baseModels!.find(m => m.id === 'xai/grok-4.6')!;
+    expect(cursorApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'grok-4.6', tokens, 'USD')).toBeNull();
+  });
+});
 const XD_GATEWAY_CN: TurnPricingContext = {
   providerId: 'xd',
   billingRoute: 'xd-gateway',

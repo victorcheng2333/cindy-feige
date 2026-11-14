@@ -183,6 +183,14 @@ export class GhostModelPicker {
     if (
       Object.keys(options).some((k) => !['type', 'initial', 'mobilePageId', 'allowRemote'].includes(k)) ||
       (options.allowRemote !== undefined && typeof options.allowRemote !== 'boolean') ||
+      (options.initial !== undefined && (options.initial as { agentKind?: unknown })?.agentKind === 'cursor')
+    ) {
+      if ((options.initial as { agentKind?: unknown } | undefined)?.agentKind === 'cursor') {
+        return fail('INVALID_REQUEST', 'Cursor is not available for plugin tasks');
+      }
+      return fail('INVALID_REQUEST', 'Invalid model picker options');
+    }
+    if (
       (options.initial !== undefined && !isPluginModelPickerRoute(options.initial)) ||
       (!!(options.initial as PluginModelPickerRoute | undefined)?.agentDeviceId && options.allowRemote !== true) ||
       (options.mobilePageId !== undefined &&
