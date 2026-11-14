@@ -13,12 +13,13 @@
  * 加载语义:未加载完成时 `loaded=false` 且 `availableVendors` 为空;消费方必须把
  * "未加载" 当作 "先别隐藏任何入口"(避免异步 fetch 期间误隐藏合法 agent)。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { invokeModelCatalog } from '@/lib/invokeModelCatalog';
 import { CONTROLLED_MODEL_CATALOG_CHANGED, parseModelCatalogKey } from '../../shared/controlledModelCatalog';
 
 import type { MakerVendor } from '@/lib/ccAgent.types';
 import { createLogger } from '@/lib/logger';
+import { useLocalDisabledHarnesses } from './useHarnessPreference';
 import {
   evictDeviceCapabilities,
   prefetchDeviceCapabilities,
@@ -312,7 +313,19 @@ export function useAvailableAgents(deviceId?: string | null): UseAvailableAgents
     };
   }, [deviceId]);
 
-  return { availableVendors, loaded, loading };
+  // 本机列表已由 main 扣掉本机关掉的 Harness。Agent 在其他电脑运行时,那台电脑的列表不含
+  // 本机设置:本机的选择器里再扣掉本机关掉的,保证「这台电脑关掉的不出现在这台电脑的选择器」。
+  // 扣完为空时保留原列表,不让选择器一个引擎都没有。
+  const localDisabled = useLocalDisabledHarnesses();
+  const effectiveVendors = useMemo<ReadonlySet<MakerVendor>>(() => {
+    if (!deviceId || localDisabled.size === 0) return availableVendors;
+    const kept = [...availableVendors].filter(
+      (vendor) => !localDisabled.has(vendor === 'cc' ? 'claude-code' : vendor),
+    );
+    return kept.length > 0 && kept.length < availableVendors.size ? new Set(kept) : availableVendors;
+  }, [deviceId, localDisabled, availableVendors]);
+
+  return { availableVendors: effectiveVendors, loaded, loading };
 }
 
 /** 测试用 —— 清进程内缓存与在途请求(其它代码不应调用)。 */

@@ -5,7 +5,7 @@
  * maker:agents:changed,这里与模型选择器(useAvailableAgents)一起重新读取。
  * 模块级快照:三行 Harness 共用一次读取,不各自打 IPC。
  */
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import type { HarnessPreferencesView } from '../../shared/harnessPreferences';
 
@@ -58,6 +58,22 @@ function subscribe(listener: () => void): () => void {
 }
 
 const getSnapshot = () => snapshot;
+
+const NO_DISABLED: ReadonlySet<string> = new Set();
+
+/**
+ * 这台电脑上关掉的 Harness。用于 Agent 在其他电脑运行时的选择器:那台电脑的清单不含
+ * 本机设置,本机选择器在它之上再扣掉本机关掉的(当前引擎由调用方保留)。
+ * 读不到(远程控制窗口等没有这组 IPC)时为空集,不隐藏任何引擎。
+ */
+export function useLocalDisabledHarnesses(): ReadonlySet<string> {
+  const view = useSyncExternalStore(subscribe, getSnapshot);
+  return useMemo(() => {
+    if (!view) return NO_DISABLED;
+    const disabled = view.harnesses.filter((item) => !item.enabled).map((item) => item.kind);
+    return disabled.length > 0 ? new Set(disabled) : NO_DISABLED;
+  }, [view]);
+}
 
 export interface HarnessPreferenceState {
   /** 已读到 main 的设置;读到之前开关不可操作。 */

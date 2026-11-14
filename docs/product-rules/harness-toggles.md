@@ -22,6 +22,9 @@ Harness 不应该一直出现在模型选择器里。开关让用户在这台电
 - **按电脑保存**：`<userData>/harness-preferences.json`，不随账号。手机、远程控制端看到的是
   运行 Agent 的那台电脑的设置，经 `maker:list-available-agents` 与 `maker:agents:changed`
   原有链路下发，不新增跨端协议。
+- **本机选择器叠加本机设置**：Agent 在其他电脑运行时，可选清单来自那台电脑；桌面选择器在它之上再扣掉
+  本机关掉的 Harness（`useAvailableAgents` 叠加 `useLocalDisabledHarnesses`），当前引擎照常保留。
+  也就是说，这台电脑关掉的 Harness 不会出现在这台电脑的任何选择器里。
 - **只记关掉的**：没有记录就是开着。以后新增的 Harness 默认开着，不需要迁移；本版本还不认识的
   id 原样保留，不丢用户的选择。
 - **至少保留一个**：不能关掉最后一个开着且已注册的 Harness。没装好的 Harness（例如 Pi）可以
