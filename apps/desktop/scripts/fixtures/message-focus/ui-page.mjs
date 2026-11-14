@@ -49,19 +49,23 @@ export default {
         if (!animation || animation.effect.getKeyframes().at(-1)[key] !== baseline[key]) return;
         const elapsed = animation.currentTime;
         const duration = animation.effect.getComputedTiming().duration;
-        // Sample the real CSS transition at exact progress points. This avoids
-        // depending on renderer frame rate during a short, token-based exit.
+        // Sample the real CSS transition without depending on renderer frame rate.
+        // The fast ease-out is already ~97% complete at half its duration: the
+        // remaining 5% ink tint rounds to zero alpha in Chromium's 8-bit style
+        // serialization. Earlier samples must still prove real interpolation.
         animation.pause();
         animation.currentTime = 0;
         const start = getComputedStyle(node)[key];
-        animation.currentTime = duration / 2;
-        const middle = getComputedStyle(node)[key];
+        const samples = [0.01, 0.05, 0.1, 0.2, 0.25, 0.5, 0.75].map((fraction) => {
+          animation.currentTime = duration * fraction;
+          return getComputedStyle(node)[key];
+        });
         animation.currentTime = duration;
         const end = getComputedStyle(node)[key];
         animation.currentTime = elapsed;
         animation.play();
         animation.finished.then(() => {
-          exits[key] = { start, middle, end, final: getComputedStyle(node)[key] };
+          exits[key] = { start, samples, end, final: getComputedStyle(node)[key] };
           if (Object.keys(exits).length === 2)
             node.removeEventListener('transitionrun', recordExit);
         });
@@ -80,12 +84,10 @@ export default {
       'Navigation highlight expires despite content updates',
     );
     for (const key of ['backgroundColor', 'boxShadow']) {
-      assert.notEqual(
-        exits[key].middle,
-        exits[key].start,
-        `${key} leaves its lit value during exit`,
+      assert.ok(
+        exits[key].samples.some((value) => value !== exits[key].start && value !== exits[key].end),
+        `${key} interpolates between its lit and unlit values: ${JSON.stringify(exits[key])}`,
       );
-      assert.notEqual(exits[key].middle, exits[key].end, `${key} has an intermediate exit value`);
       assert.equal(exits[key].final, baseline[key], `${key} returns to its unlit value`);
     }
     await ui.capture('faded');
