@@ -47,6 +47,7 @@ export class CursorHostRuntime {
   private loginAbort?: AbortController;
   private contextUsage?: CursorContextUsage;
   private requestId?: number;
+  private releaseWarm?: () => Promise<void>;
 
   constructor(
     private sdk: typeof SDK,
@@ -111,7 +112,10 @@ export class CursorHostRuntime {
           dirs: options.writableDirs,
           store,
           subagentInherit: {}, // Forward native tool exclusions to Task children as well.
-          settingSources: ["project", "user", "team", "mdm", "plugins"],
+          // Project rules only. User/team/plugin layers bring their own MCP servers, hooks
+          // and plugins, which add seconds to every first run and duplicate Cindy's own
+          // Skills and plugins.
+          settingSources: ["project"],
         },
       };
       // Read the exact agent row rather than assuming every resume is a crash.
@@ -120,6 +124,8 @@ export class CursorHostRuntime {
         ? await store.agents?.get({ agentId: options.resumeSessionId })
         : null;
       let candidate: SDK.SDKAgent;
+      let releaseWarm: (() => Promise<void>) | undefined;
+      let warmMs: number | undefined;
       if (typeof this.sdk.createAgentPlatform === "function") {
         // Observe the SDK's existing checkpoint reads/writes. Reading a second copy
         // would deserialize the complete blob store again on every turn.
@@ -140,9 +146,29 @@ export class CursorHostRuntime {
           this.captureContext(checkpoint);
           return saved;
         };
-        candidate = options.resumeSessionId
-          ? await platform.resumeAgent(options.resumeSessionId, settings)
-          : await platform.createAgent(settings);
+        // Resolving the workspace (rules, skills, MCP, ignore mappings) otherwise runs
+        // inside the first send. Do it alongside agent creation, which Cindy already
+        // runs while the user is still typing. Failures only lose the optimization.
+        const warmStartedAt = performance.now();
+        const warming: Promise<(() => Promise<void>) | undefined> =
+          typeof platform.prewarmLocalWorkspace === "function"
+            ? platform.prewarmLocalWorkspace(settings).then(
+                (release) => {
+                  warmMs = Math.round(performance.now() - warmStartedAt);
+                  return release;
+                },
+                () => undefined,
+              )
+            : Promise.resolve(undefined);
+        try {
+          candidate = options.resumeSessionId
+            ? await platform.resumeAgent(options.resumeSessionId, settings)
+            : await platform.createAgent(settings);
+        } catch (error) {
+          void warming.then((release) => release?.()).catch(() => {});
+          throw error;
+        }
+        releaseWarm = await warming;
       } else {
         candidate = options.resumeSessionId
           ? await this.sdk.Agent.resume(options.resumeSessionId, settings)
@@ -150,6 +176,7 @@ export class CursorHostRuntime {
       }
       if (this.closed) {
         candidate.close();
+        await releaseWarm?.().catch(() => {});
         await this.disposeStore();
         throw new Error("Cursor runtime is closed");
       }
@@ -157,10 +184,16 @@ export class CursorHostRuntime {
       this.agent?.close();
       this.agent = candidate;
       this.recoverResumedRun = !!persisted?.activeRunId;
+      // Release the previous executor only after the new one holds its reference, so a
+      // reopen with unchanged workspace options keeps the warm executor alive.
+      const previousWarm = this.releaseWarm;
+      this.releaseWarm = releaseWarm;
+      await previousWarm?.().catch(() => {});
       return {
         agentId: candidate.agentId,
         store: status,
         openMs: Math.round(performance.now() - startedAt),
+        ...(warmMs !== undefined ? { warmMs } : {}),
         ...(this.contextUsage ? { contextUsage: this.contextUsage } : {}),
       };
     } finally {
@@ -298,6 +331,9 @@ export class CursorHostRuntime {
     await this.cancel();
     this.agent?.close();
     this.agent = undefined;
+    const releaseWarm = this.releaseWarm;
+    this.releaseWarm = undefined;
+    await releaseWarm?.().catch(() => {});
     await this.disposeStore();
   }
 }

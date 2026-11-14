@@ -359,6 +359,8 @@ export interface PiExtraSpawnConfigContext {
   memoryEnabled?: boolean;
   /** Frozen per-Bot custom MCP policy; the host filters each session's bridge descriptor. */
   botMcpPolicy?: BotRuntimeMcpPolicy;
+  /** When set, only these bridge servers reach the runtime (applied before the other gates). */
+  allowedServerNames?: readonly string[];
   vendorOptions?: Record<string, unknown>;
   mcpCallerKind?: 'root' | 'descendant' | 'unknown';
   mcpCallerAttested?: boolean;

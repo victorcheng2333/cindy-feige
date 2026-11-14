@@ -33,6 +33,8 @@ export interface CursorOpenResult {
   agentId: string;
   store: CursorStoreStatus;
   openMs: number;
+  /** Workspace prewarm that ran alongside agent creation inside openMs. */
+  warmMs?: number;
   contextUsage?: CursorContextUsage;
 }
 

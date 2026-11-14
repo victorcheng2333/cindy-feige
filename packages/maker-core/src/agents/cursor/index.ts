@@ -255,6 +255,7 @@ export class CursorAgent extends BaseAgent {
         mcpMs,
         startMs: Math.round(performance.now() - processStartedAt),
         openMs: opened.openMs,
+        ...(opened.warmMs !== undefined ? { warmMs: opened.warmMs } : {}),
       });
       openOptions = { ...openOptions, resumeSessionId: opened.agentId };
       const queue = createAsyncQueue<AgentEvent>();
@@ -296,8 +297,15 @@ export class CursorAgent extends BaseAgent {
         costUsd: 0,
         ...opened.contextUsage,
       };
-      let productContextPending =
-        !opts.resumeSessionId && !!this.deps.runtimeConfig.systemPrompt;
+      // Same order as the other engines: host product context, then the user's
+      // personalization instructions last so they take precedence.
+      const productContext = [
+        this.deps.runtimeConfig.systemPrompt?.trim(),
+        opts.reviewMode ? undefined : opts.userPrompt?.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      let productContextPending = !opts.resumeSessionId && !!productContext;
       let permissionNotice =
         opts.permissionMode !== undefined && opts.permissionMode !== mode;
       // A resumed task already showed it; every worker rebuild would repeat it.
@@ -482,7 +490,7 @@ export class CursorAgent extends BaseAgent {
             validate(options);
             if (abortRequested) throw new Error("Cursor send was cancelled");
             if (productContextPending)
-              input.text += `\n\n<cindy_context>\n${this.deps.runtimeConfig.systemPrompt}\n</cindy_context>`;
+              input.text += `\n\n<cindy_context>\n${productContext}\n</cindy_context>`;
             if (permissionNotice || windowsNotice) {
               queue.push({
                 type: "text",

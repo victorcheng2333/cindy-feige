@@ -207,6 +207,7 @@ async function getPiExtraSpawnConfig(
     && !disabledPluginIds.includes('collab');
   const capabilityGated = (servers: NonNullable<PiExtraSpawnConfig['mcpBridge']>['servers']) =>
     servers.filter((server) => {
+      if (sessionCtx?.allowedServerNames && !sessionCtx.allowedServerNames.includes(server.name)) return false;
       if (server.name === 'cindy_memory' && sessionCtx?.memoryEnabled !== true) return false;
       // Cindy Make 个人版工具只给带标记的任务;匿名会话与普通任务一律不见(fail-closed)。
       if (

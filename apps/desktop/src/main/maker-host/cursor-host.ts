@@ -15,6 +15,8 @@ import hostSystemPrompt from './host-system-prompt.md?raw';
 import { scanLocalCustomizations } from '../skillhub/customizationScanHost.js';
 import { readDisabledSkillPaths } from '../skillhub/activationPreferences.js';
 
+const CURSOR_MCP_SERVERS = ['cindy_helper', 'cindy'] as const;
+
 export function buildCursorAgent(providers: McpProvider[], logger: Logger): CursorAgent | null {
   if (!cursorRuntimeAvailable()) return null;
   const agent = new CursorAgent({
@@ -46,6 +48,9 @@ export function buildCursorAgent(providers: McpProvider[], logger: Logger): Curs
         sessionInstanceId: opts.sessionInstanceId,
         workingDir: opts.workingDir,
         vendorOptions: opts.vendorOptions,
+        // Each MCP server costs first-run connection time and prompt space. Cursor gets
+        // Cindy's host controls and the plugin gateway only; the rest belongs in Skills.
+        allowedServerNames: CURSOR_MCP_SERVERS,
       });
       const servers = Object.fromEntries(
         (bridge?.mcpBridge?.servers ?? []).map((server) => {
