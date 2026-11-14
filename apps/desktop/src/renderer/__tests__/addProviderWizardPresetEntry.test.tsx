@@ -323,10 +323,12 @@ beforeEach(() => {
         id: 'default', status: 'signed-out', directory: '/default',
         running: 0, paused: false, limit: 4, weight: 1,
       }],
-    })) },
+    })), onChanged: vi.fn(() => () => undefined) },
     maker: {
       selectVertexServiceAccount: vi.fn(async () => ({ selectionId: 'opaque-selection', fileName: 'service.json', project: 'project-test' })),
       createVertexServiceAccountProvider: vi.fn(async () => ({ ok: true })),
+      // Providers another subscription account may join (2026-11-13); tests that need some override it.
+      listProviders: vi.fn(async () => ({ providers: [] })),
       llamaCppEnsure: vi.fn(async () => undefined),
       llamaCppStatus: vi.fn(async () => ({ installed: false, supported: true, running: false, models: [] })),
       llamaCppInstall: vi.fn(async () => undefined),

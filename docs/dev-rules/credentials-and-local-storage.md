@@ -118,6 +118,8 @@ Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订
   2026-11-07 起，用户显式添加的[供应商内订阅账号](../product-rules/subscription-account-pools.md)
   使用官方多账号方式：只在该账号的 CLI 子进程设置 `CLAUDE_CONFIG_DIR=~/.claude-cindy-<owner摘要>-<随机id>`，
   登录、状态、用量、任务及分叉始终使用同一目录。目录不含邮箱，不接受外部传入路径。
+  2026-11-13 裁决的 Claude 单独供应商同样如此（账号放在哪个供应商记在 `subscription-account-placement.json`，不含凭证）：账号并入、移动或拿出只改它属于哪个供应商，目录与官方登录不动；
+  不复用 09-24 已停用的旧 Claude 连接及其 Cindy 自存凭证。
   Cindy 从不设置 `CLAUDE_SECURESTORAGE_CONFIG_DIR`，并在启动与每次调起 CLI 时剥掉继承值：
   CLI 用它（优先于 `CLAUDE_CONFIG_DIR`）决定读哪条钥匙串登录，空值会退回默认登录。
   SSH 远端的配置目录仍由远端 cc-manager 自己管理，不在此列。
@@ -171,6 +173,9 @@ Cindy 的订阅接入只做内置 CLI 的外壳，不收集、存储或中转订
   - 原生历史绑定保存在 `claude-history-homes/<native-id>.json`，独立于连接的当前 home。
     手动切换账号时只复制该任务的原生历史及 checkpoint，CLI 确认 resume 后才更新绑定；失败
     保留源历史，不自动抛弃历史开新任务。Fork 通过 SDK 的显式 SessionStore 读写，不修改进程环境。
+    显式改选上游新增的 Claude 账号供应商时，若旧原生历史仅有此索引、尚无账号池绑定，先核验
+    目标供应商可用，再复用持久上下文交接并创建新原生会话；不把旧 native id 绑定成默认池账号，
+    不改写源历史归属。目标不可用时原历史与绑定保留，见 `subscription-accounts/runtime.ts`。
     复制前必须确认旧 CLI 的实际进程退出（包括已退役的 Query 代次）；`abort`、`killed` 和
     SDK 的 `close()` 返回均不是退出证据。等待最多 10 秒，未确认时拒绝切换并保留源路由；
     迟到的 exit 允许后续重试关闭。无用户输入的 resume 预检进程同样确认退出后才放行。

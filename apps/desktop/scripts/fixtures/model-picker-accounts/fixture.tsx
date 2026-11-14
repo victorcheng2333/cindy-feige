@@ -97,7 +97,7 @@ void mountPage({
         <div data-full-picker-trigger>
           <ModelSelector modelId="claude-opus" currentProviderId="anthropic" agentKind="claude-code"
             effort="high" onModelChange={() => {}} onEffortChange={() => {}}
-            useMorphPopover sessionEngineFilter={{currentAgent:'claude-code',onCrossEngineSelect:()=>{}}}
+            unifiedPanel useMorphPopover sessionEngineFilter={{currentAgent:'claude-code',onCrossEngineSelect:()=>{}}}
             onNavigateToProviders={()=>{}}/>
         </div>
       </main>

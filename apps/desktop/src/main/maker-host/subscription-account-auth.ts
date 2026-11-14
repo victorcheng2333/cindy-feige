@@ -1,6 +1,6 @@
 import { claudeAccountState, loginClaudeAccount, cancelClaudeAccountLogin, disconnectClaudeAccount, disconnectClaudeAccountReversibly } from './claude-account-auth.js';
-import { subscriptionAccountKind } from './subscription-account-kind.js';
-export { subscriptionAccountKind, isClaudeSubscriptionProviderId, isXaiSubscriptionProviderId } from './subscription-account-kind.js';
+import { CLAUDE_ACCOUNT_RETIRED_REASON, subscriptionAccountKind } from './subscription-account-kind.js';
+export { CLAUDE_ACCOUNT_RETIRED_REASON, subscriptionAccountKind, isClaudeSubscriptionProviderId, isXaiSubscriptionProviderId } from './subscription-account-kind.js';
 import { activeOwnerScopeKey, isAppSessionBoundaryPending, ownerScopedUserDataPath } from '../appSessionState.js';
 import { genericOAuthSecretIo } from '../secrets/providerSecretStore.js';
 import { getActiveCatalog, setDiscoveredProviderModels, setXaiDiscoveredModels } from './active-catalog.js';
@@ -20,11 +20,6 @@ let onInvalidated: (providerId: string) => void = () => {};
 export function setSubscriptionAccountInvalidatedHandler(handler: typeof onInvalidated): void {
   onInvalidated = handler;
 }
-/**
- * 旧版 Cindy OAuth 连接没有 CLI 所属目录，必须经官方 CLI 重新登录才可用于任务。
- * 保留连接 id、名称与历史；不把旧令牌复制到新的 CLI 凭证库。
- */
-export const CLAUDE_ACCOUNT_RETIRED_REASON = 'claude_account_retired';
 /** Account replacement/removal invalidates membership, never another connection's catalog. */
 export function clearSubscriptionAccountDiscoveredModels(providerId: string): Promise<void> {
   setDiscoveredProviderModels(providerId, 'claude-code', []);

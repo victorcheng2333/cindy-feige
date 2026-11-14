@@ -18,6 +18,7 @@ export interface ControllerPresenceDirectoryDevice {
   online?: unknown;
   remoteControlEnabled?: unknown;
   platform?: unknown;
+  app?: unknown;
   isSelf?: unknown;
 }
 
@@ -172,12 +173,13 @@ export function applyControllerPresenceDirectorySnapshot(options: {
   getOnline: (deviceId: string) => boolean | undefined;
   setOnline: (deviceId: string, online: boolean) => void;
   forgetOnline: (deviceId: string) => void;
-  setPlatform: (deviceId: string, platform: string | null) => void;
+  setPlatform: (deviceId: string, platform: string | null, app?: string) => void;
   setName: (deviceId: string, name: string) => void;
   shouldNotifyPeerOnline: (device: {
     deviceId: string;
     online: boolean;
     platform: string | null;
+    app?: string;
   }) => boolean;
   onPeerBecameOnline: (deviceId: string, platform: string | null) => void;
   /** A fresh current directory row confirmed the peer accepts outbound control. */
@@ -199,6 +201,7 @@ export function applyControllerPresenceDirectorySnapshot(options: {
     const reportedPlatform =
       typeof device.platform === 'string' && device.platform.trim() ? device.platform.trim() : null;
     const platform = isSupportedControllerPlatform(reportedPlatform) ? reportedPlatform : null;
+    const app = typeof device.app === 'string' ? device.app : undefined;
     const name = normalizeDirectoryName(device);
     if (name) options.setName(deviceId, name);
 
@@ -215,17 +218,17 @@ export function applyControllerPresenceDirectorySnapshot(options: {
     const wasOnline = options.getOnline(deviceId);
     if (device.online && platform === null) {
       if (wasOnline !== true) {
-        options.setPlatform(deviceId, null);
+        options.setPlatform(deviceId, null, app);
         options.forgetOnline(deviceId);
       }
       continue;
     }
 
-    options.setPlatform(deviceId, platform);
+    options.setPlatform(deviceId, platform, app);
     options.setOnline(deviceId, device.online);
     if (
       wasOnline !== true &&
-      options.shouldNotifyPeerOnline({ deviceId, online: device.online, platform })
+      options.shouldNotifyPeerOnline({ deviceId, online: device.online, platform, app })
     ) {
       options.onPeerBecameOnline(deviceId, platform);
     }
