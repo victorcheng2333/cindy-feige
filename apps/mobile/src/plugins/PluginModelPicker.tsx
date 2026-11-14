@@ -139,15 +139,17 @@ export function PluginModelPicker({
           setSelection(value);
           return true;
         },
-        onSelect: (value, source) =>
-          answer({
+        onSelect: async (value, source) => {
+          if (value.agent === "cursor") return false;
+          return answer({
             ...(source?.deviceId ? { agentDeviceId: source.deviceId } : {}),
             agentKind: value.agent === "claude-code" ? "cc" : value.agent,
             providerId: value.providerId,
             model: value.modelId,
             effort: value.effort ?? "",
             fastMode: value.fast,
-          }),
+          });
+        },
       }}
     />
   );

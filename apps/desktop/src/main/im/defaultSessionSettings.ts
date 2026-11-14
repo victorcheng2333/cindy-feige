@@ -141,7 +141,7 @@ export async function resolveImSessionDefaults(
   const requestedSettings = raw.agents[requestedAgent];
   const model = pickModel(requestedAgent, requestedSettings, config, providers);
   const agentKind = model.agentKind;
-  const agentSettings = raw.agents[agentKind] ?? requestedSettings;
+  const agentSettings = (agentKind === 'cursor' ? undefined : raw.agents[agentKind]) ?? requestedSettings;
   // 先定来源再定 effort:effort 支持是 per-(来源, 模型) 的,保存的来源被停用改道后,
   // 必须按**最终落地来源**的拷贝 reconcile —— 按第一份 connected 拷贝(可能正是那份
   // 停用拷贝)算出的档位,启用替代来源未必支持,直建会话会被上游拒
@@ -222,6 +222,7 @@ function pickModel(
   config: ImOrchestratorConfig,
   providers: ProviderView[] | null,
 ): { agentKind: AgentKind; modelId: string } {
+  if (requestedAgent === 'cursor') throw new Error('Cursor is not available for IM defaults');
   if (hasModel(requestedAgent, settings.model, providers)) {
     return { agentKind: requestedAgent, modelId: settings.model };
   }

@@ -238,6 +238,8 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
   const startAttempt = async (input: StartInput, skipDirect: boolean,
     attempt: ReturnType<typeof registerPendingRemoteStart>, recoverLostHistoryGrant = true,
     reissuedHistory = false): Promise<AgentSessionHandle> => {
+    if (input.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
+    const agentKind: RemoteAgentKind = input.agentKind;
     const initialShareId = parseProviderShareAgentDeviceId(input.deviceId);
     const initialAccessEpoch = initialShareId && findReceivedShare(initialShareId)?.status === 'active'
       ? providerShareAccessEpoch(initialShareId) : undefined;
@@ -615,7 +617,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
             // M restarted and lost its memory-only grant. Reissue only for the
             // original M through O; never send native history to another peer.
             const reauthorized = await authorizeSharedTaskExecutor(input.deviceId, sessionId,
-              input.agentKind, opts.model, original.deviceId, false, attempt.signal,
+              agentKind, opts.model, original.deviceId, false, attempt.signal,
               openingDirectRoute?.reused ? { ...openingDirectRoute, direct: true } : undefined);
             if (!reauthorized.direct || reauthorized.target !== target) throw error;
             requireCurrent();
@@ -798,7 +800,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         authorizedAccessEpoch = allocationAccessEpoch;
         leaseDeadline = nextLeaseDeadline;
         wallDeadline = allocationStartedAt + nextLeaseDeadline - allocationStartedMonotonic;
-        rememberSharedTaskAuthorization(input.deviceId, sessionId, input.agentKind, model,
+        rememberSharedTaskAuthorization(input.deviceId, sessionId, agentKind, model,
           { ...directTasks.get(taskKey)!, direct: true });
         armLeaseExpiry();
         nextRenewAt = directTasks.get(taskKey)!.renewAt;
@@ -824,7 +826,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         // Restoring a live history handle has the same original window as
         // reopening it. Only an explicit renewal/model change may replace it.
         const restored = await authorizeSharedTaskExecutor(input.deviceId, sessionId,
-          input.agentKind, authorizedModel, targetDeviceId, false, attempt.signal, { ...previous, direct: true });
+          agentKind, authorizedModel, targetDeviceId, false, attempt.signal, { ...previous, direct: true });
         if (stopped || !isCurrent() || directTasks.get(taskKey) !== previous
           || liveDirectGuestSessions.get(sessionId)?.identity !== directIdentity) {
           await releaseFailedDirectAllocation(restored.generation);
@@ -861,7 +863,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       const direct = liveDirectGuestSessions.get(sessionId);
       if (direct?.identity === directIdentity) direct.captureRecovery = () => {
         const isCurrent = captureSharedTaskAuthorizationCheck(input.deviceId, sessionId,
-          input.agentKind, authorizedModel, target);
+          agentKind, authorizedModel, target);
         return isCurrent ? { ownerRoute: direct.ownerRoute, isCurrent, requestSwitch: async () => {
           if (!isCurrent()) return undefined;
           const token = await direct.requestSwitch();

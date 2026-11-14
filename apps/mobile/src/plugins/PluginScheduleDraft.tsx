@@ -402,13 +402,15 @@ export function PluginScheduleDraft({
             return caps;
           },
           onSelect: async (value, source) => {
+            const agent = value.agent;
+            if (agent === "cursor") return false;
             assertCurrent();
             setDraft((d) => ({
               ...d,
               ...(source?.deviceId
-                ? { modelAgentKind: value.agent, modelAgentDeviceId: source.deviceId }
+                ? { modelAgentKind: agent, modelAgentDeviceId: source.deviceId }
                 : { modelAgentKind: undefined, modelAgentDeviceId: undefined }),
-              agentKind: value.agent,
+              agentKind: agent,
               model: value.modelId,
               providerId: value.providerId,
               effort: value.effort || "",

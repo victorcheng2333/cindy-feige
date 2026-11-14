@@ -4,6 +4,7 @@ import type {
 } from '../types/capability-routing.js';
 import { isClaudeCapabilityRouteEnforced } from './claude-code/capability-routing.js';
 import { isCodexCapabilityRouteEnforced } from './codex/capability-routing.js';
+import { isCursorCapabilityRouteEnforced } from './cursor/capability-routing.js';
 
 /**
  * Each harness adapter's own enforcement predicate. Pi exposes no
@@ -15,6 +16,7 @@ const CAPABILITY_ROUTE_ENFORCERS: Readonly<
   'claude-code': isClaudeCapabilityRouteEnforced,
   codex: isCodexCapabilityRouteEnforced,
   pi: () => false,
+  cursor: isCursorCapabilityRouteEnforced,
 };
 
 /**

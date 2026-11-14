@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 
-type SessionAgentKind = 'claude-code' | 'codex' | 'pi';
-const SESSION_AGENT_KINDS: readonly SessionAgentKind[] = ['claude-code', 'codex', 'pi'];
+/** 支持任务内切换的引擎(与主干一致,Cursor 暂不参与切换)。 */
+const SESSION_SWITCH_AGENT_KINDS = ['claude-code', 'codex', 'pi'] as const;
 
 /**
  * 已有任务里「切换引擎」可选的 Harness:被控电脑上开着的(maker:list-available-agents,
- * 已扣掉用户在那台电脑上关掉的),当前引擎始终保留。未读到(null)时不过滤。
+ * 已扣掉用户在那台电脑上关掉的),当前引擎始终保留(包括不参与切换的 Cursor)。
+ * 未读到(null)时不过滤。
  */
-export function sessionSwitchAgentKinds(
+export function sessionSwitchAgentKinds<K extends string>(
   available: ReadonlySet<string> | null,
-  current: SessionAgentKind,
-): SessionAgentKind[] {
-  return SESSION_AGENT_KINDS.filter((kind) => !available || kind === current || available.has(kind));
+  current: K,
+): Array<K | (typeof SESSION_SWITCH_AGENT_KINDS)[number]> {
+  const kinds: Array<K | (typeof SESSION_SWITCH_AGENT_KINDS)[number]> = SESSION_SWITCH_AGENT_KINDS
+    .filter((kind) => !available || kind === current || available.has(kind));
+  return kinds.includes(current) ? kinds : [current, ...kinds];
 }
 
 /**

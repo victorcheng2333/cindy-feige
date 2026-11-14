@@ -18,16 +18,18 @@ export const HARNESS_MENU_ITEM_CLASS = 'gap-3';
 
 /** One harness, one row: the version pill opens that harness's action menu. */
 export function HarnessVersionMenuRow({ harnessKind, label, manageLabel, version, status, pending, testId, children }: {
-  /** Harness id(claude-code / codex / pi):菜单顶部带「在模型选择器中显示」开关。 */
+  /** Harness id(claude-code / codex / pi / cursor):菜单顶部带「在模型选择器中显示」开关。 */
   harnessKind: string;
   label: string;
   manageLabel: string;
-  version: string;
+  /** 没有可显示版本的 Harness(Cursor 随应用内置 SDK)不传。 */
+  version?: string;
   status: string;
   /** Shows the spinner before the status while a check or install is running. */
   pending: boolean;
   testId?: string;
-  children: ReactNode;
+  /** 版本与更新操作;没有时菜单只有显示开关。 */
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const preference = useHarnessPreference(harnessKind);
@@ -46,7 +48,7 @@ export function HarnessVersionMenuRow({ harnessKind, label, manageLabel, version
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label={manageLabel} className="-mr-2 flex min-h-9 min-w-0 flex-1 items-center justify-end gap-2 rounded-full px-2 text-13 font-medium text-[var(--settings-section-title)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)]">
-            <span className="shrink-0 truncate">{version}</span>
+            {version && <span className="shrink-0 truncate">{version}</span>}
             {status && (
               <span role="status" className="flex min-w-0 items-center gap-1 text-12 font-normal leading-[1.35] text-[var(--settings-section-sublabel)]">
                 {pending && <Spinner size={12} />}
@@ -67,7 +69,7 @@ export function HarnessVersionMenuRow({ harnessKind, label, manageLabel, version
           <HarnessMenuFootnote>
             {preference.isLastEnabled ? t('settings.about.harnessLastEnabledHint') : t('settings.about.harnessToggleHint')}
           </HarnessMenuFootnote>
-          <DropdownMenuSeparator />
+          {children && <DropdownMenuSeparator />}
           {children}
         </DropdownMenuContent>
       </DropdownMenu>

@@ -538,6 +538,10 @@ describe('resolveLenientRoute(自动化直建会话的宽松降级)', () => {
 });
 
 describe('materializeExclusiveProviderRoute', () => {
+  // Tier: unit. Cursor's Grok ids must not be rebound to SuperGrok or the Cindy gateway.
+  it('preserves the Cursor account route for Grok', () => {
+    expect(materializeExclusiveProviderRoute([], 'cursor', 'grok-4.6', 'cursor')).toEqual({ kind: 'keep' });
+  });
   function xaiViews(connected: Record<string, boolean> = { xd: true, xai: true }) {
     const catalog = {
       providers: [

@@ -73,7 +73,7 @@ export const appSettingsSections: AppSettingsSection[] = [{
   reset: async () => resetAgentResourceSettings(),
 }, {
   id: 'harnesses', title: 'Harness 开关（本机）',
-  description: '这台电脑上关掉的 Harness（claude-code、codex、pi），关掉的不再出现在模型选择器、新建任务、IM /model 和默认模型候选里；正在运行的任务不受影响。至少保留一个开着。',
+  description: '这台电脑上关掉的 Harness（claude-code、codex、pi、cursor），关掉的不再出现在模型选择器、新建任务、IM /model 和默认模型候选里；正在运行的任务不受影响。至少保留一个开着。',
   effective: 'new-selections',
   schema: z.strictObject({ disabled: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)).max(32).optional() }),
   read: async () => readHarnessPreferencesState(),

@@ -103,6 +103,11 @@ describe('normalizeAgentTaskUpdate', () => {
   });
 
   it('defaults status to running and infers provider from source', () => {
+    // Tier: unit. Cursor child events and persisted cards must retain their provider identity.
+    expect(normalizeAgentTaskUpdate({ taskId: 'cursor-child', provider: 'cursor' }))
+      .toMatchObject({ provider: 'cursor' });
+    expect(normalizeAgentTaskUpdate({ taskId: 'cursor-child' }, 'cursor'))
+      .toMatchObject({ provider: 'cursor' });
     const update = normalizeAgentTaskUpdate({ taskId: 't1', status: 'weird' }, 'codex');
     expect(update).toMatchObject({ taskId: 't1', status: 'running', provider: 'codex' });
     expect(normalizeAgentTaskUpdate({ taskId: 't2' }, 'pi'))

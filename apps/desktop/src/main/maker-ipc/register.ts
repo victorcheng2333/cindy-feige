@@ -1,3 +1,4 @@
+import { supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readContextRecoverySessionWithPorts, classifyCodexHistoryWithPorts, commitContextRecoveryWithPorts, replayContextRecoveryWithPorts, contextRecoveryRebuilt, contextRecoveryAbortSignal } from './contextRecoveryAssembly.js';
 import { needsSubscriptionAccountHandoff, hasRestoredPooledCodexQuota } from '../subscription-accounts/runtime.js';
@@ -3371,7 +3372,7 @@ export function stopPiIdleReleaseWatcher(): void {
 }
 
 function requireAgentKind(value: unknown): AgentKind {
-  if (value === 'claude-code' || value === 'codex' || value === 'pi') return value;
+  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor') return value;
   throwIpcError('INVALID_PARAMS', 'agentKind required');
 }
 
@@ -7173,8 +7174,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   const harnessPreferencesView = () => {
     const registered = maker.listAvailableAgents();
     const disabled = readDisabledHarnesses();
-    // 已知的三个固定在前;关掉清单里本版本还不认识的 id 不展示(仍保留在文件里)。
-    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', ...registered])];
+    // 已知的 Harness 固定在前;关掉清单里本版本还不认识的 id 不展示(仍保留在文件里)。
+    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', 'cursor', ...registered])];
     return {
       harnesses: kinds.map((kind) => ({
         kind,
@@ -7553,7 +7554,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ...maker.getCapabilities(requireAgentKind(agentKind)),
       // host 级 optional 能力；旧 desktop 缺省为 false。两个 agent 查询都带回，
       // 手机读取当前 agent 快照即可决定是否展示切换入口。
-      supportsSessionAgentSwitch: true,
+      supportsSessionAgentSwitch: agentKind !== 'cursor',
+      supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
       // Mobile 据此对已知受压缩窗降级为 fail closed。
       supportsModelWindowSwitchGuard: true,
@@ -7623,8 +7625,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       markModelChoice?: unknown;
       taskProviderId?: unknown;
     };
-    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi') {
-      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi');
+    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') {
+      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor');
     }
     if (p.providerId !== undefined && typeof p.providerId !== 'string') {
       throwIpcError('INVALID_PARAMS', 'providerId must be string');
@@ -7706,8 +7708,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (typeof p.sessionId !== 'string' || !p.sessionId) {
       throwIpcError('INVALID_PARAMS', 'sessionId required');
     }
-    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi') {
-      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi');
+    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') {
+      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor');
     }
     if (typeof p.providerId !== 'string' || !p.providerId) {
       throwIpcError('INVALID_PARAMS', 'providerId required');
@@ -7746,7 +7748,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (
       typeof p.sessionId !== 'string' ||
       !p.sessionId ||
-      (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi') ||
+      (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') ||
       typeof p.providerId !== 'string' ||
       !p.providerId ||
       typeof p.model !== 'string' ||
@@ -9290,7 +9292,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
 
   const appliedTaskPrompts = new WeakMap<Awaited<ReturnType<typeof maker.createSession>>, string>();
   const readTaskPrompt = (sessionId: string, agentKind: AgentKind, agentDeviceId?: string | null) =>
-    ghostTaskSystemPrompt(sessionId, agentKind === 'claude-code' ? 'cc' : agentKind, !(agentKind === 'pi' && agentDeviceId));
+    agentKind === 'cursor'
+      ? ''
+      : ghostTaskSystemPrompt(sessionId, agentKind === 'claude-code' ? 'cc' : agentKind, !(agentKind === 'pi' && agentDeviceId));
   const createSessionWithRuntimePlugins = (o: CreateOpts, signal?: AbortSignal) => {
     if (o.id && maker.getSession(o.id)) return maker.createSession(o, signal);
     const taskPrompt = o.id ? readTaskPrompt(o.id, o.agentKind, o.agentDeviceId) : '';
@@ -10341,7 +10345,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     assertSessionCreationCurrent();
     await ensureRemoteHostReady(remoteHostIdToEnsure);
     assertSessionCreationCurrent();
-    const ensureAgentKind: 'claude-code' | 'codex' | 'pi' | null =
+    const ensureAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | null =
+      session?.agentKind === 'cursor' ||
       session?.agentKind === 'codex' ||
       session?.agentKind === 'claude-code' ||
       session?.agentKind === 'pi'
@@ -10349,7 +10354,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         : createOpts && typeof createOpts === 'object'
           ? (() => {
               const ak = (createOpts as { agentKind?: unknown }).agentKind;
-              return ak === 'codex' || ak === 'claude-code' || ak === 'pi' ? ak : null;
+              return ak === 'cursor' || ak === 'codex' || ak === 'claude-code' || ak === 'pi' ? ak : null;
             })()
           : null;
     if (!ensureAgentKind) return;
@@ -10364,6 +10369,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       await ensureCcManagerInstalledOrInstall({ host });
       return;
     }
+
+    if (ensureAgentKind === 'cursor') return;
 
     // pi 远端:走通用 silent install(probe 远端 pi 二进制,缺/版本不符则安装)。
     await ensureRemoteAgentInstalledOrInstall(remoteHostIdToEnsure, ensureAgentKind);
@@ -10638,6 +10645,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     closeCancelledSession: async session => { await maker.closeSessionIfCurrent(session); },
     bootstrapSession: async (co) => {
       assertSessionCreationCurrent();
+      if (co.agentKind === 'cursor') assertCursorTaskCreationAllowed(co);
       await ensureRemoteReadyForSessionStart({ createOpts: co });
       assertSessionCreationCurrent();
       const result = await bootstrapSession(co, assertSessionCreationCurrent);
@@ -10796,7 +10804,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         await getDbClient().drizzle.insert(sessions).values(row).run();
       },
       bootstrapSession: async (opened, assertCurrent) => {
-        const agentKind = opened.agentKind === 'codex' || opened.agentKind === 'pi'
+        const agentKind = opened.agentKind === 'cursor' || opened.agentKind === 'codex' || opened.agentKind === 'pi'
           ? opened.agentKind
           : 'claude-code';
         await bootstrapSession(buildCreateOptsWithStderr({
@@ -11187,7 +11195,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         ...(additionalWorkingDirs.length > 0 ? { additionalWorkingDirs } : {}),
       };
       return {
-        sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi',
+        sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi' | 'cursor',
         prompt: builtPrompt.prompt,
         replyLanguage: builtPrompt.replyLanguage,
         inputSummary: buildReviewInputSummary({
@@ -13719,11 +13727,16 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       validateDirectory: validateHandoffWorkingDir,
       resolveExecution: createRemoteSessionExecutionResolver({
         isSelfDeviceId: id => id === getSelfDeviceId(),
-        resolveLocal: input => resolveSessionExecution({ agentKind: input.agentKind, model: input.model, effort: input.effort, fastMode: input.fast }),
+        resolveLocal: async input => {
+          const execution = await resolveSessionExecution({ agentKind: input.agentKind, model: input.model, effort: input.effort, fastMode: input.fast });
+          if (execution.agentKind === 'cursor') throw Object.assign(new Error('Cursor supports local desktop tasks only'), { code: 'INVALID_ARGS' });
+          return { ...execution, agentKind: execution.agentKind };
+        },
         readDefault: () => {
           const route = getSelectedNewMakerRoute(activeOwnerScopeKey());
-          return route ? { agentKind: route.harness === 'claude' ? 'claude-code' : route.harness,
-            model: route.model, effort: (route.effort || undefined) as Effort | undefined, fastMode: route.fastMode } : undefined;
+          if (!route || route.harness === 'cursor') return undefined;
+          return { agentKind: route.harness === 'claude' ? 'claude-code' : route.harness,
+            model: route.model, effort: (route.effort || undefined) as Effort | undefined, fastMode: route.fastMode };
         },
         readRemoteRouting: async (id, agent) => deviceWorkerRoutingContext(await readDeviceProviderViews(remoteBackgroundInvoke, id), agent),
       }),
@@ -14565,7 +14578,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         execution ??= await resolveSessionExecution(selection, sourceSessionId);
         assertPlugin(pluginId);
-        if (!execution.providerId) return routeUnavailable();
+        if (!execution.providerId || execution.agentKind === 'cursor') return routeUnavailable();
         return { ...execution, agentKind: execution.agentKind === 'claude-code' ? 'cc' : execution.agentKind,
           providerId: execution.providerId, effort: execution.effort ?? '' };
       } catch (error) {
@@ -14715,6 +14728,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         // A queued input will execute the accepted next-send route. Keep its
         // receipt stable as a deferred model/Harness switch reaches that boundary.
         const selected = runtime?.pendingMutation?.profile ?? runtime?.effective;
+        if (selected?.agentKind === 'cursor') return null;
         let resolvedConfig: PluginTaskRoute = selected
           ? { agentKind: selected.agentKind === 'claude-code' ? 'cc' : selected.agentKind,
             ...(selected.agentDeviceId ? { agentDeviceId: selected.agentDeviceId } : {}),
@@ -15912,7 +15926,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         agentDeviceId?: unknown;
       };
       const workerAgent: AgentKind =
-        body.workerAgent === undefined ? 'claude-code' : requireAgentKind(body.workerAgent);
+        body.workerAgent === 'cursor' ? 'cursor' : body.workerAgent === 'codex' ? 'codex' : body.workerAgent === 'pi' ? 'pi' : 'claude-code';
       const delegateTask = typeof body.delegateTask === 'string' ? body.delegateTask : undefined;
       if (
         body.workerPermissionMode !== undefined &&
@@ -17659,7 +17673,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     }
     const chain = await readEffectiveBotModelChain(config);
     const toAgentKind = (harness: string): AgentKind =>
-      harness === 'codex' ? 'codex' : harness === 'pi' ? 'pi' : 'claude-code';
+      harness === 'cursor' ? 'cursor' : harness === 'codex' ? 'codex' : harness === 'pi' ? 'pi' : 'claude-code';
     const currentHarness = current.agentKind === 'codex'
       ? 'codex'
       : current.agentKind === 'pi'
@@ -18560,6 +18574,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         if (executionDeviceId) {
           if (!orcaRemoteWorkersForHost) throw new Error('[HOST_NOT_READY] Worker service is not ready');
+          if (agent === 'cursor') throwIpcError('INVALID_PARAMS', 'Cursor does not support remote workers');
           const result = await orcaRemoteWorkersForHost.readModels(executionDeviceId, {
             ...(agent ? { agent } : {}), agentDeviceId: requestedAgentDeviceId ?? null,
           });
@@ -18746,6 +18761,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const profiles = await readSessionRuntimeProfiles(sessionId);
       if (!profiles) throw new Error('Task runtime unavailable');
       const route = profiles.pendingMutation?.profile ?? profiles.effective;
+      if (route.agentKind === 'cursor') throw new Error('Cursor is not available for plugin tasks');
       return { agentKind: route.agentKind === 'claude-code' ? 'cc' : route.agentKind,
         model: route.model, providerId: route.providerId ?? 'xd',
         ...(route.agentDeviceId ? { agentDeviceId: route.agentDeviceId } : {}),
@@ -21363,7 +21379,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (
       msg.createOpts.agentKind !== 'claude-code' &&
       msg.createOpts.agentKind !== 'codex' &&
-      msg.createOpts.agentKind !== 'pi'
+      msg.createOpts.agentKind !== 'pi' &&
+      msg.createOpts.agentKind !== 'cursor'
     ) {
       throwIpcError('INVALID_PARAMS', 'queued.createOpts.agentKind invalid');
     }
@@ -22980,7 +22997,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ? atomicSelection.effort
       : ((runtimeStatus.effort ?? null) as SessionRuntimeProfile['effort']);
     const targetFastMode = atomicSelection?.fastMode ?? runtimeStatus.fastMode;
-    const agentKind = dbToMakerAgentKind(runtimeStatus.agentKind as 'cc' | 'codex' | 'pi');
+    const agentKind = dbToMakerAgentKind(runtimeStatus.agentKind as 'cc' | 'codex' | 'pi' | 'cursor');
     if (internalOptions.source === 'user' && !internalOptions.applyingUserSelectionOnSend) {
       assertRuntimeOwnerCurrent();
       assertSharedTaskCurrent.admit();
@@ -24286,7 +24303,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
               // Pi 切模后不重置 thinking level：把 renderer 记录的目标模型思考开关
               // 意图交给 runtime，由 Pi 按目标模型能力快照收敛（否则上一个模型的
               // off/旧档位会漂移给新模型）。非 Pi 引擎忽略该参数。
-              ...(runtimeAgentKind === 'pi' && atomicSelection?.thinking !== undefined
+              ...((runtimeAgentKind === 'pi' || runtimeAgentKind === 'cursor') && atomicSelection?.thinking !== undefined
                 ? { thinkingEnabled: atomicSelection.thinking }
                 : {}),
               forceSessionRebuild:

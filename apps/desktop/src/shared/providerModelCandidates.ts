@@ -52,6 +52,7 @@ export function presetModelCandidate(
   if (matches.length > 1 || matches.some(({ entry, route }) => entry.status === 'retired' || route.interfaces?.length === 0)) return;
   // A compatible interface cannot grant CC/Codex membership denied by an exact
   // Registry route. Pi's membership is maintained separately in its inventory.
+  if (agent === 'cursor') return;
   if (agent !== 'pi' && matches.some(({ route }) => !route.agents.includes(agent))) return;
   const hasBinding = matches.some(({ route }) => route.interfaces !== undefined);
   const profiles = registry?.schemaVersion === 6 ? (registry.interfaceProfiles ?? []).filter(profile =>

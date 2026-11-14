@@ -4,6 +4,7 @@ import type { readUsageWidgetSnapshot } from '../quota-overview/service.js';
 import { configureStandbyGuestCleanup } from './providerShareAvailabilityGuests.js';
 import { prepareShareAvailability } from './providerShareAvailability.js';
 import { readKimiCodingAccountUsage, readOpenCodeGoAccountUsage } from '../maker-host/provider-account-usage.js';
+import { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
 import { executeTaskTags, TASK_TAG_CHANNEL } from '../localDb/ipc/taskTags.js';
 import { requestFilePeer, stopFilePeers } from './filePeer';
 import { requestTaskMigration } from '../task-migration/service';
@@ -113,6 +114,8 @@ export const {
   prepareShareAvailability,
   readKimiCodingAccountUsage,
   readOpenCodeGoAccountUsage,
+  readCursorQuota,
+  cursorConnected,
   executeTaskTags: (...args) => executeTaskTags(...args),
   TASK_TAG_CHANNEL,
   requestFilePeer: (...args) => requestFilePeer(...args),

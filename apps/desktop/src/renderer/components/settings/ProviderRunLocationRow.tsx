@@ -187,7 +187,7 @@ export function ProviderOwnComputersStatus({ provider }: { provider: ProviderVie
   const groups = useLocalProviderGroupsState();
   const grouped = !groups.ready || Boolean(groups.groups[provider.id]);
   const open = provider.remoteInvocationEnabled === true || (own.allProviders && !grouped);
-  if (!own.remoteControl || !open || borrowed || !provider.connected || provider.suspended || provider.agents.length === 0) return null;
+  if (!own.remoteControl || !open || borrowed || !provider.connected || provider.suspended || provider.agents.length === 0 || provider.id === 'cursor') return null;
   return (
     <span data-testid="provider-own-computers" className="min-w-0 truncate text-12 leading-tight">
       {t('settings.providers.detail.ownComputersCanUse')}

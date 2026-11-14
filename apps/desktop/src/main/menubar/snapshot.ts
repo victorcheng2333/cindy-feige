@@ -38,8 +38,8 @@ import {
   type MenubarView,
 } from '../../shared/menubarQuota.js';
 
-export type MenubarHarness = 'claude-code' | 'codex' | 'pi';
-export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi' | 'opencode-go' | 'shared';
+export type MenubarHarness = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi' | 'opencode-go' | 'cursor' | 'shared';
 
 export interface MenubarWindowInput {
   kind: 'session' | 'week' | 'scoped' | 'period';
@@ -226,16 +226,17 @@ const MIN_PACE_ELAPSED = 0.03;
 const ROOMY_CELL_LIMIT = 4;
 /** Settings' soft daily limit for a period quota: period total / 30 × 4.5 (a display hint, not a cap). */
 const DAILY_SOFT_LIMIT_FACTOR = 4.5;
-const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3, 'opencode-go': 4, shared: 5 };
+const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3, 'opencode-go': 4, cursor: 5, shared: 6 };
 const FAMILY_COLORS: Record<MenubarFamily, MenubarColor[]> = {
   claude: ['claude', 'claude2', 'claude3'],
   codex: ['codex'],
   grok: ['fill'],
   kimi: ['fill'],
   'opencode-go': ['fill'],
+  cursor: ['fill', 'ink2'],
   shared: ['fill'],
 };
-const HARNESS_ORDER: MenubarHarness[] = ['claude-code', 'codex', 'pi'];
+const HARNESS_ORDER: MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor'];
 
 interface WindowState {
   window: MenubarWindowInput;
@@ -615,6 +616,10 @@ class Builder {
     if (soon && !big?.sources.includes(soon.source)) parts.push(this.t('headline.soon', { name: this.who(soon.source) }));
     const sentence = (items: string[]): string | null =>
       items.length ? this.t('headline.sentence', { text: items.join(this.t('headline.joiner')) }) : null;
+    if (!recommended || recommended.kind === 'balance') {
+      const cursor = this.visibleSubscriptions().find(source => source.family === 'cursor' && source.windows.length > 0);
+      if (cursor) return { primary: this.t('cursor.separate'), secondary: this.t('cursor.explanation'), alert: false };
+    }
     if (!recommended) {
       // "Used up" is only true when something was actually measured empty.
       const measured =
@@ -710,6 +715,14 @@ class Builder {
     }
     const state = this.state(source);
     const name = this.who(source);
+    if (source.family === 'cursor' && state.windows.length) {
+      return {
+        ...base, emphasized: false, name, value: null, valueUnit: null,
+        valueLabel: this.t('cursor.pools'), level: 'normal', fill: null, reserve: false,
+        when: state.windows.map(w => `${Math.round(w.remaining)}%`).join(' / '), whenLevel: 'normal',
+        accessibilityLabel: `Cursor · ${state.windows.map(w => `${this.t(`cursor.${w.window.label}`)} ${Math.round(w.remaining)}%`).join(' · ')}`,
+      };
+    }
     if (!state.limit || state.remaining === null) {
       return {
         ...base,
@@ -924,6 +937,22 @@ class Builder {
     let action: MenubarDetailAction = source.device || source.shared
       ? { kind: 'open-app' }
       : { kind: 'new-task', providerId: source.providerId };
+    if (source.family === 'cursor' && state.windows.length) {
+      const label = (window: WindowState) => this.t(`cursor.${window.window.label}`);
+      return {
+        id: source.id, logoSvg: source.logoSvg, title: source.brand, plan: source.plan ?? '',
+        rings: state.windows.map((window, i) => ({ fraction: window.remaining / 100, color: FAMILY_COLORS.cursor[i % 2]! })),
+        bigValue: this.t('cursor.pools'), bigUnit: null, bigColor: null, bigCompact: true,
+        bigCaption: this.t('cursor.remaining'),
+        legend: state.windows.map((window, i) => ({ label: `${label(window)} ${Math.round(window.remaining)}%`, color: FAMILY_COLORS.cursor[i % 2]! })),
+        sayPrimary: this.t('cursor.separate'), saySecondary: this.t('cursor.explanation'),
+        facts: state.windows.map(window => ({
+          label: label(window), value: this.t('fact.remainingPercent', { n: Math.round(window.remaining) }),
+          sub: window.window.resetsAtMs === null ? this.t('cursor.resetUnknown') : this.t('say.resetsAt', { at: this.at(window.window.resetsAtMs) }),
+        })).concat([{ label: this.t('cursor.extra'), value: this.t('cursor.notRead'), sub: this.t('cursor.extraHint') }]),
+        actionLabel, action,
+      };
+    }
     if (!limit) {
       return {
         id: source.id,
@@ -1110,7 +1139,7 @@ class Builder {
   }
 
   private harnessName(harness: MenubarHarness): string {
-    return this.t(`harness.${harness}`);
+    return harness === 'cursor' ? 'Cursor' : this.t(`harness.${harness}`);
   }
 
   // ── Usage ─────────────────────────────────────────────────────────────────
@@ -1157,6 +1186,7 @@ class Builder {
   private manageSubtitle(source: MenubarSourceInput): string {
     if (source.kind === 'balance') return this.t(source.quota ? 'manage.quota' : 'manage.balance');
     if (source.kind === 'payg') return this.t(source.billing === 'api' ? 'manage.payg' : 'manage.plan');
+    if (source.family === 'cursor') return this.t('cursor.remaining');
     const plan = source.plan ? ` · ${source.plan}` : '';
     const windows = source.windows
       .filter((window) => window.kind !== 'scoped')
@@ -1171,6 +1201,7 @@ class Builder {
   private manageValue(source: MenubarSourceInput): string {
     if (source.kind === 'balance') return this.balanceMoney(source.available, source.currency);
     if (source.kind === 'payg') return '—';
+    if (source.family === 'cursor' && source.windows.length) return source.windows.map(w => `${Math.round(100 - w.usedPercent)}%`).join(' / ');
     const remaining = this.remaining(source);
     if (remaining === null) return '—';
     if (remaining <= 0 && (source.creditsUnlimited || (source.credits ?? 0) > 0)) return this.t('cell.credits');
@@ -1187,7 +1218,7 @@ class Builder {
     const week = pinned?.windows.find(window => window.kind === 'week' &&
       window.resetsAtMs !== null && window.resetsAtMs > this.input.nowMs);
     return {
-      account: pinned ? `${Array.from(this.who(pinned)).slice(0, 10).join('')}${Array.from(this.who(pinned)).length > 10 ? '…' : ''} ${week ? `${Math.round(100 - week.usedPercent)}%` : '—'}` : '—',
+      account: pinned ? `${Array.from(this.who(pinned)).slice(0, 10).join('')}${Array.from(this.who(pinned)).length > 10 ? '…' : ''} ${pinned.family === 'cursor' && pinned.windows.length ? this.manageValue(pinned) : week ? `${Math.round(100 - week.usedPercent)}%` : '—'}` : '—',
       icon: null,
       lowest: tightest ? `${Math.round(this.remaining(tightest) ?? 0)}%` : hasSubscriptions ? '0%' : null,
       today: today ? this.money(today.money.reduce((sum, value) => sum + value, 0)) : null,
@@ -1231,6 +1262,8 @@ class Builder {
         continue;
       }
       if (source.kind !== 'subscription') continue;
+      // Cursor may still have another pool or additional paid usage; never infer account exhaustion.
+      if (source.family === 'cursor') return false;
       const remaining = this.usableRemaining(source);
       if (remaining === null) continue;
       known += 1;

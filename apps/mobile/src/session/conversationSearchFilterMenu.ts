@@ -23,7 +23,7 @@ const STATUS_OPTIONS: ConversationSearchStatusFilter[] = [
   "archived",
   "all",
 ];
-const AGENT_OPTIONS: ConversationSearchAgentFilter[] = [
+const AGENT_OPTIONS: Exclude<ConversationSearchAgentFilter, 'cursor'>[] = [
   "all",
   "cc",
   "codex",
@@ -107,7 +107,7 @@ function matchOption<T extends string>(
 
 export function buildConversationSearchFilterPullDownActions(
   input: ConversationSearchFilterMenuState & {
-    agentLabels: Record<ConversationSearchAgentFilter, string>;
+    agentLabels: Record<Exclude<ConversationSearchAgentFilter, 'cursor'>, string>;
     allProjectsLabel: string;
     lastActivityHeading: string;
     lastActivityLabels: Record<ConversationSearchLastActivityFilter, string>;

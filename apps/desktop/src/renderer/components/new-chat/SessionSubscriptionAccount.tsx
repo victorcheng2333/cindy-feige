@@ -110,11 +110,11 @@ const Context = createContext<ContextValue | null>(null);
  * Claude Code 显式选 Anthropic，或三种引擎显式选 OpenAI；SSH 远程与默认路由不进账号池。
  */
 export function sessionSubscriptionPoolProvider(
-  agent: 'cc' | 'codex' | 'pi',
+  agent: 'cc' | 'codex' | 'pi' | 'cursor',
   providerId: string | null | undefined,
   remoteHostId?: string | null,
 ): SubscriptionProvider | null {
-  if (remoteHostId) return null;
+  if (remoteHostId || agent === 'cursor') return null;
   if (providerId === 'anthropic') return agent === 'cc' ? providerId : null;
   return providerId === 'openai' ? providerId : null;
 }

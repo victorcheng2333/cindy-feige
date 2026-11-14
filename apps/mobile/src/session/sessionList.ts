@@ -152,7 +152,7 @@ export function localizeRemoteSessionListItem(
   translate: ListTranslator = createSessionListTranslator(),
 ): RemoteSessionListItem {
   const collaboration = collaborationLabel(item.session.orcaRole, translate);
-  const agent = item.session.agentKind === 'codex'
+  const agent = item.session.agentKind === 'cursor' ? 'Cursor' : item.session.agentKind === 'codex'
     ? 'Codex'
     : item.session.agentKind === 'pi'
       ? 'Pi'

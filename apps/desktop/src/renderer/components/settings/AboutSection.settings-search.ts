@@ -47,7 +47,7 @@ export const aboutSettings = defineSettings({
     targetId: 'settings-search-settings-about-harnessShowInPicker',
     titleKey: 'settings.about.harnessShowInPicker',
     descriptionKey: 'settings.about.harnessToggleHint',
-    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', '引擎', '隐藏 Harness', '模型选择器'],
+    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', 'Cursor', '引擎', '隐藏 Harness', '模型选择器'],
     sectionKey: 'settings.tabs.about',
   },
   debugLogLabel: {
