@@ -9252,7 +9252,12 @@ export function registerGhostIpc(): void {
   const taskSettings = new MobileTaskSettings({
       read: readPluginTaskConfig, write: writePluginTaskConfig, validate: validatePluginTaskConfig,
       providers: () => getDesktopProviderService({ allowSideEffects: false }).listProviders({ allowSideEffects: false, snapshotOnly: true }),
-      agents: async () => { const { getMakerIfReady } = await import('../maker-host/index.js'); return getMakerIfReady()?.listAvailableAgents() ?? []; },
+      // 插件任务设置里可选的引擎:只列这台电脑上开着的 Harness。
+      agents: async () => {
+        const { getMakerIfReady } = await import('../maker-host/index.js');
+        const { selectableHarnesses } = await import('../maker-host/harness-preferences-store.js');
+        return selectableHarnesses(getMakerIfReady()?.listAvailableAgents() ?? []);
+      },
     });
   remotePluginManagement = new RemotePluginManagement({
     list: availableGhosts,
@@ -9427,11 +9432,13 @@ export function registerGhostIpc(): void {
     if (owner !== activeOwnerScopeKey() || !findGhostForInstanceId(instanceId)?.enabled) return { ok: false, errorCode: 'NOT_AVAILABLE', message: 'Plugin unavailable' };
     // Do not initialize runtimes as a side effect of a plugin's read-only GET.
     const { getMakerIfReady } = await import('../maker-host/index.js');
+    const { selectableHarnesses } = await import('../maker-host/harness-preferences-store.js');
     const maker = getMakerIfReady();
     if (owner !== activeOwnerScopeKey() || !findGhostForInstanceId(instanceId)?.enabled || !maker) {
       return { ok: false, errorCode: 'NOT_AVAILABLE', message: 'Model runtimes unavailable' };
     }
-    const projected = projectGhostAgentModels(views, maker.listAvailableAgents(), getModelVisibilityOverride);
+    // 插件看到的可选模型与应用内选择器同口径:只来自开着的 Harness。
+    const projected = projectGhostAgentModels(views, selectableHarnesses(maker.listAvailableAgents()), getModelVisibilityOverride);
     if (!projected.ok) return projected;
     if (!listGhostAgentLocations) return { ...projected, supportsRemoteRoutes: true };
     const locations = await ghostAgentModelsCache.locations(owner, listGhostAgentLocations);

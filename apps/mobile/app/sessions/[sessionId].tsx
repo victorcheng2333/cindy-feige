@@ -300,6 +300,7 @@ import type { MobileModelMemoryAccessors } from '@/session/draftModelMemory';
 import type { MobileModelConfiguration } from '@/session/unifiedMobileModels';
 import { resolveAgentCapability } from '@cindy/model-providers';
 import { ModelPickerSheet } from '@/session/ModelPickerSheet';
+import { sessionSwitchAgentKinds, useSelectableAgentKinds } from '@/session/sessionSelectableAgents';
 import { MobileModelIconMark } from '@/session/MobileProviderMark';
 import { getModel, type ProviderView } from '@cindy/model-providers/registry';
 import { shouldBlockLegacyRemoteModelWindowSwitch } from '@cindy/maker-shared/agent-capabilities';
@@ -1225,6 +1226,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     status,
     subscribe,
     unsubscribe,
+    onAgentsChanged,
   } = useDeviceLink(deviceId);
   const revokedDevices = useRevokedDevices();
   const unresponsiveDevices = useUnresponsiveDevices();
@@ -2793,6 +2795,9 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const composerSwitchesAgent = composerDisplayAgentKind !== sessionAgentKind;
   const sessionAgentSwitchSupported = !!currentSession
     && supportsMobileSessionAgentSwitch(currentSession, capabilities);
+  // 切换引擎只列被控电脑上开着的 Harness(用户在那台电脑上关掉的不出现),当前引擎始终保留。
+  const selectableAgentKinds = useSelectableAgentKinds(
+    deviceId, sessionAgentSwitchSupported, maker.listAvailableAgents, onAgentsChanged);
   // Orca 的同引擎模型选择也只登记意图，保留当前执行单元直到下一次发送。
   const orcaModelSelectionUsesIntent = !!currentSession?.orcaRole && sessionAgentSwitchSupported;
   // 远程 Agent:模型列表在被控电脑自己的供应商之外,另列同账号其他电脑上开放了远程调用的供应商
@@ -10933,7 +10938,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
               currentSelection: { agentKind: sessionAgentKind, activeModelId: currentSession.model, selectedProviderId: currentSession.providerId ?? null, selectedEffort: currentSession.effort ?? '', selectedFastMode: currentSession.fastMode ?? false,
                     },
               scope: JSON.stringify([auth.user?.id, deviceId, orcaRemoteAgentDeviceId]),
-              agents: sessionAgentSwitchSupported ? ['claude-code','codex','pi'] : [sessionAgentKind],
+              agents: sessionAgentSwitchSupported ? sessionSwitchAgentKinds(selectableAgentKinds, sessionAgentKind) : [sessionAgentKind],
               loadCapabilities: async (agent) => {
                 const result = normalizeMobileAgentCapabilities(await loadComposerAgentCapabilities(agent));
                 if (!result) throw new Error('Capabilities unavailable');

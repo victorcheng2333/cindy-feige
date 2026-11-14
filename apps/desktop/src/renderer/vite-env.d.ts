@@ -5738,6 +5738,12 @@ interface ElectronAPI {
   maker: {
     listAvailableAgents: () => Promise<Array<'claude-code' | 'codex' | 'pi'>>;
     onAgentsChanged: (cb: () => void) => () => void;
+    /** 这台电脑的 Harness 开关;关掉的不再出现在新的选择入口,已有任务不受影响。 */
+    getHarnessPreferences: () => Promise<import('../shared/harnessPreferences').HarnessPreferencesView>;
+    setHarnessEnabled: (
+      kind: string,
+      enabled: boolean,
+    ) => Promise<import('../shared/harnessPreferences').HarnessPreferencesView>;
     getCapabilities: (agentKind: 'claude-code' | 'codex' | 'pi') => Promise<unknown>;
     /** Read-only: the V1 background tasks a teammate chat started (stored rows). */
     listBotDelegations: (

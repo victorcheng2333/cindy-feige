@@ -15,6 +15,7 @@ import {
 import { activeOwnerScopeKey, getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { desktopMakerLogger } from './logger-adapter.js';
 import { getMakerIfReady } from './index.js';
+import { selectableHarnesses } from './harness-preferences-store.js';
 import { getDesktopProviderService } from './createDesktopProviderService.js';
 import {
   createOverrideSettingsFile,
@@ -103,7 +104,8 @@ export async function readBotModelChainSettingsState(
   const latest = store.readState();
   if (latest.isCustomized) return latest;
   const availableAgents = options?.availableAgents ?? new Set(
-    (getMakerIfReady()?.listAvailableAgents() ?? []).map((agent) => agent === 'claude-code' ? 'cc' : agent),
+    // 只从用户开着的 Harness 推导默认链;用户自己保存过的链不受影响。
+    selectableHarnesses(getMakerIfReady()?.listAvailableAgents() ?? []).map((agent) => agent === 'claude-code' ? 'cc' : agent),
   );
   const value = { modelChain: defaultBotModelChain({ providers, providersLoading: false,
     availableAgents, availableAgentsLoaded: true,

@@ -10,6 +10,7 @@ import {
   ownerScopedUserDataPath,
 } from '../appSessionState.js';
 import { getDesktopProviderService } from '../maker-host/createDesktopProviderService.js';
+import { selectableHarnesses } from '../maker-host/harness-preferences-store.js';
 import { createLogger } from '../logger.js';
 import { t } from '../i18n.desktop.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
@@ -138,7 +139,8 @@ export function installLocalAgentHost(maker: Maker): void {
           allowSideEffects: false,
         });
         if (scopeNow() !== scope) throw new LocalAgentError('UNAUTHORIZED', 'Cindy 当前账号已更改，请重新连接。');
-        const localModels = localAgentModels(providers, maker.listAvailableAgents());
+        // 提供给外部应用挑选的模型只来自这台电脑上开着的 Harness。
+        const localModels = localAgentModels(providers, selectableHarnesses(maker.listAvailableAgents()));
         const remoteModels = await remoteLocalAgentModels(() => scopeNow() === scope, listProviderGroups(), localModels);
         if (scopeNow() !== scope) throw new LocalAgentError('UNAUTHORIZED', 'Cindy 当前账号已更改，请重新连接。');
         return [...localModels, ...remoteModels]

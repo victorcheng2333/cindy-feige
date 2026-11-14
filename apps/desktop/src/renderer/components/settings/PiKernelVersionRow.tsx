@@ -80,7 +80,7 @@ export function PiKernelVersionRow() {
   const status = busy ? k(state?.operation?.phase ?? 'lookup') : checking ? k('checking') : checkError ? k('checkFailed') : update ? k('available') : '';
 
   return <>
-    <HarnessVersionMenuRow label={t('settings.about.piVersionLabel')} manageLabel={k('manage')} testId="pi-kernel-row"
+    <HarnessVersionMenuRow harnessKind="pi" label={t('settings.about.piVersionLabel')} manageLabel={k('manage')} testId="pi-kernel-row"
       version={state?.currentVersion ?? t(`settings.about.version.${state ? 'notReady' : failed ? 'unknown' : 'loading'}`)}
       status={status} pending={busy || checking}>
       <HarnessVersionMenuItem label={k('update')} version={upstream?.version} disabled={busy || !upstream || (!!state?.currentVersion && !newer(upstream.version, state.currentVersion))} onSelect={() => upstream && setTarget({ source: 'upstream', version: upstream.version })} />

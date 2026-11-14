@@ -195,6 +195,14 @@ export const MAKER_INVOKE = {
   APPLY_NEW_MAKER_WORKTREE_BRANCH_PREF: 'maker:apply-new-maker-worktree-branch-pref',
   LIST_AVAILABLE_AGENTS: 'maker:list-available-agents',
   /**
+   * 这台电脑的 Harness 开关(本机设置页用,不进 device-link allowlist)。
+   *  - GET: () => { harnesses: Array<{ kind, registered, enabled }> }
+   *  - SET: (kind: string, enabled: boolean) => 同 GET;关掉最后一个开着的引擎返回 LAST_HARNESS
+   * 变化后复用 maker:agents:changed 推送,list-available-agents 随之只列开着的。
+   */
+  HARNESS_PREFERENCES_GET: 'maker:harness-preferences:get',
+  HARNESS_PREFERENCES_SET: 'maker:harness-preferences:set',
+  /**
    * Palette `/` 命令三源 (palette refactor):
    *  - LIST_DESKTOP_COMMANDS    : main 进程 DesktopCommandRegistry 的命令(/help /clear ...)
    *  - LIST_AGENT_COMMANDS      : agent 子类硬编码白名单(/compact 等)

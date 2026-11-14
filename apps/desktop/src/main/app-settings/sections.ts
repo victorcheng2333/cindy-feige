@@ -4,6 +4,7 @@ import { updateAppearanceFromSettings, resetAppearanceFromSettings } from '../ap
 import { readGitSafetySettingsState, writeGitSafetyMode, resetGitSafetySettings } from '../maker-host/git-safety-settings-store.js';
 import { readGoalSettingsState, writeGoalSettings, resetGoalSettings } from '../maker-host/goal-settings-store.js';
 import { readAgentResourceSettingsState, writeAgentResourceSetting, resetAgentResourceSettings } from '../maker-host/agent-resource-settings-store.js';
+import { HarnessPreferenceError, readHarnessPreferencesState, resetHarnessPreferences, writeDisabledHarnesses } from '../maker-host/harness-preferences-store.js';
 import { notifyAppSettingsChanged } from './changes.js';
 import { runtimeSettingsSections } from './runtime.js';
 import { pluginSettingsSections } from './plugins.js';
@@ -70,6 +71,23 @@ export const appSettingsSections: AppSettingsSection[] = [{
       value as number | boolean | 'normal' | 'low' | 'lowest');
   },
   reset: async () => resetAgentResourceSettings(),
+}, {
+  id: 'harnesses', title: 'Harness 开关（本机）',
+  description: '这台电脑上关掉的 Harness（claude-code、codex、pi），关掉的不再出现在模型选择器、新建任务、IM /model 和默认模型候选里；正在运行的任务不受影响。至少保留一个开着。',
+  effective: 'new-selections',
+  schema: z.strictObject({ disabled: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)).max(32).optional() }),
+  read: async () => readHarnessPreferencesState(),
+  update: async patch => {
+    const { getMakerIfReady } = await import('../maker-host/index.js');
+    try {
+      await writeDisabledHarnesses(patch.disabled as string[], getMakerIfReady()?.listAvailableAgents() ?? []);
+    } catch (error) {
+      if (error instanceof HarnessPreferenceError) return { ok: false, errorCode: error.code,
+        message: error.code === 'LAST_HARNESS' ? '至少要保留一个开着的 Harness。' : 'Harness id 只能是小写字母、数字或连字符。' };
+      throw error;
+    }
+  },
+  reset: async () => resetHarnessPreferences(),
 }];
 
 export const manageAppSettings: ReturnType<typeof createAppSettingsService> = async (input, assertCurrent) => {

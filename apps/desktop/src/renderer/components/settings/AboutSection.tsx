@@ -171,7 +171,7 @@ export function AgentVersionsRows() {
 
   return (
     <>
-      <SettingsBlock className="p-0">
+      <SettingsBlock id={aboutSettings.harnessShowInPicker.targetId} className="p-0">
         <AgentVersionRow
           kind="claude-code"
           name="Claude Code"
@@ -308,6 +308,7 @@ function AgentVersionRow({
 
   return (
     <HarnessVersionMenuRow
+      harnessKind={kind}
       label={label}
       manageLabel={t('settings.about.harnessManage', { name })}
       version={renderVersion(state, t)}

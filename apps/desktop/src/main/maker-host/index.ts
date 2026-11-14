@@ -155,6 +155,7 @@ import { readProviderGroupBinding } from '../provider-group/bindings.desktop.js'
 import { createSubscriptionFastPolicy } from './subscription-fast-policy.js';
 import { getProviderGroupGuestSwitch } from '../provider-group/guestSwitch.js';
 import { tapWindowBroadcast } from '../device-link/broadcast-tap.js';
+import { onHarnessPreferencesChanged, selectableHarnesses } from './harness-preferences-store.js';
 import { isSharedTaskAvailable, isSharedTaskRelayOnline, openRemoteLink, remoteBackgroundInvoke, remoteInvoke, waitForSharedTaskRelay } from '../device-link/index.js';
 import { captureSharedTaskAgentCommand } from '../device-link/sharedTaskCommands.js';
 import { tryGetSharedTaskHost } from '../device-link/sharedTaskRuntime.js';
@@ -434,7 +435,8 @@ type RemoteCcQuery = Awaited<
 >;
 
 let _maker: Maker | null = null;
-setPluginModelPickerAgentProvider(() => _maker?.listAvailableAgents() ?? []);
+// 插件模型选择器是「新的选择」入口:只列用户在这台电脑上开着的 Harness。
+setPluginModelPickerAgentProvider(() => listSelectableAgents());
 setPluginRouteAgentStatusProvider(async (agent) => _maker?.getAgentStatus(agent as AgentKind));
 let remoteWorkerBridge: ReturnType<typeof createOrcaRemoteWorkerBridge> | null = null;
 
@@ -3100,6 +3102,29 @@ export async function disposeRemoteCodexHostAfterRestart(hostId: string, ownerGe
   await _codexAgent?.disposeRemoteHostAfterRestart(hostId);
 }
 
+/** 引擎清单(已注册或用户开关)变化:通知本机窗口,并经 device-link 转给手机与远程控制端。 */
+function broadcastAgentsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      win.webContents.send(MAKER_PUSH.AGENTS_CHANGED);
+    } catch {
+      // Window teardown may race the broadcast; other windows still receive it.
+    }
+  }
+  tapWindowBroadcast(MAKER_PUSH.AGENTS_CHANGED, {});
+}
+
+onHarnessPreferencesChanged(broadcastAgentsChanged);
+
+/**
+ * 可以作为「新的选择」提供的引擎 = 已注册 − 用户在这台电脑上关掉的。
+ * 只给选择入口用;执行、恢复与已有任务继续读 maker.listAvailableAgents()。
+ */
+export function listSelectableAgents(): AgentKind[] {
+  return _maker ? selectableHarnesses(_maker.listAvailableAgents()) : [];
+}
+
 /** Register Pi after a managed runtime retry and notify local renderers. */
 export function registerPiAgentIfAvailable(): boolean {
   const register = _registerPiAgent;
@@ -3108,15 +3133,7 @@ export function registerPiAgentIfAvailable(): boolean {
     if (_maker?.listAvailableAgents().includes('pi')) return true;
     const registered = register();
     if (!registered) return false;
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue;
-      try {
-        win.webContents.send(MAKER_PUSH.AGENTS_CHANGED);
-      } catch {
-        // Window teardown may race the broadcast; other windows still receive it.
-      }
-    }
-    tapWindowBroadcast(MAKER_PUSH.AGENTS_CHANGED, {});
+    broadcastAgentsChanged();
     return true;
   } catch (error) {
     desktopMakerLogger.warn('Pi agent registration after runtime recovery failed', {

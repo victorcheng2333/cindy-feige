@@ -6,6 +6,7 @@ import { sameModelRoute, type AppDefaultModelSelection } from '../../shared/appD
 import { activeOwnerScopeKey, getActiveDataOwnerPushStamp, isAppSessionBoundaryPending } from '../appSessionState.js';
 import { getDesktopProviderService } from '../maker-host/createDesktopProviderService.js';
 import { getMakerIfReady } from '../maker-host/index.js';
+import { selectableHarnesses } from '../maker-host/harness-preferences-store.js';
 import { getModelVisibilityOverride, waitForModelVisibilityMirror } from '../maker-host/model-visibility-mirror.js';
 import { getNewMakerModelTuning, getSelectedNewMakerRoute, subscribeNewMakerDefaults } from '../maker-host/newMakerDefaultsCache.js';
 
@@ -81,7 +82,8 @@ async function readSelection() {
   const current = getSelectedNewMakerRoute(owner) ?? null;
   const inputs = { providers, currentRoute: current,
     tuning: (agent, providerId, model) => getNewMakerModelTuning(owner, agent, providerId, model),
-    availableAgents: new Set((getMakerIfReady()?.listAvailableAgents() ?? []).map(agent => agent === 'claude-code' ? 'cc' : agent)),
+    // 默认模型候选只列这台电脑上开着的 Harness;当前默认若在关掉的 Harness 上仍原样显示。
+    availableAgents: new Set(selectableHarnesses(getMakerIfReady()?.listAvailableAgents() ?? []).map(agent => agent === 'claude-code' ? 'cc' : agent)),
     enabled: (agent, providerId, model) => isModelVisible(getModelVisibilityOverride(agent, providerId, model.id), model.defaultEnabled),
   } satisfies Parameters<typeof availableAppDefaultModels>[0];
   const available = availableAppDefaultModels(inputs);

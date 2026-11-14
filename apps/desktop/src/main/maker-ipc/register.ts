@@ -944,6 +944,12 @@ import {
 } from '../maker-host/pi-package-mutation-grant.js';
 import { onCodexAutoResetRestored, readXaiSubscriptionUsageSnapshotForDeviceLink, readClaudeSubscriptionUsageSnapshotForDeviceLink, readCodexAccountUsageSnapshotWithWebRefresh, readCodexRateLimitsForHost } from './usage.js';
 import { requireEnum, requireObject, throwIpcError } from '../utils/ipcValidate.js';
+import {
+  HarnessPreferenceError,
+  readDisabledHarnesses,
+  selectableHarnesses,
+  setHarnessEnabled,
+} from '../maker-host/harness-preferences-store.js';
 import { applyPersistedCindyMakeMarker } from './cindyMakeSessionStart.js';
 import { assertCindyMakeEnabled, assertCindyMakeSessionAvailable } from '../cindy-make/featureGate.js';
 import { CINDY_MAKE_SESSION_SOURCE } from '../../shared/cindyMakeSession.js';
@@ -7158,8 +7164,42 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   });
 
   // ── 元能力 ─────────────────────────────────────────────────────────────
+  // 选择入口(模型选择器、新建入口、手机与远程控制端)只拿「可选」= 已注册 − 用户在这台电脑上关掉的。
+  // 执行与恢复仍读 maker.listAvailableAgents(),关掉 Harness 不打断已有任务。
   ipcMain.handle(MAKER_INVOKE.LIST_AVAILABLE_AGENTS, () => {
-    return maker.listAvailableAgents();
+    return selectableHarnesses(maker.listAvailableAgents());
+  });
+
+  const harnessPreferencesView = () => {
+    const registered = maker.listAvailableAgents();
+    const disabled = readDisabledHarnesses();
+    // 已知的三个固定在前;关掉清单里本版本还不认识的 id 不展示(仍保留在文件里)。
+    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', ...registered])];
+    return {
+      harnesses: kinds.map((kind) => ({
+        kind,
+        registered: (registered as readonly string[]).includes(kind),
+        enabled: !disabled.has(kind),
+      })),
+    };
+  };
+  ipcMain.handle(MAKER_INVOKE.HARNESS_PREFERENCES_GET, (event) => {
+    assertTrustedAppRendererEvent(event);
+    return harnessPreferencesView();
+  });
+  ipcMain.handle(MAKER_INVOKE.HARNESS_PREFERENCES_SET, async (event, kind: unknown, enabled: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    if (typeof kind !== 'string' || typeof enabled !== 'boolean') throwIpcError('INVALID_PARAMS', 'Invalid harness preference');
+    try {
+      await setHarnessEnabled(kind, enabled, maker.listAvailableAgents());
+    } catch (error) {
+      // 不新增 IPC 错误码:最后一个引擎 = PRECONDITION_FAILED,非法 id = INVALID_PARAMS。
+      if (error instanceof HarnessPreferenceError) {
+        throwIpcError(error.code === 'LAST_HARNESS' ? 'PRECONDITION_FAILED' : 'INVALID_PARAMS', error.message);
+      }
+      throw error;
+    }
+    return harnessPreferencesView();
   });
 
   ipcMain.handle(MAKER_INVOKE.TURN_CHANGE_SETS_LIST, async (event, sessionId: unknown) => {
@@ -18569,7 +18609,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             defaultProviderId: string | null;
           }>
         > = {};
-        for (const a of agents) {
+        // 本机且未指定引擎时,不列用户在这台电脑上关掉的 Harness;Lead 显式指定 agent 时照常列出。
+        for (const a of agent ? agents : selectableHarnesses(agents)) {
           const caps = maker.getCapabilities(a);
           // key 必须区分 pi,否则 pi 模型会被塞进 claude_code 键与 CC 模型混淆。
           const key = a === 'codex' ? 'codex' : a === 'pi' ? 'pi' : 'claude_code';

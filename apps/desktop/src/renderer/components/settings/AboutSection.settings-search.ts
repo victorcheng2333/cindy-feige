@@ -40,6 +40,16 @@ export const aboutSettings = defineSettings({
     sectionKey: 'settings.tabs.about',
     descriptionKey: 'settings.about.analyticsDescription',
   },
+  harnessShowInPicker: {
+    id: 'settings.about.harnessShowInPicker',
+    fallbackTargetId: 'settings-panel-about',
+    tab: 'about',
+    targetId: 'settings-search-settings-about-harnessShowInPicker',
+    titleKey: 'settings.about.harnessShowInPicker',
+    descriptionKey: 'settings.about.harnessToggleHint',
+    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', '引擎', '隐藏 Harness', '模型选择器'],
+    sectionKey: 'settings.tabs.about',
+  },
   debugLogLabel: {
     id: 'settings.about.debugLogLabel',
     fallbackTargetId: 'settings-panel-about',

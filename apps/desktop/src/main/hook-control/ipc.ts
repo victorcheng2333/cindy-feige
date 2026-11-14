@@ -30,6 +30,7 @@ import { buildOfficialBotCommandMenus } from '../im/shared/botCommands.js';
 import { stopSessionTurnExplicitly } from '../maker-ipc/register.js';
 import { onChannelTurn } from '../maker-ipc/channelTurnSignal.js';
 import { getMaker } from '../maker-host/index.js';
+import { selectableHarnesses } from '../maker-host/harness-preferences-store.js';
 import { getDesktopProviderService } from '../maker-host/createDesktopProviderService.js';
 import { getModelVisibilityOverride, waitForModelVisibilityMirror } from '../maker-host/model-visibility-mirror.js';
 import { resolveFreshSourceBranch, WorktreeManager } from '../worktree/index.js';
@@ -792,7 +793,8 @@ function ensureInstances(): { store: SlackHookStore; manager: HookControlManager
         await waitForModelVisibilityMirror();
         // 动态取 runtime 已注册的 agent(含 Pi,若已安装);上游此处硬编码 cc/codex(早于 Pi),
         // 本 PR 的 Pi 接入以 listAvailableAgents() 为准 —— 与新建入口按注册结果门控同源。
-        return getMaker().listAvailableAgents().map((agentKind) => {
+        // IM /model 卡与应用内选择器同口径:只列这台电脑上开着的 Harness(按敲指令那一刻现读)。
+        return selectableHarnesses(getMaker().listAvailableAgents()).map((agentKind) => {
           const models = visibleModelUnion(providers, agentKind, (providerId, m) =>
             isModelVisible(
               getModelVisibilityOverride(agentKind, providerId, m.id),

@@ -6685,6 +6685,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listAvailableAgents: (): Promise<Array<'claude-code' | 'codex' | 'pi'>> =>
       ipcRenderer.invoke('maker:list-available-agents'),
     onAgentsChanged: fanOutMakerAgentsChanged,
+    getHarnessPreferences: (): Promise<import('../shared/harnessPreferences').HarnessPreferencesView> =>
+      ipcRenderer.invoke('maker:harness-preferences:get'),
+    setHarnessEnabled: (
+      kind: string,
+      enabled: boolean,
+    ): Promise<import('../shared/harnessPreferences').HarnessPreferencesView> =>
+      ipcRenderer.invoke('maker:harness-preferences:set', kind, enabled),
     getCapabilities: (agentKind: 'claude-code' | 'codex' | 'pi'): Promise<unknown> =>
       ipcRenderer.invoke('maker:get-capabilities', agentKind),
     listBotDelegations: (

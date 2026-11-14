@@ -7,6 +7,7 @@ import { BRAND_NAME } from '@cindy/maker-shared/branding';
 import { createLogger } from '../logger.js';
 import { activeOwnerScopeKey, isAppSessionBoundaryPending } from '../appSessionState.js';
 import { isAgentOneShotRouteDisabled } from '../maker-host/model-route-guard-live.js';
+import { selectableHarnesses } from '../maker-host/harness-preferences-store.js';
 import { getDbClient } from '../localDb/client/current.js';
 import { sessions } from '../localDb/schema.js';
 import { agentSupportsOneShot, requestUtilityText } from '../utility-model/oneShotCandidates.js';
@@ -319,8 +320,15 @@ export async function pickHelpAgent(
   const candidates: AgentKind[] = preferredAgent
     ? [...new Set<AgentKind>([preferredAgent, 'claude-code', 'codex', 'pi'])]
     : ['claude-code', 'codex', 'pi'];
-  const ordered = candidates.filter((agentKind) => agentSupportsOneShot(agentKind));
-  const available = new Set(maker.listAvailableAgents());
+  const registered = maker.listAvailableAgents();
+  const available = new Set(registered);
+  // 用户在这台电脑上开着的 Harness 优先;都用不了时才退回关掉的,帮助与摘要不至于整个不可用。
+  const enabled = new Set<AgentKind>(selectableHarnesses(registered));
+  const supported = candidates.filter((agentKind) => agentSupportsOneShot(agentKind));
+  const ordered = [
+    ...supported.filter((agentKind) => enabled.has(agentKind)),
+    ...supported.filter((agentKind) => !enabled.has(agentKind)),
+  ];
   for (const agentKind of ordered) {
     if (!available.has(agentKind)) continue;
     try {

@@ -1,13 +1,25 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
+import { useHarnessPreference } from '@/hooks/useHarnessPreference';
+import { toast } from '@/lib/toast';
 
 /** Shared About geometry so every harness row and menu stays identical to Pi's. */
 export const HARNESS_MENU_ITEM_CLASS = 'gap-3';
 
 /** One harness, one row: the version pill opens that harness's action menu. */
-export function HarnessVersionMenuRow({ label, manageLabel, version, status, pending, testId, children }: {
+export function HarnessVersionMenuRow({ harnessKind, label, manageLabel, version, status, pending, testId, children }: {
+  /** Harness id(claude-code / codex / pi):菜单顶部带「在模型选择器中显示」开关。 */
+  harnessKind: string;
   label: string;
   manageLabel: string;
   version: string;
@@ -17,9 +29,20 @@ export function HarnessVersionMenuRow({ label, manageLabel, version, status, pen
   testId?: string;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
+  const preference = useHarnessPreference(harnessKind);
+  const hidden = preference.loaded && !preference.enabled;
+  const toggle = (enabled: boolean) => {
+    preference.setEnabled(enabled).catch(() => toast.error(t('settings.about.harnessToggleFailed')));
+  };
   return (
     <div className="flex min-h-[52px] min-w-0 items-center justify-between gap-3 overflow-hidden px-4 py-2" data-testid={testId}>
-      <span className="shrink-0 text-13 font-medium text-[var(--settings-section-sublabel)]">{label}</span>
+      <span className="flex shrink-0 flex-col">
+        <span className="text-13 font-medium text-[var(--settings-section-sublabel)]">{label}</span>
+        {hidden && (
+          <span className="text-12 leading-[1.35] text-[var(--text-secondary)]">{t('settings.about.harnessHiddenStatus')}</span>
+        )}
+      </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label={manageLabel} className="-mr-2 flex min-h-9 min-w-0 flex-1 items-center justify-end gap-2 rounded-full px-2 text-13 font-medium text-[var(--settings-section-title)] hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)]">
@@ -34,6 +57,17 @@ export function HarnessVersionMenuRow({ label, manageLabel, version, status, pen
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="z-[10000] w-[272px] max-w-[calc(100vw-24px)] p-1.5">
+          <DropdownMenuCheckboxItem
+            checked={preference.enabled}
+            disabled={!preference.loaded || preference.isLastEnabled}
+            onCheckedChange={(checked) => toggle(checked === true)}
+          >
+            {t('settings.about.harnessShowInPicker')}
+          </DropdownMenuCheckboxItem>
+          <HarnessMenuFootnote>
+            {preference.isLastEnabled ? t('settings.about.harnessLastEnabledHint') : t('settings.about.harnessToggleHint')}
+          </HarnessMenuFootnote>
+          <DropdownMenuSeparator />
           {children}
         </DropdownMenuContent>
       </DropdownMenu>
