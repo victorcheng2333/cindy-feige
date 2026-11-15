@@ -5,7 +5,7 @@ import { BackHandler, Platform } from 'react-native';
 import { useSessionListDrawerMotion, useSessionListDrawerOpenGesture } from './SessionListDrawer';
 
 /** One lifecycle for every conversation: gesture ownership, exit fencing and deferred navigation. */
-export function useConversationTaskDrawer({ enabled, persistent, width }: { enabled: boolean; persistent: boolean; width: number }) {
+export function useConversationTaskDrawer({ enabled, persistent, width, pullBlocked = false }: { enabled: boolean; persistent: boolean; width: number; pullBlocked?: boolean }) {
   const [sessionListDrawerOpen, setSessionListDrawerOpen] = useState(false);
   const [sessionListDrawerOverlayMounted, setSessionListDrawerOverlayMounted] = useState(false);
   const sessionListDrawerWidthRef = useRef(width);
@@ -63,7 +63,7 @@ export function useConversationTaskDrawer({ enabled, persistent, width }: { enab
   }, []);
   const sessionListDrawerPullGesture = useSessionListDrawerOpenGesture({
     motion: sessionListDrawerMotion,
-    enabled: sessionListDrawerFloating && (!sessionListDrawerOverlayMounted || sessionListDrawerPulling),
+    enabled: sessionListDrawerFloating && !pullBlocked && (!sessionListDrawerOverlayMounted || sessionListDrawerPulling),
     width: sessionListDrawerWidthRef.current,
     onOpen: pullSessionListDrawer,
     onCancel: settleSessionListDrawerPull,

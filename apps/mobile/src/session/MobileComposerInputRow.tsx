@@ -8,7 +8,9 @@ import {
   Easing,
   StyleSheet,
   View,
+  type GestureResponderEvent,
   type GestureResponderHandlers,
+  type PressableProps,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
@@ -89,6 +91,23 @@ const RESIZE_GRABBER_HIT_HEIGHT = Platform.OS === 'ios' ? COMPOSER_CARD_PADDING_
 const isExpoGo =
   Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
+/**
+ * 收起态输入框上的长按手势(按住说话):挂在盖住输入框的「点一下展开」透明按钮上,
+ * 轻点仍是展开。手势只在没聚焦的收起态存在——聚焦后长按归编辑器(选字 / 放大镜 / 粘贴)。
+ */
+export interface MobileComposerCollapsedHold {
+  /** 一次按住说话正在进行:即使卡片因录音展开,承载手势的按钮也要保持挂载,否则松手事件丢失。 */
+  active: boolean;
+  delayLongPress: number;
+  pressRetentionOffset: PressableProps['pressRetentionOffset'];
+  onPressIn(event: GestureResponderEvent): void;
+  /** 长按成立。返回 false 表示没能开始按住说话(无设备 / 音频不可用等),由输入框退回「展开」。 */
+  onLongPress(): boolean;
+  onPressMove(event: GestureResponderEvent): void;
+  onPressOut(event: GestureResponderEvent): void;
+  onTouchCancel(): void;
+}
+
 export interface MobileComposerInputRowProps {
   entryTransitionId?: string;
   onEntryTransitionComplete?(): void;
@@ -96,6 +115,8 @@ export interface MobileComposerInputRowProps {
   collapsedHeight?: number;
   /** When set, a tap on the compact input calls this instead of focusing directly. */
   onCollapsedPress?(): void;
+  /** 收起态长按 = 按住说话;未提供时长按和轻点一样只是展开。 */
+  collapsedHold?: MobileComposerCollapsedHold;
   /** See ComposerFrame; changes when onCollapsedPress opens the pill. */
   expandToken?: string;
   accessibilityHint?: string;
@@ -223,6 +244,7 @@ export function MobileComposerInputRow({
   onEntryTransitionComplete,
   collapsedHeight,
   onCollapsedPress,
+  collapsedHold,
   expandToken,
   accessibilityHint,
   accessibilityLabel,
@@ -394,10 +416,22 @@ export function MobileComposerInputRow({
             </TextInputWrapper>
           ) : textInputElement)}
           {inputOverlay}
-          {!cardLayout && onCollapsedPress ? (
+          {(!cardLayout && onCollapsedPress) || collapsedHold?.active ? (
             // VoiceOver still reaches the input itself and focuses it directly.
             <Pressable accessible={false} importantForAccessibility="no-hide-descendants"
-              onPress={onCollapsedPress} style={StyleSheet.absoluteFill} testID={testID ? `${testID}.collapsedOpen` : undefined} />
+              cancelable={!collapsedHold?.active}
+              delayLongPress={collapsedHold?.delayLongPress}
+              onLongPress={collapsedHold ? () => {
+                // 没能开始按住说话时退回展开,长按不能变成什么都不发生。
+                if (!collapsedHold.onLongPress()) onCollapsedPress?.();
+              } : undefined}
+              onPress={onCollapsedPress}
+              onPressIn={collapsedHold?.onPressIn}
+              onPressMove={collapsedHold?.onPressMove}
+              onPressOut={collapsedHold?.onPressOut}
+              onTouchCancel={collapsedHold?.onTouchCancel}
+              pressRetentionOffset={collapsedHold?.pressRetentionOffset}
+              style={StyleSheet.absoluteFill} testID={testID ? `${testID}.collapsedOpen` : undefined} />
           ) : null}
         </Reanimated.View>
         {cardLayout ? null : trailing}

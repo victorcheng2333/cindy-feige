@@ -106,6 +106,7 @@ import {
   Alert,
   AppState,
   BackHandler,
+  Dimensions,
   Keyboard,
   Linking,
   Platform,
@@ -515,6 +516,9 @@ import {
 } from '@/session/MobileComposerInputRow';
 import { ComposerFrame, nativeComposerFrameAvailable } from '@/session/ComposerFrame';
 import { VoiceRecordingPillContent, useMobileVoiceRecordingTimer } from '@/session/VoiceRecordingPill';
+import { VoiceHoldOverlay, type VoiceHoldState } from '@/session/VoiceHoldOverlay';
+import type { MobileComposerCollapsedHold } from '@/session/MobileComposerInputRow';
+import { VOICE_HOLD_DELAY_MS, VOICE_HOLD_PRESS_RETENTION, resolveVoiceHoldZoneForEvent, type VoiceHoldFrame } from '@/session/voiceHoldGesture';
 import { VoicePillWidthFrame } from '@/session/voicePillWidthMotion';
 import { useMobileVoiceProcessingIndicator } from '@/session/useMobileVoiceProcessingIndicator';
 import { useHandheldSessionControls, useHandheldVoiceKey } from '@/handheld/handheldMode';
@@ -1538,6 +1542,11 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     show: showVoiceSpeakerFiltered,
     clear: clearVoiceSpeakerFiltered,
   } = useSpeakerFilterNotice();
+  // 按住说话浮层(对齐微信):长按麦克风后显示,松手按手指所在区域发送 / 取消 / 编辑。
+  const [voiceHold, setVoiceHold] = useState<VoiceHoldState | null>(null);
+  // 一次按住说话从长按成立到录音彻底收尾(含松手后的转写 / 润色)都为 true:
+  // 期间输入框保持收起(文字在浮层气泡里看),并暂停右滑打开任务列表。
+  const [voiceHoldRunActive, setVoiceHoldRunActive] = useState(false);
   const [voiceReleaseToSendActive, setVoiceReleaseToSendActive] = useState(false);
   // 听写期间原生光标停在插入前的位置;停止后要等最终识别与润色完成才定位到插入末尾。
   // 这段时间继续隐藏光标,避免先在文字中间闪现再跳到末尾。
@@ -2198,7 +2207,15 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const voiceLongPressActiveRef = useRef(false);
   const voiceSuppressNextPressRef = useRef(false);
   const voiceStopAfterStartRef = useRef(false);
-  const finishVoiceRecordingRef = useRef<((options?: { focusInput?: boolean }) => void) | null>(null);
+  const sendButtonFrameRef = useRef<{ height: number; width: number; x: number; y: number;
+  } | null>(null);
+  const voiceHoldRef = useRef<VoiceHoldState | null>(null);
+  const voiceHoldFrameRef = useRef<VoiceHoldFrame | null>(null);
+  // 本次按下的位置与按下前的输入内容:滑到「取消」松手时把输入框恢复成按下前的样子。
+  const voiceHoldPressRef = useRef<{ pageX: number; pageY: number; document: ComposerDocument } | null>(null);
+  // 起录还没完成就松手:记下松手时选的结果,起录完成后按它收尾。
+  const voiceHoldDeferredFinishRef = useRef<{ sendAfterTranscribe?: boolean; focusInput?: boolean } | null>(null);
+  const finishVoiceRecordingRef = useRef<((options?: { sendAfterTranscribe?: boolean; focusInput?: boolean }) => void) | null>(null);
   const composerInputRef = useRef<ComposerRichInputHandle | null>(null);
   const voiceControllerSessionRef = useRef<MobileVoiceControllerSession | null>(null);
   const voiceDictionaryLearningTrackerRef = useRef<MobileVoiceDictionaryLearningTracker | null>(null);
@@ -2215,8 +2232,6 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     () => ({ current: [] }),
     [activeComposerDraftScopeKey],
   );
-  const sendButtonFrameRef = useRef<{ height: number; width: number; x: number; y: number;
-  } | null>(null);
   const capabilitiesLoadSeqRef = useRef(0);
   const alternateCapabilitiesLoadSeqRef = useRef(0);
   const agentSwitchIntentLoadSeqRef = useRef(0);
@@ -3223,6 +3238,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   // 退出宽屏后 layout.drawerWidth 会变 0;退场期间继续用最后一个有效宽度,避免面板几何跳变。
   const { sessionListDrawerOpen, sessionListDrawerOverlayMounted, sessionListDrawerWidthRef, sessionListDrawerClosingRef, pendingDrawerNavigationRef, openSessionListDrawer, closeSessionListDrawer, sessionListDrawerFloating, sessionListDrawerMotion, sessionListDrawerPullGesture, queueDrawerNavigation, handleSessionListDrawerClosed } = useConversationTaskDrawer({
     enabled: wideSessionNav.enabled, persistent: paneLayout.persistent, width: wideSessionNav.drawerWidth,
+    // 按住说话时右滑 = 编辑,不能同时把任务列表拉出来。
+    pullBlocked: voiceHoldRunActive,
   });
   const handleDrawerSelectSession = useCallback((item: RemoteSessionListItem) => {
     const targetSession = item.session as RemoteSession;
@@ -3335,6 +3352,23 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     setVoiceReleaseToSendActive(active);
     return active;
   }, [isPointInsideSendButton]);
+  // 只在进入 / 离开按住态或换区域时更新 state,手指在同一区域里移动不触发整页重渲。
+  const updateVoiceHold = useCallback((next: VoiceHoldState | null) => {
+    const previous = voiceHoldRef.current;
+    voiceHoldRef.current = next;
+    if (previous === null && next === null) return;
+    if (previous !== null && next !== null && previous.zone === next.zone) return;
+    if (previous !== null && next !== null) playHaptic('selection');
+    setVoiceHold(next);
+  }, []);
+  const resolveVoiceHoldZoneAt = useCallback((hold: VoiceHoldState, event: GestureResponderEvent) => resolveVoiceHoldZoneForEvent({
+    frame: voiceHoldFrameRef.current,
+    window: Dimensions.get('window'),
+    startPageX: hold.startPageX,
+    startPageY: hold.startPageY,
+    pageX: event.nativeEvent.pageX,
+    pageY: event.nativeEvent.pageY,
+  }), []);
   // Bottom padding the message list needs to clear the composer = the composer's own height only.
   // The keyboard lift is already applied once by ComposerKeyboardAvoidingView,
   // so ALSO adding keyboardBottomInset here double-counted the keyboard and shoved the conversation
@@ -5918,13 +5952,15 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     voiceLongPressActiveRef.current = false;
     voiceSuppressNextPressRef.current = false;
     voiceStopAfterStartRef.current = false;
+    voiceHoldDeferredFinishRef.current = null;
+    updateVoiceHold(null);
     setVoiceReleaseToSendActive(false);
     setComposerVoiceHoldArmed(false);
     setVoiceState('idle');
     setVoiceError(null);
     discardPendingPrewarm();
     if (controller) void controller.cancel().catch(() => undefined);
-  }, [setVoiceState]);
+  }, [setVoiceState, updateVoiceHold]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -5949,6 +5985,29 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     voicePermissionRequestInFlightRef.current = false;
     cancelVoiceForAppBackground();
   }, [cancelVoiceForAppBackground]);
+
+  // 按住说话滑到「取消」松手:放弃本次录音,输入框恢复成按下前的内容。
+  const cancelVoiceHoldRecording = useCallback((documentBeforeHold: ComposerDocument | null) => {
+    cancelVoiceForGestureTermination();
+    if (!documentBeforeHold) return;
+    applyRichComposerChange(documentBeforeHold);
+    const input = composerInputRef.current;
+    requestAnimationFrame(() => {
+      if (input && composerInputRef.current === input && composerDocumentRef.current === documentBeforeHold) {
+        // 只放光标、不聚焦:取消后输入框保持收起,不弹键盘(ToEnd 版本会聚焦)。
+        input.applyDocumentAndSetSelection(documentBeforeHold, composerDocumentProjectedText(documentBeforeHold).length);
+      }
+    });
+  }, [applyRichComposerChange, cancelVoiceForGestureTermination]);
+
+  // 按住期间起录失败:收起浮层,错误照常显示在输入区。
+  useEffect(() => {
+    if (voiceState === 'error') updateVoiceHold(null);
+  }, [updateVoiceHold, voiceState]);
+  useEffect(() => {
+    if (!voiceHoldRunActive || voiceHold !== null || voiceStartPending) return;
+    if (voiceState === 'idle' || voiceState === 'done' || voiceState === 'error') setVoiceHoldRunActive(false);
+  }, [voiceHold, voiceHoldRunActive, voiceStartPending, voiceState]);
 
   useEffect(() => {
     return () => {
@@ -6043,7 +6102,10 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
 
   useEffect(() => {
     finishVoiceRecordingRef.current = (options) => {
-      void finishVoiceRecording(options);
+      // 起录完成后的补收尾(按住说话时起录未完成就松手):按松手时选的结果收尾。
+      const deferred = voiceHoldDeferredFinishRef.current;
+      voiceHoldDeferredFinishRef.current = null;
+      void finishVoiceRecording(options ?? deferred ?? undefined);
     };
   }, [finishVoiceRecording]);
 
@@ -6096,6 +6158,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   useHandheldVoiceKey({
     start: () => {
       voiceSuppressNextPressRef.current = false;
+      voiceHoldDeferredFinishRef.current = null;
       handleVoiceButtonPressIn();
       voiceStartedOnPressInRef.current = false;
     },
@@ -6107,6 +6170,71 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       void finishVoiceRecording({ sendAfterTranscribe: false });
     },
   });
+
+  // 没聚焦的收起态输入框上长按 = 按住说话(2026-11-14):长按成立才开始录音,
+  // 松手按手指方向发送 / 取消 / 编辑。聚焦后麦克风按钮点按使用,长按归编辑器。
+  const collapsedVoiceHold = useMemo<MobileComposerCollapsedHold>(() => ({
+    active: voiceHoldRunActive,
+    delayLongPress: VOICE_HOLD_DELAY_MS,
+    pressRetentionOffset: VOICE_HOLD_PRESS_RETENTION,
+    onPressIn: (event) => {
+      voiceHoldDeferredFinishRef.current = null;
+      voiceHoldPressRef.current = {
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+        document: composerDocumentRef.current,
+      };
+    },
+    onLongPress: () => {
+      const press = voiceHoldPressRef.current;
+      if (!press) return false;
+      handleVoiceButtonPressIn();
+      // 守卫没放行(处理中 / 无设备 / 音频不可用 / 启动在途)就没起录:交给输入框展开。
+      if (!voiceStartedOnPressInRef.current) return false;
+      // 这次按下由 onPressOut 收尾,不走麦克风按钮的「点一下切换」。
+      voiceStartedOnPressInRef.current = false;
+      setVoiceHoldRunActive(true);
+      updateVoiceHold({ startPageX: press.pageX, startPageY: press.pageY, zone: 'send' });
+      return true;
+    },
+    onPressMove: (event) => {
+      const hold = voiceHoldRef.current;
+      if (!hold) return;
+      updateVoiceHold({ ...hold, zone: resolveVoiceHoldZoneAt(hold, event) });
+    },
+    onPressOut: (event) => {
+      const hold = voiceHoldRef.current;
+      const press = voiceHoldPressRef.current;
+      voiceHoldPressRef.current = null;
+      // 没进入按住态(轻点展开):不处理。
+      if (!hold) return;
+      updateVoiceHold(null);
+      const zone = resolveVoiceHoldZoneAt(hold, event);
+      if (zone === 'cancel') {
+        cancelVoiceHoldRecording(press?.document ?? null);
+        return;
+      }
+      // 停在原处松手 = 发送;往右滑 = 文字留在输入框并弹出键盘。
+      const options = zone === 'send'
+        ? { sendAfterTranscribe: canUseComposer }
+        : { focusInput: true };
+      if (!voiceRecordingActiveRef.current) {
+        voiceStopAfterStartRef.current = true;
+        voiceHoldDeferredFinishRef.current = options;
+        return;
+      }
+      void finishVoiceRecording(options);
+    },
+    onTouchCancel: () => {
+      // 被系统打断(来电、切后台等):按取消处理,输入框恢复成按下前的内容。
+      const press = voiceHoldPressRef.current;
+      voiceHoldPressRef.current = null;
+      voiceHoldDeferredFinishRef.current = null;
+      if (!voiceHoldRef.current) return;
+      updateVoiceHold(null);
+      cancelVoiceHoldRecording(press?.document ?? null);
+    },
+  }), [canUseComposer, cancelVoiceHoldRecording, finishVoiceRecording, handleVoiceButtonPressIn, resolveVoiceHoldZoneAt, updateVoiceHold, voiceHoldRunActive]);
 
   const removeRemoteFileAttachment = useCallback((id: string) => {
     // 已上传中转区的对象移除时 best-effort 回收,避免未发送附件在 OSS 留孤儿(codex review #504)。
@@ -11790,6 +11918,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                 voiceSpeakerFiltered={voiceSpeakerFiltered}
                 composerVoiceHoldArmed={composerVoiceHoldArmed}
                 setComposerVoiceHoldArmed={setComposerVoiceHoldArmed}
+                collapsedVoiceHold={collapsedVoiceHold}
+                voiceHoldRunActive={voiceHoldRunActive}
                 modelSheetOpen={modelSheetOpen}
                 permissionSheetOpen={permissionSheetOpen}
                 sending={sending || messageEditSubmitting}
@@ -11885,6 +12015,12 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
         />
         ) : null}
       </MessageHistoryOverlay>
+      <VoiceHoldOverlay
+        frameRef={voiceHoldFrameRef}
+        hold={voiceHold}
+        testID="session.voiceHoldOverlay"
+        textSource={composerDraftSource}
+      />
     </View>
     </GestureDetector>
   );
@@ -12729,6 +12865,8 @@ interface SessionComposerInputProps {
   voiceSpeakerFiltered: boolean;
   composerVoiceHoldArmed: boolean;
   setComposerVoiceHoldArmed: (value: boolean) => void;
+  collapsedVoiceHold: MobileComposerCollapsedHold;
+  voiceHoldRunActive: boolean;
   modelSheetOpen: boolean;
   permissionSheetOpen: boolean;
   sending: boolean;
@@ -12760,7 +12898,7 @@ interface SessionComposerInputProps {
 function SessionComposerInput({
   promptRecommendation,
   onDismissPromptRecommendation,
-  source, sessionId, composerInputRef, canUseComposer, canStopComposer, canUseRemoteSessionControls, remoteUnavailableReason, voiceState, voiceStartPending, voiceCaretPlacementPending, voiceError, voiceSpeakerFiltered, composerVoiceHoldArmed, setComposerVoiceHoldArmed, modelSheetOpen, permissionSheetOpen, sending, queueBusy, nativeShellLayout, composerTouchLayout, keyboardState, attachmentError, visualFocusComposer, applyRichComposerChange, setComposerDraft, handleComposerInputPressIn, beginPastePlaceholders, failPastePlaceholders, resolvePastedSessionLinkLabel, openVoiceSettings,
+  source, sessionId, composerInputRef, canUseComposer, canStopComposer, canUseRemoteSessionControls, remoteUnavailableReason, voiceState, voiceStartPending, voiceCaretPlacementPending, voiceError, voiceSpeakerFiltered, composerVoiceHoldArmed, setComposerVoiceHoldArmed, collapsedVoiceHold, voiceHoldRunActive, modelSheetOpen, permissionSheetOpen, sending, queueBusy, nativeShellLayout, composerTouchLayout, keyboardState, attachmentError, visualFocusComposer, applyRichComposerChange, setComposerDraft, handleComposerInputPressIn, beginPastePlaceholders, failPastePlaceholders, resolvePastedSessionLinkLabel, openVoiceSettings,
   composerSendUnavailableReason, attachmentCount, pendingUploadCount,
   onPasteImages, onDragActiveChange, onInputTopLayout, composerPullThrough, renderControls,
 }: SessionComposerInputProps) {
@@ -12886,8 +13024,8 @@ function SessionComposerInput({
   const composerCardActive = (canUseComposer && (composerFocused || composerPillOpen.opening || composerDragOpen))
     || modelSheetOpen
     || permissionSheetOpen
-    || voiceStartPending
-    || voiceIsBusy
+    // 按住说话的录音不展开输入框:文字在浮层气泡里,松手后按结果发送 / 取消 / 聚焦。
+    || (!voiceHoldRunActive && (voiceStartPending || voiceIsBusy))
     || composerVoiceHoldActive;
   const recommendationPresentation = usePromptRecommendationVisibility(sessionId, draft, composerCardActive);
   const visibleRecommendation = promptRecommendation && recommendationPresentation.visible
@@ -13164,7 +13302,9 @@ function SessionComposerInput({
                     bodyScrollTestID="session.composerScroll"
                     bodyScrollEnabled={composerScrollEnabled}
                     collapsedHeight={composerDock.enabled ? composerDock.pillHeight : undefined}
-                    onCollapsedPress={composerPillOpen.onCollapsedPress}
+                    // 减弱动态效果时没有「展开动画」,但长按手势仍挂在这层按钮上:轻点退回直接聚焦。
+                    onCollapsedPress={composerPillOpen.onCollapsedPress
+                      ?? (composerDock.enabled && canUseComposer && voiceUiAvailable ? () => composerInputRef.current?.focus() : undefined)}
                     accessibilityLabel={t('session.screen.composerPlaceholder')}
                     accessibilityHint={composerLayout.input.disabledReason ?? undefined}
                     accessoryAbove={controls.attachmentTray}
@@ -13248,6 +13388,8 @@ function SessionComposerInput({
                     trailing={composerCardActive ? null : controls.trailing}
                     value={draft}
                     voicePlacement={composerVoicePlacement}
+                    // 收起态:点麦克风按钮走原来的点按逻辑;长按输入框才进入按住说话(微信式)。
+                    collapsedHold={voiceUiAvailable && canUseComposer ? collapsedVoiceHold : undefined}
                   />
                 </View>
                 </ComposerFrame>

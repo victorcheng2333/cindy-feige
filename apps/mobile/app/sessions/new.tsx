@@ -98,6 +98,7 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
+  type GestureResponderEvent,
   type StyleProp,
   type TextInputContentSizeChangeEvent,
   type ViewStyle,
@@ -320,8 +321,11 @@ import {
   MOBILE_COMPOSER_MIN_TOUCH_TARGET,
   VoiceMicWaveCaret,
   resolveMobileComposerVoiceButtonPlacement,
+  type MobileComposerCollapsedHold,
 } from '@/session/MobileComposerInputRow';
 import { VoiceRecordingPillContent, useMobileVoiceRecordingTimer } from '@/session/VoiceRecordingPill';
+import { VoiceHoldOverlay, type VoiceHoldState } from '@/session/VoiceHoldOverlay';
+import { VOICE_HOLD_DELAY_MS, VOICE_HOLD_PRESS_RETENTION, resolveVoiceHoldZoneForEvent, type VoiceHoldFrame } from '@/session/voiceHoldGesture';
 import { VoicePillWidthFrame } from '@/session/voicePillWidthMotion';
 import { useMobileVoiceProcessingIndicator } from '@/session/useMobileVoiceProcessingIndicator';
 import { useHandheldVoiceKey } from '@/handheld/handheldMode';
@@ -1537,6 +1541,16 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // 「按下即录」的乐观反馈(与会话页/桌面同款,详见 [sessionId].tsx 同名状态注释)。
   const voiceStartPendingSeqRef = useRef(0);
   const voiceStartedOnPressInRef = useRef(false);
+  // 按住说话(对齐微信):长按麦克风显示浮层,松手按手指所在区域创建 / 取消 / 编辑。
+  const [voiceHold, setVoiceHold] = useState<VoiceHoldState | null>(null);
+  // 一次按住说话从长按成立到录音彻底收尾都为 true:期间输入框保持收起(文字在浮层气泡里看)。
+  const [voiceHoldRunActive, setVoiceHoldRunActive] = useState(false);
+  const voiceHoldRef = useRef<VoiceHoldState | null>(null);
+  const voiceHoldFrameRef = useRef<VoiceHoldFrame | null>(null);
+  // 本次按下的位置与按下前的输入内容:滑到「取消」松手时恢复成按下前的样子。
+  const voiceHoldPressRef = useRef<{ pageX: number; pageY: number; text: string } | null>(null);
+  // 起录还没完成就松手:进入听写后按松手时选的结果收尾。
+  const voiceHoldDeferredReleaseRef = useRef<'send' | 'edit' | null>(null);
   // 语音生命周期内创建按钮常驻(与会话页发送槽同理,对齐桌面):录音中点创建
   // = 结束录音并用转写创建(create() 已有 listening 分支);否则首段转写落地的
   // 瞬间按钮冒出来,右对齐工具排会把语音胶囊整格推左。乐观 pending 期同理占位,
@@ -1625,8 +1639,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     || composerImageHoldActive
     || (Platform.OS !== 'ios' && modelSheetOpen)
     || permissionSheetOpen
-    || voiceStartPending
-    || voiceIsBusy
+    // 按住说话的录音不展开输入框:文字在浮层气泡里,松手后按结果创建 / 取消 / 聚焦。
+    || (!voiceHoldRunActive && (voiceStartPending || voiceIsBusy))
     || composerVoiceHoldActive;
   useComposerCardTransition(composerCardActive, keyboardState);
   // 下拉收起 = 退出聚焦激活态(模型浮窗已是独立 Modal,拖拽手势够不到它,无需在此关闭)。
@@ -3305,6 +3319,122 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     handheldStopAfterStartRef.current = false;
     void finishVoiceRecording();
   }, [finishVoiceRecording, voiceState]);
+
+  // 只在进入 / 离开按住态或换区域时更新 state,手指在同一区域里移动不触发重渲。
+  const updateVoiceHold = useCallback((next: VoiceHoldState | null) => {
+    const previous = voiceHoldRef.current;
+    voiceHoldRef.current = next;
+    if (previous === null && next === null) return;
+    if (previous !== null && next !== null && previous.zone === next.zone) return;
+    if (previous !== null && next !== null) playHaptic('selection');
+    setVoiceHold(next);
+  }, []);
+  const resolveVoiceHoldZoneAt = useCallback((hold: VoiceHoldState, event: GestureResponderEvent) => resolveVoiceHoldZoneForEvent({
+    frame: voiceHoldFrameRef.current,
+    window: windowDimensions,
+    startPageX: hold.startPageX,
+    startPageY: hold.startPageY,
+    pageX: event.nativeEvent.pageX,
+    pageY: event.nativeEvent.pageY,
+  }), [windowDimensions]);
+  // 滑到「取消」松手:放弃本次录音,输入框恢复成按下前的内容。
+  const cancelVoiceHoldRecording = useCallback((textBeforeHold: string | null) => {
+    voiceHoldDeferredReleaseRef.current = null;
+    cancelVoiceForDeviceSwitch();
+    if (textBeforeHold === null) return;
+    firstMessageSelectionRef.current = { start: textBeforeHold.length, end: textBeforeHold.length };
+    setFirstMessageDraft(textBeforeHold);
+  }, [cancelVoiceForDeviceSwitch, setFirstMessageDraft]);
+  // 滑到「编辑」松手:停止录音,文字留在输入框并弹出键盘继续改。
+  const finishVoiceHoldForEdit = useCallback(async () => {
+    const latestDraft = await finishVoiceRecording();
+    if (latestDraft === null) return;
+    requestAnimationFrame(() => firstMessageInputRef.current?.focus());
+  }, [finishVoiceRecording]);
+  // 停在中间松手 = 创建并发送(与点创建按钮同一入口,由页面末尾按最新状态绑定)。
+  const voiceHoldSendRef = useRef<(() => void) | null>(null);
+  // 按住期间起录失败:收起浮层,错误照常显示在输入区。
+  useEffect(() => {
+    if (voiceState === 'error') {
+      voiceHoldDeferredReleaseRef.current = null;
+      updateVoiceHold(null);
+    }
+  }, [updateVoiceHold, voiceState]);
+  // 起录未完成就松手:进入听写后按松手时选的结果收尾。
+  useEffect(() => {
+    if (voiceState !== 'listening') return;
+    const release = voiceHoldDeferredReleaseRef.current;
+    if (!release) return;
+    voiceHoldDeferredReleaseRef.current = null;
+    if (release === 'edit') void finishVoiceHoldForEdit();
+    else voiceHoldSendRef.current?.();
+  }, [finishVoiceHoldForEdit, voiceState]);
+  useEffect(() => {
+    if (!voiceHoldRunActive || voiceHold !== null || voiceStartPending) return;
+    if (voiceState === 'idle' || voiceState === 'done' || voiceState === 'error') setVoiceHoldRunActive(false);
+  }, [voiceHold, voiceHoldRunActive, voiceStartPending, voiceState]);
+
+  // 没聚焦的收起态输入框上长按 = 按住说话(2026-11-14):长按成立才开始录音,松手按手指
+  // 方向创建并发送 / 取消 / 编辑。点麦克风按钮仍走原来的点按逻辑。
+  const collapsedVoiceHold = useMemo<MobileComposerCollapsedHold>(() => ({
+    active: voiceHoldRunActive,
+    delayLongPress: VOICE_HOLD_DELAY_MS,
+    pressRetentionOffset: VOICE_HOLD_PRESS_RETENTION,
+    onPressIn: (event) => {
+      voiceHoldDeferredReleaseRef.current = null;
+      voiceHoldPressRef.current = {
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+        text: firstMessageRef.current,
+      };
+    },
+    onLongPress: () => {
+      const press = voiceHoldPressRef.current;
+      if (!press) return false;
+      handleVoiceButtonPressIn();
+      // 守卫没放行(创建中 / 处理中 / 未选电脑 / 音频不可用 / 启动在途)就没起录:交给输入框展开。
+      if (!voiceStartedOnPressInRef.current) return false;
+      // 这次按下由 onPressOut 收尾,不走麦克风按钮的「点一下切换」。
+      voiceStartedOnPressInRef.current = false;
+      setVoiceHoldRunActive(true);
+      updateVoiceHold({ startPageX: press.pageX, startPageY: press.pageY, zone: 'send' });
+      return true;
+    },
+    onPressMove: (event) => {
+      const hold = voiceHoldRef.current;
+      if (!hold) return;
+      updateVoiceHold({ ...hold, zone: resolveVoiceHoldZoneAt(hold, event) });
+    },
+    onPressOut: (event) => {
+      const hold = voiceHoldRef.current;
+      const press = voiceHoldPressRef.current;
+      voiceHoldPressRef.current = null;
+      // 没进入按住态(轻点展开):不处理。
+      if (!hold) return;
+      updateVoiceHold(null);
+      const zone = resolveVoiceHoldZoneAt(hold, event);
+      if (zone === 'cancel') {
+        cancelVoiceHoldRecording(press?.text ?? null);
+        return;
+      }
+      // 起录还没完成就松手:进入听写后按松手时选的结果收尾。
+      if (!voiceRecordingActiveRef.current && voiceState !== 'listening') {
+        voiceHoldDeferredReleaseRef.current = zone;
+        return;
+      }
+      if (zone === 'edit') void finishVoiceHoldForEdit();
+      else voiceHoldSendRef.current?.();
+    },
+    onTouchCancel: () => {
+      // 被系统打断(来电、切后台等):按取消处理,输入框恢复成按下前的内容。
+      const press = voiceHoldPressRef.current;
+      voiceHoldPressRef.current = null;
+      voiceHoldDeferredReleaseRef.current = null;
+      if (!voiceHoldRef.current) return;
+      updateVoiceHold(null);
+      cancelVoiceHoldRecording(press?.text ?? null);
+    },
+  }), [cancelVoiceHoldRecording, finishVoiceHoldForEdit, handleVoiceButtonPressIn, resolveVoiceHoldZoneAt, updateVoiceHold, voiceHoldRunActive, voiceState]);
 
   useEffect(() => {
     return () => {
@@ -5070,6 +5200,19 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     if (command.action === 'set') await createGoalSession({ objective: command.objective });
   }, [attachmentsRef, createGoalSession, createMessageSession, pendingUploads.length, slashCommands, t, voiceIsBusy]);
 
+  // 按住说话停在中间松手:能创建就走创建按钮同一入口(录音中创建会先收尾再用转写创建),
+  // 暂时不能创建(如还没选好电脑)就只停止录音,文字留在输入框。
+  useEffect(() => {
+    voiceHoldSendRef.current = () => {
+      if (canCreate) {
+        playHaptic('commit');
+        void create();
+        return;
+      }
+      void finishVoiceRecording();
+    };
+  });
+
   const goalDraftCommand = parseMobileDesktopCommand(draft.firstMessage, slashCommands);
   const goalDraftObjective = goalDraftCommand?.name === 'goal' && pendingGoalSkillRef.current !== 'goal'
     ? goalDraftCommand.args
@@ -5557,7 +5700,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                   autoFocus={visualFocusComposer}
                   entryTransitionId={entryMorph?.id}
                   collapsedHeight={composerDock.enabled ? composerDock.pillHeight : undefined}
-                  onCollapsedPress={composerPillOpen.onCollapsedPress}
+                  // 减弱动态效果时没有「展开动画」,但长按手势仍挂在这层按钮上:轻点退回直接聚焦。
+                  onCollapsedPress={composerPillOpen.onCollapsedPress
+                    ?? (composerDock.enabled && voiceUiAvailable ? () => firstMessageInputRef.current?.focus() : undefined)}
                   expandToken={composerPillOpen.expandToken}
                   cardActive={composerCardActive}
 
@@ -5599,6 +5744,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
 
                   voicePlacement={composerVoicePlacement}
                   floatingVoiceButton={voiceUiAvailable ? renderComposerVoiceButton : undefined}
+                  // 收起态:点麦克风按钮走原来的点按逻辑;长按输入框才进入按住说话(微信式)。
+                  collapsedHold={voiceUiAvailable && !creating ? collapsedVoiceHold : undefined}
                 />
               </View>
             </View>
@@ -6104,6 +6251,12 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
           onClose={() => setComposerPreviewAttachmentId(null)}
         />
       {composerAnnotations.host}
+      <VoiceHoldOverlay
+        frameRef={voiceHoldFrameRef}
+        hold={voiceHold}
+        testID="newSession.voiceHoldOverlay"
+        text={draft.firstMessage}
+      />
     </SafeAreaView>
   );
 }
