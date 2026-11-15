@@ -1550,7 +1550,7 @@ describe('new session model', () => {
   it('wires the new-session screen to gate agents by list-available-agents and coerce off unavailable', () => {
     const newSource = newSessionSources;
     // 拉被控端 runtime 注册集合,渲染按可用集过滤,选中不可用时 coerce。
-    expect(newSource).toContain('maker.listAvailableAgents()');
+    expect(newSource).toContain('useNewSessionAgentRoster({');
     expect(newSource).toContain('onAgentsChanged');
     expect(newSource).toContain('evictAgentCapabilitiesForDevice(deviceId);');
     expect(newSource).toContain('const rosterRecoveryIdentityRef = useRef<');

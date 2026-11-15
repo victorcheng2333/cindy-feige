@@ -1,3 +1,4 @@
+import { useNewSessionAgentRoster } from '@/session/useNewSessionAgentRoster';
 import { playHaptic } from '@/platform/haptics';
 import { TaskArchiveUndoSlot } from '@/session/TaskArchiveUndoNotice';
 import { useComposerDragOpen } from '@/session/useComposerDragOpen';
@@ -750,13 +751,15 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // 权限模式独立浮窗(composer 工具条权限药丸点开;面板自持档位,见 NativePermissionSheet)。
   const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  // 被控端 runtime 已注册的 agent 集合(null = 未拉到 → fail-open 不过滤入口)。据此过滤新建
-  // agent 选项:被控端 Pi 二进制缺失时其 agent map 无 pi,但模型目录仍投影 Pi,不过滤会让用户
-  // 建出最终 requireAgent 报 not-registered 的会话(codex review P2)。
-  const [availableAgentKinds, setAvailableAgentKinds] =
-    useState<ReadonlySet<NewSessionAgentKind> | null>(null);
   const [availableAgentRefreshNonce, setAvailableAgentRefreshNonce] = useState(0);
   const [availableAgentRosterRefreshNonce, setAvailableAgentRosterRefreshNonce] = useState(0);
+  const availableAgentKinds = useNewSessionAgentRoster({
+    deviceId: selectedDeviceId,
+    ownerGeneration: outboxOwner.generation,
+    maker,
+    openLink,
+    refreshNonce: availableAgentRosterRefreshNonce,
+  });
   const rosterRecoveryIdentityRef = useRef<{
     deviceId: string;
     connectionEpoch: number;
@@ -2004,40 +2007,6 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     // state 身份判断。判定体内经 catalogReadyRef 读最新就绪态。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capabilities, draft.agentKind, draft.model, draft.providerId, draft.fastMode, selectedDeviceId, draftMemory, modelRows, deviceProviders.ready]);
-
-  // 拉被控端 runtime 已注册的 agent 集合(过滤新建 agent 入口)。fail-open:失败/无设备时置 null
-  // (不过滤),真正的兜底是被控端 requireAgent。窗口/设备切换重拉,让按需下载补齐的 Pi 及时出现。
-  useEffect(() => {
-    if (!selectedDeviceId) {
-      setAvailableAgentKinds(null);
-      return;
-    }
-    let cancelled = false;
-    setAvailableAgentKinds(null);
-    void withTransientRemoteRetry(async () => {
-      await openLink(selectedDeviceId);
-      const agents = await maker.listAvailableAgents();
-      if (!agents.includes('cursor')) return agents;
-      const cursor = normalizeMobileAgentCapabilities(await maker.getCapabilities('cursor'));
-      return cursor?.supportsControlledCursorCreation ? agents : agents.filter(agent => agent !== 'cursor');
-    })
-      .then((agents) => {
-        if (cancelled) return;
-        setAvailableAgentKinds(
-          new Set(
-            (Array.isArray(agents) ? agents : []).filter(
-              (a): a is NewSessionAgentKind => a === 'claude-code' || a === 'codex' || a === 'pi' || a === 'cursor',
-            ),
-          ),
-        );
-      })
-      .catch(() => {
-        /* fail-open:拉取失败不过滤入口(不因一次隧道抖动抹掉合法 agent)。 */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDeviceId, maker, openLink, availableAgentRosterRefreshNonce]);
 
   useEffect(() => {
     if (!selectedDeviceId) {
