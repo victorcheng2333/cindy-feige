@@ -5,7 +5,7 @@ import { ComposerActivityPill, makeComposerActivityPillStyles } from '@/session/
 import { useThemedStyles } from '@/theme';
 
 export type SlowSendPhase = 'preparing' | 'uploading' | 'connecting' | 'checkingModel' | 'creating' | 'sending';
-export const SLOW_SEND_NOTICE_DELAY_MS = 8_000;
+export const SLOW_SEND_NOTICE_DELAY_MS = 1_500;
 
 /** True once a send has waited past the delay; one elapsed clock survives phase changes and page handoff. */
 export function useSlowSendVisible(startedAt: number | null): boolean {

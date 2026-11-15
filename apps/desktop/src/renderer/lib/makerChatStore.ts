@@ -189,6 +189,7 @@ import type { Effort } from '@/lib/userPreferences.types';
 import { emitAutoTitlePreview, emitAutoTitlePreviewCleared, emitPatch } from '@/lib/sessionsBus';
 import { clearSessionStarting, markSessionStarting } from '@/lib/sessionStartingStore';
 import { createLogger } from '@/lib/logger';
+import { noteLocalSendEntrance } from '@/lib/localSendEntrance';
 import {
   traceRemoteSendAccepted,
   traceRemoteSendDispatching,
@@ -16058,6 +16059,7 @@ async function sendMessageCore(
   // （IM / 手机端 / 定时任务）注入的 user 消息不抢视口。后续路径 return false
   // （如 beforeEnqueue 回滚）会留下一个永不渲染的 id，无害。
   markLocalSentUserMessage(sessionId, queued.clientId);
+  noteLocalSendEntrance(queued.clientId);
 
   const deviceLinkRemote = remoteScopeAtStart !== null;
   const remoteRecord = remoteScopeAtStart
@@ -16493,6 +16495,7 @@ async function steerMessageCore(
   opts?.onInputCreated?.(queued.clientId);
   // #2194: 与 sendMessageCore 相同——本端 steer 也是明确的本地发送意图。
   markLocalSentUserMessage(sessionId, queued.clientId);
+  noteLocalSendEntrance(queued.clientId);
   const deviceLinkRemote = remoteScopeAtStart !== null;
   const remoteDeviceId = remoteScopeAtStart?.deviceId;
   const remoteRecord = remoteScopeAtStart

@@ -314,6 +314,7 @@ import {
 import type { SerializedComposerContent } from '@/components/new-chat/composerContentSerialization';
 import type { PastedTextRange, SlashCommandRange } from '@/lib/imageRef';
 import { createLogger } from '@/lib/logger';
+import { useStartingSessionIds } from '@/lib/sessionStartingStore';
 import { subscribeWorkLouderCodexAction } from '@/lib/workLouderCodexActions';
 import {
   copyCurrentTaskMarkdown,
@@ -1947,6 +1948,21 @@ function CCAgentSessionContent({
     updateQueueItemContent,
     chatDisplaySnapshot,
   } = useCCAgentChat(sessionId, handleTitleUpdate, { chatRealtime });
+  // 按下发送到 Agent 真正跑起来之间(读取历史、拉起进程、接入队列,常有一两秒)，输入框上方的
+  // 状态栏先出现并写「正在处理…」，不让用户对着一条静止的气泡猜有没有发出去。starting 由本端
+  // 发送置位(sessionStartingStore)，真 running 一到就由这里吸收；出错、尾部已有回复时不显示。
+  const runningSelfIds = useMemo(
+    () => (sessionId && agentStatus.isRunning ? new Set([sessionId]) : undefined),
+    [sessionId, agentStatus.isRunning],
+  );
+  const startingSessionIds = useStartingSessionIds(runningSelfIds);
+  const conversationTail = messages[messages.length - 1];
+  const awaitingRunStart =
+    !!sessionId &&
+    startingSessionIds.has(sessionId) &&
+    !agentStatus.isRunning &&
+    conversationTail?.role === 'user' &&
+    !error;
   useBotIslandVisibleSession(
     viewVisible && session?.id === sessionId && historyLoaded ? sessionId ?? null : null,
     ownsWindowRoute && !isCompactRail && !isOrcaMode,
@@ -5706,7 +5722,7 @@ function CCAgentSessionContent({
 
   const composerRuntimeVisible =
     !pendingPlanReview &&
-    (agentStatus.isRunning || backgroundTasksActive || runningWorkflow !== null);
+    (agentStatus.isRunning || awaitingRunStart || backgroundTasksActive || runningWorkflow !== null);
 
   const content = (
     // Layout: single scroll container (full height) + sticky input overlay at bottom.
@@ -5972,7 +5988,7 @@ function CCAgentSessionContent({
                 <RunningStatusBar
                   key={sessionId}
                   sessionKey={sessionId ?? null}
-                  status={composerStatus}
+                  status={awaitingRunStart ? t('ccAgent.agentStatus.processing') : composerStatus}
                   messages={sideChatMessages}
                   reconnectStatus={reconnectStatus}
                   tokenUsage={agentStatus.tokenUsage}
@@ -5983,7 +5999,9 @@ function CCAgentSessionContent({
                   startedAt={agentStatus.startedAt}
                   visible={composerRuntimeVisible || (!pendingPlanReview && activeReconnect !== null)}
                   inputWidth={inputWidth}
-                  sideTaskRunning={agentStatus.sideTaskRunning ?? false}
+                  // 等待开跑时还没有这一轮的计时与用量:沿用「不调模型」的显示，隐藏上一轮残留的
+                  // 耗时 / 速率和「已完成」勾，开跑后立即换回真实计时。
+                  sideTaskRunning={(agentStatus.sideTaskRunning ?? false) || awaitingRunStart}
                   backgroundTasksRunning={backgroundTasksActive}
                   workflowStatus={runningWorkflow ? composerStatus : undefined}
                   // 仅后台 Bash 在跑(无模型调用)时换专属文案 + 温和停止语义:

@@ -127,6 +127,7 @@ import { UserMessageUrlLink } from './UserMessageUrlLink';
 import { InlineReferenceChip } from './InlineReferenceChip';
 import { QuoteChip } from './QuoteChip';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { markLocalSendEntrancePlayed, shouldPlayLocalSendEntrance } from '@/lib/localSendEntrance';
 import { SentAgentReferenceChip, sentAgentReferenceDisplayLabel } from './SentAgentReferenceChip';
 import {
   parseOrcaCommunicationContent,
@@ -871,6 +872,11 @@ export function UserMessage({
   blockedByGhost,
 }: UserMessageProps) {
   const { t } = useTranslation();
+  // 本机刚发出的气泡入场一次；挂载时定格，之后的重渲染和重挂载都不再播放。
+  const [sendEntering] = useState(() => shouldPlayLocalSendEntrance(messageClientId));
+  useEffect(() => {
+    if (sendEntering && messageClientId) markLocalSendEntrancePlayed(messageClientId);
+  }, [sendEntering, messageClientId]);
   // Capability gate: 没传 agentKind (调用方未升级) → 默认两者都允许 (兼容旧路径)
   // 传了 agentKind → 按 capabilities.fork/rewind.supported 决定 icon 显示
   // renderer 'cc' ↔ maker 'claude-code' 别名映射 (DB / Session 用 'cc', maker IPC 用 'claude-code')
@@ -1394,6 +1400,7 @@ export function UserMessage({
       <div
         className={cn(
           'flex flex-col gap-2',
+          sendEntering && !orcaCommunication && !hookSource && !botLetter && 'chat-send-enter',
           botLetter
             ? cn(CHAT_BUBBLE_COLUMN_CLASS, 'w-full items-start')
             : orcaCommunication || hookSource

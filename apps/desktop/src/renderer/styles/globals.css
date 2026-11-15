@@ -1018,6 +1018,20 @@ body.resizing-pane [data-ghost-webview] {
   }
 }
 
+/* 本机刚发出的用户气泡入场一次(DESIGN.md §14.4 Desktop local send entrance):淡入、上移 8px、
+   从 0.96 放大,与手机端发送气泡及模态入场同一原型;以右下角为原点,像从输入框升上来。
+   仅 transform / opacity,只在发送后首次挂载时播放,减弱动态效果下直落终态。 */
+.chat-send-enter {
+  transform-origin: 100% 100%;
+  animation: chat-send-enter var(--motion-base) var(--motion-ease-out) both;
+}
+@keyframes chat-send-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-voice-mic-active='true'] [data-voice-mic-bar],
   .status-bar-shimmer,
@@ -1032,7 +1046,8 @@ body.resizing-pane [data-ghost-webview] {
   .first-run-rise,
   .first-run-pop,
   .first-run-draw,
-  .first-run-leave {
+  .first-run-leave,
+  .chat-send-enter {
     animation: none !important;
     will-change: auto;
   }

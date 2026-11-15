@@ -2,7 +2,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SlowSendNotice } from '@/session/SlowSendNotice';
+import { SLOW_SEND_NOTICE_DELAY_MS, SlowSendNotice } from '@/session/SlowSendNotice';
 import { i18n } from '@/i18n';
 
 vi.mock('react-native', async () => {
@@ -42,30 +42,30 @@ afterEach(() => {
 describe('SlowSendNotice', () => {
   it('keeps an empty status slot for fast sends, including after completion', async () => {
     act(() => root.render(<SlowSendNotice startedAt={0} phase="uploading" />));
-    await act(async () => { await vi.advanceTimersByTimeAsync(7_999); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SLOW_SEND_NOTICE_DELAY_MS - 1); });
     expect(host.childElementCount).toBe(1);
     expect(host.textContent).toBe('');
     act(() => root.render(<SlowSendNotice startedAt={null} phase="uploading" />));
-    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SLOW_SEND_NOTICE_DELAY_MS); });
     expect(host.childElementCount).toBe(1);
     expect(host.textContent).toBe('');
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('shows the current phase after eight seconds without resetting on phase changes', async () => {
+  it('shows the current phase after the delay without resetting on phase changes', async () => {
     act(() => root.render(<SlowSendNotice startedAt={null} phase="uploading" />));
     const slot = host.firstElementChild;
     act(() => root.render(<SlowSendNotice startedAt={0} phase="uploading" />));
-    await act(async () => { await vi.advanceTimersByTimeAsync(7_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(SLOW_SEND_NOTICE_DELAY_MS - 500); });
     act(() => root.render(<SlowSendNotice startedAt={0} phase="connecting" />));
-    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     expect(host.textContent).toBe('正在连接电脑…');
     expect(host.querySelector('[data-pill="activity"]')?.getAttribute('aria-live')).toBe('polite');
     expect(host.querySelector('[data-pill="activity"]')?.textContent).toBe('正在连接电脑…');
     act(() => root.render(<SlowSendNotice startedAt={0} phase="sending" />));
     expect(host.textContent).toBe('正在发送消息…');
     expect(host.firstElementChild).toBe(slot);
-    act(() => root.render(<SlowSendNotice startedAt={8_000} phase="uploading" />));
+    act(() => root.render(<SlowSendNotice startedAt={SLOW_SEND_NOTICE_DELAY_MS} phase="uploading" />));
     expect(host.childElementCount).toBe(1);
     expect(host.textContent).toBe('');
   });
