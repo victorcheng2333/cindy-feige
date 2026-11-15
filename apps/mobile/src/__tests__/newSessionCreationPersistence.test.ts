@@ -541,6 +541,34 @@ it.each(['deleted', 'archived'])('retires saved recovery on %s, including editor
   expect(remoteSessionStore.getSessions()).toEqual([]);
 });
 
+// Unit regression: an app exit leaves a queued creation without a live task.
+// Existing removal coverage only exercised failed/editor records. Run the real
+// removal boundary and reload persisted bytes to detect outbox resurrection.
+it.each(['removed', 'not-found', 'offline'] as const)(
+  'removes interrupted queued creation only with host confirmation: %s', async outcome => {
+    const saved = await saveDraftFixture();
+    await mobileDurableOutbox.activate('');
+    await mobileDurableOutbox.activate(getMobileAuthOwner().accountKey);
+    const remote = vi.fn(async () => {
+      if (outcome === 'not-found') throw new Error('[NOT_FOUND] Session does not exist');
+      if (outcome === 'offline') throw new Error('offline');
+      return { id: saved.item.sessionId, status: 'deleted' };
+    });
+    const removal = withNewSessionCreationRemoval(saved.item.sessionId, 'pc', 'deleted', remote);
+    if (outcome === 'removed') await expect(removal).resolves.toMatchObject({ status: 'deleted' });
+    else await expect(removal).rejects.toThrow(outcome === 'not-found' ? 'NOT_FOUND' : 'offline');
+    expect(remote).toHaveBeenCalledOnce();
+    await mobileDurableOutbox.activate('');
+    await mobileDurableOutbox.activate(getMobileAuthOwner().accountKey);
+    if (outcome === 'offline') {
+      expect(getCurrentMobileOutboxRecords()).toEqual([saved]);
+    } else {
+      expect(getCurrentMobileOutboxRecords()).toEqual([]);
+      expect(mobileDurableOutbox.getSnapshot()[0]).toMatchObject({ cleanupOutcome: 'cancelled', suspended: true });
+    }
+  },
+);
+
 it('keeps a saved draft if durable deletion fails', async () => {
   const original = await saveDraftFixture();
   const saved = await mobileDurableOutbox.update(original, cancelledCreationDraft(original));

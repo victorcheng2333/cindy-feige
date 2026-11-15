@@ -638,9 +638,12 @@ export async function withNewSessionCreationRemoval<T>(
   const localFailure = task?.deviceId === deviceId && task.status === 'create-failed' && isTaskOwnerCurrent(task);
   const savedDraft = getCurrentMobileOutboxRecords().some(record => record.deviceId === deviceId
     && record.item.sessionId === sessionId && isDurableEditRecord(record));
-  const failedDraft = getCurrentMobileOutboxRecords().some(record => record.deviceId === deviceId
-    && record.item.sessionId === sessionId && record.creation && record.state === 'failed');
-  if (!localFailure && !savedDraft && !failedDraft) return remove();
+  // A restart loses the live creation task before the durable record necessarily
+  // reaches 'failed'. Retire queued/reconciling creation records too, but only
+  // after the host confirms removal (or exact NOT_FOUND) below.
+  const recoveredCreation = getCurrentMobileOutboxRecords().some(record => record.deviceId === deviceId
+    && record.item.sessionId === sessionId && record.creation && (!task || record.state === 'failed'));
+  if (!localFailure && !savedDraft && !recoveredCreation) return remove();
   const release = localFailure ? beginNewSessionReturnToEdit(sessionId) : null;
   if (localFailure && !release) throw new Error(i18n.t('session.new.worktreeCleanupPending'));
   const retire = async () => {
