@@ -2331,6 +2331,24 @@
         "dark": "Dark theme",
         "system": "Follow system"
       },
+      "userBubble": {
+        "title": "My message bubble color",
+        "presets": "Color",
+        "default": "Default",
+        "peach": "First Draft",
+        "yellow": "Daybreak",
+        "sage": "Spark",
+        "blue": "Dreamscape",
+        "lavender": "Night Cat",
+        "red": "Red Collar",
+        "custom": "Custom color",
+        "hue": "Hue",
+        "preview": "Message preview",
+        "sampleUser": "Help me organize today’s ideas.",
+        "sampleAssistant": "Sure, let’s work through your ideas together.",
+        "hint": "Adjusts for light and dark mode so text stays readable. Saved on this computer only.",
+        "customHint": "Drag the color strip to pick a hue. Adjusts for light and dark mode; saved on this computer only."
+      },
       "sidebarCardMode": {
         "label": "Pinned Style",
         "hint": "Show pinned sessions as text, cards, or a list.",

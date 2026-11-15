@@ -2300,6 +2300,24 @@
         "dark": "夜色主題",
         "system": "隨系統"
       },
+      "userBubble": {
+        "title": "君訊氣泡之色",
+        "presets": "色",
+        "default": "常例",
+        "peach": "初稿",
+        "yellow": "曙色",
+        "sage": "靈犀",
+        "blue": "幽夢",
+        "lavender": "夜貓",
+        "red": "朱環",
+        "custom": "自擬色",
+        "hue": "色相",
+        "preview": "訊之先覽",
+        "sampleUser": "助我理一理今日之靈感。",
+        "sampleAssistant": "善，且與君一同理清思緒。",
+        "hint": "深淺模式下自調明暗，以保文字清晰。僅存於此電腦。",
+        "customHint": "左右拖曳色帶以擇色。深淺模式下自調明暗，僅存於此電腦。"
+      },
       "sidebarCardMode": {
         "label": "置頂之式",
         "hint": "擇置頂差事以文字、卡片或列表示之",

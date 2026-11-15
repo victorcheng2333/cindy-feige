@@ -35,6 +35,7 @@ import {
   slashCommandRangeCoversToken,
 } from '@cindy/maker-shared/composer-palette';
 import { cn } from '@/lib/utils';
+import { useUserBubbleAppearance, userBubbleSurfaceStyle } from '@/lib/userBubblePreference';
 import { ListComposerTextarea } from '@/components/new-chat/ListComposerTextarea';
 import { toast } from '@/lib/toast';
 import { ApiError } from '@/lib/httpClient';
@@ -120,6 +121,7 @@ export function UserMessageEditBox({
   onCommitOverride,
 }: UserMessageEditBoxProps) {
   const { t } = useTranslation();
+  const { colors } = useUserBubbleAppearance();
   const [text, setText] = useState(initialText);
   const [submitting, setSubmitting] = useState(false);
   // state 版本驱动 UI(按钮 disable / spinner);ref 版本是同步防重入守卫——
@@ -326,10 +328,11 @@ export function UserMessageEditBox({
     <div
       className={cn(
         'w-full rounded-[12px]',
-        'border border-[var(--msg-user-border)]',
+        'border-[0.5px] border-[var(--msg-user-border)]',
         'bg-[var(--msg-user-bg)]',
         'px-4 pt-3 pb-2.5',
       )}
+      style={userBubbleSurfaceStyle(colors)}
     >
       <ListComposerTextarea
         ref={textareaRef}

@@ -2301,6 +2301,24 @@
         "dark": "深色主题",
         "system": "跟随系统"
       },
+      "userBubble": {
+        "title": "我的消息气泡颜色",
+        "presets": "颜色",
+        "default": "默认",
+        "peach": "初稿",
+        "yellow": "晨光",
+        "sage": "灵感",
+        "blue": "梦境",
+        "lavender": "夜猫",
+        "red": "项圈",
+        "custom": "自定义颜色",
+        "hue": "色相",
+        "preview": "消息预览",
+        "sampleUser": "帮我整理一下今天的灵感。",
+        "sampleAssistant": "好的，我们一起把想法梳理清楚。",
+        "hint": "深浅模式下自动调整明暗，保证文字清晰。仅保存在此电脑。",
+        "customHint": "左右拖动色带选择颜色。深浅模式下自动调整明暗，仅保存在此电脑。"
+      },
       "sidebarCardMode": {
         "label": "置顶样式",
         "hint": "选择置顶任务的文字、卡片或列表样式",

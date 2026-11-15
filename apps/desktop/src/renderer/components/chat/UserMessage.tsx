@@ -8,6 +8,8 @@ import { useBotDmThreadForMessage } from '@/features/bots/botDmThreadsContext';
 import { FileTypeIcon } from '@/components/ui/file-type-icon';
 import type { ImMessageSource } from '../../../shared/imMessageSource';
 import { isSharedTaskPeer } from '@cindy/device-link';
+import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
+import { isOwnUserBubble } from '@/lib/userBubbleOwnership';
 import { hasEmbeddedImPrompt } from './userMessageDisplayText';
 /**
  * UserMessage
@@ -158,6 +160,8 @@ interface UserMessageProps {
   sharedAuthorName?: string;
   /** 共享任务成员 id:作者行悬停显示。 */
   sharedAuthorMemberId?: string;
+  /** 共享任务作者账号;只用于「我的消息气泡颜色」归属,不作权限依据。 */
+  sharedAuthorAccountId?: string;
   /** F2: session cwd used to resolve relative paths in inline @-chip refs.
    *  Stable per-session — only changes on session switch. */
   workingDir: string;
@@ -838,6 +842,7 @@ export function UserMessage({
   pendingIndicator,
   sharedAuthorName,
   sharedAuthorMemberId,
+  sharedAuthorAccountId,
   workingDir,
   allowPrivilegedLinks = true,
   content,
@@ -878,6 +883,10 @@ export function UserMessage({
   const sessionFileCtx = useChatSessionFile();
   const remoteDeviceId = originDeviceId(sessionFileCtx.origin);
   const sharedGuest = isSharedTaskPeer(remoteDeviceId ?? '');
+  const ownBubble = isOwnUserBubble(
+    { sharedAuthorName, sharedAuthorAccountId },
+    { accountId: getDataOwnerGeneration().dataOwnerId, remoteDeviceId: remoteDeviceId ?? '' },
+  );
   const remoteMediaOrigin = useMemo(
     () => toRemoteMediaOrigin(sessionFileCtx.origin, sessionFileCtx.workingDir),
     [sessionFileCtx],
@@ -1593,6 +1602,7 @@ export function UserMessage({
                     data-plugin-appearance-region
                     data-plugin-appearance-speaker="user"
                     speaker="user"
+                    own={ownBubble}
                     // 只剩插件标注行的气泡:分享图会剥掉标注,整泡一起去掉,不留空壳。
                     // 伙伴私聊里附件也在气泡内,有附件就不是空壳。
                     {...(inlineQuoteCount === 0 && !displayBubbleBody.trim() && !attachmentsInBubble
@@ -1606,7 +1616,7 @@ export function UserMessage({
                         commandNamespace={ghostCmd?.namespace ?? undefined}
                         className={
                           inlineQuoteCount > 0 || displayBubbleBody.trim()
-                            ? 'mb-2.5 border-b border-[var(--msg-user-border)] pb-2.5'
+                            ? 'mb-2.5 border-b-[0.5px] border-[var(--msg-user-border)] pb-2.5'
                             : undefined
                         }
                       />

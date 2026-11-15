@@ -39,6 +39,7 @@ import { Slider } from '@/components/ui/slider';
 import { extractIpcError } from '@/utils/ipcError';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 import { DockIconPicker } from './DockIconPicker';
+import { UserBubbleSettings } from './UserBubbleSettings';
 import { SettingsTextInput } from './SettingsTextInput';
 import { FontFamilyPicker } from './FontFamilyPicker';
 import { LayoutResetControl } from './LayoutResetControl';
@@ -665,6 +666,8 @@ export function AppearanceSection() {
                 trailing={<DockIconPicker />}
               />
             ) : null}
+
+            <UserBubbleSettings />
 
             <SettingsRow
               wrap

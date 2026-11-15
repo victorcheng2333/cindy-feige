@@ -118,6 +118,26 @@ export const appearanceSettings = defineSettings({
     // Only macOS can swap the Dock icon at runtime (see main/app-icon.ts).
     isVisible: ({ platform }) => platform === 'darwin',
   },
+  userBubble: {
+    id: 'settings.appearance.userBubble',
+    fallbackTargetId: 'settings-search-target-appearance-theme',
+    tab: 'appearance',
+    targetId: 'settings-search-settings-appearance-userBubble',
+    titleKey: 'settings.appearance.userBubble.title',
+    sectionKey: 'settings.appearance.themeLabel',
+    descriptionKey: 'settings.appearance.userBubble.hint',
+    aliases: ['气泡', '气泡颜色', 'bubble', 'message bubble'],
+    options: [
+      { value: 'default', labelKey: 'settings.appearance.userBubble.default' },
+      { value: 'peach', labelKey: 'settings.appearance.userBubble.peach' },
+      { value: 'yellow', labelKey: 'settings.appearance.userBubble.yellow' },
+      { value: 'sage', labelKey: 'settings.appearance.userBubble.sage' },
+      { value: 'blue', labelKey: 'settings.appearance.userBubble.blue' },
+      { value: 'lavender', labelKey: 'settings.appearance.userBubble.lavender' },
+      { value: 'red', labelKey: 'settings.appearance.userBubble.red' },
+      { value: 'custom', labelKey: 'settings.appearance.userBubble.custom' },
+    ],
+  },
   themeLabel: {
     id: 'settings.appearance.themeLabel',
     fallbackTargetId: 'settings-search-target-appearance-theme',

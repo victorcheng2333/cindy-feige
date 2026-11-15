@@ -17,7 +17,7 @@ export type { PluginSetupCommandError } from './pluginSetupCommandError';
 import { emitTaskTagCatalog } from '@/features/task-tags/taskTagEvents';
 import { normalizeTaskTags } from '@cindy/maker-shared';
 import type { ImMessageSource } from '../../shared/imMessageSource';
-import { sharedTaskAuthorMemberId, sharedTaskAuthorName } from '@cindy/maker-shared';
+import { sharedTaskAuthorAccountId, sharedTaskAuthorMemberId, sharedTaskAuthorName } from '@cindy/maker-shared';
 import { readBotAuthorizationCard } from '../../shared/botAuthorization';
 import { readBotStarterOptions } from '../../shared/botStarterOptions';
 import { applyCindyMakeCardAttention } from './cindyMakeAttention';
@@ -571,6 +571,8 @@ export interface ChatMessage {
   sharedAuthorName?: string;
   /** 共享任务成员 id(作者行悬停显示,与模型 `[消息来源]` 的 member_id 同源)。 */
   sharedAuthorMemberId?: string;
+  /** 共享任务作者账号;只用于「我的消息气泡颜色」归属,不作权限依据。 */
+  sharedAuthorAccountId?: string;
   /** 手机 / 另一台电脑远程发来时的发送设备(读自 agentMeta.sourceDevice)。 */
   sourceDevice?: MessageSourceDevice;
   /** 插件任务派发的消息来源(读自 agentMeta.sourcePlugin)。 */
@@ -5495,7 +5497,7 @@ function hydratePersistedMessage(
   // even after the host has delivered a source-free row.
   for (const field of [
     'automationOrigin', 'sourceDevice', 'sourcePlugin', 'sourceGroup',
-    'hookSource', 'sharedAuthorName', 'sharedAuthorMemberId',
+    'hookSource', 'sharedAuthorName', 'sharedAuthorMemberId', 'sharedAuthorAccountId',
   ] as const) {
     if (persisted[field] === undefined) delete hydrated[field];
   }
@@ -20360,6 +20362,7 @@ function mapServerMessages(serverMsgs: Message[]): ChatMessage[] {
       return {
         sharedAuthorName: sharedTaskAuthorName(m.agentMeta),
         sharedAuthorMemberId: sharedTaskAuthorMemberId(m.agentMeta),
+        sharedAuthorAccountId: sharedTaskAuthorAccountId(m.agentMeta),
         clientId: m.clientId,
         role: m.role,
         content: parsed.text,

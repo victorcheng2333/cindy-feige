@@ -7125,6 +7125,7 @@ const MessageItem = memo(function MessageItem({
             pluginUi={pluginUi}
             sharedAuthorName={message.sharedAuthorName}
             sharedAuthorMemberId={message.sharedAuthorMemberId}
+            sharedAuthorAccountId={message.sharedAuthorAccountId}
             workingDir={workingDir}
             content={message.content}
             quotesEncoded={message.quotesEncoded}

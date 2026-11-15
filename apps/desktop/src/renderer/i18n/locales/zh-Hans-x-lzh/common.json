@@ -2300,6 +2300,24 @@
         "dark": "夜色主题",
         "system": "随系统"
       },
+      "userBubble": {
+        "title": "君讯气泡之色",
+        "presets": "色",
+        "default": "常例",
+        "peach": "初稿",
+        "yellow": "曙色",
+        "sage": "灵犀",
+        "blue": "幽梦",
+        "lavender": "夜猫",
+        "red": "朱环",
+        "custom": "自拟色",
+        "hue": "色相",
+        "preview": "讯之先览",
+        "sampleUser": "助我理一理今日之灵感。",
+        "sampleAssistant": "善，且与君一同理清思绪。",
+        "hint": "深浅模式下自调明暗，以保文字清晰。仅存于此电脑。",
+        "customHint": "左右拖曳色带以择色。深浅模式下自调明暗，仅存于此电脑。"
+      },
       "sidebarCardMode": {
         "label": "置顶之式",
         "hint": "择置顶差事以文字、卡片或列表示之",

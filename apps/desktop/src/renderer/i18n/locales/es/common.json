@@ -2368,6 +2368,24 @@
         "dark": "Tema oscuro",
         "system": "Seguir sistema"
       },
+      "userBubble": {
+        "title": "Color de burbuja de mi mensaje",
+        "presets": "Color",
+        "default": "Predeterminado",
+        "peach": "Primer borrador",
+        "yellow": "Amanecer",
+        "sage": "Chispa",
+        "blue": "Paisaje onírico",
+        "lavender": "Gato nocturno",
+        "red": "Collar rojo",
+        "custom": "Color personalizado",
+        "hue": "Tono",
+        "preview": "Vista previa del mensaje",
+        "sampleUser": "Ayúdame a organizar las ideas de hoy.",
+        "sampleAssistant": "Claro, trabajemos juntos en tus ideas.",
+        "hint": "Se ajusta al modo claro y oscuro para que el texto siga siendo legible. Guardado solo en este ordenador.",
+        "customHint": "Arrastra la franja de color para elegir un tono. Se ajusta al modo claro y oscuro; guardado solo en este ordenador."
+      },
       "sidebarCardMode": {
         "label": "Estilo fijado",
         "hint": "Muestra las sesiones fijadas como texto, tarjetas o lista.",

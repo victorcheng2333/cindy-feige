@@ -1,22 +1,27 @@
 import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
+import { useUserBubbleAppearance, userBubbleSurfaceStyle } from '@/lib/userBubblePreference';
 import { CHAT_BODY_CLASS } from './chatChrome';
 import './ChatBubble.css';
 
 /** Shared by group messages and the private task runtime, including their thread replies. */
 export const CHAT_BUBBLE_COLUMN_CLASS = 'chat-bubble-column max-w-[min(720px,calc(100%-var(--chat-bubble-gutter,120px)))]';
 
-export function ChatBubble({ speaker = 'assistant', bare = false, className, ...props }: ComponentProps<'div'> & {
+export function ChatBubble({ speaker = 'assistant', bare = false, own = true, className, style, ...props }: ComponentProps<'div'> & {
   speaker?: 'assistant' | 'user';
   /** Ordinary task replies and an empty stream have no bubble surface. */
   bare?: boolean;
+  /** False for shared-task messages that are not the current viewer's. */
+  own?: boolean;
 }) {
-  return <div {...props} className={cn(
+  const { colors } = useUserBubbleAppearance();
+  const tint = speaker === 'user' && own !== false ? userBubbleSurfaceStyle(colors) : undefined;
+  return <div {...props} style={tint || style ? { ...tint, ...style } : undefined} className={cn(
     CHAT_BODY_CLASS,
-    bare ? 'w-full min-w-0' : 'relative min-w-0 max-w-full rounded-xl border',
+    bare ? 'w-full min-w-0' : 'relative min-w-0 max-w-full rounded-xl',
     speaker === 'user'
-      ? 'border-[var(--msg-user-border)] bg-[var(--msg-user-bg)] px-4 py-3 text-[var(--msg-user-text)]'
-      : cn('text-[var(--msg-assistant-text)]', !bare && 'border-[var(--border-default)] bg-[var(--surface-elevated)] px-3.5 py-2.5'),
+      ? 'border-[0.5px] border-[var(--msg-user-border)] bg-[var(--msg-user-bg)] px-4 py-3 text-[var(--msg-user-text)]'
+      : cn('text-[var(--msg-assistant-text)]', !bare && 'border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3.5 py-2.5'),
     className,
   )} />;
 }

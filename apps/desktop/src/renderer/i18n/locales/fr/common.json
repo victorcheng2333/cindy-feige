@@ -2368,6 +2368,24 @@
         "dark": "Thème sombre",
         "system": "Suivre le système"
       },
+      "userBubble": {
+        "title": "Couleur de mes bulles",
+        "presets": "Couleur",
+        "default": "Par défaut",
+        "peach": "Premier jet",
+        "yellow": "Point du jour",
+        "sage": "Étincelle",
+        "blue": "Rêverie",
+        "lavender": "Chat de nuit",
+        "red": "Collier rouge",
+        "custom": "Couleur personnalisée",
+        "hue": "Teinte",
+        "preview": "Aperçu du message",
+        "sampleUser": "Aide-moi à organiser mes idées du jour.",
+        "sampleAssistant": "Bien sûr, examinons vos idées ensemble.",
+        "hint": "S'adapte aux modes clair et sombre pour que le texte reste lisible. Enregistré uniquement sur cet ordinateur.",
+        "customHint": "Faites glisser la bande de couleur pour choisir une teinte. S'adapte aux modes clair et sombre ; enregistré uniquement sur cet ordinateur."
+      },
       "sidebarCardMode": {
         "label": "Style des épinglés",
         "hint": "Affichez les sessions épinglées sous forme de texte, de cartes ou de liste.",

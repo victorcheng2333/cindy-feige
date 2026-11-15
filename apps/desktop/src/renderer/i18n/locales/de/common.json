@@ -2330,6 +2330,24 @@
         "dark": "Dunkles Design",
         "system": "Systemeinstellung folgen"
       },
+      "userBubble": {
+        "title": "Farbe meiner Nachrichtenblasen",
+        "presets": "Farbe",
+        "default": "Standard",
+        "peach": "Erster Entwurf",
+        "yellow": "Tagesanbruch",
+        "sage": "Funke",
+        "blue": "Traumwelt",
+        "lavender": "Nachtkatze",
+        "red": "Rotes Halsband",
+        "custom": "Eigene Farbe",
+        "hue": "Farbton",
+        "preview": "Nachrichtenvorschau",
+        "sampleUser": "Hilf mir, meine heutigen Ideen zu ordnen.",
+        "sampleAssistant": "Klar, lass uns deine Ideen gemeinsam durchgehen.",
+        "hint": "Passt sich an den hellen und dunklen Modus an, damit der Text lesbar bleibt. Wird nur auf diesem Computer gespeichert.",
+        "customHint": "Ziehe am Farbstreifen, um einen Farbton auszuwählen. Passt sich an den hellen und dunklen Modus an und wird nur auf diesem Computer gespeichert."
+      },
       "sidebarCardMode": {
         "label": "Stil für angeheftete Elemente",
         "hint": "Angeheftete Sitzungen als Text, Karten oder Liste anzeigen.",

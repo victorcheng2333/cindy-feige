@@ -2368,6 +2368,24 @@
         "dark": "Tema escuro",
         "system": "Seguir o sistema"
       },
+      "userBubble": {
+        "title": "Cor do balão das minhas mensagens",
+        "presets": "Cor",
+        "default": "Padrão",
+        "peach": "Primeiro rascunho",
+        "yellow": "Amanhecer",
+        "sage": "Faísca",
+        "blue": "Paisagem dos sonhos",
+        "lavender": "Gato noturno",
+        "red": "Coleira vermelha",
+        "custom": "Cor personalizada",
+        "hue": "Matiz",
+        "preview": "Prévia da mensagem",
+        "sampleUser": "Me ajude a organizar as ideias de hoje.",
+        "sampleAssistant": "Claro, vamos organizar suas ideias juntos.",
+        "hint": "Adapta-se aos modos claro e escuro para manter o texto legível. Salvo apenas neste computador.",
+        "customHint": "Arraste a faixa de cores para escolher um matiz. Adapta-se aos modos claro e escuro; salvo apenas neste computador."
+      },
       "sidebarCardMode": {
         "label": "Estilo dos fixados",
         "hint": "Mostre sessões fixadas como texto, cartões ou lista.",

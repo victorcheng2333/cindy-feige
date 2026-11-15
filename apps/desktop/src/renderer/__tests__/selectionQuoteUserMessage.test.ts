@@ -44,7 +44,8 @@ vi.mock('@cindy/maker-shared', async () => {
   const { normalizeTaskTags, reconcileTaskTags } = await import('../../../../../packages/maker-shared/src/taskTags');
   const { MAX_STATUS_QUERIES } = await import('../../../../../packages/maker-shared/src/sessionPrRefs');
   const workingStatus = await import('../../../../../packages/maker-shared/src/workingStatus');
-  return { leadingSlashInvocation, normalizeTaskTags, reconcileTaskTags, MAX_STATUS_QUERIES, ...workingStatus };
+  const userBubble = await import('../../../../../packages/maker-shared/src/userBubbleAppearance');
+  return { leadingSlashInvocation, normalizeTaskTags, reconcileTaskTags, MAX_STATUS_QUERIES, ...workingStatus, ...userBubble };
 });
 vi.mock('@cindy/device-link', async () => ({
   ...await import('../../../../../packages/device-link/src/sharedTaskPeer'),
