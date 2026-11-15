@@ -463,7 +463,7 @@ export function readModelPriceOverrideView(
 ): ModelPriceOverrideView {
   const remoteReference = providerReferencePriceQuote(target.providerId, target.modelId, registry, {
     agent: target.agent,
-  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry, target.modelId) : undefined);
+  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry ?? undefined, target.modelId) : undefined);
   const reference =
     remoteReference && currencyCanProjectToLedger(remoteReference.currency, ledgerCurrency)
       ? remoteReference
@@ -495,7 +495,7 @@ export function setModelPriceOverride(
   }
   const reference = providerReferencePriceQuote(target.providerId, target.modelId, registry, {
     agent: target.agent,
-  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry, target.modelId) : undefined);
+  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry ?? undefined, target.modelId) : undefined);
   const baseReference = comparable(reference);
   const values = sparseValues(desired, baseReference);
   const entries = { ...readEntries() };
