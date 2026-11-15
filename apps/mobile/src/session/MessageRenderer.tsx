@@ -159,6 +159,7 @@ import {
 import {
   buildVisibleSentInlineTokens,
   sentInlineTokensDisplayText,
+  withSessionLinkTokens,
   type SentInlineToken,
 } from '@/session/sentMessageAtoms';
 import { SelectionQuoteContext } from '@/session/selectionQuote';
@@ -438,7 +439,7 @@ import { tokenizeInlineMath } from '@cindy/maker-shared/math-markdown';
 import type { RemoteTextFilePreviewResult } from '@/device-link/mobileMakerTransport';
 import { fontWeight, lineHeight, radius, spacing, typeScale } from '@/theme/tokens';
 import { iconSize, iconStroke, monoFont, useTheme, useThemedStyles, type ThemeColors } from '@/theme';
-import { useUserBubbleAppearance } from '@/theme/userBubblePreference';
+import { chipColorsForUserBubble, UserBubbleChipContext, useUserBubbleAppearance, useUserBubbleChipColors } from '@/theme/userBubblePreference';
 import { isOwnUserBubble } from './userBubbleOwnership';
 import { i18n } from '@/i18n';
 import { formatLocalizedDuration } from '@/session/sessionDurationFormat';
@@ -3567,14 +3568,15 @@ function MessageBubble({
   const sentInlineTokens = useMemo(
     () =>
       item.message.kind === 'user'
-      ? buildVisibleSentInlineTokens(
+      // 任务 / 消息引用拆成引用块(圆角、描边、图标),与电脑端同一外观，不再是正文里的底色文字。
+      ? withSessionLinkTokens(buildVisibleSentInlineTokens(
           item.message.body,
           quoteSegments.length > 0
             ? quoteSegments
             : item.message.body ? [{ kind: 'text' as const, text: item.message.body }] : [],
           item.message.pastedTextRanges,
           item.message.slashCommandRanges,
-        )
+        ))
       : [],
     [
       item.message.body,
@@ -3956,7 +3958,11 @@ function MessageBubble({
     && (hasBubbleContent || (!attachmentStripNode && messageQuotes.length === 0));
   // 气泡是纯 View,不承接任何手势:文本选择走正文原生 Text selectable(长按文字就地选择复制),
   // 气泡上不能挂 Pressable——它会参与触摸协商,干扰正文里表格/代码块横向 ScrollView 的拖动。
+  const ownBubbleTint = isUser && !item.message.systemCardType && userBubbleColors
+    && isOwnUserBubble(item.message, { accountId: viewer?.id, remoteDeviceId: actions.remoteDeviceId })
+    ? userBubbleColors : null;
   const bubble = (
+    <UserBubbleChipContext.Provider value={chipColorsForUserBubble(ownBubbleTint)}>
     <View
       style={[
         styles.bubble,
@@ -3966,9 +3972,7 @@ function MessageBubble({
         actions.companion && !isUser && !item.message.systemCardType && styles.companionAnswer,
         actions.intermediateProcess && { paddingVertical: 0 },
         hookSource && styles.hookSourceBubble,
-        isUser && !item.message.systemCardType && userBubbleColors
-          && isOwnUserBubble(item.message, { accountId: viewer?.id, remoteDeviceId: actions.remoteDeviceId })
-          && { backgroundColor: userBubbleColors.background, borderColor: userBubbleColors.border },
+        ownBubbleTint && { backgroundColor: ownBubbleTint.background, borderColor: ownBubbleTint.border },
       ]}
       testID={isUser ? 'message.userBubble' : 'message.agentBubble'}
     >
@@ -4045,6 +4049,7 @@ function MessageBubble({
         ) : rendersSentInlineBody ? (
           <SentInlineAtomBody
             onOpenPayload={actions.onOpenPayload}
+            onOpenSessionLink={actions.onOpenSessionLink}
             renderText={(text, index) => (
               <View key={`text:${index}`} style={styles.sentInlineTextChunk}>
                 <MarkdownBody
@@ -4130,6 +4135,7 @@ function MessageBubble({
         </MarkdownSelectableText>
       ) : null}
     </View>
+    </UserBubbleChipContext.Provider>
   );
 
   const messageNode = (
@@ -6979,6 +6985,8 @@ function MarkdownSessionLinkSpan({
   styles: ReturnType<typeof makeStyles>;
 }) {
   const messages = useRemoteSessionMessages(session.sessionId);
+  // 在自己染色的消息气泡里，引用底色跟随气泡色相(深一档)，不贴主题的不透明中性底。
+  const bubbleChip = useUserBubbleChipColors();
   const explicit =
     inline.text.trim() && inline.text.trim() !== inline.url ? inline.text.trim() : null;
   const targetMessage = session.messageClientId
@@ -7003,7 +7011,12 @@ function MarkdownSessionLinkSpan({
   return (
     <SpanText
       onPress={openSessionLink}
-      style={clickableInlineStyle(styles, openSessionLink, baseStyle, styles.sessionLinkChipText)}
+      style={clickableInlineStyle(
+        styles,
+        openSessionLink,
+        baseStyle,
+        bubbleChip ? [styles.sessionLinkChipText, { backgroundColor: bubbleChip.background }] : styles.sessionLinkChipText,
+      )}
     >
       {`${session.messageClientId ? '❝' : '↳'} ${title}`}
     </SpanText>

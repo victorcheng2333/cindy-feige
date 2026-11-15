@@ -16513,16 +16513,25 @@ async function steerMessageCore(
       )
     : undefined;
   if (deviceLinkRemote && !remoteRecord) return false;
-  if (deviceLinkRemote) {
-    setState(sessionId, (s) =>
-      s.messages.some((message) => message.clientId === queued.clientId)
-        ? s
-        : { ...s, messages: [...s.messages, reserveRemoteUser({ ...queued.chatMessage, isPendingPersist: true }, s.messages)] },
-    );
-  }
+  // 插话也先上屏:本地插话要等 Agent 在当前一步结束时确认收下才落库，常常一两秒，
+  // 之前这段时间输入框已清空、气泡却还没出现，像是没发出去。乐观行与普通发送同一套
+  // isPendingPersist 交接:落库回声按 clientId 替换；被物化进队列时由投影移除、交给
+  // 排队行；被拒时下面回滚撤掉，输入框恢复草稿。
+  setState(sessionId, (s) =>
+    s.messages.some((message) => message.clientId === queued.clientId)
+      ? s
+      : {
+          ...s,
+          messages: [
+            ...s.messages,
+            deviceLinkRemote
+              ? reserveRemoteUser({ ...queued.chatMessage, isPendingPersist: true }, s.messages)
+              : { ...queued.chatMessage, isPendingPersist: true },
+          ],
+        },
+  );
   const rollbackOptimisticSteer = () => {
-    if (!deviceLinkRemote) return;
-    clearRemoteOptimisticSend(sessionId, queued.clientId);
+    if (deviceLinkRemote) clearRemoteOptimisticSend(sessionId, queued.clientId);
     setState(sessionId, (s) => ({
       ...s,
       messages: s.messages.filter(

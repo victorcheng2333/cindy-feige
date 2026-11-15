@@ -219,6 +219,7 @@ function BubbleHarness({ body, kind = 'user', automationOrigin: origin }) {
   const bubbleBody = body;
   const hasPluginInvocations = false;
   const userBubbleColors = undefined;
+  const ownBubbleTint = null;
   const actions = {};
   const colors = {};
   const presentation = {};
@@ -254,6 +255,8 @@ return { BubbleHarness, MarkdownHarness };
     mayExceedVisualLineThreshold, resolveUserMessageCollapse,
     AUTOMATION_USER_MESSAGE_VISUAL_LINE_THRESHOLD, AUTOMATION_USER_MESSAGE_COLLAPSED_LINES,
     LONG_USER_MESSAGE_VISUAL_LINE_THRESHOLD, LONG_USER_MESSAGE_COLLAPSED_LINES,
+    // The harness renders an untinted bubble; chips keep the theme colors.
+    UserBubbleChipContext: React.createContext(null), chipColorsForUserBubble: () => null,
   });
 
 describe('MessageRenderer bounded long-message native behavior', () => {

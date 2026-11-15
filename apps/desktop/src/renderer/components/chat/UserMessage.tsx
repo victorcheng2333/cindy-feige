@@ -1809,7 +1809,8 @@ export function UserMessage({
                         className={cn(
                           'mt-2 inline-flex items-center gap-1 rounded-full px-1 py-0.5',
                           'text-12 font-medium leading-5',
-                          'text-[var(--text-secondary)] transition-colors',
+                          // 气泡内用说明文字(70%):染色气泡上仍清晰，也不拖浅「我的消息气泡颜色」。
+                          'text-[var(--text-secondary-mid)] transition-colors',
                           'hover:text-[var(--msg-user-text)]',
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)]',
                         )}

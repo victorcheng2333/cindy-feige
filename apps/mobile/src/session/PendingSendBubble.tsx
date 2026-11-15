@@ -81,7 +81,7 @@ import {
   type ThemeColors,
 } from '@/theme';
 import { radius, spacing, typeScale } from '@/theme/tokens';
-import { useUserBubbleAppearance } from '@/theme/userBubblePreference';
+import { chipColorsForUserBubble, UserBubbleChipContext, useUserBubbleAppearance } from '@/theme/userBubblePreference';
 
 /** 与已发送消息上的来源标签同一组图标(自动化 Timer / 任务 Send / Orca Bot / 插件 Ghost)。 */
 function sourceIcon(kind: MobilePendingSendSourceKind): LucideIcon {
@@ -430,6 +430,7 @@ export function PendingSendBubble({
   const DeviceIcon = item.sourceDevice?.platform === 'mobile' ? Smartphone : Monitor;
 
   return (
+    <UserBubbleChipContext.Provider value={chipColorsForUserBubble(userBubbleColors)}>
     <View style={styles.rowWrap} testID={`pendingSend.row.${item.clientId}`}>
       {item.source && SourceIcon ? (
         // 非本人输入的排队条目:气泡上方的来源标签(对齐桌面排队面板与已发送消息的来源标签)。
@@ -662,6 +663,7 @@ export function PendingSendBubble({
         <Text style={styles.rowHint} testID={`pendingSend.hint.${item.clientId}`}>{item.hint}</Text>
       ) : null}
     </View>
+    </UserBubbleChipContext.Provider>
   );
 }
 

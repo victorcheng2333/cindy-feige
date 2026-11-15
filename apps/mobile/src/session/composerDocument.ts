@@ -742,6 +742,10 @@ function composerNodeFromSentToken(token: SentInlineToken): ComposerNode {
   if (token.kind === 'slash') {
     return { type: 'text', text: token.text, slashCommand: token.text };
   }
+  if (token.kind === 'session') {
+    // Display-only token; restore the original link text if one ever reaches a draft.
+    return { type: 'text', text: token.label ? `[${token.label}](${token.url})` : token.url };
+  }
   return { type: 'text', text: token.text };
 }
 

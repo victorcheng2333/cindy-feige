@@ -70,13 +70,14 @@ export function userBubbleSeed(
 
 /**
  * Presets stay soft; custom colors are tinted more so the chosen hue reads clearly.
- * The derived foreground keeps >= 7:1. Callers pass the theme text colors that are
- * actually drawn inside the bubble (body, secondary, inline code...); the tint is
- * reduced until every one of them keeps >= 4.5:1. Zero tint is the theme-neutral
- * surface, which those roles already satisfy.
+ * The light preset depth matches a familiar chat tint (owner, 2026-11-15: sage lands
+ * on #e3f6e8 next to Codex's #e3f3e7). The derived foreground keeps >= 7:1. Callers
+ * pass the theme text colors that are actually drawn inside the bubble (body,
+ * secondary, inline code...); the tint is reduced until every one of them keeps
+ * >= 4.5:1. Zero tint is the theme-neutral surface, which those roles already satisfy.
  */
 const tint = {
-  preset: { light: 0.16, dark: 0.13 },
+  preset: { light: 0.17, dark: 0.13 },
   custom: { light: 0.3, dark: 0.18 },
 };
 const FOREGROUND_MIN_CONTRAST = 7;
@@ -107,9 +108,15 @@ export function resolveUserBubbleColors(
         dark ? 27 + v * strength : 255 - (255 - v) * strength,
       ),
     );
+  // A role the theme already accepts below the threshold on the untinted surface
+  // (Desktop's 44% ink tertiary is 3.2:1 on white) cannot constrain the tint;
+  // keeping it would bisect every preset down to the plain surface.
+  const constrainingRoles = textRoles.filter(
+    (role) => contrastRatio(mix(0), role) >= TEXT_ROLE_MIN_CONTRAST,
+  );
   const readable = (background: string) =>
     contrastRatio(background, foreground) >= FOREGROUND_MIN_CONTRAST &&
-    textRoles.every(
+    constrainingRoles.every(
       (role) => contrastRatio(background, role) >= TEXT_ROLE_MIN_CONTRAST,
     );
   let strength = tint[preference.startsWith("#") ? "custom" : "preset"][mode];
@@ -127,4 +134,17 @@ export function resolveUserBubbleColors(
   const background = mix(strength);
   const border = toHex(rgb(background).map((v) => (dark ? v + 22 : v - 24)));
   return { background, foreground, border };
+}
+
+/**
+ * Reference chips inside a tinted bubble: one deeper step of the same hue (40% and,
+ * pressed/hovered, 70% from the bubble surface toward its border) with the bubble's
+ * border, instead of the theme's opaque neutral chip. Chip text keeps >= 4.5:1 on both
+ * (presets stay above 7:1; only extreme custom hues approach the floor).
+ */
+export function userBubbleChipColors(colors: { background: string; border: string }) {
+  const from = rgb(colors.background);
+  const to = rgb(colors.border);
+  const at = (amount: number) => toHex(from.map((v, i) => v + (to[i] - v) * amount));
+  return { background: at(0.4), pressed: at(0.7), border: colors.border };
 }

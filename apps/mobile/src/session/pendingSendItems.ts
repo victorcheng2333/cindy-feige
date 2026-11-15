@@ -34,6 +34,7 @@ import { i18n } from '@/i18n';
 import type { MobileOutboxDisplayItem, MobileOutboxThumb } from '@/session/sessionOutbox';
 import {
   buildVisibleSentInlineTokens,
+  withSessionLinkTokens,
   type SentInlineToken,
 } from '@/session/sentMessageAtoms';
 import type { QueuedRemoteMessage } from '@/session/types';
@@ -315,12 +316,13 @@ function buildPendingSentInlineTokens(input: {
   const segments = quoteSegments.length > 0
     ? quoteSegments
     : input.text ? [{ kind: 'text' as const, text: input.text }] : [];
-  return buildVisibleSentInlineTokens(
+  // 与已发送气泡同一外观:任务 / 消息引用拆成引用块。
+  return withSessionLinkTokens(buildVisibleSentInlineTokens(
     input.text,
     segments,
     input.pastedTextRanges,
     input.slashCommandRanges,
-  );
+  ));
 }
 
 /**

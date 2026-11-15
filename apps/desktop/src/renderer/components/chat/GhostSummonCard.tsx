@@ -154,7 +154,7 @@ export function GhostSummonCard({
             'transition-colors hover:text-foreground focus-visible:outline-none',
             'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring-soft)]',
           )}
-          style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+          style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary-mid)' }}
         >
           {soloIcon ? (
             <img
@@ -181,7 +181,7 @@ export function GhostSummonCard({
             <DirectiveSegments
               segments={mentionDirectiveSegments(directive.ghosts)}
               systemClassName="text-[var(--text-tertiary)]"
-              injectedClassName="text-[var(--text-secondary)]"
+              injectedClassName="text-[var(--text-secondary-mid)]"
             />
           </div>
         </Collapse>
@@ -226,7 +226,7 @@ export function GhostSummonCard({
         <SummonSeal iconDataUrl={installedGhost?.iconDataUrl ?? null} />
         <span
           className="min-w-0 truncate text-xs font-medium transition-colors group-hover:text-[var(--text-primary)]"
-          style={{ color: 'var(--text-secondary)' }}
+          style={{ color: 'var(--text-secondary-mid)' }}
         >
           {directive.name}
         </span>

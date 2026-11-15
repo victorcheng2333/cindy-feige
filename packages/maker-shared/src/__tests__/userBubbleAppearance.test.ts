@@ -5,6 +5,7 @@ import {
   contrastRatio,
   parseUserBubblePreference,
   resolveUserBubbleColors,
+  userBubbleChipColors,
   type UserBubblePreference,
 } from "../userBubbleAppearance";
 
@@ -81,5 +82,28 @@ describe("personal message bubble appearance", () => {
     expect(resolveUserBubbleColors("sage", "light", roles.light)).toEqual(
       resolveUserBubbleColors("sage", "light"),
     );
+  });
+  it("still tints when a theme role is already below the threshold on the plain surface", () => {
+    // Desktop Cindy Light: 88% / 56% ink plus a 44% ink tertiary (#8f8f8f, 3.2:1 on
+    // white). Requiring that role used to bisect every preset down to plain white.
+    const desktopLight = ["#1f1f1f", "#707070", "#8f8f8f"];
+    const { background } = resolveUserBubbleColors("sage", "light", desktopLight)!;
+    expect(background).not.toBe("#ffffff");
+    expect(contrastRatio(background, "#707070")).toBeGreaterThanOrEqual(4.5);
+  });
+  it("derives reference chips as a deeper step of the bubble hue that keeps body text readable", () => {
+    // 2026-11-15: an opaque neutral theme chip (#e5e5e5) read as a grey patch on a tinted bubble.
+    for (const mode of ["light", "dark"] as const) {
+      for (const preference of [...USER_BUBBLE_PRESETS.slice(1), "#ff0000", "#0000ff"] as const) {
+        const colors = resolveUserBubbleColors(preference, mode)!;
+        const chip = userBubbleChipColors(colors);
+        const [bubble, edge, step] = [colors.background, colors.border, chip.background].map(luminance);
+        expect(Math.min(bubble, edge) <= step && step <= Math.max(bubble, edge)).toBe(true);
+        expect(chip.border).toBe(colors.border);
+        for (const surface of [chip.background, chip.pressed]) {
+          expect(contrastRatio(surface, colors.foreground)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
   });
 });

@@ -4320,13 +4320,13 @@ function CCAgentSessionContent({
         // SSH 任务在远端主机运行;只有此时才带上主机,其余调用保持原参数。
         ...(session?.remoteHostId ? { remoteHostId: session.remoteHostId } : {}),
       })).proceed;
-      // 输入框在点击时就已清空。普通发送把这项检查交给 store 的 beforeEnqueue:
-      // 气泡先上屏,和清空同一帧出现,不再等这次主进程往返;不通过时 store 按
-      // clientId 撤回气泡、返回 false,输入框原样恢复草稿。还没选目录(走目录选择
-      // 续发)、本地插话和内置技能分派不经过 store 的乐观插入,仍在这里先查。
-      // 归档任务也先查,避免认证拒绝后仍留下自动取消归档的副作用。
+      // 输入框在点击时就已清空。普通发送与插话都把这项检查交给 store 的 beforeEnqueue:
+      // 气泡先上屏,和清空同一帧出现,不再等这次主进程往返(本地会话每次都重验运行时与
+      // 登录,偶尔要两秒);不通过时 store 按 clientId 撤回气泡、返回 false,输入框原样
+      // 恢复草稿。还没选目录(走目录选择续发)和内置技能分派不经过 store 的乐观插入,
+      // 仍在这里先查。归档任务也先查,避免认证拒绝后仍留下自动取消归档的副作用。
       const deferVendorAuthGate = Boolean(session?.workingDir) && !opts?.builtInSkillIntent &&
-        deliveryMode !== 'steer' && session?.status !== 'archived';
+        session?.status !== 'archived';
       if (!remoteDeviceId && !recoveringBaseline && !deferVendorAuthGate) {
         if (!(await passesVendorAuthGate())) return false;
       }

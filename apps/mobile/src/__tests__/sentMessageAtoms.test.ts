@@ -60,7 +60,9 @@ import {
   buildSentInlineTokens,
   buildVisibleSentInlineTokens,
   sentInlineTokensDisplayText,
+  withSessionLinkTokens,
 } from '@/session/sentMessageAtoms';
+import { BRAND_IDENTITY } from '@cindy/maker-shared/brand-identity';
 
 describe('sent message atoms', () => {
   it('splits exact pasted-text and slash ranges without guessing', () => {
@@ -120,5 +122,26 @@ describe('sent message atoms', () => {
       [],
       [{ start: 0, end: 10 }],
     ))).toBe('/git follow-up');
+  });
+});
+
+// 2026-11-15: a task reference in the user's own message rendered as underlined text on a
+// rectangular neutral highlight; it is now a chip like Desktop. Only display tokens split.
+describe('withSessionLinkTokens', () => {
+  const link = `${BRAND_IDENTITY.primaryScheme}://session/s-1`;
+  it('lifts labelled and bare task links out of text without touching other atoms', () => {
+    const tokens = withSessionLinkTokens([
+      { kind: 'text', text: `看看这个 [询问插话](${link}) 还有 ${link}.` },
+      { kind: 'slash', text: '/goal' },
+    ]);
+    expect(tokens).toEqual([
+      { kind: 'text', text: '看看这个 ' },
+      { kind: 'session', url: link, label: '询问插话' },
+      { kind: 'text', text: ' 还有 ' },
+      { kind: 'session', url: link, label: null },
+      { kind: 'text', text: '.' },
+      { kind: 'slash', text: '/goal' },
+    ]);
+    expect(sentInlineTokensDisplayText(tokens)).toBe(`看看这个 询问插话 还有 ${link}./goal`);
   });
 });

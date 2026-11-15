@@ -124,6 +124,10 @@ function projectBodyParts(
       if (token.display) parts.push({ kind: 'pasted', label: token.display });
       continue;
     }
+    if (token.kind === 'session') {
+      parts.push({ kind: 'text', text: token.label ?? token.url });
+      continue;
+    }
     if (token.text) parts.push({ kind: 'slash', label: slashCommandDisplayLabel(token.text) });
   }
   return parts;

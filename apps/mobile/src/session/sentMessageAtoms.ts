@@ -4,6 +4,12 @@ import {
   type ChatQuoteSegment,
 } from '@cindy/maker-shared/chat-quotes';
 import { slashCommandDisplayLabel } from '@cindy/maker-shared/composer-palette';
+import {
+  createSessionLinkPattern,
+  findMarkdownLabelStart,
+  trimSessionLinkMatch,
+  unescapeMarkdownLabelBrackets,
+} from '@/session/sessionLinks';
 
 export interface SentPastedTextRange {
   start: number;
@@ -70,7 +76,9 @@ export type SentInlineToken =
   | { kind: 'text'; text: string }
   | { kind: 'slash'; text: string }
   | { kind: 'pasted'; text: string; display: string }
-  | { kind: 'quote'; quote: ChatQuote };
+  | { kind: 'quote'; quote: ChatQuote }
+  /** A task / message deep link in the user's own message, drawn as a reference chip. */
+  | { kind: 'session'; url: string; label: string | null };
 
 /** Split exact persisted ranges without guessing from repeated text. */
 export function buildSentInlineTokens(
@@ -183,9 +191,46 @@ export function sentInlineTokensDisplayText(tokens: readonly SentInlineToken[]):
       ? token.display
       : token.kind === 'slash'
         ? slashCommandDisplayLabel(token.text)
-        : token.text;
+        : token.kind === 'session'
+          ? token.label ?? token.url
+          : token.text;
   }
   return display.trimEnd();
+}
+
+/**
+ * Display-only: lift task / message deep links (`[label](cindy://session/...)` or a bare
+ * link) out of text tokens so the sent bubble draws them as reference chips, like
+ * Desktop. Draft restore and share projection keep using the unsplit tokens.
+ */
+export function withSessionLinkTokens(tokens: readonly SentInlineToken[]): SentInlineToken[] {
+  const result: SentInlineToken[] = [];
+  for (const token of tokens) {
+    if (token.kind !== 'text') {
+      result.push(token);
+      continue;
+    }
+    const text = token.text;
+    let cursor = 0;
+    for (const match of text.matchAll(createSessionLinkPattern())) {
+      const at = match.index ?? 0;
+      if (at < cursor) continue;
+      const url = trimSessionLinkMatch(match[0]);
+      const labelStart = text[at - 1] === '(' && text[at - 2] === ']' && text[at + url.length] === ')'
+        ? findMarkdownLabelStart(text, at - 2)
+        : -1;
+      const start = labelStart >= 0 ? labelStart : at;
+      const end = labelStart >= 0 ? at + url.length + 1 : at + url.length;
+      const label = labelStart >= 0
+        ? unescapeMarkdownLabelBrackets(text.slice(labelStart + 1, at - 2)).trim() || null
+        : null;
+      if (start > cursor) pushTextToken(result, text.slice(cursor, start));
+      result.push({ kind: 'session', url, label: label && label !== url ? label : null });
+      cursor = end;
+    }
+    if (cursor < text.length) pushTextToken(result, text.slice(cursor));
+  }
+  return result;
 }
 
 function pushTextToken(tokens: SentInlineToken[], text: string): void {

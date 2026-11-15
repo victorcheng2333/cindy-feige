@@ -5422,6 +5422,60 @@ describe('makerChatStore text delta batching', () => {
     expect(messages[0]?.isPendingPersist).toBeUndefined();
   });
 
+  // 2026-11-15: a local steer only persists once the Agent accepts it at its next
+  // step boundary, so the composer used to clear while no bubble appeared for ~2s.
+  // It now shows before the readiness preflight, never dispatches a rejected steer,
+  // and leaves exactly one row after the DB ack (unit).
+  it.each([true, false])('shows a local steer bubble before its preflight settles (proceed=%s)', async (proceed) => {
+    makerChatStore.__applyStatusUpdateForTest(SESSION_ID, {
+      sessionId: SESSION_ID,
+      status: 'running',
+      tokenUsage: 0,
+      contextTokens: 0,
+      contextWindow: 0,
+      isRunning: true,
+    });
+    let resolvePreflight!: (value: boolean) => void;
+    const preflight = new Promise<boolean>((resolve) => {
+      resolvePreflight = resolve;
+    });
+    const steer = makerChatStore.steerMessage(
+      SESSION_ID,
+      'local steer',
+      MODEL,
+      EFFORT,
+      PERMISSION_MODE,
+      WORKING_DIR,
+      undefined,
+      undefined,
+      { beforeEnqueue: () => preflight },
+    );
+
+    expect(makerChatStore.getSnapshot(SESSION_ID).messages).toEqual([
+      expect.objectContaining({ content: 'local steer', isPendingPersist: true }),
+    ]);
+    expect(input.steer).not.toHaveBeenCalled();
+
+    resolvePreflight(proceed);
+    await expect(steer).resolves.toBe(proceed);
+    if (!proceed) {
+      expect(input.steer).not.toHaveBeenCalled();
+      expect(makerChatStore.getSnapshot(SESSION_ID).messages).toEqual([]);
+      return;
+    }
+    expect(input.steer).toHaveBeenCalledOnce();
+    const queued = (input.steer.mock.calls[0] as unknown[])[1] as AgentInputQueuedMessage;
+    emitDbMessageCreated({
+      clientId: queued.clientId,
+      role: 'user',
+      content: 'local steer',
+      createdAt: '2026-11-15T00:00:00.000Z',
+    });
+    const messages = makerChatStore.getSnapshot(SESSION_ID).messages;
+    expect(messages.filter((message) => message.clientId === queued.clientId)).toHaveLength(1);
+    expect(messages[0]?.isPendingPersist).toBeUndefined();
+  });
+
   it('keeps an accepted device-link steer until a delayed DB ack is reconciled', async () => {
     remoteProjectsStore.pinSessionOrigin('device-1', SESSION_ID);
     makerChatStore.__applyStatusUpdateForTest(SESSION_ID, {

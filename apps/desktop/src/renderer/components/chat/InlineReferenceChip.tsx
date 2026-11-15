@@ -71,14 +71,16 @@ export function InlineReferenceChip({
     'inline-flex min-w-0 max-w-full items-center',
     !textSelectable && 'select-none',
     'gap-1.5 rounded-full border px-2 py-0.5 text-12 font-normal leading-5',
-    'bg-[var(--surface-chip)] text-[var(--text-primary)]',
+    // 染色的「我的消息气泡」会下发 --user-bubble-chip-*:引用块成为同色相的深一档；
+    // 其余位置取不到这些变量，保持主题的标签底与描边。
+    'bg-[var(--user-bubble-chip-bg,var(--surface-chip))] text-[var(--text-primary)]',
     // DESIGN.md §14.5：按钮语义、指针与下划线只表示实际点击动作。
     // 仅有上下文菜单的引用仍可聚焦以使用菜单键，但不宣称可点击。
-    interactive && 'cursor-pointer underline underline-offset-2 transition-colors hover:bg-[var(--surface-hover)]',
+    interactive && 'cursor-pointer underline underline-offset-2 transition-colors hover:bg-[var(--user-bubble-chip-hover,var(--surface-hover))]',
     className,
   );
   const style = {
-    borderColor: selected ? 'var(--focus-ring)' : 'var(--border-default)',
+    borderColor: selected ? 'var(--focus-ring)' : 'var(--user-bubble-chip-border, var(--border-default))',
   };
   const contents = (
     <>

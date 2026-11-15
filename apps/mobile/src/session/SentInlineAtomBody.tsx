@@ -11,6 +11,7 @@ import { FileText } from "lucide-react-native";
 import { Text } from "@/components/AppText";
 import { InlineQuoteChip } from "@/session/InlineQuoteChip";
 import { InlineReferenceChip } from "@/session/InlineReferenceChip";
+import { SentSessionLinkChip } from "@/session/SentSessionLinkChip";
 import {
   buildTextPayload,
   type MessagePayload,
@@ -39,6 +40,7 @@ export function SentInlineAtomBody({
   maxVisibleLines,
   numberOfLines,
   onOpenPayload,
+  onOpenSessionLink,
   renderText,
   selectable,
   textStyle,
@@ -49,6 +51,7 @@ export function SentInlineAtomBody({
   maxVisibleLines?: number;
   numberOfLines?: number;
   onOpenPayload?: (payload: MessagePayload) => void;
+  onOpenSessionLink?: (url: string) => void;
   renderText?: (text: string, index: number) => ReactNode;
   selectable?: boolean;
   textStyle?: StyleProp<TextStyle>;
@@ -74,6 +77,16 @@ export function SentInlineAtomBody({
               interactive={interactiveAtoms}
               key={`quote:${token.quote.sourcePath ?? "chat"}:${index}:${token.quote.text}`}
               quote={token.quote}
+            />
+          );
+        }
+        if (token.kind === "session") {
+          return (
+            <SentSessionLinkChip
+              key={`session:${index}:${token.url}`}
+              label={token.label}
+              onOpenSessionLink={interactiveAtoms ? onOpenSessionLink : undefined}
+              url={token.url}
             />
           );
         }

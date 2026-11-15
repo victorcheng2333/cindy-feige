@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import {
   parseUserBubblePreference,
   resolveUserBubbleColors,
+  userBubbleChipColors,
   type UserBubblePreference,
 } from '@cindy/maker-shared';
 
@@ -18,11 +19,16 @@ import { themeService } from '@/themes/theme-service';
 
 export const USER_BUBBLE_STORAGE_KEY = 'cindy.desktop.user-bubble.v1';
 const DEFAULT_PREFERENCE: UserBubblePreference = 'default';
+/**
+ * Text colors actually drawn inside the user bubble: body, the long-message toggle
+ * (secondary-mid) and the quote chip label (tertiary; the algorithm ignores a role
+ * that already misses the threshold on the untinted surface). The 56% secondary ink
+ * is not used inside the bubble and must not thin out the tint.
+ */
 const TEXT_ROLE_IDS = [
   'text-primary',
-  'text-secondary',
-  'text-tertiary',
   'text-secondary-mid',
+  'text-tertiary',
 ] as const;
 
 function parsePreference(raw: string | null): UserBubblePreference | null {
@@ -126,13 +132,23 @@ export function resolveDesktopUserBubbleColors(
   );
 }
 
+/**
+ * The bubble tint plus the colors of reference chips drawn inside it. Chips read
+ * these variables first, so in a tinted bubble they become a slightly deeper step of
+ * the same hue instead of an opaque neutral patch (Default theme's #e5e5e5 chip);
+ * outside a tinted bubble they keep the theme chip colors.
+ */
 export function userBubbleSurfaceStyle(
   colors: { background: string; border: string } | null,
 ): CSSProperties | undefined {
   if (!colors) return undefined;
+  const chip = userBubbleChipColors(colors);
   return {
     '--msg-user-bg': colors.background,
     '--msg-user-border': colors.border,
+    '--user-bubble-chip-bg': chip.background,
+    '--user-bubble-chip-hover': chip.pressed,
+    '--user-bubble-chip-border': chip.border,
   } as CSSProperties;
 }
 
