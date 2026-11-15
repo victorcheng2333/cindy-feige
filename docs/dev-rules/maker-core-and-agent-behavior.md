@@ -442,6 +442,28 @@ sessionRunningRetry 就停。每次因 replacement 关闭而重新入队都计�
 > （下节 3）与 system prompt 改动门禁（下节 4）对所有触及相关路径的改动都生效，不分
 > 新旧代码，也不因“只是小改”豁免**。
 
+## Cursor 用量、上下文与 API 等价估值
+
+Cursor 一轮结束时的 `usage`（`turn-ended` / `RunResult`）是计费用量，不能当作上下文占用。
+上下文占用由 `CursorHostRuntime` 在 SDK `createAgentPlatform` 已有的 checkpoint
+`loadLatest` / `saveCheckpoint` 上顺带读取，`cursorContextUsage` 只取出
+`tokenDetails.usedTokens / maxTokens` 两个计数；不另外加载、复制或解码原生历史，
+checkpoint 里的消息与 blob 不离开 SDK。取不到时上下文保持未知，不借用其它引擎同名模型的
+窗口。上下文计数随已有 status 下发，手机端写进任务的 `contextTokens` / `contextWindow`。
+
+API 等价估值（`usage/cursorApiValue.ts`）只用本轮 SDK 的 token 桶，加上模型目录里厂商
+官方标准 API 参考价：不读 SDK 的累计账单，不计 Cursor 套餐扣费、Fast 附加费或之前轮次
+迟到的费用。型号按公共 ID、别名，或唯一的「厂商前缀 + 裸 ID」匹配；有歧义、价格来源不是
+厂商官方、或用到的缓存价格缺失时保持未知。SDK 没有逐请求边界，只有从 0 到本轮累计输入
+上界之间所有可能的档位，对实际用到的 token 桶都同价时才估算，不能把跨价格档的整次运行当成
+一次长上下文请求计价。
+
+金额只作为 `value-estimate`，不计入 Cindy 实际花费，也不是 Cursor 账单
+（`maker-ipc/sessionCursorTurnUsage.ts`）。token 按轮累计到任务和模型账本，`done` 与
+`error` 都会记录，失败或取消的一轮保留已上报的用量；算不出估值时记为未定价，不补估。
+估值与缓存明细沿用现有的消息账本、模型账本与推送，Desktop 与 Mobile 共用，不新增数据库
+schema 或远程通道，以前缺失的金额不自动回填。
+
 ## 事实来源
 
 | 内容 | 权威来源 |
