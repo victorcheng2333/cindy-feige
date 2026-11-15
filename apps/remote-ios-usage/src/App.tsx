@@ -244,7 +244,13 @@ function UsageApp() {
     const timer = setInterval(() => {
       if (AppState.currentState === "active") void refresh();
     }, 30000);
-    return () => clearInterval(timer);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refresh();
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
   }, [device, demo, remote, signed]);
   const clearLoginView = () => {
     setSigned(false);

@@ -14,6 +14,7 @@ const fake = vi.hoisted(() => ({
   readLastDevice: vi.fn(),
   rememberDevice: vi.fn(),
   impact: vi.fn(),
+  appState: { currentState: "active" as string, listeners: [] as Array<(state: string) => void> },
 }));
 vi.mock("expo-haptics", () => ({
   impactAsync: fake.impact,
@@ -22,7 +23,17 @@ vi.mock("expo-haptics", () => ({
 vi.mock("./remote", () => ({ Remote: { create: async () => fake } }));
 vi.mock("./sso", () => ({ loginSso: vi.fn() }));
 vi.mock("react-native", () => ({
-  AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
+  AppState: {
+    get currentState() { return fake.appState.currentState; },
+    addEventListener: (_event: string, handler: (state: string) => void) => {
+      fake.appState.listeners.push(handler);
+      return {
+        remove: () => {
+          fake.appState.listeners = fake.appState.listeners.filter((item) => item !== handler);
+        },
+      };
+    },
+  },
   Platform: { OS: "ios" },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   AccessibilityInfo: {
@@ -65,6 +76,8 @@ import App from "./App";
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  fake.appState.currentState = "active";
+  fake.appState.listeners = [];
   fake.tokens = {};
   fake.logout.mockReset().mockImplementation(async () => {
     fake.tokens = null;
@@ -319,4 +332,31 @@ it("shows precise Cursor pools in overview and detail without losing pull-to-ref
   await click('测试下拉');
   expect(host.textContent).toContain('99.7%');
   expect(fake.logout).not.toHaveBeenCalled();
+});
+
+// User request: returning from background must fetch again; the 30s poll never
+// fires while iOS suspends timers, so stale quota stayed until a manual refresh.
+it("refreshes the current device when returning to the foreground", async () => {
+  await act(async () => root.render(<App />));
+  await click("Test Mac");
+  expect(host.textContent).toContain("Test Claude");
+  await act(async () => {
+    fake.appState.currentState = "background";
+    for (const handler of [...fake.appState.listeners]) handler("background");
+  });
+  fake.usage.mockResolvedValueOnce([{
+    id: "account",
+    name: "Foreground Claude",
+    service: "Claude",
+    plan: "Pro",
+    windows: [],
+    failed: false,
+    updated: null,
+  }]);
+  await act(async () => {
+    fake.appState.currentState = "active";
+    for (const handler of [...fake.appState.listeners]) handler("active");
+  });
+  expect(host.textContent).toContain("Foreground Claude");
+  expect(host.textContent).toContain("‹ 返回");
 });
