@@ -1040,7 +1040,11 @@ export function switchVendor(next: MakerVendor, { restoreAgentLocation = true }:
   agentLocationByVendor.set(currentDraft.vendor, {
     agentDeviceId: currentDraft.agentDeviceId, agentDeviceName: currentDraft.agentDeviceName,
   });
-  const location = restoreAgentLocation && !currentDraft.remoteHostId ? agentLocationByVendor.get(next) : undefined;
+  // A different harness must not inherit the previous harness's borrowed source.
+  // With no remembered location, start on the task computer (including Cursor).
+  const location = restoreAgentLocation && !currentDraft.remoteHostId
+    ? agentLocationByVendor.get(next) ?? { agentDeviceId: null, agentDeviceName: null }
+    : undefined;
   currentDraft = {
     ...currentDraft,
     ...location,

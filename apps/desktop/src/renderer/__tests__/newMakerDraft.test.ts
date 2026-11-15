@@ -2185,3 +2185,17 @@ it('restores execution location per harness without leaking across task computer
   mod.switchVendor('codex'); mod.switchVendor('cc');
   expect(mod.getDraft().agentDeviceId).toBeNull();
 });
+
+// Regression: a local task borrowing Claude on Shared Mac must use local Cursor on
+// its first selection, then restore Claude's remote source on switching back.
+it('starts an unvisited harness on the task computer instead of inheriting shared Claude', async () => {
+  const mod = await loadModule();
+  mod.switchVendor('cc');
+  mod.patchDraft({ agentDeviceId: 'shared-computer', agentDeviceName: 'Shared Mac' });
+  mod.switchVendor('cursor');
+  expect(mod.getDraft()).toMatchObject({ vendor: 'cursor', agentDeviceId: null, agentDeviceName: null });
+  mod.fallbackUnavailableVendor(new Set(['cc', 'codex', 'cursor']));
+  expect(mod.getDraft().vendor).toBe('cursor');
+  mod.switchVendor('cc');
+  expect(mod.getDraft()).toMatchObject({ vendor: 'cc', agentDeviceId: 'shared-computer' });
+});

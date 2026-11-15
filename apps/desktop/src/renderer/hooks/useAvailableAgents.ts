@@ -103,6 +103,7 @@ async function fetchAvailableAgents(deviceId?: string | null): Promise<RuntimeAg
  * 缓存只在进程内,失败不写缓存(保持 fail-open 的下一次重试机会)。
  */
 const REFETCH_MIN_INTERVAL_MS = 15_000;
+const EMPTY_VENDORS: ReadonlySet<MakerVendor> = new Set();
 interface AgentsCacheEntry {
   vendors: ReadonlySet<MakerVendor>;
   fetchedAt: number;
@@ -252,7 +253,9 @@ export interface UseAvailableAgentsResult {
  * @param deviceId 省略/undefined = 本机;传值 = 该被控端(device-link)。
  */
 export function useAvailableAgents(deviceId?: string | null): UseAvailableAgentsResult {
-  const cached = agentsCache.get(cacheKeyOf(deviceId));
+  const selectedKey = cacheKeyOf(deviceId);
+  const cached = agentsCache.get(selectedKey);
+  const [ownerKey, setOwnerKey] = useState(selectedKey);
   // 初值取缓存:同一 deviceId 已经查过时,新实例挂载即出值,不再走一遍「空集合 → loaded」
   // 的闪帧。useState 的 lazy 初值只在首次 render 取一次,后续由下面的 effect 维护。
   const [availableVendors, setAvailableVendors] = useState<ReadonlySet<MakerVendor>>(
@@ -264,6 +267,7 @@ export function useAvailableAgents(deviceId?: string | null): UseAvailableAgents
   useEffect(() => {
     let cancelled = false;
     const hit = agentsCache.get(cacheKeyOf(deviceId));
+    setOwnerKey(cacheKeyOf(deviceId));
     setAvailableVendors(hit?.vendors ?? new Set());
     setLoaded(hit !== undefined);
     const key = cacheKeyOf(deviceId);
@@ -316,16 +320,22 @@ export function useAvailableAgents(deviceId?: string | null): UseAvailableAgents
   // 模型目录来源不代表任务归属。本机任务借用共享供应商时,目录可以来自其他电脑,
   // 选择器仍须按本机偏好隐藏 Harness。空结果也不能恢复已关闭的候选;
   // 已有任务当前使用的引擎由选择器调用方单独保留。
+  // Effects run after render: do not let the new target's fallback effect consume
+  // the old target's loaded roster while the hook is switching subscriptions.
+  const ownsSelection = ownerKey === selectedKey;
+  const selectedVendors = ownsSelection ? availableVendors : cached?.vendors ?? EMPTY_VENDORS;
+  const selectedLoaded = ownsSelection ? loaded : cached !== undefined;
+  const selectedLoading = ownsSelection ? loading : cached === undefined;
   const localDisabled = useLocalDisabledHarnesses();
   const effectiveVendors = useMemo<ReadonlySet<MakerVendor>>(() => {
-    if (!deviceId || localDisabled.size === 0) return availableVendors;
-    const kept = [...availableVendors].filter(
+    if (!deviceId || localDisabled.size === 0) return selectedVendors;
+    const kept = [...selectedVendors].filter(
       (vendor) => !localDisabled.has(vendor === 'cc' ? 'claude-code' : vendor),
     );
-    return kept.length < availableVendors.size ? new Set(kept) : availableVendors;
-  }, [deviceId, localDisabled, availableVendors]);
+    return kept.length < selectedVendors.size ? new Set(kept) : selectedVendors;
+  }, [deviceId, localDisabled, selectedVendors]);
 
-  return { availableVendors: effectiveVendors, loaded, loading };
+  return { availableVendors: effectiveVendors, loaded: selectedLoaded, loading: selectedLoading };
 }
 
 /** 测试用 —— 清进程内缓存与在途请求(其它代码不应调用)。 */
