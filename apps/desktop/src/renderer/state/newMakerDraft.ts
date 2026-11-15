@@ -1103,7 +1103,9 @@ export function fallbackUnavailableVendor(availableVendors: ReadonlySet<MakerVen
     availableVendors.has(vendor),
   );
   if (!fallback) return false;
-  switchVendor(fallback);
+  // The fallback belongs to the roster we just checked. Restoring a remembered
+  // location here could move to a different roster and trigger a fallback loop.
+  switchVendor(fallback, { restoreAgentLocation: false });
   return true;
 }
 

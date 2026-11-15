@@ -2199,3 +2199,18 @@ it('starts an unvisited harness on the task computer instead of inheriting share
   mod.switchVendor('cc');
   expect(mod.getDraft()).toMatchObject({ vendor: 'cc', agentDeviceId: 'shared-computer' });
 });
+
+// Automatic fallback is chosen from the current computer's roster. Restoring
+// another computer's remembered location can bounce forever between two rosters.
+it('keeps automatic harness fallback on the catalog that supplied its availability', async () => {
+  const mod = await loadModule();
+  mod.switchVendor('cc');
+  mod.patchDraft({ agentDeviceId: 'computer-a', agentDeviceName: 'Computer A' });
+  mod.switchVendor('codex');
+  mod.patchDraft({ agentDeviceId: 'computer-b', agentDeviceName: 'Computer B' });
+  mod.switchVendor('cc');
+  expect(mod.getDraft().agentDeviceId).toBe('computer-a');
+  expect(mod.fallbackUnavailableVendor(new Set(['codex']))).toBe(true);
+  expect(mod.getDraft()).toMatchObject({ vendor: 'codex', agentDeviceId: 'computer-a' });
+  expect(mod.fallbackUnavailableVendor(new Set(['codex']))).toBe(false);
+});
