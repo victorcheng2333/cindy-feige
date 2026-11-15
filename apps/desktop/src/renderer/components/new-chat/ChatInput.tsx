@@ -2017,7 +2017,7 @@ export function ChatInput({
   const ccCaps = useAgentCapabilities('claude-code', catalogDeviceId);
   const codexCaps = useAgentCapabilities('codex', catalogDeviceId);
   const piCaps = useAgentCapabilities('pi', catalogDeviceId);
-  const cursorCaps = useAgentCapabilities(catalogDeviceId ? null : 'cursor');
+  const cursorCaps = useAgentCapabilities('cursor', catalogDeviceId);
   const activeAgentCapabilities =
     agentKind === 'cursor' ? cursorCaps.capabilities : agentKind === 'codex'
       ? codexCaps.capabilities

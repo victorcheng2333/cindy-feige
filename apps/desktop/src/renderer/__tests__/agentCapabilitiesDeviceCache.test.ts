@@ -2,12 +2,14 @@
  * useAgentCapabilities 的 deviceId-aware 缓存单测(device-link「以被控端为准」)。
  * 守住:本机 / 各被控设备的能力缓存按 (deviceId, agentKind) 隔离、远程走隧道、本机走本地、
  * inflight 去重、驱逐只清该设备 —— 这是控制端在远程会话里"忘掉本地能力"的基础。
- * 模块级缓存:每个用例 vi.resetModules() + 动态 import 拿到干净模块。
+ * 模块只加载一次，每例通过生产缓存刷新与驱逐入口隔离。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as mod from '@/hooks/useAgentCapabilities';
 
 beforeEach(() => {
-  vi.resetModules();
+  mod.evictAllRemoteCapabilities();
+  mod.commitLocalCapabilitiesSnapshot(mod.beginLocalCapabilitiesRefresh(), []);
 });
 
 interface Caps {
@@ -80,7 +82,6 @@ function stubLocalCatalog() {
 describe('useAgentCapabilities deviceId-aware cache', () => {
   it('本机路径:preload 命中 maker.getCapabilities,不碰 deviceLink', async () => {
     const { getCapabilities, invoke } = stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.preloadAllCapabilities();
     expect(getCapabilities).toHaveBeenCalledWith('claude-code');
     expect(getCapabilities).toHaveBeenCalledWith('codex');
@@ -93,7 +94,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
 
   it('本机目录热刷新会原子替换核心 agent 的缓存快照', async () => {
     const { getCapabilities } = stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.preloadAllCapabilities();
     getCapabilities.mockImplementation(async (agent: string) => caps(`refreshed:${agent}`));
 
@@ -116,11 +116,11 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
         );
       return caps(`local:${agent}`);
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await expect(mod.loadLocalCapabilitiesSnapshot()).resolves.toEqual([
       ['claude-code', caps('local:claude-code')],
       ['codex', caps('local:codex')],
+      ['cursor', caps('local:cursor')],
     ]);
     expect(getCapabilities).toHaveBeenCalledWith('pi');
   });
@@ -131,7 +131,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
       if (agent === 'codex') throw new Error("Agent 'codex' is not registered");
       return caps(`local:${agent}`);
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await expect(mod.loadLocalCapabilitiesSnapshot()).rejects.toThrow(
       "Agent 'codex' is not registered",
@@ -223,7 +222,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
 
   it('远程路径:prefetch 命中 deviceLink.invoke(maker:get-capabilities),不碰本地 maker', async () => {
     const { getCapabilities, invoke } = stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.prefetchDeviceCapabilities('dev-1');
     expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['claude-code']);
     expect(invoke).toHaveBeenCalledWith('dev-1', 'maker:get-capabilities', ['codex']);
@@ -246,7 +244,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await mod.prefetchDeviceCapabilities('dev-1');
 
@@ -300,7 +297,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await mod.prefetchDeviceCapabilities('dev-1');
 
@@ -329,7 +325,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     const invoke = vi.fn(async () => snapshot);
     const getCapabilities = vi.fn(async (agent: string) => caps(`local:${agent}`));
     vi.stubGlobal('window', { electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } } });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await mod.prefetchDeviceCapabilities('dev-1');
 
@@ -356,7 +351,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await mod.prefetchDeviceCapabilities('dev-1');
 
@@ -372,7 +366,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
     const listener = vi.fn();
     mod.subscribeDeviceCapabilities('dev-invalid', 'codex', listener);
 
@@ -394,7 +387,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
     const listener = vi.fn();
     mod.subscribeDeviceCapabilities('dev-invalid-item', 'codex', listener);
 
@@ -429,7 +421,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
     const listener = vi.fn();
     mod.subscribeDeviceCapabilities('dev-invalid-default', 'codex', listener);
 
@@ -457,7 +448,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities: vi.fn() }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     await mod.prefetchDeviceCapabilities('dev-pi-default');
 
@@ -483,7 +473,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
     const listener = vi.fn();
     mod.subscribeDeviceCapabilities('dev-invalid-effort', 'codex', listener);
 
@@ -509,7 +498,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
       vi.stubGlobal('window', {
         electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
       });
-      const mod = await import('@/hooks/useAgentCapabilities');
       const listener = vi.fn();
       mod.subscribeDeviceCapabilities(`dev-invalid-${field}`, 'codex', listener);
 
@@ -525,7 +513,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
 
   it('key 隔离:local / dev-1 / dev-2 各自独立不串', async () => {
     stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.preloadAllCapabilities();
     await mod.prefetchDeviceCapabilities('dev-1');
     await mod.prefetchDeviceCapabilities('dev-2');
@@ -540,18 +527,16 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
 
   it('inflight 去重:同 key 并发只发一次请求', async () => {
     const { invoke } = stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     await Promise.all([
       mod.prefetchDeviceCapabilities('dev-1'),
       mod.prefetchDeviceCapabilities('dev-1'),
     ]);
-    // cc + codex + pi 各一次 = 3 次,而非 6 次
-    expect(invoke).toHaveBeenCalledTimes(3);
+    // 四个引擎各一次，并发预取复用同一请求。
+    expect(invoke).toHaveBeenCalledTimes(4);
   });
 
   it('驱逐:evict 只清该设备,本地与其它设备保留', async () => {
     stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.preloadAllCapabilities();
     await mod.prefetchDeviceCapabilities('dev-1');
     await mod.prefetchDeviceCapabilities('dev-2');
@@ -570,7 +555,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     const p = mod.prefetchDeviceCapabilities('dev-1'); // 在途(deps.invoke 未 resolve)
     mod.evictDeviceCapabilities('dev-1'); // 设备下线 → 驱逐(代际自增)
@@ -590,7 +574,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
 
     const p1 = mod.prefetchDeviceCapabilities('dev-1'); // 第一轮在途
     mod.evictDeviceCapabilities('dev-1'); // 驱逐,代际 → 1
@@ -606,7 +589,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
 
   it('provider revision 后两个 agent 的新快照都会通知已挂载订阅者', async () => {
     stubElectron();
-    const mod = await import('@/hooks/useAgentCapabilities');
     const claudeListener = vi.fn();
     const codexListener = vi.fn();
     mod.subscribeDeviceCapabilities('dev-1', 'claude-code', claudeListener);
@@ -635,7 +617,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     vi.stubGlobal('window', {
       electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } },
     });
-    const mod = await import('@/hooks/useAgentCapabilities');
     const claudeListener = vi.fn();
     const codexListener = vi.fn();
     mod.subscribeDeviceCapabilities('dev-1', 'claude-code', claudeListener);
@@ -644,15 +625,12 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     const stale = mod.prefetchDeviceCapabilities('dev-1');
     mod.evictDeviceCapabilities('dev-1');
     const fresh = mod.prefetchDeviceCapabilities('dev-1');
-    // 每轮按 ALL_AGENT_KINDS 顺序 push 三个 resolver(cc/codex/pi):
-    // 第一轮(stale)= [0][1][2],第二轮(fresh)= [3][4][5]。
-    resolvers[3](caps('fresh:claude'));
-    resolvers[4](caps('fresh:codex'));
-    resolvers[5](caps('fresh:pi'));
+    // Four engine requests per generation, including Cursor.
+    for (const [index, kind] of ['claude', 'codex', 'pi', 'cursor'].entries())
+      resolvers[index + 4](caps(`fresh:${kind}`));
     await fresh;
-    resolvers[0](caps('stale:claude'));
-    resolvers[1](caps('stale:codex'));
-    resolvers[2](caps('stale:pi'));
+    for (const [index, kind] of ['claude', 'codex', 'pi', 'cursor'].entries())
+      resolvers[index](caps(`stale:${kind}`));
     await stale;
 
     expect(claudeListener).toHaveBeenNthCalledWith(1, { status: 'loading' });
@@ -689,7 +667,6 @@ it('expires a remote capabilities snapshot at the forwarded host deadline', asyn
     }));
     const getCapabilities = vi.fn(async (kind: string) => caps(`local:${kind}`));
     vi.stubGlobal('window', { electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } } });
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.prefetchDeviceCapabilities('dev-1');
     expect(mod.getCachedCapabilities('codex', 'dev-1')).not.toBeNull();
 
@@ -714,7 +691,6 @@ it('keeps the host deadline across a retained capability refresh', async () => {
     }));
     const getCapabilities = vi.fn(async (kind: string) => caps(`local:${kind}`));
     vi.stubGlobal('window', { electronAPI: { maker: { getCapabilities }, deviceLink: { invoke } } });
-    const mod = await import('@/hooks/useAgentCapabilities');
     await mod.prefetchDeviceCapabilities('dev-1');
     const events = vi.fn();
     const off = mod.subscribeDeviceCapabilities('dev-1', 'codex', events);

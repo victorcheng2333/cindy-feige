@@ -1,13 +1,12 @@
 /**
  * modelDefinitions 的 deviceId 透传单测(device-link「以被控端为准」)。
  * 模型 id 跨设备不唯一(fork 自定义 contextWindow / 折扣路由),远程会话必须读被控端 caps —— 不能用本地替代。
- * 复用 useAgentCapabilities 的同一份模块级缓存(同一 module graph 下 import),vi.resetModules 保证干净。
+ * 复用 useAgentCapabilities 的同一份模块级缓存，保留跨设备隔离。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as capsMod from '@/hooks/useAgentCapabilities';
+import * as md from '@/lib/modelDefinitions';
 
-beforeEach(() => {
-  vi.resetModules();
-});
 
 function model(id: string, ctx: number) {
   return { id, displayName: id, contextWindow: ctx, efforts: ['high'], defaultEffort: 'high', supportsFastMode: false };
@@ -16,14 +15,14 @@ function model(id: string, ctx: number) {
 function stubElectron() {
   // 本地 cc: 仅 'm'(ctx=100);本地 codex 空。
   const getCapabilities = vi.fn(async (k: string) => ({
-    availableModels: k === 'claude-code' ? [model('m', 100)] : [],
+    availableModels: k === 'cursor' ? [model('cursor-shared', 400)] : k === 'claude-code' ? [model('m', 100)] : [],
     hasFastMode: false,
     effortLevels: [],
     permissionModes: [],
   }));
   // dev-1 cc: 'm'(ctx=200,与本地不同)+ 被控端独有 'host-only';dev-1 codex 空。
   const invoke = vi.fn(async (_deviceId: string, _channel: string, args: unknown[]) => ({
-    availableModels: args[0] === 'claude-code' ? [model('m', 200), model('host-only', 300)] : [],
+    availableModels: args[0] === 'cursor' ? [model('cursor-shared', 800), model('cursor-host-only', 900)] : args[0] === 'claude-code' ? [model('m', 200), model('host-only', 300)] : [],
     hasFastMode: false,
     effortLevels: [],
     permissionModes: [],
@@ -34,8 +33,6 @@ function stubElectron() {
 describe('modelDefinitions deviceId threading', () => {
   it('getModelById:本地 vs 被控端读各自缓存;被控端独有模型仅带 deviceId 时可解', async () => {
     stubElectron();
-    const capsMod = await import('@/hooks/useAgentCapabilities');
-    const md = await import('@/lib/modelDefinitions');
     await capsMod.preloadAllCapabilities();
     await capsMod.prefetchDeviceCapabilities('dev-1');
 
@@ -50,8 +47,6 @@ describe('modelDefinitions deviceId threading', () => {
 
   it('getModelsForVendor / getEffortsForModel 同样按 deviceId 取', async () => {
     stubElectron();
-    const capsMod = await import('@/hooks/useAgentCapabilities');
-    const md = await import('@/lib/modelDefinitions');
     await capsMod.preloadAllCapabilities();
     await capsMod.prefetchDeviceCapabilities('dev-1');
 
@@ -60,4 +55,19 @@ describe('modelDefinitions deviceId threading', () => {
     expect(md.getEffortsForModel('host-only', 'dev-1')).toEqual(['high']);
     expect(md.getEffortsForModel('host-only')).toEqual([]); // 本地没有
   });
+});
+
+// Unit regression: remote Cursor models were excluded from synchronous lookups.
+// Existing coverage only queried Claude. The same ID on both devices must retain
+// the target's context window, and target-only models must remain selectable.
+it('resolves Cursor metadata from the controlled computer', async () => {
+  stubElectron();
+  await capsMod.preloadAllCapabilities();
+  await capsMod.prefetchDeviceCapabilities('dev-1');
+  expect(md.getModelsForVendor('cursor', 'dev-1').map(m => m.id))
+    .toEqual(['cursor-shared', 'cursor-host-only']);
+  expect(md.getModelById('cursor-shared', 'dev-1')?.contextWindow).toBe(800);
+  expect(md.getModelById('cursor-shared')?.contextWindow).toBe(400);
+  expect(md.getEffortsForModel('cursor-host-only', 'dev-1')).toEqual(['high']);
+  expect(md.getModelById('cursor-host-only')).toBeUndefined();
 });

@@ -26,8 +26,10 @@ vi.mock('@/lib/scrollbarAutoHide', () => ({ flashScrollbar: vi.fn() }));
 vi.mock('@/hooks/useAgentCapabilities', () => ({
   evictDeviceCapabilities: vi.fn(),
   prefetchDeviceCapabilities: vi.fn(async () => {}),
-  useAgentCapabilities: () => ({
-    capabilities: { hasFastMode: false, effortLevels: [], availableModels: [] },
+  useAgentCapabilities: (agent: string, deviceId?: string) => ({
+    capabilities: { hasFastMode: false, effortLevels: [], availableModels:
+      agent === 'cursor' && deviceId === 'device-b'
+        ? [{ id: 'm5-cursor', displayName: 'M5 Cursor model', contextWindow: 200000, efforts: [], defaultEffort: null }] : [] },
     loading: false,
     error: null,
   }),
@@ -60,7 +62,9 @@ const catalogs = vi.hoisted(() => {
   return {
     local: [provider('a-local', 'A Local', 'a-model')] as unknown[],
     byDevice: {
-      'device-b': [provider('b-main', 'B Main', 'b-model')],
+      'device-b': [provider('b-main', 'B Main', 'b-model'),
+        provider('cursor', 'Cursor', 'm5-cursor', { agents: ['cursor'], routing: { cursor: {} },
+          models: { cursor: [{ id: 'm5-cursor', name: 'M5 Cursor model', contextWindow: 200000, efforts: [], defaultEffort: null }] } })],
       'device-c': [provider('c-open', 'C Open', 'c-model', { remoteInvocationEnabled: true })],
       'share:abc': [provider('s-shared', 'S Shared', 's-model', { remoteInvocationEnabled: true })],
     } as Record<string, unknown[]>,
@@ -390,12 +394,17 @@ describe('新任务引擎标签', () => {
 // tab and switch its browsing state. Tier: unit (in-memory provider fixtures).
 describe('远程目录 Cursor 入口', () => {
   it('浏览远程 Claude 来源时仍可切换到 Cursor', async () => {
+    const onSwitch = vi.fn(async () => true);
     renderPanel({ devices: [], selectedDeviceId: null, homeDeviceId: 'device-b' }, {
       unifiedPanel: false, compactProviderList: true, onUnifiedSelect: undefined,
       unifiedAgents: ['claude-code', 'cursor'],
-      agentSwitch: { currentVendor: 'cc', onSwitch: vi.fn(async () => true) },
+      agentSwitch: { currentVendor: 'cc', onSwitch },
     });
     await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Cursor' })); });
     expect(screen.getByRole('tab', { name: 'Cursor' }).getAttribute('aria-selected')).toBe('true');
+    // The active task is still Claude: browsing Cursor must load the controlled
+    // computer's capabilities before an engine switch, rather than local/empty caps.
+    await act(async () => { fireEvent.click(screen.getAllByText('M5 Cursor model')[0]!); });
+    expect(onSwitch).toHaveBeenCalledWith('cursor', 'm5-cursor', 'cursor', expect.any(Object));
   });
 });

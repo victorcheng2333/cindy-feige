@@ -266,7 +266,9 @@ function isModelDescriptor(value: unknown): value is ModelDescriptor {
     value.displayName.length > 0 &&
     typeof value.contextWindow === 'number' &&
     Number.isFinite(value.contextWindow) &&
-    value.contextWindow > 0 &&
+    // Cursor reports 0 when the account catalog does not declare a window.
+    // Unknown capacity does not make a model unavailable.
+    value.contextWindow >= 0 &&
     isStringArray(efforts) &&
     (defaultEffort === null ||
       (typeof defaultEffort === 'string' && efforts.includes(defaultEffort))) &&

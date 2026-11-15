@@ -92,7 +92,9 @@ function isProviderModel(value: unknown): boolean {
     typeof value.name === 'string' &&
     typeof value.contextWindow === 'number' &&
     Number.isFinite(value.contextWindow) &&
-    value.contextWindow > 0 &&
+    // Cursor reports 0 when the account catalog does not declare a window.
+    // Unknown capacity does not make a model unavailable.
+    value.contextWindow >= 0 &&
     Array.isArray(efforts) &&
     efforts.every((effort) => typeof effort === 'string') &&
     (defaultEffort === undefined || defaultEffort === null ||

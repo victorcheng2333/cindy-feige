@@ -63,7 +63,7 @@ export interface DeviceLinkCreateParams {
 }
 
 export interface DeviceLinkCreateArgs {
-  agentKind: 'claude-code' | 'codex' | 'pi';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
   /** 仅远程 worktree 流程出现(与 worktree:create 登记的绑定同 id)。 */
   id?: string;
   /** 仅项目会话出现;dialogue 不带此字段(被控端自行分配运行目录)。 */
@@ -85,7 +85,10 @@ export interface DeviceLinkCreateArgs {
 }
 
 export function buildDeviceLinkCreateArgs(p: DeviceLinkCreateParams): DeviceLinkCreateArgs {
-  if (p.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
+  // Remote control creates the task on its own computer; borrowing Cursor
+  // from another provider computer is a different, unsupported execution path.
+  if (p.agentKind === 'cursor' && p.agentDeviceId)
+    throw new Error('Cursor requires execution on the task computer');
   // 空白目录一律当「没选项目」处理(与本机 selectedWorkingDir 的 trim() || undefined 同口径),
   // 免得 '  ' 这种脏值在被控端被当成一个真实路径去校验。
   const dir = p.workingDir?.trim();
