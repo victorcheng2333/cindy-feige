@@ -29,6 +29,16 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+// Unit regression (2026-11-15): a remote roster advertised Cursor but the parser
+// discarded it. Existing scope cases only return Claude remotely. Minimum input:
+// a remote Cursor plus an unknown id; expose Cursor without accepting unknown ids.
+it('preserves Cursor in the remote selectable roster', async () => {
+  api.deviceLink.invoke.mockResolvedValue(['claude-code', 'cursor', 'unknown-engine']);
+  const hook = renderHook(() => useAvailableAgents('shared-computer'));
+  await waitFor(() => expect(hook.result.current.loaded).toBe(true));
+  expect([...hook.result.current.availableVendors]).toEqual(['cc', 'cursor']);
+});
+
 it.each([false, true])('does not use the remote roster on the first local render (cached: %s)', async (cached) => {
   if (cached) {
     const warm = renderHook(() => useAvailableAgents());

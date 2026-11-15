@@ -325,7 +325,7 @@ describe('精简任务列表跨 harness 切换', () => {
       expect(screen.getAllByRole('listbox')).toHaveLength(1);
       expect(screen.queryByRole('textbox')).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
-      expect(screen.queryByRole('tab', { name: 'Cursor' })).toBeNull();
+      expect(screen.getByRole('tab', { name: 'Cursor' })).toBeTruthy();
       const local = screen.getByRole('group', { name: 'target-local' });
       const remote = screen.getByRole('group', { name: 'target-remote' });
       await act(async () => { fireEvent.click(within(local).getByRole('option')); });
@@ -339,5 +339,21 @@ describe('精简任务列表跨 harness 切换', () => {
       catalogs.local = originalLocal;
       catalogs.byDevice['share:abc'] = originalRemote;
     }
+  });
+});
+
+// Unit regression (2026-11-15): remote Claude catalogs hid the Cursor tab.
+// Existing cases only switch Codex/Pi on local catalogs. Minimum input: a remote
+// catalog with Cursor in the selectable roster; the real picker must expose the
+// tab and switch its browsing state. Tier: unit (in-memory provider fixtures).
+describe('远程目录 Cursor 入口', () => {
+  it('浏览远程 Claude 来源时仍可切换到 Cursor', async () => {
+    renderPanel({ devices: [], selectedDeviceId: null, homeDeviceId: 'device-b' }, {
+      unifiedPanel: false, compactProviderList: true, onUnifiedSelect: undefined,
+      unifiedAgents: ['claude-code', 'cursor'],
+      agentSwitch: { currentVendor: 'cc', onSwitch: vi.fn(async () => true) },
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Cursor' })); });
+    expect(screen.getByRole('tab', { name: 'Cursor' }).getAttribute('aria-selected')).toBe('true');
   });
 });

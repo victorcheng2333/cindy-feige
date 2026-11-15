@@ -4161,7 +4161,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
               if (next !== 'orca') void handleBrowseVendorChange(next);
             }}
             hiddenVendors={(['cc', 'codex', 'pi', 'cursor'] as const).filter((vendor) =>
-              (!!catalogDeviceId && vendor === 'cursor') || (!!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!)),
+              !!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!),
             )}
             disabled={interactionDisabled}
             dense
