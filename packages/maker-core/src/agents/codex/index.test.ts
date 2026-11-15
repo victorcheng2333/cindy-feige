@@ -1486,10 +1486,16 @@ describe('CodexAgent spawn configuration', () => {
     await agent.dispose();
   });
 
-  it.each(['oauth-bearer', 'gateway-key'] as const)('separates canonical history from target credentials (%s)', async mode => {
+  // Regression: a new Cindy thread must not be stored in the selected login home.
+  // Existing cross-home coverage only resumed stored threads. Unit protocol fixture.
+  it.each([
+    ['oauth-bearer', false, false], ['gateway-key', false, false],
+    ['oauth-bearer', true, false], ['gateway-key', true, false],
+    ['oauth-bearer', false, true], ['oauth-bearer', true, true],
+  ] as const)('separates canonical history from target credentials (%s, resume=%s, subscription=%s)', async (mode, resume, subscription) => {
     const credentialHome = path.resolve(os.tmpdir(), 'target-account-fixture');
-    const historyHome = path.resolve(os.tmpdir(), 'original-history-fixture');
-    const sqliteHome = path.resolve(os.tmpdir(), 'original-database-fixture');
+    const historyHome = await fs.mkdtemp(path.join(os.tmpdir(), 'cindy-private-history-'));
+    const sqliteHome = resume ? path.join(historyHome, 'database') : historyHome;
     const tokens = { accessToken: 'test-target-token', chatgptAccountId: 'target-account' };
     const readTokens = vi.fn(async () => tokens);
     const prepare = vi.fn<NonNullable<AgentDeps['prepareCodexExtraSpawnConfig']>>(async () => ({ extraArgs: ['-c', 'model_catalog_json="target-catalog.json"'], extraEnv: {}, codexProxyActive: true }));
@@ -1497,6 +1503,7 @@ describe('CodexAgent spawn configuration', () => {
       isCodexAccountProvider: id => id === 'account-b',
       createCodexAuthTokenReader: () => readTokens,
       resolveCodexThreadStorage: async () => ({ historyHome, sqliteHome }),
+      getCodexThreadHome: () => historyHome,
     });
     deps.auth.getState = async () => ({ authenticated: true, authSource: mode === 'oauth-bearer' ? 'oauth' : 'api-key' });
     deps.auth.getAuthEnv = async () => ({ CODEX_HOME: credentialHome, XDT_CODEX_API_KEY: 'selected-gateway' });
@@ -1507,8 +1514,11 @@ describe('CodexAgent spawn configuration', () => {
     };
     const agent = new CodexAgent(deps);
     try {
-      const handle = await agent.startSession({ sessionId: 'cross-home', resumeSessionId: '0199ae4e-d6b0-7755-a755-66754cd7a847',
-        providerId: mode === 'oauth-bearer' ? 'account-b' : 'xd', model: 'gpt-5.4', workingDir: os.tmpdir() });
+      const handle = await agent.startSession({ sessionId: 'cross-home', resumeSessionId: resume ? '0199ae4e-d6b0-7755-a755-66754cd7a847' : undefined,
+        providerId: mode === 'oauth-bearer' ? 'account-b' : 'xd', model: 'gpt-5.4', workingDir: os.tmpdir(),
+        ...(subscription ? { [NATIVE_SUBSCRIPTION_ACCOUNT]: { id: 'default', configDir: credentialHome,
+          assertCurrent() {}, readState: async () => ({ authenticated: true }), readCodexTokens: readTokens } } : {}),
+      });
       expect(createdStdioOptions[0].env).toMatchObject({ CODEX_HOME: historyHome, XDT_CODEX_API_KEY: 'selected-gateway' });
       expect(createdStdioOptions[0].extraArgs).toContain(`sqlite_home=${JSON.stringify(sqliteHome)}`);
       expect(createdStdioOptions[0].extraArgs).toContain('cli_auth_credentials_store="ephemeral"');
@@ -1517,8 +1527,9 @@ describe('CodexAgent spawn configuration', () => {
         expect(prepare.mock.calls[0][1]).toMatchObject({ codexHome: credentialHome, providerId: 'account-b' });
         expect(readTokens).toHaveBeenCalledTimes(1);
         const methods = createdTransports[0].lines.map(line => JSON.parse(line).method);
-        expect(methods).toContain('thread/resume');
-        expect(methods.indexOf('thread/resume')).toBeGreaterThan(methods.indexOf('account/login/start'));
+        const method = resume ? 'thread/resume' : 'thread/start';
+        expect(methods).toContain(method);
+        expect(methods.indexOf(method)).toBeGreaterThan(methods.indexOf('account/login/start'));
       } else {
         expect(readTokens).not.toHaveBeenCalled();
         expect(createdTransports[0].lines.some(line => JSON.parse(line).method === 'account/login/start')).toBe(false);
@@ -1526,6 +1537,7 @@ describe('CodexAgent spawn configuration', () => {
       await handle.close();
     } finally {
       await agent.forceDisposeLocalHostForAuthChange('test cleanup');
+      await fs.rm(historyHome, { recursive: true, force: true });
     }
   });
 

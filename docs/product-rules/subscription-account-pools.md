@@ -181,7 +181,10 @@
 - 旧连接已有跨账号分享时，仅在「我分享的供应商」保留其管理入口，继续按原 ID 逐人撤销；断连或暂停不隐藏「远程与分享」。普通供应商列表仍只展示归并后的 OpenAI；不要求先移出整个账号，也不扩大旧分享的账号范围。
 - 安装升级、打开账号界面不会改写原单账号授权；未创建账号池时任务仍走原入口。首次配置账号池时，已经授权的 Codex 私有目录作为兼容首账号保留原位置，通过持久元数据记录来源；添加后续账号失败或取消也不能遮蔽它。新安装的首账号仍用 `~/.codex`，后续新增账号一律用带后缀的独立目录。
 - 旧 Codex 任务可能来自 Cindy 私有目录，不能假定为 `~/.codex`。旧 Codex 续聊、分叉的账号归属先于默认登录校验解析（含未保存来源的旧任务）；已有绑定优先，没有绑定时只读查询当前 owner 的历史目录。隐式来源仍先排除网关、其它连接与 SSH 路由；目录唯一对应已有账号（含旧独立连接映射）时固定该账号，启动成功后补记绑定，不按池顺序换号。已移出的映射保留为拒绝依据，暂停、登录失效与断开仍走账号池原有校验；目录未知时保持原路径，查找失败或切 owner 时终止，不猜默认账号。新建任务进入账号池。旧私有登录不自动授权系统默认目录。旧独立连接的元数据与 CLI 目录保留，归并仅改变管理与新任务来源的展示；回退不支持映射的旧客户端时，仍可经保留的独立连接使用原账号。
-- Codex 正常执行与登录使用 CLI 原生凭证存储；跨历史目录的 external-auth、Claude Code 使用 OpenAI 模型及 Pi 的 HTTP/WebSocket 请求复用现有 host-only bridge，只读选定账号的 `auth.json`。仅钥匙串存储而没有该文件时明确失败，不能拿默认账号 token 顶替。Anthropic 订阅不使用此 bridge。
+- 本 fork 的 Codex 新任务历史隔离（2026-11-15）：普通本地新任务使用当前 Cindy profile 的 `codex-home` 保存 rollout、线程索引与分页历史，账号目录负责登录与凭证来源。Desktop 与 Node Host 通过 `getCodexThreadHome` 接入同一 Core 路径；跨目录登录复用现有 external-auth bridge。已有任务按已记录的位置续聊和分叉，访客与本机应用专用目录仍优先，SSH 由远端管理历史。实现见 `packages/maker-core/src/agents/codex/index.ts`，回归见同目录 `index.test.ts` 的 canonical history 用例。
+  维护者同时明确接受独立配置：新任务的原生 `config.toml` 等配置取值以 Cindy 私有目录为准；原生 Codex 账号目录中的参数与自定义 MCP 会因此与 Cindy 分开。既有 Cindy 全局规则、技能和插件投影继续按原入口准备。
+  存量共用历史的集中迁移需先停止相关写入并备份，按 Cindy 保存的原生线程 ID 连同子任务迁移。Codex 新版的 `thread_history_1.sqlite` 承载分页投影，必须与 rollout、state 数据一起处理；通过原生接口逐条核对完整历史后才能更新位置索引、归档旧记录。本次源码变更只调整新任务默认目录，存量迁移是单独执行的本机操作。
+- Codex 登录使用 CLI 原生凭证存储；跨历史目录的 external-auth、Claude Code 使用 OpenAI 模型及 Pi 的 HTTP/WebSocket 请求复用现有 host-only bridge，只读选定账号的 `auth.json`。仅钥匙串存储而没有该文件时明确失败，不能拿默认账号 token 顶替。Anthropic 订阅不使用此 bridge。
 - OpenAI 账号选择贯穿三种引擎；Pi 将账号能力绑定到已鉴权的运行令牌，Claude Code 通过已有原生会话到业务会话的映射取回。关闭清理对应登记；换供应商重建并重新选账号。同一账号的上游认证作废不会断开其它账号。
 - Helper 的 `configure_model_provider` 提供 `subscriptionAccounts` 操作（本机任务范围），与 UI 共用校验及执行服务；登录仍在执行电脑的官方浏览器流程完成。
 

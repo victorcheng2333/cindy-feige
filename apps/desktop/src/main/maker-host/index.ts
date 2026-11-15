@@ -1937,6 +1937,7 @@ export function getMaker(): Maker {
       // use createCodexAuthTokenReader and recordCodexThreadLocation as extraction bounds.
       // Keep storage keys explicit; the record binding follows the token-reader callback.
       prepareCodexResumeSession: prepareCodexResumeSession,
+      getCodexThreadHome: getCodexHome,
       resolveCodexThreadStorage: resolveCodexThreadStorage,
       createCodexAuthTokenReader: (providerId) => {
         const owner = getActiveAppSession();

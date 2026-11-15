@@ -34,6 +34,7 @@ export function createHostCodexThreadStorage(options: {
   return {
     readCodexThreadStorageReadOnly: (threadId: string) => checkAfter(() => storage.readCodexThreadStorageReadOnly(threadId)),
     deps: {
+      getCodexThreadHome: () => { options.check(); return path.join(options.profileDir, 'codex-home'); },
       prepareCodexResumeSession: (threadId: string) => checkAfter(() => storage.prepareCodexResumeSession(threadId)),
       resolveCodexThreadStorage: (threadId: string, lookup?: { readOnly?: boolean }) => checkAfter(() => storage.resolveCodexThreadStorage(threadId, lookup)),
       recordCodexThreadLocation: (threadId: string, home: string, rolloutPath?: string) => checkAfter(() => storage.recordCodexThreadLocation(threadId, home, rolloutPath)),

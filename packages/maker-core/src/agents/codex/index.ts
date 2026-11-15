@@ -5233,13 +5233,18 @@ assertRouteCurrent();
       ? path.join(hosted.guestHome, 'codex')
       : undefined;
     if (guestCodexHome) await fs.mkdir(guestCodexHome, { recursive: true, mode: 0o700 });
+    const newThreadHome = !opts.remoteHostId && !opts.resumeSessionId && !localApplicationHome && !guestCodexHome
+      ? this.deps.getCodexThreadHome?.() : undefined;
+    if (newThreadHome) await fs.mkdir(newThreadHome, { recursive: true, mode: 0o700 });
     const sessionStorage = localApplicationHome
       ? {historyHome:localApplicationHome,sqliteHome:localApplicationHome}
       : guestCodexHome
       ? { historyHome: guestCodexHome, sqliteHome: guestCodexHome }
       : !opts.remoteHostId && opts.resumeSessionId
         ? await this.deps.resolveCodexThreadStorage?.(opts.resumeSessionId)
-        : undefined;
+        : newThreadHome
+          ? { historyHome: newThreadHome, sqliteHome: newThreadHome }
+          : undefined;
     const sessionSqliteHome = sessionStorage?.sqliteHome;
     const companionEnvironment = opts.botRuntimeProfile && !opts.remoteHostId && sid
       ? await this.deps.resolveSessionEnvironment?.(sid) : undefined;
