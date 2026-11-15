@@ -2162,3 +2162,26 @@ it('persists the default, preserves explicit permissions, isolates owners and re
   expect(m.getDraft().newChatDefaultPermissionMode).toBeNull();
   expect(m.getDraft().lastByVendor.pi.permissionMode).toBe('auto');
 });
+
+// unit regression: returning to Claude after selecting a local Codex model
+// must restore Claude's execution location; prior coverage only checked one slot.
+it('restores execution location per harness without leaking across task computers or owners', async () => {
+  const mod = await loadModule();
+  mod.switchVendor('cc');
+  mod.patchDraft({ agentDeviceId: 'share:claude', agentDeviceName: 'Claude share' });
+  mod.switchVendor('codex');
+  mod.patchDraft({ agentDeviceId: null, agentDeviceName: null });
+  mod.switchVendor('cc');
+  expect(mod.getDraft().agentDeviceId).toBe('share:claude');
+  mod.resetDraftWorkspaceAfterSend();
+  expect(mod.getDraft().agentDeviceId).toBe('share:claude');
+  mod.switchVendor('codex');
+  expect(mod.getDraft().agentDeviceId).toBeNull();
+  mod.patchDraft({ deviceLinkDeviceId: 'other-computer' });
+  mod.switchVendor('cc');
+  expect(mod.getDraft().agentDeviceId).toBeNull();
+  mod.patchDraft({ agentDeviceId: 'share:other', agentDeviceName: 'Other' });
+  mod.setNewMakerDraftOwner('other-owner');
+  mod.switchVendor('codex'); mod.switchVendor('cc');
+  expect(mod.getDraft().agentDeviceId).toBeNull();
+});

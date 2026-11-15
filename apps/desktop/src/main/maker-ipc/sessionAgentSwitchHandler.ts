@@ -40,6 +40,7 @@ import { isProviderShareAgentDeviceId } from '../../shared/providerShare.js';
 import { createSharedTaskPendingSelectionGuard, createSharedTaskSettingGuard } from './sharedTaskSetting.js';
 
 import { MAKER_INVOKE } from './channels.js';
+import { assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import type { IpcHandlerRegistry } from './ipcHandlerRegistry.js';
 import {
   buildHandoffText,
@@ -118,6 +119,7 @@ export function toMakerAgentKind(dbKind: string): AgentKind {
 
 /** 交接 framing 与边界卡展示用的引擎名。 */
 export function agentEngineLabel(dbKind: DbAgentKind): string {
+  if (dbKind === 'cursor') return 'Cursor';
   if (dbKind === 'codex') return 'Codex';
   if (dbKind === 'pi') return 'Pi';
   return 'Claude Code';
@@ -199,6 +201,8 @@ export interface AgentSwitchSessionRow {
 const AGENT_DEVICE_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 export interface MakerSessionAgentSwitchHandlerDeps {
+  /** Reject unsupported reference-directory grants before committing a Cursor handoff. */
+  assertCursorHandoffDirectories?(sessionId: string): Promise<void>;
   /**
    * 任务要换到供应商组那一项(组所在电脑上那个建了组的供应商)时，由组按它的状态选一台能用的电脑
    * (docs/product-rules/provider-groups.md §6)：返回选中那台的位置；不是组那一项或组读不到返回 null(照用户选的位置)；
@@ -803,12 +807,27 @@ export async function performSessionAgentSwitch(
   if (!row || row.status === 'deleted') {
     throwIpcError('NOT_FOUND', `Session ${sessionId} not found`);
   }
-  // The unified picker routes same-engine model choices through this entry too.
-  // Admit local Cursor choices, while keeping its unsupported handoff paths closed.
+  // Local Cursor uses the shared bounded handoff and parked-thread resume flow.
+  // Moving its runtime between computers is still unsupported.
   if ((row.agentKind === 'cursor' || targetAgentKind === 'cursor') && (
-    row.agentKind !== targetAgentKind || row.agentDeviceId || requestedAgentDeviceId
+    row.agentDeviceId || requestedAgentDeviceId
   )) {
-    throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor supports model changes on the current local task only');
+    throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires execution on the task computer');
+  }
+  if (targetAgentKind === 'cursor') {
+    assertCursorTaskCreationAllowed(row);
+    if (row.agentKind !== 'cursor') {
+      if (row.orcaRemoteLead || (row.source && row.source !== 'desktop')) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor handoff supports ordinary desktop tasks only');
+      }
+      if (normalizedProviderId !== 'cursor') {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires the Cursor connection');
+      }
+      if (!['auto', 'bypassPermissions', 'plan'].includes(row.permissionMode ?? '')) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Choose Auto, Full access or Plan before switching to Cursor');
+      }
+      await deps.assertCursorHandoffDirectories?.(sessionId);
+    }
   }
   if (params.runtimeSource === 'agent' && row.status === 'archived') {
     throwIpcError('UNSUPPORTED_CAPABILITY', 'archived task cannot change harness');

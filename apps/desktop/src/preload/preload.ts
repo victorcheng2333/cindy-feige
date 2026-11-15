@@ -4679,6 +4679,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   prepareCrashDiagnosis: (): Promise<import('../shared/crashDiagnosis').CrashDiagnosisEvidence | null> =>
     ipcRenderer.invoke('crash-diagnosis:prepare'),
   dismissCrashDiagnosis: (): Promise<void> => ipcRenderer.invoke('crash-diagnosis:dismiss'),
+  /** 计划内重启（本机替换安装）带启动参数时为 true：中断的任务直接继续、不弹窗。每个进程只返回一次 true。 */
+  consumeLaunchResumeInterruptedTasks: (): Promise<boolean> =>
+    ipcRenderer.invoke('app-launch:consume-resume-interrupted-tasks'),
 
   // ── 客户端日志上报(Settings → About)──
   // 真相在 main:是否配置了上报目标、是否已同意隐私政策、开关的 override 状态都由 main
@@ -8521,6 +8524,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ): Promise<void> => ipcRenderer.invoke('maker:auth:logout', agentKind, ownerScope),
       onStateChanged: fanOutMakerAuthStateChanged,
       onLoginProgress: fanOutMakerAuthLoginProgress,
+    },
+
+    cursorSdk: {
+      getState: (check = false): Promise<import('../shared/cursorSdk').CursorSdkState> =>
+        ipcRenderer.invoke('maker:agent:cursor-sdk-state', check),
+      install: (request: import('../shared/cursorSdk').CursorSdkInstallRequest): Promise<import('../shared/cursorSdk').CursorSdkState> =>
+        ipcRenderer.invoke('maker:agent:cursor-sdk-install', request),
     },
 
     piKernel: {

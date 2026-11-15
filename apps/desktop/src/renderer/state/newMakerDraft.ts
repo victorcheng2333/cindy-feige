@@ -35,6 +35,11 @@ import { getManagedWorktreeBasePath } from '../../shared/managedWorktreePaths';
 
 const STORAGE_KEY = 'xdt:newMakerDraft:v1';
 let activeDataOwnerId: string | null = null;
+// Execution locations are renderer-lifetime preferences, scoped to the task
+// computer. Model/provider choices already live in agentDeviceDraftMemory.
+const agentLocationByVendor = new Map<MakerVendor, {
+  agentDeviceId: string | null; agentDeviceName: string | null;
+}>();
 
 function storageKey(): string {
   return activeDataOwnerId ? `${STORAGE_KEY}:${encodeURIComponent(activeDataOwnerId)}` : STORAGE_KEY;
@@ -837,6 +842,7 @@ export function setNewMakerDraftOwner(ownerId: string | null): void {
   const normalized = typeof ownerId === 'string' && ownerId.trim().length > 0 ? ownerId : null;
   if (activeDataOwnerId === normalized) return;
   activeDataOwnerId = normalized;
+  agentLocationByVendor.clear();
   currentDraft = loadFromStorage();
   preferenceSyncFallback = null;
   emit();
@@ -975,6 +981,8 @@ export function patchDraft(patch: Partial<NewMakerDraft>): void {
   }
   // 协同与项目/对话形态正交,切 workingDir 不再改 enabled。device-link 与 SSH 的 Worker
   // 创建和团队读写都在对应执行端完成;Worker 子会话不能嵌套协同,由会话侧入口判定兜住。
+  if (currentDraft.deviceLinkDeviceId !== next.deviceLinkDeviceId ||
+      currentDraft.remoteHostId !== next.remoteHostId) agentLocationByVendor.clear();
   currentDraft = next;
   scheduleWrite({ preserveStoredWorktreePreference: true });
   emit();
@@ -1026,11 +1034,16 @@ export function patchCollab(patch: Partial<CollabDraft>): void {
  *   2. 切到新 vendor
  * NewMakerDraftRoute 的 VendorSegmentedSwitcher 切换时调本函数;切回某 vendor 时 ChatInput 通过 lastByVendor[vendor] 取上次值。
  */
-export function switchVendor(next: MakerVendor): void {
+export function switchVendor(next: MakerVendor, { restoreAgentLocation = true }: { restoreAgentLocation?: boolean } = {}): void {
   rebaseStoredDefaultTuplePreference();
   if (currentDraft.vendor === next) return;
+  agentLocationByVendor.set(currentDraft.vendor, {
+    agentDeviceId: currentDraft.agentDeviceId, agentDeviceName: currentDraft.agentDeviceName,
+  });
+  const location = restoreAgentLocation && !currentDraft.remoteHostId ? agentLocationByVendor.get(next) : undefined;
   currentDraft = {
     ...currentDraft,
+    ...location,
     vendor: next,
   };
   scheduleWrite({ preserveStoredDefaultTuplePreference: false });
@@ -1401,6 +1414,7 @@ export function getPersistedVendorModel(vendor: MakerVendor): string {
 
 /** 测试用 —— 重置 store + 清 localStorage(其它代码不应调用)。 */
 export function __resetForTest(): void {
+  agentLocationByVendor.clear();
   currentDraft = makeDefault();
   activeDataOwnerId = null;
   if (typeof window !== 'undefined') {
@@ -1418,6 +1432,7 @@ export function __resetForTest(): void {
  * 方式从 localStorage 恢复,不写盘、不通知。新增模块级状态时要在这里一并复位。
  */
 export function __reloadForTest(): void {
+  agentLocationByVendor.clear();
   activeDataOwnerId = null;
   preferenceSyncFallback = null;
   listeners.clear();

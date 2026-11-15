@@ -7,6 +7,14 @@ import type { RemoteSession, RemoteSessionAgentSwitchIntent } from './types';
 
 export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
 
+/** Match the host's ordinary-task handoff scope; execution still checks host authority. */
+export function canSwitchSessionToCursor(
+  session: Pick<RemoteSession, 'remoteHostId' | 'agentDeviceId' | 'orcaRole' | 'orcaRemoteLead' | 'source'>,
+): boolean {
+  return !session.remoteHostId && !session.agentDeviceId && !session.orcaRole && !session.orcaRemoteLead
+    && (!session.source || session.source === 'desktop');
+}
+
 /** 将不可信 device-link payload 收窄为公开 intent；非法值按“无意图”处理。 */
 export function normalizeSessionAgentSwitchIntent(
   value: unknown,

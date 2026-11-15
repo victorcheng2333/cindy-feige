@@ -2993,6 +2993,24 @@
         "installFailed": "Die Installation von Pi ist fehlgeschlagen. Die vorherige Version ist weiterhin ausgewählt. Prüfe deine Verbindung und den verfügbaren Speicherplatz und versuch es erneut.",
         "openFailed": "Die Versionshinweise konnten nicht geöffnet werden.",
         "restartRequired": "Pi {{version}} ist installiert. Starte Cindy neu, um Pi zu aktivieren."
+      },
+      "cursorSdk": {
+        "label": "Cursor-SDK-Version",
+        "manage": "Cursor-SDK verwalten",
+        "check": "Nach Updates suchen",
+        "checking": "Wird geprüft…",
+        "checkFailed": "Prüfung fehlgeschlagen",
+        "available": "Update verfügbar",
+        "installing": "Wird installiert…",
+        "update": "SDK aktualisieren",
+        "restore": "Mitgelieferte Version wiederherstellen",
+        "updateTitle": "Auf Cursor-SDK {{version}} aktualisieren?",
+        "restoreTitle": "Mitgeliefertes Cursor-SDK wiederherstellen?",
+        "description": "Updates werden von Cursor veröffentlicht und können Kompatibilitätsprobleme aufweisen. Die mitgelieferte Version kann jederzeit wiederhergestellt werden. Bestehende Agent-Sitzungen behalten ihre Version.",
+        "installed": "Das Cursor-SDK ist bereit. Die nächste Agent-Sitzung verwendet die ausgewählte Version.",
+        "installFailed": "Das Update ist fehlgeschlagen. Die bisherige Version bleibt unverändert. Bitte erneut nach Updates suchen und versuchen.",
+        "scope": "Gilt ab der nächsten Agent-Sitzung. Laufende Aufgaben bleiben unberührt.",
+        "checkedAt": "Zuletzt geprüft: {{time}}"
       }
     },
     "apiKey": {

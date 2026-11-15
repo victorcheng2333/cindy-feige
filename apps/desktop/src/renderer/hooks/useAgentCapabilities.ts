@@ -364,6 +364,7 @@ function cacheKey(agentKind: AgentKind, deviceId?: string): CacheKey {
 const cache = new Map<CacheKey, AgentCapabilities>();
 /** Remote snapshots inherit the host's bounded directory budget. */
 const expiry = new MetadataSnapshotExpiry();
+const stale = new Set<CacheKey>();
 const inflight = new Map<CacheKey, Promise<AgentCapabilities | null>>();
 /** 本地能力刷新代际；使刷新前的在途 IPC 结果无法回写旧快照。 */
 let localGen = 0;
@@ -391,6 +392,7 @@ const deviceGen = new Map<string, number>();
 function retireDeviceCapabilityKey(deviceId: string, agentKind: AgentKind, deferNotify = false): void {
   const key = cacheKey(agentKind, deviceId);
   cache.delete(key);
+  stale.delete(key);
   expiry.forget(key);
   inflight.delete(key);
   const event: DeviceCapabilitiesEvent = { status: 'error',
@@ -433,7 +435,7 @@ async function fetchCapabilities(
   deviceId?: string,
 ): Promise<AgentCapabilities | null> {
   const key = cacheKey(agentKind, deviceId);
-  const cached = expiry.valid(key) ? cache.get(key) : undefined;
+  const cached = getCachedCapabilities(agentKind, deviceId);
   if (cached) return cached;
   const ip = inflight.get(key);
   if (ip) return ip;
@@ -475,6 +477,7 @@ async function fetchCapabilities(
           throw new Error('[MODEL_VISIBILITY_NOT_READY] Agent capabilities snapshot expired');
         }
         cache.set(key, caps);
+        stale.delete(key);
         inflight.delete(key);
         if (deviceId)
           notifyRemoteCapabilities(deviceId, agentKind, { status: 'ready', capabilities: caps });
@@ -496,6 +499,9 @@ async function fetchCapabilities(
       if (isCurrent()) {
         inflight.delete(key);
         if (deviceId) {
+          cache.delete(key);
+          stale.delete(key);
+          expiry.forget(key);
           notifyRemoteCapabilities(deviceId, agentKind, {
             status: 'error',
             error: e instanceof Error ? e.message : String(e),
@@ -527,14 +533,14 @@ export function useAgentCapabilities(
   deviceId?: string,
 ): UseAgentCapabilitiesResult {
   const selectedKey = agentKind ? cacheKey(agentKind, deviceId) : null;
-  const initialCapabilities = agentKind ? getCachedCapabilities(agentKind, deviceId) ?? undefined : undefined;
+  const initialCapabilities = agentKind ? getCapabilitiesDisplaySnapshot(agentKind, deviceId) ?? undefined : undefined;
   const [ownerKey, setOwnerKey] = useState<CacheKey | null>(
     initialCapabilities ? selectedKey : null,
   );
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(
     initialCapabilities ?? null,
   );
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !!agentKind && !getCachedCapabilities(agentKind, deviceId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -600,10 +606,9 @@ export function useAgentCapabilities(
       return;
     }
     let cancelled = false;
-    // cache miss:先清掉上一设备 / 会话的能力,避免 fetch 解析前(失败则永远)UI 残留旧设备的
-    // 模型 / effort 列表 → 远程会话误选目标端不支持的模型。
+    // A refresh may reuse only this target's bounded display, while readiness stays loading.
     setOwnerKey(key);
-    setCapabilities(null);
+    setCapabilities(getCapabilitiesDisplaySnapshot(agentKind, deviceId));
     setLoading(true);
     setError(null);
     const remoteGeneration = deviceId ? (deviceGen.get(deviceId) ?? 0) : null;
@@ -637,6 +642,11 @@ export function useAgentCapabilities(
   };
 }
 
+function getCapabilitiesDisplaySnapshot(agentKind: AgentKind, deviceId?: string): AgentCapabilities | null {
+  const key = cacheKey(agentKind, deviceId);
+  return expiry.valid(key) ? cache.get(key) ?? null : null;
+}
+
 /**
  * 同步读取已缓存的 capabilities (没缓存返回 null)。
  * 用于 useMemo / 同步逻辑里需要 capabilities 但又不能起 effect 的场景。
@@ -647,7 +657,7 @@ export function getCachedCapabilities(
   deviceId?: string,
 ): AgentCapabilities | null {
   const key = cacheKey(agentKind, deviceId);
-  return expiry.valid(key) ? cache.get(key) ?? null : null;
+  return expiry.valid(key) && !stale.has(key) ? cache.get(key) ?? null : null;
 }
 
 /**
@@ -691,7 +701,8 @@ export function evictDeviceCapabilities(
   }
   const prefix = `${deviceId}:`;
   for (const k of [...cache.keys()]) if (k.startsWith(prefix)) {
-    cache.delete(k);
+    if (options?.retainDisplaySnapshot) stale.add(k);
+    else { cache.delete(k); stale.delete(k); }
     // A retained refresh preserves the mounted display payload, so its host
     // deadline must survive too. Dropping it would let a hung refresh keep the
     // old capabilities past the forwarded trust window.

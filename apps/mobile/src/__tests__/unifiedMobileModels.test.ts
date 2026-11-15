@@ -111,4 +111,8 @@ it('admits Cursor draft models only when the caller explicitly enables controlle
   expect(rows).toHaveLength(1);
   expect(resolveMobileModelConfig(rows[0], {fastCapable})).toMatchObject({agent:'cursor',modelId:'model',effort:'low'});
   expect(mobileUnifiedEntries([provider], ['cursor'], undefined, false)).toEqual([]);
+  // Unit regression: an approved controlled-host catalog must also offer Cursor
+  // to an older Codex task; previous coverage only admitted brand-new tasks.
+  expect(mobileUnifiedEntries([provider], ['codex', 'cursor'], undefined, true,
+    { providerId: 'other', modelId: 'old', agent: 'codex' }, true)).toHaveLength(1);
 });

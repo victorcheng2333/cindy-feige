@@ -669,6 +669,7 @@ import {
 } from './mcp-integrations/computer.desktop.js';
 import { initAnalyticsSettingsService, noteAuthColdStartState } from './analyticsSettingsService';
 import { initCrashDiagnosisService } from './crash-diagnosis';
+import { initLaunchResumeInterruptedTasks } from './launchResumeInterruptedTasks';
 import { initLogUploadService, scheduleStartupBackfill } from './log-upload';
 import { initPerformanceTraceService } from './performance-trace';
 import { createOpenLogsMenuItem, openLogsDirectory } from './logSupport';
@@ -10662,6 +10663,7 @@ app.on('ready', async () => {
   // onFatalShutdown 上就位,否则 createWindow 之后立刻崩的那一次拿不到标记。
   initLogUploadService();
   initCrashDiagnosisService();
+  initLaunchResumeInterruptedTasks();
   initPerformanceTraceService(() => mainWindowRef);
   // Local profiles bypass authManager's cloud claim path. Await the same
   // asynchronous PID provenance scan before the first BrowserWindow exists so

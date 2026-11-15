@@ -18,6 +18,7 @@ import {
 import type { ModelPriceQuote, ModelPricingCatalog } from '../../shared/regionalMoney.js';
 import { getByokPricing } from '../model-access/byokPricing.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
+import { cursorOfficialReferenceQuote } from './cursorApiValue.js';
 import { accountHasReferencePriceDeclaration, accountReferencePriceQuote as providerReferencePriceQuote } from './accountReferencePrice.js';
 import {
   applyModelPriceOverrides,
@@ -81,6 +82,11 @@ export function getReferenceModelPricing(
         if (quote) (pricing[provider.id] ??= {})[modelPricingKey(model.id, agent as AgentKind)] = quote;
       }
     }
+  }
+  const cursor = catalog.providers.find(provider => provider.id === 'cursor');
+  for (const model of cursor?.models.cursor ?? []) {
+    const quote = cursorOfficialReferenceQuote(registry, model.id, at);
+    if (quote) (pricing.cursor ??= {})[modelPricingKey(model.id, 'cursor')] = quote;
   }
   return {
     ...applyModelPriceOverrides(pricing, registry, undefined, { at, entries: options.overrides }),

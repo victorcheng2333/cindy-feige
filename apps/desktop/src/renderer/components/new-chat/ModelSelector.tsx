@@ -1343,6 +1343,10 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const { t, i18n } = useTranslation();
   const modelGroupRows = useModelGroupPickerRows(modelGroups?.config ?? MODEL_GROUPS_DEFAULTS);
   const favoriteModelGroupCount = useFavoriteModelGroupCount(modelGroups?.config ?? MODEL_GROUPS_DEFAULTS);
+  const [localBrowseVendor, setBrowseVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor'>(
+    agentSwitch?.currentVendor ?? vendorKey ?? 'cc',
+  );
+  const browseVendor = catalogSection?.browseVendor ?? localBrowseVendor;
   // ── 远程 Agent:面板在本机目录与其他电脑的目录之间切换浏览 ─────────────────────
   // 打开时停在草稿当前的落点(Agent 在哪台电脑就先列哪台);左侧栏点到另一台电脑的供应商时,
   // 下面整套目录(能力 / 供应商 / 可见性 / 用量 / 收藏)都随 deviceId 换成那台电脑的。
@@ -1355,9 +1359,10 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     remoteAgentDeviceId ? { deviceId: remoteAgentDeviceId, providerId: currentProviderId ?? null } : null,
   );
   const combinedCatalogs = compactProviderList && !useUnifiedPanel && !!remoteAgent;
-  const remoteBrowse = useMemo(() => combinedCatalogs
+  // Cursor uses the task computer's own account; other computers cannot supply its models.
+  const remoteBrowse = useMemo(() => browseVendor === 'cursor' ? null : combinedCatalogs
     ? (catalogSection ? { deviceId: catalogSection.deviceId, providerId: null } : null)
-    : browseSource, [combinedCatalogs, catalogSection?.deviceId, browseSource]);
+    : browseSource, [browseVendor, combinedCatalogs, catalogSection?.deviceId, browseSource]);
   // 落点在面板之外变了(那台电脑被解除配对而回到本机等):跟到新落点,不停在旧目录上。
   const lastRemoteAgentDeviceIdRef = useRef(remoteAgentDeviceId);
   useEffect(() => {
@@ -1426,10 +1431,6 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const modelTagDensity = modelTagDensityForWidth(paneWidth ?? (fluidWidth ? null : 320));
   // session-agent-switch:两步式引擎切换的浏览态。browseVendor 初始 = 会话当前引擎;
   // 切到另一家 tab 只是「浏览目标引擎的模型」,选中模型行才真正触发切换事务。
-  const [localBrowseVendor, setBrowseVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor'>(
-    agentSwitch?.currentVendor ?? vendorKey ?? 'cc',
-  );
-  const browseVendor = catalogSection?.browseVendor ?? localBrowseVendor;
   const browseSwitchPendingRef = useRef(false);
   const handleBrowseVendorChange = async (next: 'cc' | 'codex' | 'pi' | 'cursor') => {
     if (interactionDisabled || next === browseVendor || browseSwitchPendingRef.current) return;
@@ -1456,8 +1457,11 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     ? vendorKeyToAgentKind(browseVendor)
     : vendorKeyToAgentKind(vendorKey);
   // A field that only persists a model must not offer another Harness.
-  // Apply an engine restriction only to the selected execution device.
-  const unifiedAgents = (browsingSelectedCatalog ? requestedUnifiedAgents : undefined) ??
+  // The combined list's root owns the engine tabs for the whole task. Its local
+  // catalog can differ from the selected remote model source; that must not
+  // discard the task's selectable Harnesses. Individual catalog sections keep
+  // their existing device-scoped restrictions.
+  const unifiedAgents = (combinedCatalogs && !catalogSection || browsingSelectedCatalog ? requestedUnifiedAgents : undefined) ??
     (vendorKey && agentKind && !onUnifiedSelect && !agentSwitch && !sessionEngineFilter ? [agentKind] : undefined);
   const browseTargetLabel =
     browseVendor === 'cursor' ? 'Cursor' : browseVendor === 'codex' ? 'Codex' : browseVendor === 'pi' ? 'Pi' : 'Claude Code';
@@ -1711,7 +1715,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // ── 远程 Agent 的左侧栏数据 ──────────────────────────────────────────────────
   // 栏位要同时列出本机与各台电脑的供应商,而列表此刻只装着其中一份目录:本机格与远程格
   // 各自按**自己的**目录与可见性派生,不借用正在浏览的那一份。
-  const remoteAgentDevices = remoteAgent?.devices;
+  const remoteAgentDevices = browseVendor === 'cursor' ? undefined : remoteAgent?.devices;
   const routedFavoriteSources = useMemo(() => remoteAgent?.catalogHostDeviceId
     ? new Map((remoteAgentDevices ?? []).flatMap(device => device.favoriteSource
       ? [[device.deviceId, device.favoriteSource] as const] : []))
@@ -1724,7 +1728,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     () => remoteAgentDeviceIds.map(id => modelCatalogKey(id, remoteAgent?.catalogHostDeviceId)!),
     [remoteAgentDeviceIds, remoteAgent?.catalogHostDeviceId],
   );
-  const fetchedCatalogs = useDevicesProviders(catalogSection ? [] : remoteCatalogKeys);
+  const fetchedCatalogs = useDevicesProviders(catalogSection ? [] : remoteCatalogKeys, { retainDisplaySnapshot: true });
   const scopedCatalogs = catalogSection?.catalogs ?? fetchedCatalogs;
   const remoteDeviceCatalogs = useMemo(() => new Map(remoteAgentDeviceIds.map((id, index) =>
     [id, scopedCatalogs.get(remoteCatalogKeys[index])!] as const)), [remoteAgentDeviceIds, remoteCatalogKeys, scopedCatalogs]);
@@ -2613,7 +2617,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       const applied = await runLiveWrite(() => enqueueAgentSwitch(
         browseVendor === 'cursor' ? 'cursor' : browseVendor === 'codex' ? 'codex' : browseVendor === 'pi' ? 'pi' : 'claude-code',
         id,
-        providerId,
+        providerId ?? (browseVendor === 'cursor' ? 'cursor' : null),
         { effort: effortOverride, fastMode: fastOverride },
       ));
       if (applied) dismissAfterSelection();
@@ -2859,7 +2863,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const editThinkingToggle =
     canConfigure && (currentAgentKind === 'pi' || currentAgentKind === 'cursor') && editingModel?.thinkingToggle === true;
   const editHasEfforts =
-    canConfigure && ((editingModel?.displayEfforts ?? editingModel?.efforts)?.length ?? 0) > 0 && !editThinkingToggle;
+    canConfigure && ((editingModel?.displayEfforts ?? editingModel?.efforts)?.length ?? 0) > 0;
 
   // 配置列当前 effort 值(选中 → live;否则记忆/默认)。
   const editEffortValue: Effort | null = editingModel
@@ -4157,7 +4161,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
               if (next !== 'orca') void handleBrowseVendorChange(next);
             }}
             hiddenVendors={(['cc', 'codex', 'pi', 'cursor'] as const).filter((vendor) =>
-              vendor === 'cursor' || (!!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!)),
+              (!!catalogDeviceId && vendor === 'cursor') || (!!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!)),
             )}
             disabled={interactionDisabled}
             dense
@@ -4823,8 +4827,7 @@ export function ModelSelector({
   const showEffort =
     !fallbackOption?.active &&
     efforts.length > 0 &&
-    efforts.includes(effort) &&
-    !activeThinkingToggle;
+    efforts.includes(effort);
   const fullEffortLabel = showEffort
     ? labelOf(effort)
     : activeThinkingToggle && thinkingEnabled

@@ -121,4 +121,50 @@ describe('InterruptedTasksResumeDialog', () => {
     expect(screen.getByText('伙伴主任务')).toBeTruthy();
     expect(screen.getByText(/workdir-name/)).toBeTruthy();
   });
+  // 本机替换安装脚本带 --resume-interrupted-tasks 重开:发起替换的任务不能停在弹窗上;
+  // 该参数只对当时登录的账号生效一次,之后换账号仍照常询问。
+  it('continues every interrupted task without the dialog after a planned restart, once', async () => {
+    const now = Date.now();
+    const session = (id: string) => ({
+      id,
+      title: id,
+      source: 'desktop',
+      agentKind: 'cc',
+      workingDir: `/code/${id}`,
+      workspaceKind: 'project',
+      createdAt: new Date(now).toISOString(),
+    });
+    const candidates = [
+      { sessionId: 'planned-a', interruptedAt: now - 10_000, activity: null },
+      { sessionId: 'planned-b', interruptedAt: now - 5_000, activity: null },
+    ];
+    const consume = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+    Object.assign(window, {
+      electronAPI: {
+        consumeLaunchResumeInterruptedTasks: consume,
+        localDb: {
+          sessions: {
+            interruptedResumeCandidates: async () => candidates,
+            getMany: async (ids: string[]) => ids.map(session),
+          },
+        },
+      },
+    });
+    sendUiTrigger.mockClear();
+
+    auth.dataOwnerId = 'owner-planned-restart';
+    const onPendingChange = vi.fn();
+    render(<InterruptedTasksResumeDialog onPendingChange={onPendingChange} />);
+    await waitFor(() => expect(sendUiTrigger).toHaveBeenCalledTimes(2));
+    expect(sendUiTrigger).toHaveBeenCalledWith('planned-a', CONTINUE_AFTER_APP_EXIT_PROMPT);
+    expect(sendUiTrigger).toHaveBeenCalledWith('planned-b', CONTINUE_AFTER_APP_EXIT_PROMPT);
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    cleanup();
+
+    auth.dataOwnerId = 'owner-after-planned-restart';
+    render(<InterruptedTasksResumeDialog />);
+    await screen.findByRole('alertdialog');
+    expect(sendUiTrigger).toHaveBeenCalledTimes(2);
+  });
 });

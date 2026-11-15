@@ -81,6 +81,12 @@ pnpm package:install -- --region cn --dry-run  # 只做预检，不替换
    退出后把旧版移到 `backups/`（保留最近两份），放入新版并打开。
 4. 健康检查：新版须在 60 秒内启动并持续运行 10 秒；否则自动恢复旧版并重新打开，
    失败的新版留在 `failed-<时间>.app`。
+5. 自动续跑：脚本重开 Cindy（新版或恢复的旧版）时带启动参数
+   `--resume-interrupted-tasks`。带这个参数启动时，被这次退出打断的任务（通常就是
+   发起替换的那个任务）不弹「继续上次中断的任务」，直接按默认全选发出与「继续」
+   相同的续跑；每个进程只生效一次，手动启动或崩溃重启仍照常弹窗。需要保留弹窗时给
+   `pnpm package:install` 加 `--ask-resume`。参数由
+   `apps/desktop/src/main/launchResumeInterruptedTasks.ts` 读取，不认识它的旧版会忽略。
 
 进度写在 `~/Library/Caches/cindy-local-install/install.log`，结果在同目录的
 `status.json`（`ok`／`rolled_back`／`failed`）。替换期间本机 Cindy 和远程连接会中断，

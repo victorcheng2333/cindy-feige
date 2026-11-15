@@ -2964,6 +2964,24 @@
         "installFailed": "Pi のインストールに失敗しました。以前のバージョンを引き続き使用します。ネットワークとディスクの空き容量を確認し、再試行してください。",
         "openFailed": "リリースノートを開けませんでした。",
         "restartRequired": "Pi {{version}} をインストールしました。Cindy を再起動すると使用できます。"
+      },
+      "cursorSdk": {
+        "label": "Cursor SDK バージョン",
+        "manage": "Cursor SDK を管理",
+        "check": "更新を確認",
+        "checking": "確認中…",
+        "checkFailed": "確認に失敗",
+        "available": "更新があります",
+        "installing": "インストール中…",
+        "update": "SDK を更新",
+        "restore": "同梱版に戻す",
+        "updateTitle": "Cursor SDK {{version}} に更新しますか？",
+        "restoreTitle": "同梱の Cursor SDK に戻しますか？",
+        "description": "更新版は Cursor が公開しています。互換性に問題がある場合は同梱版に戻せます。既存のエージェントセッションは現在のバージョンを使用し続けます。",
+        "installed": "Cursor SDK の準備ができました。次のエージェントセッションから適用されます。",
+        "installFailed": "Cursor SDK の更新に失敗しました。以前のバージョンは変更されていません。更新を再確認してお試しください。",
+        "scope": "次のエージェントセッションから適用されます。実行中のタスクには影響しません。",
+        "checkedAt": "最終確認：{{time}}"
       }
     },
     "apiKey": {

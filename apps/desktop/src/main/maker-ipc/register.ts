@@ -7554,7 +7554,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ...maker.getCapabilities(requireAgentKind(agentKind)),
       // host 级 optional 能力；旧 desktop 缺省为 false。两个 agent 查询都带回，
       // 手机读取当前 agent 快照即可决定是否展示切换入口。
-      supportsSessionAgentSwitch: agentKind !== 'cursor',
+      supportsSessionAgentSwitch: true,
       supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
       // Mobile 据此对已知受压缩窗降级为 fail closed。
@@ -11687,6 +11687,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     },
     assertAgentDeviceRouteUsable,
     describeAgentDevice,
+    assertCursorHandoffDirectories: async (sessionId) => {
+      const grants = directoryGrantsForRuntime(await readSessionExtraDirsFromDb(sessionId));
+      if (grants.extraDirs?.length) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor does not support read-only reference directories');
+      }
+    },
     getSessionRow: async (sessionId) => {
       const db = getDbClient().drizzle;
       const [row] = await db

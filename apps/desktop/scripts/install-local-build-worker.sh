@@ -5,7 +5,7 @@
 # absolute system paths only. Arguments are passed by install-local-build.mjs.
 set -u
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-NEW_APP="$1"; TARGET="$2"; EXE="$3"; DELAY="$4"; STATE="$5"; STAGING="$6"
+NEW_APP="$1"; TARGET="$2"; EXE="$3"; DELAY="$4"; STATE="$5"; STAGING="$6"; RESUME="${7:-1}"
 LOG="$STATE/install.log"; STATUS="$STATE/status.json"; LOCK="$STATE/worker.pid"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$STATE/backups/Cindy-$TS.app"
@@ -28,6 +28,12 @@ background_denied() {
     2>/dev/null | grep -Fq "\"$APP_NAME\" BTM said"
 }
 finish() { rm -f "$LOCK"; rm -rf "$STAGING"; exit "$1"; }
+# Cindy was quit by this worker, so the tasks it interrupted (normally the one
+# that started this replacement) continue without the startup resume dialog.
+# Builds without the flag ignore it.
+reopen() {
+  if [ "$RESUME" = 1 ]; then open "$TARGET" --args --resume-interrupted-tasks; else open "$TARGET"; fi
+}
 main_pids() { ps -axo pid=,comm= | awk -v p="$MAIN_EXE" '{ pid=$1; $1=""; sub(/^ +/, ""); if ($0 == p) print pid }'; }
 # Poll every 0.5s; argument is a timeout in seconds.
 wait_gone() { local i; for ((i = 0; i < $1 * 2; i++)); do [ -z "$(main_pids)" ] && return 0; sleep 0.5; done; return 1; }
@@ -46,7 +52,7 @@ trap 'log "received SIGTERM, ignored"' TERM
 trap 'log "worker exit code=$?"' EXIT
 
 echo $$ > "$LOCK"
-log "worker start: pid=$$ ppid=$PPID new=$NEW_APP target=$TARGET delay=${DELAY}s"
+log "worker start: pid=$$ ppid=$PPID new=$NEW_APP target=$TARGET delay=${DELAY}s resume=$RESUME"
 status waiting "等待 ${DELAY} 秒后退出 Cindy"
 sleep "$DELAY"
 
@@ -71,7 +77,7 @@ if [ -e "$TARGET" ]; then
   if ! mv "$TARGET" "$BACKUP"; then
     log "backup move failed; reopening old app"
     status failed "备份旧版失败，未做任何替换"
-    open "$TARGET"; finish 1
+    reopen; finish 1
   fi
   log "old app moved to $BACKUP"
 fi
@@ -79,13 +85,13 @@ if ! mv "$NEW_APP" "$TARGET"; then
   log "moving new app failed; restoring backup"
   [ -e "$BACKUP" ] && mv "$BACKUP" "$TARGET"
   status rolled_back "放入新版失败，已恢复旧版"
-  open "$TARGET"; finish 1
+  reopen; finish 1
 fi
 xattr -dr com.apple.quarantine "$TARGET" 2>/dev/null
 
 log "opening new app"
 status starting "正在启动新版"
-open "$TARGET"
+reopen
 if wait_up; then
   log "new app is running"
   status ok "新版已启动"
@@ -103,7 +109,7 @@ log "new app did not stay up; rolling back"
 PIDS="$(main_pids)"; [ -n "$PIDS" ] && { kill -TERM $PIDS 2>/dev/null; wait_gone 30; }
 if [ -e "$BACKUP" ]; then
   mv "$TARGET" "$STATE/failed-$TS.app" && mv "$BACKUP" "$TARGET"
-  open "$TARGET"
+  reopen
   status rolled_back "新版没能正常启动，已恢复旧版；失败的新版留在 $STATE/failed-$TS.app"
 else
   status failed "新版没能正常启动，且没有可恢复的旧版"

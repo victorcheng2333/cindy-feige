@@ -429,6 +429,7 @@ import {
   confirmMobileSessionAgentSwitch,
 } from '@/session/sessionAgentSwitchConfirmation';
 import {
+  canSwitchSessionToCursor,
   effectiveAgentDeviceId,
   intentChangesAgentLocation,
   mobileAgentLabel,
@@ -1368,6 +1369,14 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const contextSheetMediaLibraryEnabled = canBrowsePhotoLibraryDirectly(Platform.OS);
   // 模型 + 权限浮窗(ContextSheet 同款 Modal,含二级「模型选项 / 权限」叠层)。
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  useEffect(() => {
+    if (!modelSheetOpen) return;
+    // The native sheet hides the keyboard without clearing the composer's focus.
+    // An engine-switch Alert can restore that responder when it closes, bringing
+    // the keyboard back over the picker. Release focus for the whole browsing flow.
+    composerInputRef.current?.blur();
+    Keyboard.dismiss();
+  }, [modelSheetOpen]);
   // 权限模式独立浮窗(composer 左侧图标钮点开,与模型浮窗同属 composer 激活态)。
   const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
   // 已建会话的模型浮窗可先浏览另一 Agent；只改此浏览态不触碰会话，选模型才登记 intent。
@@ -2831,7 +2840,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const remoteAgentCatalogs = useRemoteAgentCatalogs({
     // 选择器打开时才读其他电脑;Agent 已在另一台电脑时还要按那台的目录显示模型药丸。
     // 共享任务访客读到的是自己账号的设备,与任务无关,不读。
-    enabled: !!deviceId && !isSharedTaskPeer(deviceId) && (
+    enabled: !!deviceId && !isSharedTaskPeer(deviceId)
+      && (modelSheetOpen ? modelSheetAgentKind : composerDisplayAgentKind) !== 'cursor' && (
       (agentLocationMovable && modelSheetOpen) || remoteAgentKeepDeviceIds.length > 0
     ),
     controlledDeviceId: deviceId,
@@ -9365,6 +9375,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     // 远程 Agent:这一行来自哪台电脑的目录(null = 被控电脑),能力就按那份目录核对
     // (同 id 模型两台电脑的档位 / Fast 可以不同)。
     const catalogDeviceId = source?.deviceId ?? null;
+    if (config.agent === 'cursor' && (catalogDeviceId
+      || (sessionAgentKind !== 'cursor' && !canSwitchSessionToCursor(currentSession)))) return false;
     const catalogProviders = catalogDeviceId
       ? (remoteAgentCatalogs.find((item) => item.deviceId === catalogDeviceId)?.providers ?? [])
         : composerDeviceProviders.providers;
@@ -9373,6 +9385,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     const targetCapabilities = normalizeMobileAgentCapabilities(
       await loadComposerAgentCapabilities(config.agent, catalogDeviceId));
     if (!targetCapabilities || deviceIdRef.current !== deviceId) return false;
+    if (config.agent === 'cursor' && sessionAgentKind !== 'cursor'
+      && targetCapabilities.supportsControlledCursorCreation !== true) return false;
     if (config.fast && (!capability.supportsFastMode || !targetCapabilities.hasFastMode)) return false;
     // 与任务当前所在电脑不同 = 连 Agent 的运行位置一起换(先确认,下一条消息生效);
     // 同一台电脑内换模型直接切。
@@ -9389,7 +9403,6 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!location || deviceIdRef.current !== deviceId) return false;
     const relocates = location.agentDeviceId !== undefined;
     if (config.agent !== sessionAgentKind) {
-      if (config.agent === 'cursor') return false;
       if (!sessionAgentSwitchSupported) return false;
       // 换电脑与换引擎是同一份交接风险:换电脑那一步已经确认过,不再叠一层换引擎确认。
       if (!relocates && modelSheetApprovedAgentRef.current !== config.agent && agentSwitchIntent?.targetAgentKind !== config.agent && !(await confirmMobileSessionAgentSwitch(config.agent, !!agentSwitchIntent,
@@ -10940,7 +10953,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
               currentSelection: { agentKind: sessionAgentKind, activeModelId: currentSession.model, selectedProviderId: currentSession.providerId ?? null, selectedEffort: currentSession.effort ?? '', selectedFastMode: currentSession.fastMode ?? false,
                     },
               scope: JSON.stringify([auth.user?.id, deviceId, orcaRemoteAgentDeviceId]),
-              agents: sessionAgentSwitchSupported ? sessionSwitchAgentKinds(selectableAgentKinds, sessionAgentKind) : [sessionAgentKind],
+              agents: sessionAgentSwitchSupported ? sessionSwitchAgentKinds(selectableAgentKinds, sessionAgentKind,
+                canSwitchSessionToCursor(currentSession)) : [sessionAgentKind],
               loadCapabilities: async (agent) => {
                 const result = normalizeMobileAgentCapabilities(await loadComposerAgentCapabilities(agent));
                 if (!result) throw new Error('Capabilities unavailable');

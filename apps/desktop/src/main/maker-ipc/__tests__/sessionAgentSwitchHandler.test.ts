@@ -106,9 +106,26 @@ describe('Cursor model picker admission', () => {
     expect(calls).toEqual([]);
   });
 
+  // User regression, unit: local old tasks could neither enter nor leave Cursor.
+  // The old cases asserted rejection only; verify persisted history and engine startup.
   it.each([
     { source: 'cc', target: 'cursor', device: undefined },
     { source: 'cursor', target: 'codex', device: undefined },
+  ])('hands local history from $source to $target', async ({ source, target }) => {
+    const { deps } = makeDeps({ getSessionRow: vi.fn(async () => makeRow({ agentKind: source })) });
+    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
+    await expect(ipc.invoke(MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', target, 'model', target === 'cursor' ? 'cursor' : null))
+      .resolves.toMatchObject({ switched: true, agentKind: target, engineReady: true });
+    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({ agentKind: target, sdkSessionId: null }));
+    expect(deps.insertBoundaryMessage).toHaveBeenCalledWith('s1', expect.objectContaining({
+      fromAgentKind: source, toAgentKind: target, handoff: expect.stringContaining('你好'),
+    }));
+    expect(deps.setPendingHandoff).toHaveBeenCalledWith('s1', expect.stringContaining('Cursor'), undefined);
+    expect(deps.bootstrapSwitchedSession).toHaveBeenCalled();
+  });
+
+  it.each([
+    { source: 'cc', target: 'cursor', device: 'other-device' },
     { source: 'cursor', target: 'cursor', device: 'other-device' },
   ])('rejects unsupported Cursor handoff $source to $target ($device)', async ({ source, target, device }) => {
     const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
@@ -118,6 +135,18 @@ describe('Cursor model picker admission', () => {
       device ? { agentDeviceId: device } : undefined)).rejects.toThrow('UNSUPPORTED_CAPABILITY');
     expect(calls).toEqual([]);
     expect(selectSameAgentModel).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { permissionMode: 'ask' },
+    { source: 'bot' },
+    { orcaRemoteLead: 'remote-lead' },
+    { orcaRole: 'worker' },
+  ])('preserves the original task when Cursor cannot accept it: %j', async (patch) => {
+    const { deps, calls } = makeDeps({ getSessionRow: vi.fn(async () => makeRow(patch)) });
+    await expect(performSessionAgentSwitch(deps, { ...validParams, targetAgentKind: 'cursor', providerId: 'cursor' }))
+      .rejects.toThrow('UNSUPPORTED_CAPABILITY');
+    expect(calls).toEqual([]);
   });
 });
 
@@ -1516,15 +1545,15 @@ describe('Phase 2:切回停泊引擎(resume + 增量交接)', () => {
     expect(pending.get('s1')).toBeUndefined();
   });
 
-  it('有停泊绑定:DB 落停泊 id、交接为增量模式、边界行标 resumed', async () => {
+  it.each(['codex', 'cursor'] as const)('%s: 有停泊绑定:DB 落停泊 id、交接为增量模式、边界行标 resumed', async (targetAgentKind) => {
     const { deps } = makeResumeDeps();
-    const result = await performSessionAgentSwitch(deps, validParams);
+    const result = await performSessionAgentSwitch(deps, { ...validParams, targetAgentKind, providerId: targetAgentKind === 'cursor' ? 'cursor' : null });
     expect(result).toMatchObject({ switched: true, engineReady: true });
-    expect(deps.findParkedEngineSession).toHaveBeenCalledWith('s1', 'codex', null);
+    expect(deps.findParkedEngineSession).toHaveBeenCalledWith('s1', targetAgentKind, null);
     expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', {
-      agentKind: 'codex',
+      agentKind: targetAgentKind,
       model: 'gpt-5.5',
-      providerId: null,
+      providerId: targetAgentKind === 'cursor' ? 'cursor' : null,
       sdkSessionId: 'sdk-parked-codex',
     });
     // 增量素材按水位线取
@@ -1571,12 +1600,12 @@ describe('Phase 2:切回停泊引擎(resume + 增量交接)', () => {
     expect(calls).toContain('bootstrap');
   });
 
-  it('resume bootstrap 失败:清停泊 id → 边界行改写全量交接 → fresh 重试成功', async () => {
+  it.each(['codex', 'cursor'] as const)('%s: resume bootstrap 失败:清停泊 id → 边界行改写全量交接 → fresh 重试成功', async (targetAgentKind) => {
     const bootstrap = vi
       .fn(async () => {})
       .mockRejectedValueOnce(new Error('resume transcript missing'));
     const { deps } = makeResumeDeps({ bootstrapSwitchedSession: bootstrap });
-    const result = await performSessionAgentSwitch(deps, validParams);
+    const result = await performSessionAgentSwitch(deps, { ...validParams, targetAgentKind, providerId: targetAgentKind === 'cursor' ? 'cursor' : null });
     expect(result).toMatchObject({ switched: true, engineReady: true });
     // 同一原子事务清掉失效 id并改写边界为全量交接 + resumed:false
     const rewritten = vi.mocked(deps.applyResumeFallbackAtomically).mock.calls[0];

@@ -17,6 +17,7 @@ import {
 } from '../appSessionState.js';
 import { createLogger } from '../logger.js';
 import { outboundFetch } from './outbound-fetch.desktop.js';
+import { bundledCursorHostEntry, getCursorSdkManager } from '../agent-binaries/cursor-sdk.js';
 
 const log = createLogger('cursor-auth');
 let login: CursorRpcClient | undefined;
@@ -53,17 +54,12 @@ interface Credentials {
 }
 
 export function cursorHostEntry(): string {
-  // The SDK locates native sandbox/rg helpers relative to argv[1]. ASAR's
-  // virtual stat loses executable bits, and native spawn needs a physical path.
-  const buildDir = app.isPackaged
-    ? path.join(app.getAppPath().replace(/\.asar$/, '.asar.unpacked'), '.vite', 'build')
-    : __dirname;
-  return path.join(buildDir, 'cursorHostProcess.js');
+  return getCursorSdkManager().entry();
 }
 
 export function cursorRuntimeAvailable(): boolean {
   return (
-    fs.existsSync(cursorHostEntry()) && !(process.platform === 'win32' && process.arch === 'arm64')
+    fs.existsSync(bundledCursorHostEntry()) && !(process.platform === 'win32' && process.arch === 'arm64')
   );
 }
 
@@ -370,10 +366,19 @@ export async function refreshCursorModels(): Promise<void> {
   }
 }
 
+/** Cursor's Grok 4.6 has no `context` parameter. Pricing has no 500k SKU (unlike 4.7);
+ * the Cursor Grok standard window is 256k. Do not copy xAI's 500k API window. */
+const CURSOR_FIXED_CONTEXT_WINDOWS: Record<string, number> = {
+  'grok-4.6': 256_000,
+};
+
 function catalogValues(raw: ModelListItem[]): CatalogModel[] {
   return raw.filter(model => model && typeof model.id === 'string' && typeof model.displayName === 'string').map(model => {
     const descriptor = cursorModelDescriptor(model);
-    return { ...descriptor, name: descriptor.displayName, efforts: [...descriptor.efforts] };
+    const catalog: CatalogModel = { ...descriptor, name: descriptor.displayName, efforts: [...descriptor.efforts] };
+    const fixed = CURSOR_FIXED_CONTEXT_WINDOWS[catalog.id];
+    if (catalog.contextWindow > 0 || !(typeof fixed === 'number' && fixed > 0)) return catalog;
+    return { ...catalog, contextWindow: fixed, contextWindowMax: fixed, contextWindowVerified: true };
   });
 }
 

@@ -62,8 +62,8 @@ const getSnapshot = () => snapshot;
 const NO_DISABLED: ReadonlySet<string> = new Set();
 
 /**
- * 这台电脑上关掉的 Harness。用于 Agent 在其他电脑运行时的选择器:那台电脑的清单不含
- * 本机设置,本机选择器在它之上再扣掉本机关掉的(当前引擎由调用方保留)。
+ * 这台电脑上关掉的 Harness。本机任务使用共享模型供应商时,模型目录来源可以在别处,
+ * 选择器仍按本机偏好扣掉关闭的 Harness(当前引擎由调用方保留)。
  * 读不到(远程控制窗口等没有这组 IPC)时为空集,不隐藏任何引擎。
  */
 export function useLocalDisabledHarnesses(): ReadonlySet<string> {

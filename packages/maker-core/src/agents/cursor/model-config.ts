@@ -12,11 +12,38 @@ const EFFORTS: readonly Effort[] = [
   "ultra",
 ];
 
+const EFFORT_PARAM_IDS = new Set(["effort", "reasoning", "reasoning_effort"]);
+
 export interface CursorModelTuning {
   effort?: string;
   fastMode?: boolean | "ultrafast";
   contextWindowBudget?: number | null;
   thinkingEnabled?: boolean;
+}
+
+function isEffortParam(id: string): boolean {
+  return EFFORT_PARAM_IDS.has(id);
+}
+
+/** Cursor GPT catalogs use extra-high; Cindy's effort union uses xhigh. */
+function toCindyEffort(value: string): Effort | undefined {
+  if ((EFFORTS as readonly string[]).includes(value)) return value as Effort;
+  return value === "extra-high" ? "xhigh" : undefined;
+}
+
+function toCatalogEffort(
+  values: readonly { value: string }[],
+  requested?: string,
+): string | undefined {
+  if (!requested) return undefined;
+  if (values.some((entry) => entry.value === requested)) return requested;
+  if (
+    requested === "xhigh" &&
+    values.some((entry) => entry.value === "extra-high")
+  ) {
+    return "extra-high";
+  }
+  return undefined;
 }
 
 function tokens(value?: string): number {
@@ -43,15 +70,16 @@ export function cursorModelDescriptor(model: ModelListItem): ModelDescriptor & {
   thinkingToggle?: boolean;
 } {
   const params = model.parameters ?? [];
-  const effort = params.find(
-    (param) => param.id === "effort" || param.id === "reasoning",
+  const effort = params.find((param) => isEffortParam(param.id));
+  const declared = new Set(
+    (effort?.values ?? [])
+      .map((entry) => toCindyEffort(entry.value))
+      .filter((level): level is Effort => level !== undefined),
   );
-  const efforts = EFFORTS.filter((level) =>
-    effort?.values.some((entry) => entry.value === level),
+  const efforts = EFFORTS.filter((level) => declared.has(level));
+  const defaultEffort = toCindyEffort(
+    defaults(model).find((param) => param.id === effort?.id)?.value ?? "",
   );
-  const defaultEffort = defaults(model).find(
-    (param) => param.id === effort?.id,
-  )?.value;
   const context = params.find((param) => param.id === "context");
   const contextValues =
     context?.values.map((entry) => tokens(entry.value)).filter(Boolean) ?? [];
@@ -110,8 +138,8 @@ export function cursorModelSelection(
   );
   for (const param of model.parameters ?? []) {
     let requested: string | undefined;
-    if (param.id === "effort" || param.id === "reasoning")
-      requested = tuning.effort;
+    if (isEffortParam(param.id))
+      requested = toCatalogEffort(param.values, tuning.effort);
     if (param.id === "fast" && tuning.fastMode !== undefined) {
       requested = String(tuning.fastMode);
     }

@@ -28,6 +28,7 @@ import { useAnalyticsSettings } from '@/hooks/useAnalyticsSettings';
 import { useLogUploadSettings } from '@/hooks/useLogUploadSettings';
 import { OpenLogsRow, UploadLogsRow } from '@/components/log-support/LogSupportActions';
 import { PiKernelVersionRow } from './PiKernelVersionRow';
+import { CursorSdkVersionRow } from './CursorSdkVersionRow';
 import { HARNESS_MENU_ITEM_CLASS, HarnessMenuFootnote, HarnessVersionMenuItem, HarnessVersionMenuRow } from './HarnessVersionMenuRow';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
@@ -193,15 +194,7 @@ export function AgentVersionsRows() {
         <PiKernelVersionRow />
       </SettingsBlock>
       <SettingsBlock className="p-0">
-        {/* Cursor 随应用内置 SDK,没有单独的版本与更新,这一行只有模型选择器显示开关。 */}
-        <HarnessVersionMenuRow
-          harnessKind="cursor"
-          label="Cursor"
-          manageLabel={t('settings.about.harnessShowInPicker')}
-          status=""
-          pending={false}
-          testId="cursor-harness-row"
-        />
+        <CursorSdkVersionRow />
       </SettingsBlock>
     </>
   );

@@ -11,6 +11,10 @@ vi.mock("node:fs/promises", () => ({
 }));
 import type { InteractionUpdate } from "@cursor/sdk";
 import { CursorAgent, type CursorAgentDeps } from "../index.js";
+import {
+  cursorModelDescriptor,
+  cursorModelSelection,
+} from "../model-config.js";
 import { CursorHostRuntime } from "../host-runtime.js";
 import { CursorRpcClient, type CursorRpc } from "../rpc-client.js";
 import type { PiTransport } from "../../pi/transport.js";
@@ -1511,4 +1515,61 @@ it("forwards catalog-declared effort, Fast and context tiers through the real ad
     },
   });
   await handle.close();
+});
+
+// Live Cursor catalogs declare reasoning_effort (Gemini/Grok 4.7) and extra-high
+// (GPT). The selector only lists Cindy Effort values, so those must map both ways.
+describe("Cursor catalog effort parameters", () => {
+  const values = (...levels: string[]) => levels.map((value) => ({ value }));
+
+  it("exposes reasoning_effort as selectable Cindy efforts", () => {
+    const model = {
+      id: "gemini-4-hydrogen",
+      displayName: "Gemini 4 Hydrogen",
+      parameters: [
+        { id: "reasoning_effort", values: values("low", "medium", "high", "xhigh") },
+      ],
+      variants: [
+        {
+          displayName: "Gemini 4 Hydrogen",
+          isDefault: true,
+          params: [{ id: "reasoning_effort", value: "high" }],
+        },
+      ],
+    };
+    expect(cursorModelDescriptor(model)).toMatchObject({
+      efforts: ["low", "medium", "high", "xhigh"],
+      defaultEffort: "high",
+      thinkingToggle: false,
+    });
+    expect(cursorModelSelection(model.id, model, { effort: "xhigh" })).toEqual({
+      id: model.id,
+      params: [{ id: "reasoning_effort", value: "xhigh" }],
+    });
+  });
+
+  it("maps extra-high to xhigh and sends the catalog value back", () => {
+    const model = {
+      id: "gpt-5.5",
+      displayName: "GPT-5.5",
+      parameters: [
+        { id: "reasoning", values: values("none", "low", "medium", "high", "extra-high") },
+      ],
+      variants: [
+        {
+          displayName: "GPT-5.5",
+          isDefault: true,
+          params: [{ id: "reasoning", value: "medium" }],
+        },
+      ],
+    };
+    expect(cursorModelDescriptor(model)).toMatchObject({
+      efforts: ["low", "medium", "high", "xhigh"],
+      defaultEffort: "medium",
+    });
+    expect(cursorModelSelection(model.id, model, { effort: "xhigh" })).toEqual({
+      id: model.id,
+      params: [{ id: "reasoning", value: "extra-high" }],
+    });
+  });
 });

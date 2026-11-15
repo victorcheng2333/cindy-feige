@@ -2994,6 +2994,24 @@
         "installFailed": "Pi installation failed. The previous version is still selected. Check your connection and available disk space, then retry.",
         "openFailed": "Could not open the release notes.",
         "restartRequired": "Pi {{version}} is installed. Restart Cindy to enable Pi."
+      },
+      "cursorSdk": {
+        "label": "Cursor SDK version",
+        "manage": "Manage Cursor SDK",
+        "check": "Check for updates",
+        "checking": "Checking…",
+        "checkFailed": "Check failed",
+        "available": "Update available",
+        "installing": "Installing…",
+        "update": "Update SDK",
+        "restore": "Restore bundled version",
+        "updateTitle": "Update to Cursor SDK {{version}}?",
+        "restoreTitle": "Restore bundled Cursor SDK?",
+        "description": "Updates are published by Cursor and may have compatibility issues. You can restore the bundled version at any time. Running Cursor engines keep their current version.",
+        "installed": "Cursor SDK is ready. The selected version takes effect the next time the Cursor engine starts.",
+        "installFailed": "Cursor SDK update failed. The previous version is unchanged. Check for updates and try again.",
+        "scope": "Takes effect the next time the Cursor engine starts. Current work is unaffected.",
+        "checkedAt": "Last checked: {{time}}"
       }
     },
     "apiKey": {

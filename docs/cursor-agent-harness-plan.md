@@ -260,7 +260,14 @@ Cursor 的 `systemPrompt` 是整段替换、且要 Cursor 按账号开通，不�
   `t3code/packages/provider-cursor/src/client.ts`）。填充色用 `currentColor`，跟随语义前景色与选中态，
   不硬编码 t3 的 `#26251E / #EDECEC`。
 - 对外名称统一写「Cursor」；Harness 筛选、Issue 元数据里的公开全名写「Cursor」，不用缩写。
-- 「关于」页的 Harness 版本行显示 `@cursor/sdk` 版本；SDK 随应用发布，不提供单独更新按钮。
+- 「关于」页的 Harness 版本行显示 `@cursor/sdk` 版本；2026-11-15 起支持手动检查官方 npm
+  `latest`、更新 SDK 与恢复随应用内置版本。查询在用户点击后进行，普通打开页面只读本地状态。
+  独立 SDK 装到 `<userData>/cursor-sdk/<generation>/node_modules`，不改已签名的应用包。
+  安装使用受管 Node 的 npm，关闭生命周期脚本和用户 npm 配置；npm 校验依赖 SRI，再核对
+  SDK 的发布摘要与目标平台包版本，经实际 Electron utility process 加载入口后才原子发布选择。
+  新进程读取所选 SDK，已有进程及旧代次保留。SDK 代码与当前应用的宿主适配器分离，升级应用后
+  继续使用新应用的适配器。登录与历史目录不变。检查或安装失败不发布新选择；可恢复内置版。
+  入口加载检查不等于完整模型、工具与 sandbox 兼容性认证，真实更新后仍需实际使用验收。
 
 ### 5.5 用量
 
@@ -691,6 +698,13 @@ Cursor 同引擎待应用配置，不开放跨引擎／跨电脑分配；旧控�
 
 
 ## 任务内跨 Harness 上下文交接（2026-11-05）
+
+2026-11-15 当前 checkout 复查：上文历史验收不代表当前代码仍包含支持。实际发现桌面候选
+清单遗漏 Cursor、分段入口强制隐藏 Cursor，且 handler 拒绝跨 Harness 交接。本次重新接回
+本机普通任务的双向切换与既有停泊恢复，补齐 Cursor 名称及平铺模型行的 Cursor 来源。
+沿用下述准入边界；不扩展跨电脑执行。回归覆盖首条发送接受／拒绝、回切增量与恢复失败回退，
+选择器在 760px／390px、Light／Dark 下验证隐藏 Pi 后仍可选 Cursor。以上为合成验证，
+本次尚未打包安装或使用真实模型重新验收，不能沿用旧版本的实机结论。
 
 ### 使用方式与范围
 

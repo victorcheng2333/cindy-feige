@@ -29,7 +29,7 @@ vi.mock('electron', () => ({
 vi.mock('node:fs', () => ({
   default: {
     existsSync: () => true,
-    readFileSync: (file: string) => { const value = h.files.get(file); if (value === undefined) throw new Error('ENOENT'); return value; },
+    readFileSync: (file: string) => { const value = h.files.get(file); if (value === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return value; },
     mkdirSync: () => {},
     writeFileSync: (file: string, value: string) => { h.files.set(file, value); },
     renameSync: (from: string, to: string) => { h.files.set(to, h.files.get(from)!); h.files.delete(from); },
@@ -244,6 +244,49 @@ describe('Cursor connection', () => {
     expect(h.stop).toHaveBeenCalledOnce();
     expect(h.openExternal).toHaveBeenCalledWith('https://cursor.com/login/fixture');
     expect(h.close).toHaveBeenCalledOnce();
+  });
+
+  it('projects catalog-declared reasoning_effort and extra-high as selectable efforts', async () => {
+    const values = (...levels: string[]) => levels.map(value => ({ value }));
+    h.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [
+        {
+          id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen',
+          parameters: [{ id: 'reasoning_effort', values: values('low', 'medium', 'high', 'xhigh') }],
+          variants: [{ isDefault: true, params: [{ id: 'reasoning_effort', value: 'high' }] }],
+        },
+        {
+          id: 'gpt-5.5', displayName: 'GPT-5.5',
+          parameters: [{ id: 'reasoning', values: values('none', 'low', 'medium', 'high', 'extra-high') }],
+          variants: [{ isDefault: true, params: [{ id: 'reasoning', value: 'medium' }] }],
+        },
+      ] }),
+    });
+    expect(await cursorAuthAdapter.triggerLogin()).toMatchObject({ authenticated: true });
+    expect(cursorProvider().models.cursor).toEqual([
+      expect.objectContaining({ id: 'gemini-4-hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' }),
+      expect.objectContaining({ id: 'gpt-5.5', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' }),
+    ]);
+  });
+
+  it('uses Cursor\'s 256k Grok window for 4.6 and keeps 4.7\'s catalog Max Mode', async () => {
+    h.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [
+        { id: 'grok-4.6', displayName: 'Grok 4.6' },
+        {
+          id: 'grok-4.7', displayName: 'Grok 4.7',
+          parameters: [{ id: 'context', values: [{ value: '256k' }, { value: '500k' }] }],
+          variants: [{ isDefault: true, params: [{ id: 'context', value: '500k' }] }],
+        },
+      ] }),
+    });
+    expect(await cursorAuthAdapter.triggerLogin()).toMatchObject({ authenticated: true });
+    expect(cursorProvider().models.cursor).toEqual([
+      expect.objectContaining({ id: 'grok-4.6', contextWindow: 256_000, contextWindowMax: 256_000, contextWindowVerified: true }),
+      expect.objectContaining({ id: 'grok-4.7', contextWindow: 500_000, contextWindowMax: 500_000 }),
+    ]);
   });
 
   it('does not save a login that arrives after cancellation', async () => {

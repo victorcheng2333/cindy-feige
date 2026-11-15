@@ -2,7 +2,11 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-beforeEach(() => vi.resetModules());
+import * as providerCache from '@/hooks/useDeviceProviders';
+import { useDevicesProviders } from '@/hooks/useDevicesProviders';
+import { useAgentCapabilities, evictAllRemoteCapabilities, evictDeviceCapabilities, getCachedCapabilities } from '@/hooks/useAgentCapabilities';
+
+beforeEach(() => { providerCache.evictAllDeviceProviders(); evictAllRemoteCapabilities(); });
 afterEach(cleanup);
 
 function directory(ids = ['xd', 'ollama']) {
@@ -77,6 +81,64 @@ describe('multi-device provider rows during real catalog refresh', () => {
     await act(async () => { f.pending.get('a')!.resolve(directory(['xd'])); await done; });
     expect(f.result.current.get('a')?.providers.map(p => p.id)).toEqual(['xd']);
     expect(f.result.current.get('a')?.loading).toBe(false);
+  });
+
+  // unit regression: existing coverage kept hooks mounted. New opens during a held
+  // refresh must retain rows/capabilities without treating them as authoritative.
+  it('keeps display snapshots when the picker and selected model remount during refresh', async () => {
+    const f = await fixture();
+    const selected = renderHook(() => ({
+      providers: providerCache.useDeviceProviders('a'),
+      capabilities: useAgentCapabilities('codex', 'a'),
+    }));
+    await waitFor(() => expect(selected.result.current.capabilities.capabilities).not.toBeNull());
+    const { done } = await f.start();
+    f.unmount(); selected.unmount();
+    const reopened = renderHook(() => ({
+      rows: useDevicesProviders(['a'], { retainDisplaySnapshot: true }),
+      selected: providerCache.useDeviceProviders('a'),
+    }));
+    expect(reopened.result.current.rows.get('a')?.providers).toHaveLength(2);
+    expect(reopened.result.current.selected.providers).toHaveLength(2);
+    expect(reopened.result.current.selected.loading).toBe(true);
+    expect(providerCache.getCachedDeviceProviders('a')).toBeNull();
+    await act(async () => { f.pending.get('a')!.resolve(directory(['new'])); await done; });
+    expect(reopened.result.current.selected.providers.map(p => p.id)).toEqual(['new']);
+  });
+
+  it('remounts retained capabilities as loading and expires them at the original deadline', async () => {
+    vi.useFakeTimers();
+    const caps = { availableModels: [], hasFastMode: false, effortLevels: [], permissionModes: [],
+      providerContinuity: { stale: false, remainingMs: 1000 } };
+    let finish!: (value: typeof caps) => void;
+    const invoke = vi.fn().mockResolvedValueOnce(caps)
+      .mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    Object.defineProperty(window, 'electronAPI', { configurable: true, value: { deviceLink: { invoke } } });
+    try {
+      const first = renderHook(() => useAgentCapabilities('claude-code', 'bounded'));
+      await act(async () => {});
+      expect(first.result.current.capabilities).not.toBeNull();
+      act(() => { evictDeviceCapabilities('bounded', { retainDisplaySnapshot: true }); });
+      first.unmount();
+      const second = renderHook(() => useAgentCapabilities('claude-code', 'bounded'));
+      expect(second.result.current.capabilities).not.toBeNull();
+      expect(second.result.current.loading).toBe(true);
+      expect(getCachedCapabilities('claude-code', 'bounded')).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(second.result.current.capabilities).toBeNull();
+      await act(async () => { finish(caps); });
+      expect(second.result.current.capabilities).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps bounded rows on transient failure, but clears them on revocation', async () => {
+    const f = await fixture();
+    const { done } = await f.start();
+    await act(async () => { f.pending.get('a')!.reject(new Error('[DEVICE_LINK_TIMEOUT] timed out')); await done; });
+    expect(f.result.current.get('a')?.providers).toHaveLength(2);
+    expect(f.result.current.get('a')?.error).toContain('TIMEOUT');
+    act(() => { f.mod.evictDeviceProviders('a'); });
+    expect(f.result.current.get('a')?.providers).toEqual([]);
   });
 
   it('accepts an authoritative empty list', async () => {

@@ -1635,3 +1635,21 @@ describe('the seed keeps a restored explicit choice', () => {
     expect(spy.mock.calls[0]?.[3]).toBe(true);
   });
 });
+
+// Unit regression: before the selection effect runs, reopening New must already
+// display the remembered model rather than the first model of the remote catalog.
+it('uses the remembered remote model on the first draft frame', () => {
+  const initial = callback<() => DeviceLinkDraftSelection>('deviceLinkInitial', {
+    usesDeviceCatalog: true, dlSel: null,
+    capabilities: {
+      availableModels: ['default-model', 'remembered-model'].map(id => ({
+        id, displayName: id, contextWindow: 1000, efforts: ['high'], defaultEffort: 'high',
+      })),
+      hasFastMode: false, effortLevels: [], permissionModes: [],
+    },
+    deviceDraftDefaults: { model: 'remembered-model', modelChosenByUser: true, effort: 'high' },
+    capabilityAgentKind: 'claude-code', remoteDraftProviders: undefined,
+    resolveDeviceLinkDraftDefaults,
+  });
+  expect(initial().model).toBe('remembered-model');
+});

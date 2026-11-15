@@ -10,6 +10,7 @@ import type { AgentKind, ModelRegistry } from '@cindy/model-providers';
 
 import { modelPricingKey } from '../../shared/modelPriceQuote.js';
 import { accountReferencePriceQuote as providerReferencePriceQuote } from './accountReferencePrice.js';
+import { cursorOfficialReferenceQuote } from './cursorApiValue.js';
 import type {
   ModelPriceOverrideDesiredQuote,
   ModelPriceOverrideTarget,
@@ -53,7 +54,7 @@ interface ModelPriceOverridePrefs {
 const DEFAULTS: ModelPriceOverridePrefs = { version: STORE_VERSION, entries: {} };
 
 function isAgent(value: unknown): value is AgentKind {
-  return value === 'claude-code' || value === 'codex' || value === 'pi';
+  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor';
 }
 
 function isCurrency(value: unknown): value is MoneyCurrency {
@@ -462,7 +463,7 @@ export function readModelPriceOverrideView(
 ): ModelPriceOverrideView {
   const remoteReference = providerReferencePriceQuote(target.providerId, target.modelId, registry, {
     agent: target.agent,
-  });
+  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry, target.modelId) : undefined);
   const reference =
     remoteReference && currencyCanProjectToLedger(remoteReference.currency, ledgerCurrency)
       ? remoteReference
@@ -494,7 +495,7 @@ export function setModelPriceOverride(
   }
   const reference = providerReferencePriceQuote(target.providerId, target.modelId, registry, {
     agent: target.agent,
-  });
+  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry, target.modelId) : undefined);
   const baseReference = comparable(reference);
   const values = sparseValues(desired, baseReference);
   const entries = { ...readEntries() };

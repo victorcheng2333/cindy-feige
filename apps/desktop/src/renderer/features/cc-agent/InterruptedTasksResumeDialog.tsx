@@ -12,6 +12,9 @@
  *  - 没勾选的任务和「暂不继续」不做任何写入,任务里的横幅与红点照常保留,之后仍可单独处理。
  *
  * 每个窗口生命周期只弹一次;更新说明弹窗打开期间先不弹,关掉后再出现。
+ *
+ * 计划内重启(本机替换安装脚本带 `--resume-interrupted-tasks` 重新打开 Cindy)时不弹:
+ * 中断的就是发起替换的那些任务,直接按默认全选继续,与用户点「继续」走同一条路径。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -42,6 +45,25 @@ const MAX_LOAD_ATTEMPTS = 5;
  */
 let _load: { ownerId: string | null; promise: Promise<InterruptedTask[]> } | null = null;
 const _handledOwnerIds = new Set<string | null>();
+/**
+ * main 侧一次性消费:true 只会给出一次,缓存住让 StrictMode / 重挂载的 effect 共用同一答案
+ * (是否已续跑由 _handledOwnerIds 判定)。false 不缓存,再问一次 main 也只会是 false。
+ */
+let _launchResume: Promise<boolean> | null = null;
+
+function consumeLaunchResume(): Promise<boolean> {
+  _launchResume ??= Promise.resolve(window.electronAPI.consumeLaunchResumeInterruptedTasks?.())
+    .then((value) => {
+      if (value === true) return true;
+      _launchResume = null;
+      return false;
+    })
+    .catch(() => {
+      _launchResume = null;
+      return false;
+    });
+  return _launchResume;
+}
 
 interface InterruptedTask {
   session: Session;
@@ -68,6 +90,29 @@ async function loadBotNamesBySessionId(): Promise<Map<string, string>> {
 async function listStillInterruptedIds(): Promise<Set<string>> {
   const candidates = await window.electronAPI.localDb.sessions.interruptedResumeCandidates();
   return new Set(candidates.map((c) => c.sessionId));
+}
+
+/**
+ * 对选中任务发与横幅相同的续跑指令。弹窗可能在更新说明后才出现,期间任务可能已被其它
+ * 窗口/横幅继续:提交前重新取仍处于中断态的集合再取交集,避免对已恢复的任务重复续跑。
+ */
+async function continueInterruptedTasks(
+  picked: string[],
+  onFailed: (count: number) => void,
+): Promise<void> {
+  const stillInterrupted = await listStillInterruptedIds().catch(() => null);
+  if (!stillInterrupted) {
+    onFailed(picked.length);
+    return;
+  }
+  const ids = picked.filter((id) => stillInterrupted.has(id));
+  const results = await Promise.allSettled(
+    ids.map((id) => makerChatStore.sendUiTrigger(id, CONTINUE_AFTER_APP_EXIT_PROMPT)),
+  );
+  const failed = results.filter((r) => r.status === 'rejected');
+  if (failed.length === 0) return;
+  log.warn(`failed to continue ${failed.length}/${ids.length} interrupted task(s)`);
+  onFailed(failed.length);
 }
 
 async function loadInterruptedTasks(): Promise<InterruptedTask[]> {
@@ -151,6 +196,8 @@ export function InterruptedTasksResumeDialog({ suspended = false, onPendingChang
   const [tasks, setTasks] = useState<InterruptedTask[]>([]);
   const [deselected, setDeselected] = useState<ReadonlySet<string>>(() => new Set());
   const [open, setOpen] = useState(false);
+  const tRef = useRef(t);
+  tRef.current = t;
 
   useEffect(() => {
     let active = true;
@@ -159,9 +206,28 @@ export function InterruptedTasksResumeDialog({ suspended = false, onPendingChang
     if (_load?.ownerId !== dataOwnerId) {
       _load = { ownerId: dataOwnerId, promise: loadInterruptedTasksWithRetry() };
     }
-    void _load.promise.then((loaded) => {
+    void _load.promise.then(async (loaded) => {
       if (!active) return;
       if (_handledOwnerIds.has(dataOwnerId) || loaded.length === 0) {
+        onPendingChange?.(false);
+        return;
+      }
+      const resumeOnLaunch = await consumeLaunchResume();
+      // The one-shot answer is already consumed: settle it even if this effect was
+      // superseded, otherwise a StrictMode/owner re-run would fall back to the dialog.
+      if (resumeOnLaunch && !_handledOwnerIds.has(dataOwnerId)) {
+        _handledOwnerIds.add(dataOwnerId);
+        // Only the account signed in at the planned restart; a later account still asks.
+        _launchResume = Promise.resolve(false);
+        log.info(`resuming ${loaded.length} interrupted task(s) after a planned restart`);
+        void continueInterruptedTasks(
+          loaded.map((task) => task.session.id),
+          (count) =>
+            toast.error(tRef.current('chat.interruptedResumeDialog.continueFailed', { count })),
+        );
+      }
+      if (!active) return;
+      if (_handledOwnerIds.has(dataOwnerId)) {
         onPendingChange?.(false);
         return;
       }
@@ -210,24 +276,9 @@ export function InterruptedTasksResumeDialog({ suspended = false, onPendingChang
   };
 
   const handleContinue = () => {
-    const picked = selectedIds;
-    void (async () => {
-      // 弹窗可能在更新说明后才出现,期间任务可能已被其它窗口/横幅继续:提交前重新取
-      // 仍处于中断态的集合再取交集,避免对已恢复的任务重复续跑。
-      const stillInterrupted = await listStillInterruptedIds().catch(() => null);
-      if (!stillInterrupted) {
-        toast.error(t('chat.interruptedResumeDialog.continueFailed', { count: picked.length }));
-        return;
-      }
-      const ids = picked.filter((id) => stillInterrupted.has(id));
-      const results = await Promise.allSettled(
-        ids.map((id) => makerChatStore.sendUiTrigger(id, CONTINUE_AFTER_APP_EXIT_PROMPT)),
-      );
-      const failed = results.filter((r) => r.status === 'rejected');
-      if (failed.length === 0) return;
-      log.warn(`failed to continue ${failed.length}/${ids.length} interrupted task(s)`);
-      toast.error(t('chat.interruptedResumeDialog.continueFailed', { count: failed.length }));
-    })();
+    void continueInterruptedTasks(selectedIds, (count) =>
+      toast.error(t('chat.interruptedResumeDialog.continueFailed', { count })),
+    );
   };
 
   if (total === 0) return null;

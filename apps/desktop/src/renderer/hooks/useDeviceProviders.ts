@@ -51,6 +51,8 @@ export interface DeviceProvidersPayload {
 const EMPTY_PAYLOAD: DeviceProvidersPayload = { providers: [] };
 const cache = new Map<string, DeviceProvidersPayload>();
 const expiry = new MetadataSnapshotExpiry();
+// A soft refresh invalidates routing readiness, not the bounded display payload.
+const stale = new Set<string>();
 // Retained across a policy refresh failure; discarded on disconnect/owner
 // eviction. Otherwise a failed refresh loses the identity needed to retry it.
 const subscriptionFetchedAt = new Map<string, number>();
@@ -191,6 +193,12 @@ export function isDeviceProvidersUnsupportedError(error: unknown): boolean {
   return extractIpcError(error)?.code === 'DEVICE_LINK_CHANNEL_NOT_ALLOWED';
 }
 
+function canRetainDeviceProviderDisplay(error: unknown): boolean {
+  return !isProviderAccessDeniedError(error) && !isDeviceProvidersUnsupportedError(error)
+    && extractIpcError(error)?.code !== 'MODEL_VISIBILITY_NOT_READY'
+    && (isTransientRemoteError(error) || isDeviceUnresponsiveRemoteError(error));
+}
+
 function notifyDeviceProviders(deviceId: string, event: DeviceProvidersEvent): void {
   for (const listener of listeners.get(deviceId) ?? []) listener(event);
 }
@@ -256,6 +264,7 @@ async function fetchDeviceProviders(deviceId: string): Promise<DeviceProvidersPa
           throw new Error('[MODEL_VISIBILITY_NOT_READY] Provider directory snapshot expired');
         }
         cache.set(deviceId, payload);
+        stale.delete(deviceId);
         if (deviceId.startsWith('share:') && payload.providers.some(provider => !!provider.subscriptionFastPolicy))
           subscriptionFetchedAt.set(deviceId, Date.now());
         else subscriptionFetchedAt.delete(deviceId);
@@ -267,7 +276,11 @@ async function fetchDeviceProviders(deviceId: string): Promise<DeviceProvidersPa
     .catch((e) => {
       if (isCurrent()) {
         inflight.delete(deviceId);
-        if (isProviderAccessDeniedError(e)) { cache.delete(deviceId); expiry.forget(deviceId); }
+        if (!canRetainDeviceProviderDisplay(e)) {
+          cache.delete(deviceId);
+          stale.delete(deviceId);
+          expiry.forget(deviceId);
+        }
         notifyDeviceProviders(deviceId, {
           status: 'error',
           error: e instanceof Error ? e.message : String(e),
@@ -292,12 +305,12 @@ export interface UseDeviceProvidersResult {
 }
 
 export function useDeviceProviders(deviceId?: string): UseDeviceProvidersResult {
-  const initialPayload = deviceId ? getCachedDeviceProviders(deviceId) ?? undefined : undefined;
+  const initialPayload = deviceId ? getDeviceProvidersDisplaySnapshot(deviceId) ?? undefined : undefined;
   const [ownerDeviceId, setOwnerDeviceId] = useState<string | null>(
     initialPayload ? (deviceId ?? null) : null,
   );
   const [payload, setPayload] = useState<DeviceProvidersPayload>(initialPayload ?? EMPTY_PAYLOAD);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !!deviceId && !getCachedDeviceProviders(deviceId));
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
 
@@ -347,7 +360,7 @@ export function useDeviceProviders(deviceId?: string): UseDeviceProvidersResult 
         setOwnerDeviceId(deviceId);
         // 只有可重试的瞬时故障可以继续显示有界快照；明确拒绝、移除或
         // 无效目录等永久失败必须立刻清掉旧模型，不能让界面停在旧结果。
-        if (!recoverable || errorCode === 'MODEL_VISIBILITY_NOT_READY') setPayload(EMPTY_PAYLOAD);
+        if (!canRetainDeviceProviderDisplay(new Error(event.error))) setPayload(EMPTY_PAYLOAD);
         setLoading(false);
         setError(event.error);
         setUnsupported(event.unsupported);
@@ -379,9 +392,9 @@ export function useDeviceProviders(deviceId?: string): UseDeviceProvidersResult 
       setLoading(false);
       return cleanup;
     }
-    // cache miss:先清空,避免 fetch 解析前(失败则永远)残留上一设备的供应商。
+    // Only the selected target may supply a bounded display during refresh.
     setOwnerDeviceId(deviceId);
-    setPayload(EMPTY_PAYLOAD);
+    setPayload(getDeviceProvidersDisplaySnapshot(deviceId) ?? EMPTY_PAYLOAD);
     setLoading(true);
     setError(null);
     setUnsupported(false);
@@ -447,6 +460,11 @@ export function refreshControlledDeviceProviders(taskDeviceId: string): void {
 
 /** device-link:被控设备下线 / 断链时驱逐其供应商缓存(只清该设备的 key + 代际自增)。 */
 export function getCachedDeviceProviders(deviceId: string): DeviceProvidersPayload | null {
+  return expiry.valid(deviceId) && !stale.has(deviceId) ? cache.get(deviceId) ?? null : null;
+}
+
+/** Display only; callers must keep loading/error readiness separate. */
+export function getDeviceProvidersDisplaySnapshot(deviceId: string): DeviceProvidersPayload | null {
   return expiry.valid(deviceId) ? cache.get(deviceId) ?? null : null;
 }
 
@@ -477,7 +495,8 @@ export function evictDeviceProviders(
       }
     }
   }
-  cache.delete(deviceId);
+  if (options?.retainDisplaySnapshot && cache.has(deviceId)) stale.add(deviceId);
+  else { cache.delete(deviceId); stale.delete(deviceId); }
   if (!options?.retainDisplaySnapshot) expiry.forget(deviceId);
   if (!options?.retainDisplaySnapshot) subscriptionFetchedAt.delete(deviceId);
   inflight.delete(deviceId);

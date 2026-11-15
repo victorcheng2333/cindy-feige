@@ -3031,6 +3031,24 @@
         "installFailed": "A instalação do Pi falhou. A versão anterior continua selecionada. Verifique a ligação e o espaço disponível em disco e tente novamente.",
         "openFailed": "Não foi possível abrir as notas de lançamento.",
         "restartRequired": "O Pi {{version}} está instalado. Reinicie o Cindy para ativar o Pi."
+      },
+      "cursorSdk": {
+        "label": "Versão do SDK do Cursor",
+        "manage": "Gerir SDK do Cursor",
+        "check": "Procurar atualizações",
+        "checking": "A verificar…",
+        "checkFailed": "Falha na verificação",
+        "available": "Atualização disponível",
+        "installing": "A instalar…",
+        "update": "Atualizar SDK",
+        "restore": "Restaurar versão incluída",
+        "updateTitle": "Atualizar para o SDK do Cursor {{version}}?",
+        "restoreTitle": "Restaurar o SDK do Cursor incluído?",
+        "description": "As atualizações são publicadas pelo Cursor e podem apresentar incompatibilidades. Pode restaurar a versão incluída a qualquer momento. As sessões de agente existentes mantêm a sua versão.",
+        "installed": "O SDK do Cursor está pronto. A próxima sessão de agente utilizará a versão selecionada.",
+        "installFailed": "A atualização falhou. A versão anterior não foi alterada. Procure atualizações e tente novamente.",
+        "scope": "Aplica-se à próxima sessão de agente. As tarefas em curso não são afetadas.",
+        "checkedAt": "Última verificação: {{time}}"
       }
     },
     "apiKey": {

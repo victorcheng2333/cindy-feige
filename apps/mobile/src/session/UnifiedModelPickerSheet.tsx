@@ -401,7 +401,7 @@ export function UnifiedModelPickerSheet(
           : selectedDeviceId === null
             ? keepModel
             : undefined,
-        !p.existingSessionRoute && p.unified.agents.includes('cursor'),
+        p.unified.agents.includes('cursor'),
       ),
     [
       p.providers,
@@ -1276,7 +1276,7 @@ export function UnifiedModelPickerSheet(
       onBrowseAgent={async (agent) => {
         if (agent === browsingAgent || !p.unified.agents.includes(agent)) return;
         await transact(async (isCurrent) => {
-          if (p.agentSwitch && agent !== 'cursor') {
+          if (p.agentSwitch) {
             if (await p.agentSwitch.onBrowseAgent(agent) === false) return;
           }
           if (!isCurrent()) return;
@@ -1346,7 +1346,7 @@ export function UnifiedModelPickerSheet(
           ? {
               row,
               agents: row.entry.candidates.filter(agent => p.unified.agents.includes(agent) &&
-                (agent !== "cursor" || (!row.remoteDevice && (!p.existingSessionRoute || p.agentKind === "cursor"))),
+                (agent !== "cursor" || !row.remoteDevice),
               ),
               fastCapable:
                 !!cap?.supportsFastMode && (!!row.remoteDevice || fastCapable(row.config.agent)),

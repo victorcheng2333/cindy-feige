@@ -44,6 +44,16 @@ parentPort.on("message", ({ data }) => {
     try {
       let result: unknown;
       switch (request.method) {
+        case "sdk-probe": {
+          // Installation check only: no credentials, model request, or user history.
+          const sqlite = load("@cursor/sdk/sqlite") as typeof import("@cursor/sdk/sqlite");
+          if (typeof sdk.Agent?.create !== "function" || typeof sdk.Cursor?.auth?.login !== "function"
+            || typeof sdk.Cursor?.models?.list !== "function" || typeof sqlite.SqliteLocalAgentStore !== "function") {
+            throw new Error("Cursor SDK entry points unavailable");
+          }
+          result = { ready: true };
+          break;
+        }
         case "open": {
           // First open of a long task may migrate its whole history. Stop proving liveness
           // after the cap so a stuck open still reaches the caller's idle timeout.

@@ -313,16 +313,16 @@ export function useAvailableAgents(deviceId?: string | null): UseAvailableAgents
     };
   }, [deviceId]);
 
-  // 本机列表已由 main 扣掉本机关掉的 Harness。Agent 在其他电脑运行时,那台电脑的列表不含
-  // 本机设置:本机的选择器里再扣掉本机关掉的,保证「这台电脑关掉的不出现在这台电脑的选择器」。
-  // 扣完为空时保留原列表,不让选择器一个引擎都没有。
+  // 模型目录来源不代表任务归属。本机任务借用共享供应商时,目录可以来自其他电脑,
+  // 选择器仍须按本机偏好隐藏 Harness。空结果也不能恢复已关闭的候选;
+  // 已有任务当前使用的引擎由选择器调用方单独保留。
   const localDisabled = useLocalDisabledHarnesses();
   const effectiveVendors = useMemo<ReadonlySet<MakerVendor>>(() => {
     if (!deviceId || localDisabled.size === 0) return availableVendors;
     const kept = [...availableVendors].filter(
       (vendor) => !localDisabled.has(vendor === 'cc' ? 'claude-code' : vendor),
     );
-    return kept.length > 0 && kept.length < availableVendors.size ? new Set(kept) : availableVendors;
+    return kept.length < availableVendors.size ? new Set(kept) : availableVendors;
   }, [deviceId, localDisabled, availableVendors]);
 
   return { availableVendors: effectiveVendors, loaded, loading };
@@ -346,7 +346,7 @@ export function __resetAvailableAgentsCacheForTest(): void {
 export function useModelPickerAgents(current: RuntimeAgentKind, deviceId?: string | null): readonly RuntimeAgentKind[] | undefined {
   const { availableVendors, loaded } = useAvailableAgents(deviceId);
   if (!loaded) return undefined;
-  return (['claude-code', 'codex', 'pi'] as const).filter(
+  return (['claude-code', 'codex', 'pi', 'cursor'] as const).filter(
     (agent) => agent === current || availableVendors.has(toVendor(agent)),
   );
 }

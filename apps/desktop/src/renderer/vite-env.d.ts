@@ -2365,6 +2365,8 @@ interface ElectronAPI {
   getCrashDiagnosis: () => Promise<import('../shared/crashDiagnosis').CrashDiagnosisSummary | null>;
   prepareCrashDiagnosis: () => Promise<import('../shared/crashDiagnosis').CrashDiagnosisEvidence | null>;
   dismissCrashDiagnosis: () => Promise<void>;
+  /** 计划内重启（本机替换安装）带启动参数时为 true：中断的任务直接继续、不弹窗。每个进程只返回一次 true。 */
+  consumeLaunchResumeInterruptedTasks?: () => Promise<boolean>;
   getLogUploadSettings: () => Promise<LogUploadSettingsPayload>;
   setLogUploadCrashAuto: (enabled: boolean) => Promise<LogUploadSettingsPayload>;
   /** 恢复默认:删掉 override,重新跟随当前版本默认的“已有 Git 项目”模式。 */
@@ -7245,6 +7247,11 @@ interface ElectronAPI {
           userCode?: string;
         }) => void,
       ) => () => void;
+    };
+
+    cursorSdk: {
+      getState: (check?: boolean) => Promise<import('../shared/cursorSdk').CursorSdkState>;
+      install: (request: import('../shared/cursorSdk').CursorSdkInstallRequest) => Promise<import('../shared/cursorSdk').CursorSdkState>;
     };
 
     piKernel: {

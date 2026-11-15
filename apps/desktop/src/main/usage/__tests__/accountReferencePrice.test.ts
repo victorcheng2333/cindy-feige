@@ -39,7 +39,14 @@ const accountCatalog = { ...BUNDLED_CATALOG, providers: [buildUserProvider({
     // The active catalog fills Claude membership from account discovery.
     if (native === 'claude') provider.models.codex = [{ id: 'claude-sonnet-4-6', name: 'Sonnet', contextWindow: 200000, efforts: [], defaultEffort: null }];
     return provider;
-  })] };
+  }), {
+    id: 'cursor', name: 'Cursor', source: 'builtin' as const,
+    agents: ['cursor'] as const, auth: { method: 'oauth' as const }, routing: {},
+    models: { cursor: [
+      { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', contextWindow: 0, efforts: [], defaultEffort: null },
+      { id: 'composer-2.5', name: 'Composer 2.5', contextWindow: 0, efforts: [], defaultEffort: null },
+    ] },
+  }] };
 
 vi.mock('../../maker-host/active-catalog.js', () => ({
   getActiveCatalog: () => accountCatalog,
@@ -204,4 +211,15 @@ it('resolves the reference catalog for a historical day with route tariffs', () 
     if (original === undefined) delete route.referencePrices;
     else route.referencePrices = original;
   }
+});
+
+it('publishes unique official manufacturer prices on Cursor catalog models', () => {
+  const at = '2026-11-13';
+  const pricing = getReferenceModelPricing({ at });
+  expect(getModelPriceQuote(pricing, 'cursor', 'gemini-4-hydrogen', 'cursor')).toMatchObject({
+    providerId: 'cursor', modelId: 'gemini-4-hydrogen', currency: 'USD',
+    source: 'provider-reference', approximate: true,
+    inputPerMtok: 1.5, outputPerMtok: 7.5, cacheReadPerMtok: 0.075,
+  });
+  expect(getModelPriceQuote(pricing, 'cursor', 'composer-2.5', 'cursor')).toBeUndefined();
 });

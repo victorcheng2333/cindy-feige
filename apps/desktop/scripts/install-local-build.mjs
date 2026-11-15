@@ -6,6 +6,7 @@
  *   pnpm package:install -- --region cn             # newest signed ZIP for this arch
  *   pnpm package:install -- --zip <path-to-zip>     # explicit ZIP
  *   pnpm package:install -- --region cn --dry-run   # only run the preflight checks
+ *   pnpm package:install -- --region cn --ask-resume  # show the resume dialog after restart
  *
  * The script is designed to be run from inside a Cindy task on the same Mac,
  * so it must outlive the Cindy process it replaces:
@@ -21,7 +22,10 @@
  *    reply), send SIGTERM to Cindy (its normal graceful quit path, no dialogs),
  *    move the old app to a backup, move the new app into place and open it.
  *    If the new app does not start and stay up, it restores the backup and
- *    reopens the old app.
+ *    reopens the old app. Cindy is reopened with --resume-interrupted-tasks so
+ *    the tasks this quit interrupted (normally the one that ran this script)
+ *    continue on their own instead of waiting at the startup resume dialog;
+ *    --ask-resume keeps the dialog.
  *
  * Progress is written to ~/Library/Caches/cindy-local-install/{install.log,status.json}.
  */
@@ -46,7 +50,7 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const args = { region: null, zip: null, app: '/Applications/Cindy.app', delay: 15, dryRun: false };
+  const args = { region: null, zip: null, app: '/Applications/Cindy.app', delay: 15, dryRun: false, resume: true };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -61,6 +65,7 @@ function parseArgs(argv) {
     else if (arg === '--app') args.app = next();
     else if (arg === '--delay') args.delay = Number(next());
     else if (arg === '--dry-run') args.dryRun = true;
+    else if (arg === '--ask-resume') args.resume = false;
     else fail(`不认识的参数 ${arg}`);
   }
   if (!args.zip && !args.region) fail('需要 --region <cn|global> 或 --zip <路径>');
@@ -243,10 +248,13 @@ function main() {
     STATUS_PATH,
     `${JSON.stringify({ state: 'scheduled', message: '已安排替换', at: new Date().toISOString(), app: targetApp })}\n`,
   );
-  launchWorker(staging, [stagedApp, targetApp, executable, String(args.delay), STATE_DIR, staging]);
+  launchWorker(staging, [stagedApp, targetApp, executable, String(args.delay), STATE_DIR, staging, args.resume ? '1' : '0']);
 
   console.log(`==> 已安排替换：${args.delay} 秒后退出 Cindy，换上新版并重新打开`);
   console.log(`    新版没能正常启动时会自动恢复旧版`);
+  console.log(args.resume
+    ? '    重开后被这次退出打断的任务会自动继续，不弹「继续中断的任务」'
+    : '    重开后照常弹「继续中断的任务」（--ask-resume）');
   console.log(`    日志：${LOG_PATH}`);
   console.log(`    结果：${STATUS_PATH}`);
 }

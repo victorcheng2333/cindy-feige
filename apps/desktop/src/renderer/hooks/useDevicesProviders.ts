@@ -13,9 +13,9 @@ import type { ProviderView } from '@cindy/model-providers';
 
 import {
   getCachedDeviceProviders,
+  getDeviceProvidersDisplaySnapshot,
   prefetchDeviceProviders,
   subscribeDeviceProviders,
-  type DeviceProvidersPayload,
 } from './useDeviceProviders';
 
 export interface DeviceProvidersSnapshot {
@@ -33,16 +33,9 @@ export function useDevicesProviders(
   const idsKey = deviceIds.join('\n');
   const [version, setVersion] = useState(0);
   const errorsRef = useRef(new Map<string, string>());
-  // Display only: the shared cache still invalidates immediately. Only catalog
-  // refreshes may retain rows; disconnect/revocation evictions and errors clear them.
-  const displayRef = useRef(new Map<string, DeviceProvidersPayload>());
 
   useEffect(() => {
-    if (!retainDisplaySnapshot) displayRef.current.clear();
     const ids = idsKey ? idsKey.split('\n') : [];
-    for (const id of displayRef.current.keys()) {
-      if (!ids.includes(id)) displayRef.current.delete(id);
-    }
     if (!idsKey) return;
     let cancelled = false;
     const bump = () => {
@@ -50,11 +43,6 @@ export function useDevicesProviders(
     };
     const unsubscribes = ids.map((deviceId) =>
       subscribeDeviceProviders(deviceId, (event) => {
-        if (retainDisplaySnapshot && event.status === 'ready') displayRef.current.set(deviceId, event);
-        if (event.status === 'error'
-          || (event.status === 'loading' && !event.retainDisplaySnapshot)) {
-          displayRef.current.delete(deviceId);
-        }
         if (event.status === 'error') errorsRef.current.set(deviceId, event.error);
         else errorsRef.current.delete(deviceId);
         bump();
@@ -78,8 +66,7 @@ export function useDevicesProviders(
     if (!idsKey) return result;
     for (const deviceId of idsKey.split('\n')) {
       const cached = getCachedDeviceProviders(deviceId);
-      if (cached && retainDisplaySnapshot) displayRef.current.set(deviceId, cached);
-      const display = cached ?? (retainDisplaySnapshot ? displayRef.current.get(deviceId) : undefined);
+      const display = cached ?? (retainDisplaySnapshot ? getDeviceProvidersDisplaySnapshot(deviceId) : undefined);
       const error = cached ? null : (errorsRef.current.get(deviceId) ?? null);
       result.set(deviceId, {
         providers: display?.providers ?? [],

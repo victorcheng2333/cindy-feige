@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLED_CATALOG } from '@cindy/model-providers';
-import { cursorApiValue } from '../cursorApiValue.js';
+import { cursorApiValue, cursorOfficialReferenceQuote } from '../cursorApiValue.js';
 import { modelPricingKey, providerReferencePriceQuote, subscriptionDirectPriceQuote } from '../../../shared/modelPriceQuote';
 
 import type { ModelUsageDeltaEntry } from '../modelUsageDelta';
@@ -54,6 +54,19 @@ describe('Cursor API equivalent without a native bill', () => {
     const registry = BUNDLED_CATALOG.modelRegistry!;
     const base = registry.baseModels!.find(m => m.id === 'xai/grok-4.6')!;
     expect(cursorApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'grok-4.6', tokens, 'USD')).toBeNull();
+  });
+  it('quotes unique official manufacturer prices for Cursor catalog ids', () => {
+    const at = '2026-11-13';
+    expect(cursorOfficialReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'gemini-4-hydrogen', at))
+      .toMatchObject({ providerId: 'cursor', modelId: 'gemini-4-hydrogen', currency: 'USD',
+        source: 'provider-reference', approximate: true, inputPerMtok: 1.5, outputPerMtok: 7.5, cacheReadPerMtok: 0.075 });
+    expect(cursorOfficialReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'grok-4.6', at))
+      .toMatchObject({ providerId: 'cursor', modelId: 'grok-4.6', currency: 'USD',
+        inputPerMtok: 2, outputPerMtok: 6, cacheReadPerMtok: 0.5 });
+    expect(cursorOfficialReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'composer-2.5', at)).toBeUndefined();
+    const registry = BUNDLED_CATALOG.modelRegistry!;
+    const base = registry.baseModels!.find(m => m.id === 'google/gemini-4-hydrogen')!;
+    expect(cursorOfficialReferenceQuote({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/gemini-4-hydrogen' }] }, 'gemini-4-hydrogen', at)).toBeUndefined();
   });
 });
 const XD_GATEWAY_CN: TurnPricingContext = {

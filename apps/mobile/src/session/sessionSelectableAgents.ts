@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 
-/** 支持任务内切换的引擎(与主干一致,Cursor 暂不参与切换)。 */
-const SESSION_SWITCH_AGENT_KINDS = ['claude-code', 'codex', 'pi'] as const;
+/** Supported task handoffs; Cursor remains on the controlled task computer. */
+const SESSION_SWITCH_AGENT_KINDS = ['claude-code', 'codex', 'pi', 'cursor'] as const;
 
 /**
  * 已有任务里「切换引擎」可选的 Harness:被控电脑上开着的(maker:list-available-agents,
- * 已扣掉用户在那台电脑上关掉的),当前引擎始终保留(包括不参与切换的 Cursor)。
+ * 已扣掉用户在那台电脑上关掉的),当前引擎始终保留;Cursor 交接还须符合任务范围。
  * 未读到(null)时不过滤。
  */
 export function sessionSwitchAgentKinds<K extends string>(
   available: ReadonlySet<string> | null,
   current: K,
+  allowCursor = false,
 ): Array<K | (typeof SESSION_SWITCH_AGENT_KINDS)[number]> {
   const kinds: Array<K | (typeof SESSION_SWITCH_AGENT_KINDS)[number]> = SESSION_SWITCH_AGENT_KINDS
-    .filter((kind) => !available || kind === current || available.has(kind));
+    .filter((kind) => (kind !== 'cursor' || allowCursor || kind === current)
+      && (!available || kind === current || available.has(kind)));
   return kinds.includes(current) ? kinds : [current, ...kinds];
 }
 

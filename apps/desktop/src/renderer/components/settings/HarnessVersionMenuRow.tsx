@@ -22,7 +22,7 @@ export function HarnessVersionMenuRow({ harnessKind, label, manageLabel, version
   harnessKind: string;
   label: string;
   manageLabel: string;
-  /** 没有可显示版本的 Harness(Cursor 随应用内置 SDK)不传。 */
+  /** 尚无可显示版本的 Harness 可以不传。 */
   version?: string;
   status: string;
   /** Shows the spinner before the status while a check or install is running. */

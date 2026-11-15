@@ -1877,7 +1877,9 @@ export function NewMakerDraftRoute() {
     if (capabilities) {
       return resolveDeviceLinkDraftDefaults(
         capabilities,
-        null,
+        // Seed the first frame from the same remembered selection as the effect,
+        // rather than briefly showing the remote computer's default model.
+        deviceDraftDefaults,
         undefined,
         capabilityAgentKind,
         remoteDraftProviders,
@@ -1888,6 +1890,7 @@ export function NewMakerDraftRoute() {
     usesDeviceCatalog,
     dlSel,
     capabilities,
+    deviceDraftDefaults,
     capabilityAgentKind,
     remoteDraftProviders,
   ]);
@@ -3531,7 +3534,9 @@ export function NewMakerDraftRoute() {
       // event 到达前的旧 Harness。switchVendor 自身同值早返，不会制造额外写入。
       // 手动选了普通模型 = 取消插件模型。
       if (getDraft().pluginModel || getDraft().modelGroup) patchDraft({ pluginModel: null, modelGroup: null });
-      switchVendor(selection.vendor);
+      // This row supplies its own location; do not restore a different remembered
+      // location halfway through applying the explicit selection.
+      switchVendor(selection.vendor, { restoreAgentLocation: false });
       // ── 远程 Agent:模型面板里选到了另一台电脑上的模型(或从那台回到任务所在电脑)──────
       // 连 Agent 的运行位置一起换。任务、项目、附件都在任务所在电脑(本机或被控电脑),一概不动;
       // 只有模型目录与这次选择改按目标电脑。

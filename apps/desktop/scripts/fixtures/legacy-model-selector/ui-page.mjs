@@ -7,6 +7,10 @@ export default {
   real: 'ModelSelector, MorphPopover, legacy model list and vendor switcher',
   notCovered: 'Live providers, model requests and persisted selections',
   cases: {
+    'cursor-local': { about: 'Local Cursor ignores unavailable remote model catalogs' },
+    'cursor-local-narrow': { about: 'Local Cursor with unavailable remote catalogs at phone width', viewport: { width: 390, height: 640 } },
+    cursor: { about: 'Existing task switches to Cursor while Pi is disabled' },
+    'cursor-narrow': { about: 'Four-harness picker with Pi disabled on a narrow screen', viewport: { width: 390, height: 640 } },
     'compact-motion': { about: 'Content width stays stable across animated opening' },
     'compact-short': { about: 'Only model rows scroll when height is constrained', viewport: { width: 760, height: 320 } },
     'compact-selected': { about: 'Opening focuses the selected remote model instead of the first local row' },
@@ -39,6 +43,38 @@ export default {
       });
     }
     await page.locator('main button[aria-haspopup]').click();
+    if (ui.case.startsWith('cursor')) {
+      assert.equal(await page.getByRole('tab', { name: 'Pi', exact: true }).count(), 0);
+      // Regression: a local Cursor picker with an unavailable remote source used to
+      // read that source and show an unrelated failure. Existing cases only switch engines.
+      if (ui.case.startsWith('cursor-local')) {
+        await page.getByRole('option', { name: /Cursor fixture/ }).waitFor();
+        assert.equal(await page.evaluate(() => window.__remoteModelReads), 0);
+        assert.equal(await page.getByRole('alert').count(), 0);
+        await ui.capture('local-cursor');
+        await page.getByRole('tab', { name: 'Codex', exact: true }).click();
+        await page.getByRole('alert').first().waitFor();
+        assert.ok(await page.evaluate(() => window.__remoteModelReads) > 0, 'other engines still load remote catalogs');
+      }
+      await page.getByRole('tab', { name: 'Cursor', exact: true }).click();
+      await page.getByRole('option', { name: /Cursor fixture/ }).waitFor();
+      if (ui.case.startsWith('cursor-local')) assert.equal(await page.getByRole('alert').count(), 0);
+      await page.getByRole('option', { name: /Cursor fixture/ }).scrollIntoViewIfNeeded();
+      await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
+      await ui.capture('cursor-models');
+      await page.getByRole('option', { name: /Cursor fixture/ }).click();
+      if (ui.case.startsWith('cursor-local')) {
+        await page.getByRole('listbox').waitFor({ state: 'hidden' });
+        return;
+      }
+      assert.deepEqual(await page.evaluate(() => {
+        const { agent, modelId, providerId, agentDevice } = window.__modelPickerRelocation;
+        return { agent, modelId, providerId, agentDevice };
+      }), {
+        agent: 'cursor', modelId: 'cursor-fixture', providerId: 'cursor', agentDevice: null,
+      });
+      return;
+    }
     if (ui.case === 'compact-motion' || ui.case === 'compact-short') {
       await page.waitForFunction(() => window.pickerWidthsDone);
       const widths = await page.evaluate(() => window.pickerWidths);

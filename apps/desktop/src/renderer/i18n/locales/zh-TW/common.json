@@ -2964,6 +2964,24 @@
         "installFailed": "Pi 安裝失敗，仍使用原版本。請檢查網路與磁碟空間後重試。",
         "openFailed": "無法開啟更新說明。",
         "restartRequired": "Pi {{version}} 已安裝，重新啟動 Cindy 後可用。"
+      },
+      "cursorSdk": {
+        "label": "Cursor SDK 版本號",
+        "manage": "管理 Cursor SDK",
+        "check": "檢查更新",
+        "checking": "檢查中…",
+        "checkFailed": "檢查失敗",
+        "available": "有更新",
+        "installing": "安裝中…",
+        "update": "更新 SDK",
+        "restore": "恢復內建版本",
+        "updateTitle": "升級至 Cursor SDK {{version}}？",
+        "restoreTitle": "恢復內建 Cursor SDK？",
+        "description": "更新版由 Cursor 官方發布，可能存在相容性問題，可隨時恢復內建版本。目前已啟動的 Cursor 引擎繼續使用原版本。",
+        "installed": "Cursor SDK 已就緒，下次啟動 Cursor 引擎時使用所選版本。",
+        "installFailed": "Cursor SDK 更新失敗，原版本未變更。請重新檢查版本後重試。",
+        "scope": "下次啟動 Cursor 引擎時生效，目前執行不受影響。",
+        "checkedAt": "上次檢查：{{time}}"
       }
     },
     "apiKey": {

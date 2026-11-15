@@ -406,9 +406,14 @@ export class CursorAgent extends BaseAgent {
           this.deps.logger.debug("Cursor run configuration", {
             modelId: model.id,
             parameters: model.params?.filter((param) =>
-              ["effort", "reasoning", "context", "fast", "thinking"].includes(
-                param.id,
-              ),
+              [
+                "effort",
+                "reasoning",
+                "reasoning_effort",
+                "context",
+                "fast",
+                "thinking",
+              ].includes(param.id),
             ),
           });
           const result = await client.request<RunResult>(

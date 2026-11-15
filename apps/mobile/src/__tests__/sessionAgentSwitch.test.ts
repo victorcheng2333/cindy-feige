@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canSwitchSessionToCursor,
   effectiveAgentDeviceId,
   intentChangesAgentLocation,
   mobileAgentLabel,
@@ -14,8 +15,27 @@ import {
   supportsMobileSessionAgentSwitch,
 } from '@/session/sessionAgentSwitch';
 import type { MobileAgentCapabilities } from '@/session/agentCapabilities';
+import { sessionSwitchAgentKinds } from '@/session/sessionSelectableAgents';
 
 describe('mobile session Agent switch contract', () => {
+  // Unit regression: old tasks used a fixed three-engine roster. Exercise the
+  // production roster and the host-matching task scope, not source-code strings.
+  it('offers Cursor handoff on ordinary local tasks and respects its Harness switch', () => {
+    const task = { remoteHostId: null, agentDeviceId: null, orcaRole: null, orcaRemoteLead: null, source: 'desktop' };
+    const available = new Set(['codex', 'cursor']);
+    expect(sessionSwitchAgentKinds(available, 'codex', canSwitchSessionToCursor(task))).toEqual(['codex', 'cursor']);
+    expect(sessionSwitchAgentKinds(new Set(['codex']), 'codex', true)).toEqual(['codex']);
+    expect(sessionSwitchAgentKinds(new Set(['codex']), 'cursor', false)).toEqual(['codex', 'cursor']);
+    for (const restricted of [
+      { ...task, remoteHostId: 'ssh' }, { ...task, agentDeviceId: 'another-computer' },
+      { ...task, orcaRole: 'lead' }, { ...task, source: 'review' },
+      { ...task, orcaRemoteLead: { leadDeviceId: 'lead' } },
+    ]) {
+      const allowed = canSwitchSessionToCursor(restricted as Parameters<typeof canSwitchSessionToCursor>[0]);
+      expect(allowed).toBe(false);
+      expect(sessionSwitchAgentKinds(available, 'codex', allowed)).toEqual(['codex']);
+    }
+  });
   it('normalizes only the public pending intent fields', () => {
     expect(normalizeSessionAgentSwitchIntent({
       targetAgentKind: 'codex',
