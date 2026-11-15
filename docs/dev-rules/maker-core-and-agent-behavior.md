@@ -914,6 +914,13 @@ Desktop 的产品共用正文在 `apps/desktop/src/main/maker-host/host-system-p
 `codex-system-prompt.md` 当前留空，保留加载入口；`pi-system-prompt.md` 保留语言、文件工具
 和 MCP 网关调用说明。Skill 来源优先级仍仅注入 Claude/Codex；Pi 的精简回答协议仍单独维护。
 
+Cursor 不走 system 段：`cursor-host.ts` 把共用正文与 `cursor-system-prompt.md` 拼成
+`<cindy_context>`，附在新任务第一条消息末尾。Cursor SDK 从工作目录逐级向上读取每层的
+`.cursor/rules`、`AGENTS.md`（见 `LocalCursorRulesService.loadRulesFromDirAndAncestors`），
+项目位于用户主目录下时 `~/.cursor/rules` 仍会生效，`settingSources` 只收窄不到这一层。
+Cursor 补充因此只说明 Cindy 自动起标题、跳过要求调用 Cursor App `rename_chat` 的规则
+（2026-11-15 实测该类规则让首轮多绕约 10 秒去找不存在的工具）。
+
 这些内容均追加到引擎原生提示词，不替换原生规则。回归入口为 `runtimeConfigs.test.ts`、
 `piRosterAssembly.test.ts` 与 Headless 的 `prompt-parity.test.ts`。
 

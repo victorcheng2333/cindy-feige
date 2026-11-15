@@ -12,6 +12,7 @@ import {
 } from './cursor-auth.js';
 import { getPiExtraSpawnConfig } from '../mcp-integrations/piEnvironment.desktop.js';
 import hostSystemPrompt from './host-system-prompt.md?raw';
+import cursorSystemPrompt from './cursor-system-prompt.md?raw';
 import { scanLocalCustomizations } from '../skillhub/customizationScanHost.js';
 import { readDisabledSkillPaths } from '../skillhub/activationPreferences.js';
 
@@ -29,7 +30,9 @@ export function buildCursorAgent(providers: McpProvider[], logger: Logger): Curs
     createRpc: () => createCursorRpc(),
     logger,
     getRuntimeNotice: (reason) => t(`settings.providers.cursor.${reason}`),
-    runtimeConfig: { systemPrompt: hostSystemPrompt },
+    // Cursor's SDK loads rules from every ancestor directory, so user-level Cursor rules
+    // (such as calling Cursor App's rename_chat) still apply; the supplement covers that gap.
+    runtimeConfig: { systemPrompt: `${hostSystemPrompt.trim()}\n\n${cursorSystemPrompt.trim()}` },
     capabilityRouting: {
       overrides: ['webSearch', 'generateImage'].map((id) => ({
         capabilityId: id === 'webSearch' ? 'web-search' : 'image-generation',
