@@ -26,14 +26,32 @@ export const REMOTE_VIEWER = {
   CHANNEL_REPLY: 'remote-desktop-viewer:channel-reply',
   SYSTEM_SHARING: 'remote-desktop-viewer:system-sharing',
   SET_SYSTEM_SHARING: 'remote-desktop-viewer:set-system-sharing',
+  SYSTEM_SHARING_DEVICE: 'remote-desktop-viewer:system-sharing-device',
 } as const;
 
 /** macOS controller: open other Macs in the system Screen Sharing app when reachable. */
 export type SystemScreenSharingMode = 'standard' | 'high';
+export type SystemScreenSharingPreference = SystemScreenSharingMode | 'auto';
+export function isSystemScreenSharingPreference(
+  value: unknown,
+): value is SystemScreenSharingPreference {
+  return value === 'high' || value === 'standard' || value === 'auto';
+}
+export interface SystemSharingDecision {
+  mode: SystemScreenSharingMode;
+  reason: 'manual' | 'capability' | 'good' | 'limited' | 'unknown';
+  at: number;
+}
+export interface SystemSharingDeviceSettings {
+  override: SystemScreenSharingPreference | null;
+  effective: SystemScreenSharingPreference;
+  enabled: boolean;
+  lastDecision: SystemSharingDecision | null;
+}
 export interface SystemScreenSharingSettings {
   enabled: boolean;
   /** Defaults to High Performance; an explicit Standard override is preserved. */
-  mode: SystemScreenSharingMode;
+  mode: SystemScreenSharingPreference;
 }
 export const DEFAULT_SYSTEM_SCREEN_SHARING: SystemScreenSharingSettings = {
   enabled: false,

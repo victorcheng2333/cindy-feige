@@ -1,5 +1,6 @@
 import { remoteControlSettings } from './RemoteControlSection.settings-search';
 import { deviceDisplayName } from '@/lib/deviceName';
+import { SystemSharingDeviceSetting } from './SystemSharingDeviceSetting';
 import { Button } from '@/components/ui/button';
 /**
  * MyDevicesPanel —— 「远程控制」页统一的「我的设备」面板。
@@ -539,6 +540,10 @@ export function MyDevicesPanel({
                     </div>
                   )}
                 </div>
+
+                {d.platform === 'darwin' && !peerRevoked && window.electronAPI?.platform === 'darwin' && (
+                  <SystemSharingDeviceSetting deviceId={d.deviceId} />
+                )}
 
                 {/* 两个方向各一行。手机等「不可被控」的设备、以及对方已拒绝本机的设备,都不展示「我可以」行
                     (前者永远控不了;后者避免让用户看到一个控不了的选中态而纠结)。 */}

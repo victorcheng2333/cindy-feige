@@ -66,5 +66,6 @@ export async function readSystemScreenSharing(): Promise<RemoteDesktopSystemScre
     user: os.userInfo().username,
     highPerformance: supportsHighPerformance(),
     addressVerification: 1,
+    networkProbe: 1,
   };
 }

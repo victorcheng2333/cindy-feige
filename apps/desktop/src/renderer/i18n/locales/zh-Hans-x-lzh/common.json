@@ -1332,7 +1332,21 @@
       "chooseDetail": "高性能：至六十帧，迟滞愈少，用虚拟显示器一，宜有线或高速局域网。\n标准：随网络自调画质。\n初连之时，请于系统弹窗输彼 Mac 登录密码，并择记于钥匙串，后则径连。",
       "high": "高性能",
       "standard": "标准",
-      "cancel": "取消"
+      "cancel": "取消",
+      "auto": "自动",
+      "inherit": "从预设",
+      "deviceTitle": "此 Mac 之屏幕共享",
+      "deviceHint": "存于本机。自动模式于本机网络未变时沿用检测，至多一小时；重测至多用 16 MiB，不改正在使用之连线。",
+      "effective": "今设：{{mode}}",
+      "disabledHint": "请先启用系统屏幕共享。",
+      "lastChoice": "前次请求：{{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "依所设",
+        "capability": "依装置所能",
+        "good": "网络短测已过",
+        "limited": "网络短测宜用标准模式",
+        "unknown": "网络未明，仍从预设"
+      }
     }
   },
   "ipcError": {

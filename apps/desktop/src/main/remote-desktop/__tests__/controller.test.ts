@@ -48,19 +48,19 @@ function harness() {
 
 // Unit: the new listener operation must use the same owner/controller/auth gates
 // as desktop requests; revocation while starting must close the listener.
-it('guards address verification and cleans up after authorization changes', async () => {
+it.each(['systemSharingProbe', 'systemSharingNetworkProbe'] as const)('guards %s and cleans up after authorization changes', async (op) => {
   const h = harness();
   const stop = vi.fn();
   h.deps.stopSystemSharingProbes = stop;
-  h.deps.systemSharingProbe = vi.fn(async (_peer, _action, _id, current) => {
+  h.deps[op] = vi.fn(async (_peer, _action, _id, current) => {
     expect(current()).toBe(true);
     h.revoke();
     return { port: 50000 };
   });
-  await expect(h.controller.request('phone', { op: 'systemSharingProbe', action: 'begin', id: '1'.repeat(32) })).rejects.toThrow('DESKTOP_STOPPED');
+  await expect(h.controller.request('phone', { op, action: 'begin', id: '1'.repeat(32) })).rejects.toThrow('DESKTOP_STOPPED');
   expect(stop).toHaveBeenCalledWith('phone', '1'.repeat(32));
-  await expect(h.controller.request('phone', { op: 'systemSharingProbe', action: 'begin', id: '2'.repeat(32) })).rejects.toThrow('DESKTOP_DISABLED');
-  expect(h.deps.systemSharingProbe).toHaveBeenCalledOnce();
+  await expect(h.controller.request('phone', { op, action: 'begin', id: '2'.repeat(32) })).rejects.toThrow('DESKTOP_DISABLED');
+  expect(h.deps[op]).toHaveBeenCalledOnce();
 });
 it('records bounded received heartbeats and the unchanged expiration deadline without lease secrets', async () => {
   diagnosticLog.mockClear();
@@ -210,9 +210,9 @@ describe('remote desktop authority and lifecycle', () => {
       'permissions',
       'remoteDesktop',
       'onAppSessionInvalidated',
-      'systemSharingProbes',
+      'stopSystemSharingProbes',
       registration,
-    )(clipboardStop, register, clear, 1, { dismiss }, { stop, stopAndRestore }, () => detachProbeBoundary, { stop: stopProbes });
+    )(clipboardStop, register, clear, 1, { dismiss }, { stop, stopAndRestore }, () => detachProbeBoundary, stopProbes);
     register.mock.calls.find(([name]) => name === 'remote-desktop-system-sharing-probes')![1]();
     expect(stopProbes).toHaveBeenCalledOnce();
     expect(detachProbeBoundary).toHaveBeenCalledOnce();

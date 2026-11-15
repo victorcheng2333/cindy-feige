@@ -1345,7 +1345,21 @@
       "chooseDetail": "Hohe Leistung: bis zu 60 fps, geringere Latenz und ein virtueller Bildschirm. Am besten im kabelgebundenen oder schnellen lokalen Netzwerk.\nStandard: passt die Qualität an das Netzwerk an.\nGib beim ersten Mal das Anmeldepasswort des anderen Mac in der Bildschirmfreigabe ein und sichere es im Schlüsselbund. Danach wird direkt verbunden.",
       "high": "Hohe Leistung",
       "standard": "Standard",
-      "cancel": "Abbrechen"
+      "cancel": "Abbrechen",
+      "auto": "Automatisch",
+      "inherit": "Standardvorgabe verwenden",
+      "deviceTitle": "Bildschirmfreigabe für diesen Mac",
+      "deviceHint": "Auf diesem Computer gespeichert. Automatisch verwendet Netzwerkprüfungen bis zu 1 Stunde erneut, solange sich das lokale Netzwerk nicht ändert. Eine neue Prüfung nutzt bis zu 16 MiB. Aktive Verbindungen werden nicht umgeschaltet.",
+      "effective": "Wirksame Einstellung: {{mode}}",
+      "disabledHint": "Aktiviere die System-Bildschirmfreigabe.",
+      "lastChoice": "Zuletzt angefordert: {{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "Deine Einstellung",
+        "capability": "Geräteunterstützung",
+        "good": "Kurze Netzwerkprüfung bestanden",
+        "limited": "Netzwerkprüfung empfiehlt Standard",
+        "unknown": "Netzwerkqualität unbekannt; Vorgabe beibehalten"
+      }
     }
   },
   "ipcError": {

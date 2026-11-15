@@ -24,9 +24,25 @@ import {
 } from '../remote-desktop/systemScreenSharingProbe';
 import {
   DEFAULT_SYSTEM_SCREEN_SHARING,
+  isSystemScreenSharingPreference,
+  type SystemSharingDecision,
   type SystemScreenSharingMode,
   type SystemScreenSharingSettings,
 } from '../../shared/remoteDesktopViewer';
+
+import {
+  measureSharingNetwork,
+  sharingNetworkQuality,
+} from '../remote-desktop/systemSharingNetworkProbe';
+import {
+  readSystemSharingOverride,
+  rememberSystemSharingDecision,
+} from './systemSharingPreferences';
+
+import {
+  readSharingNetworkFingerprint,
+  systemSharingNetworkCache,
+} from './systemSharingNetworkCache';
 
 const log = createLogger('remote-viewer:system-sharing');
 const PROBE_MS = 1200;
@@ -41,7 +57,9 @@ const store = createOverrideSettingsFile<SystemScreenSharingSettings>({
     const value = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
     return {
       enabled: value.enabled === true,
-      mode: value.mode === 'standard' ? 'standard' : DEFAULT_SYSTEM_SCREEN_SHARING.mode,
+      mode: isSystemScreenSharingPreference(value.mode)
+        ? value.mode
+        : DEFAULT_SYSTEM_SCREEN_SHARING.mode,
     };
   },
   maxBytes: 4 * 1024,
@@ -57,7 +75,7 @@ export function readSystemScreenSharingSettings(): SystemScreenSharingSettings {
 export async function writeSystemScreenSharingSettings(
   patch: Partial<SystemScreenSharingSettings>,
 ): Promise<SystemScreenSharingSettings> {
-  await store.writePatchAtomic(patch);
+  await store.writePatchAtomic(patch, { preserveDefaults: true });
   return readSystemScreenSharingSettings();
 }
 
@@ -135,7 +153,7 @@ async function reachableHost(hosts: string[]): Promise<string | null> {
 }
 
 type ProbeRequest = (request: {
-  op: 'systemSharingProbe';
+  op: 'systemSharingProbe' | 'systemSharingNetworkProbe';
   action: 'begin' | 'end';
   id: string;
 }) => Promise<unknown>;
@@ -183,6 +201,7 @@ export type SystemScreenSharingOutcome = 'opened' | 'cancelled' | 'fallback';
  * while waiting, which ends the attempt without opening anything.
  */
 export async function openWithSystemScreenSharing(options: {
+  deviceId?: string;
   caps: RemoteDesktopCapabilities | null;
   current: () => boolean;
   requestProbe?: ProbeRequest;
@@ -212,7 +231,73 @@ export async function openWithSystemScreenSharing(options: {
   const settings = readSystemScreenSharingSettings();
   // Default to High Performance without a prompt, while preserving an explicit
   // Standard override. Capability fallback must not overwrite that preference.
-  const mode: SystemScreenSharingMode = plan.highPerformance ? settings.mode : 'standard';
+  const preference =
+    (options.deviceId ? readSystemSharingOverride(options.deviceId) : null) ?? settings.mode;
+  let mode: SystemScreenSharingMode = preference === 'standard' ? 'standard' : 'high';
+  let reason: SystemSharingDecision['reason'] = 'manual';
+  if (!plan.highPerformance) {
+    mode = 'standard';
+    reason = 'capability';
+  } else if (preference === 'auto') {
+    reason = 'unknown';
+    mode = settings.mode === 'standard' ? 'standard' : 'high';
+    if (options.caps?.systemScreenSharing?.networkProbe === 1 && options.requestProbe) {
+      const owner = activeOwnerScopeKey();
+      const network = options.deviceId ? await readSharingNetworkFingerprint(host) : null;
+      if (!options.current()) return 'cancelled';
+      const context = systemSharingNetworkCache.begin(owner, options.deviceId ?? host, network);
+      const cached = systemSharingNetworkCache.read(context);
+      if (cached) {
+        reason = cached;
+        mode = cached === 'good' ? 'high' : 'standard';
+      } else {
+        const id = randomBytes(16).toString('hex');
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const proof = await Promise.race([
+            options.requestProbe({ op: 'systemSharingNetworkProbe', action: 'begin', id }),
+            new Promise<null>((resolve) => {
+              timer = setTimeout(() => resolve(null), 1500);
+            }),
+          ]);
+          clearTimeout(timer);
+          if (!options.current()) return 'cancelled';
+          const sample = await measureSharingNetwork(host, proof, id, options.current);
+          reason = sharingNetworkQuality(sample);
+          if (network && reason !== 'unknown') {
+            const after = await readSharingNetworkFingerprint(host);
+            if (!options.current()) return 'cancelled';
+            if (after !== network || !systemSharingNetworkCache.current(context))
+              reason = 'unknown';
+            else systemSharingNetworkCache.remember(context, reason, after);
+          }
+          if (reason === 'unknown') reason = systemSharingNetworkCache.read(context) ?? 'unknown';
+          if (reason !== 'unknown') mode = reason === 'good' ? 'high' : 'standard';
+        } catch {
+          reason = systemSharingNetworkCache.read(context) ?? 'unknown';
+          if (reason !== 'unknown') mode = reason === 'good' ? 'high' : 'standard';
+          /* A failed sample never overwrites or renews valid evidence. */
+        } finally {
+          clearTimeout(timer);
+          if (options.current())
+            void options
+              .requestProbe({ op: 'systemSharingNetworkProbe', action: 'end', id })
+              .catch(() => {});
+        }
+      }
+    }
+  }
+  if (!options.current()) return 'cancelled';
+  const latest = readSystemScreenSharingSettings();
+  if (!latest.enabled) return 'fallback';
+  const latestPreference =
+    (options.deviceId ? readSystemSharingOverride(options.deviceId) : null) ?? latest.mode;
+  // A manual edit made during the bounded probe wins over its late automatic result.
+  if (plan.highPerformance && latestPreference !== preference) {
+    mode = latestPreference === 'standard' ? 'standard' : 'high';
+    reason = latestPreference === 'auto' ? 'unknown' : 'manual';
+  }
+  if (reason === 'unknown') mode = latest.mode === 'standard' ? 'standard' : 'high';
   try {
     await shell.openExternal(systemScreenSharingUrl(host, plan.user, mode));
   } catch (error) {
@@ -221,7 +306,10 @@ export async function openWithSystemScreenSharing(options: {
     });
     return 'fallback';
   }
+  if (options.deviceId && options.current())
+    rememberSystemSharingDecision(options.deviceId, { mode, reason, at: Date.now() });
   log.info('opened system screen sharing', {
+    reason,
     mode,
     bonjour: BONJOUR_HOST.test(host),
     dynamicResolutionRequested: mode === 'high',

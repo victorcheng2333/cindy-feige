@@ -1363,7 +1363,21 @@
       "chooseDetail": "Alto desempenho: até 60 fps, menor latência e uma tela virtual. Ideal em rede local cabeada ou rápida.\nPadrão: ajusta a qualidade à rede.\nNa primeira vez, digite a senha de login do outro Mac no Compartilhamento de Tela e escolha salvá-la no Acesso às Chaves. Depois disso, a conexão é direta.",
       "high": "Alto desempenho",
       "standard": "Padrão",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "auto": "Automático",
+      "inherit": "Usar padrão",
+      "deviceTitle": "Compartilhamento de tela deste Mac",
+      "deviceHint": "Salvo neste computador. O modo automático reutiliza verificações por até 1 hora se a rede local não mudar. Uma nova verificação usa até 16 MiB. As conexões ativas não são alteradas.",
+      "effective": "Configuração efetiva: {{mode}}",
+      "disabledHint": "Ative o compartilhamento de tela do sistema.",
+      "lastChoice": "Última solicitação: {{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "Sua preferência",
+        "capability": "Capacidade do dispositivo",
+        "good": "Verificação breve da rede aprovada",
+        "limited": "A verificação da rede recomenda o modo padrão",
+        "unknown": "Qualidade da rede desconhecida; padrão mantido"
+      }
     }
   },
   "ipcError": {

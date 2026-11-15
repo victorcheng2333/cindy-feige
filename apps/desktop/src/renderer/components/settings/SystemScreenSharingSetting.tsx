@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { SettingsCard, SettingsRow } from '@/components/ui/settings-rows';
 import { Switch } from '@/components/ui/switch';
 import { Select } from '@/components/ui/select';
-import type { SystemScreenSharingMode } from '../../../shared/remoteDesktopViewer';
+import {
+  isSystemScreenSharingPreference,
+  type SystemScreenSharingPreference,
+} from '../../../shared/remoteDesktopViewer';
 import { toast } from '@/lib/toast';
 import { remoteControlSettings } from './RemoteControlSection.settings-search';
 import { useSettingDefinition } from './useSettingDefinition';
@@ -16,7 +19,7 @@ export function SystemScreenSharingSetting() {
   const api = window.electronAPI?.remoteDesktop;
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<SystemScreenSharingMode>('high');
+  const [mode, setMode] = useState<SystemScreenSharingPreference>('high');
   useEffect(() => {
     if (!api?.systemSharing) return;
     let active = true;
@@ -52,7 +55,10 @@ export function SystemScreenSharingSetting() {
               setBusy(true);
               void api
                 .setSystemSharing(next)
-                .then((value) => setEnabled(value.enabled))
+                .then((value) => {
+                  setEnabled(value.enabled);
+                  window.dispatchEvent(new Event('system-sharing-settings-changed'));
+                })
                 .catch(() => toast.error(t('settings.remoteControl.systemSharing.saveFailed')))
                 .finally(() => setBusy(false));
             }}
@@ -70,15 +76,19 @@ export function SystemScreenSharingSetting() {
             value={mode}
             disabled={busy || enabled !== true || !api.setSystemSharingMode}
             options={[
+              { value: 'auto', label: t('remoteDesktop.systemSharing.auto') },
               { value: 'high', label: t('remoteDesktop.systemSharing.high') },
               { value: 'standard', label: t('remoteDesktop.systemSharing.standard') },
             ]}
             onValueChange={(next) => {
-              if (next !== 'high' && next !== 'standard') return;
+              if (!isSystemScreenSharingPreference(next)) return;
               setBusy(true);
               void api
                 .setSystemSharingMode(next)
-                .then((value) => setMode(value.mode))
+                .then((value) => {
+                  setMode(value.mode);
+                  window.dispatchEvent(new Event('system-sharing-settings-changed'));
+                })
                 .catch(() => toast.error(t('settings.remoteControl.systemSharing.saveFailed')))
                 .finally(() => setBusy(false));
             }}

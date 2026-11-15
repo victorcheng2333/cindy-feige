@@ -9,6 +9,7 @@ const fixture = vi.hoisted(() => ({
   debug: vi.fn(),
   canUseDeviceLink: true,
   persistedMode: 'cloud',
+  sharingOverrides: new Map<string, string>(),
 }));
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: () => null },
@@ -27,6 +28,14 @@ vi.mock('../../appSessionState', () => ({
 }));
 vi.mock('../../appCapabilities', () => ({
   getAppCapabilities: () => ({ canUseDeviceLink: fixture.canUseDeviceLink }),
+}));
+vi.mock('../systemSharingPreferences', () => ({
+  readSystemSharingOverride: (device: string) => fixture.sharingOverrides.get(device) ?? null,
+  writeSystemSharingOverride: async (device: string, value: string | null) => {
+    if (value === null) fixture.sharingOverrides.delete(device);
+    else fixture.sharingOverrides.set(device, value);
+  },
+  readSystemSharingDecision: () => null,
 }));
 vi.mock('../preferences', () => ({
   readViewerPreferences: () => ({
@@ -620,3 +629,30 @@ it.each(['pending', 'live'] as const)(
     } finally { views.endAll(); }
   },
 );
+// Unit: device settings IPC is local to the trusted initiating window; an iframe or
+// malformed preference must not change the device override. Existing viewer tests never wrote it.
+it('validates per-device settings and keeps inheritance local to the requesting window', async () => {
+  const sender: any = { id: 100, mainFrame: {} };
+  manager = new RemoteDesktopViewerWindows(value => value === sender); manager.register();
+  const handler = fixture.handlers.get(REMOTE_VIEWER.SYSTEM_SHARING_DEVICE)!;
+  const event = { sender, senderFrame: sender.mainFrame };
+  const settings = vi.spyOn(systemSharing, 'readSystemScreenSharingSettings').mockReturnValue({ enabled: true, mode: 'high' });
+  expect(await handler(event, 'home', 'auto')).toMatchObject({ override: 'auto', effective: 'auto' });
+  expect(await handler(event, 'office')).toMatchObject({ override: null, effective: 'high' });
+  await expect(handler(event, 'home', 'invalid')).rejects.toThrow('Invalid screen sharing preference');
+  await expect(handler({ ...event, senderFrame: {} }, 'home', 'standard')).rejects.toThrow('Remote desktop unavailable');
+  expect(await handler(event, 'home')).toMatchObject({ override: 'auto' });
+  expect(await handler(event, 'home', null)).toMatchObject({ override: null, effective: 'high' });
+  settings.mockRestore(); fixture.sharingOverrides.clear();
+});
+
+// Unit: actual power/account-reset entry points retire cached network evidence.
+import { systemSharingNetworkCache } from '../systemSharingNetworkCache';
+it.each(['suspend', 'resume', 'reset'])('invalidates automatic mode evidence on %s', event => {
+  manager = new RemoteDesktopViewerWindows(() => true); manager.register();
+  const context = systemSharingNetworkCache.begin('test-owner', 'mac', 'wifi');
+  systemSharingNetworkCache.remember(context, 'limited', 'wifi');
+  expect(systemSharingNetworkCache.read(context)).toBe('limited');
+  if (event === 'reset') manager.reset(); else powerMonitor.emit(event);
+  expect(systemSharingNetworkCache.read(context)).toBeNull();
+});

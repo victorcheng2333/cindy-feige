@@ -19,6 +19,7 @@ import { desktopDiagnosticCode } from '../../shared/remoteDesktopDiagnostics';
 import {
   LIVE_SCREEN_EMBED,
   REMOTE_VIEWER,
+  isSystemScreenSharingPreference,
   type RemoteViewerTarget,
 } from '../../shared/remoteDesktopViewer.js';
 import {
@@ -62,6 +63,11 @@ import {
   readSystemScreenSharingSettings,
   writeSystemScreenSharingSettings,
 } from './systemScreenSharing.js';
+
+import { readSystemSharingOverride, writeSystemSharingOverride, readSystemSharingDecision } from './systemSharingPreferences';
+
+import { systemSharingNetworkCache } from './systemSharingNetworkCache';
+import { onLocalNetworkChanged } from '../device-link/networkChanges';
 
 const log = createLogger('remote-viewer');
 /** How long the system Screen Sharing route waits for the computer before using Cindy's viewer. */
@@ -221,6 +227,7 @@ export class RemoteDesktopViewerWindows {
       if (!current()) return;
       const outcome = await openWithSystemScreenSharing({
         caps,
+        deviceId: target.deviceId,
         current,
         requestProbe: (request) => requestRemote(target.deviceId, request, check),
       });
@@ -256,6 +263,7 @@ export class RemoteDesktopViewerWindows {
   reset(): void {
     this.pluginViews?.endAll();
     this.embedded.endAll();
+    systemSharingNetworkCache.clear();
     for (const e of this.entries) {
       e.connection.deactivate();
       e.controller.dispose();
@@ -449,6 +457,9 @@ export class RemoteDesktopViewerWindows {
         pluginViews.frame(event.sender, relayId, kind, bytes),
       );
     }
+    onLocalNetworkChanged(systemSharingNetworkCache.clear);
+    powerMonitor.on('suspend', systemSharingNetworkCache.clear);
+    powerMonitor.on('resume', systemSharingNetworkCache.clear);
     powerMonitor.on('lock-screen', this.endForLocalLock);
     powerMonitor.on('suspend', this.endForLocalLock);
     ipcMain.handle(REMOTE_VIEWER.OPEN, (event, target) => {
@@ -462,7 +473,7 @@ export class RemoteDesktopViewerWindows {
     ipcMain.handle(REMOTE_VIEWER.SET_SYSTEM_SHARING, (event, enabled: unknown, mode?: unknown) => {
       assertTrustedAppRendererEvent(event);
       if (mode !== undefined) {
-        if (enabled !== undefined || (mode !== 'high' && mode !== 'standard'))
+        if (enabled !== undefined || !isSystemScreenSharingPreference(mode))
           throwIpcError('INVALID_PARAMS', 'Invalid screen sharing mode');
         return writeSystemScreenSharingSettings({ mode });
       }
@@ -489,6 +500,47 @@ export class RemoteDesktopViewerWindows {
       assertTrustedAppRendererEvent(event);
       this.embedded.channelReply(event.sender, embedId, generation, id, outcome);
     });
+    ipcMain.handle(
+      REMOTE_VIEWER.SYSTEM_SHARING_DEVICE,
+      async (event, device: unknown, preference?: unknown) => {
+        assertTrustedAppRendererEvent(event);
+        if (
+          !isTrustedTopLevelCindyRendererEvent(event) ||
+          !this.isOpenSender(event.sender) ||
+          !getAppCapabilities().canUseDeviceLink ||
+          isAppSessionBoundaryPending()
+        )
+          throwIpcError('PERMISSION_DENIED', 'Remote desktop unavailable');
+        if (
+          typeof device !== 'string' ||
+          !device.length ||
+          device.length > 256 ||
+          /[\x00-\x1f]/.test(device) ||
+          (preference !== undefined &&
+            preference !== null &&
+            !isSystemScreenSharingPreference(preference))
+        )
+          throwIpcError('INVALID_PARAMS', 'Invalid screen sharing preference');
+        const owner = activeOwnerScopeKey();
+        if (preference !== undefined) {
+          try {
+            await writeSystemSharingOverride(device, preference);
+          } catch {
+            throwIpcError('INTERNAL', 'Could not save screen sharing preference');
+          }
+        }
+        if (owner !== activeOwnerScopeKey() || isAppSessionBoundaryPending())
+          throwIpcError('PERMISSION_DENIED', 'Account changed');
+        const settings = readSystemScreenSharingSettings();
+        const override = readSystemSharingOverride(device);
+        return {
+          override,
+          effective: override ?? settings.mode,
+          enabled: settings.enabled,
+          lastDecision: readSystemSharingDecision(device),
+        };
+      },
+    );
     ipcMain.handle(REMOTE_VIEWER.STATE, (event) => this.entry(event).connection.snapshot());
     ipcMain.handle(REMOTE_VIEWER.READY, (event) => {
       this.entry(event).controller.markRendererReady(event.sender);

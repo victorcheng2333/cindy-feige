@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { networkInterfaces } from 'node:os';
-import { watchNetworkChanges } from '../networkChanges';
+import { watchNetworkChanges, onLocalNetworkChanged } from '../networkChanges';
 vi.mock('node:os', () => ({ networkInterfaces: vi.fn() }));
 afterEach(() => vi.useRealTimers());
 it('ignores stable/reordered interfaces and stops on teardown', () => {
@@ -17,6 +17,8 @@ it('ignores stable/reordered interfaces and stops on teardown', () => {
   const vpn = { ...wifi, address: '192.0.2.2', cidr: '192.0.2.2/24' };
   read.mockReturnValue({ en0: [wifi], utun: [vpn] });
   const changed = vi.fn();
+  const local = vi.fn();
+  const unsubscribe = onLocalNetworkChanged(local);
   const stop = watchNetworkChanges(changed);
   read.mockReturnValue({ utun: [vpn], en0: [wifi] });
   vi.advanceTimersByTime(2_000);
@@ -24,6 +26,8 @@ it('ignores stable/reordered interfaces and stops on teardown', () => {
   read.mockReturnValue({ en0: [wifi] });
   vi.advanceTimersByTime(2_000);
   expect(changed).toHaveBeenCalledTimes(1);
+  expect(local).toHaveBeenCalledOnce();
+  unsubscribe();
   read.mockImplementation(() => {
     throw new Error('OS unavailable');
   });

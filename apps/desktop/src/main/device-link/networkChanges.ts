@@ -1,5 +1,14 @@
 import { networkInterfaces } from 'node:os';
 
+const listeners = new Set<() => void>();
+/** Subscribe to the existing Device Link watcher; no additional polling or reconnects. */
+export function onLocalNetworkChanged(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 /** Observe interface/address changes without recording addresses in logs. Some
  * route-only VPN/proxy changes remain covered by the regular relay heartbeat. */
 export function watchNetworkChanges(onChange: () => void): () => void {
@@ -19,7 +28,16 @@ export function watchNetworkChanges(onChange: () => void): () => void {
       const next = snapshot();
       const changed = previous !== undefined && previous !== next;
       previous = next;
-      if (changed) onChange();
+      if (changed) {
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* Isolate local consumers. */
+          }
+        }
+        onChange();
+      }
     } catch {
       // An OS enumeration failure is not evidence that the relay is broken.
     }

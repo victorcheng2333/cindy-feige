@@ -227,6 +227,16 @@ export interface RemoteDesktopSystemScreenSharing {
   highPerformance: boolean;
   /** Supports short-lived address verification before direct IP connections. */
   addressVerification?: 1;
+  /** Bounded direct-path quality probe; never sent to older hosts. */
+  networkProbe?: 1;
+}
+/** One-use token for a bounded direct network sample, delivered over the authenticated channel. */
+export interface SystemScreenSharingNetworkProbe {
+  version: 1;
+  id: string;
+  port: number;
+  udpPort: number;
+  token: string;
 }
 /** Ephemeral public key delivered over the authenticated device channel, never an OS password. */
 export interface SystemScreenSharingProbe {
@@ -461,6 +471,8 @@ export type RemoteDesktopRequest =
   | { op: "capabilities" }
   /** Only to hosts advertising systemScreenSharing.addressVerification = 1. */
   | { op: "systemSharingProbe"; action: "begin" | "end"; id: string }
+  /** Only to hosts advertising systemScreenSharing.networkProbe = 1. */
+  | { op: "systemSharingNetworkProbe"; action: "begin" | "end"; id: string }
   /** Only to hosts advertising `liveScreens`. */
   | { op: "screens" }
   | { op: "permissions"; action: "check" | "guide" }
@@ -557,7 +569,7 @@ export function parseRemoteDesktopRequest(
     return v.control === true ? { control: true as const } : {};
   };
   if (v.op === "capabilities" || v.op === "screens") return { op: v.op };
-  if (v.op === "systemSharingProbe") {
+  if (v.op === "systemSharingProbe" || v.op === "systemSharingNetworkProbe") {
     if ((v.action !== "begin" && v.action !== "end") || typeof v.id !== "string" || !/^[a-f0-9]{32}$/.test(v.id))
       throw new Error("INVALID_REQUEST");
     return { op: v.op, action: v.action, id: v.id };

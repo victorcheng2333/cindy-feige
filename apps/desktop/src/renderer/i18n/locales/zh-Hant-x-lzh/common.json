@@ -1332,7 +1332,21 @@
       "chooseDetail": "高效能：至六十幀，遲滯愈少，用虛擬顯示器一，宜有線或高速區域網路。\n標準：隨網路自調畫質。\n初連之時，請於系統視窗輸彼 Mac 登入密碼，並擇記於鑰匙圈，後則逕連。",
       "high": "高效能",
       "standard": "標準",
-      "cancel": "取消"
+      "cancel": "取消",
+      "auto": "自動",
+      "inherit": "從預設",
+      "deviceTitle": "此 Mac 之螢幕共享",
+      "deviceHint": "存於本機。自動模式於本機網路未變時沿用檢測，至多一小時；重測至多用 16 MiB，不改正在使用之連線。",
+      "effective": "今設：{{mode}}",
+      "disabledHint": "請先啟用系統螢幕共享。",
+      "lastChoice": "前次請求：{{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "依所設",
+        "capability": "依裝置所能",
+        "good": "網路短測已過",
+        "limited": "網路短測宜用標準模式",
+        "unknown": "網路未明，仍從預設"
+      }
     }
   },
   "ipcError": {

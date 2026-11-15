@@ -73,3 +73,31 @@ it.each([false, true])(
     expect(readViewerPreferences('other')).toMatchObject({ privacyScreen: true, lockOnExit: true });
   },
 );
+
+// Unit: the new system-sharing settings must persist only the selected peer's override,
+// remove it on inheritance, and isolate accounts. Existing tests cover Cindy viewer settings only.
+import { readSystemSharingOverride, writeSystemSharingOverride, rememberSystemSharingDecision, readSystemSharingDecision } from '../systemSharingPreferences';
+it('persists explicit system-sharing choices and removes only the restored device', async () => {
+  await writeSystemSharingOverride('home', 'auto');
+  await writeSystemSharingOverride('office', 'high');
+  const file = join(fixture.directory, 'remote-desktop-system-sharing-devices.json');
+  const home = createHash('sha256').update('home').digest('hex');
+  expect(JSON.parse(readFileSync(file, 'utf8'))[home]).toBe('auto');
+  await writeSystemSharingOverride('home', null);
+  expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty(home);
+  expect(readSystemSharingOverride('home')).toBeNull();
+  expect(readSystemSharingOverride('office')).toBe('high');
+});
+it('does not carry a device preference or last requested mode into another account', async () => {
+  const original = fixture.directory;
+  await writeSystemSharingOverride('home', 'standard');
+  rememberSystemSharingDecision('home', { mode: 'standard', reason: 'manual', at: 1 });
+  const other = mkdtempSync(join(tmpdir(), 'cindy-sharing-owner-'));
+  try {
+    fixture.directory = other;
+    expect(readSystemSharingOverride('home')).toBeNull();
+    expect(readSystemSharingDecision('home')).toBeNull();
+    fixture.directory = original;
+    expect(readSystemSharingOverride('home')).toBe('standard');
+  } finally { fixture.directory = original; rmSync(other, { recursive: true, force: true }); }
+});

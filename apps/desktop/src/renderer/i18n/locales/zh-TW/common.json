@@ -1332,7 +1332,21 @@
       "chooseDetail": "高效能：最高 60 fps，延遲更低，使用一個虛擬顯示器，適合有線或高速區域網路。\n標準：依網路自動調整畫質。\n第一次連線時，請在系統視窗中輸入對方 Mac 的登入密碼，並選擇在鑰匙圈中記住密碼，之後會直接連線。",
       "high": "高效能",
       "standard": "標準",
-      "cancel": "取消"
+      "cancel": "取消",
+      "auto": "自動",
+      "inherit": "跟隨預設",
+      "deviceTitle": "這台 Mac 的螢幕共享",
+      "deviceHint": "儲存在本機。自動模式在本機網路未變更時沿用檢查結果，最長 1 小時；重新檢查最多使用 16 MiB，不會切換使用中的連線。",
+      "effective": "目前設定：{{mode}}",
+      "disabledHint": "請先開啟系統螢幕共享。",
+      "lastChoice": "上次請求：{{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "依照你的設定",
+        "capability": "依據裝置能力",
+        "good": "短時間網路檢查通過",
+        "limited": "網路檢查建議使用標準模式",
+        "unknown": "網路品質未知，沿用預設"
+      }
     }
   },
   "ipcError": {

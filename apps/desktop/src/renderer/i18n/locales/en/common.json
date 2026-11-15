@@ -1345,7 +1345,21 @@
       "chooseDetail": "High Performance: up to 60 fps with lower latency and one virtual display. Best on a wired or fast local network.\nStandard: adjusts quality to the network.\nThe first time, enter the other Mac's login password in the Screen Sharing prompt and choose to remember it in your keychain. After that it connects directly.",
       "high": "High Performance",
       "standard": "Standard",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "auto": "Automatic",
+      "inherit": "Use default",
+      "deviceTitle": "Screen sharing for this Mac",
+      "deviceHint": "Saved on this computer. Automatic reuses network checks for up to 1 hour while the local network is unchanged. A new check uses up to 16 MiB. Active connections are not switched.",
+      "effective": "Effective setting: {{mode}}",
+      "disabledHint": "Turn on system Screen Sharing to use this setting.",
+      "lastChoice": "Last requested: {{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "Your preference",
+        "capability": "Device capability",
+        "good": "Short network check passed",
+        "limited": "Network check suggests Standard",
+        "unknown": "Network quality unknown; default retained"
+      }
     }
   },
   "ipcError": {

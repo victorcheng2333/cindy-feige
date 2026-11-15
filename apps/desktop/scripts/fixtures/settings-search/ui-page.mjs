@@ -55,6 +55,22 @@ export default {
       await page.getByRole('option', { name: await ui.t('remoteDesktop.systemSharing.standard'), exact: true }).click();
       await page.waitForFunction(label => document.querySelector('[data-setting-id="remoteControl.systemScreenSharingMode"]')?.textContent?.includes(label), await ui.t('remoteDesktop.systemSharing.standard'));
       await ui.capture('system-screen-sharing-standard');
+      await mode.click();
+      await page.getByRole('option', { name: await ui.t('remoteDesktop.systemSharing.auto'), exact: true }).click();
+      await panel.locator('#settings-search-target-remote-devices > button').click();
+      const deviceSummary = panel.locator('summary').filter({ hasText: await ui.t('remoteDesktop.systemSharing.deviceTitle') });
+      await deviceSummary.focus();
+      await deviceSummary.press('Enter');
+      const deviceMode = panel.locator('[data-setting-id="remoteControl.systemSharingDevice"]');
+      await deviceMode.waitFor();
+      await deviceMode.click();
+      await page.getByRole('option', { name: await ui.t('remoteDesktop.systemSharing.standard'), exact: true }).click();
+      await page.waitForFunction(label => document.querySelector('[data-setting-id="remoteControl.systemSharingDevice"]')?.textContent?.includes(label), await ui.t('remoteDesktop.systemSharing.standard'));
+      await ui.capture('system-screen-sharing-device');
+      await deviceMode.click();
+      await page.getByRole('option', { name: await ui.t('remoteDesktop.systemSharing.inherit'), exact: true }).click();
+      await page.waitForFunction(label => document.querySelector('[data-setting-id="remoteControl.systemSharingDevice"]')?.textContent?.includes(label), await ui.t('remoteDesktop.systemSharing.inherit'));
+      await ui.capture('system-screen-sharing-inherit-auto');
     }
     // 2026-11-14 recording: settled screenshots missed a blank frame caused by each tab's fade-in.
     // Exercise real SettingsView navigation and Chromium paint, with normal motion, on the first
@@ -172,6 +188,9 @@ export default {
     const entry = await panel.evaluate((el, tab) => {
       const controls = [...el.querySelectorAll('[data-setting-id]')].reverse();
       const entries = window.settingsFixtureEntries;
+      // The per-device entry shares the devices section anchor and must reveal its controls.
+      if (tab === 'remote-control' && el.querySelector('[data-setting-id="remoteControl.systemSharingDevice"]'))
+        return entries.find(item => item.id === 'remoteControl.systemSharingDevice');
       return controls.map(control => entries.find(item => item.id === control.dataset.settingId && item.tab === tab))
         .find(item => item && document.getElementById(item.targetId))
         ?? entries.find(item => item.tab === tab && item.targetId === el.id);

@@ -1363,7 +1363,21 @@
       "chooseDetail": "Alto rendimiento: hasta 60 fps, menor latencia y una pantalla virtual. Ideal en una red local por cable o rápida.\nEstándar: ajusta la calidad a la red.\nLa primera vez, introduce la contraseña de inicio de sesión del otro Mac en Compartir pantalla y elige guardarla en el llavero. Después se conectará directamente.",
       "high": "Alto rendimiento",
       "standard": "Estándar",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "auto": "Automático",
+      "inherit": "Usar valor predeterminado",
+      "deviceTitle": "Compartir pantalla de este Mac",
+      "deviceHint": "Se guarda en este ordenador. El modo automático reutiliza las comprobaciones hasta 1 hora si la red local no cambia. Cada nueva comprobación usa hasta 16 MiB. No se cambian las conexiones activas.",
+      "effective": "Ajuste efectivo: {{mode}}",
+      "disabledHint": "Activa la función del sistema para compartir pantalla.",
+      "lastChoice": "Última solicitud: {{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "Tu preferencia",
+        "capability": "Capacidad del dispositivo",
+        "good": "Comprobación breve de red superada",
+        "limited": "La comprobación de red recomienda el modo estándar",
+        "unknown": "Calidad de red desconocida; se conserva el valor predeterminado"
+      }
     }
   },
   "ipcError": {

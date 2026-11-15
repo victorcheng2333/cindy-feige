@@ -1363,7 +1363,21 @@
       "chooseDetail": "Alto desempenho: até 60 fps, menor latência e um ecrã virtual. Ideal numa rede local por cabo ou rápida.\nPadrão: ajusta a qualidade à rede.\nNa primeira vez, introduza a palavra-passe de início de sessão do outro Mac na Partilha de ecrã e escolha guardá-la no porta-chaves. Depois, a ligação é direta.",
       "high": "Alto desempenho",
       "standard": "Padrão",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "auto": "Automático",
+      "inherit": "Usar predefinição",
+      "deviceTitle": "Partilha de ecrã deste Mac",
+      "deviceHint": "Guardado neste computador. O modo automático reutiliza verificações até 1 hora se a rede local não mudar. Uma nova verificação usa até 16 MiB. As ligações ativas não são alteradas.",
+      "effective": "Definição efetiva: {{mode}}",
+      "disabledHint": "Ative a partilha de ecrã do sistema.",
+      "lastChoice": "Último pedido: {{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "A sua preferência",
+        "capability": "Capacidade do dispositivo",
+        "good": "Verificação breve da rede aprovada",
+        "limited": "A verificação da rede recomenda o modo padrão",
+        "unknown": "Qualidade da rede desconhecida; predefinição mantida"
+      }
     }
   },
   "ipcError": {

@@ -8,7 +8,7 @@ import type {
   RemoteDesktopIceReply,
   DesktopIceServer,
 } from '@cindy/device-link';
-import type { SystemScreenSharingMode, SystemScreenSharingSettings } from './remoteDesktopViewer';
+import type { SystemScreenSharingPreference, SystemSharingDeviceSettings, SystemScreenSharingSettings } from './remoteDesktopViewer';
 // Initial capture plus three lease-scoped audio retries; also bounds Main's grant.
 export const DESKTOP_AUDIO_RETRY_MS = [3_000, 10_000, 30_000] as const;
 export const DESKTOP_LOCAL = {
@@ -99,9 +99,10 @@ export interface RemoteDesktopApi {
   openPermission(permission: DesktopPermission): Promise<void>;
   dismissPermissionGuide(): Promise<void>;
   /** macOS controller preference: connect to other Macs with system Screen Sharing. */
+  systemSharingDevice(device: string, preference?: SystemScreenSharingPreference | null): Promise<SystemSharingDeviceSettings>;
   systemSharing(): Promise<SystemScreenSharingSettings>;
   setSystemSharing(enabled: boolean): Promise<SystemScreenSharingSettings>;
-  setSystemSharingMode(mode: SystemScreenSharingMode): Promise<SystemScreenSharingSettings>;
+  setSystemSharingMode(mode: SystemScreenSharingPreference): Promise<SystemScreenSharingSettings>;
 }
 /** Narrow bridge exposed only to the dedicated capture surface. */
 export interface DesktopCaptureApi {

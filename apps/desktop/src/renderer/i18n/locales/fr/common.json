@@ -1363,7 +1363,21 @@
       "chooseDetail": "Hautes performances : jusqu’à 60 i/s, latence réduite et un écran virtuel. Idéal sur un réseau local filaire ou rapide.\nStandard : adapte la qualité au réseau.\nLa première fois, saisissez le mot de passe de session de l’autre Mac dans Partage d’écran et choisissez de l’enregistrer dans le trousseau. Ensuite, la connexion est directe.",
       "high": "Hautes performances",
       "standard": "Standard",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "auto": "Automatique",
+      "inherit": "Utiliser le réglage par défaut",
+      "deviceTitle": "Partage d’écran pour ce Mac",
+      "deviceHint": "Enregistré sur cet ordinateur. Le mode automatique réutilise les vérifications pendant 1 heure maximum si le réseau local ne change pas. Une nouvelle vérification utilise jusqu’à 16 Mio. Les connexions actives ne changent pas.",
+      "effective": "Réglage effectif : {{mode}}",
+      "disabledHint": "Activez le partage d’écran système.",
+      "lastChoice": "Dernière demande : {{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "Votre réglage",
+        "capability": "Capacité de l’appareil",
+        "good": "Vérification réseau courte réussie",
+        "limited": "La vérification réseau recommande le mode standard",
+        "unknown": "Qualité réseau inconnue ; réglage par défaut conservé"
+      }
     }
   },
   "ipcError": {

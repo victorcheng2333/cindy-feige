@@ -1332,7 +1332,21 @@
       "chooseDetail": "高性能：最高 60 帧，延迟更低，使用一个虚拟显示器，适合有线或高速局域网。\n标准：根据网络自动调整画质。\n第一次连接时，请在系统弹窗中输入对方 Mac 的登录密码，并选择在钥匙串中记住密码，以后会直接连接。",
       "high": "高性能",
       "standard": "标准",
-      "cancel": "取消"
+      "cancel": "取消",
+      "auto": "自动",
+      "inherit": "跟随默认",
+      "deviceTitle": "这台 Mac 的屏幕共享",
+      "deviceHint": "保存在本机。自动模式在本机网络未变化时复用检测结果，最长 1 小时；重新检测最多使用 16 MiB，不会切换正在使用的连接。",
+      "effective": "当前设置：{{mode}}",
+      "disabledHint": "请先开启系统屏幕共享。",
+      "lastChoice": "上次请求：{{mode}} · {{reason}}",
+      "reasons": {
+        "manual": "按你的设置",
+        "capability": "根据设备能力",
+        "good": "短时网络检查通过",
+        "limited": "网络检查建议使用标准模式",
+        "unknown": "网络质量未知，沿用默认"
+      }
     }
   },
   "ipcError": {

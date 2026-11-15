@@ -21,6 +21,7 @@ const relayState = {
 };
 const emptyDirectory = { bytes: 0, fileCount: 0 };
 const visibilityWrites: unknown[] = [];
+const sharingOverrides = new Map<string, string>();
 let systemSharingEnabled = false;
 let systemSharingMode = 'high';
 Object.assign(window, { visibilityWrites });
@@ -83,9 +84,15 @@ void mountPage({
     sharedTask: { account: read([]) },
     ghosts: { listSync: () => ({ ghosts: [] }), recentUsageSync: () => ({ ids: [] }), onChanged: subscription('ghosts'), onRecentUsageChanged: subscription('ghost-usage') },
     pluginMarket: { snapshot: read({ items: [], unavailableReason: null, customSourceNames: [], unavailableCustomSourceNames: [] }), onUpdateConsentHoldsChanged: subscription('plugin-consent') },
-    deviceLink: { getState: read({ remoteControlEnabled: Boolean(ctx.data.cloud), linkStatus: ctx.data.cloud ? 'online' : 'disconnected', controlledBy: [] }), onControlTargetChanged: subscription('control-target'), onOwnershipChanged: subscription('ownership'), onControlledState: subscription('controlled'), onConnectionIssue: subscription('connection-issue'), getSettings: read({}), getStatus: read({ connected: false }), listDevices: read({ devices: ctx.data.cloud ? [{ deviceId: 'fixture-pc', name: 'Preview PC', isSelf: true, online: true, platform: 'win32', remoteControlEnabled: true, controlEnabled: true }] : [] }), onPresenceChanged: subscription('presence'), onStatusChanged: subscription('device-status') },
+    deviceLink: { getState: read({ remoteControlEnabled: Boolean(ctx.data.cloud), linkStatus: ctx.data.cloud ? 'online' : 'disconnected', controlledBy: [] }), onControlTargetChanged: subscription('control-target'), onOwnershipChanged: subscription('ownership'), onControlledState: subscription('controlled'), onConnectionIssue: subscription('connection-issue'), getSettings: read({}), getStatus: read({ connected: false }), listDevices: read({ devices: ctx.data.cloud ? [{ deviceId: 'fixture-pc', name: 'Preview PC', isSelf: true, online: true, platform: 'win32', remoteControlEnabled: true, controlEnabled: true }, { deviceId: 'fixture-mac', name: 'Preview Mac', isSelf: false, online: true, platform: 'darwin', remoteControlEnabled: true, controlEnabled: true }] : [] }), onPresenceChanged: subscription('presence'), onStatusChanged: subscription('device-status') },
     remoteDesktop: {
       state: read({ enabled: false }),
+      systemSharingDevice: async (device: string, preference?: string | null) => {
+        if (preference === null) sharingOverrides.delete(device);
+        else if (preference !== undefined) sharingOverrides.set(device, preference);
+        return { override: sharingOverrides.get(device) ?? null, effective: sharingOverrides.get(device) ?? systemSharingMode,
+          enabled: systemSharingEnabled, lastDecision: { mode: 'standard', reason: 'limited', at: 0 } };
+      },
       systemSharing: async () => ({ enabled: systemSharingEnabled, mode: systemSharingMode }),
       setSystemSharing: async (enabled: boolean) => {
         systemSharingEnabled = enabled;

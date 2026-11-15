@@ -5160,6 +5160,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     enable: (enabled) => ipcRenderer.invoke(DESKTOP_LOCAL.ENABLE, enabled),
     windowsSupport: (enabled) => ipcRenderer.invoke(DESKTOP_LOCAL.WINDOWS_SUPPORT, enabled),
     stop: () => ipcRenderer.invoke(DESKTOP_LOCAL.STOP),
+    systemSharingDevice: (device, preference) => ipcRenderer.invoke(REMOTE_VIEWER.SYSTEM_SHARING_DEVICE, device, preference),
     systemSharing: () => ipcRenderer.invoke(REMOTE_VIEWER.SYSTEM_SHARING),
     setSystemSharing: (enabled) => ipcRenderer.invoke(REMOTE_VIEWER.SET_SYSTEM_SHARING, enabled),
     setSystemSharingMode: (mode) => ipcRenderer.invoke(REMOTE_VIEWER.SET_SYSTEM_SHARING, undefined, mode),

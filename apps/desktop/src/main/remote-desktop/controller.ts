@@ -156,6 +156,12 @@ export interface DesktopControllerDeps {
     id: string,
     current: () => boolean,
   ): Promise<unknown>;
+  systemSharingNetworkProbe?(
+    peer: string,
+    action: 'begin' | 'end',
+    id: string,
+    current: () => boolean,
+  ): Promise<unknown>;
   stopSystemSharingProbes?(peer?: string, id?: string): void;
   permissions?(action: 'check' | 'guide'): Promise<RemoteDesktopPermissions>;
   frame(
@@ -918,11 +924,14 @@ export class RemoteDesktopController {
       };
     }
     if (!this.deps.authorized(peer)) throw new Error('DESKTOP_DISABLED');
-    if (request.op === 'systemSharingProbe') {
+    if (request.op === 'systemSharingProbe' || request.op === 'systemSharingNetworkProbe') {
       const session = this.authenticationSession(peer);
-      if (!this.deps.systemSharingProbe) throw new Error('DESKTOP_UNAVAILABLE');
+      const probe = request.op === 'systemSharingNetworkProbe'
+        ? this.deps.systemSharingNetworkProbe
+        : this.deps.systemSharingProbe;
+      if (!probe) throw new Error('DESKTOP_UNAVAILABLE');
       const current = () => this.deps.authorized(peer) && this.authenticationCurrent(peer, session);
-      const result = await this.deps.systemSharingProbe(peer, request.action, request.id, current);
+      const result = await probe(peer, request.action, request.id, current);
       if (!current()) {
         this.deps.stopSystemSharingProbes?.(peer, request.id);
         throw new Error('DESKTOP_STOPPED');
@@ -1181,7 +1190,7 @@ export class RemoteDesktopController {
     peer: string,
     request: Exclude<
       ReturnType<typeof parseRemoteDesktopRequest>,
-      { op: 'capabilities' | 'permissions' | 'screens' | 'start' | 'systemSharingProbe' }
+      { op: 'capabilities' | 'permissions' | 'screens' | 'start' | 'systemSharingProbe' | 'systemSharingNetworkProbe' }
     >,
   ): Promise<unknown> {
     const active = this.require(peer, request.lease);

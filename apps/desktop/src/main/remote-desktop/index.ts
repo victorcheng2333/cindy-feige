@@ -64,6 +64,7 @@ import { encodeDesktopFrame, encodeNativeRelayFrame } from './frame';
 import { transferDesktopClipboard, transferDesktopClipboardContent } from './clipboard';
 import { NativeDesktopCapture } from './nativeCapture';
 import { readSystemScreenSharing } from './systemScreenSharing';
+import { SystemSharingNetworkProbeHost } from './systemSharingNetworkProbe';
 import { SystemScreenSharingProbeHost } from './systemScreenSharingProbe';
 import {
   activeOwnerScopeKey,
@@ -854,6 +855,11 @@ async function setPrivacyScreen(enabled: boolean, current: () => boolean): Promi
 }
 
 const systemSharingProbes = new SystemScreenSharingProbeHost();
+const systemSharingNetworkProbes = new SystemSharingNetworkProbeHost();
+const stopSystemSharingProbes = (peer?: string, id?: string) => {
+  systemSharingProbes.stop(peer, id);
+  systemSharingNetworkProbes.stop(peer, id);
+};
 export const remoteDesktop: RemoteDesktopController = new RemoteDesktopController({
   systemSharingProbe: async (peer, action, id, current) => {
     if (action === 'end') {
@@ -868,7 +874,19 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
       () => current() && owner === activeOwnerScopeKey() && !isAppSessionBoundaryPending(),
     );
   },
-  stopSystemSharingProbes: (peer, id) => systemSharingProbes.stop(peer, id),
+  systemSharingNetworkProbe: async (peer, action, id, current) => {
+    if (action === 'end') {
+      systemSharingNetworkProbes.stop(peer, id);
+      return null;
+    }
+    if (process.platform !== 'darwin') return null;
+    const owner = activeOwnerScopeKey();
+    return systemSharingNetworkProbes.begin(
+      peer, id,
+      () => current() && owner === activeOwnerScopeKey() && !isAppSessionBoundaryPending(),
+    );
+  },
+  stopSystemSharingProbes,
   prepare: async (current) => {
     if (nativeWayland() && (await supportsLinuxPrivacy())) {
       // Optional privacy support cannot make ordinary viewing unavailable.
@@ -1176,10 +1194,10 @@ export function registerRemoteDesktopIpc(
   }, 1000);
   timer.unref();
   onQuit('remote-desktop-clipboard', stopLinuxClipboardWriter);
-  const removeProbeBoundaryListener = onAppSessionInvalidated(() => systemSharingProbes.stop());
+  const removeProbeBoundaryListener = onAppSessionInvalidated(() => stopSystemSharingProbes());
   onQuit('remote-desktop-system-sharing-probes', () => {
     removeProbeBoundaryListener();
-    systemSharingProbes.stop();
+    stopSystemSharingProbes();
   });
   onQuit('remote-desktop-stop', () => {
     clearInterval(timer);

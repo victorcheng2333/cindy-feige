@@ -102,6 +102,59 @@ screen that was already locked when the setting was turned on stays locked. Logi
 `apps/desktop/src/main/remote-desktop/awayGuard.ts` (unit-tested state machine) and
 `awayGuardService.ts`; shared-userData passive instances do not run it.
 
+## Per-Mac automatic Screen Sharing (2026-11-11, unreleased)
+
+The initiating Mac can choose Automatic, High Performance or Standard globally, and
+store an override for each Mac under My devices → Screen sharing for this Mac.
+Use default deletes that device's override. Existing global preferences and the
+opt-in switch are preserved; the default remains High Performance. Settings are
+account-scoped on the controller; nothing is written to the receiving Mac's Apple settings.
+
+Automatic runs only when opening a new system connection, after address verification.
+Hosts must advertise `systemScreenSharing.networkProbe: 1`. A bounded begin/end request
+uses the existing authenticated desktop channel; bulk bytes go directly to the selected
+Screen Sharing address, never through Cindy's relay. Successful measurements are cached for
+one hour in the initiating Mac's process memory, scoped to the account and target device.
+No raw network identity or samples are persisted. Each automatic connection first checks
+local interface addresses plus the target route and default gateway (parallel local route
+lookups, each capped at 400 ms); a matching unexpired result skips the network probe entirely.
+The existing Device Link interface-change watcher invalidates the cache when it detects a
+change (2-second polling); the synchronous interface/route check before reuse also protects
+connections between polls. Suspend, resume and viewer/account reset clear it. The default
+route is included even when the target uses an unchanged Tailscale interface. An unreadable
+snapshot bypasses caching. A changed snapshot during measurement discards that result.
+Cache hits and failed probes never extend the original monotonic expiry; unknown results
+never overwrite valid evidence. Expired or different-network evidence is not used as fallback.
+There is no extra background polling, relay request or external speed-test tool. Remote
+congestion and Tailscale internal path changes may be invisible to local route information;
+the one-hour expiry bounds that staleness. Restarting Cindy clears this ephemeral cache.
+The cache stores a measured quality decision, not proof that Apple's session succeeded.
+
+The new probe host allows one pending test, at most once per 15 seconds, with an
+8-second lease and four pre-authentication sockets. A random one-use token delivered
+through Device Link claims the TCP connection. It permits eight 66-byte UDP echoes
+only to that authenticated TCP peer's IP, with unique sequence numbers, then a TCP
+stream of random bytes capped at 16 MiB or 1.5 seconds of writes (including backpressure).
+The controller waits at most 1.5 seconds for begin and 4.5 seconds for the direct test.
+Matching end, authorization loss, account switch and shutdown release resources;
+cleanup cannot stop another peer's test or reset Device Link. No passwords, tokens or
+payloads are logged/persisted. The host sends no data to a client-supplied destination.
+
+Initial conservative policy: at least 75 Mbps received, median UDP RTT at most 80 ms,
+RTT spread at most 30 ms and all eight echoes received selects High Performance.
+Otherwise a completed measurement selects Standard. These are initial application
+heuristics, not an official Apple 2K threshold; small UDP echoes do not measure sustained
+UDP loss or validate Apple's UDP ports 5900–5902. Incomplete/unsupported/busy probes keep
+the global manual default (High Performance when the global choice itself is Automatic).
+Unsupported High Performance always selects Standard. Explicit manual choices skip testing.
+
+The per-device panel shows the last *requested* mode and reason in memory. Opening Apple's
+app is not proof of login, a stable connection or actual bitrate/fps. There is no runtime
+mode switch, fixed-2K promise or Apple preference modification. Desktop macOS launch sites
+share the same main-process decision; Mobile, Windows, Linux and input-handoff viewers
+keep their existing behavior. Both Macs need this update to run the optional network test;
+an older peer remains connectable without it.
+
 ## System Screen Sharing between Macs (macOS, 2026-11-09)
 
 Settings → Remote control → **Use Screen Sharing between Macs** (default off, macOS
@@ -150,7 +203,7 @@ Apple's Screen Sharing app. A successful manual VPN test motivated this addition
 does not establish that every VPN permits the extra verification port.
 
 When both Macs support High Performance, Cindy opens it directly by default without a
-mode-selection prompt. The initiating Mac selects High Performance or Standard in
+mode-selection prompt. The initiating Mac selects Automatic, High Performance or Standard in
 Settings → Remote control → Screen Sharing → Connection mode. The default is High
 Performance; the chosen mode is saved only on that controller and applies to later
 connections. The receiving Mac does not choose again. The existing `mode: "standard"`
