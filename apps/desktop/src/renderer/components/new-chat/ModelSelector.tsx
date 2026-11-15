@@ -949,6 +949,10 @@ export interface ModelSelectorBaseProps {
    * 同一动机;单实例的 composer 不传,行为不变。
    */
   ariaContext?: string;
+  /** 草稿的引擎标签；无运行时切换提示。 */
+  draftEngineTabs?: boolean;
+  /** 点击草稿引擎标签后由调用方恢复该引擎上次选择，保持面板打开。 */
+  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor') => void;
   /**
    * session-agent-switch:会话内显式两步切换引擎(先选 Agent,再选模型)。
    * 传入后列表顶部渲染 Claude / Codex 分段;切到非当前引擎的 tab 进入「浏览目标
@@ -1163,6 +1167,10 @@ export interface ModelSelectorContentBaseProps {
    * trigger width」),主菜单列由固定 320 改为撑满外层 PopoverContent。
    */
   fluidWidth?: boolean;
+  /** 草稿的引擎标签；无运行时切换提示。 */
+  draftEngineTabs?: boolean;
+  /** 点击草稿引擎标签后由调用方恢复该引擎上次选择，保持面板打开。 */
+  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor') => void;
   /** 语义同 ModelSelectorProps.agentSwitch(显式两步引擎切换)。 */
   agentSwitch?: {
     currentVendor: 'cc' | 'codex' | 'pi' | 'cursor';
@@ -1330,6 +1338,8 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     optionsPanelUsesLayoutPositioning = false,
     fluidWidth = false,
     agentSwitch,
+    draftEngineTabs = false,
+    onDraftVendorChange,
     discoveringModels = false,
     interactionDisabled = false,
     gatewayPricing,
@@ -1445,13 +1455,14 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       }
     }
     setBrowseVendor(next);
+    if (draftEngineTabs) onDraftVendorChange?.(next);
   };
   // 会话引擎在外部变化(切换完成 / 换会话)时重置浏览态,跟随新的当前引擎。
   useEffect(() => {
     setBrowseVendor(agentSwitch?.currentVendor ?? vendorKey ?? 'cc');
   }, [agentSwitch?.currentVendor, vendorKey]);
   // Compact is a list layout, not a restriction on an existing task's handoff.
-  const hasEngineBrowser = !!agentSwitch || (!compactProviderList && !!onUnifiedSelect);
+  const hasEngineBrowser = !!agentSwitch || ((draftEngineTabs || !compactProviderList) && !!onUnifiedSelect);
   const browsing = hasEngineBrowser && browseVendor !== (agentSwitch?.currentVendor ?? vendorKey ?? 'cc');
   const agentKind = hasEngineBrowser
     ? vendorKeyToAgentKind(browseVendor)
@@ -4141,7 +4152,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       )}
       {/* session-agent-switch:显式两步引擎切换——先在分段里选 Agent,再选模型。
           复用新建会话的 VendorSegmentedSwitcher 视觉(dense),宽度撑满列表列。 */}
-      {!compactProviderList && !agentSwitch && onUnifiedSelect && (
+      {!compactProviderList && !draftEngineTabs && !agentSwitch && onUnifiedSelect && (
         <AgentSelect
           value={browseVendor}
           onChange={(next) => { if (next !== 'orca') void handleBrowseVendorChange(next); }}
@@ -4153,7 +4164,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
           side="bottom"
         />
       )}
-      {!catalogSection && agentSwitch && (
+      {!catalogSection && (agentSwitch || (draftEngineTabs && onUnifiedSelect)) && (
         <>
           <VendorSegmentedSwitcher
             value={browseVendor}
@@ -4168,7 +4179,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
             width="100%"
             className="mx-auto"
           />
-          {browsing && (
+          {browsing && agentSwitch && (
             <div className="px-2 pb-0.5 text-12 text-[var(--text-tertiary)]">
               {t('newChat.modelSelector.agentSwitch.hint', { agent: browseTargetLabel })}
             </div>
@@ -4216,9 +4227,13 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
           ? 'relative flex min-w-0 flex-col gap-0.5'
           : 'morph-panel-list-scroll relative -mr-2 flex max-h-[300px] flex-col gap-0.5 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]'}
         style={
-          catalogSection || constrainedListMaxHeight === undefined
+          catalogSection
             ? undefined
-            : { maxHeight: `${constrainedListMaxHeight}px` }
+            : {
+                maxHeight: constrainedListMaxHeight,
+                // 引擎间模型数量不同也保持列表高度；受限窗口仍由外层 flex 收缩。
+                ...(draftEngineTabs ? { height: constrainedListMaxHeight ?? 300, minHeight: 0 } : {}),
+              }
         }
         role={catalogSection ? undefined : "listbox"}
         tabIndex={compactProviderList && !catalogSection ? -1 : undefined}
@@ -4432,6 +4447,8 @@ export function ModelSelector({
   onProviderChange,
   onNavigateToProviders,
   agentSwitch,
+  draftEngineTabs = false,
+  onDraftVendorChange,
 }: ModelSelectorProps) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -5360,6 +5377,8 @@ export function ModelSelector({
       pointerRevealRequiresIntent={morphEnabled}
       optionsPanelUsesLayoutPositioning={isCreateAgentVariant}
       fluidWidth={fieldPanelFollowsTrigger || (morphEnabled && !unifiedPanel)}
+      draftEngineTabs={draftEngineTabs}
+      onDraftVendorChange={onDraftVendorChange}
       agentSwitch={contentAgentSwitch}
       discoveringModels={showDiscoveryPending && discovery.pending}
       interactionDisabled={switching || disabled}

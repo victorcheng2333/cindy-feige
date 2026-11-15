@@ -1101,7 +1101,7 @@ export function NewMakerDraftRoute() {
   );
   const hiddenSwitcherVendors = useMemo<MakerVendor[]>(() => {
     if (!availableAgentsLoaded) return [];
-    return (['cc', 'codex', 'pi'] as const).filter((vendor) => !availableVendors.has(vendor));
+    return (['cc', 'codex', 'pi', 'cursor'] as const).filter((vendor) => !availableVendors.has(vendor));
   }, [availableAgentsLoaded, availableVendors]);
   /**
    * 「这份草稿要建到对端设备上」—— 只看 deviceId,**不再要求 workingDir**(#807)。
@@ -1528,8 +1528,8 @@ export function NewMakerDraftRoute() {
   const remoteDraftProviders = useMemo(() => deviceProvidersUnsupported ? undefined :
     visibleRemoteDraftProviders(targetSelectableProviders, capabilityAgentKind, deviceVisibility),
   [deviceProvidersUnsupported, targetSelectableProviders, capabilityAgentKind, deviceVisibility]);
-  // 保留原始选择器和独立引擎下拉。老被控端只有 capabilities、没有供应商目录时，
-  // 仍走兼容列表与引擎下拉；否则联合列表会为空，也无法切换引擎。
+  // 原始选择器内提供引擎标签。老被控端只有 capabilities、没有供应商目录时，
+  // 保留兼容列表与独立引擎下拉，避免选模型时缺少完整来源配置。
   const unifiedModelPanelEnabled = !catalogDeviceId || !deviceProvidersUnsupported;
   const unifiedModelPanelActive = false;
   const remoteModelListStatus = !usesDeviceCatalog
@@ -6807,12 +6807,11 @@ export function NewMakerDraftRoute() {
                     folderPickerOpen={folderPickerOpen}
                     onFolderPickerOpenChange={handleFolderPickerOpenChange}
                     showFolderPicker={false}
-                    // 统一模型选择器(model-selector-unified §1.1):引擎不再是工具条上的
-                    // 独立控件 —— 它跟着模型走(推荐映射自动配好,并在模型 pill 与每一行
-                    // 右侧常驻显示),高级调整收进行配置浮层。仅在老被控端
-                    // capabilities-only 降级时恢复独立引擎下拉。
+                    // 新任务与已有任务共用引擎标签；旧端无供应商目录时保留独立入口。
+                    draftEngineTabs={unifiedModelPanelEnabled}
+                    onDraftVendorChange={handleVendorChange}
                     middleToolbarSlot={
-                      unifiedModelPanelActive ? undefined : (
+                      unifiedModelPanelEnabled ? undefined : (
                         <AgentSelect
                           value={draft.vendor}
                           onChange={handleVendorChange}
@@ -6870,7 +6869,7 @@ export function NewMakerDraftRoute() {
                         : undefined
                     }
                     compactMiddleToolbarSlot={
-                      unifiedModelPanelActive ? undefined : (
+                      unifiedModelPanelEnabled ? undefined : (
                         <AgentSelect
                           value={draft.vendor}
                           onChange={handleVendorChange}

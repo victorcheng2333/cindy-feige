@@ -1,3 +1,4 @@
+import { useComposerPillOpen } from '@/session/useComposerPillOpen';
 // @vitest-environment jsdom
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -240,6 +241,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('composer keyboard geometry and motion', () => {
@@ -617,4 +619,25 @@ describe('composer keyboard geometry and motion', () => {
       [...native.listeners.values()].every((listeners) => listeners.size === 0),
     ).toBe(true);
   });
+});
+
+// Unit regression: a downward dismissal during opening must cancel the pending
+// focus fallback. Existing keyboard-frame tests did not cover this 320ms window.
+it('does not reopen the keyboard after the opening composer is dismissed', () => {
+  vi.useFakeTimers();
+  const focus = vi.fn();
+  let api!: ReturnType<typeof useComposerPillOpen>;
+  function OpeningComposer() {
+    api = useComposerPillOpen(true, focus);
+    return null;
+  }
+  act(() => root.render(<OpeningComposer />));
+  act(() => api.onCollapsedPress?.());
+  act(() => { vi.advanceTimersByTime(100); api.cancelOpening(); });
+  act(() => vi.advanceTimersByTime(1_000));
+  expect(focus).not.toHaveBeenCalled();
+  expect(api.opening).toBe(false);
+  act(() => api.onCollapsedPress?.());
+  act(() => vi.advanceTimersByTime(320));
+  expect(focus).toHaveBeenCalledOnce();
 });

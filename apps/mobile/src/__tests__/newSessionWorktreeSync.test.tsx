@@ -6,6 +6,7 @@ import { remoteSessionStore } from '@/session/remoteSessionStore';
 import type { NewSessionWorktreeEligibility } from '@/session/newSessionWorktree';
 import {
   useNewSessionWorktreeSync,
+  useNewSessionWorktreeDisplay,
   type NewSessionWorktreeSyncInput,
   type WorktreeCreateIntentSnapshot,
 } from '@/session/useNewSessionWorktreeSync';
@@ -331,3 +332,34 @@ it.each(['writing', 'reconciling'])(
     expect(h.state.worktreeEnabled).toBe(true);
   },
 );
+
+// Unit regression: the page kept the Git row but read its label from probing,
+// flashing HEAD. Prior sync tests never exercised the display's store lookup.
+it('keeps the branch and Git row through revalidation, isolates a changed project', () => {
+  const deviceId = `worktree-display-${++deviceSequence}`;
+  let target = { deviceId, workingDir: '/repo' };
+  let eligibility: NewSessionWorktreeEligibility = { status: 'eligible', baseRepo: '/repo', sourceBranch: 'main' };
+  remoteSessionStore.setNewMakerWorktreeBranchPreference(deviceId, { baseRepo: '/repo', sourceBranch: 'feature', revision: 1 });
+  let state!: ReturnType<typeof useNewSessionWorktreeDisplay>;
+  function Display() {
+    state = useNewSessionWorktreeDisplay(eligibility, target, null);
+    return null;
+  }
+  root = createRoot(document.createElement('div'));
+  const render = () => act(() => root!.render(createElement(Display)));
+  render();
+  expect(state.sourceBranch).toBe('feature');
+  for (const status of ['probing', 'recovering', 'detect-failed'] as const) {
+    eligibility = { status };
+    render();
+    expect(state.sourceBranch).toBe('feature');
+    expect(state.settled?.eligibility.status).toBe('eligible');
+  }
+  act(() => remoteSessionStore.setNewMakerWorktreeBranchPreference(deviceId,
+    { baseRepo: '/repo', sourceBranch: 'main', revision: 2 }));
+  expect(state.sourceBranch).toBe('main');
+  target = { ...target, workingDir: '/other' };
+  render();
+  expect(state.settled).toBeNull();
+  expect(state.preference).toBeNull();
+});

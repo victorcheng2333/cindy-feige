@@ -940,6 +940,9 @@ interface ChatInputProps {
   botMentions?: readonly ComposerBotMention[];
   /** 新任务的「让插件选」(只有新任务草稿传)。 */
   pluginModels?: PluginModelsPickerProps;
+  /** 在原始模型面板内切换引擎，恢复对应草稿选择。 */
+  draftEngineTabs?: boolean;
+  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor') => void;
   /** 新任务的模型组(只有新任务草稿传)。 */
   modelGroups?: ModelGroupsPickerProps;
   /**
@@ -1418,6 +1421,8 @@ export function ChatInput({
   collaboration,
   botMentions = [],
   onUnifiedDraftSelect,
+  draftEngineTabs = false,
+  onDraftVendorChange,
   pluginModels,
   modelGroups,
   selectedFavoriteUid = null,
@@ -2231,16 +2236,16 @@ export function ChatInput({
   // 联合列表参与哪些引擎 —— 以**运行时注册结果**为准(device-link 取被控端的)。
   // 撤掉新会话工具条的 AgentSelect 后,它的 hiddenVendors 门禁就落到这里:Pi 二进制缺失
   // 时模型目录照样投影 Pi 模型,只看目录会让用户一路选到 requireAgent 的 not-registered。
-  // 未加载完成 → 传 undefined(fail-open,不隐藏任何引擎);当前引擎恒在列。
+  // 未加载完成 → 传 undefined；只有已有任务保留当前引擎，新任务严格按可选清单。
   const { availableVendors: runtimeAvailableVendors, loaded: runtimeAgentsLoaded } =
     useAvailableAgents(catalogDeviceId);
   const unifiedAgents = useMemo<readonly AgentKind[] | undefined>(() => {
     if (!runtimeAgentsLoaded) return undefined;
     const kinds = UNIFIED_AGENT_KINDS.filter(
-      (kind) => kind === agentKind || runtimeAvailableVendors.has(agentKindToVendor(kind)),
+      (kind) => (!!sessionId && kind === agentKind) || runtimeAvailableVendors.has(agentKindToVendor(kind)),
     );
-    return kinds.length > 0 ? kinds : undefined;
-  }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind]);
+    return kinds;
+  }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId]);
   // 已有 device-link 任务在断链时仍有 pinned deviceId + renderer outbox 可接住发送，
   // 不能因为被控端 provider 目录暂时拉不到就禁用 composer。远程草稿没有既有 session
   // 可以排队，仍与本地任务一样保留来源门禁。
@@ -10237,7 +10242,9 @@ export function ChatInput({
                     agentIdentity={
                       sessionId
                         ? composerAgentIdentity
-                        : undefined
+                        : draftEngineTabs && vendorKey
+                          ? { vendorKey, state: 'current' }
+                          : undefined
                     }
                     // 统一模型选择器(M5 新会话 / M6 会话内)。composer 是它的两个真实入口;
                     // 其余 7 个消费者(scheduler / IM / Hook / Subagent / Worker /
@@ -10249,6 +10256,8 @@ export function ChatInput({
                     engineMarkVendor={unifiedPanelActive ? composerEngineMarkVendor : null}
                     unifiedPanel={unifiedPanelActive}
                     compactProviderList
+                    draftEngineTabs={!sessionId && draftEngineTabs}
+                    onDraftVendorChange={!sessionId ? onDraftVendorChange : undefined}
                     // 「最近使用」只记**对话**入口(新任务草稿 / 会话内,本组件就是这两个),且
                     // 远程不记:被控端目录的模型写进本机列表只会得到一行永远不可路由的记录。
                     // deviceLinkDeviceId 为 undefined = 归属尚未解析(冷启动) —— 宁可这一帧
@@ -10262,7 +10271,7 @@ export function ChatInput({
                     sessionEngineFilter={sessionEngineFilter}
                     // 新会话:选中直通,引擎跟着模型一起落进草稿(见 handleUnifiedDraftSelect)。
                     onUnifiedSelect={
-                      !sessionId && (unifiedPanelActive || remoteAgentOptions) && onUnifiedDraftSelect
+                      !sessionId && (draftEngineTabs || unifiedPanelActive || remoteAgentOptions) && onUnifiedDraftSelect
                         ? handleUnifiedDraftSelect
                         : undefined
                     }

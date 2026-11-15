@@ -342,6 +342,48 @@ describe('精简任务列表跨 harness 切换', () => {
   });
 });
 
+// Unit: 2026-11-15 new-task parity. Existing cases cover session handoff only.
+// Minimal input: compact draft with a Codex model and Cursor disabled; browsing
+// restores the parent-owned draft selection, and model selection emits the full tuple.
+// Focused run: 5.16s wall clock, 135ms test execution.
+describe('新任务引擎标签', () => {
+  it('切引擎恢复草稿选择，继续选模型提交完整配置，并隐藏关闭的 Cursor', async () => {
+    const originalLocal = catalogs.local;
+    catalogs.local = [...originalLocal, {
+      ...(originalLocal[0] as object), id: 'codex-source', name: 'Codex Source',
+      agents: ['codex'], routing: { codex: {} },
+      models: { codex: [{ id: 'codex-model', name: 'Codex Model', contextWindow: 200000,
+        efforts: ['low', 'high'], defaultEffort: 'low' }] },
+    }];
+    try {
+      const onUnifiedSelect = vi.fn(async () => true);
+      function DraftPicker() {
+        const [vendor, setVendor] = React.useState<'cc' | 'codex' | 'pi' | 'cursor'>('cc');
+        return <ModelSelectorContent
+          modelId={vendor === 'codex' ? 'codex-model' : 'a-model'}
+          currentProviderId={vendor === 'codex' ? 'codex-source' : 'a-local'}
+          effort="high" vendorKey={vendor} onModelChange={vi.fn()} onEffortChange={vi.fn()}
+          remoteAgent={{ devices: [], selectedDeviceId: null }}
+          compactProviderList draftEngineTabs onDraftVendorChange={setVendor}
+          unifiedAgents={['claude-code', 'codex']} onUnifiedSelect={onUnifiedSelect}
+        />;
+      }
+      render(<DraftPicker />);
+      expect(screen.queryByRole('tab', { name: 'Cursor' })).toBeNull();
+      await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Codex' })); });
+      expect(onUnifiedSelect).not.toHaveBeenCalled();
+      expect(screen.queryByText('newChat.modelSelector.agentSwitch.hint')).toBeNull();
+      expect(within(screen.getByRole('group', { name: 'Codex Source' })).getByRole('option').getAttribute('aria-selected')).toBe('true');
+      await act(async () => {
+        fireEvent.click(within(screen.getByRole('group', { name: 'Codex Source' })).getByRole('option'));
+      });
+      expect(onUnifiedSelect).toHaveBeenCalledWith(expect.objectContaining({
+        providerId: 'codex-source', modelId: 'codex-model', engine: 'codex', effort: 'high', fast: false,
+      }));
+    } finally { catalogs.local = originalLocal; }
+  });
+});
+
 // Unit regression (2026-11-15): remote Claude catalogs hid the Cursor tab.
 // Existing cases only switch Codex/Pi on local catalogs. Minimum input: a remote
 // catalog with Cursor in the selectable roster; the real picker must expose the

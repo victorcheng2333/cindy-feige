@@ -11,6 +11,7 @@ import { withTransientRemoteRetry } from "@/device-link/remoteRetry";
 import {
   remoteSessionStore,
   useRemoteNewMakerWorktreePreference,
+  useRemoteNewMakerWorktreeBranchPreference,
 } from "./remoteSessionStore";
 import {
   applyWorktreePreferenceOnHost,
@@ -18,6 +19,10 @@ import {
   isWorktreeChannelNotAllowedError,
   shouldBlockNewSessionCreateForWorktree,
   worktreeEligibilityCaptionKey,
+  settleWorktreeEligibilityForDisplay,
+  worktreeSourceBranchFromPreference,
+  type NewSessionWorktreeBranchTarget,
+  type NewSessionWorktreeSettledSnapshot,
   type NewSessionWorktreeEligibility,
 } from "./newSessionWorktree";
 import type { NewSessionDraft } from "./newSession";
@@ -679,4 +684,23 @@ export function useNewSessionWorktreeSync({
     worktreePreferenceAuthorityUnknown,
     prepareWorktreeCreateIntent,
   };
+}
+
+/** Keep the branch label and row visibility on the same confirmed, target-scoped snapshot. */
+export function useNewSessionWorktreeDisplay(
+  eligibility: NewSessionWorktreeEligibility,
+  target: NewSessionWorktreeBranchTarget,
+  compatibilitySelection: { key: string; sourceBranch: string } | null,
+) {
+  const previous = useRef<NewSessionWorktreeSettledSnapshot | null>(null);
+  const settled = settleWorktreeEligibilityForDisplay(eligibility, target, previous.current);
+  useLayoutEffect(() => { previous.current = settled; }, [settled]);
+  const displayEligibility = settled?.eligibility ?? eligibility;
+  const baseRepo = displayEligibility.status === 'eligible' ? displayEligibility.baseRepo : '';
+  const preference = useRemoteNewMakerWorktreeBranchPreference(target.deviceId, baseRepo);
+  const preferenceKey = target.deviceId && baseRepo ? `${target.deviceId}\u0000${baseRepo}` : '';
+  const sourceBranch = compatibilitySelection?.key === preferenceKey
+    ? compatibilitySelection.sourceBranch
+    : worktreeSourceBranchFromPreference(preference, displayEligibility);
+  return { settled, preference, sourceBranch };
 }

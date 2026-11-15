@@ -33,9 +33,15 @@ export function useComposerPillOpen(enabled: boolean, focus: () => void) {
       }, FOCUS_GRACE_MS));
     }, FALLBACK_FOCUS_MS));
   }, []);
+  const cancelOpening = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setOpening(false);
+  }, []);
   const active = enabled && reduceMotion === false;
   return {
     opening,
+    cancelOpening,
     onCollapsedPress: active ? open : undefined,
     // Mounted while enabled so native already knows the pill's frame on the first open.
     expandToken: active ? String(openCount) : undefined,

@@ -14,7 +14,7 @@ import {
   revalidateNewSessionDraftAfterAuth,
   restoreNewSessionFastPreference,
 } from '@/session/newSessionRuntimeReconciliation';
-import { useNewSessionWorktreeSync } from '@/session/useNewSessionWorktreeSync';
+import { useNewSessionWorktreeDisplay, useNewSessionWorktreeSync } from '@/session/useNewSessionWorktreeSync';
 import {
   publishNewSessionVoiceDraft,
   changeNewSessionVoiceText,
@@ -91,6 +91,7 @@ import {
   AppState,
   FlatList,
   Linking,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -298,7 +299,6 @@ import {
 } from '@/session/newSessionPreferenceStore';
 import {
   remoteSessionStore,
-  useRemoteNewMakerWorktreeBranchPreference,
   useRemoteSessions,
 } from '@/session/remoteSessionStore';
 import { buildSessionComposerLayout } from '@/session/sessionComposerLayout';
@@ -416,14 +416,12 @@ import {
   initialWorktreeProbeEligibility,
   resolveWorktreeEligibility,
   shouldAcceptWorktreeBranchListResult,
-  settleWorktreeEligibilityForDisplay,
   shouldShowWorktreeToggle,
   worktreeEligibilityForTarget,
   worktreeEligibilityFromError,
   worktreeSourceBranchFromPreference,
   type NewSessionWorktreeEligibility,
   type NewSessionWorktreeProbeSnapshot,
-  type NewSessionWorktreeSettledSnapshot,
 } from '@/session/newSessionWorktree';
 import { mobileAgentLabel, mobileAgentVendor } from '@/session/sessionAgentSwitch';
 import { MobileModelIconMark } from '@/session/MobileProviderMark';
@@ -800,7 +798,6 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const worktreeBranchRenderedRef = useRef({ key: '', sourceBranch: '' });
   const worktreeBranchTargetRef = useRef({ deviceId: '', workingDir: '' });
   const worktreeEligibilityRef = useRef<NewSessionWorktreeEligibility>({ status: 'probing' });
-  const worktreeSettledRef = useRef<NewSessionWorktreeSettledSnapshot | null>(null);
   const worktreeSourceBranchRef = useRef('HEAD');
   const [attachments, setAttachments] = useState<RemoteSerializedAttachment[]>([]);
   // create() 里 await 在途图片上传后闭包里的 attachments 已是旧值,经 ref 读最新列表。
@@ -1348,9 +1345,12 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       : draft.model.trim()
         ? runtimeSummary.modelSummary
         : t('session.new.noModelSelected');
-  const pillAccessibilityModel = remoteAgentCatalog?.name
-    ? [pillModelSummary, remoteAgentCatalog.name].join(', ')
+  const pillSelectionSummary = Platform.OS === 'ios'
+    ? [mobileAgentLabel(remoteAgentPick?.agentKind ?? draft.agentKind), pillModelSummary].join(' · ')
     : pillModelSummary;
+  const pillAccessibilityModel = remoteAgentCatalog?.name
+    ? [pillSelectionSummary, remoteAgentCatalog.name].join(', ')
+    : pillSelectionSummary;
   // 权限按钮 / 权限下拉不体现 plan(对齐桌面 PR#494 / Cursor):计划模式激活时展示
   // 进入前的底层权限档(无记录时回退首个非 plan 档),激活态由 composer 的 PlanModeChip 表达。
   const displayPermissionMode = draft.permissionMode === 'plan'
@@ -1374,10 +1374,13 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const agentLabel = mobileAgentLabel(draft.agentKind);
   // effect 在 commit 后才会把旧探测结果重置为 probing；render 期先按设备 + cwd +
   // 连接代次同步对齐 target，切项目/设备或同目标重连后立即创建也拿不到旧结果。
+  // 全局 presenceVersion 也包含其它电脑和路径切换；Git 只跟踪当前电脑可用性。
+  const worktreeDeviceAvailability = selectedDeviceId ? getPresenceAvailability(selectedDeviceId) : null;
+  const worktreeProbeGeneration = `${connectionEpoch}\u0000${worktreeDeviceAvailability}`;
   const worktreeTarget = {
     deviceId: selectedDeviceId ?? '',
     workingDir: draft.workspaceKind === 'project' ? draft.workingDir.trim() : '',
-    probeGeneration: `${connectionEpoch}\u0000${presenceVersion}`,
+    probeGeneration: worktreeProbeGeneration,
   };
   worktreeBranchTargetRef.current = worktreeTarget;
   const worktreeEligibility = worktreeEligibilityForTarget(worktreeProbe, worktreeTarget);
@@ -1387,16 +1390,17 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     && worktreeProbe.target.workingDir.trim() === worktreeTarget.workingDir.trim()
     ? worktreeProbe.supportsRecoveryKeyDiscard
     : undefined;
+  const {
+    settled: worktreeSettled,
+    preference: remoteWorktreeBranchPreference,
+    sourceBranch: displayWorktreeSourceBranch,
+  } = useNewSessionWorktreeDisplay(worktreeEligibility, worktreeTarget, worktreeBranchCompatibilitySelection);
   const worktreeBranchBaseRepo = worktreeEligibility.status === 'eligible'
     ? worktreeEligibility.baseRepo
     : '';
   const worktreeBranchPreferenceKey = selectedDeviceId && worktreeBranchBaseRepo
     ? `${selectedDeviceId}\u0000${worktreeBranchBaseRepo}`
     : '';
-  const remoteWorktreeBranchPreference = useRemoteNewMakerWorktreeBranchPreference(
-    selectedDeviceId,
-    worktreeBranchBaseRepo,
-  );
   const authoritativeWorktreeSourceBranch = worktreeSourceBranchFromPreference(
     remoteWorktreeBranchPreference,
     worktreeEligibility,
@@ -1415,20 +1419,10 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       : [],
     [worktreeBranchList, worktreeBranchListMatchesTarget],
   );
-  // 开关行按「已有定论」显示：首次探测完成前不出现，重连重探沿用上次定论不闪。
-  const worktreeSettled = settleWorktreeEligibilityForDisplay(
-    worktreeEligibility,
-    worktreeTarget,
-    worktreeSettledRef.current,
-  );
-  // 只在提交后记录「已展示的定论」：被放弃的并发 render 不能污染它。
-  useLayoutEffect(() => {
-    worktreeSettledRef.current = worktreeSettled;
-  }, [worktreeSettled]);
   // host preference 虽然持久化，连接代次仍属于权威读取 identity：桌面重启/重连后
   // 即使 deviceId/repo 没变，也重新 GET，不能只相信手机内存里的旧快照。
   const worktreeBranchPreferenceSyncKey = worktreeBranchPreferenceKey
-    ? `${worktreeBranchPreferenceKey}\u0000${connectionEpoch}\u0000${presenceVersion}`
+    ? `${worktreeBranchPreferenceKey}\u0000${worktreeProbeGeneration}`
     : '';
   worktreeBranchPreferenceSyncKeyRef.current = worktreeBranchPreferenceSyncKey;
   const worktreeBranchPreferenceReady = worktreeBranchPreferenceSyncKey.length > 0
@@ -1491,9 +1485,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     || worktreeBranchPreferenceSaving
     || worktreeEligibility.status !== 'eligible'
     || (!worktreeBranchPreferenceReady && !worktreeBranchPreferenceError);
-  const worktreeBranchSheetVisible = worktreeBranchSheetOpen
-    && worktreeEligibility.status === 'eligible'
-    && worktreeBranchListMatchesTarget;
+  const worktreeBranchSheetVisible = worktreeBranchSheetOpen && worktreeRowVisible;
   // 2026-09-11: show this draft's explicit choice, otherwise the last host mirror.
   // Eligibility failures still cannot silently downgrade an enabled worktree.
   const worktreeChecked = worktreeEnabled;
@@ -1616,7 +1608,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     }),
     [safeAreaInsets.top, windowDimensions.height],
   );
-  // 聚焦 / 面板打开 / 语音中呈现卡片形态（输入区全宽 + 底部工具排），其余保持单行简洁态。
+  // 聚焦 / 面板打开 / 语音中展开输入卡片；iOS 模型入口常驻项目与分支下方。
   // 语音结束后草稿仍有内容时经 hold 保持展开(一行文字也不收),
   // 不随 voiceIsBusy 归零塌回简洁态。
   const composerVoiceHoldActive = resolveComposerVoiceHoldActive({
@@ -1631,7 +1623,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     useComposerDragOpen(firstMessageInputFocused, () => firstMessageInputRef.current?.focus());
   const composerCardActive = firstMessageInputFocused || composerPillOpen.opening || composerDragOpen
     || composerImageHoldActive
-    || modelSheetOpen
+    || (Platform.OS !== 'ios' && modelSheetOpen)
     || permissionSheetOpen
     || voiceStartPending
     || voiceIsBusy
@@ -1642,8 +1634,12 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const handleComposerSnapToAuto = useCallback(() => {
     collapseComposerImages();
     setComposerVoiceHoldArmed(false);
+    handleComposerDragOpenChange(false);
+    composerPillOpen.cancelOpening();
     firstMessageInputRef.current?.blur();
-  }, [collapseComposerImages]);
+    Keyboard.dismiss();
+    setFirstMessageInputFocused(false);
+  }, [collapseComposerImages, handleComposerDragOpenChange, composerPillOpen.cancelOpening]);
   const [composerAttachmentTrayHeight, setComposerAttachmentTrayHeight] = useState(0);
   const composerCardMaxHeight = Math.max(COMPOSER_CARD_CHROME_HEIGHT + MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT, windowDimensions.height
     - (keyboardState.visible ? keyboardState.height : safeAreaInsets.bottom)
@@ -2490,7 +2486,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     const target = {
       deviceId: selectedDeviceId ?? '',
       workingDir: cwd,
-      probeGeneration: `${connectionEpoch}\u0000${presenceVersion}`,
+      probeGeneration: worktreeProbeGeneration,
     };
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2505,7 +2501,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     worktreeEligibilityRef.current = initialEligibility;
     setWorktreeProbe({ target, eligibility: initialEligibility });
     // Relay 离线时不把预期的 NOT_CONNECTED 固化成 detect-failed；online /
-    // connectionEpoch / presenceVersion 变化后自动重探，覆盖手机重连和工作端
+    // 当前电脑的连接代次 / 可用性变化后自动重探，覆盖手机重连和工作端
     // 重新上线两种路径。
     if (!selectedDeviceId || !cwd || deviceLinkStatus !== 'online') return undefined;
     void withTransientRemoteRetry(async () => {
@@ -2546,9 +2542,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [
-    connectionEpoch,
+    worktreeProbeGeneration,
     deviceLinkStatus,
-    presenceVersion,
     worktreeDetectRetryNonce,
     selectedDeviceId,
     draft.workspaceKind,
@@ -2715,9 +2710,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [
-    connectionEpoch,
+    worktreeProbeGeneration,
     deviceLinkStatus,
-    presenceVersion,
     worktreeBranchPreferencePullRetryNonce,
     selectedDeviceId,
     draft.workspaceKind,
@@ -2832,7 +2826,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   ]);
 
   const openWorktreeBranchPicker = useCallback(() => {
-    if (creatingRef.current || worktreeBranchDisabled) return;
+    if (creatingRef.current || !worktreeRowVisible) return;
     setDevicePickerOpen(false);
     setWorkspacePickerOpen(false);
     setAgentPickerOpen(false);
@@ -2843,7 +2837,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     setWorktreeBranchSheetSnap('half');
     setWorktreeBranchSheetOpen(true);
     loadWorktreeBranches(false);
-  }, [loadWorktreeBranches, worktreeBranchDisabled]);
+  }, [loadWorktreeBranches, worktreeRowVisible]);
 
   const selectWorktreeSourceBranch = useCallback((sourceBranch: string) => {
     if (
@@ -3422,6 +3416,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         accessibilityLabel={t('models.picker.permissionModeAccessibility', { mode: presentation.label })}
         accessibilityRole="button"
         accessibilityState={{ expanded: permissionSheetOpen || undefined }}
+        disabled={creating}
         hitSlop={10}
         onPress={openPermissionPicker}
         style={({ pressed }) => [styles.composerIconButton, pressed && styles.pressed]}
@@ -3436,13 +3431,38 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     );
   };
 
+  const renderModelPickerButton = (standalone = false) => (
+        <Pressable
+          accessibilityLabel={t('session.new.modelAccessibility', { model: pillAccessibilityModel })}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: modelSheetOpen || undefined }}
+          disabled={creating}
+          hitSlop={10}
+          onPress={toggleModelPicker}
+          style={({ pressed }) => [standalone ? styles.selectorRow : styles.modelPill, standalone && styles.runtimeModelSelector, pressed && styles.pressed]}
+          testID="newSession.modelIndicator"
+        >
+          {remoteAgentPick ? (
+            <RemoteSourceMark size={standalone ? iconSize.lg : iconSize.sm} inset={{ x: 0, y: 0 }}>
+              <MobileAgentMark agentKind={remoteAgentPick.agentKind} color={colors.textSecondary} size={standalone ? iconSize.lg : iconSize.sm} />
+            </RemoteSourceMark>
+          ) : <MobileAgentMark agentKind={draft.agentKind} color={colors.textSecondary} size={standalone ? iconSize.lg : iconSize.sm} />}
+          <Text style={standalone ? styles.selectorText : styles.modelPillText} numberOfLines={1}>{pillSelectionSummary}</Text>
+          {(remoteAgentPick ? remoteAgentPick.fastMode : triggerFastOn)
+            ? (
+            <ModelSpeedIcon mode={(remoteAgentPick ? remoteAgentPick.fastMode : draft.fastMode) ?? false} color={colors.textTertiary} size={standalone ? iconSize.lg : iconSize.sm} />
+          ) : null}
+          <ChevronDown color={colors.textTertiary} size={standalone ? iconSize.lg : iconSize.sm} strokeWidth={iconStroke.regular} />
+        </Pressable>
+  );
+
   // 工具条布局:左 = [+][权限][计划 chip][模型];右 = [语音][创建]。
   // 模型放左侧组,不随创建按钮出现而横向跳动。
   const renderComposerToolbar = () => (
     <>
       <ComposerToolbarLeftGroup testID="newSession.composerToolbarLeft">
         {renderAttachmentToggleButton()}
-        {renderPermissionIconButton()}
+        {Platform.OS !== 'ios' ? renderPermissionIconButton() : null}
         {planModeOn ? (
           <PlanModeChip
             disabled={creating}
@@ -3464,27 +3484,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
             testID="newSession.collabChip"
           />
         ) : null}
-        <Pressable
-          accessibilityLabel={t('session.new.modelAccessibility', { model: pillAccessibilityModel })}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: modelSheetOpen || undefined }}
-          hitSlop={10}
-          onPress={toggleModelPicker}
-          style={({ pressed }) => [styles.modelPill, pressed && styles.pressed]}
-          testID="newSession.modelIndicator"
-        >
-          {remoteAgentPick ? (
-            <RemoteSourceMark size={iconSize.sm} inset={{ x: 0, y: 0 }}>
-              <MobileAgentMark agentKind={remoteAgentPick.agentKind} color={colors.textSecondary} size={iconSize.sm} />
-            </RemoteSourceMark>
-          ) : <MobileAgentMark agentKind={draft.agentKind} color={colors.textSecondary} size={iconSize.sm} />}
-          <Text style={styles.modelPillText} numberOfLines={1}>{pillModelSummary}</Text>
-          {(remoteAgentPick ? remoteAgentPick.fastMode : triggerFastOn)
-            ? (
-            <ModelSpeedIcon mode={(remoteAgentPick ? remoteAgentPick.fastMode : draft.fastMode) ?? false} color={colors.textTertiary} size={iconSize.sm} />
-          ) : null}
-          <ChevronDown color={colors.textTertiary} size={iconSize.sm} strokeWidth={iconStroke.regular} />
-        </Pressable>
+        {Platform.OS !== 'ios' ? renderModelPickerButton() : null}
       </ComposerToolbarLeftGroup>
       <ComposerToolbarSpacer />
       {composerVoicePlacement?.inline || composerVoicePlacement?.floating
@@ -5124,8 +5124,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
           ) : null}
 
           <View ref={workspacePickerHostRef} collapsable={false} onLayout={measureWorkspacePicker} style={{ flex: 1 }}>
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.bottomCluster, composerDock.enabled && { paddingBottom: 0 }]}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.bottomCluster, composerDock.enabled && { paddingBottom: spacing.lg }]}
             onScrollBeginDrag={() => setWorkspacePickerOpen(false)}
+            keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.selectorStack}>
               <View style={styles.deviceSelectorWrap}>
@@ -5232,114 +5233,80 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                 ) : null}
               </View>
               ) : null}
-              <View ref={workspacePickerAnchorRef} collapsable={false} onLayout={measureWorkspacePicker} style={styles.workspaceSelectorWrap}>
-                <Pressable
-                  accessibilityLabel={t('session.new.selectWorkspace')}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: workspacePickerOpen || undefined }}
-                  disabled={creating}
-                  onPress={() => {
-                    setDevicePickerOpen(false);
-                    setModelSheetOpen(false);
-                    setAgentPickerOpen(false);
-                    setWorkspacePickerOpen((value) => !value);
-                  }}
-                  style={({ pressed }) => [styles.selectorRow, pressed && styles.pressed]}
-                  testID="newSession.workspaceSelector"
-                >
-                  <WorkspaceIcon color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
-                  <Text style={styles.selectorText} numberOfLines={1}>{workspaceLabel}</Text>
-                  <ChevronsUpDown color={colors.borderStrong} size={iconSize.sm} strokeWidth={iconStroke.regular} />
-                </Pressable>
-              </View>
-              {worktreeRowVisible ? (
-                <View style={styles.worktreeToggleWrap}>
-                  <View style={styles.worktreeControlTouchWrap}>
-                    <View style={styles.worktreeControl} testID="newSession.branchWorktreeControl">
-                      <View
-                        pointerEvents="none"
-                        style={[
-                          styles.worktreeControlBackground,
-                          worktreeChecked && styles.worktreeControlChecked,
-                        ]}
+              <View style={styles.workspaceBranchRow}>
+                <View ref={workspacePickerAnchorRef} collapsable={false} onLayout={measureWorkspacePicker} style={styles.workspaceSelectorWrap}>
+                  <Pressable
+                    accessibilityLabel={t('session.new.selectWorkspace')}
+                    accessibilityValue={{ text: workspaceLabel }}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: workspacePickerOpen || undefined }}
+                    disabled={creating}
+                    onPress={() => {
+                      setDevicePickerOpen(false);
+                      setModelSheetOpen(false);
+                      setAgentPickerOpen(false);
+                      setWorkspacePickerOpen((value) => !value);
+                    }}
+                    style={({ pressed }) => [styles.selectorRow, pressed && styles.pressed]}
+                    testID="newSession.workspaceSelector"
+                  >
+                    <WorkspaceIcon style={styles.workspaceFixedIcon} color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                    <Text style={styles.selectorText} numberOfLines={1} ellipsizeMode="tail">{workspaceLabel}</Text>
+                    <ChevronsUpDown style={styles.workspaceFixedIcon} color={colors.borderStrong} size={iconSize.sm} strokeWidth={iconStroke.regular} />
+                  </Pressable>
+                </View>
+                {worktreeRowVisible ? (
+                  <View style={styles.worktreeControl} testID="newSession.branchWorktreeControl">
+                    <View pointerEvents="none" style={[
+                      styles.worktreeControlBackground,
+                      worktreeChecked && styles.worktreeControlChecked,
+                    ]} />
+                    <Pressable
+                      accessibilityLabel={t('session.new.selectWorktreeBranchA11y', {
+                        branch: displayWorktreeSourceBranch,
+                      })}
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        busy: worktreeBranchPreferenceSaving || undefined,
+                        disabled: creating || undefined,
+                        expanded: worktreeBranchSheetVisible || undefined,
+                      }}
+                      disabled={creating}
+                      onPress={openWorktreeBranchPicker}
+                      style={({ pressed }) => [
+                        styles.worktreeBranchSegment,
+                        pressed && styles.pressed,
+                        creating && styles.disabled,
+                      ]}
+                      testID="newSession.worktreeBranchPicker"
+                    >
+                      <GitBranch
+                        style={styles.workspaceFixedIcon}
+                        color={worktreeChecked ? colors.textPrimary : colors.textTertiary}
+                        size={iconSize.sm}
+                        strokeWidth={iconStroke.regular}
                       />
-                      <Pressable
-                        accessibilityLabel={t('session.new.selectWorktreeBranchA11y', {
-                          branch: worktreeSourceBranch,
-                        })}
-                        accessibilityRole="button"
-                        accessibilityState={{
-                          busy: worktreeBranchPreferenceSaving || undefined,
-                          disabled: worktreeBranchDisabled || undefined,
-                          expanded: worktreeBranchSheetVisible || undefined,
-                        }}
-                        disabled={worktreeBranchDisabled}
-                        onPress={openWorktreeBranchPicker}
-                        style={({ pressed }) => [
-                          styles.worktreeBranchSegment,
-                          pressed && styles.pressed,
-                          worktreeBranchDisabled && styles.disabled,
-                        ]}
-                        testID="newSession.worktreeBranchPicker"
-                      >
-                        <GitBranch
-                          color={worktreeChecked ? colors.textPrimary : colors.textTertiary}
-                          size={iconSize.sm}
+                      <Text style={styles.worktreeBranchLabel} numberOfLines={1} ellipsizeMode="tail">
+                        {displayWorktreeSourceBranch}
+                      </Text>
+                      {!creating ? (
+                        <ChevronDown
+                          style={styles.workspaceFixedIcon}
+                          color={colors.textTertiary}
+                          size={iconSize.xs}
                           strokeWidth={iconStroke.regular}
                         />
-                        <Text style={styles.worktreeBranchLabel} numberOfLines={1}>
-                          {worktreeSourceBranch}
-                        </Text>
-                        {!worktreeBranchDisabled ? (
-                          <ChevronDown
-                            color={colors.textTertiary}
-                            size={iconSize.xs}
-                            strokeWidth={iconStroke.regular}
-                          />
-                        ) : null}
-                      </Pressable>
-                      <View style={styles.worktreeControlDivider} />
-                      <Pressable
-                        accessibilityLabel={t('session.new.useWorktree')}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{
-                          checked: worktreeChecked,
-                          disabled: worktreeToggleDisabled || undefined,
-                        }}
-                        disabled={worktreeToggleDisabled}
-                        onPress={toggleWorktree}
-                        style={({ pressed }) => [
-                          styles.worktreeToggleRow,
-                          pressed && styles.pressed,
-                          worktreeToggleDisabled && styles.disabled,
-                        ]}
-                        testID="newSession.worktreeToggle"
-                      >
-                        <View style={[
-                          styles.worktreeCheckbox,
-                          worktreeChecked && styles.worktreeCheckboxChecked,
-                        ]}>
-                          {worktreeChecked ? (
-                            <Check color={colors.ctaText} size={iconSize.xs} strokeWidth={iconStroke.bold} />
-                          ) : null}
-                        </View>
-                        <Text style={styles.worktreeToggleLabel} numberOfLines={1}>
-                          {t('session.new.worktreeShortLabel')}
-                        </Text>
-                      </Pressable>
-                    </View>
+                      ) : null}
+                    </Pressable>
                   </View>
-                  {worktreeControlCaptionKey ? (
-                    <Text style={styles.worktreeCaption} testID="newSession.worktreeCaption">
-                      {t(worktreeControlCaptionKey)}
-                    </Text>
-                  ) : null}
+                ) : null}
+              </View>
+              {Platform.OS === 'ios' ? (
+                <View style={styles.runtimeSelectorRow}>
+                  {renderModelPickerButton(true)}
+                  {renderPermissionIconButton()}
                 </View>
-              ) : (
-                // 开关行不显示时占住同样高度：检测结果回来后开关出现，上方选择器
-                // 也不会被顶起；同时作为选择器与输入框之间的留白。
-                <View style={styles.worktreeSlotPlaceholder} testID="newSession.worktreeSlot" />
-              )}
+              ) : null}
             </View>
 
             {!nativeSelectionSheet && browseOpen ? (
@@ -5559,7 +5526,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                   {attachmentError}
                 </Text>
               ) : null}
-              <SlowSendNotice startedAt={creating ? createStartedAt : null} phase={createPhase} />
+              {creating ? <SlowSendNotice startedAt={createStartedAt} phase={createPhase} /> : null}
               {voiceStatusVisible ? (
                 <View style={styles.voiceStatusRow}>
                   <Text style={styles.voiceStatusText} testID="newSession.voiceStatus">
@@ -5580,9 +5547,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                 </View>
               ) : null}
               <TaskArchiveUndoSlot active={isShareTargetFocused} />
-              <View style={[styles.composerToolbarWrap, composerCardActive && {
-                minHeight: COMPOSER_CARD_CHROME_HEIGHT + MOBILE_COMPOSER_INPUT_SINGLE_LINE_HEIGHT,
-              }]}>
+              <View style={styles.composerToolbarWrap}>
                 <ResizableComposerInputRow resize={composerResize}
                   accessibilityLabel={t('session.new.firstMessagePlaceholder')}
                   bodyScrollGesture={composerResize.scrollGesture}
@@ -5934,7 +5899,42 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
           testID="newSession.worktreeBranchSheet"
           title={t('session.new.worktreeSourceBranch')}
         >
-          {worktreeBranchList?.loading ? (
+          <View style={styles.worktreeSheetSettings}>
+            <Pressable
+              accessibilityLabel={t('session.new.useWorktree')}
+              accessibilityRole="checkbox"
+              accessibilityState={{
+                checked: worktreeChecked,
+                disabled: worktreeToggleDisabled || undefined,
+              }}
+              disabled={worktreeToggleDisabled}
+              onPress={toggleWorktree}
+              style={({ pressed }) => [
+                styles.worktreeToggleRow,
+                pressed && styles.pressed,
+                worktreeToggleDisabled && styles.disabled,
+              ]}
+              testID="newSession.worktreeToggle"
+            >
+              <View style={[
+                styles.worktreeCheckbox,
+                worktreeChecked && styles.worktreeCheckboxChecked,
+              ]}>
+                {worktreeChecked ? (
+                  <Check color={colors.ctaText} size={iconSize.xs} strokeWidth={iconStroke.bold} />
+                ) : null}
+              </View>
+              <Text style={styles.worktreeToggleLabel} numberOfLines={1}>
+                {t('session.new.worktreeShortLabel')}
+              </Text>
+            </Pressable>
+            {worktreeControlCaptionKey ? (
+              <Text style={styles.worktreeCaption} testID="newSession.worktreeCaption">
+                {t(worktreeControlCaptionKey)}
+              </Text>
+            ) : null}
+          </View>
+          {worktreeEligibility.status !== 'eligible' ? null : !worktreeBranchListMatchesTarget || worktreeBranchList?.loading ? (
             <View style={styles.worktreeBranchStatusRow}>
               <ActivityIndicator color={colors.textSecondary} size="small" />
               <Text style={styles.worktreeBranchStatusText}>
@@ -5959,7 +5959,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
           ) : (
             <MobileChoicePickerList
               activeId={worktreeSourceBranch}
-              disabled={creating}
+              disabled={worktreeBranchDisabled}
               onSelect={selectWorktreeSourceBranch}
               options={worktreeBranchOptions}
               testID="newSession.worktreeBranchSheet.option"
@@ -6293,6 +6293,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     gap: spacing.lg,
     paddingHorizontal: spacing.sm,
   },
+  runtimeSelectorRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  runtimeModelSelector: {
+    flex: 1,
+    minWidth: 0,
+  },
   selectorRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -6377,7 +6386,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: lineHeight.body,
     minWidth: 0,
   },
+  workspaceFixedIcon: {
+    flexShrink: 0,
+  },
+  workspaceBranchRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 44,
+  },
   workspaceSelectorWrap: {
+    flex: 1,
+    minWidth: 0,
     position: 'relative',
     zIndex: 20,
   },
@@ -6454,26 +6474,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     marginVertical: spacing.xs,
   },
-  // 分支 + worktree 是两个独立点击区组成的一枚紧凑 pill。点击区实高 44；背景绝对
-  // 内缩 5pt 后视觉高 34，既不牺牲触控面积，也不让「worktree」重新显得臃肿。
-  worktreeToggleWrap: {
+  worktreeSheetSettings: {
     gap: spacing.xs,
-  },
-  worktreeSlotPlaceholder: {
-    height: 44,
-  },
-  worktreeControlTouchWrap: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    maxWidth: '100%',
-    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   worktreeControl: {
     alignItems: 'stretch',
     flexDirection: 'row',
     height: 44,
-    maxWidth: '100%',
+    // Keep room for the directory and its controls, even with a long branch name.
+    maxWidth: '45%',
+    minWidth: 0,
     position: 'relative',
   },
   worktreeControlBackground: {
@@ -6498,7 +6510,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     minHeight: 44,
     minWidth: 72,
     paddingLeft: spacing.sm,
-    paddingRight: spacing.xs,
+    paddingRight: spacing.sm,
   },
   worktreeBranchLabel: {
     color: colors.textSecondary,
@@ -6507,12 +6519,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: fontWeight.regular,
     lineHeight: lineHeight.caption,
     minWidth: 0,
-  },
-  worktreeControlDivider: {
-    alignSelf: 'center',
-    backgroundColor: colors.border,
-    height: 16,
-    width: StyleSheet.hairlineWidth,
   },
   worktreeToggleRow: {
     alignItems: 'center',

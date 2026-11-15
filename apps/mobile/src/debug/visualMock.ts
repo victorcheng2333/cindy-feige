@@ -135,6 +135,8 @@ const deletedDeviceIds = new Set<string>();
 const renamedDevices = new Map<string, string>();
 const modelSelectionPatches = new Map<string, Partial<RemoteSession>>();
 // 本进程内的发送写入:运行中任务的入队留在队列里,插话或空闲任务的发送进消息列表。
+const mockWorktreeBranches = new Map<string, { baseRepo: string; sourceBranch: string; revision: number }>();
+let mockWorktreeEnabled = false;
 const mockQueued = new Map<string, InputProjection['pendingQueue']>();
 const mockSent = new Map<string, RemoteMessage[]>();
 function mockDeliver(sessionId: string, item: InputProjection['pendingQueue'][number]) {
@@ -501,6 +503,31 @@ async function visualMockInvoke<T = unknown>(
         { sessionId: 'visual-running', agentKind: 'cc', isTurnRunning: true },
         { sessionId: 'visual-automation-running', agentKind: 'cc', isTurnRunning: true },
       ] as T;
+    case 'maker:get-new-maker-defaults':
+      return { worktreeEnabled: mockWorktreeEnabled } as T;
+    case 'maker:apply-new-maker-worktree-pref':
+      mockWorktreeEnabled = (args[0] as { worktreeEnabled: boolean }).worktreeEnabled;
+      return { worktreeEnabled: mockWorktreeEnabled } as T;
+    case 'maker:get-new-maker-worktree-branch-pref': {
+      const { baseRepo } = args[0] as { baseRepo: string };
+      return (mockWorktreeBranches.get(baseRepo) ?? { baseRepo, sourceBranch: 'main', revision: 0 }) as T;
+    }
+    case 'maker:apply-new-maker-worktree-branch-pref': {
+      const { baseRepo, sourceBranch } = args[0] as { baseRepo: string; sourceBranch: string };
+      const snapshot = { baseRepo, sourceBranch, revision: (mockWorktreeBranches.get(baseRepo)?.revision ?? 0) + 1 };
+      mockWorktreeBranches.set(baseRepo, snapshot);
+      return snapshot as T;
+    }
+    case 'worktree:detect-cwd': {
+      const { cwd } = args[0] as { cwd: string };
+      // Exercise both new-task directory layouts through the normal Git probe.
+      const isGitRepo = !cwd.endsWith('/no-git');
+      return { gitInstalled: true, isGitRepo, isInsideWorktree: false,
+        currentBranch: isGitRepo ? 'main' : undefined,
+        repoRoot: isGitRepo ? cwd : undefined, supportsRecoveryKeyDiscard: true } as T;
+    }
+    case 'worktree:list-branches':
+      return { branches: ['main', 'feature/long-branch-name-for-layout-preview'], current: 'main' } as T;
     case 'maker:list-available-agents':
       return ['claude-code', 'codex', 'pi'] as T;
     case 'maker:get-capabilities':

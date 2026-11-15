@@ -7,6 +7,10 @@ export default {
   real: 'ModelSelector, MorphPopover, legacy model list and vendor switcher',
   notCovered: 'Live providers, model requests and persisted selections',
   cases: {
+    'compact-draft-height': { about: 'Codex and Cursor keep the same draft panel height' },
+    'compact-draft-height-short': { about: 'Stable draft height fits a short viewport', viewport: { width: 390, height: 320 } },
+    'compact-draft': { about: 'Draft restores the remembered model when changing Harness' },
+    'compact-draft-narrow': { about: 'Draft engine tabs at narrow width', viewport: { width: 390, height: 640 } },
     'cursor-local': { about: 'Local Cursor ignores unavailable remote model catalogs' },
     'cursor-local-narrow': { about: 'Local Cursor with unavailable remote catalogs at phone width', viewport: { width: 390, height: 640 } },
     cursor: { about: 'Existing task switches to Cursor while Pi is disabled' },
@@ -43,6 +47,40 @@ export default {
       });
     }
     await page.locator('main button[aria-haspopup]').click();
+    if (ui.case.startsWith('compact-draft-height')) {
+      // Regression: Codex includes remote groups, Cursor has one local model.
+      // Measure the real popup after animations, including the footer and tabs.
+      const panel = page.locator('[data-morph-side][data-state="open"]');
+      const heights = [];
+      for (const engine of ['Codex', 'Cursor', 'Codex']) {
+        await page.getByRole('tab', { name: engine, exact: true }).click();
+        await page.getByRole('option', { name: engine === 'Cursor' ? /Cursor fixture/ : /GPT fixture/ }).first().waitFor();
+        await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
+        const box = await panel.boundingBox();
+        assert.ok(box && box.y >= 0 && box.y + box.height <= await page.evaluate(() => innerHeight));
+        assert.equal(await page.getByRole('option', { name: engine === 'Cursor' ? /Cursor fixture/ : /GPT fixture/ }).first().getAttribute('aria-selected'), 'true');
+        heights.push(box.height);
+        await ui.capture(`height-${engine}-${heights.length}`);
+      }
+      assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `engine panel heights differ: ${heights.join(', ')}`);
+      await page.keyboard.press('Escape');
+      return;
+    }
+    if (ui.case.startsWith('compact-draft')) {
+      assert.equal(await page.getByRole('tab', { name: 'Cursor', exact: true }).count(), 0);
+      await ui.capture('draft-open');
+      await page.getByRole('tab', { name: 'Codex', exact: true }).click();
+      assert.equal(await page.evaluate(() => window.__modelPickerSelection), undefined);
+      await ui.capture('draft-browse');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.evaluate(() => window.__modelPickerSelection), undefined);
+      await page.locator('main button[aria-haspopup]').click();
+      await page.getByRole('tab', { name: 'Codex', exact: true }).click();
+      await page.getByRole('group', { name: 'TapSVC', exact: true }).getByRole('option').click();
+      await page.waitForFunction(() => window.__modelPickerSelection?.engine === 'codex');
+      await page.getByRole('listbox').waitFor({ state: 'hidden' });
+      return;
+    }
     if (ui.case.startsWith('cursor')) {
       assert.equal(await page.getByRole('tab', { name: 'Pi', exact: true }).count(), 0);
       // Regression: a local Cursor picker with an unavailable remote source used to
