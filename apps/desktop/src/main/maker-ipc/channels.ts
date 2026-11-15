@@ -408,6 +408,8 @@ export const MAKER_INVOKE = {
   USAGE_CLAUDE_SUBSCRIPTION: 'maker:usage:claude-subscription',
   // SuperGrok 账号周用量 (cli-chat-proxy settings + billing?format=credits)
   USAGE_XAI_SUBSCRIPTION: 'maker:usage:xai-subscription',
+  // Cursor 账期分池余量。与 device-link 同名通道同一信封，百分比来自 Cursor，不按套餐价反推。
+  USAGE_CURSOR_SUBSCRIPTION: 'maker:usage:cursor-subscription',
   // device-link v1 模型单价表:保留 modelId → USD/Mtok 扁平形状,旧控制端继续可读。
   USAGE_MODEL_PRICING: 'maker:usage:model-pricing',
   // Desktop renderer v2:Cindy AI `/models` 下发的 XD 原生报价。

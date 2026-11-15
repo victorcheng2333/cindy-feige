@@ -92,6 +92,11 @@ import { useCodexRuntimeRoute } from '@/hooks/useCodexRuntimeRoute';
 import { useCodexRateLimits } from '@/hooks/useCodexRateLimits';
 import { useXaiRateLimit } from '@/hooks/useXaiRateLimit';
 import {
+  requestCursorSubscriptionRefresh,
+  useCursorSubscriptionUsage,
+  type CursorQuotaSnapshot,
+} from '@/hooks/useCursorSubscriptionUsage';
+import {
   requestXaiSubscriptionRefresh,
   useXaiSubscriptionUsage,
   type XaiSubscriptionUsageSnapshot,
@@ -130,6 +135,7 @@ import { QuotaResetConfetti } from './QuotaResetConfetti';
 import { quotaFullCelebrations } from './quotaFullCelebrations';
 import {
   buildClaudeUsageCard,
+  buildCursorUsageCard,
   buildCodexUsageCard,
   buildDeepSeekUsageCard,
   buildXaiUsageCard,
@@ -170,6 +176,7 @@ import {
 const CODEX_USAGE_DASHBOARD_URL = 'https://chatgpt.com/settings/usage';
 const XAI_USAGE_DASHBOARD_URL = 'https://grok.com';
 const CLAUDE_USAGE_DASHBOARD_URL = 'https://claude.ai/settings/usage';
+const CURSOR_USAGE_DASHBOARD_URL = 'https://cursor.com/dashboard';
 
 type MetricKey = 'daily' | 'monthly' | 'credit' | 'session';
 // credit 排在 session 左边 —— 账号额度是"还能用多少"的前提, 本对话花费是它的增量。
@@ -787,6 +794,23 @@ function useLatestTurnUsageSummary(sessionId: string | undefined): LatestTurnUsa
   return displaySnapshot ? displaySummary : summary;
 }
 
+/** Cursor pools share one cycle end. Labels stay pool names; percentages are not added together. */
+function getCursorChipWindows(
+  snapshot: CursorQuotaSnapshot | null,
+  t: TFunction,
+  nowMs: number,
+): ChipWindowSegment[] {
+  if (!snapshot) return [];
+  return snapshot.pools.map((pool) => ({
+    key: `cursor-${pool.id}`,
+    label: t(`menubar.cursor.${pool.id}`),
+    remainingPercent: 100 - clampPercent(pool.usedPercent),
+    resetsAtMs: snapshot.resetsAtMs,
+    resetPending: isResetPending(snapshot.resetsAtMs, nowMs),
+    level: quotaLevelFromUsed(clampPercent(pool.usedPercent)),
+  }));
+}
+
 function getXaiChipWindows(
   snapshot: XaiSubscriptionUsageSnapshot | null,
   t: TFunction,
@@ -1060,6 +1084,11 @@ export function TodaySpendChip({
   // 远程会话不读本机账户快照 —— 额度事实在远端:SSH 用 remoteHostId 判,device-link 与
   // 远程 Agent 用 isDeviceLinkRemote 判(任一成立即远程,turn 消耗的是远端账号的额度)。
   const isAnyRemoteSession = Boolean(remoteHostId) || isDeviceLinkRemote;
+  // Cursor 任务只跑在本机，额度是当前连接的 Cursor 账期分池，不借用其他引擎的配额。
+  const isCursorLocalSubscription =
+    vendorKey === 'cursor' && !isAnyRemoteSession && !accountUnreadable;
+  const cursorQuota = useCursorSubscriptionUsage(isCursorLocalSubscription);
+  const wrapsUsageChip = isClaudeSubscription || isCursorLocalSubscription;
   // API Key 计费供应商（DeepSeek 余额 / 智谱 Coding Plan 额度）：只认本机会话且显式选中
   // 该供应商的形态；额度事实在本机账户，远程会话不借用（口径同订阅形态）。
   const usesDeepSeekAccountForm =
@@ -1145,7 +1174,8 @@ export function TodaySpendChip({
   // session ledger 读取，订阅价值从消息明细重建，再统一汇总成“本对话”投影。
   const sessionUsage = useSessionUsageMoney(sessionId, sessionInitialMoney, sessionInitialCostUsd);
   const sessionTokens = useSessionTokens(
-    vendorKey === 'pi' ||
+    vendorKey === 'cursor' ||
+      vendorKey === 'pi' ||
       isCodexApi ||
       isCodexSubscription ||
       isSubscriptionBridge ||
@@ -1477,6 +1507,8 @@ export function TodaySpendChip({
   // device-link 远程会话额度属于被控端账号,本机浏览器打开的看板是控制端自己的账号 → 不跳。
   const usageDashboardUrl: string | null = isDeviceLinkRemote
     ? null
+    : isCursorLocalSubscription
+      ? CURSOR_USAGE_DASHBOARD_URL
     : usesXaiQuotaForm
       ? XAI_USAGE_DASHBOARD_URL
       : isCodexOauth || isChatgptBridge
@@ -1492,6 +1524,8 @@ export function TodaySpendChip({
   // (tooltip 不显示"打开看板"行,chip 也不可点)。
   const usageDashboardLabel: string | null = isDeviceLinkRemote
     ? null
+    : isCursorLocalSubscription
+      ? t('menubar.cursor.extraHint')
     : usesXaiQuotaForm
       ? t('todaySpend.openXaiUsage')
       : isCodexOauth || isChatgptBridge
@@ -1513,7 +1547,9 @@ export function TodaySpendChip({
 
   // 当前形态下 chip 展示的限额窗口段 (Codex 订阅 / Claude 订阅 / 智谱 Coding Plan 共用结构);
   // 其它形态为空数组, 两个 rollup slot 空转。
-  const chipWindows: ChipWindowSegment[] = usesKimiCodingForm
+  const chipWindows: ChipWindowSegment[] = isCursorLocalSubscription
+    ? getCursorChipWindows(cursorQuota, t, windowLabelNowMs)
+    : usesKimiCodingForm
     ? (providerAccountSnapshot?.kind === 'kimi-coding-quota' && providerAccountUsage.result?.status === 'ready' && !providerAccountUsage.result.stale
       ? providerAccountSnapshot.windows.slice(0, 2).map(w => ({
         key: w.id,
@@ -1607,9 +1643,18 @@ export function TodaySpendChip({
   const chipRef = React.useRef<HTMLDivElement | null>(null);
   const celebrationProvider = JSON.stringify([
     isDeviceLinkRemote ? accountDeviceId : 'local',
-    providerId ?? (usesCodexQuotaForm ? 'openai' : usesXaiQuotaForm ? 'xai' : 'anthropic'),
+    providerId ??
+      (isCursorLocalSubscription
+        ? 'cursor'
+        : usesCodexQuotaForm
+          ? 'openai'
+          : usesXaiQuotaForm
+            ? 'xai'
+            : 'anthropic'),
   ]);
-  const quotaSnapshotUpdatedAt = usesCodexQuotaForm
+  const quotaSnapshotUpdatedAt = isCursorLocalSubscription
+    ? cursorQuota?.fetchedAtMs
+    : usesCodexQuotaForm
     ? accountUsage?.updatedAt
     : usesXaiQuotaForm
       ? xaiSubscriptionUsage?.updatedAt
@@ -1654,6 +1699,7 @@ export function TodaySpendChip({
       !usesCodexQuotaForm
       && !usesXaiQuotaForm
       && !isClaudeSubscription
+      && !isCursorLocalSubscription
       && !usesZhipuCodingPlanForm
       && !usesKimiCodingForm
       && !quotaPopoverOpen
@@ -1669,6 +1715,7 @@ export function TodaySpendChip({
     usesCodexQuotaForm,
     usesXaiQuotaForm,
     isClaudeSubscription,
+    isCursorLocalSubscription,
     usesZhipuCodingPlanForm,
     usesKimiCodingForm,
     quotaPopoverOpen,
@@ -1705,6 +1752,8 @@ export function TodaySpendChip({
       } else {
         requestXaiSubscriptionRefresh(providerId ?? 'xai');
       }
+    } else if (isCursorLocalSubscription) {
+      requestCursorSubscriptionRefresh();
     } else if (isClaudeSubscription && !usesCodexQuotaForm) {
       if (isDeviceLinkRemoteClaudeSubscription && accountDeviceId) {
         requestRemoteClaudeSubscriptionRefresh(accountDeviceId, providerId ?? 'anthropic');
@@ -1717,6 +1766,7 @@ export function TodaySpendChip({
     xaiNeedsWeeklyRefresh,
     isChatgptBridge,
     isClaudeSubscription,
+    isCursorLocalSubscription,
     isDeviceLinkRemote,
     isDeviceLinkRemoteClaudeSubscription,
     accountDeviceId,
@@ -1751,7 +1801,7 @@ export function TodaySpendChip({
       ) : (
         <span className="tabular-nums opacity-60">{DEFAULT_MONEY_SYMBOL}</span>
       );
-  } else if (usesCodexQuotaForm || usesXaiQuotaForm || isClaudeSubscription || usesProviderAccountUsageForm) {
+  } else if (usesCodexQuotaForm || usesXaiQuotaForm || isClaudeSubscription || isCursorLocalSubscription || usesProviderAccountUsageForm) {
     // DeepSeek 余额形态无窗口段：chip 主指标直接显示余额（与 GPT credits 同层）。
     const deepSeekBalanceSegment = usesDeepSeekAccountForm
       ? formatDeepSeekBalanceSegment(providerAccountSnapshot, t, formatterLocale)
@@ -1768,9 +1818,16 @@ export function TodaySpendChip({
       );
     }
     if (sessionSegment) chipSegments.push(sessionSegment);
+    else if (isCursorLocalSubscription && hasPositiveSessionTokens(sessionTokens)) {
+      chipSegments.push(
+        t('todaySpend.codex.sessionTokensLine', {
+          tokens: formatCompactTokens(Math.floor(sessionTokens ?? 0)),
+        }),
+      );
+    }
     labelNode =
       chipSegments.length > 0 ? (
-        renderSegmentedLabel(chipSegments, isClaudeSubscription)
+        renderSegmentedLabel(chipSegments, wrapsUsageChip)
       ) : (
         <span className="tabular-nums opacity-60">{DEFAULT_MONEY_SYMBOL}</span>
       );
@@ -1804,7 +1861,9 @@ export function TodaySpendChip({
                     : null,
                   t,
                 )
-              : buildClaudeUsageCard(claudeSubscriptionUsage, t);
+              : isCursorLocalSubscription
+                ? buildCursorUsageCard(cursorQuota, t)
+                : buildClaudeUsageCard(claudeSubscriptionUsage, t);
       if ((usesKimiCodingForm || usesOpenCodeGoForm) && providerAccountUsage.result?.status === 'ready' && providerAccountUsage.result.stale) account.notices = [{ text: t('providerAccountUsage.kimi.stale'), tone: 'warn' }];
       if (usesProviderAccountUsageForm && providerAccountUsage.result?.status === 'unavailable') {
         account.emptyText = t(`providerAccountUsage.${usesKimiCodingForm ? 'kimi.' : ''}error.${providerAccountUsage.result.error}`);
@@ -1836,7 +1895,10 @@ export function TodaySpendChip({
       isCodexApi && !slots.session.available && !hasPositiveSessionTokens(sessionTokens)
         ? getCodexApiEmptyState(latestTurnUsage)
         : null;
-    if (codexApiHasTokenFallback) {
+    if (
+      codexApiHasTokenFallback ||
+      (vendorKey === 'cursor' && !slots.session.available && hasPositiveSessionTokens(sessionTokens))
+    ) {
       chipSegments.push(
         t('todaySpend.codex.sessionTokensLine', {
           tokens: formatCompactTokens(Math.floor(sessionTokens ?? 0)),
@@ -1939,7 +2001,7 @@ export function TodaySpendChip({
   // 与 ContextCapacityRing 视觉对齐 (h-5 = 20px) + reset button UA 默认 padding/border。
   // tabular-nums 让 "$306 / $1.2k" 这类数字段的字符宽度等宽, 段间数字落点对齐。
   const buttonClass = cn(
-    isClaudeSubscription
+    wrapsUsageChip
       ? 'inline-flex min-h-5 min-w-0 max-w-full flex-wrap items-center justify-end gap-y-1'
       : 'inline-flex h-5 shrink-0 items-center',
     'text-12 font-medium leading-none tabular-nums',
@@ -1954,12 +2016,18 @@ export function TodaySpendChip({
   return (
     <div
       ref={chipRef}
-      className={cn('inline-flex items-center gap-3', isClaudeSubscription ? 'min-h-5 min-w-0 max-w-full' : 'h-5 shrink-0')}
-      onMouseEnter={refreshCodexRateLimits}
+      className={cn('inline-flex items-center gap-3', wrapsUsageChip ? 'min-h-5 min-w-0 max-w-full' : 'h-5 shrink-0')}
+      onMouseEnter={() => {
+        refreshCodexRateLimits();
+        if (isCursorLocalSubscription) requestCursorSubscriptionRefresh();
+      }}
       onFocusCapture={(event) => {
         // Focusing Retry inside the portal must not start a read and disable
         // that button before the user can activate it.
-        if (event.target === quotaPopoverTriggerRef.current) refreshCodexRateLimits();
+        if (event.target === quotaPopoverTriggerRef.current) {
+          refreshCodexRateLimits();
+          if (isCursorLocalSubscription) requestCursorSubscriptionRefresh();
+        }
       }}
     >
       <Popover

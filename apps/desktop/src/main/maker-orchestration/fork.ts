@@ -75,13 +75,17 @@ export async function createSideChat(sourceSessionId: string): Promise<Session> 
     : inFlight ? source.activeTurnStartedAt : undefined;
   // Fork the last completed reply through the next user boundary. Later user
   // rows may be steers; a queued turn's question may also predate its start.
-  const [anchor] = await db.select({ clientId: messages.clientId }).from(messages).where(and(
+  const assistantAnchor = (before?: ReturnType<typeof lt>) => db.select({ clientId: messages.clientId }).from(messages).where(and(
     eq(messages.sessionId, sourceSessionId),
     eq(messages.role, 'assistant'),
     isNull(messages.rewindAt),
     source.clearedAt === null ? undefined : gt(messages.createdAt, source.clearedAt),
-    completedBefore ? lt(messages.createdAt, completedBefore) : undefined,
+    before,
   )).orderBy(desc(messages.createdAt), desc(messageRowid)).limit(1);
+  const [completed] = await assistantAnchor(completedBefore ? lt(messages.createdAt, completedBefore) : undefined);
+  // A still-running first turn has visible replies after activeTurnStartedAt.
+  // Those replies are enough to open a side conversation; do not wait for the turn to end.
+  const [anchor] = (completed?.clientId || !completedBefore) ? [completed] : await assistantAnchor();
   if (!anchor?.clientId) throw forkError('NO_PRIOR_ASSISTANT', 'Wait for the first completed reply');
   return forkSessionAtMessage(sourceSessionId, anchor.clientId, { sideChat: true });
 }
@@ -220,7 +224,10 @@ async function seedForkHandoffAfterSameEngineRebuild(opts: {
     }));
   const lastUser = [...opts.rows].reverse().find((row) => row.role === 'user');
   const label =
-    opts.agentKind === 'codex' ? 'Codex' : opts.agentKind === 'pi' ? 'Pi' : 'Claude Code';
+    opts.agentKind === 'codex' ? 'Codex'
+      : opts.agentKind === 'pi' ? 'Pi'
+        : opts.agentKind === 'cursor' ? 'Cursor'
+          : 'Claude Code';
   const handoff = buildHandoffText(handoffMessages, {
     fromLabel: label,
     toLabel: label,
@@ -272,7 +279,8 @@ function parseContextRebuildBoundary(content: string): ParsedContextRebuildBound
       reason: parsed.reason,
       ...(parsed.sourceAgentKind === 'cc' ||
       parsed.sourceAgentKind === 'codex' ||
-      parsed.sourceAgentKind === 'pi'
+      parsed.sourceAgentKind === 'pi' ||
+      parsed.sourceAgentKind === 'cursor'
         ? { sourceAgentKind: parsed.sourceAgentKind }
         : {}),
       ...(typeof parsed.sourceModel === 'string' ? { sourceModel: parsed.sourceModel } : {}),
@@ -942,6 +950,9 @@ export async function forkSessionAtMessage(
   // Codex: 从当前时间线倒扫 agent_switch，把 copy boundary 之后、确实写入所选
   // 原生 thread 的 user turn 计为 rollback 数；其它引擎片段不能混算。
   const isCodex = forkSource.agentKind === 'codex';
+  // Cursor has no native transcript fork. Copy the visible history and hand the
+  // new conversation that context on its first message.
+  const isCursor = forkSource.agentKind === 'cursor';
   // pi 复用 codex 的粗粒度 tail-turn fork:countCodexTailTurns 只按 sdkSessionId
   // 数边界后的 user turn(引擎无关),pi 的 forkSdkSession 按 tailTurnsToDrop rewind
   // 到目标 user 消息。只有 Claude(cc)走 message-uuid 锚点路径。
@@ -956,7 +967,7 @@ export async function forkSessionAtMessage(
     target.role,
     forkSource.agentKind,
   );
-  if (!usesTailTurnFork && forkSource.sdkSessionId) {
+  if (!isCursor && !usesTailTurnFork && forkSource.sdkSessionId) {
     claudeAnchorIndex = forkSource.agentDeviceId ? null : await loadClaudeTranscriptAnchorIndex({
       sdkSessionId: forkSource.sdkSessionId,
       workingDir: source.workingDir,
@@ -972,7 +983,7 @@ export async function forkSessionAtMessage(
     if (!assistantUuid && !resetHandoffBoundaryClientId) {
       throw forkError('NO_PRIOR_ASSISTANT', '请在 AI 回复之后的提问上 fork');
     }
-  } else if (forkSource.reuseVendorSession && forkSource.sdkSessionId) {
+  } else if (!isCursor && forkSource.reuseVendorSession && forkSource.sdkSessionId) {
     if (isCodex) {
       lastTurnId = resolveCodexTurnAnchor(sourceMessages, forkSource.sdkSessionId);
       if (!lastTurnId) forkAtTimestampMs = resolveCodexForkEventTimestamp(sourceMessages);
@@ -1174,7 +1185,17 @@ export async function forkSessionAtMessage(
   if (!row) {
     throw new Error('Fork session 创建后查询失败');
   }
-  if (!needsHistoryRecovery && !forkSource.reuseVendorSession && forkSource.rebuildReason) {
+  if (isCursor) {
+    await assertTaskActionCurrent();
+    await seedForkHandoffAfterSameEngineRebuild({
+      sessionId: newSessionId,
+      rows: sourceMessages,
+      agentKind: 'cursor',
+      model: forkSource.model,
+      providerId: forkSource.providerId,
+      reason: 'native-session-recovery',
+    });
+  } else if (!needsHistoryRecovery && !forkSource.reuseVendorSession && forkSource.rebuildReason) {
     await assertTaskActionCurrent();
     await seedForkHandoffAfterSameEngineRebuild({
       sessionId: newSessionId,

@@ -535,6 +535,81 @@ describe('forkSessionAtMessage', () => {
     expect(txCalls).toHaveLength(0);
   });
 
+  it('opens a Cursor side chat from visible replies and hands that context to the first message', async () => {
+    const source = makeSourceRow({
+      agentKind: 'cursor',
+      model: 'composer-2.5',
+      providerId: 'cursor',
+      activeTurnStartedAt: 3001,
+      lastTurnEndedAt: 2600,
+    });
+    const reply = makeMessageRow({
+      role: 'assistant',
+      clientId: 'cursor-reply',
+      content: '"finished the footer"',
+      createdAt: 2500,
+      agentMeta: null,
+    });
+    selectQueue.push(
+      [source],
+      [{ clientId: reply.clientId }],
+      [source],
+      [reply],
+      [],
+      [reply],
+      [makeSourceRow({ id: 'child', source: 'side-chat', agentKind: 'cursor', sdkSessionId: null })],
+    );
+    const child = await createSideChat('src-session');
+    expect(child.id).toBe('child');
+    expect(forkSdkSessionMock).not.toHaveBeenCalled();
+    const transaction = txCalls.find(call => call.name === 'fork.session')?.args as { newSession: Record<string, unknown> };
+    expect(transaction.newSession).toMatchObject({
+      source: 'side-chat',
+      agentKind: 'cursor',
+      sdkSessionId: null,
+      parentSessionId: 'src-session',
+    });
+    expect(commitContextRebuildMock).toHaveBeenCalledWith(
+      forkedSessionIdFromTx(),
+      expect.stringContaining('Cursor'),
+      expect.objectContaining({ reason: 'native-session-recovery', sourceAgentKind: 'cursor' }),
+    );
+    expect(createMessageMock).toHaveBeenCalled();
+  });
+
+  it('opens a Cursor side chat while the first turn is still running', async () => {
+    const source = makeSourceRow({
+      agentKind: 'cursor',
+      model: 'composer-2.5',
+      providerId: 'cursor',
+      activeTurnStartedAt: 1000,
+      lastTurnEndedAt: null,
+    });
+    const reply = makeMessageRow({
+      role: 'assistant',
+      clientId: 'live-reply',
+      content: '"partial answer"',
+      createdAt: 2500,
+    });
+    selectQueue.push(
+      [source],
+      [],
+      [{ clientId: reply.clientId }],
+      [source],
+      [reply],
+      [],
+      [reply],
+      [makeSourceRow({ id: 'child', source: 'side-chat', agentKind: 'cursor' })],
+    );
+    await createSideChat('src-session');
+    expect(forkSdkSessionMock).not.toHaveBeenCalled();
+    expect(commitContextRebuildMock).toHaveBeenCalledWith(
+      forkedSessionIdFromTx(),
+      expect.stringContaining('partial answer'),
+      expect.objectContaining({ sourceAgentKind: 'cursor' }),
+    );
+  });
+
   it('leaves an empty parent untouched when there is no completed reply', async () => {
     selectQueue.push([makeSourceRow()], []);
     await expect(createSideChat('src-session')).rejects.toMatchObject({ code: 'NO_PRIOR_ASSISTANT' });

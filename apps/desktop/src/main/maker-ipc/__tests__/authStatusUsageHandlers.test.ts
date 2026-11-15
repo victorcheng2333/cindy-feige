@@ -1253,6 +1253,12 @@ describe('maker usage IPC handlers', () => {
       consumeCodexRateLimitReset: vi.fn(),
       readClaudeSubscriptionUsageSnapshot: vi.fn().mockResolvedValue(null),
       readXaiSubscriptionUsageSnapshot: vi.fn().mockResolvedValue(null),
+      readCursorSubscriptionUsage: vi.fn().mockResolvedValue({
+        providerId: 'cursor',
+        connected: false,
+        status: 'unavailable',
+        snapshot: null,
+      }),
       readClaudeAccountUsageSnapshot: vi.fn(),
       triggerClaudeAccountUsageRefresh: vi.fn(),
       readModelPricing: vi.fn(),
@@ -1276,6 +1282,49 @@ describe('maker usage IPC handlers', () => {
       totalTokens: 42,
     });
     expect(readAgentTodayUsage).toHaveBeenCalledWith('codex');
+  });
+
+  it('returns Cursor plan pools for a trusted sender and hides them from an untrusted one', async () => {
+    const snapshot = {
+      pools: [
+        { id: 'auto' as const, usedPercent: 20 },
+        { id: 'api' as const, usedPercent: 40 },
+      ],
+      resetsAtMs: 1,
+      fetchedAtMs: 2,
+    };
+    const readCursorSubscriptionUsage = vi.fn().mockResolvedValue({
+      providerId: 'cursor',
+      connected: true,
+      status: 'ready',
+      snapshot,
+    });
+    const trusted = new IpcHarness();
+    const assertTrustedSender = vi.fn();
+    registerMakerUsageHandlers(
+      trusted,
+      makeUsageDeps({ readCursorSubscriptionUsage, assertTrustedSender }),
+    );
+    await expect(trusted.invoke(MAKER_INVOKE.USAGE_CURSOR_SUBSCRIPTION)).resolves.toEqual({
+      providerId: 'cursor',
+      connected: true,
+      status: 'ready',
+      snapshot,
+    });
+    expect(assertTrustedSender).toHaveBeenCalledOnce();
+
+    const untrusted = new IpcHarness();
+    const denied = vi.fn(() => {
+      throw new Error('[PERMISSION_DENIED] untrusted');
+    });
+    registerMakerUsageHandlers(
+      untrusted,
+      makeUsageDeps({ readCursorSubscriptionUsage, assertTrustedSender: denied }),
+    );
+    await expect(untrusted.invoke(MAKER_INVOKE.USAGE_CURSOR_SUBSCRIPTION)).rejects.toThrow(
+      /PERMISSION_DENIED/,
+    );
+    expect(readCursorSubscriptionUsage).toHaveBeenCalledOnce();
   });
 
   it('rejects SuperGrok usage reads from untrusted senders', async () => {

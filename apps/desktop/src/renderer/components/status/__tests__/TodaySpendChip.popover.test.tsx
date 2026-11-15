@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
     estimatedValueMoney: null,
     totalMoney: null,
   } as SessionUsageMoney,
+  cursorQuota: null as import('../../../../shared/cursorQuota').CursorQuotaSnapshot | null,
   openExternal: vi.fn(() => Promise.resolve()),
   refreshCodexRateLimits: vi.fn(),
   resetSnapshot: null as MobileCodexRateLimitsResult | null,
@@ -66,6 +67,11 @@ vi.mock('react-i18next', () => ({
         'quotaCard.limitRejected': '已触发套餐限额',
         'todaySpend.claude.modelWeeklyLabel': '{{model}} 周限',
         'todaySpend.claude.windowSegment': '{{label}} 剩余 {{remaining}}',
+        'menubar.cursor.auto': 'Cursor 模型',
+        'menubar.cursor.api': '其他模型',
+        'menubar.cursor.explanation': 'Cursor 的额度池独立计算。',
+        'menubar.cursor.extra': '额外消费',
+        'menubar.cursor.extraHint': '在 Cursor 账单查看',
         'todaySpend.codex.weekWindow': '周限',
         'todaySpend.codex.limitWindow': '限额',
         'todaySpend.codex.daysWindow': '{{days}}天',
@@ -183,6 +189,10 @@ vi.mock('@/hooks/useXaiSubscriptionUsage', () => ({
   useXaiSubscriptionUsage: (enabled: boolean) => (enabled ? mocks.xaiSnapshot : null),
   requestXaiSubscriptionRefresh: vi.fn(),
 }));
+vi.mock('@/hooks/useCursorSubscriptionUsage', () => ({
+  useCursorSubscriptionUsage: (enabled: boolean) => (enabled ? mocks.cursorQuota : null),
+  requestCursorSubscriptionRefresh: vi.fn(),
+}));
 vi.mock('@/hooks/useXaiRateLimit', () => ({ useXaiRateLimit: () => null }));
 vi.mock('../QuotaResetConfetti', () => ({
   QuotaResetConfetti: () => <span data-testid="quota-reset-confetti" />,
@@ -276,6 +286,7 @@ beforeEach(() => {
   mocks.codexQuotaReadFailed = false;
   mocks.codexQuotaRefreshing = false;
   mocks.xaiSnapshot = null;
+  mocks.cursorQuota = null;
   mocks.gatewaySnapshot = null;
   mocks.creditSnapshot = null;
   mocks.sessionTokens = null;
@@ -604,6 +615,50 @@ describe('TodaySpendChip Claude subscription popover', () => {
     const trigger = screen.getByTestId('task-usage-trigger');
     expect(trigger.textContent).toContain('5h 剩余 88%');
     expect(trigger.textContent).toContain('Opus 周限 剩余 66%');
+  });
+
+  it('shows Cursor pool remaining, task value, and the latest model together', async () => {
+    mocks.cursorQuota = {
+      pools: [
+        { id: 'auto', usedPercent: 20 },
+        { id: 'api', usedPercent: 100 },
+      ],
+      resetsAtMs: Date.now() + 86_400_000,
+      fetchedAtMs: Date.now(),
+    };
+    const estimatedValueMoney = usdMoney(1.25, 'value-estimate');
+    mocks.sessionUsage = {
+      actualMoney: null,
+      estimatedValueMoney,
+      totalMoney: estimatedValueMoney,
+    };
+    setLatestUsageMessage({
+      turnMoney: estimatedValueMoney,
+      turnCostIsEstimate: true,
+      turnUsageDetails: { ...TURN_USAGE_DETAILS, model: 'composer-2.5' },
+    });
+
+    const view = render(<TodaySpendChip vendorKey="cursor" sessionId="session-cursor" />);
+    const trigger = screen.getByTestId('task-usage-trigger');
+    expect(trigger.textContent).toContain('Cursor 模型 剩余 80%');
+    expect(trigger.textContent).toContain('其他模型 剩余 0%');
+    expect(trigger.textContent).toContain('本任务价值 $1.25');
+
+    const { card } = openCardFromHover();
+    await act(async () => {});
+    expect(within(card).getByText('Cursor 的额度池独立计算。')).toBeTruthy();
+    expect(within(card).getByText('composer-2.5')).toBeTruthy();
+    expect(within(card).getByTestId('usage-cost-details')).toBeTruthy();
+    fireEvent.click(within(card).getByRole('button', { name: '在 Cursor 账单查看' }));
+    expect(mocks.openExternal).toHaveBeenCalledWith('https://cursor.com/dashboard');
+
+    mocks.sessionUsage = { actualMoney: null, estimatedValueMoney: null, totalMoney: null };
+    mocks.sessionTokens = 1800;
+    await act(async () => {
+      view.rerender(<TodaySpendChip vendorKey="cursor" sessionId="session-cursor" />);
+    });
+    expect(screen.getByTestId('task-usage-trigger').textContent).toContain('本任务 Token 1.8k');
+    expect(screen.getByTestId('task-usage-trigger').textContent).not.toContain('本任务价值');
   });
 
   it('只给达到条件的窗口的剩余百分比上色（剩 ≤30% 黄、≤10% 红），其余段与任务价值保持常色', () => {

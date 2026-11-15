@@ -1,4 +1,4 @@
-import { parseCursorQuota } from '../cursorUsage';
+import { cursorQuotaFromRead, parseCursorQuota } from '../cursorUsage';
 import type { ProviderView } from '@cindy/model-providers';
 import { describe, expect, it } from 'vitest';
 
@@ -665,4 +665,12 @@ it('keeps Cursor usage separate and maps independent pools without a fake limiti
   expect(parseCursorQuota({ billingCycleEnd: NOW - 1, planUsage: { autoPercentUsed: 20 } }, NOW)).toBeNull();
   expect(parseCursorQuota({ planUsage: { autoPercentUsed: '0', apiPercentUsed: -1 } }, NOW)).toBeNull();
   expect(parseCursorQuota({ planUsage: { totalPercentUsed: 40 } }, NOW)?.pools).toEqual([{ id: 'total', usedPercent: 40 }]);
+  expect(cursorQuotaFromRead({
+    providerId: 'cursor',
+    connected: true,
+    status: 'ready',
+    snapshot,
+  })).toEqual(snapshot);
+  expect(cursorQuotaFromRead({ providerId: 'cursor', status: 'unavailable', snapshot: null })).toBeNull();
+  expect(cursorQuotaFromRead({ pools: [{ id: 'auto', usedPercent: -1 }], resetsAtMs: null, fetchedAtMs: 1 })).toBeNull();
 });

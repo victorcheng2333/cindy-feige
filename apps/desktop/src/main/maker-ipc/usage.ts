@@ -1,3 +1,4 @@
+import { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
 import { claudeCliLoginRevision } from '../maker-host/claude-native-cli-status.js';
 import { claudeAccountPrincipal } from '../maker-host/claude-account-auth.js';
 import { noteManagedClaudeRateLimit } from '../usage/claudeManagedAccountUsage.js';
@@ -427,6 +428,15 @@ export function registerMakerUsageIpc(maker: Maker): void {
     },
     readClaudeSubscriptionUsageSnapshot: readClaudeSubscriptionUsageSnapshotForDeviceLink,
     readXaiSubscriptionUsageSnapshot: readXaiSubscriptionUsageSnapshotForDeviceLink,
+    readCursorSubscriptionUsage: async () => {
+      const snapshot = await readCursorQuota();
+      return {
+        providerId: 'cursor' as const,
+        connected: cursorConnected(),
+        status: snapshot ? 'ready' as const : 'unavailable' as const,
+        snapshot,
+      };
+    },
     assertTrustedSender: (event) => {
       assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
     },

@@ -8582,6 +8582,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('maker:usage:claude-subscription', providerId),
       getXaiSubscription: (providerId?: string): Promise<unknown | null> =>
         ipcRenderer.invoke('maker:usage:xai-subscription', providerId),
+      /** Cursor 账期分池余量。信封与 device-link 的 maker:usage:cursor-subscription 相同。 */
+      getCursorSubscription: (): Promise<import('../shared/cursorQuota').CursorSubscriptionUsageRead> =>
+        ipcRenderer.invoke('maker:usage:cursor-subscription'),
       /** Cindy AI /models 下发的 XD 原生报价。 */
       getModelPricing: (): Promise<unknown | null> =>
         ipcRenderer.invoke('maker:usage:model-pricing-v2'),

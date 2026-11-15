@@ -7411,6 +7411,10 @@ interface ElectronAPI {
       ) => () => void;
       getXaiSubscription: (providerId?: string) => Promise<unknown | null>;
       onXaiSubscriptionChanged: (cb: (payload: unknown) => void, providerId?: string) => () => void;
+      /** Cursor plan pools for the task status chip. Null snapshot means the reading is unknown. */
+      getCursorSubscription: () => Promise<
+        import('../shared/cursorQuota').CursorSubscriptionUsageRead
+      >;
     };
 
     /* ── 跨 Agent 工作区互转（双向，5 项独立判断；进度 step 通过 push 流转）── */
