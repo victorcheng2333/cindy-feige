@@ -4,7 +4,7 @@ import { resolveDesktopOutboundProxy } from '../maker-host/outbound-proxy-resolv
 import { createComputerRuntime } from './computer.js';
 
 /** Locked use (docs/product-rules/locked-use.md), registered by Main once it starts. */
-let lockedDesktop: { prepare(sessionId: string): Promise<void>; hint(): string | undefined } | null = null;
+let lockedDesktop: { prepare(sessionId: string | null): Promise<boolean>; hint(): string | undefined } | null = null;
 export function setLockedDesktopPorts(ports: typeof lockedDesktop): void {
   lockedDesktop = ports;
 }
@@ -70,6 +70,6 @@ export const {
   outboundFetch,
   resolveOutboundProxy: resolveDesktopOutboundProxy,
   // A no-op until Main registers Locked use.
-  prepareLockedDesktop: async (sessionId) => { await lockedDesktop?.prepare(sessionId); },
+  prepareLockedDesktop: async (sessionId) => (lockedDesktop ? lockedDesktop.prepare(sessionId) : true),
   lockedDesktopHint: () => lockedDesktop?.hint(),
 });

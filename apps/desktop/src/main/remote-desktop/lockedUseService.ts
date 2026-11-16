@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { ipcMain, nativeTheme, powerMonitor } from 'electron';
 import { createLogger } from '../logger';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer';
@@ -20,7 +22,9 @@ import { lockDesktopScreen } from './inputHost';
 import { LockedUseController, type LockedUseRefusal } from './lockedUse';
 
 const log = createLogger('remote-desktop:locked-use');
-const TICK_MS = 2_000;
+const exec = promisify(execFile);
+/** Secure keyboard input is checked this often while Locked use holds the Mac. */
+const TICK_MS = 1_000;
 /** The saved-password check spawns the signed helper; reuse its answer briefly. */
 const STATUS_CACHE_MS = 30_000;
 
@@ -32,6 +36,37 @@ export interface LockedUseServiceDeps {
   /** Host facts only (docs/product-rules/locked-use.md「谁能触发解锁」). */
   allowed(sessionId: string): Promise<boolean>;
   running(sessionId: string): boolean;
+  /** A remote desktop or screen viewer is connected to this computer. */
+  remoteViewer(): boolean;
+}
+
+/**
+ * An established macOS Screen Sharing (VNC, port 5900) connection. Unreadable counts as one.
+ * Other remote-control apps are not detected (docs/product-rules/locked-use.md).
+ */
+async function systemScreenShared(): Promise<boolean> {
+  try {
+    const { stdout } = await exec('/usr/sbin/netstat', ['-an', '-p', 'tcp'], { timeout: 3000, maxBuffer: 4 * 1024 * 1024 });
+    return /\.5900\s+\S+\s+ESTABLISHED/.test(stdout);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Some app has secure keyboard input on (the console session lists its PID). Unreadable
+ * counts as on: Locked use then locks rather than trust a cover it cannot check.
+ */
+async function secureKeyboardInput(): Promise<boolean> {
+  try {
+    const { stdout } = await exec('/usr/sbin/ioreg', ['-n', 'Root', '-d1'], { timeout: 3000, maxBuffer: 1024 * 1024 });
+    const uid = process.getuid?.();
+    const session = stdout.match(/\{[^{}]*\}/g)?.find((entry) => new RegExp(`"kCGSSessionUserIDKey"=${uid}(?![0-9])`).test(entry));
+    if (!session) return true;
+    return /"kCGSSessionSecureInputPID"=[1-9]/.test(session);
+  } catch {
+    return true;
+  }
 }
 
 /** macOS 14+, the same floor as the privacy screen it covers with. */
@@ -53,17 +88,25 @@ async function readNativeStatus(force = false): Promise<{ saved: boolean; access
 }
 
 /**
- * Before a local Agent task's computer tool call. Never throws: a Mac that stays locked
- * is reported by the tool itself (`screen_locked`) with this service's hint.
+ * Before a computer tool call: a local Agent task's id, or null for a plugin's own call.
+ * False when the call must not run because Locked use holds this Mac for other tasks. A
+ * Mac that stays locked is reported by the tool itself (`screen_locked`) with the hint.
  */
-export async function prepareLockedDesktop(sessionId: string): Promise<void> {
+export async function prepareLockedDesktop(sessionId: string | null): Promise<boolean> {
   const target = controller;
-  if (!target) return;
+  if (!target) return true;
   try {
     const result = await target.prepare(sessionId);
+    if (result === 'busy') {
+      log.info('locked use refused another caller', { plugin: sessionId === null });
+      return false;
+    }
     if (result !== 'not_locked' && result !== 'unlocked') log.info('locked use refused', { reason: result });
+    return true;
   } catch (error) {
     log.warn('locked use prepare failed', error);
+    // Never let an unknown state open the Mac to a caller Locked use did not admit.
+    return !target.holdsDesktop;
   }
 }
 
@@ -74,6 +117,7 @@ const HINTS: Record<LockedUseRefusal, string> = {
   not_allowed: 'This task cannot unlock this Mac while it is locked.',
   failed: 'Cindy could not unlock this Mac just now. Try again later, or ask the owner to unlock it.',
   unavailable: 'The privacy screen could not cover this Mac, so Cindy did not unlock it.',
+  remote_viewer: 'A remote desktop or Screen Sharing connection is open to this Mac, so Cindy does not unlock it; the owner can unlock from that connection.',
 };
 
 /** Extra hint for the Agent when the screen stays locked. */
@@ -114,6 +158,9 @@ export function startLockedUse(deps: LockedUseServiceDeps): void {
     screenLocked: deps.screenLocked,
     allowed: deps.allowed,
     running: deps.running,
+    remoteViewer: deps.remoteViewer,
+    secureInput: secureKeyboardInput,
+    screenShared: systemScreenShared,
     cover: coverForLockedUse,
     covered: isLockedUseCovered,
     uncover: endLockedUseCover,

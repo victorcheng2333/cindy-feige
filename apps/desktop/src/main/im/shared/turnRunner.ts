@@ -131,7 +131,7 @@ import {
   type InteractionRouteLease,
 } from '../../maker-ipc/interactionRouter';
 import { beginGroupHistoryAccess, type GroupHistoryAccessScope } from './groupHistoryAccess';
-import { beginChannelToolScope, type ChannelToolScope } from './channelToolScope';
+import { beginChannelToolScope, beginChannelTurnRequester, type ChannelToolScope } from './channelToolScope';
 import { agentHandoffPending } from '../../maker-ipc/agentHandoffPendingSingleton';
 import { prependHandoffToUserMessage, prependNoteToWireUserMessage } from '../../maker-ipc/agentHandoff';
 import { buildPlanReconcileNote, summarizeOpenPlan } from '../../maker-ipc/planReconcile';
@@ -311,6 +311,8 @@ interface TurnState {
   groupHistoryAccessRelease: (() => void) | null;
   /** 渠道工具作用域租约(cindy_telegram_bot); 与群历史租约同一生命周期。 */
   channelToolScopeRelease: (() => void) | null;
+  /** 这一轮的触发者登记(锁屏后继续使用只信主人触发的渠道轮次);与作用域同一生命周期。 */
+  channelTurnRequesterRelease: (() => void) | null;
   /** Terminal classification consumed by chunked-text commitFinal. */
   terminalKind: 'done' | 'aborted' | 'error';
   terminalErrorCode: string | null;
@@ -1297,6 +1299,7 @@ export function createTurnRunner(
       hostTurnLeaseRelease: null,
       groupHistoryAccessRelease: null,
       channelToolScopeRelease: null,
+      channelTurnRequesterRelease: null,
       terminalKind: 'done',
       terminalErrorCode: null,
       chunkedReplyBegun: false,
@@ -1896,6 +1899,9 @@ export function createTurnRunner(
               scope: item.groupHistoryAccess,
             });
           }
+          item.turn.channelTurnRequesterRelease?.();
+          item.turn.channelTurnRequesterRelease = beginChannelTurnRequester(rowId,
+            item.requesterIsOwner === true || item.channelToolScope?.requesterIsOwner === true);
           if (item.channelToolScope) {
             // A retried dispatch must not reuse an earlier input receipt.
             delete item.channelToolScope.inputClientId;
@@ -3525,6 +3531,9 @@ export function createTurnRunner(
     const releaseChannelToolScope = turn.channelToolScopeRelease;
     turn.channelToolScopeRelease = null;
     releaseChannelToolScope?.();
+    const releaseChannelTurnRequester = turn.channelTurnRequesterRelease;
+    turn.channelTurnRequesterRelease = null;
+    releaseChannelTurnRequester?.();
     const lease = turn.interactionRouteLease;
     turn.interactionRouteLease = null;
     lease?.release(reason);

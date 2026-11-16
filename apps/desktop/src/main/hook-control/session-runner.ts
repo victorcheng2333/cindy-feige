@@ -27,7 +27,7 @@
  * 正确。后续要精确区分时再与 maker-core 一起演进。
  */
 
-import { beginChannelToolScope } from '../im/shared/channelToolScope.js';
+import { beginChannelToolScope, beginChannelTurnRequester } from '../im/shared/channelToolScope.js';
 import { getSessionRuntimeStartOverride } from '../maker-ipc/sessionRuntimeControl.js';
 
 import { randomUUID } from 'node:crypto';
@@ -1190,9 +1190,12 @@ export function createMakerHookSessionRunner(deps: {
       };
       /** turn 收口清扫: 未决交互按默认自决 + 释放中央 route。幂等。 */
       let releaseXCompanionScope: (() => void) | undefined;
+      let releaseChannelTurnRequester: (() => void) | undefined;
       const finalizeInteractions = (): void => {
         releaseXCompanionScope?.();
         releaseXCompanionScope = undefined;
+        releaseChannelTurnRequester?.();
+        releaseChannelTurnRequester = undefined;
         headlessTurn.closed = true;
         headlessTurn.release?.();
         headlessTurn.release = null;
@@ -1584,6 +1587,10 @@ export function createMakerHookSessionRunner(deps: {
                 scope: req.groupHistoryAccess,
               });
             }
+            // Hook turns carry no verified owner identity, except the X companion lane below.
+            releaseChannelTurnRequester?.();
+            releaseChannelTurnRequester = beginChannelTurnRequester(session.id,
+              Boolean(req.companionBotId && req.source?.im === 'x'));
             if (req.companionBotId && req.source?.im === 'x') {
               releaseXCompanionScope = beginChannelToolScope({
                 sessionId: session.id, sessionInstanceId: session.instanceId,

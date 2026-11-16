@@ -668,6 +668,7 @@ import {
 } from './remote-desktop';
 import { isAwayCoverUp, registerAwayGuardIpc, startAwayGuard } from './remote-desktop/awayGuardService';
 import { lockedUseHint, prepareLockedDesktop, registerLockedUseIpc, startLockedUse } from './remote-desktop/lockedUseService';
+import { remoteDesktop } from './remote-desktop/index';
 import { isSessionSharedTaskActive } from './device-link/sharedTaskDispatch.js';
 import { channelTurnRequesterIsOwner } from './im/shared/channelToolScope.js';
 import { DisplayDemand } from './remote-desktop/displayDemand';
@@ -5273,6 +5274,9 @@ const registerIpcHandlers = () => {
       realm: () => authManager.getActiveAuthRealm(),
       screenLocked: isDesktopScreenLocked,
       running: (sessionId) => getAgentIslandService()?.isLocalTaskRunning(sessionId) === true,
+      // Any viewing lease, including view-only and plugin screens: it would see or control the
+      // unlocked Mac without the password.
+      remoteViewer: () => remoteDesktop.state !== null,
       // Host facts only (「谁能触发解锁」): running here, a local task, not shared with guests,
       // and an IM turn only when the owner triggered it.
       allowed: async (sessionId) => {

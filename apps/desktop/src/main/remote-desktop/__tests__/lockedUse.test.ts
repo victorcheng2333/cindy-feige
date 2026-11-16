@@ -7,7 +7,8 @@
  * - 现有覆盖缺口：新模块；awayGuard.test.ts 只覆盖遮罩本身，不覆盖解锁与重新锁屏的时序。
  * - 最小失败输入：遮罩建立失败；盖遮罩时或解锁进行中有人碰电脑（不解锁 / 解锁完成后立刻再锁）；
  *   解锁后任务一直在用电脑（不能按 2 分钟空闲锁回）；撤遮罩时没真锁屏（2026-11-16 实测：任务结束后
- *   桌面被打开）；本机解锁的
+ *   桌面被打开）；锁屏后使用期间别的任务、插件、远程桌面或系统屏幕共享、安全键盘输入
+ *   （2026-11-16 安全审阅：都能不经密码使用已解锁的电脑）；本机解锁的
  *   系统事件晚到（不能当成主人手动解锁而解除暂停）；任务停止运行；保存的密码被系统拒绝。
  * - tier：unit，内存 fake，无 Electron / 原生进程。
  */
@@ -21,6 +22,8 @@ function setup(overrides: Partial<LockedUseDeps> = {}) {
     covered: false,
     allowed: true,
     running: true,
+    viewer: false,
+    secure: false,
     coverFails: false,
     unlockError: null as string | null,
     /** Runs inside the native unlock, before it returns. */
@@ -32,6 +35,9 @@ function setup(overrides: Partial<LockedUseDeps> = {}) {
     screenLocked: () => state.locked,
     allowed: async () => state.allowed,
     running: () => state.running,
+    remoteViewer: () => state.viewer,
+    secureInput: async () => state.secure,
+    screenShared: async () => false,
     cover: async () => {
       if (state.coverFails) throw new Error('DESKTOP_PRIVACY_UNAVAILABLE');
       state.covered = true;
@@ -145,6 +151,34 @@ describe('LockedUseController', () => {
     await controller.tick();
     expect(state.events.slice(-2)).toEqual(['uncover:finished', 'lock']);
     expect(state.locked).toBe(true);
+  });
+
+  it('lets only tasks allowed to unlock use the Mac it opened, never a plugin', async () => {
+    const allowed = new Set(['task-1', 'task-2']);
+    const { state, controller } = setup({ allowed: async (id) => allowed.has(id) });
+    await expect(controller.prepare('task-1')).resolves.toBe('unlocked');
+    await expect(controller.prepare('im-guest-task')).resolves.toBe('busy');
+    await expect(controller.prepare(null)).resolves.toBe('busy');
+    await expect(controller.prepare('task-2')).resolves.toBe('not_locked');
+    state.running = false;
+    await controller.tick();
+    expect(state.locked).toBe(true);
+    // Once locked again, a plugin call is not refused; it simply meets the lock screen.
+    await expect(controller.prepare(null)).resolves.toBe('not_locked');
+  });
+
+  it.each([
+    ['a remote viewer connects', (state: { viewer: boolean }) => { state.viewer = true; }],
+    ['an app turns on secure keyboard input', (state: { secure: boolean }) => { state.secure = true; }],
+  ])('locks again when %s, and never unlocks with a viewer connected', async (_case, change) => {
+    const { state, controller } = setup();
+    await expect(controller.prepare('task-1')).resolves.toBe('unlocked');
+    change(state as never);
+    await controller.tick();
+    expect(state.locked).toBe(true);
+    expect(state.covered).toBe(false);
+    state.secure = false;
+    if (state.viewer) await expect(controller.prepare('task-1')).resolves.toBe('remote_viewer');
   });
 
   it('asks for setup again when the saved password is rejected, without retrying it', async () => {

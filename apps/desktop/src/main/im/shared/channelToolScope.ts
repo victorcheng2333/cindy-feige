@@ -163,14 +163,30 @@ export function readChannelToolScope(args: {
 }
 
 /**
- * 这个任务当前是否有渠道轮次在跑、触发者是不是主人;没有渠道轮次为 null。
- * 只给宿主自己的授权判断用(锁屏后继续使用,docs/product-rules/locked-use.md),不经模型参数。
+ * 每个 IM / hook 渠道轮次都登记「触发者是不是主人」,不论渠道有没有直通工具作用域;
+ * 没有主人身份证明的一律记为不是主人。只给宿主自己的授权判断用(锁屏后继续使用,
+ * docs/product-rules/locked-use.md),不经模型参数。
  */
+const channelTurnsBySession = new Map<string, { token: symbol; owner: boolean }>();
+
+export function beginChannelTurnRequester(sessionId: string, owner: boolean): () => void {
+  const token = Symbol('channel-turn');
+  channelTurnsBySession.set(sessionId, { token, owner });
+  return () => {
+    if (channelTurnsBySession.get(sessionId)?.token === token) channelTurnsBySession.delete(sessionId);
+  };
+}
+
+/** 这个任务当前有渠道轮次在跑时,触发者是不是主人(两处登记都要说是);没有渠道轮次为 null。 */
 export function channelTurnRequesterIsOwner(sessionId: string): boolean | null {
-  return activeBySession.get(sessionId)?.scope.requesterIsOwner ?? null;
+  const turn = channelTurnsBySession.get(sessionId);
+  const scope = activeBySession.get(sessionId)?.scope.requesterIsOwner;
+  if (!turn && scope === undefined) return null;
+  return turn?.owner !== false && scope !== false;
 }
 
 /** 测试/进程级 teardown;生产授权仍必须通过租约 release 收口。 */
 export function resetChannelToolScopeForTests(): void {
   activeBySession.clear();
+  channelTurnsBySession.clear();
 }

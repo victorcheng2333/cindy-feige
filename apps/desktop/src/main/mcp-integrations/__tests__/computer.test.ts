@@ -3660,7 +3660,7 @@ describe('computer mcp integration', () => {
   // (before this, only locked-screen calls reported and the Mac relocked after two minutes).
   // Plugin host calls never wake a locked Mac.
   it('reports local task calls to Locked use before dispatch, never plugin calls', async () => {
-    const prepare = vi.fn(async () => undefined);
+    const prepare = vi.fn(async (_sessionId: string | null) => true);
     setLockedDesktopPorts({ prepare, hint: () => undefined });
     try {
       mcpCallToolMock.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"ok":true,"windows":[]}' }] });
@@ -3672,6 +3672,12 @@ describe('computer mcp integration', () => {
         hostCaller: { kind: 'plugin', pluginId: 'p', dataOwnerId: 'o', ownerGeneration: 1 },
       } as never)).rejects.toThrow('PERMISSION_DENIED');
       expect(prepare).toHaveBeenCalledTimes(1);
+      // Locked use holds the Mac for another task: nothing reaches the driver.
+      prepare.mockResolvedValueOnce(false);
+      const calls = mcpCallToolMock.mock.calls.length;
+      await expect(deps.callTool('list_windows', {}, { sessionId: 'session-other' }))
+        .rejects.toThrow('Locked use');
+      expect(mcpCallToolMock.mock.calls.length).toBe(calls);
     } finally {
       setLockedDesktopPorts(null);
     }

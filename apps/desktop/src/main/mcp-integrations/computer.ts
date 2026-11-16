@@ -214,11 +214,11 @@ export interface ComputerRuntimePorts {
   assertInputAvailable?(): void;
   beforeCall?(): Promise<void>;
   /**
-   * Locked use (docs/product-rules/locked-use.md): before each local Agent task's call. On a
-   * locked screen the host may cover and unlock; on an unlocked one it only notes the task
-   * is still using the Mac. Never throws; plugin calls never get here.
+   * Locked use (docs/product-rules/locked-use.md): before each call, with the local Agent
+   * task's id (null for a plugin's own call). On a locked screen the host may cover and
+   * unlock for that task. False: Locked use holds this Mac and this caller may not use it.
    */
-  prepareLockedDesktop?(sessionId: string): Promise<void>;
+  prepareLockedDesktop?(sessionId: string | null): Promise<boolean>;
   /** Why a locked screen stays locked for the Agent, written by the host. */
   lockedDesktopHint?(): string | undefined;
   getPath(name: 'home' | 'temp'): string;
@@ -4191,9 +4191,15 @@ function getComputerMcpDeps(options: ComputerMcpDepsOptions = {}): ComputerMcpDe
       await ensureRuntime();
       plugin?.assertCurrent();
       // Only an Agent task may wake a locked Mac; status checks never need the screen. Calls on
-      // an unlocked screen still report in, so a task using a Mac it unlocked keeps it.
-      if (!caller && context?.sessionId && !LOCKED_DESKTOP_EXEMPT_TOOLS.has(name))
-        await ports.prepareLockedDesktop?.(context.sessionId);
+      // an unlocked screen still report in, so a task using a Mac it unlocked keeps it, and
+      // nobody else (another task, a plugin) uses a Mac Locked use opened.
+      if (!LOCKED_DESKTOP_EXEMPT_TOOLS.has(name) && ports.prepareLockedDesktop &&
+          !(await ports.prepareLockedDesktop(caller ? null : context?.sessionId ?? null))) {
+        throw new ComputerDriverError(
+          'This Mac is locked and Cindy has opened it only for another task (Locked use). This call was not sent. Tell the person this step needs the Mac unlocked; do not retry in a loop.',
+          'LOCKED_USE_BUSY',
+        );
+      }
       return callComputerDriverTool(name, args, context);
     },
     isSecureTarget: async target => { await ensureRuntime(); return ports.isSecureTarget(target); },

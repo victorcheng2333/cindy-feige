@@ -25,9 +25,15 @@ export type LockedUseRefusal =
   | 'paused'
   | 'not_allowed'
   | 'failed'
-  | 'unavailable';
+  | 'unavailable'
+  | 'remote_viewer';
 
-export type LockedUseResult = 'not_locked' | 'unlocked' | LockedUseRefusal;
+/**
+ * `busy`: this Mac is unlocked for Locked use and the caller is not one of the tasks allowed
+ * to use it (another task that may not trigger an unlock, or a plugin). The call must not
+ * run: only Locked use may use a Mac that was locked (docs/product-rules/locked-use.md).
+ */
+export type LockedUseResult = 'not_locked' | 'unlocked' | 'busy' | LockedUseRefusal;
 
 export interface LockedUseDeps {
   /** Setting on and the password saved (native status). */
@@ -48,6 +54,21 @@ export interface LockedUseDeps {
   cancelUnlock(): void;
   /** Direct system lock, used when an unlock completes after it was no longer wanted. */
   lock(): Promise<void>;
+  /**
+   * A remote desktop or screen viewer is connected. It would control the unlocked Mac without
+   * the password, so Locked use never unlocks then and locks again when one connects.
+   */
+  remoteViewer(): boolean;
+  /**
+   * Some app turned on secure keyboard input: the privacy screen's input guard cannot see
+   * keystrokes then, so a person at the Mac could type behind the cover. Locks again.
+   */
+  secureInput(): Promise<boolean>;
+  /**
+   * macOS Screen Sharing has a connection. The privacy screen is hidden from screen capture,
+   * so that viewer would see and control the unlocked desktop without the password.
+   */
+  screenShared(): Promise<boolean>;
   now(): number;
   log(event: string, detail?: Record<string, unknown>): void;
 }
@@ -72,6 +93,11 @@ export class LockedUseController {
     return this.paused;
   }
 
+  /** Cindy is unlocking or holds this Mac unlocked for Locked use. */
+  get holdsDesktop(): boolean {
+    return this.phase !== 'idle';
+  }
+
   /** True while Cindy is unlocking for a task (the system unlock event is then ours). */
   get isUnlocking(): boolean {
     return this.phase === 'unlocking';
@@ -82,23 +108,30 @@ export class LockedUseController {
     return this.deps.screenLocked() ? this.lastRefusal : null;
   }
 
-  /** Before a computer tool call of a local Agent task. */
-  async prepare(sessionId: string): Promise<LockedUseResult> {
+  /**
+   * Before a computer tool call: a local Agent task's id, or null for a plugin's own call.
+   * Returns `busy` when the call must not run.
+   */
+  async prepare(sessionId: string | null): Promise<LockedUseResult> {
     const { deps } = this;
-    if (!deps.screenLocked()) {
-      if (this.phase === 'active' && this.leases.has(sessionId)) this.leases.set(sessionId, deps.now());
-      return 'not_locked';
-    }
-    if (this.unlocking) {
-      const result = await this.unlocking;
-      if (result === 'unlocked' && this.phase === 'active' && (await deps.allowed(sessionId)))
-        this.leases.set(sessionId, deps.now());
-      return result;
-    }
+    if (this.unlocking) return this.join(sessionId, await this.unlocking);
+    if (this.phase === 'active') return this.join(sessionId, 'unlocked');
+    if (!deps.screenLocked() || sessionId === null) return 'not_locked';
     this.unlocking = this.start(sessionId).finally(() => {
       this.unlocking = null;
     });
     return this.unlocking;
+  }
+
+  /** Another call while Locked use holds this Mac: only tasks allowed to unlock may use it. */
+  private async join(sessionId: string | null, result: LockedUseResult): Promise<LockedUseResult> {
+    const { deps } = this;
+    if (this.phase !== 'active') return result;
+    if (sessionId === null) return 'busy';
+    if (!this.leases.has(sessionId) && !(await deps.allowed(sessionId))) return 'busy';
+    if (this.phase !== 'active') return 'busy';
+    this.leases.set(sessionId, deps.now());
+    return 'not_locked';
   }
 
   private refuse(reason: LockedUseRefusal): LockedUseResult {
@@ -113,6 +146,7 @@ export class LockedUseController {
     if (ready !== 'ready') return this.refuse(ready);
     if (!(await deps.allowed(sessionId))) return this.refuse('not_allowed');
     if (deps.now() < this.retryAt) return this.refuse('failed');
+    if (deps.remoteViewer() || (await deps.screenShared())) return this.refuse('remote_viewer');
     if (!deps.screenLocked()) return 'not_locked';
     const generation = ++this.generation;
     this.phase = 'unlocking';
@@ -171,6 +205,9 @@ export class LockedUseController {
     if (this.phase !== 'active') return;
     const { deps } = this;
     if (!deps.covered()) return this.stop('cover gone');
+    if (deps.remoteViewer() || (await deps.screenShared())) return this.stop('remote viewer connected');
+    if (await deps.secureInput()) return this.stop('secure input');
+    if (this.phase !== 'active') return;
     const now = deps.now();
     for (const [sessionId, at] of this.leases) {
       if (!deps.running(sessionId) || now - at >= LOCKED_USE_IDLE_MS) this.leases.delete(sessionId);
