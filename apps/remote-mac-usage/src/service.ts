@@ -143,7 +143,11 @@ export class UsageService {
                 cursorResult = await read('maker:usage:cursor-subscription');
                 if (record(cursorResult).connected === true && !providers.some(p => p.id === 'cursor'))
                   providers.push({ id: 'cursor', name: 'Cursor' });
-              } catch (error) { device.cursorUnsupported = !!error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED'; }
+              } catch (error) {
+                device.cursorUnsupported = !!error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED';
+                if (!device.cursorUnsupported && !providers.some(p => p.id === 'cursor'))
+                  providers.push({ id: 'cursor', name: 'Cursor' });
+              }
               const accounts = await Promise.all(providers.map(async p => {
                 const a = emptyAccount(p), builtin = a.service === 'Claude' ? 'anthropic' : 'openai';
                 const args = a.id !== builtin ? [a.id] : a.service === 'Claude'

@@ -602,6 +602,7 @@ async fn logout_discards_in_flight_quota_response() {
 
 struct CursorMockLink {
     channel_not_allowed: AtomicBool,
+    transport_error: AtomicBool,
     calls: StdMutex<Vec<(String, Vec<Value>)>>,
 }
 
@@ -638,6 +639,12 @@ impl DeviceLinkSession for CursorMockLink {
                 return Ok(InvokeOutcome::Err {
                     code: "CHANNEL_NOT_ALLOWED".to_string(),
                     message: "old host".to_string(),
+                });
+            }
+            if self.transport_error.load(Ordering::SeqCst) {
+                return Ok(InvokeOutcome::Err {
+                    code: "IPC_ERROR".to_string(),
+                    message: "link reset".to_string(),
                 });
             }
             return Ok(InvokeOutcome::Ok(json!({
@@ -706,6 +713,7 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
     });
     let link = Arc::new(CursorMockLink {
         channel_not_allowed: AtomicBool::new(false),
+        transport_error: AtomicBool::new(false),
         calls: StdMutex::new(Vec::new()),
     });
     let link_for_factory = link.clone();
@@ -745,4 +753,27 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
     let snap2 = svc.snapshot().await;
     assert_eq!(snap2.devices[0].cursor_unsupported, Some(true));
     assert_eq!(snap2.devices[0].error, None);
+
+    // 测试价值
+    // - 生产入口与可观察结果：UsageService.refresh 在 Cursor 专用读取因链路失败时仍画出 Cursor 卡
+    // - Bug／规则依据：M5 本机已连接 Cursor，猫猫失败时曾静默省略卡片
+    // - 现有覆盖缺口：只覆盖 CHANNEL_NOT_ALLOWED 的「更新 Cindy」提示
+    // - 最小失败输入：cursor-subscription 返回 IPC_ERROR
+    // - tier：unit
+    link.channel_not_allowed.store(false, Ordering::SeqCst);
+    link.transport_error.store(true, Ordering::SeqCst);
+    svc.refresh().await;
+    let snap3 = svc.snapshot().await;
+    assert_eq!(snap3.devices[0].cursor_unsupported, None);
+    assert_eq!(snap3.devices[0].error, None);
+    let cursor_failed = snap3.devices[0]
+        .accounts
+        .iter()
+        .find(|a| a.service == ServiceKind::Cursor)
+        .expect("failed Cursor card remains visible");
+    assert!(cursor_failed.failed);
+    assert_eq!(
+        cursor_failed.error.as_deref(),
+        Some("暂时读不到 Cursor 额度，请稍后刷新。")
+    );
 }

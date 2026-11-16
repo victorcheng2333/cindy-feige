@@ -30,10 +30,17 @@ execFileSync(process.execPath, [join(root, 'scripts/build-rust-ui.mjs'), '--regi
   env,
 });
 
-execFileSync(cargoBin, ['build', '--release', '--manifest-path', join(root, 'src-tauri/Cargo.toml')], {
-  stdio: 'inherit',
+const cargoOutput = execFileSync(cargoBin, ['build', '--release', '--message-format=json-render-diagnostics', '--manifest-path', join(root, 'src-tauri/Cargo.toml')], {
+  stdio: ['ignore', 'pipe', 'inherit'],
+  encoding: 'utf8',
   env,
 });
+// Cargo may redirect output through CARGO_TARGET_DIR or a configured build target.
+// Package the executable reported by this build, never a stale default-path binary.
+const binarySrc = cargoOutput.trim().split('\n').map(line => JSON.parse(line))
+  .findLast(event => event.reason === 'compiler-artifact'
+    && event.target?.name === 'quota-cat-rust' && event.executable)?.executable;
+if (!binarySrc) throw Error('Cargo did not report the Quota Cat executable; refusing to package.');
 
 const out = join(root, 'out');
 const bundleParent = join(out, `猫猫-darwin-${process.arch}`);
@@ -60,7 +67,6 @@ const icnsPath = join(resourcesDir, 'cat.icns');
 execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icnsPath]);
 await rm(iconset, { recursive: true, force: true });
 
-const binarySrc = join(root, 'src-tauri/target/release/quota-cat-rust');
 const binaryDst = join(macosDir, '猫猫');
 await copyFile(binarySrc, binaryDst);
 await chmod(binaryDst, 0o755);

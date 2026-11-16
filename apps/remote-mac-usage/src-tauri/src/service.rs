@@ -406,6 +406,7 @@ impl UsageService {
 
         let outcome: Result<(Vec<Account>, bool), String> = async {
             self.check_epoch(epoch).await?;
+            link.close_link(device_id, "user");
             let accepted = link.open_link(device_id, Duration::from_secs(15)).await?;
             self.check_epoch(epoch).await?;
             if !accepted
@@ -473,6 +474,17 @@ impl UsageService {
                 Err(err) => {
                     if err.code.as_deref() == Some("CHANNEL_NOT_ALLOWED") {
                         cursor_unsupported = true;
+                    } else if !providers
+                        .iter()
+                        .any(|p| p.get("id").and_then(Value::as_str) == Some("cursor"))
+                    {
+                        // Keep a visible failed card. Cursor is local-only in the
+                        // provider catalog, so a dropped dedicated read used to look
+                        // like this computer had no Cursor connection.
+                        let mut entry = serde_json::Map::new();
+                        entry.insert("id".to_string(), json!("cursor"));
+                        entry.insert("name".to_string(), json!("Cursor"));
+                        providers.push(entry);
                     }
                 }
             }

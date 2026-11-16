@@ -123,8 +123,14 @@ impl PeerTransport {
     }
 
     fn reset_for_disconnect(&mut self) {
+        // Rotate the outbound stream so Cindy does not treat the next open as
+        // duplicateOpen on the previous generation and drop later invokes
+        // (Cursor quota is the slow one that used to disappear).
+        self.local_stream_id = Uuid::new_v4().to_string();
+        self.next_seq = 1;
         self.reliable = false;
         self.remote_stream_id = None;
+        self.last_delivered_seq = 0;
         self.ready.clear();
         self.assemblies.clear();
     }
@@ -478,6 +484,10 @@ async fn run_actor(
                         ActorCommand::OpenLink { dst, reply } => {
                             let peer = peers.entry(dst.clone()).or_insert_with(PeerTransport::new);
                             peer.reset_for_disconnect();
+                            // Advertise reliable on this open, so wrapped link-accept
+                            // frames from Cindy can be decoded before the accept handler
+                            // would otherwise set the flag.
+                            peer.reliable = true;
                             let req_id = Uuid::new_v4().to_string();
                             let open_env = WireEnvelope {
                                 v: PROTOCOL_VERSION,
@@ -678,7 +688,10 @@ fn handle_inbound_envelope(
                     return acks;
                 };
                 if !peer.reliable {
-                    return acks;
+                    if env.kind != "link-accept" {
+                        return acks;
+                    }
+                    peer.reliable = true;
                 }
                 if let Some(expected_stream) = peer.remote_stream_id.as_deref() {
                     if expected_stream != stream_id {
@@ -827,9 +840,17 @@ fn deliver_logical_frame(
             {
                 let peer = peers.entry(src.to_string()).or_insert_with(PeerTransport::new);
                 peer.reliable = true;
-                peer.remote_stream_id = accepted.transport_stream_id.clone();
                 let base_seq = accepted.transport_base_seq.unwrap_or(1).max(1);
-                peer.last_delivered_seq = base_seq - 1;
+                if peer.remote_stream_id != accepted.transport_stream_id {
+                    peer.remote_stream_id = accepted.transport_stream_id.clone();
+                    peer.last_delivered_seq = base_seq - 1;
+                    peer.ready.clear();
+                    peer.assemblies.clear();
+                } else {
+                    // A wrapped accept has already advanced this stream. Its
+                    // advertised base is a lower bound, not a rewind point.
+                    peer.last_delivered_seq = peer.last_delivered_seq.max(base_seq - 1);
+                }
                 if accepted
                     .capabilities
                     .iter()
@@ -848,4 +869,58 @@ fn deliver_logical_frame(
         }
     }
     let _ = entry.tx.send(Ok(payload));
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+
+    // Unit regression: production inbound dispatch must deliver quota replies after
+    // a reconnect and after a wrapped accept. Service fakes cannot cover wire ordering.
+    // Minimal input: one delivered old seq, or accept seq=1 followed by reply seq=2.
+    fn inbound(kind: &str, id: &str, seq: u64, payload: Value) -> WireEnvelope {
+        let mut frame = encode_reliable_envelopes("cat", kind, id, &payload, "host-stream", seq)
+            .unwrap().remove(0);
+        frame.src = Some("host".to_string());
+        // Real senders may retain earlier pending frames as the advertised base.
+        frame.payload.as_mut().unwrap()[TRANSPORT_MARKER]["baseSeq"] = json!(1);
+        frame
+    }
+
+    #[test]
+    fn reconnect_delivers_new_stream_reply_after_previous_progress() {
+        let mut peer = PeerTransport::new();
+        peer.last_delivered_seq = 20;
+        peer.reset_for_disconnect();
+        peer.reliable = true;
+        let mut peers = HashMap::from([("host".to_string(), peer)]);
+        let (tx, mut rx) = oneshot::channel();
+        let mut pending = HashMap::from([("quota".to_string(), PendingReply {
+            dst: "host".to_string(), expect_kind: "invoke-result", tx,
+        })]);
+        handle_inbound_envelope(inbound("invoke-result", "quota", 1, json!({"connected":true})), &mut peers, &mut pending);
+        assert_eq!(rx.try_recv().unwrap().unwrap()["connected"], true);
+    }
+
+    #[test]
+    fn wrapped_accept_does_not_rewind_delivered_position() {
+        let mut peer = PeerTransport::new();
+        peer.reliable = true;
+        let mut peers = HashMap::from([("host".to_string(), peer)]);
+        let (tx, mut accepted) = oneshot::channel();
+        let mut pending = HashMap::from([("open".to_string(), PendingReply {
+            dst: "host".to_string(), expect_kind: "link-accept", tx,
+        })]);
+        handle_inbound_envelope(inbound("link-accept", "open", 1, json!({
+            "capabilities":[CAPABILITY_RELIABLE_TRANSPORT_V1, CAPABILITY_RELIABLE_LINK_CONFIRM_V1],
+            "transportStreamId":"host-stream", "transportBaseSeq":1,
+        })), &mut peers, &mut pending);
+        assert!(accepted.try_recv().unwrap().is_ok());
+        let (tx, mut reply) = oneshot::channel();
+        pending.insert("quota".to_string(), PendingReply {
+            dst: "host".to_string(), expect_kind: "invoke-result", tx,
+        });
+        handle_inbound_envelope(inbound("invoke-result", "quota", 2, json!({"connected":true})), &mut peers, &mut pending);
+        assert_eq!(reply.try_recv().unwrap().unwrap()["connected"], true);
+    }
 }

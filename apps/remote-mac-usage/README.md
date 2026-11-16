@@ -76,6 +76,17 @@ pnpm --dir apps/remote-mac-usage package
 
 ## 验证记录
 
+- 2026-11-16 / 0.2.0：修复打包脚本忽略 `CARGO_TARGET_DIR`、从默认目录复制旧二进制的问题；
+  改为读取本次 Cargo 构建返回的 executable 路径，未返回时拒绝打包，兼容重定向与构建目标配置。
+  同时修复 Rust 可靠传输重连后沿用旧接收序号，以及解包握手回复后将
+  已交付序号回退的问题，避免后续额度回复被误丢或等待不存在的前序消息。两项最小回归
+  均先复现失败再修复通过；Rust 13 项、TS 41 项与类型检查通过，共享 Device Link 1306 项、
+  自建中转 50 项及 2 项真实互通检查通过。未新增 wire 字段，中转仍按原有协议透明路由，
+  无需升级。Developer ID 签名、严格校验及 ZIP 校验通过，已备份并替换本机独立猫猫，保留
+  原登录与设备筛选。同一生产取数代码实读提供端 Cursor 双池，连续两次重连结果一致；
+  修正打包路径后核对安装二进制与签名包一致，用户确认卡片恢复。最终画面由用户确认，
+  未将程序取数成功作为界面目检证据。
+
 - 2026-11-12 / 0.2.0：独立猫猫主进程、认证、Device Link 协议与安全存储切换为纯 Rust（Tauri 2 + `WKWebView`），
   沿用 `com.chengfei.quotacat.cn`、`~/Library/Application Support/QuotaCatCN` 与 `QuotaCatCN Safe Storage`
   钥匙串身份，实现 Chromium OSCrypt `v10` 密文双向兼容以无缝保留原登录、设备筛选与排序。`.app` 体积由 276 MB

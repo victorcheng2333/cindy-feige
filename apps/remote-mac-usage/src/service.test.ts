@@ -253,6 +253,15 @@ it('discovers Cursor, reads separate pools, and keeps unavailable different from
   h.link.invoke.mockImplementation(async (_id, request) => (request.channel === 'maker:provider:list' ? { ok: true, result: { providers: [] } } : { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED', message: 'old host' } }) as never);
   await h.service.refresh();
   expect(h.service.snapshot().devices[0]).toMatchObject({ cursorUnsupported: true, error: null });
+  // 测试价值：Cursor 专用读取因链路失败时仍画出失败卡，避免看起来像这台电脑没连 Cursor。
+  h.link.invoke.mockImplementation(async (_id, request) => (request.channel === 'maker:provider:list'
+    ? { ok: true, result: { providers: [] } }
+    : { ok: false, error: { code: 'IPC_ERROR', message: 'link reset' } }) as never);
+  await h.service.refresh();
+  expect(h.service.snapshot().devices[0]).toMatchObject({ cursorUnsupported: false, error: null });
+  expect(h.service.snapshot().devices[0].accounts).toEqual([
+    expect.objectContaining({ service: 'Cursor', failed: true, error: '暂时读不到 Cursor 额度，请稍后刷新。' }),
+  ]);
   h.service.dispose();
 });
 
