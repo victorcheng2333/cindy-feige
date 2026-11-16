@@ -28,11 +28,11 @@ export interface VoiceHoldLayout {
 }
 
 /**
- * 长按成立所需时间,与桌面端长按输入框唤醒语音一致(ChatInput 的 VOICE_INPUT_LONG_PRESS_MS,
- * 2026-11-14 用户确认这个时长刚好)。也晚于输入框自身「长按之后的拖动归编辑器」的 350ms 分界
- * (composerResize 的 COMPOSER_BODY_DRAG_LONG_PRESS_MS),长按成立时竖向拖拽手势已经放手。
+ * 手机端长按成立所需时间(2026-11-15 用户要求缩短等待)。取输入框自身
+ * 「长按之后的拖动归编辑器」的 350ms 分界(composerResize 的
+ * COMPOSER_BODY_DRAG_LONG_PRESS_MS),到达此时竖向拖拽判定已拒绝接管。
  */
-export const VOICE_HOLD_DELAY_MS = 450;
+export const VOICE_HOLD_DELAY_MS = 350;
 
 /**
  * 按压保持范围:按住态里手指会滑到屏幕别处的区域,不能因为离开输入框
