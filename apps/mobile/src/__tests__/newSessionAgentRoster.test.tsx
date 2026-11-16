@@ -56,6 +56,22 @@ it('keeps confirmed tabs during refresh/failure, then applies actual harness cha
   expect(page.visible).toEqual(['codex', 'pi']);
 });
 
+// Bug: a failed Cursor capability read discarded a successful host roster and
+// restored hidden Pi through the unknown-roster fallback. Existing cases only
+// fail the roster read. Minimum input: [codex,cursor], capability rejection.
+// Tier: unit; exercise the production hook and visible option filtering.
+it('keeps host harness preferences when the Cursor capability read fails', async () => {
+  const page = mount();
+  page.bindings.maker.getCapabilities.mockRejectedValue(new Error('unsupported'));
+  await page.render();
+  await act(async () => page.read.resolve(['codex', 'cursor']));
+  expect(page.visible).toEqual(['codex']);
+  page.bindings.maker.getCapabilities.mockResolvedValue({ supportsControlledCursorCreation: true });
+  await page.refresh();
+  await act(async () => page.read.resolve(['codex', 'cursor']));
+  expect(page.visible).toEqual(['codex', 'cursor']);
+});
+
 it.each(['device', 'account'] as const)('isolates %s changes and ignores late old responses', async (kind) => {
   const page = mount();
   await page.render();

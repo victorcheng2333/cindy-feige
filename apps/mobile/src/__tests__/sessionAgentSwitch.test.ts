@@ -26,8 +26,11 @@ describe('mobile session Agent switch contract', () => {
     expect(sessionSwitchAgentKinds(available, 'codex', canSwitchSessionToCursor(task))).toEqual(['codex', 'cursor']);
     expect(sessionSwitchAgentKinds(new Set(['codex']), 'codex', true)).toEqual(['codex']);
     expect(sessionSwitchAgentKinds(new Set(['codex']), 'cursor', false)).toEqual(['codex', 'cursor']);
+    // Shared Claude/Codex/Pi still hand off to local Cursor; SSH / Orca / review do not.
+    expect(canSwitchSessionToCursor({ ...task, agentDeviceId: 'another-computer' })).toBe(true);
+    expect(sessionSwitchAgentKinds(available, 'codex', true)).toEqual(['codex', 'cursor']);
     for (const restricted of [
-      { ...task, remoteHostId: 'ssh' }, { ...task, agentDeviceId: 'another-computer' },
+      { ...task, remoteHostId: 'ssh' },
       { ...task, orcaRole: 'lead' }, { ...task, source: 'review' },
       { ...task, orcaRemoteLead: { leadDeviceId: 'lead' } },
     ]) {

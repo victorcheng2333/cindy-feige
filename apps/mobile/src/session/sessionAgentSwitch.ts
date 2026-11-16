@@ -7,11 +7,12 @@ import type { RemoteSession, RemoteSessionAgentSwitchIntent } from './types';
 
 export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
 
-/** Match the host's ordinary-task handoff scope; execution still checks host authority. */
+/** Match the host's ordinary-task handoff scope; execution still checks host authority.
+ * A borrowed Claude/Codex/Pi source (`agentDeviceId`) can still hand off to local Cursor. */
 export function canSwitchSessionToCursor(
   session: Pick<RemoteSession, 'remoteHostId' | 'agentDeviceId' | 'orcaRole' | 'orcaRemoteLead' | 'source'>,
 ): boolean {
-  return !session.remoteHostId && !session.agentDeviceId && !session.orcaRole && !session.orcaRemoteLead
+  return !session.remoteHostId && !session.orcaRole && !session.orcaRemoteLead
     && (!session.source || session.source === 'desktop');
 }
 

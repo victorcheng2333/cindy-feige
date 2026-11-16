@@ -9514,9 +9514,13 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!canUseRemoteSessionControls || !currentSession || controlBusy) return false;
     // 远程 Agent:这一行来自哪台电脑的目录(null = 被控电脑),能力就按那份目录核对
     // (同 id 模型两台电脑的档位 / Fast 可以不同)。
-    const catalogDeviceId = source?.deviceId ?? null;
-    if (config.agent === 'cursor' && (catalogDeviceId
-      || (sessionAgentKind !== 'cursor' && !canSwitchSessionToCursor(currentSession)))) return false;
+    // Cursor always runs on the task computer. Ignore a borrowed catalog's device
+    // so a shared Claude task can hand off to local Cursor.
+    let catalogDeviceId = source?.deviceId ?? null;
+    if (config.agent === 'cursor') {
+      if (sessionAgentKind !== 'cursor' && !canSwitchSessionToCursor(currentSession)) return false;
+      catalogDeviceId = null;
+    }
     const catalogProviders = catalogDeviceId
       ? (remoteAgentCatalogs.find((item) => item.deviceId === catalogDeviceId)?.providers ?? [])
         : composerDeviceProviders.providers;

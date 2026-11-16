@@ -125,9 +125,31 @@ describe('Cursor model picker admission', () => {
   });
 
   it.each([
-    { source: 'cc', target: 'cursor', device: 'other-device' },
+    { source: 'cc', rowDevice: 'shared-mac' as string | undefined, requestDevice: undefined as string | undefined },
+    { source: 'cc', rowDevice: 'shared-mac', requestDevice: 'shared-mac' },
+    { source: 'codex', rowDevice: 'shared-mac', requestDevice: undefined },
+  ])('hands shared $source history to local Cursor instead of inheriting $rowDevice', async ({ source, rowDevice, requestDevice }) => {
+    const { deps } = makeDeps({
+      getSessionRow: vi.fn(async () => makeRow({ agentKind: source, agentDeviceId: rowDevice })),
+    });
+    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
+    await expect(ipc.invoke(
+      MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', 'cursor', 'grok', 'cursor', 'high', false,
+      requestDevice ? { agentDeviceId: requestDevice } : undefined,
+    )).resolves.toMatchObject({ switched: true, agentKind: 'cursor', engineReady: true });
+    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
+      agentKind: 'cursor', agentDeviceId: null, sdkSessionId: null,
+    }));
+    expect(deps.insertBoundaryMessage).toHaveBeenCalledWith('s1', expect.objectContaining({
+      fromAgentKind: source, toAgentKind: 'cursor', handoff: expect.stringContaining('你好'),
+    }));
+    expect(deps.setPendingHandoff).toHaveBeenCalledWith('s1', expect.stringContaining('Cursor'), undefined);
+    expect(deps.bootstrapSwitchedSession).toHaveBeenCalled();
+  });
+
+  it.each([
     { source: 'cursor', target: 'cursor', device: 'other-device' },
-  ])('rejects unsupported Cursor handoff $source to $target ($device)', async ({ source, target, device }) => {
+  ])('rejects moving Cursor from $source to $target ($device)', async ({ source, target, device }) => {
     const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
     const { deps, calls } = makeDeps({ getSessionRow: vi.fn(async () => makeRow({ agentKind: source })), selectSameAgentModel });
     const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);

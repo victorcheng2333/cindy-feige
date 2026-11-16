@@ -2265,15 +2265,25 @@ export function ChatInput({
   // 撤掉新会话工具条的 AgentSelect 后,它的 hiddenVendors 门禁就落到这里:Pi 二进制缺失
   // 时模型目录照样投影 Pi 模型,只看目录会让用户一路选到 requireAgent 的 not-registered。
   // 未加载完成 → 传 undefined；只有已有任务保留当前引擎，新任务严格按可选清单。
+  // Cursor's account/runtime belong to the task host, not the borrowed catalog.
+  // Other engines can still execute on the provider computer (e.g. shared Pi
+  // without Pi installed locally), so keep their existing catalog-scoped roster.
+  const taskComputerAgents = useAvailableAgents(deviceLinkDeviceId ?? undefined);
   const { availableVendors: runtimeAvailableVendors, loaded: runtimeAgentsLoaded } =
     useAvailableAgents(catalogDeviceId);
   const unifiedAgents = useMemo<readonly AgentKind[] | undefined>(() => {
     if (!runtimeAgentsLoaded) return undefined;
     const kinds = UNIFIED_AGENT_KINDS.filter(
-      (kind) => (!!sessionId && kind === agentKind) || runtimeAvailableVendors.has(agentKindToVendor(kind)),
+      (kind) => {
+        if (sessionId && kind === 'cursor') {
+          return kind === agentKind || !taskComputerAgents.loaded || taskComputerAgents.availableVendors.has('cursor');
+        }
+        return (!!sessionId && kind === agentKind) || runtimeAvailableVendors.has(agentKindToVendor(kind));
+      },
     );
     return kinds;
-  }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId]);
+  }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId,
+    taskComputerAgents.loaded, taskComputerAgents.availableVendors]);
   // 已有 device-link 任务在断链时仍有 pinned deviceId + renderer outbox 可接住发送，
   // 不能因为被控端 provider 目录暂时拉不到就禁用 composer。远程草稿没有既有 session
   // 可以排队，仍与本地任务一样保留来源门禁。

@@ -781,6 +781,9 @@ export async function performSessionAgentSwitch(
     throwIpcError('INVALID_PARAMS', 'agentDeviceId must be a device id or null');
   }
   let requestedAgentDeviceId = rawAgentDeviceId as string | null | undefined;
+  // Cursor always runs on the task computer. A borrowed Claude/Codex/Pi source must
+  // not become Cursor's destination — same as starting an unvisited harness locally.
+  if (targetAgentKind === 'cursor') requestedAgentDeviceId = null;
   // 必须在第一个 await 前快照：跨窗口 / 跨设备写入即使 set→clear 回到同值，修订号也会变化。
   const pendingRevisionAtStart = deps.pendingSwitches?.revision?.(sessionId);
   let normalizedProviderId =
@@ -808,14 +811,16 @@ export async function performSessionAgentSwitch(
     throwIpcError('NOT_FOUND', `Session ${sessionId} not found`);
   }
   // Local Cursor uses the shared bounded handoff and parked-thread resume flow.
-  // Moving its runtime between computers is still unsupported.
-  if ((row.agentKind === 'cursor' || targetAgentKind === 'cursor') && (
-    row.agentDeviceId || requestedAgentDeviceId
-  )) {
+  // Moving an already-Cursor runtime between computers is still unsupported.
+  // Switching *to* Cursor from a borrowed source is allowed: destination is local.
+  if (row.agentKind === 'cursor' && (row.agentDeviceId || rawAgentDeviceId)) {
     throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires execution on the task computer');
   }
   if (targetAgentKind === 'cursor') {
-    assertCursorTaskCreationAllowed(row);
+    assertCursorTaskCreationAllowed({
+      remoteHostId: row.remoteHostId,
+      orcaRole: row.orcaRole,
+    });
     if (row.agentKind !== 'cursor') {
       if (row.orcaRemoteLead || (row.source && row.source !== 'desktop')) {
         throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor handoff supports ordinary desktop tasks only');

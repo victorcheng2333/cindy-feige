@@ -45,6 +45,7 @@ const h = vi.hoisted(() => ({ t: (key: string) => key, confirm: vi.fn(), editor:
   prepare: vi.fn(),
   micGranted: true,
   realModelSelector: false,
+  scopedAgentRoster: false,
   listAgentSkills: vi.fn(),
   localProviders: [] as ProviderView[],
   deviceProviders: [] as ProviderView[],
@@ -117,7 +118,9 @@ vi.mock('@/hooks/useDeviceProviders', () => ({ useDeviceProviders: (deviceId?: s
 vi.mock('@/hooks/useDevicesProviders', () => ({ useDevicesProviders: (ids: readonly string[]) =>
   new Map(ids.map(id => [id, { providers: h.deviceProviders, loading: false, error: null }])) }));
 vi.mock('@/hooks/useConnectedSource', () => ({ useConnectedSource: () => ({ hasConnectedSource: true, loading: false }) }));
-vi.mock('@/hooks/useAvailableAgents', () => ({ useAvailableAgents: () => ({ agents: [], loading: false }) }));
+vi.mock('@/hooks/useAvailableAgents', () => ({ useAvailableAgents: (deviceId?: string) => h.scopedAgentRoster
+  ? { availableVendors: new Set(deviceId ? ['cc', 'pi'] : ['cc', 'cursor']), loaded: true }
+  : { agents: [], loading: false } }));
 vi.mock('@/hooks/useAgentCapabilities', async (original) => ({ ...await original<typeof import('@/hooks/useAgentCapabilities')>(), useAgentCapabilities: (_agent: unknown, deviceId?: string) => ({
   capabilities: deviceId === 'share:composer' ? { availableModels: [], effortLevels: [], hasFastMode: false } : null,
   loading: false,
@@ -176,6 +179,7 @@ beforeEach(() => {
   h.prepare.mockClear();
   h.micGranted = true;
   h.realModelSelector = false;
+  h.scopedAgentRoster = false;
   h.cancel.mockReset().mockResolvedValue(undefined);
   h.atPanel = null;
   h.scan.mockReset().mockResolvedValue({ success: true, items: [], truncated: false });
@@ -561,6 +565,30 @@ it('returns focus to the editor after choosing a model from the real selector', 
   await waitFor(() => expect(screen.queryByRole('listbox', { name: 'newChat.modelSelector.modelListAria' })).toBeNull());
   await waitFor(() => expect(onModelDidChange).toHaveBeenCalledExactlyOnceWith('remote-new'));
   await waitFor(() => expect(document.activeElement).toBe(h.editor!.view.dom));
+});
+
+// Unit regression 2026-11-16: the installed app hid local Cursor while borrowing
+// Claude. Picker-only tests supply the roster and miss ChatInput's device choice.
+// Minimum input: a shared Claude task, shared cc/pi roster, local cc/cursor roster.
+// Assert the visible tab through the real composer/picker, not a supplied roster.
+it('offers task-computer Cursor when the borrowed Claude computer has no Cursor', async () => {
+  h.realModelSelector = true;
+  h.scopedAgentRoster = true;
+  supplyRangeGeometry();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  h.localProviders = [sshProvider('local', [sshModel('local-model')], 'claude-code')];
+  h.deviceProviders = [sshProvider('shared', [sshModel('shared-model')], 'claude-code')];
+  renderComposer({
+    sessionId: 'borrowed-claude-cursor', runtimeAgentKind: 'claude-code', sessionOrcaRole: null,
+    agentDeviceId: 'share:composer', vendorKey: 'cc',
+    initialModel: 'shared-model', initialProviderId: 'shared', initialEffort: 'high',
+    hideRuntimeControls: false,
+    remoteAgentDevices: [{ deviceId: 'share:composer', name: 'Shared source' }],
+  });
+  fireEvent.click(screen.getByRole('button', { name: /newChat.modelSelector.trigger.ariaWithEffort/ }));
+  expect(screen.getByRole('tab', { name: 'Pi' })).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Cursor' })); });
+  expect(screen.getByRole('tab', { name: 'Cursor' }).getAttribute('aria-selected')).toBe('true');
 });
 
 // Regression: ChatInput gated remote catalogs and draft selection on the disabled

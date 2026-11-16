@@ -32,7 +32,10 @@ export function useNewSessionAgentRoster(p: {
       const agents = await maker.listAvailableAgents();
       if (cancelled) return null;
       if (!agents.includes('cursor')) return agents;
-      const cursor = normalizeMobileAgentCapabilities(await maker.getCapabilities('cursor'));
+      // Cursor creation is a separate capability check. Its failure must not
+      // discard the host's successful roster (and restore a hidden Pi via the
+      // unknown-roster fallback). Recheck on the existing recovery/focus events.
+      const cursor = normalizeMobileAgentCapabilities(await maker.getCapabilities('cursor').catch(() => null));
       return cursor?.supportsControlledCursorCreation ? agents : agents.filter(agent => agent !== 'cursor');
     }).then((agents) => {
       if (cancelled || !agents) return;
