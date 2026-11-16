@@ -1149,7 +1149,11 @@
     },
     "hintWindows": "Presiona cualquier tecla para bloquear; desbloquea con Windows Hello o tu contraseña",
     "hintLinux": "Presiona cualquier tecla para bloquear; desbloquea con tu contraseña",
-    "verifyReason": "quitar la pantalla de privacidad"
+    "verifyReason": "quitar la pantalla de privacidad",
+    "lockedUse": {
+      "status": "Cindy está usando este Mac mientras está bloqueado",
+      "hint": "Toca cualquier cosa para bloquearlo al instante"
+    }
   },
   "appBadge": {
     "attentionCount": "Tareas que requieren atención: {{count}}"
@@ -2591,6 +2595,16 @@
         },
         "hintWindows": "Cuando la IA necesita la pantalla, esta computadora no la apaga ni se bloquea. Una pantalla de privacidad la cubre y la IA sigue trabajando detrás. Al presionar una tecla o hacer clic se bloquea de inmediato; desbloquéala con Windows Hello o tu contraseña. Si no hay tareas en curso, la pantalla se apaga y se bloquea como siempre. Al terminar un control remoto, la pantalla de privacidad también protege esta computadora.",
         "hintLinux": "Cuando la IA necesita la pantalla, esta computadora no la apaga ni se bloquea. Una pantalla de privacidad la cubre y la IA sigue trabajando detrás. Al presionar una tecla o hacer clic se bloquea de inmediato; desbloquéala con tu contraseña. Si no hay tareas en curso, la pantalla se apaga y se bloquea como siempre. Al terminar un control remoto, la pantalla de privacidad también protege esta computadora."
+      },
+      "lockedUse": {
+        "label": "Dejar que la IA siga usando este Mac aunque esté bloqueado",
+        "hint": "Cuando este Mac está bloqueado y una tarea en curso necesita la pantalla, Cindy primero la cubre con la pantalla de privacidad y luego la desbloquea con la contraseña de inicio de sesión que guardaste. Vuelve a bloquearse cuando la tarea termina o alguien toca el Mac. La contraseña se guarda cifrada solo en este Mac.",
+        "settingUp": "Introduce la contraseña de inicio de sesión de este Mac en la ventana que aparece.",
+        "permission": "Permite cindy-macos-remote-credentials en Ajustes del Sistema > Privacidad y seguridad > Accesibilidad para que pueda introducir la contraseña en la pantalla de bloqueo. Hasta entonces, no se desbloquea nada automáticamente.",
+        "paused": "Alguien tocó el Mac, así que el desbloqueo automático está en pausa. Se reanuda cuando lo desbloquees tú una vez.",
+        "needsSetup": "Tu contraseña de inicio de sesión cambió. Vuelve a activar este ajuste.",
+        "errorPassword": "La contraseña no es correcta. El ajuste sigue desactivado.",
+        "errorUnavailable": "No se puede activar ahora. Reinicia Cindy y vuelve a intentarlo."
       }
     },
     "agentIsland": {

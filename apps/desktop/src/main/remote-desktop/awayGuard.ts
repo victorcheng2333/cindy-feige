@@ -45,6 +45,12 @@ export interface AwayGuardDeps {
   hideMasks(): void;
   now(): number;
   log(event: string, detail?: Record<string, unknown>): void;
+  /**
+   * A Locked use cover ended by itself (docs/product-rules/locked-use.md): `touched` when
+   * physical input or a mask failure ended it (the helper locks), `locked` when the system
+   * locked by other means.
+   */
+  lockedUseEnded?(reason: 'touched' | 'locked'): void;
 }
 
 /** After masks fail to start, fall back to the system lock instead of retrying every tick. */
@@ -92,6 +98,8 @@ export class AwayGuardController {
   private displayAddedWhileShowing = false;
   private ticking = false;
   private remoteExit = false;
+  /** Covering for Locked use: stays up on a locked screen until Cindy unlocks behind it. */
+  private lockedUse = false;
   private showing: Promise<boolean> | null = null;
 
   constructor(private readonly deps: AwayGuardDeps) {
@@ -149,6 +157,49 @@ export class AwayGuardController {
     }
   }
 
+  /**
+   * Locked use: cover every display, also on a locked screen, so the desktop is already
+   * covered when Cindy unlocks it. Rejects unless the masks are up and the helper is
+   * consuming physical input; nothing may be unlocked then.
+   */
+  async coverLockedUse(): Promise<void> {
+    if (this.mask === 'ending') throw new Error('DESKTOP_LOCK_PENDING');
+    this.lockedUse = true;
+    this.previewUntil = 0;
+    this.remoteExit = false;
+    try {
+      if (this.mask !== 'shown') await this.show();
+      if (!this.inputShielded || !this.lockedUse) throw new Error('DESKTOP_PRIVACY_UNAVAILABLE');
+      this.deps.keepDisplayAwake(true);
+    } catch (error) {
+      this.lockedUse = false;
+      throw error;
+    }
+  }
+
+  /** The Locked use cover is up (the screen may still be locked behind it). */
+  get lockedUseCovered(): boolean {
+    return this.lockedUse && this.mask === 'shown';
+  }
+
+  /**
+   * Locked use is over: the Mac was locked before, so it is locked again whatever the
+   * privacy-screen setting says. Still locked (the unlock never happened): just uncover.
+   */
+  async endLockedUse(reason: string): Promise<void> {
+    if (!this.lockedUse) return;
+    this.lockedUse = false;
+    if (this.mask === 'none' || this.mask === 'ending') return;
+    if (this.deps.screenLocked()) {
+      this.mask = 'none';
+      this.deps.hideMasks();
+      this.deps.keepDisplayAwake(false);
+      this.deps.log('masks released', { reason: 'locked use ended while locked' });
+      return;
+    }
+    await this.end(true, reason);
+  }
+
   /** Share a mask startup with previews, the idle timer and remote exit. */
   private show(): Promise<boolean> {
     if (this.showing) return this.showing;
@@ -174,6 +225,10 @@ export class AwayGuardController {
    * on the black cover, unlocked 1.6 s later, cover still there).
    */
   screenLockedNow(): void {
+    if (this.lockedUse) {
+      this.lockedUse = false;
+      this.deps.lockedUseEnded?.('locked');
+    }
     this.remoteExit = false;
     this.previewUntil = 0;
     this.ownerInputAt = this.deps.now();
@@ -189,6 +244,10 @@ export class AwayGuardController {
   masksEnded(): void {
     this.remoteExit = false;
     this.previewUntil = 0;
+    if (this.lockedUse) {
+      this.lockedUse = false;
+      this.deps.lockedUseEnded?.('touched');
+    }
     if (this.mask === 'none') return;
     this.mask = 'none';
     // Whoever touched this Mac counts as present: never re-cover right away.
@@ -222,6 +281,8 @@ export class AwayGuardController {
     const { deps } = this;
     // A preview is still putting its masks up; let it finish first.
     if (this.mask === 'showing') return;
+    // Locked use owns this cover until it ends (locked or unlocked behind it).
+    if (this.lockedUse && this.mask === 'shown') return deps.keepDisplayAwake(true);
     const now = deps.now();
     if (deps.screenLocked()) {
       // The owner unlocking starts a fresh absence period.
@@ -285,6 +346,7 @@ export class AwayGuardController {
   private async end(lock: boolean, reason: string): Promise<void> {
     this.mask = 'ending';
     this.remoteExit = false;
+    this.lockedUse = false;
     this.previewUntil = 0;
     try {
       if (lock) await this.deps.lockAndHideMasks();

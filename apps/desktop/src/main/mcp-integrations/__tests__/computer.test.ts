@@ -130,6 +130,7 @@ import {
   getCuaDriverReleaseAssetName,
   resolveCuaDriverHostArch,
   getComputerMcpDeps,
+  setLockedDesktopPorts,
   getComputerDriverStatus,
   grantComputerDriverPermissions,
   installComputerDriver,
@@ -3652,6 +3653,28 @@ describe('computer mcp integration', () => {
     expect(prepareRuntimeBeforeUse.mock.invocationCallOrder[0]).toBeLessThan(
       mcpCallToolMock.mock.invocationCallOrder[0]!,
     );
+  });
+
+  // Locked use (docs/product-rules/locked-use.md): every local task call reports in before
+  // dispatch, also on an unlocked screen, so a task using the Mac it unlocked keeps it
+  // (before this, only locked-screen calls reported and the Mac relocked after two minutes).
+  // Plugin host calls never wake a locked Mac.
+  it('reports local task calls to Locked use before dispatch, never plugin calls', async () => {
+    const prepare = vi.fn(async () => undefined);
+    setLockedDesktopPorts({ prepare, hint: () => undefined });
+    try {
+      mcpCallToolMock.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"ok":true,"windows":[]}' }] });
+      const deps = getComputerMcpDeps({ isComputerUseEnabled: () => true });
+      await deps.callTool('list_windows', {}, { sessionId: 'session-locked-use' });
+      expect(prepare).toHaveBeenCalledWith('session-locked-use');
+      expect(prepare.mock.invocationCallOrder[0]).toBeLessThan(mcpCallToolMock.mock.invocationCallOrder[0]!);
+      await expect(deps.callTool('list_windows', {}, {
+        hostCaller: { kind: 'plugin', pluginId: 'p', dataOwnerId: 'o', ownerGeneration: 1 },
+      } as never)).rejects.toThrow('PERMISSION_DENIED');
+      expect(prepare).toHaveBeenCalledTimes(1);
+    } finally {
+      setLockedDesktopPorts(null);
+    }
   });
 
   it('prepares the runtime only once for subsequent tool calls', async () => {

@@ -1132,7 +1132,11 @@
     },
     "hintWindows": "Zum Sperren eine beliebige Taste drücken; entsperren mit Windows Hello oder deinem Passwort",
     "hintLinux": "Zum Sperren eine beliebige Taste drücken; entsperren mit deinem Passwort",
-    "verifyReason": "den Sichtschutz entfernen"
+    "verifyReason": "den Sichtschutz entfernen",
+    "lockedUse": {
+      "status": "Cindy nutzt diesen Mac im gesperrten Zustand",
+      "hint": "Eine Berührung sperrt sofort"
+    }
   },
   "appBadge": {
     "attentionCount": "Aufgaben, die Aufmerksamkeit benötigen: {{count}}"
@@ -2553,6 +2557,16 @@
         },
         "hintWindows": "Wenn die KI den Bildschirm braucht, schaltet dieser Computer den Bildschirm nicht aus und sperrt sich nicht. Ein Sichtschutz verdeckt ihn, und die KI arbeitet dahinter weiter. Ein Tastendruck oder Klick sperrt ihn sofort; entsperre ihn mit Windows Hello oder deinem Passwort. Ohne laufende Aufgaben geht der Bildschirm wie gewohnt aus und sperrt sich. Auch nach dem Ende einer Fernsteuerung schützt der Sichtschutz diesen Computer.",
         "hintLinux": "Wenn die KI den Bildschirm braucht, schaltet dieser Computer den Bildschirm nicht aus und sperrt sich nicht. Ein Sichtschutz verdeckt ihn, und die KI arbeitet dahinter weiter. Ein Tastendruck oder Klick sperrt ihn sofort; entsperre ihn mit deinem Passwort. Ohne laufende Aufgaben geht der Bildschirm wie gewohnt aus und sperrt sich. Auch nach dem Ende einer Fernsteuerung schützt der Sichtschutz diesen Computer."
+      },
+      "lockedUse": {
+        "label": "KI diesen Mac auch im gesperrten Zustand nutzen lassen",
+        "hint": "Ist dieser Mac gesperrt und braucht eine laufende Aufgabe den Bildschirm, deckt Cindy ihn zuerst mit dem Sichtschutz ab und entsperrt ihn dann mit deinem gespeicherten Anmeldepasswort. Ist die Aufgabe fertig oder berührt jemand den Mac, wird er wieder gesperrt. Das Passwort wird nur verschlüsselt auf diesem Mac gespeichert.",
+        "settingUp": "Gib im angezeigten Fenster das Anmeldepasswort dieses Macs ein.",
+        "permission": "Erlaube cindy-macos-remote-credentials unter Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen, damit das Passwort auf dem Sperrbildschirm eingegeben werden kann. Bis dahin wird nichts automatisch entsperrt.",
+        "paused": "Jemand hat den Mac berührt, daher ist das automatische Entsperren pausiert. Es geht weiter, nachdem du ihn einmal selbst entsperrt hast.",
+        "needsSetup": "Dein Anmeldepasswort hat sich geändert. Schalte diese Einstellung erneut ein.",
+        "errorPassword": "Das Passwort ist nicht korrekt. Die Einstellung bleibt aus.",
+        "errorUnavailable": "Das ist gerade nicht möglich. Starte Cindy neu und versuche es erneut."
       }
     },
     "agentIsland": {

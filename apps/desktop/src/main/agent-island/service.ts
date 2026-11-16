@@ -2093,6 +2093,12 @@ export class AgentIslandService {
     return count;
   }
 
+  /** This task is executing on this computer right now (same test as display demand). */
+  isLocalTaskRunning(sessionId: string): boolean {
+    const task = this.state.sessions.get(sessionId);
+    return task !== undefined && task.sourceDeviceId === null && task.running && task.phase === 'running';
+  }
+
   getLocalTaskActivitySnapshots(): AgentIslandSessionSnapshot[] {
     return buildAllSessionActivitySnapshots(this.state);
   }

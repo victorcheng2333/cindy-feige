@@ -6,6 +6,8 @@
  *  - 用隐私屏代替锁屏(awayGuard,支持的平台):AI 需要屏幕时不熄屏不锁屏,隐私屏遮住,
  *    有人碰就锁屏;远程结束后也用它保护。开着时「保持电脑唤醒」显示为已包含。
  *  - 离开多久后打开隐私屏:上一项开着才出现;Cindy 自己的选项加「跟随系统」。
+ *  - 锁屏后让 AI 继续使用这台电脑(lockedUse,macOS;docs/product-rules/locked-use.md):
+ *    打开时由签名助手弹出系统密码框,密码只加密保存在本机。
  * 遥控端只决定这一次连接什么时候保护,不在这里设置。
  */
 
@@ -17,6 +19,7 @@ import { SegmentedControl } from '@/components/ui/segmented-control';
 import { SETTINGS_HINT, SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
 import { useAwayGuardSetting } from '@/hooks/useAwayGuardSetting';
 import { useKeepAwakeSetting } from '@/hooks/useKeepAwakeSetting';
+import { useLockedUseSetting } from '@/hooks/useLockedUseSetting';
 import { isAwayGuardDelaySeconds } from '../../../shared/awayGuard';
 import { awayFromComputerSettings } from './AwayFromComputerSection.settings-search';
 import { BehaviorRow } from './BehaviorRow';
@@ -25,6 +28,7 @@ export function AwayFromComputerSection() {
   const { t } = useTranslation();
   const { keepAwake, setKeepAwake } = useKeepAwakeSetting();
   const awayGuard = useAwayGuardSetting();
+  const lockedUse = useLockedUseSetting();
   const privacyOn = awayGuard.available && awayGuard.state?.enabled === true;
   const platform = window.electronAPI?.platform;
   // Hyprland draws its cover in the compositor; there is no preview there yet.
@@ -138,6 +142,46 @@ export function AwayFromComputerSection() {
                 label: t(option.labelKey),
               }))}
             />
+          }
+        />
+      ),
+    });
+  }
+
+  if (lockedUse.available && lockedUse.state) {
+    const state = lockedUse.state;
+    const notes = [
+      state.error === 'password' ? 'settings.windowBehavior.lockedUse.errorPassword' : null,
+      state.error === 'unavailable' ? 'settings.windowBehavior.lockedUse.errorUnavailable' : null,
+      state.needsSetup ? 'settings.windowBehavior.lockedUse.needsSetup' : null,
+      state.enabled && state.accessibility === 'missing' ? 'settings.windowBehavior.lockedUse.permission' : null,
+      state.paused ? 'settings.windowBehavior.lockedUse.paused' : null,
+    ].filter((key): key is string => key !== null);
+    rows.push({
+      key: 'locked-use',
+      node: (
+        <BehaviorRow
+          id={awayFromComputerSettings.lockedUse.targetId}
+          data-setting-id={awayFromComputerSettings.lockedUse.id}
+          label={t(awayFromComputerSettings.lockedUse.titleKey)}
+          hint={t(awayFromComputerSettings.lockedUse.descriptionKey)}
+          checked={state.enabled}
+          disabled={lockedUse.busy}
+          onCheckedChange={(enabled) => void lockedUse.setEnabled(enabled)}
+          ariaLabel={t(awayFromComputerSettings.lockedUse.titleKey)}
+          note={
+            notes.length || lockedUse.busy ? (
+              <div className="flex flex-col items-start gap-1 pt-1" aria-live="polite">
+                {lockedUse.busy && !state.enabled ? (
+                  <p className={SETTINGS_HINT}>{t('settings.windowBehavior.lockedUse.settingUp')}</p>
+                ) : null}
+                {notes.map((key) => (
+                  <p key={key} className={SETTINGS_HINT} role="status">
+                    {t(key)}
+                  </p>
+                ))}
+              </div>
+            ) : undefined
           }
         />
       ),

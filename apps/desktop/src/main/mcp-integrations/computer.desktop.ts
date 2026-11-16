@@ -2,6 +2,12 @@ import { app, powerMonitor } from 'electron';
 import { outboundFetch } from '../maker-host/outbound-fetch.desktop.js';
 import { resolveDesktopOutboundProxy } from '../maker-host/outbound-proxy-resolver.js';
 import { createComputerRuntime } from './computer.js';
+
+/** Locked use (docs/product-rules/locked-use.md), registered by Main once it starts. */
+let lockedDesktop: { prepare(sessionId: string): Promise<void>; hint(): string | undefined } | null = null;
+export function setLockedDesktopPorts(ports: typeof lockedDesktop): void {
+  lockedDesktop = ports;
+}
 export type { ComputerDriverInstallResult, ComputerDriverUpdateCheck, ComputerDriverPermissionGrantResult, ComputerMcpDepsOptions, ActivityTimeoutOptions, CuaDriverReleaseAsset, ComputerDriverUpdateProgress } from './computer.js';
 export const {
   getComputerDriverAppBundlePath,
@@ -63,4 +69,7 @@ export const {
   },
   outboundFetch,
   resolveOutboundProxy: resolveDesktopOutboundProxy,
+  // A no-op until Main registers Locked use.
+  prepareLockedDesktop: async (sessionId) => { await lockedDesktop?.prepare(sessionId); },
+  lockedDesktopHint: () => lockedDesktop?.hint(),
 });

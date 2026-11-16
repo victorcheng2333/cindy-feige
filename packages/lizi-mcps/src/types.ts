@@ -831,7 +831,11 @@ export interface ComputerMcpDeps {
    * Host-side desktop facts the driver cannot report: whether the screen is
    * locked. Used to name the reason when an observation produces nothing.
    */
-  describeDesktop?(): Promise<{ screen_locked?: boolean }>;
+  /**
+   * Host desktop facts. `locked_hint` says why a locked screen stays locked for this task
+   * (Locked use, docs/product-rules/locked-use.md); host-written, never model text.
+   */
+  describeDesktop?(): Promise<{ screen_locked?: boolean; locked_hint?: string }>;
   logger?: LiziMcpLogger;
 }
 

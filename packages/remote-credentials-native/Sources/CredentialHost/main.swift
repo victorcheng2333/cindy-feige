@@ -21,6 +21,8 @@ struct CredentialHostMain {
       CommandLine.arguments.count == 2, CommandLine.arguments[1].hasPrefix("/") else { exit(77) }
     let host = HostCredentialServer(directory: URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true))
     let viewer = MobileCredentialClient(storageDirectory: URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true).appendingPathComponent("viewer"))
+    // Locked use keeps its own installation marker, so its Keychain namespace never overlaps remote unlock.
+    let lockedUse = MacLockedUse(directory: URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true).appendingPathComponent("locked-use"))
     let input = AsyncStream<Data>(bufferingPolicy: .bufferingOldest(64)) { continuation in
       DispatchQueue(label: "cindy.credential.stdin").async {
         var buffer = Data()
@@ -73,6 +75,11 @@ struct CredentialHostMain {
           result = try host.response(peer: string("peer"), handle: string("handle"), id: string("requestId"),
             body: string("body"), success: success)
         case "status": result = host.status()
+        case "lockedUseStatus": result = try lockedUse.status()
+        case "lockedUseSetup": result = try await lockedUse.setup(locale: string("locale"), theme: string("theme"))
+        case "lockedUseForget": try lockedUse.forget(); result = true
+        case "lockedUseUnlock": result = try await lockedUse.unlock()
+        case "lockedUseCancel": lockedUse.cancel(); result = true
         case "close": host.close(peer: try string("peer")); result = true
         case "closeAll": host.closeAll(); result = true
         case "reset": host.reset(); result = true
@@ -88,7 +95,7 @@ struct CredentialHostMain {
     for await line in input {
       let value = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
       let method = value?["method"] as? String
-      if let method, ["configure", "relayHeaders", "begin", "receive", "viewerConfigure", "viewerBegin", "viewerPassword", "viewerBiometric"].contains(method) {
+      if let method, ["configure", "relayHeaders", "begin", "receive", "viewerConfigure", "viewerBegin", "viewerPassword", "viewerBiometric", "lockedUseSetup", "lockedUseUnlock"].contains(method) {
         // Setup and OS unlock await independently. Status and close must remain
         // serviceable while an authentication attempt is awaiting loginwindow.
         guard networkJobs.count < 8 else {
@@ -100,6 +107,7 @@ struct CredentialHostMain {
       } else { await process(line) }
     }
     for job in networkJobs.values { job.cancel() }
+    lockedUse.cancel()
     host.reset()
     viewer.reset()
   }

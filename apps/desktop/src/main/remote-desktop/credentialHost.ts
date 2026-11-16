@@ -166,6 +166,22 @@ export class RemoteCredentialHost {
     );
   }
 
+  /**
+   * Locked use (docs/product-rules/locked-use.md), macOS only: this Mac's own saved login
+   * password. The password stays inside the signed helper; Main only sees fixed results.
+   */
+  async lockedUseCall(
+    realm: 'global' | 'cn',
+    method: 'lockedUseStatus' | 'lockedUseSetup' | 'lockedUseForget' | 'lockedUseUnlock' | 'lockedUseCancel',
+    args: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    if (process.platform !== 'darwin') throw new Error('CREDENTIAL_UNAVAILABLE');
+    this.configuredRealm ??= realm;
+    // Setup waits for the owner typing; unlock includes waking the display and loginwindow.
+    const timeout = method === 'lockedUseSetup' ? 300_000 : method === 'lockedUseUnlock' ? 45_000 : 20_000;
+    return this.call(method, args, timeout);
+  }
+
   authenticationSession(peer: string): string | null {
     return performance.now() < this.validUntil ? (this.sessions[peer] ?? null) : null;
   }

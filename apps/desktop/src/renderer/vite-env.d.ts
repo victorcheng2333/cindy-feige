@@ -2045,6 +2045,8 @@ interface ElectronAPI {
       delaySeconds: import('../shared/awayGuard').AwayGuardDelaySeconds | null,
     ) => Promise<import('../shared/awayGuard').AwayGuardState>;
     previewAwayGuard: () => Promise<import('../shared/awayGuard').AwayGuardPreviewResult>;
+    getLockedUseState: () => Promise<import('../shared/lockedUse').LockedUseState>;
+    setLockedUseEnabled: (enabled: boolean) => Promise<import('../shared/lockedUse').LockedUseState>;
     setSwallowActivationClick: (enabled: boolean) => Promise<{ ok: true }>;
     getWindowsCloseBehavior: () => Promise<'quit' | 'tray' | null>;
     setWindowsCloseBehavior: (behavior: 'quit' | 'tray') => Promise<'quit' | 'tray'>;

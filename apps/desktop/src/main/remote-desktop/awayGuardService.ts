@@ -149,6 +149,49 @@ export async function coverRemoteDesktopExit(): Promise<void> {
   await controller.coverRemoteExit();
 }
 
+let prepareLockedUseCover: (() => void) | null = null;
+let lockedUseCovering = false;
+/**
+ * The masks up now were put up by Locked use. Its own unlock behind them is not the owner
+ * coming back, so ending them must lock for real (2026-11-16 real-device test: the #10665
+ * "unlocked meanwhile" shortcut took Cindy's own unlock for the owner and uncovered an
+ * unlocked desktop when the task finished).
+ */
+let lockedUseOwnsCover = false;
+let lockedUseEndedListener: ((reason: 'touched' | 'locked') => void) | null = null;
+
+/** Locked use (docs/product-rules/locked-use.md) is told when its cover ends by itself. */
+export function onLockedUseCoverEnded(listener: ((reason: 'touched' | 'locked') => void) | null): void {
+  lockedUseEndedListener = listener;
+}
+
+/**
+ * Cover every display for Locked use, on the locked screen, before anything unlocks it.
+ * Rejects when the masks or the physical input guard are not up.
+ */
+export async function coverForLockedUse(): Promise<void> {
+  const target = controller;
+  if (!target || !supportsAwayGuard() || process.platform !== 'darwin') throw new Error('DESKTOP_PRIVACY_UNAVAILABLE');
+  prepareLockedUseCover?.();
+  lockedUseCovering = true;
+  try {
+    await target.coverLockedUse();
+    lockedUseOwnsCover = true;
+  } finally {
+    lockedUseCovering = false;
+  }
+}
+
+/** The Locked use cover is up and still owned by Locked use. */
+export function isLockedUseCovered(): boolean {
+  return controller?.lockedUseCovered === true;
+}
+
+/** End Locked use: lock again (or just uncover when the screen never unlocked). */
+export async function endLockedUseCover(reason: string): Promise<void> {
+  await controller?.endLockedUse(reason);
+}
+
 let holdLockFailure: (() => void) | null = null;
 /**
  * A lock someone at this computer asked for was not confirmed (local privacy exit):
@@ -325,6 +368,14 @@ export function startAwayGuard(deps: AwayGuardServiceDeps): void {
     controller?.screenLockedNow();
   });
   holdLockFailure = holdUntilLocked;
+  // Masks left fading out under a recent lock screen must not be removed later from under
+  // a new Locked use cover: drop them now (the screen is locked) and start clean.
+  prepareLockedUseCover = () => {
+    if (!settleTimer) return;
+    clearTimeout(settleTimer);
+    settleTimer = null;
+    masks.stop();
+  };
 
   const masks = new PrivacyScreen(
     // Persistent covers must also be excluded when a viewer reconnects.
@@ -332,10 +383,12 @@ export function startAwayGuard(deps: AwayGuardServiceDeps): void {
     // The helper or a mask ended on its own: never leave the desktop without a lock.
     async (): Promise<false | void> => {
       const transition = coverLockTransition;
-      const locked = helperLocked || transition !== lockTransition || (await lockNow());
+      const ownUnlock = lockedUseOwnsCover;
+      const unlockedSince = () => !ownUnlock && transition !== lockTransition;
+      const locked = helperLocked || unlockedSince() || (await lockNow());
       controller?.masksEnded();
       // The system unlocked meanwhile: the owner passed it, so uncover now (#10665).
-      if (transition !== lockTransition && !lockScreenUp) return;
+      if (unlockedSince() && !lockScreenUp) return;
       if (locked) {
         stopMasksUnderLockScreen();
         return false;
@@ -362,10 +415,12 @@ export function startAwayGuard(deps: AwayGuardServiceDeps): void {
       return watched;
     },
     {
-      html: () => privacyScreenHtml(
-        t('awayGuard.status'),
-        t(process.platform === 'win32' ? 'awayGuard.hintWindows' : 'awayGuard.hint'),
-      ),
+      html: () => lockedUseCovering
+        ? privacyScreenHtml(t('awayGuard.lockedUse.status'), t('awayGuard.lockedUse.hint'))
+        : privacyScreenHtml(
+          t('awayGuard.status'),
+          t(process.platform === 'win32' ? 'awayGuard.hintWindows' : 'awayGuard.hint'),
+        ),
       nonActivating: true,
       // No new UI or native permission: the held mask already catches local clicks.
       // If the helper cannot re-arm, the next click still retries lock + verification.
@@ -415,6 +470,7 @@ export function startAwayGuard(deps: AwayGuardServiceDeps): void {
       }
       const current = ++generation;
       coverLockTransition = lockTransition;
+      lockedUseOwnsCover = lockedUseCovering;
       restoreWindow = BrowserWindow.getFocusedWindow();
       try {
         await masks.set(true, () => current === generation);
@@ -426,18 +482,21 @@ export function startAwayGuard(deps: AwayGuardServiceDeps): void {
     lockAndHideMasks: async () => {
       generation++;
       const transition = coverLockTransition;
+      // Cindy's own Locked use unlock never counts as the owner coming back: always lock.
+      const ownUnlock = lockedUseOwnsCover;
+      const unlockedSince = () => !ownUnlock && transition !== lockTransition;
       // Do not send another lock shortcut after an intervening OS unlock.
       const locked =
-        transition !== lockTransition ||
+        unlockedSince() ||
         (monitor ? await monitor.lock() : false) ||
-        transition !== lockTransition ||
+        unlockedSince() ||
         (await lockNow());
-      if (!locked && transition === lockTransition) {
+      if (!locked && !unlockedSince()) {
         holdUntilLocked();
         throw new Error('DESKTOP_LOCK_FAILED');
       }
       // Unlocked in between (#10665): no lock screen will cover the desktop, uncover now.
-      if (transition !== lockTransition && !lockScreenUp) return masks.stop();
+      if (unlockedSince() && !lockScreenUp) return masks.stop();
       stopMasksUnderLockScreen();
     },
     hideMasks: () => {
@@ -450,6 +509,7 @@ export function startAwayGuard(deps: AwayGuardServiceDeps): void {
     },
     now: Date.now,
     log: (event, detail) => log.info(event, detail ?? {}),
+    lockedUseEnded: (reason) => lockedUseEndedListener?.(reason),
   });
 
   screen.on('display-added', () => void controller?.displaysChanged());

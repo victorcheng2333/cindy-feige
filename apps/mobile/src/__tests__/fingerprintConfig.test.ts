@@ -72,7 +72,7 @@ describe("remote credentials fingerprint boundary", () => {
       const files: string[] = config.ignorePaths.filter((path: string) =>
         path.endsWith(".swift"),
       );
-      expect(files).toHaveLength(6);
+      expect(files).toHaveLength(7);
       for (const file of files) {
         const lines = readFileSync(resolve(projectRoot, file), "utf8")
           .trim()

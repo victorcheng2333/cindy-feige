@@ -1149,7 +1149,11 @@
     },
     "hintWindows": "Pressione qualquer tecla para bloquear; desbloqueie com o Windows Hello ou sua senha",
     "hintLinux": "Pressione qualquer tecla para bloquear; desbloqueie com sua senha",
-    "verifyReason": "remover a tela de privacidade"
+    "verifyReason": "remover a tela de privacidade",
+    "lockedUse": {
+      "status": "O Cindy está usando este Mac enquanto ele está bloqueado",
+      "hint": "Toque em qualquer coisa para bloquear na hora"
+    }
   },
   "appBadge": {
     "attentionCount": "Tarefas que precisam de atenção: {{count}}"
@@ -2591,6 +2595,16 @@
         },
         "hintWindows": "Quando a IA precisa da tela, este computador não a desliga nem se bloqueia. Uma tela de privacidade a cobre e a IA continua trabalhando por trás. Pressionar uma tecla ou clicar bloqueia na hora; desbloqueie com o Windows Hello ou sua senha. Sem tarefas em andamento, a tela apaga e bloqueia como de costume. Ao fim de um controle remoto, a tela de privacidade também protege este computador.",
         "hintLinux": "Quando a IA precisa da tela, este computador não a desliga nem se bloqueia. Uma tela de privacidade a cobre e a IA continua trabalhando por trás. Pressionar uma tecla ou clicar bloqueia na hora; desbloqueie com sua senha. Sem tarefas em andamento, a tela apaga e bloqueia como de costume. Ao fim de um controle remoto, a tela de privacidade também protege este computador."
+      },
+      "lockedUse": {
+        "label": "Deixar a IA continuar usando este Mac mesmo bloqueado",
+        "hint": "Quando este Mac está bloqueado e uma tarefa em andamento precisa da tela, o Cindy primeiro a cobre com a tela de privacidade e depois a desbloqueia com a senha de login que você salvou. Ele bloqueia de novo quando a tarefa termina ou alguém toca no Mac. A senha fica criptografada e guardada só neste Mac.",
+        "settingUp": "Digite a senha de login deste Mac na janela que aparecer.",
+        "permission": "Permita cindy-macos-remote-credentials em Ajustes do Sistema > Privacidade e Segurança > Acessibilidade para que ele possa digitar a senha na tela de bloqueio. Até lá, nada é desbloqueado automaticamente.",
+        "paused": "Alguém tocou no Mac, então o desbloqueio automático está pausado. Ele volta depois que você desbloquear uma vez.",
+        "needsSetup": "Sua senha de login mudou. Ative este ajuste de novo.",
+        "errorPassword": "A senha não está correta. O ajuste continua desativado.",
+        "errorUnavailable": "Não foi possível ativar agora. Reinicie o Cindy e tente de novo."
       }
     },
     "agentIsland": {

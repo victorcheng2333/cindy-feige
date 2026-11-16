@@ -8,6 +8,8 @@
  * - 最小失败输入：主人解锁后仍有任务运行（不应立即重新遮罩）；遮罩建立失败（必须放弃常亮）；
  *   PR #9190 review：遮罩建立中接入显示器、建立中放行 Agent 输入、锁屏失败、远程会话撤罩；
  *   在已锁屏时启动（2026-11-06 实测：没有锁屏事件，测试版在锁屏后面一直常亮）。
+ *   锁屏后继续使用（docs/product-rules/locked-use.md）：已锁屏时 tick 会撤掉遮罩，
+ *   解锁前盖好的遮罩必须留下，结束时一律真锁屏，有人碰电脑要报给锁屏后继续使用。
  * - tier：unit，内存 fake，无 Electron / 原生进程。
  */
 import { describe, expect, it } from 'vitest';
@@ -315,6 +317,37 @@ describe('AwayGuardController', () => {
     state.showFails = false;
     await guard.coverRemoteExit();
     expect(guard.inputShielded).toBe(true);
+  });
+
+  // Locked use: the cover goes up on the locked screen before Cindy unlocks behind it. An
+  // ordinary tick on a locked screen removes the masks, which would expose the desktop at
+  // the unlock; and the end is always the real lock, with the privacy screen setting off.
+  it('keeps a Locked use cover on a locked screen and ends it in the real lock', async () => {
+    const ended: string[] = [];
+    const { state, guard } = setup({ lockedUseEnded: (reason) => ended.push(reason) });
+    state.enabled = false;
+    state.locked = true;
+    await guard.coverLockedUse();
+    await guard.tick();
+    expect(guard.lockedUseCovered).toBe(true);
+    expect(state.events).toEqual(['show']);
+    expect(state.awake).toBe(true);
+    state.locked = false; // Cindy unlocked behind the cover.
+    await guard.tick();
+    expect(guard.lockedUseCovered).toBe(true);
+    await guard.endLockedUse('finished');
+    expect(state.events).toEqual(['show', 'lock']);
+    expect(guard.lockedUseCovered).toBe(false);
+    // Someone touching the Mac ends a later cover: the helper locks and Locked use hears it.
+    state.locked = true;
+    await guard.coverLockedUse();
+    guard.masksEnded();
+    expect(ended).toEqual(['touched']);
+    expect(guard.lockedUseCovered).toBe(false);
+    // Never unlock when the cover could not come up.
+    state.showFails = true;
+    await expect(guard.coverLockedUse()).rejects.toThrow('DESKTOP_PRIVACY_UNAVAILABLE');
+    expect(guard.lockedUseCovered).toBe(false);
   });
 
   it('reads this user\'s lock state from the console session list', () => {

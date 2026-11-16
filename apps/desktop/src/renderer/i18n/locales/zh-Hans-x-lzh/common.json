@@ -1120,7 +1120,11 @@
     },
     "hintWindows": "按任一键即锁屏，以 Windows Hello 或密码解之",
     "hintLinux": "按任一键即锁屏，以密码解之",
-    "verifyReason": "撤隐私画面"
+    "verifyReason": "撤隐私画面",
+    "lockedUse": {
+      "status": "Cindy 正于锁屏后用此机",
+      "hint": "一触即锁屏"
+    }
   },
   "appBadge": {
     "attentionCount": "待察之差事：{{count}}"
@@ -2523,6 +2527,16 @@
         },
         "hintWindows": "AI 需用屏时，此机不熄屏、不自锁，以隐私画面覆之，AI 于其后续作；有人按键或点按即锁屏，以 Windows Hello 或密码解之。无事之时，熄屏锁屏如常。远程控制既毕，亦以隐私画面护此机。",
         "hintLinux": "AI 需用屏时，此机不熄屏、不自锁，以隐私画面覆之，AI 于其后续作；有人按键或点按即锁屏，以密码解之。无事之时，熄屏锁屏如常。远程控制既毕，亦以隐私画面护此机。"
+      },
+      "lockedUse": {
+        "label": "锁屏之后，许 AI 仍用此机",
+        "hint": "机既锁屏，行中之任务需用屏时，Cindy 先覆以隐私画面，再以汝所存之登录密码暂解之；用毕或有人触机，即复锁屏。密码唯加密存于此机。",
+        "settingUp": "请于所弹之窗输入此 Mac 之登录密码。",
+        "permission": "须于「系统设置 → 隐私与安全性 → 辅助功能」许 cindy-macos-remote-credentials，方能于锁屏处输入密码。未许之前，不自解锁。",
+        "paused": "有人触机，自解锁已暂停。汝亲解一次，即复如常。",
+        "needsSetup": "登录密码已易，请重启此设置。",
+        "errorPassword": "密码不合，未启。",
+        "errorUnavailable": "暂不能启，请重启 Cindy 再试。"
       }
     },
     "agentIsland": {

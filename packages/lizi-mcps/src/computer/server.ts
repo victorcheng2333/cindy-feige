@@ -719,7 +719,7 @@ export function createComputerMcpServer(
             (typeof parsedData.pid === 'number' && typeof parsedData.window_id === 'number'))
             ? await rediscoverWindow(parsedData, { ...callContext, signal })
             : undefined;
-        const unavailable = await classifyUnavailableObservation(data, recovery, screenLocked);
+        const unavailable = await classifyUnavailableObservation(data, recovery, screenLocked, desktop?.locked_hint);
         return textResult(
           {
             ok: false,
@@ -817,11 +817,10 @@ export function createComputerMcpServer(
           : undefined;
       // A thrown window-identity failure gets the same reason as a degraded read.
       const unresolvedReason = recovery
-        ? await classifyUnavailableObservation(
-            undefined,
-            recovery,
-            (await deps.describeDesktop?.().catch(() => undefined))?.screen_locked === true,
-          )
+        ? await (async () => {
+            const desktop = await deps.describeDesktop?.().catch(() => undefined);
+            return classifyUnavailableObservation(undefined, recovery, desktop?.screen_locked === true, desktop?.locked_hint);
+          })()
         : undefined;
       const shouldObserveUnknownAction =
         !recovery &&
@@ -1022,12 +1021,11 @@ export function createComputerMcpServer(
     data: unknown,
     recovery: { requested_target: { window_id?: unknown } ; discovery: { ok: boolean; data?: unknown } } | undefined,
     screenLocked: boolean,
+    lockedHint?: string,
   ): Promise<{ reason: 'screen_locked' | 'window_not_on_screen' | 'window_gone' | 'driver_error'; hint: string }> {
     if (screenLocked) {
-      return {
-        reason: 'screen_locked',
-        hint: 'The screen is locked, so no window can be observed or operated. Do not retry in a loop: tell the person this step needs the screen unlocked, then call get_window_state again after they unlock.',
-      };
+      const base = 'The screen is locked, so no window can be observed or operated. Do not retry in a loop: tell the person this step needs the screen unlocked, then call get_window_state again after they unlock.';
+      return { reason: 'screen_locked', hint: lockedHint ? `${base} ${lockedHint}` : base };
     }
     const windows = recovery?.discovery.ok && recovery.discovery.data && typeof recovery.discovery.data === 'object'
       ? (recovery.discovery.data as { windows?: unknown }).windows

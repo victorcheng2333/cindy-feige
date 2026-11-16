@@ -1132,7 +1132,11 @@
     },
     "hintWindows": "Press any key to lock; unlock with Windows Hello or your password",
     "hintLinux": "Press any key to lock; unlock with your password",
-    "verifyReason": "remove the privacy screen"
+    "verifyReason": "remove the privacy screen",
+    "lockedUse": {
+      "status": "Cindy is using this Mac while it's locked",
+      "hint": "Touch anything to lock it right away"
+    }
   },
   "appBadge": {
     "attentionCount": "Tasks needing attention: {{count}}"
@@ -2553,6 +2557,16 @@
         },
         "hintWindows": "When AI needs the screen, this computer won’t turn off its display or lock. A privacy screen covers it and AI keeps working behind it. Pressing a key or clicking locks it right away; unlock with Windows Hello or your password. With no tasks running, the display turns off and locks as usual. After a remote session ends, the privacy screen protects this computer too.",
         "hintLinux": "When AI needs the screen, this computer won’t turn off its display or lock. A privacy screen covers it and AI keeps working behind it. Pressing a key or clicking locks it right away; unlock with your password. With no tasks running, the display turns off and locks as usual. After a remote session ends, the privacy screen protects this computer too."
+      },
+      "lockedUse": {
+        "label": "Let AI keep using this Mac while it's locked",
+        "hint": "When this Mac is locked and a running task needs the screen, Cindy first covers it with the privacy screen, then unlocks it with the login password you saved. It locks again when the task is done or someone touches the Mac. The password is encrypted and stored only on this Mac.",
+        "settingUp": "Enter this Mac's login password in the window that appears.",
+        "permission": "Allow cindy-macos-remote-credentials in System Settings > Privacy & Security > Accessibility so it can enter the password on the lock screen. Until then, nothing is unlocked automatically.",
+        "paused": "Someone touched this Mac, so automatic unlock is paused. It resumes after you unlock it once yourself.",
+        "needsSetup": "Your login password changed. Turn this setting on again.",
+        "errorPassword": "That password isn't correct. The setting stays off.",
+        "errorUnavailable": "Couldn't turn this on right now. Restart Cindy and try again."
       }
     },
     "agentIsland": {

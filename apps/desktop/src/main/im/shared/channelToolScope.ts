@@ -162,6 +162,14 @@ export function readChannelToolScope(args: {
   return active.scope;
 }
 
+/**
+ * 这个任务当前是否有渠道轮次在跑、触发者是不是主人;没有渠道轮次为 null。
+ * 只给宿主自己的授权判断用(锁屏后继续使用,docs/product-rules/locked-use.md),不经模型参数。
+ */
+export function channelTurnRequesterIsOwner(sessionId: string): boolean | null {
+  return activeBySession.get(sessionId)?.scope.requesterIsOwner ?? null;
+}
+
 /** 测试/进程级 teardown;生产授权仍必须通过租约 release 收口。 */
 export function resetChannelToolScopeForTests(): void {
   activeBySession.clear();

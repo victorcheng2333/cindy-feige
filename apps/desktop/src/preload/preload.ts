@@ -148,6 +148,11 @@ import {
   type AwayGuardState,
 } from '../shared/awayGuard';
 import {
+  LOCKED_USE_GET_STATE_CHANNEL,
+  LOCKED_USE_SET_ENABLED_CHANNEL,
+  type LockedUseState,
+} from '../shared/lockedUse';
+import {
   CODEX_MICRO_GUARD_GET_STATE_CHANNEL,
   CODEX_MICRO_GUARD_RECOVER_CHANNEL,
   CODEX_MICRO_GUARD_SET_ENABLED_CHANNEL,
@@ -2157,6 +2162,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setAwayGuardDelay: (delaySeconds: AwayGuardDelaySeconds | null): Promise<AwayGuardState> =>
       ipcRenderer.invoke(AWAY_GUARD_SET_DELAY_CHANNEL, delaySeconds),
     previewAwayGuard: (): Promise<AwayGuardPreviewResult> => ipcRenderer.invoke(AWAY_GUARD_PREVIEW_CHANNEL),
+    // macOS「锁屏后让 AI 继续使用这台电脑」;打开时由签名助手弹出系统密码框,密码不经过这里。
+    getLockedUseState: (): Promise<LockedUseState> => ipcRenderer.invoke(LOCKED_USE_GET_STATE_CHANNEL),
+    setLockedUseEnabled: (enabled: boolean): Promise<LockedUseState> =>
+      ipcRenderer.invoke(LOCKED_USE_SET_ENABLED_CHANNEL, enabled),
     // 通知 main 落盘"首次点击是否吞掉"。仅落盘,不改变已创建窗口的行为——macOS
     // acceptFirstMouse 是 BrowserWindow 构造参数,需要下次启动才读到新值。Windows
     // 上此调用只是保持 userData 落盘和 renderer localStorage 一致,Windows JS

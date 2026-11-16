@@ -203,6 +203,35 @@ screen that was already locked when the setting was turned on stays locked. Logi
 `apps/desktop/src/main/remote-desktop/awayGuard.ts` (unit-tested state machine) and
 `awayGuardService.ts`; shared-userData passive instances do not run it.
 
+## Locked use (macOS, 2026-11-16)
+
+Product rules: [Locked use](product-rules/locked-use.md). Settings → General → When You're
+Away → 「锁屏后让 AI 继续使用这台电脑」 (default off). Turning it on asks the signed
+`cindy-macos-remote-credentials` helper (`lockedUseSetup`) to show its native password
+panel; the password is verified with OpenDirectory and stored in the login Keychain under a
+namespace of its own (`credential-identity/locked-use/installation-id`), never crossing stdio.
+
+When the screen is locked, `computer.ts` calls `prepareLockedDesktop(sessionId)` before a
+local Agent task's tool call (not for plugin host callers, `status` or `check_permissions`).
+`LockedUseController` (`remote-desktop/lockedUse.ts`, unit-tested) checks the host facts in
+`bootstrap-electron.ts` (task running here, in the local task table without `remote_host_id`,
+not shared with guests, an IM turn only from the owner), then `coverForLockedUse` puts the
+privacy screen up on the locked screen (`AwayGuardController.coverLockedUse`; an ordinary
+tick no longer removes it while locked), and only then `lockedUseUnlock` drives
+`MacScreenUnlocker` with the saved password after verifying it again. A rejected password is
+deleted instead of typed. The cover ends in the real lock (`endLockedUse`) when no task that
+asked still runs or has called a tool for two minutes, when the setting is turned off, or when
+the cover goes. Physical input ends it through the helper's own lock; that pauses automatic
+unlock until the owner unlocks by hand (an unlock event within five seconds of Cindy's own
+unlock is not the owner). The cover's end ignores the #10665 "OS unlocked meanwhile, uncover
+without locking" shortcut (`lockedUseOwnsCover` in `awayGuardService.ts`): Cindy's own unlock
+is not the owner returning. The 2026-11-16 first real-device run hit exactly that and left the
+desktop unlocked; the controller now also re-locks whenever the screen is not locked after the
+cover ends. A locked screen that stays locked adds `locked_hint` to the
+computer tool's `screen_locked` hint. Not yet verified on a real locked Mac: building the
+masks and the event tap under the lock screen, and the owner's first input on the lock screen
+while the tap is up.
+
 ## Per-Mac automatic Screen Sharing (2026-11-11, unreleased)
 
 The initiating Mac can choose Automatic, High Performance or Standard globally, and

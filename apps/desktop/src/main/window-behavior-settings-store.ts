@@ -11,6 +11,8 @@
  *  - linuxCloseBehavior: null (Linux 首次关闭时弹窗询问,选择后持久化)
  *  - awayGuard: false (macOS「离开时继续工作」;开启后由 remote-desktop/awayGuard 执行)
  *  - awayGuardDelaySeconds: null (离开多久后遮住;null 跟随系统熄屏时间)
+ *  - lockedUse: false (macOS「锁屏后让 AI 继续使用这台电脑」;登录密码只存在签名助手的钥匙串里,
+ *    这里只记开关,见 docs/product-rules/locked-use.md)
  *
  * swallowActivationClick 仍由 renderer localStorage 承担运行时事实标准,main
  * 侧文件只供下次创建 BrowserWindow 时读取。平台关闭行为则完全由 main 侧
@@ -38,6 +40,7 @@ export interface WindowBehaviorSettings {
   linuxCloseBehavior: LinuxCloseBehavior | null;
   awayGuard: boolean;
   awayGuardDelaySeconds: AwayGuardDelaySeconds | null;
+  lockedUse: boolean;
 }
 
 const DEFAULTS: WindowBehaviorSettings = {
@@ -46,6 +49,7 @@ const DEFAULTS: WindowBehaviorSettings = {
   linuxCloseBehavior: null,
   awayGuard: false,
   awayGuardDelaySeconds: null,
+  lockedUse: false,
 };
 
 function settingsFilePath(): string {
@@ -70,6 +74,7 @@ function normalize(raw: unknown): WindowBehaviorSettings {
     awayGuardDelaySeconds: isAwayGuardDelaySeconds(r.awayGuardDelaySeconds)
       ? r.awayGuardDelaySeconds
       : DEFAULTS.awayGuardDelaySeconds,
+    lockedUse: typeof r.lockedUse === 'boolean' ? r.lockedUse : DEFAULTS.lockedUse,
   };
 }
 
@@ -110,9 +115,15 @@ export function writeAwayGuardDelay(awayGuardDelaySeconds: AwayGuardDelaySeconds
   log.info('away guard delay written', { awayGuardDelaySeconds });
 }
 
+export function writeLockedUse(lockedUse: boolean): void {
+  store.writePatch({ lockedUse });
+  log.info('locked use setting written', { lockedUse });
+}
+
 export const __testing = { normalize };
 
 /** New-computer setup: values the user changed here (docs/product-rules/new-device-setup-migration.md). */
 // The away guard needs this computer's own Accessibility grant, like remote desktop,
-// so it is turned on per computer instead of being copied over.
-export const windowBehaviorPortableSettings = portableOverrideSettings(store, { omitKeys: ['awayGuard'] });
+// so it is turned on per computer instead of being copied over. Locked use also needs this
+// computer's own saved login password.
+export const windowBehaviorPortableSettings = portableOverrideSettings(store, { omitKeys: ['awayGuard', 'lockedUse'] });

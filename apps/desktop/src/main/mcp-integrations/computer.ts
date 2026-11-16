@@ -213,6 +213,14 @@ export interface ComputerRuntimePorts {
   /** Cross-process input coordinator readiness, checked before every write. */
   assertInputAvailable?(): void;
   beforeCall?(): Promise<void>;
+  /**
+   * Locked use (docs/product-rules/locked-use.md): before each local Agent task's call. On a
+   * locked screen the host may cover and unlock; on an unlocked one it only notes the task
+   * is still using the Mac. Never throws; plugin calls never get here.
+   */
+  prepareLockedDesktop?(sessionId: string): Promise<void>;
+  /** Why a locked screen stays locked for the Agent, written by the host. */
+  lockedDesktopHint?(): string | undefined;
   getPath(name: 'home' | 'temp'): string;
   powerMonitor: {
     getSystemIdleTime(): number;
@@ -4182,13 +4190,25 @@ function getComputerMcpDeps(options: ComputerMcpDepsOptions = {}): ComputerMcpDe
       }
       await ensureRuntime();
       plugin?.assertCurrent();
+      // Only an Agent task may wake a locked Mac; status checks never need the screen. Calls on
+      // an unlocked screen still report in, so a task using a Mac it unlocked keeps it.
+      if (!caller && context?.sessionId && !LOCKED_DESKTOP_EXEMPT_TOOLS.has(name))
+        await ports.prepareLockedDesktop?.(context.sessionId);
       return callComputerDriverTool(name, args, context);
     },
     isSecureTarget: async target => { await ensureRuntime(); return ports.isSecureTarget(target); },
-    describeDesktop: async () => { await ensureRuntime(); return { screen_locked: isDesktopScreenLocked() }; },
+    describeDesktop: async () => {
+      await ensureRuntime();
+      const locked = isDesktopScreenLocked();
+      const hint = locked ? ports.lockedDesktopHint?.() : undefined;
+      return { screen_locked: locked, ...(hint ? { locked_hint: hint } : {}) };
+    },
     logger,
   };
 }
+
+/** Tools that never read or drive the screen do not trigger Locked use. */
+const LOCKED_DESKTOP_EXEMPT_TOOLS: ReadonlySet<string> = new Set(['status', 'check_permissions']);
 
 function pluginDriverScope(caller: NonNullable<ComputerMcpCallContext['hostCaller']>): string {
   return `plugin:${JSON.stringify([caller.dataOwnerId, caller.ownerGeneration, caller.pluginId])}`;

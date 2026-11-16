@@ -1120,7 +1120,11 @@
     },
     "hintWindows": "按任意鍵鎖定，用 Windows Hello 或密碼解鎖",
     "hintLinux": "按任意鍵鎖定，用密碼解鎖",
-    "verifyReason": "撤下隱私畫面"
+    "verifyReason": "撤下隱私畫面",
+    "lockedUse": {
+      "status": "Cindy 正在鎖定後使用這台電腦",
+      "hint": "碰一下就會立刻鎖定"
+    }
   },
   "appBadge": {
     "attentionCount": "需要關注的任務：{{count}}"
@@ -2523,6 +2527,16 @@
         },
         "hintWindows": "AI 需要使用螢幕時，電腦不關閉螢幕、不鎖定，由隱私畫面遮住螢幕，AI 在後面繼續工作；有人按鍵或點按就立即鎖定，用 Windows Hello 或密碼解鎖。沒有任務時照常關閉螢幕並鎖定。遠端控制結束後，也用隱私畫面保護這台電腦。",
         "hintLinux": "AI 需要使用螢幕時，電腦不關閉螢幕、不鎖定，由隱私畫面遮住螢幕，AI 在後面繼續工作；有人按鍵或點按就立即鎖定，用密碼解鎖。沒有任務時照常關閉螢幕並鎖定。遠端控制結束後，也用隱私畫面保護這台電腦。"
+      },
+      "lockedUse": {
+        "label": "鎖定後讓 AI 繼續使用這台電腦",
+        "hint": "電腦鎖定後，正在執行的任務需要用螢幕時，Cindy 先蓋上隱私畫面，再用你儲存的登入密碼暫時解鎖；用完或有人碰電腦就重新鎖定。密碼只加密儲存在這台電腦上。",
+        "settingUp": "請在跳出的視窗中輸入這台 Mac 的登入密碼。",
+        "permission": "需要在「系統設定 → 隱私權與安全性 → 輔助使用」中允許 cindy-macos-remote-credentials，才能在鎖定畫面輸入密碼。允許之前不會自動解鎖。",
+        "paused": "有人碰過電腦，已暫停自動解鎖。你解鎖一次後恢復。",
+        "needsSetup": "登入密碼已變更，請重新開啟這項設定。",
+        "errorPassword": "密碼不正確，未開啟。",
+        "errorUnavailable": "暫時無法開啟，請重新啟動 Cindy 後再試。"
       }
     },
     "agentIsland": {

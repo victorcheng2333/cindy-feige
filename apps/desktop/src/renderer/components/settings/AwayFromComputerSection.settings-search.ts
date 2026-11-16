@@ -23,6 +23,17 @@ export const awayFromComputerSettings = defineSettings({
     descriptionKey: 'settings.windowBehavior.awayGuard.hint',
     isVisible: ({ platform }) => ['darwin', 'linux'].includes(platform),
   },
+  lockedUse: {
+    id: 'settings.windowBehavior.lockedUse.label',
+    fallbackTargetId: 'settings-away-from-computer',
+    tab: 'general',
+    targetId: 'settings-search-locked-use',
+    titleKey: 'settings.windowBehavior.lockedUse.label',
+    aliases: ['锁屏', '锁屏后', '自动解锁', 'Locked use', 'unlock', 'locked'],
+    sectionKey: 'settings.awayFromComputer.title',
+    descriptionKey: 'settings.windowBehavior.lockedUse.hint',
+    isVisible: ({ platform }) => platform === 'darwin',
+  },
   awayGuardDelay: {
     id: 'settings.windowBehavior.awayGuard.delay.label',
     fallbackTargetId: 'settings-away-from-computer',

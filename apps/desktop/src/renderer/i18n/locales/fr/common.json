@@ -1149,7 +1149,11 @@
     },
     "hintWindows": "Appuyez sur une touche pour verrouiller ; déverrouillez avec Windows Hello ou votre mot de passe",
     "hintLinux": "Appuyez sur une touche pour verrouiller ; déverrouillez avec votre mot de passe",
-    "verifyReason": "retirer l'écran de confidentialité"
+    "verifyReason": "retirer l'écran de confidentialité",
+    "lockedUse": {
+      "status": "Cindy utilise ce Mac pendant qu’il est verrouillé",
+      "hint": "Touchez n’importe quoi pour le verrouiller aussitôt"
+    }
   },
   "appBadge": {
     "attentionCount": "Tâches nécessitant votre attention : {{count}}"
@@ -2591,6 +2595,16 @@
         },
         "hintWindows": "Quand l'IA a besoin de l'écran, cet ordinateur ne l'éteint pas et ne se verrouille pas. Un écran de confidentialité le masque et l'IA continue de travailler derrière. Une touche ou un clic le verrouille aussitôt ; déverrouillez avec Windows Hello ou votre mot de passe. Sans tâche en cours d'exécution, l'écran s'éteint et se verrouille comme d'habitude. À la fin d'une prise en main à distance, l'écran de confidentialité protège aussi cet ordinateur.",
         "hintLinux": "Quand l'IA a besoin de l'écran, cet ordinateur ne l'éteint pas et ne se verrouille pas. Un écran de confidentialité le masque et l'IA continue de travailler derrière. Une touche ou un clic le verrouille aussitôt ; déverrouillez avec votre mot de passe. Sans tâche en cours d'exécution, l'écran s'éteint et se verrouille comme d'habitude. À la fin d'une prise en main à distance, l'écran de confidentialité protège aussi cet ordinateur."
+      },
+      "lockedUse": {
+        "label": "Laisser l'IA utiliser ce Mac même verrouillé",
+        "hint": "Quand ce Mac est verrouillé et qu'une tâche en cours a besoin de l'écran, Cindy le couvre d'abord avec l'écran de confidentialité, puis le déverrouille avec le mot de passe de session que vous avez enregistré. Il se reverrouille quand la tâche est terminée ou que quelqu'un touche le Mac. Le mot de passe est chiffré et stocké uniquement sur ce Mac.",
+        "settingUp": "Saisissez le mot de passe de session de ce Mac dans la fenêtre qui s’affiche.",
+        "permission": "Autorisez cindy-macos-remote-credentials dans Réglages Système > Confidentialité et sécurité > Accessibilité pour qu'il puisse saisir le mot de passe sur l'écran de verrouillage. D'ici là, rien n'est déverrouillé automatiquement.",
+        "paused": "Quelqu'un a touché le Mac : le déverrouillage automatique est en pause. Il reprend après que vous l'avez déverrouillé vous-même une fois.",
+        "needsSetup": "Votre mot de passe de session a changé. Réactivez ce réglage.",
+        "errorPassword": "Ce mot de passe n'est pas correct. Le réglage reste désactivé.",
+        "errorUnavailable": "Impossible de l'activer pour l'instant. Redémarrez Cindy et réessayez."
       }
     },
     "agentIsland": {

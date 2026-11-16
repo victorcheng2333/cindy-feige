@@ -667,11 +667,15 @@ import {
   startLinuxAwayCover,
 } from './remote-desktop';
 import { isAwayCoverUp, registerAwayGuardIpc, startAwayGuard } from './remote-desktop/awayGuardService';
+import { lockedUseHint, prepareLockedDesktop, registerLockedUseIpc, startLockedUse } from './remote-desktop/lockedUseService';
+import { isSessionSharedTaskActive } from './device-link/sharedTaskDispatch.js';
+import { channelTurnRequesterIsOwner } from './im/shared/channelToolScope.js';
 import { DisplayDemand } from './remote-desktop/displayDemand';
 import {
   isDesktopScreenLocked,
   seedDesktopScreenLocked,
   msSinceForeignDesktopInput,
+  setLockedDesktopPorts,
   setPhysicalInputShielded,
 } from './mcp-integrations/computer.desktop.js';
 import { initAnalyticsSettingsService, noteAuthColdStartState } from './analyticsSettingsService';
@@ -1144,6 +1148,7 @@ import {
   writeLinuxCloseBehavior,
   writeAwayGuard,
   writeAwayGuardDelay,
+  writeLockedUse,
   writeSwallowActivationClick,
   writeWindowsCloseBehavior,
 } from './window-behavior-settings-store.js';
@@ -3008,6 +3013,7 @@ registerAwayGuardIpc({
   writeEnabled: writeAwayGuard,
   writeDelay: writeAwayGuardDelay,
 });
+registerLockedUseIpc();
 
 // ── 资源用量面板 IPC ─────────────────────────────────────────────────
 // 订阅驱动采样(面板不开不采样),interval 已 unref 不拖退出;terminate 只认
@@ -5259,6 +5265,30 @@ const registerIpcHandlers = () => {
       seedScreenLocked: seedDesktopScreenLocked,
       msSinceOwnerInput: () => msSinceForeignDesktopInput(),
     });
+    // 锁屏后继续使用(macOS,默认关;docs/product-rules/locked-use.md):锁屏时本机运行中的任务要用屏幕,
+    // 先盖隐私屏、再用主人保存的登录密码临时解锁,用完或有人碰电脑就重新锁屏。
+    startLockedUse({
+      enabled: () => readWindowBehaviorSettings().lockedUse,
+      writeEnabled: writeLockedUse,
+      realm: () => authManager.getActiveAuthRealm(),
+      screenLocked: isDesktopScreenLocked,
+      running: (sessionId) => getAgentIslandService()?.isLocalTaskRunning(sessionId) === true,
+      // Host facts only (「谁能触发解锁」): running here, a local task, not shared with guests,
+      // and an IM turn only when the owner triggered it.
+      allowed: async (sessionId) => {
+        if (getAgentIslandService()?.isLocalTaskRunning(sessionId) !== true) return false;
+        if (isSessionSharedTaskActive(sessionId)) return false;
+        if (channelTurnRequesterIsOwner(sessionId) === false) return false;
+        const db = tryGetDbClient();
+        if (!db) return false;
+        const row = await db.queryOne<{ remoteHostId: string | null }>(
+          'SELECT remote_host_id AS remoteHostId FROM sessions WHERE id = ? LIMIT 1',
+          [sessionId],
+        );
+        return row !== null && row !== undefined && !row.remoteHostId;
+      },
+    });
+    setLockedDesktopPorts({ prepare: prepareLockedDesktop, hint: lockedUseHint });
     // Hyprland draws its privacy screen in the compositor; same policy, own loop.
     startLinuxAwayCover();
     setPhysicalInputShielded(() => isAwayCoverUp() || isLinuxAwayCoverUp());

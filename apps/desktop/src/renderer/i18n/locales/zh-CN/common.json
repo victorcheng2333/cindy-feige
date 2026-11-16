@@ -1120,7 +1120,11 @@
     },
     "hintWindows": "按任意键锁屏，用 Windows Hello 或密码解锁",
     "hintLinux": "按任意键锁屏，用密码解锁",
-    "verifyReason": "撤下隐私屏"
+    "verifyReason": "撤下隐私屏",
+    "lockedUse": {
+      "status": "Cindy 正在锁屏后使用这台电脑",
+      "hint": "碰一下就会立刻锁屏"
+    }
   },
   "appBadge": {
     "attentionCount": "需要关注的任务：{{count}}"
@@ -2523,6 +2527,16 @@
         },
         "hintWindows": "AI 需要用屏幕时，电脑不关屏、不锁定，由隐私屏遮住屏幕，AI 在后面继续工作；有人按键或点按就立即锁定，用 Windows Hello 或密码解锁。没有任务时照常关屏锁定。远程控制结束后，也用隐私屏保护这台电脑。",
         "hintLinux": "AI 需要用屏幕时，电脑不关屏、不锁定，由隐私屏遮住屏幕，AI 在后面继续工作；有人按键或点按就立即锁定，用密码解锁。没有任务时照常关屏锁定。远程控制结束后，也用隐私屏保护这台电脑。"
+      },
+      "lockedUse": {
+        "label": "锁屏后让 AI 继续使用这台电脑",
+        "hint": "电脑锁屏后，正在运行的任务需要用屏幕时，Cindy 先盖上隐私屏，再用你保存的登录密码临时解锁；用完或有人碰电脑就重新锁屏。密码只加密保存在这台电脑上。",
+        "settingUp": "请在弹出的窗口中输入这台 Mac 的登录密码。",
+        "permission": "需要在「系统设置 → 隐私与安全性 → 辅助功能」中允许 cindy-macos-remote-credentials，才能在锁屏界面输入密码。允许之前不会自动解锁。",
+        "paused": "有人碰过电脑，已暂停自动解锁。你解锁一次后恢复。",
+        "needsSetup": "登录密码已更改，请重新打开这项设置。",
+        "errorPassword": "密码不正确，未打开。",
+        "errorUnavailable": "暂时无法打开，请重启 Cindy 后再试。"
       }
     },
     "agentIsland": {

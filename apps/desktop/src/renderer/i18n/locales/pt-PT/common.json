@@ -1149,7 +1149,11 @@
     },
     "hintWindows": "Prima qualquer tecla para bloquear; desbloqueie com o Windows Hello ou a sua palavra-passe",
     "hintLinux": "Prima qualquer tecla para bloquear; desbloqueie com a sua palavra-passe",
-    "verifyReason": "retirar o ecrã de privacidade"
+    "verifyReason": "retirar o ecrã de privacidade",
+    "lockedUse": {
+      "status": "O Cindy está a utilizar este Mac enquanto está bloqueado",
+      "hint": "Toque em qualquer coisa para bloquear de imediato"
+    }
   },
   "appBadge": {
     "attentionCount": "Tarefas que precisam de atenção: {{count}}"
@@ -2591,6 +2595,16 @@
         },
         "hintWindows": "Quando a IA precisa do ecrã, este computador não o desliga nem se bloqueia. Um ecrã de privacidade cobre-o e a IA continua a trabalhar por trás. Premir uma tecla ou clicar bloqueia de imediato; desbloqueie com o Windows Hello ou a sua palavra-passe. Sem tarefas em curso, o ecrã apaga-se e bloqueia como habitualmente. No fim de um controlo remoto, o ecrã de privacidade também protege este computador.",
         "hintLinux": "Quando a IA precisa do ecrã, este computador não o desliga nem se bloqueia. Um ecrã de privacidade cobre-o e a IA continua a trabalhar por trás. Premir uma tecla ou clicar bloqueia de imediato; desbloqueie com a sua palavra-passe. Sem tarefas em curso, o ecrã apaga-se e bloqueia como habitualmente. No fim de um controlo remoto, o ecrã de privacidade também protege este computador."
+      },
+      "lockedUse": {
+        "label": "Deixar a IA continuar a utilizar este Mac mesmo bloqueado",
+        "hint": "Quando este Mac está bloqueado e uma tarefa em curso precisa do ecrã, o Cindy cobre-o primeiro com o ecrã de privacidade e depois desbloqueia-o com a palavra-passe de início de sessão que guardou. Volta a bloquear quando a tarefa termina ou alguém toca no Mac. A palavra-passe fica encriptada e guardada apenas neste Mac.",
+        "settingUp": "Introduza a palavra-passe de início de sessão deste Mac na janela apresentada.",
+        "permission": "Permita cindy-macos-remote-credentials em Definições do Sistema > Privacidade e segurança > Acessibilidade para que possa introduzir a palavra-passe no ecrã de bloqueio. Até lá, nada é desbloqueado automaticamente.",
+        "paused": "Alguém tocou no Mac, por isso o desbloqueio automático está em pausa. Retoma depois de o desbloquear uma vez.",
+        "needsSetup": "A sua palavra-passe de início de sessão mudou. Volte a ativar esta definição.",
+        "errorPassword": "A palavra-passe não está correta. A definição continua desativada.",
+        "errorUnavailable": "Não é possível ativar agora. Reinicie o Cindy e tente novamente."
       }
     },
     "agentIsland": {

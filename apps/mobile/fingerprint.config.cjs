@@ -30,7 +30,7 @@ module.exports = {
   preset: "strict",
   sourceSkips,
   // These entry points are outside the iOS podspec's source glob, and these
-  // six core files are wholly guarded by #if os(macOS). Keep this an explicit
+  // seven core files are wholly guarded by #if os(macOS). Keep this an explicit
   // list: new/shared Swift files and Resources must still change the runtime.
   // fingerprintConfig.test.ts checks the platform guards and real hash effects.
   // Adopting this boundary changes legacy hashes once; ship with a planned
@@ -43,6 +43,7 @@ module.exports = {
       "CredentialPipeInput",
       "HostCredentialServer",
       "MacCredentialPasswordForm",
+      "MacLockedUse",
       "MacCredentialSecret",
       "MacScreenUnlock",
       "MacSystemAccount",
