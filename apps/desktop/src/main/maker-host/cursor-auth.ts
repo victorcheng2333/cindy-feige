@@ -366,10 +366,36 @@ export async function refreshCursorModels(): Promise<void> {
   }
 }
 
-/** Cursor's Grok 4.6 has no `context` parameter. Pricing has no 500k SKU (unlike 4.7);
- * the Cursor Grok standard window is 256k. Do not copy xAI's 500k API window. */
+/** Cursor /v1/models omits `context` for these ids. Values are Cursor's own
+ * contextTokenLimit, checked 2026-11-16; for these ids it matches max mode.
+ * A catalog-declared context still wins. Do not substitute a provider API window
+ * (Grok 4.5/4.6 stay at Cursor's 256k, not xAI's 500k). Unknown ids stay unset. */
 const CURSOR_FIXED_CONTEXT_WINDOWS: Record<string, number> = {
+  'claude-haiku-4-5': 200_000,
+  'claude-opus-4-5': 200_000,
+  'composer-2.5': 200_000,
+  'deepseek-v41-flash-1017': 1_048_576,
+  'gemini-2.5-flash': 1_000_000,
+  'gemini-3-flash': 1_000_000,
+  'gemini-3.1-pro': 1_000_000,
+  'gemini-3.5-flash': 1_000_000,
+  'gemini-3.8-flash': 1_000_000,
+  'gemini-4-argon': 1_000_000,
+  'gemini-4-carbon': 1_000_000,
+  'gemini-4-hydrogen': 1_000_000,
+  'glm-5.2': 1_000_000,
+  'glm-5p3': 1_000_000,
+  'glm-5p3-flash': 1_000_000,
+  'gpt-5-mini': 272_000,
+  'gpt-5.1': 272_000,
+  'gpt-5.2': 272_000,
+  'gpt-5.3-codex': 272_000,
+  'gpt-5.4-mini': 272_000,
+  'gpt-5.4-nano': 272_000,
+  'grok-4.5': 256_000,
   'grok-4.6': 256_000,
+  'kimi-k2.7-code': 262_000,
+  'kimi-k3': 1_048_576,
 };
 
 function catalogValues(raw: ModelListItem[]): CatalogModel[] {

@@ -270,11 +270,41 @@ describe('Cursor connection', () => {
     ]);
   });
 
-  it('uses Cursor\'s 256k Grok window for 4.6 and keeps 4.7\'s catalog Max Mode', async () => {
+  // Selector hides a 0 window. Models whose Cursor catalog omits `context` must
+  // show Cursor's own window; a declared context tier must not be replaced.
+  it('fills Cursor windows when the catalog omits context and keeps a declared tier', async () => {
+    const omitted: Array<[string, number]> = [
+      ['claude-haiku-4-5', 200_000],
+      ['claude-opus-4-5', 200_000],
+      ['composer-2.5', 200_000],
+      ['deepseek-v41-flash-1017', 1_048_576],
+      ['gemini-2.5-flash', 1_000_000],
+      ['gemini-3-flash', 1_000_000],
+      ['gemini-3.1-pro', 1_000_000],
+      ['gemini-3.5-flash', 1_000_000],
+      ['gemini-3.8-flash', 1_000_000],
+      ['gemini-4-argon', 1_000_000],
+      ['gemini-4-carbon', 1_000_000],
+      ['gemini-4-hydrogen', 1_000_000],
+      ['glm-5.2', 1_000_000],
+      ['glm-5p3', 1_000_000],
+      ['glm-5p3-flash', 1_000_000],
+      ['gpt-5-mini', 272_000],
+      ['gpt-5.1', 272_000],
+      ['gpt-5.2', 272_000],
+      ['gpt-5.3-codex', 272_000],
+      ['gpt-5.4-mini', 272_000],
+      ['gpt-5.4-nano', 272_000],
+      ['grok-4.5', 256_000],
+      ['grok-4.6', 256_000],
+      ['kimi-k2.7-code', 262_000],
+      ['kimi-k3', 1_048_576],
+    ];
     h.fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ items: [
-        { id: 'grok-4.6', displayName: 'Grok 4.6' },
+        ...omitted.map(([id]) => ({ id, displayName: id })),
+        { id: 'cursor-model-without-a-known-window', displayName: 'Unknown' },
         {
           id: 'grok-4.7', displayName: 'Grok 4.7',
           parameters: [{ id: 'context', values: [{ value: '256k' }, { value: '500k' }] }],
@@ -283,10 +313,22 @@ describe('Cursor connection', () => {
       ] }),
     });
     expect(await cursorAuthAdapter.triggerLogin()).toMatchObject({ authenticated: true });
-    expect(cursorProvider().models.cursor).toEqual([
-      expect.objectContaining({ id: 'grok-4.6', contextWindow: 256_000, contextWindowMax: 256_000, contextWindowVerified: true }),
-      expect.objectContaining({ id: 'grok-4.7', contextWindow: 500_000, contextWindowMax: 500_000 }),
-    ]);
+    const windows = Object.fromEntries(
+      cursorProvider().models.cursor!.map(model => [model.id, {
+        contextWindow: model.contextWindow,
+        contextWindowMax: model.contextWindowMax,
+        contextWindowVerified: model.contextWindowVerified,
+      }]),
+    );
+    expect(windows).toEqual({
+      ...Object.fromEntries(omitted.map(([id, window]) => [id, {
+        contextWindow: window, contextWindowMax: window, contextWindowVerified: true,
+      }])),
+      'cursor-model-without-a-known-window': {
+        contextWindow: 0, contextWindowMax: undefined, contextWindowVerified: false,
+      },
+      'grok-4.7': { contextWindow: 500_000, contextWindowMax: 500_000, contextWindowVerified: true },
+    });
   });
 
   it('does not save a login that arrives after cancellation', async () => {
