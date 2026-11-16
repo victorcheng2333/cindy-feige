@@ -1,4 +1,5 @@
 import { useNewSessionAgentRoster } from '@/session/useNewSessionAgentRoster';
+import { ProjectPickerIcon } from '@/session/ProjectPickerIcon';
 import { playHaptic } from '@/platform/haptics';
 import { TaskArchiveUndoSlot } from '@/session/TaskArchiveUndoNotice';
 import { useComposerDragOpen } from '@/session/useComposerDragOpen';
@@ -5393,7 +5394,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                     style={({ pressed }) => [styles.selectorRow, pressed && styles.pressed]}
                     testID="newSession.workspaceSelector"
                   >
-                    <WorkspaceIcon style={styles.workspaceFixedIcon} color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />
+                    {draft.workspaceKind === 'project' && draft.workingDir && selectedDeviceId ? <ProjectPickerIcon deviceId={selectedDeviceId} workingDir={draft.workingDir} title={workspaceLabel} size={iconSize.action} /> : <WorkspaceIcon style={styles.workspaceFixedIcon} color={colors.textTertiary} size={iconSize.lg} strokeWidth={iconStroke.thin} />}
                     <Text style={styles.selectorText} numberOfLines={1} ellipsizeMode="tail">{workspaceLabel}</Text>
                     <ChevronsUpDown style={styles.workspaceFixedIcon} color={colors.borderStrong} size={iconSize.sm} strokeWidth={iconStroke.regular} />
                   </Pressable>

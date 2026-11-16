@@ -5422,6 +5422,43 @@ describe('makerChatStore text delta batching', () => {
     expect(messages[0]?.isPendingPersist).toBeUndefined();
   });
 
+  // Unit regression: steerMessage's optimistic row must not become the running-turn
+  // trim boundary. The historical-steer trim tests only cover already persisted rows.
+  // Minimum input: a busy turn over 300 rows and a steer waiting on preflight.
+  it('preserves the running turn when an optimistic steer is pending during view eviction', async () => {
+    const leave = makerChatStore.enterView(SESSION_ID);
+    await flushPromises();
+    makerChatStore.__applyStatusUpdateForTest(SESSION_ID, {
+      sessionId: SESSION_ID, status: 'running', isRunning: true,
+      tokenUsage: 0, contextTokens: 0, contextWindow: 0,
+    });
+    emitDbMessageCreated({
+      clientId: 'running-turn-start', role: 'user', content: 'original request',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    for (let index = 0; index < 301; index += 1) {
+      emitDbMessageCreated({
+        clientId: `running-reply-${index}`, role: 'assistant', content: `reply ${index}`,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index + 1)).toISOString(),
+      });
+    }
+    let release!: (proceed: boolean) => void;
+    const preflight = new Promise<boolean>((resolve) => { release = resolve; });
+    const steer = makerChatStore.steerMessage(
+      SESSION_ID, 'in-flight steer', MODEL, EFFORT, PERMISSION_MODE, WORKING_DIR,
+      undefined, undefined, { beforeEnqueue: () => preflight },
+    );
+    expect(makerChatStore.getSnapshot(SESSION_ID).messages.at(-1)).toEqual(
+      expect.objectContaining({ content: 'in-flight steer', isPendingPersist: true }),
+    );
+    leave();
+    const retained = makerChatStore.getSnapshot(SESSION_ID).messages;
+    release(false);
+    await expect(steer).resolves.toBe(false);
+    expect(retained[0]?.clientId).toBe('running-turn-start');
+    expect(retained).toHaveLength(303);
+  });
+
   // 2026-11-15: a local steer only persists once the Agent accepts it at its next
   // step boundary, so the composer used to clear while no bubble appeared for ~2s.
   // It now shows before the readiness preflight, never dispatches a rejected steer,

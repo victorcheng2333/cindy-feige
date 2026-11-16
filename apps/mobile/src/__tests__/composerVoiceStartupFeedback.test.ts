@@ -87,6 +87,7 @@ describe.each(['new.tsx', '[sessionId].tsx'])('%s voice startup feedback', (page
     const setVoiceError = vi.fn();
     const playHaptic = vi.fn();
     const run = callbacks({
+      Platform: { OS: 'ios' },
       startupSeq: 1, voiceStartupSeqRef: startupSeq, setVoiceError, playHaptic,
       setVoiceState: (value: MobileVoiceState) => run.setVoiceState(value),
       creating: false, voiceIsProcessing: false, voiceState: 'idle',

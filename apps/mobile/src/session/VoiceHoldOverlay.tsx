@@ -49,7 +49,7 @@ const BASE_ARC_WIDTH_RATIO = 2.4;
 /** 气泡与「取消 / 编辑」之间的留白。 */
 const BUBBLE_GAP = spacing.xl;
 /** 操作钮下方文字标签占的高度(间距 + 一行 caption + 上下内边距)。 */
-const ACTION_LABEL_SPACE = spacing.sm + lineHeight.caption + 4;
+const ACTION_LABEL_SPACE = spacing.sm + lineHeight.caption + spacing.xs;
 
 /**
  * 按住说话浮层:铺满宿主根视图,不接收触摸(手势始终归输入框),只负责展示——
@@ -332,7 +332,7 @@ const makeStyles = (colors: ThemeColors) => ({
     alignSelf: 'stretch' as const,
     backgroundColor: colors.surfaceElevated,
     borderColor: colors.border,
-    borderRadius: radius.container * 2,
+    borderRadius: radius.container,
     borderWidth: StyleSheet.hairlineWidth,
     flexShrink: 1,
     gap: spacing.md,

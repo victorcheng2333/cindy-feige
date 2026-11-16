@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as openaiCompletions from '@earendil-works/pi-ai/api/openai-completions';
 import { SseTranslator } from '@cindy/anthropic-responses-bridge';
 import { PROVIDER_MODEL_CATALOG, BUNDLED_CATALOG, buildUserProvider, modelProtocolComparison, parseModelsListResponse, mergeDiscoveredRuntimeModels } from '@cindy/model-providers';
-import { probePiProvider, createPiProviderFetch, handlePiProviderRequest, hostCredentialEndpointAllowed, invocationModelRecord, nativeBridgeApiKey, NATIVE_ADAPTER_ERROR_BODY_LIMIT, NATIVE_BRIDGE_SESSION_HEADER, readBoundedResponseText } from '../pi-provider-transport.js';
+import { probePiProvider, createPiProviderFetch, handlePiProviderRequest, hostCredentialEndpointAllowed, invocationModelRecord, nativeBridgeApiKey, NATIVE_ADAPTER_ERROR_BODY_LIMIT, NATIVE_BRIDGE_SESSION_HEADER, readBoundedResponseText, sanitizePiAssistantContent } from '../pi-provider-transport.js';
 
 vi.mock('@earendil-works/pi-ai/api/openai-completions', async (importOriginal) => ({
   ...await importOriginal<typeof import('@earendil-works/pi-ai/api/openai-completions')>(),
@@ -33,6 +33,13 @@ describe('Pi-owned transport for Cindy harnesses', () => {
       { role: 'system', content: `Stable policy.\n\n${budget}` },
       { role: 'user', content: [{ type: 'text', text: 'Question' }] },
     ]);
+  });
+
+  it('drops empty thinking signatures while retaining substantive assistant output', () => {
+    expect(sanitizePiAssistantContent([
+      { type: 'thinking', thinking: 'stale', thinkingSignature: '' },
+      { type: 'text', text: 'keep this' },
+    ] as never)).toEqual([{ type: 'text', text: 'keep this' }]);
   });
 
   // #10269, unit: the ID-only model on a Messages connection must carry its

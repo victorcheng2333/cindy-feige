@@ -40,12 +40,17 @@ import { builtInSkillDescriptors, prepareBuiltInSkills } from '../../maker-host/
 import { isCindySkillEnabled, setCindySkillEnabled } from '../../skillhub/activationPreferences.js';
 import { clearCurrentDbClient, setCurrentDbClient } from '../../localDb/client/current.js';
 import { app } from 'electron';
+import { readClaudeHistoryHome } from '../../maker-host/claude-history-home.js';
+import { readBoundClaudeConfigDir } from '../../subscription-accounts/store.js';
+import { getSessionProvider } from '../../maker-host/session-provider-store.js';
+import { subscriptionAccountKind } from '../../maker-host/subscription-account-auth.js';
+import { readClaudeAccountRecord, claudeAccountHome } from '../../maker-host/claude-account-auth.js';
 
 // Real temporary workspaces and capture files, for both sides.
 // An explicit bound instead of the 5 s / 10 s defaults, wide enough for the loaded full desktop pool.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-type Session = { id: string; instanceId: string; agentKind: AgentKind; workDir: string; remoteHostId: string | null; getStatus?(): 'active' | 'closed' };
+type Session = { id: string; instanceId: string; agentKind: AgentKind; workDir: string; remoteHostId: string | null; sdkSessionId?: string; getStatus?(): 'active' | 'closed' };
 type Capture = (session: Session, persisted: unknown, dispatched: string) => Promise<unknown>;
 
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-learn-capture-parity-')));
@@ -90,7 +95,14 @@ beforeAll(async () => {
       ? maker.listAgentRuntimeSkills(session.agentKind, {
         workingDir: session.workDir,
         sessionId: session.id,
-        runtimeConfigDir: process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), '.claude'),
+        runtimeConfigDir: (() => {
+          const nativeId = maker.getSession(session.id)?.sdkSessionId;
+          const boundHome = nativeId ? readClaudeHistoryHome(nativeId) ?? readBoundClaudeConfigDir(nativeId) : undefined;
+          if (boundHome) return boundHome;
+          const providerId = getSessionProvider(session.id);
+          return providerId && subscriptionAccountKind(providerId) === 'claude' && readClaudeAccountRecord(providerId)
+            ? claudeAccountHome(providerId) : path.join(os.homedir(), '.claude');
+        })(),
       })
       : maker.listAgentSkills(session.agentKind, {
         workingDir: session.workDir,

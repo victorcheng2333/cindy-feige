@@ -2309,7 +2309,9 @@ describe('new session worktree wiring (source locks)', () => {
     expect(newSource).toContain('const worktreeTarget = {');
     expect(newSource).toContain('deviceId: selectedDeviceId ??');
     expect(newSource).toContain('worktreeEligibilityForTarget(worktreeProbe, worktreeTarget)');
-    expect(newSource).toContain('probeGeneration: `${connectionEpoch}\\u0000${presenceVersion}`');
+    expect(newSource).toContain('const worktreeDeviceAvailability = selectedDeviceId ? getPresenceAvailability(selectedDeviceId) : null;');
+    expect(newSource).toContain('const worktreeProbeGeneration = `${connectionEpoch}\\u0000${worktreeDeviceAvailability}`;');
+    expect(newSource).toContain('probeGeneration: worktreeProbeGeneration,');
     expect(newSource).toContain('worktreeSourceBranchFromPreference(');
     expect(newSource).toContain('shouldAcceptWorktreeBranchListResult({');
     expect(newSource).toContain('sourceBranch: worktreeIntent.sourceBranch,');
@@ -2859,7 +2861,7 @@ describe('new.tsx worktree 探测 effect 的离线起始态(#4046,源码契约)'
     expect(source).toContain("if (!selectedDeviceId || !cwd || deviceLinkStatus !== 'online') return undefined;");
   });
 
-  it('离线起始态的恢复依赖 effect 依赖数组:链路 / 连接代次 / presence / 定时重探任一变化即重跑', () => {
+  it('离线起始态的恢复依赖 effect 依赖数组:链路 / 连接代次 / 当前电脑可用性 / 定时重探任一变化即重跑', () => {
     // recovering 不是终态,靠 effect 重跑回到探测;这几项漏掉任何一个,断网恢复后都会卡在
     // 「连接恢复中」。锁住依赖数组片段,补上 initialWorktreeProbeEligibility 单测覆盖不到的那一段。
     const effectStart = source.indexOf('initialWorktreeProbeEligibility({');
@@ -2868,9 +2870,8 @@ describe('new.tsx worktree 探测 effect 的离线起始态(#4046,源码契约)'
     const depsEnd = source.indexOf(']);', depsStart);
     const deps = source.slice(depsStart, depsEnd);
     for (const dep of [
-      'connectionEpoch',
+      'worktreeProbeGeneration',
       'deviceLinkStatus',
-      'presenceVersion',
       'worktreeDetectRetryNonce',
       'selectedDeviceId',
       'draft.workspaceKind',

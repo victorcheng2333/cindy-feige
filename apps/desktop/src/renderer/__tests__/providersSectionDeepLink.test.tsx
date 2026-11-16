@@ -349,10 +349,13 @@ describe('ProvidersSection — 深链定位', () => {
     expect(screen.queryByText('Local model')).toBeNull();
     expect(screen.queryByText('settings.providers.detail.emptyModelsDisconnected')).toBeNull();
     const refresh = screen.queryByRole('button', { name: 'settings.providers.models.refreshBuiltinAria' });
-    if (connected) expect(refresh).toBeNull();
-    else expect(refresh).toBeTruthy();
+    // Both local states show the borrowed computer's read-only list and its
+    // remote refresh, never this computer's CLI refresh or account controls.
+    expect(refresh).toBeTruthy();
     expect(screen.queryByTestId('subscription-accounts')).toBeNull();
-    expect(screen.getByRole('progressbar', { name: 'Remote weekly' }).getAttribute('aria-valuenow')).toBe('63');
+    // The quota and injected model section are siblings: their keys must differ
+    // or a catalog rerender duplicates the quota card. Keep this query singular.
+    expect(within(screen.getByTestId('provider-detail-scroll')).getByRole('progressbar', { name: 'Remote weekly' }).getAttribute('aria-valuenow')).toBe('63');
     fireEvent.doubleClick(screen.getByRole('button', { name: /^Claude-6/ }));
     expect(confirmSpy).not.toHaveBeenCalled();
     // Local controls return when the selected remote source goes away.

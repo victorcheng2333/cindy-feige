@@ -103,7 +103,6 @@ describe('mobile session header desktop-first surface', () => {
     expect(source).toContain('<View onLayout={handleKeyboardAreaLayout} pointerEvents="none" style={StyleSheet.absoluteFill} />');
     expect(source).toContain('testID="session.composerFrost"');
     expect(source).toContain('<View ref={topOverlayRef} onLayout={handleTopOverlayLayout} pointerEvents="box-none" style={styles.sessionChrome} testID="session.chrome">');
-    expect(source).toContain('<View style={[styles.sessionChromeContent, { paddingTop: horizontalSystemHeader ? nativeHeaderHeight : insets.top + (paneLayout.persistent ? spacing.lg : 0) }, companionChat && Platform.OS !== \'ios\' && { backgroundColor: colors.surface }]}>');
     // iOS 临时任务列表抽屉放进独立窗口盖住系统栏;系统栏不随抽屉开合收起。
     expect(source).toContain("aboveSystemBar={Platform.OS === 'ios'}");
     expect(source).not.toContain('systemBarHidden');
@@ -213,7 +212,8 @@ describe('mobile session header desktop-first surface', () => {
     // 悬浮模式下右滑任务页拉出任务栏,不再触发系统返回;拉动期间手势保持启用,否则会被取消。
     expect(source).toContain('gestureEnabled: !sessionListDrawerOverlayMounted && !sessionListDrawerFloating');
     expect(source).toContain('<GestureDetector gesture={sessionListDrawerPullGesture}>');
-    expect(source).toContain('enabled: sessionListDrawerFloating && (!sessionListDrawerOverlayMounted || sessionListDrawerPulling)');
+    expect(source).toContain('pullBlocked: voiceHoldRunActive,');
+    expect(source).toContain('enabled: sessionListDrawerFloating && !pullBlocked && (!sessionListDrawerOverlayMounted || sessionListDrawerPulling)');
     // 选任务失败路径:校验先于关闭动画——先关再弹 Alert 会让焦点归还抢走弹窗焦点。
     expect(source).toContain("Alert.alert(t('devices.list.error.sessionDeviceNotFound'));\n      return;\n    }\n    // 不派发 NativeStack REPLACE");
   });

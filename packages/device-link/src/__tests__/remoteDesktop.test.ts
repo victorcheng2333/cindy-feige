@@ -191,6 +191,7 @@ describe("remote desktop channel requests", () => {
   it("allows only small lease-scoped control operations", () => {
     const allowed = [
       { op: "control", lease: "l", enabled: true },
+      { op: "heartbeat", lease: "l", lockOnExit: true },
       { op: "presentation", lease: "l", enabled: false },
       { op: "hostMute", lease: "l", enabled: true },
       { op: "privacyScreen", lease: "l", enabled: true },
@@ -204,7 +205,6 @@ describe("remote desktop channel requests", () => {
     for (const request of [
       { op: "capabilities" },
       { op: "start", displayId: "1" },
-      { op: "heartbeat", lease: "l" },
       { op: "offer", lease: "l", sdp: "x" },
       { op: "frame", lease: "l" },
       { op: "stop", lease: "l" },

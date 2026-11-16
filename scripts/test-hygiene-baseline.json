@@ -34,9 +34,6 @@
     "apps/desktop/src/main/__tests__/chatAttachmentIpcOwnerBoundary.test.ts": {
       "sourceReads": 1
     },
-    "apps/desktop/src/main/__tests__/claudeAccountUsageSource.test.ts": {
-      "sourceReads": 1
-    },
     "apps/desktop/src/main/__tests__/claudeOrphanReaper.test.ts": {
       "resetModules": 1
     },
@@ -475,9 +472,6 @@
     "apps/desktop/src/renderer/__tests__/accountUsageSnapshot.test.ts": {
       "sourceReads": 6
     },
-    "apps/desktop/src/renderer/__tests__/agentCapabilitiesDeviceCache.test.ts": {
-      "resetModules": 1
-    },
     "apps/desktop/src/renderer/__tests__/agentDeviceModelMemory.test.ts": {
       "resetModules": 2
     },
@@ -536,9 +530,6 @@
       "resetModules": 1
     },
     "apps/desktop/src/renderer/__tests__/deviceProvidersRecovery.test.tsx": {
-      "resetModules": 1
-    },
-    "apps/desktop/src/renderer/__tests__/devicesProvidersRefresh.test.tsx": {
       "resetModules": 1
     },
     "apps/desktop/src/renderer/__tests__/diffHorizontalScroll.test.tsx": {
@@ -627,9 +618,6 @@
       "sourceReads": 3
     },
     "apps/desktop/src/renderer/__tests__/modelDefinitionsDefaults.test.ts": {
-      "resetModules": 1
-    },
-    "apps/desktop/src/renderer/__tests__/modelDefinitionsDeviceId.test.ts": {
       "resetModules": 1
     },
     "apps/desktop/src/renderer/__tests__/modelEnginePrefs.test.ts": {
