@@ -499,6 +499,9 @@ function SettingsViewContent() {
                     {/* Section — Language (py 18) */}
                     <section id={generalSettings.language.targetId} className="py-[18px]" aria-label={t(generalSettings.language.titleKey)}>
                       <LanguageSection />
+                    </section>
+
+                    <section className="py-[18px]" aria-label={t('settings.moneyDisplay.title')}>
                       <MoneyDisplaySection />
                     </section>
 
