@@ -833,13 +833,12 @@ fn deliver_logical_frame(
     let entry = pending.remove(req_id).unwrap();
     if kind == "link-accept" {
         if let Ok(accepted) = serde_json::from_value::<LinkAccept>(payload.clone()) {
-            if accepted
+            let peer = peers.entry(src.to_string()).or_insert_with(PeerTransport::new);
+            peer.reliable = accepted
                 .capabilities
                 .iter()
-                .any(|c| c == CAPABILITY_RELIABLE_TRANSPORT_V1)
-            {
-                let peer = peers.entry(src.to_string()).or_insert_with(PeerTransport::new);
-                peer.reliable = true;
+                .any(|c| c == CAPABILITY_RELIABLE_TRANSPORT_V1);
+            if peer.reliable {
                 let base_seq = accepted.transport_base_seq.unwrap_or(1).max(1);
                 if peer.remote_stream_id != accepted.transport_stream_id {
                     peer.remote_stream_id = accepted.transport_stream_id.clone();
@@ -885,6 +884,29 @@ mod transport_tests {
         // Real senders may retain earlier pending frames as the advertised base.
         frame.payload.as_mut().unwrap()[TRANSPORT_MARKER]["baseSeq"] = json!(1);
         frame
+    }
+
+    // Unit protocol regression: a background-only host must not receive reliable
+    // invoke wrappers after a plain accept. Service mocks never negotiate transport.
+    // Minimal input: the provisional reliable flag plus an accept without that capability.
+    #[test]
+    fn plain_accept_disables_unnegotiated_reliable_transport() {
+        let mut peer = PeerTransport::new();
+        peer.reliable = true;
+        let mut peers = HashMap::from([("host".to_string(), peer)]);
+        let (tx, mut reply) = oneshot::channel();
+        let mut pending = HashMap::from([("open".to_string(), PendingReply {
+            dst: "host".to_string(), expect_kind: "link-accept", tx,
+        })]);
+        let acks = handle_inbound_envelope(WireEnvelope {
+            v: PROTOCOL_VERSION,
+            kind: "link-accept".to_string(), id: Some("open".to_string()),
+            src: Some("host".to_string()), dst: Some("cat".to_string()),
+            payload: Some(json!({"capabilities":[CAPABILITY_BACKGROUND_LINK_V1]})),
+        }, &mut peers, &mut pending);
+        assert!(reply.try_recv().unwrap().is_ok());
+        assert!(acks.is_empty());
+        assert!(!peers["host"].reliable, "outbound invokes must remain plain for this host");
     }
 
     #[test]
