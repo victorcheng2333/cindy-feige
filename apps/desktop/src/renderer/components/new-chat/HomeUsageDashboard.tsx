@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 /**
  * HomeUsageDashboard — 首页 (新建对话界面) 的 Token 用量与费用仪表盘。
  *
@@ -163,6 +164,7 @@ function StatCell({
 }
 
 export function HomeUsageDashboard(): React.JSX.Element {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_STORAGE_KEY));

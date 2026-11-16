@@ -1,3 +1,4 @@
+import { displayMoney } from '../settings/moneyDisplayPreferences';
 /**
  * modelPickerRows —— 模型选择列表「每行展示什么」的派生纯逻辑(**纯逻辑,零 react-native**)。
  *
@@ -84,7 +85,8 @@ function compactNumber(value: number): string {
 }
 
 function formatUsd(value: number): string {
-  return `$${compactNumber(value)}`;
+  const display = displayMoney({ amount: value, currency: "USD" });
+  return `${display.converted ? "≈ " : ""}${display.currency === "USD" ? "$" : "¥"}${compactNumber(display.amount)}`;
 }
 
 function compactPercent(discount: number): string {

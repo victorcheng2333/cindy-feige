@@ -2036,6 +2036,7 @@ interface ElectronAPI {
   windowBehavior: {
     getLoginItem: () => Promise<import('../shared/loginItem').LoginItemState>;
     setLoginItem: (enabled: boolean) => Promise<import('../shared/loginItem').LoginItemState>;
+    setMenubarMoneyDisplay: (value: import('@cindy/maker-shared/money-display').MoneyDisplayPreferences) => Promise<{ ok: true }>;
     getMenubarState: () => Promise<import('../shared/menubarQuota').MenubarState>;
     setMenubarEnabled: (enabled: boolean) => Promise<import('../shared/menubarQuota').MenubarState>;
     getAwayGuardState: () => Promise<import('../shared/awayGuard').AwayGuardState>;

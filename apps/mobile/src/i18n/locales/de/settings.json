@@ -503,5 +503,18 @@
   },
   "navigation": {
     "unavailable": "Die Einstellungen des Zielcomputers konnten nicht geöffnet werden. Prüfe, ob er online ist und Fernsteuerung erlaubt. Aktualisiere Cindy bei einer älteren Version."
+  },
+  "moneyDisplay": {
+    "title": "Kostenanzeige",
+    "currency": "Anzeigewährung",
+    "original": "Originalwährung",
+    "USD": "US-Dollar (USD)",
+    "CNY": "Chinesischer Yuan (CNY)",
+    "rate": "1 USD = CNY",
+    "rateHint": "Fester Anzeigekurs. Standard 6,7.",
+    "hint": "≈ kennzeichnet umgerechnete Beträge, einschließlich früherer CNY-Kosten. Nur auf diesem Gerät.",
+    "reset": "Standardwerte wiederherstellen",
+    "invalidRate": "Gib eine endliche Zahl größer als null ein.",
+    "saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
   }
 }

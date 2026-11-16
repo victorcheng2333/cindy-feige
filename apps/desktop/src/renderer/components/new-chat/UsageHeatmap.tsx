@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 /**
  * UsageHeatmap — GitHub 风格的日活跃热力图 (强度 = 当日花费 USD)。
  *
@@ -172,6 +173,7 @@ export function UsageHeatmap({
   onDayClick?: (day: string) => void;
   onVisibleWeeksChange?: (weeks: number) => void;
 }): React.JSX.Element {
+  useMoneyDisplayPreferences();
   const { t, i18n } = useTranslation();
   const plotRef = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);

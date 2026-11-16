@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { ResolvedProjectIcon } from './ResolvedProjectIcon';
 import { sessionProjectDirectory } from '@cindy/maker-shared/worktree-paths';
 import { SessionTaskMenu } from './SessionTaskMenu';
@@ -167,6 +168,7 @@ export const SessionCard = withSidebarNavigation<SessionCardProps>(function Sess
   navigationOnly = false,
   sharedTaskRole,
 }: SessionCardProps & SidebarNavigationProps) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const followers = useSessionFollowers(session);
   // 标题后常显的标记:任务标签色球与「伙伴在跟进」头像。浮出操作钮与归档确认胶囊按它让位。

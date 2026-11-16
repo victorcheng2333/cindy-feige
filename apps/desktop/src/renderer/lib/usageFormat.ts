@@ -1,3 +1,4 @@
+import { displayMoney } from './moneyDisplayPreferences';
 /**
  * usageFormat — usage 相关展示格式化的共用常量与函数。
  * TodaySpendChip (右下角 chip) 与 HomeUsageDashboard (首页仪表盘) 共用,
@@ -29,8 +30,7 @@ export function formatCompactUsd(n: number): string {
 
 /** 精确 USD 金额: < $10 保留 2 位小数 (小额可读), 其余走紧凑格式。 */
 export function formatUsd(n: number): string {
-  if (n < 10) return `$${n.toFixed(2)}`;
-  return formatCompactUsd(n);
+  return formatMoney({ amount: n, currency: 'USD', kind: 'actual-cost', approximate: false });
 }
 
 /**
@@ -40,8 +40,7 @@ export function formatUsd(n: number): string {
  * retain a lower-bound label instead of misleadingly rendering as $0.00.
  */
 export function formatTurnCostUsd(n: number): string {
-  if (n >= 0.01) return `$${n.toFixed(2)}`;
-  return '<$0.01';
+  return formatTurnCostMoney({ amount: n, currency: 'USD', kind: 'actual-cost', approximate: false });
 }
 
 function moneyPrefix(money: RegionalMoney): string {
@@ -49,20 +48,20 @@ function moneyPrefix(money: RegionalMoney): string {
 }
 
 /** 区域金额的紧凑展示；币种来自金额本身。 */
-export function formatCompactMoney(money: RegionalMoney): string {
+export function formatOriginalCompactMoney(money: RegionalMoney): string {
   const prefix = moneyPrefix(money);
   if (money.amount >= 1000) return `${prefix}${(money.amount / 1000).toFixed(1)}k`;
   return `${prefix}${Math.round(money.amount)}`;
 }
 
 /** 区域金额的常规展示。 */
-export function formatMoney(money: RegionalMoney): string {
+function rawFormatMoney(money: RegionalMoney): string {
   if (money.amount < 10) return `${moneyPrefix(money)}${money.amount.toFixed(2)}`;
-  return formatCompactMoney(money);
+  return formatOriginalCompactMoney(money);
 }
 
 /** 每轮 / 每模型金额：固定两位；小于最小货币展示单位时显示下界。 */
-export function formatTurnCostMoney(money: RegionalMoney): string {
+function rawFormatTurnCostMoney(money: RegionalMoney): string {
   const symbol = money.currency === 'CNY' ? '¥' : '$';
   if (money.amount === 0) {
     return `${symbol}0.00`;
@@ -73,3 +72,17 @@ export function formatTurnCostMoney(money: RegionalMoney): string {
   return `<${symbol}0.01`;
 }
 
+export function formatCompactMoney(money: RegionalMoney): string {
+  const display = displayMoney(money);
+  return `${display.converted ? '≈ ' : ''}${formatOriginalCompactMoney(display)}`;
+}
+
+export function formatMoney(money: RegionalMoney): string {
+  const display = displayMoney(money);
+  return `${display.converted ? '≈ ' : ''}${rawFormatMoney(display)}`;
+}
+
+export function formatTurnCostMoney(money: RegionalMoney): string {
+  const display = displayMoney(money);
+  return `${display.converted ? '≈ ' : ''}${rawFormatTurnCostMoney(display)}`;
+}

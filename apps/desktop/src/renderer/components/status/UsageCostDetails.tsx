@@ -1,8 +1,10 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { useTranslation } from 'react-i18next';
 import { usageCostTotals, type UsageCostRow } from '@cindy/maker-shared/usage-cost-details';
 import { formatTurnCostMoney } from '@/lib/usageFormat';
 
 export function UsageCostDetails({ rows }: { rows: UsageCostRow[] | null | undefined }) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   return (
     <div className="space-y-3 text-12 text-[var(--text-primary)]" data-testid="usage-cost-details">

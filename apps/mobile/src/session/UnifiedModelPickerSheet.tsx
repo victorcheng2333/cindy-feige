@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { Platform } from 'react-native';
 import { isModelVisible } from '@cindy/model-providers/sections';
 import { subscriptionQuotaOverview } from '@cindy/maker-shared/subscription-selection';
@@ -268,6 +269,7 @@ export interface UnifiedMobilePickerViewProps {
 export function UnifiedModelPickerSheet(
   p: ModelPickerSheetProps & { unified: UnifiedMobilePickerOptions },
 ) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const { quotas, now, quotaOf } = useMobileModelQuotas(
     p.unified.scope,

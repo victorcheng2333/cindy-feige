@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 /**
  * MessageActionBar
  * ---------------------------------------------------------------------------
@@ -200,6 +201,7 @@ export function MessageActionBar({
   sessionId,
   clientId,
 }: MessageActionBarProps) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const readAloud = useContext(MessageReadAloudContext);
   const pluginMenuEntries = align === 'right' ? pluginUi.userMenu : pluginUi.assistantMenu;

@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 /**
  * ModelOptionsSheetView —— 模型浮窗二级「模型选项」视图的内容(SheetSurface 的 children)。
  *
@@ -158,6 +159,7 @@ export function ModelOptionsSheetView({
   disabled = false,
   testID = "modelOptions",
 }: ModelOptionsSheetViewProps) {
+  useMoneyDisplayPreferences();
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const { t } = useTranslation();

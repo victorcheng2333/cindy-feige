@@ -1,3 +1,4 @@
+import { displayMoney } from '../settings/moneyDisplayPreferences';
 import type { NormalizedRemoteMessage } from '@/session/messageNormalize';
 import { stripChatQuoteMarkerLines } from '@cindy/maker-shared/chat-quotes';
 import { projectSlashCommandsInText } from '@cindy/maker-shared/composer-palette';
@@ -146,7 +147,8 @@ export function formatMessageAbsoluteTime(createdAt: string): string {
 
 export function formatMessageTurnCost(money: RemoteMoney | undefined): string {
   if (!money || !Number.isFinite(money.amount) || money.amount <= 0) return '';
-  const value = formatTurnCost(money);
+  const display = displayMoney(money);
+  const value = `${display.converted ? "≈ " : ""}${formatTurnCost(display)}`;
   if (money.kind === 'value-estimate') {
     return i18n.t('message.actions.turnCostValue', { value });
   }

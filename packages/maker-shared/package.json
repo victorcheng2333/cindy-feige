@@ -8,6 +8,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./money-display": "./src/moneyDisplay.ts",
     "./model-route": "./src/modelRoute.ts",
     "./agent-capabilities": "./src/agentCapabilities.ts",
     "./app-icons": "./src/appIcons.ts",

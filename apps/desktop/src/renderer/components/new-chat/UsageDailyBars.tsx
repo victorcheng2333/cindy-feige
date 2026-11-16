@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 /**
  * UsageDailyBars — 近 30 天每日花费柱状图, 每根柱子按当日各模型消耗堆叠分段。
  *
@@ -75,6 +76,7 @@ export function UsageDailyBars({
   colorOrder: string[];
   todayKey: string;
 }): React.JSX.Element {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   // chart currency 取窗口内**最近一个有金额的日子**的币种:取首行会在币种切换
   // 过渡期选中旧币种(或 token-only 日合成的零额 USD),把当前币种的柱子全部

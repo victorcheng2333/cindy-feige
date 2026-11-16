@@ -9472,6 +9472,19 @@
     },
     "navigation": {
       "unavailable": "No se pudo abrir la configuración del equipo de destino. Comprueba que esté conectado y permita el control remoto; actualiza Cindy si usa una versión antigua."
+    },
+    "moneyDisplay": {
+      "title": "Visualización de costes",
+      "currency": "Moneda mostrada",
+      "original": "Moneda original",
+      "USD": "Dólar estadounidense (USD)",
+      "CNY": "Yuan chino (CNY)",
+      "rate": "1 USD = CNY",
+      "rateHint": "Tipo fijo de visualización. Predeterminado 6,7.",
+      "hint": "≈ indica importes convertidos, incluidos los costes históricos en CNY. Solo en este dispositivo.",
+      "reset": "Restaurar valores predeterminados",
+      "invalidRate": "Introduce un número finito mayor que cero.",
+      "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
     }
   },
   "remoteDevice": {

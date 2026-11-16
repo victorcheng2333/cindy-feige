@@ -1,3 +1,4 @@
+import { displayMoney } from '../settings/moneyDisplayPreferences';
 import type { TFunction } from "i18next";
 import type { SessionMenuAccountUsage } from "./readSessionMenuAccountUsage";
 import {
@@ -28,13 +29,17 @@ export function formatQuotaResetCountdown(
   );
 }
 
-export function formatSessionUsageMoney(money: RemoteMoney): string {
+export function formatSessionUsageMoney(source: RemoteMoney): string {
+  return formatUsageAmount(displayMoney(source));
+}
+
+function formatUsageAmount(money: RemoteMoney & { converted?: boolean }): string {
   const symbol = remoteMoneySymbol(money.currency);
   const amount =
     money.amount > 0 && money.amount < 0.01
       ? `<${symbol}0.01`
       : `${symbol}${money.amount.toFixed(2)}`;
-  return `${money.approximate || money.kind === "value-estimate" ? "≈ " : ""}${amount}`;
+  return `${money.converted || money.approximate || money.kind === "value-estimate" ? "≈ " : ""}${amount}`;
 }
 
 export function sessionUsageAmounts(
@@ -160,7 +165,7 @@ export function accountUsageRows(
     };
     rows.push({
       label: t(`session.menu.usage.${amount.id}`),
-      value: `${formatSessionUsageMoney(money)}${amount.limit === undefined ? "" : ` / ${formatSessionUsageMoney({ ...money, amount: amount.limit })}`}`,
+      value: `${formatUsageAmount(money)}${amount.limit === undefined ? "" : ` / ${formatUsageAmount({ ...money, amount: amount.limit })}`}`,
       level:
         amount.id === "balance"
           ? amount.amount <= 0 ? "crit" : "normal"

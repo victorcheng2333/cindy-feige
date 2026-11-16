@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { ComposerNativeSection as Section } from './ComposerNativeSection';
 import { Text, Toggle, Picker } from '@expo/ui/swift-ui';
 import { disabled, tint, pickerStyle, tag } from "@expo/ui/swift-ui/modifiers";
@@ -15,6 +16,7 @@ import {
   rowFastOn,
 } from "./modelPickerRows";
 export function ModelOptionsSheetView(p: ModelOptionsSheetViewProps) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const { colors } = useTheme();
   useDraftModelMemoryVersion();

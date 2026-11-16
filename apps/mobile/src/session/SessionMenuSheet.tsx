@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { sessionAllowsProjectMove, useSessionProjectMoveSheet } from './SessionProjectMoveSheet';
 import { SessionPrLinks } from './SessionPrLinks';
 import { SessionMenuPrLinks } from './SessionMenuPrLinks';
@@ -236,6 +237,7 @@ export function SessionMenuSheet({
   onClosed,
   keyboardAvoidingBehavior,
 }: SessionMenuSheetProps) {
+  useMoneyDisplayPreferences();
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const { t, i18n: i18nInstance } = useTranslation();

@@ -269,3 +269,6 @@ export function isMenubarSupportedPlatform(platform: string, osRelease: string):
   const major = Number.parseInt(osRelease.split('.')[0] ?? '', 10);
   return Number.isFinite(major) && major >= 23;
 }
+
+/** Local renderer display preference, separate from the usage ledger. */
+export const MENUBAR_SET_MONEY_DISPLAY_CHANNEL = 'menubar:set-money-display';

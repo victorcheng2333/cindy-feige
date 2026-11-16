@@ -1,3 +1,4 @@
+import { MoneyDisplaySection } from './MoneyDisplaySection';
 import { generalSettings } from './GeneralSettings.settings-search';
 import { billingSettings } from './BillingSettings.settings-search';
 import { usageHistorySettings } from './usage/UsageHistorySection.settings-search';
@@ -498,6 +499,7 @@ function SettingsViewContent() {
                     {/* Section — Language (py 18) */}
                     <section id={generalSettings.language.targetId} className="py-[18px]" aria-label={t(generalSettings.language.titleKey)}>
                       <LanguageSection />
+                      <MoneyDisplaySection />
                     </section>
 
                     {/* Section — Notifications (py 18) */}

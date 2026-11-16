@@ -1,3 +1,4 @@
+import { DEFAULT_MONEY_DISPLAY, type MoneyDisplayPreferences } from '@cindy/maker-shared/money-display';
 /**
  * Logic of a quota panel, shared by every platform's presentation.
  *
@@ -89,6 +90,14 @@ export class QuotaPanelController {
 
   constructor(private readonly presenter: QuotaPanelPresenter, private readonly deps: QuotaPanelDeps) {
     this.overview = deps.overview ?? getQuotaOverviewService();
+  }
+
+  private moneyDisplay = DEFAULT_MONEY_DISPLAY;
+
+  setMoneyDisplay(value: MoneyDisplayPreferences): void {
+    this.moneyDisplay = value;
+    const build = this.overview.latest();
+    if (this.started && build) this.publish(build);
   }
 
   get settings(): MenubarSettings {
@@ -203,7 +212,7 @@ export class QuotaPanelController {
       shared: { ...source.shared, label: source.shared?.label ?? source.brand,
         note: build.input.t(source.shared?.highestWeekly ? 'shared.highestWeeklyNote' : 'shared.note') },
     })) : [];
-    const view = sources.length ? buildMenubarView({ ...build.input, nowMs: Date.now(), sources: [...build.input.sources, ...sources] }) : build.view;
+    const view = buildMenubarView({ ...build.input, moneyDisplay: this.moneyDisplay, nowMs: Date.now(), sources: [...build.input.sources, ...sources] });
     this.show({ ...view, ...this.taskOverview(gate), ...controlState(gate) });
     if (gate) {
       // The first real build after signing in counts as a first build again.

@@ -1,4 +1,12 @@
-import { beforeAll, describe, expect, it } from "vitest";
+vi.mock('@react-native-async-storage/async-storage', () => {
+  const values = new Map<string, string>();
+  return { default: {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+    removeItem: async (key: string) => { values.delete(key); },
+  } };
+});
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { i18n } from "@/i18n";
 import {
   accountUsageRows,
@@ -149,4 +157,24 @@ describe("task menu usage presentation", () => {
     expect(accountUsageRows(account("xai", at(25 * 86_400_000)), i18n.t, "zh-CN", now)[0].label).toBe("25天");
     expect(formatQuotaResetCountdown(at(7 * 86_400_000 + 30_000), now, i18n.t, 10080)).toBe("7天");
   });
+});
+
+// Unit regression for selected display currency. Existing coverage uses source units only.
+// Minimal input is a historical CNY amount plus USD display preference.
+import { saveMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
+import { formatMessageTurnCost } from '@/session/messageActions';
+import { formatRemoteMoney } from '@/session/remoteMoney';
+it('uses one converted amount across mobile task details, list and message actions', async () => {
+  const source = money(9.11, 'CNY');
+  try {
+    await saveMoneyDisplayPreferences({ currency: 'USD', usdToCny: 6.7 });
+    expect(formatSessionUsageMoney(source)).toBe('≈ $1.36');
+    expect(formatRemoteMoney(source)).toBe('≈ $1.36');
+    expect(formatMessageTurnCost(source)).toBe('≈ $1.36');
+    await saveMoneyDisplayPreferences({ currency: 'USD', usdToCny: 7 });
+    expect(formatSessionUsageMoney(source)).toBe('≈ $1.30');
+    expect(source).toEqual(money(9.11, 'CNY'));
+  } finally {
+    await saveMoneyDisplayPreferences({ currency: 'original', usdToCny: 6.7 });
+  }
 });

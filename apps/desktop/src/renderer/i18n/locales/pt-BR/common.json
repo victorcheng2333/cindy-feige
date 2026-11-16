@@ -9472,6 +9472,19 @@
     },
     "navigation": {
       "unavailable": "Não foi possível abrir as configurações do computador de destino. Verifique se está online e permite controle remoto; atualize o Cindy se estiver em uma versão antiga."
+    },
+    "moneyDisplay": {
+      "title": "Exibição de custos",
+      "currency": "Moeda exibida",
+      "original": "Moeda original",
+      "USD": "Dólar americano (USD)",
+      "CNY": "Yuan chinês (CNY)",
+      "rate": "1 USD = CNY",
+      "rateHint": "Taxa fixa de exibição. Padrão 6,7.",
+      "hint": "≈ indica valores convertidos, incluindo custos históricos em CNY. Apenas neste dispositivo.",
+      "reset": "Restaurar padrões",
+      "invalidRate": "Digite um número finito maior que zero.",
+      "saveFailed": "Não foi possível salvar. Tente novamente."
     }
   },
   "remoteDevice": {

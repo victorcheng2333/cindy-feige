@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import type { ProviderShareUsageDetails } from '../../../shared/providerShareInsights';
 import { ErrorNotice } from '@/components/ui/error-notice';
 /**
@@ -129,6 +130,7 @@ export function ProviderUsageSection({
   groupConfig?: ProviderGroupConfig | null;
   time: ShareTimeFormat;
 }) {
+  useMoneyDisplayPreferences();
   const { t, i18n } = useTranslation();
   const user = useOptionalAuthUser();
   const devices = useDeviceLinkDeviceList();
@@ -625,6 +627,7 @@ function PartyTable({
   memberActions?: ProviderShareMemberActions;
   time: ShareTimeFormat;
 }) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const byParty = groupUsageRows(filterUsageRows(rows, filter, { party: true }), (row) => row.party);
   const todayByParty = groupUsageRows(filterUsageRows(rows, { ...filter, range: 'today' }, { party: true }), (row) => row.party);
@@ -798,6 +801,7 @@ function ComputerTable({
   selected: string;
   onToggle: (key: string) => void;
 }) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const keyOf = (row: ProviderUsageRow) => currentComputerKey(groupKeys, row.computer);
   const byComputer = groupUsageRows(filterUsageRows(rows, filter, { computer: true }), keyOf);
@@ -906,6 +910,7 @@ function ModelTable({
   colorOf: (key: string) => string;
   rangeLabel: string;
 }) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const items = [...groupUsageRows(rows, modelKeyOf).entries()]
     .map(([key, list]) => ({ key, kind: list[0]!.kind, model: list[0]!.model, totals: summarizeUsageRows(list) }))

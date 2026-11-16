@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ModelPriceQuote } from '../../../shared/regionalMoney';
 import {
@@ -193,4 +193,42 @@ describe('modelPriceFormat', () => {
       current: standard,
     });
   });
+});
+
+// User-requested display conversion. Existing quote tests only cover original currency.
+// Unit regression: historical CNY 9.11 must display approximately USD 1.36,
+// without changing the recorded amount. Also exercises edited rates and reset.
+import { saveMoneyDisplayPreferences } from '../moneyDisplayPreferences';
+import { formatTurnCostMoney } from '../usageFormat';
+import { normalizeMoneyDisplay } from '@cindy/maker-shared/money-display';
+
+it('converts historical costs and quotes with the selected rate, then restores original units', () => {
+  const storage = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+  });
+  const money = { amount: 9.11, currency: 'CNY' as const, kind: 'actual-cost' as const, approximate: false };
+  try {
+    saveMoneyDisplayPreferences({ currency: 'USD', usdToCny: 6.7 });
+    expect(formatTurnCostMoney(money)).toBe('≈ $1.36');
+    expect(formatModelPricePair(quote({ inputPerMtok: 6.7, outputPerMtok: 13.4 }))).toBe('≈ $1 / ≈ $2');
+    expect(money.amount).toBe(9.11);
+    expect(money.currency).toBe('CNY');
+    saveMoneyDisplayPreferences({ currency: 'USD', usdToCny: 7 });
+    expect(formatTurnCostMoney(money)).toBe('≈ $1.30');
+    saveMoneyDisplayPreferences({ currency: 'CNY', usdToCny: 7 });
+    expect(formatTurnCostMoney({ ...money, amount: 1, currency: 'USD' })).toBe('≈ ¥7.00');
+    saveMoneyDisplayPreferences({ currency: 'original', usdToCny: 6.7 });
+    expect(formatTurnCostMoney(money)).toBe('¥9.11');
+    expect(storage.size).toBe(0);
+  } finally {
+    saveMoneyDisplayPreferences({ currency: 'original', usdToCny: 6.7 });
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([0, -1, Infinity, NaN])('recovers a valid display rate from invalid persisted input %s', usdToCny => {
+  expect(normalizeMoneyDisplay({ currency: 'USD', usdToCny })).toEqual({ currency: 'USD', usdToCny: 6.7 });
 });

@@ -1,3 +1,4 @@
+import { displayMoney } from './moneyDisplayPreferences';
 import type { ModelPriceQuote, MoneyCurrency } from '../../shared/regionalMoney';
 
 interface EffectiveModelCost {
@@ -34,7 +35,8 @@ function compactNumber(value: number): string {
 }
 
 export function formatModelPriceAmount(amount: number, currency: MoneyCurrency): string {
-  return `${currency === 'CNY' ? '¥' : '$'}${compactNumber(amount)}`;
+  const display = displayMoney({ amount, currency });
+  return `${display.converted ? '≈ ' : ''}${display.currency === 'CNY' ? '¥' : '$'}${compactNumber(display.amount)}`;
 }
 
 export function formatModelPricePair(quote: ModelPriceQuote): string {

@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { ResolvedProjectIcon } from './ResolvedProjectIcon';
 import { sessionProjectDirectory } from '@cindy/maker-shared/worktree-paths';
 import { SessionTaskMenu } from './SessionTaskMenu';
@@ -350,6 +351,7 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
   navigationOnly = false,
   sharedTaskRole,
 }: SessionItemProps & SidebarNavigationProps) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const followers = useSessionFollowers(session);
   const cindyMakeActivity = useCindyMakeActivity(session);

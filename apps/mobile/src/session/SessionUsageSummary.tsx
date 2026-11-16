@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { Pressable, StyleSheet, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -63,6 +64,7 @@ export function SessionUsageSummary({
   /** 模型目录里的用户可读展示名;缺席时按 sessionUsageModelLabel 兜底。 */
   modelLabel?: string | null;
 }) {
+  useMoneyDisplayPreferences();
   const { t, i18n } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();

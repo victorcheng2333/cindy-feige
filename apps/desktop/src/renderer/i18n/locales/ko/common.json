@@ -9357,6 +9357,19 @@
     },
     "navigation": {
       "unavailable": "대상 컴퓨터의 설정을 열 수 없습니다. 온라인 상태이고 원격 제어가 허용되어 있는지 확인하세요. 이전 버전이라면 Cindy를 업데이트하세요."
+    },
+    "moneyDisplay": {
+      "title": "비용 표시",
+      "currency": "표시 통화",
+      "original": "원래 통화",
+      "USD": "미국 달러 (USD)",
+      "CNY": "중국 위안 (CNY)",
+      "rate": "1 USD = CNY",
+      "rateHint": "표시용 고정 환율. 기본값 6.7.",
+      "hint": "≈는 과거 CNY 비용을 포함한 환산액입니다. 이 기기에만 적용됩니다.",
+      "reset": "기본값 복원",
+      "invalidRate": "0보다 큰 유한한 숫자를 입력하세요.",
+      "saveFailed": "저장하지 못했습니다. 다시 시도하세요."
     }
   },
   "remoteDevice": {

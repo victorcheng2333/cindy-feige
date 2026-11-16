@@ -1,3 +1,4 @@
+import { displayMoney } from '../settings/moneyDisplayPreferences';
 export type RemoteMoneyCurrency = 'CNY' | 'USD';
 
 /** Desktop 经 device-link 下发的结构化金额。 */
@@ -49,9 +50,14 @@ export function resolveSessionTotalMoney(session: {
     : null;
 }
 
-export function formatRemoteMoney(money: RemoteMoney): string {
+function rawFormatRemoteMoney(money: RemoteMoney): string {
   const symbol = remoteMoneySymbol(money.currency);
   if (money.amount >= 10) return `${symbol}${Math.round(money.amount)}`;
   if (money.amount >= 0.01) return `${symbol}${money.amount.toFixed(2)}`;
   return `<${symbol}0.01`;
+}
+
+export function formatRemoteMoney(money: RemoteMoney): string {
+  const display = displayMoney(money);
+  return `${display.converted ? "≈ " : ""}${rawFormatRemoteMoney(display)}`;
 }

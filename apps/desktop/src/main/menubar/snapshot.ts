@@ -1,3 +1,4 @@
+import { convertDisplayMoney, DEFAULT_MONEY_DISPLAY, type MoneyDisplayPreferences } from '@cindy/maker-shared/money-display';
 /**
  * Builds the menu bar view model from normalized usage inputs.
  *
@@ -200,6 +201,7 @@ export interface MenubarUsageInput {
 export type MenubarTranslate = (key: string, vars?: Record<string, string | number>) => string;
 
 export interface MenubarBuildInput {
+  moneyDisplay?: MoneyDisplayPreferences;
   nowMs: number;
   locale: string;
   moneySymbol: string;
@@ -388,7 +390,21 @@ class Builder {
 
   // ── Formatting ────────────────────────────────────────────────────────────
 
-  private money(value: number, symbol = this.input.moneySymbol): string {
+  private usageMoney(value: number) {
+    return convertDisplayMoney({ amount: value, currency: this.input.moneySymbol === '¥' ? 'CNY' : 'USD' },
+      this.input.moneyDisplay ?? DEFAULT_MONEY_DISPLAY);
+  }
+
+  private usageSymbol(): string {
+    const money = this.usageMoney(1);
+    return `${money.converted ? '≈ ' : ''}${money.currency === 'CNY' ? '¥' : '$'}`;
+  }
+
+  private money(value: number, symbol?: string): string {
+    if (symbol === undefined) {
+      value = this.usageMoney(value).amount;
+      symbol = this.usageSymbol();
+    }
     if (value >= 10_000) return `${symbol}${(value / 1000).toFixed(1)}k`;
     if (value >= 100) return `${symbol}${Math.round(value).toLocaleString('en-US')}`;
     return `${symbol}${value.toFixed(2)}`;
@@ -1127,7 +1143,7 @@ class Builder {
           title: this.input.settings.privacy ? this.t('tasks.private', { harness: this.harnessName(task.harness) }) : task.title,
           harness: task.harness,
           logoSvg: this.input.harnessLogos[task.harness],
-          value: task.valueToday,
+          value: this.usageMoney(task.valueToday).amount,
           tokens: task.tokensToday,
           running: task.running,
           startedAtMs: task.running ? task.startedAtMs ?? task.lastActiveAtMs : null,
@@ -1148,7 +1164,18 @@ class Builder {
     const scopes = {} as Record<MenubarUsageScope, MenubarUsageScopeData>;
     for (const scope of ['local', 'all'] as const) {
       const data = this.input.usage.scopes[scope];
-      scopes[scope] = { daily: data.daily, models: data.models, note: this.usageNote(scope, data.devices) };
+      scopes[scope] = {
+        daily: data.daily.map(day => ({ ...day,
+          money: day.money.map(value => this.usageMoney(value).amount) as typeof day.money,
+          paid: this.usageMoney(day.paid).amount,
+        })),
+        models: {
+          '7': data.models['7'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
+          '30': data.models['30'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
+          '90': data.models['90'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
+        },
+        note: this.usageNote(scope, data.devices),
+      };
     }
     return { days: this.input.usage.days, scopes };
   }
@@ -1231,7 +1258,7 @@ class Builder {
     const tasks = this.tasks();
     return {
       locale: this.input.locale,
-      moneySymbol: this.input.moneySymbol,
+      moneySymbol: this.usageSymbol(),
       strings: this.input.uiStrings,
       statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(),
       updatedAtMs: this.input.updatedAtMs,

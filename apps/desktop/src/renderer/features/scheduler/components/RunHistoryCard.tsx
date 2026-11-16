@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 /**
  * RunHistoryCard — 单条 run 卡片
  * ---------------------------------------------------------------------------
@@ -148,6 +149,7 @@ export function RunHistoryCard({
   onRestart,
   sessionReference,
 }: Props) {
+  useMoneyDisplayPreferences();
   const { t, i18n } = useTranslation();
   const errorCode = run.errorMsg ? parseAgentErrorCode(run.errorMsg)?.code : undefined;
   const errorKey = errorCode ? `chat.remoteError.${errorCode}` : undefined;

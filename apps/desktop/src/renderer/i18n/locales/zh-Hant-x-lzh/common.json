@@ -9357,6 +9357,19 @@
     },
     "navigation": {
       "unavailable": "未能開啟彼機設定。請驗其在線且已允遠控；版本舊則先更新 Cindy。"
+    },
+    "moneyDisplay": {
+      "title": "費用顯示",
+      "currency": "顯示幣別",
+      "original": "原幣",
+      "USD": "美元 (USD)",
+      "CNY": "人民幣 (CNY)",
+      "rate": "1 USD = CNY",
+      "rateHint": "固定顯示匯率，預設 6.7。",
+      "hint": "≈ 表示換算值，包含歷史 CNY 費用。設定僅作用於目前裝置。",
+      "reset": "還原預設",
+      "invalidRate": "請輸入大於零的有限數值。",
+      "saveFailed": "儲存失敗，請重試。"
     }
   },
   "remoteDevice": {

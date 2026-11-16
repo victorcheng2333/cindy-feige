@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { CursorMark } from '@/components/icons/CursorMark';
 import { modelImageInputDefault } from '../../../shared/modelImageInputOverride';
 import { displayPricingComponent, isDisplayPricingTableRedundant } from '@/lib/displayPricingFormat';
@@ -227,6 +228,7 @@ export function ModelAdvancedDrawer({
   disabled,
   paymentRequired,
 }: Props) {
+  useMoneyDisplayPreferences();
   const row = groupRow?.aliasRows?.find((member) => member.id === selectedMemberId)
     ?? groupRow?.aliasRows?.find((member) => member.id === groupRow.id) ?? groupRow;
   const memberRows = groupRow?.aliasRows ?? (row ? [row] : []);

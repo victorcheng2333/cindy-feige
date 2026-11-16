@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { prNumberLabel } from '@cindy/maker-shared';
 import {
   createContext,
@@ -122,6 +123,7 @@ function InfoMetaContent({
   pr: HomeSessionPrInfo | null;
   usage: RemoteSessionUsage | null;
 }) {
+  useMoneyDisplayPreferences();
   const { colors } = useTheme();
   const { t } = useTranslation();
   const session = item.session as InfoSession;

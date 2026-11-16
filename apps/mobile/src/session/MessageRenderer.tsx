@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { usePreviewChromeFrame } from "./usePreviewChromeFrame";
 import { parseSettingsNavigationUrl } from '@cindy/maker-shared/settings-navigation';
 import { SettingsLinkSpan } from './SettingsLinkSpan';
@@ -3578,6 +3579,7 @@ function MessageBubble({
   item: MobileMessageItem;
   actions: MessageActions & { firstUserMessageClientId?: string };
 }) {
+  useMoneyDisplayPreferences();
   const { colors: userBubbleColors } = useUserBubbleAppearance();
   const { user: viewer } = useAuth();
   const styles = useThemedStyles(makeStyles);

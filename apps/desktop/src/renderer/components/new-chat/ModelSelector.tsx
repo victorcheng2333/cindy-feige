@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { useRemoteProviderDisable } from '@/lib/remoteProviderDisable';
 import { sameRunLocationProvider, duplicateSubscriptionProviders, subscriptionModelsCoveredBy } from '@cindy/model-providers';
 import { deviceDisplayName } from '@/lib/deviceName';
@@ -1298,6 +1299,7 @@ type ModelSelectorContentViewProps = ModelSelectorContentProps & {
 };
 
 function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
+  useMoneyDisplayPreferences();
   const {
     pluginModels,
     modelGroups,

@@ -9357,6 +9357,19 @@
     },
     "navigation": {
       "unavailable": "対象のパソコンの設定を開けませんでした。オンラインでリモート操作が許可されているか確認し、古いバージョンの場合は Cindy を更新してください。"
+    },
+    "moneyDisplay": {
+      "title": "費用表示",
+      "currency": "表示通貨",
+      "original": "元の通貨",
+      "USD": "米ドル (USD)",
+      "CNY": "人民元 (CNY)",
+      "rate": "1 USD = CNY",
+      "rateHint": "表示用の固定レート。既定値は 6.7。",
+      "hint": "≈ は過去の CNY 費用を含む換算額です。この端末のみに適用します。",
+      "reset": "既定値に戻す",
+      "invalidRate": "ゼロより大きい有限の数値を入力してください。",
+      "saveFailed": "保存できませんでした。再試行してください。"
     }
   },
   "remoteDevice": {

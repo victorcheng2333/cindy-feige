@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { isKimiCodingProviderView, kimiUsageWindowMinutes } from '../../../shared/kimiCodingUsage';
 import { isOpenCodeGoProviderView, opencodeGoUsageWindowMinutes } from '../../../shared/opencodeGoUsage';
 import { useCodexRateLimitReset } from '@/hooks/useCodexRateLimitReset';
@@ -34,6 +35,7 @@ import { TASK_USAGE_ACCOUNT, type UsageAccountLocation } from '@/lib/usageAccoun
 import {
   DAILY_SOFT_LIMIT_FACTOR,
   formatCompactMoney,
+  formatOriginalCompactMoney,
   formatCompactTokens,
   formatModelShort,
   formatTurnCostMoney,
@@ -248,8 +250,8 @@ function computeMetricSlots(
   // Cindy 自己的计费账本, 与账单页 BILLING_CURRENCY 同一笔钱、必须同口径 —— 不能
   // 改用 Gateway 目录下发的币种, 否则同一笔余额在两个界面显示成不同货币。
   if (creditTotals) {
-    const used = formatCompactMoney(gatewayMoney(creditTotals.used));
-    const total = formatCompactMoney(gatewayMoney(creditTotals.total));
+    const used = formatOriginalCompactMoney(gatewayMoney(creditTotals.used));
+    const total = formatOriginalCompactMoney(gatewayMoney(creditTotals.total));
     slots.credit = {
       label: t('todaySpend.creditLabel', { used, total }),
       tooltipLabel: t('todaySpend.tooltip.creditUsed', { used, total }),
@@ -768,10 +770,11 @@ function findLatestTurnUsageSummary(messages: ChatMessage[]): LatestTurnUsageSum
 }
 
 function useLatestTurnUsageSummary(sessionId: string | undefined): LatestTurnUsageSummary | null {
+  const moneyDisplayPreferences = useMoneyDisplayPreferences();
   const displaySnapshot = useChatDisplaySnapshot(sessionId);
   const displaySummary = React.useMemo(
     () => (displaySnapshot ? findLatestTurnUsageSummary(displaySnapshot.messages) : null),
-    [displaySnapshot],
+    [displaySnapshot, moneyDisplayPreferences],
   );
   const [summary, setSummary] = React.useState<LatestTurnUsageSummary | null>(() => {
     if (!sessionId) return null;
@@ -789,7 +792,7 @@ function useLatestTurnUsageSummary(sessionId: string | undefined): LatestTurnUsa
     };
     update();
     return makerChatStore.subscribe(sessionId, update);
-  }, [displaySnapshot, sessionId]);
+  }, [displaySnapshot, sessionId, moneyDisplayPreferences]);
 
   return displaySnapshot ? displaySummary : summary;
 }
@@ -936,6 +939,7 @@ export function TodaySpendChip({
   deviceLinkDeviceId,
   usageAccount = TASK_USAGE_ACCOUNT,
 }: TodaySpendChipProps) {
+  useMoneyDisplayPreferences();
   const { t, i18n } = useTranslation();
   const formatterLocale = i18n.resolvedLanguage ?? i18n.language;
   // 账号余量从哪台电脑读:Agent 在任务所在电脑时就是那台(本机,或 deviceLinkDeviceId 的被控端);

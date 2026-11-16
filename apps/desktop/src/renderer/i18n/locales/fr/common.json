@@ -9472,6 +9472,19 @@
     },
     "navigation": {
       "unavailable": "Impossible d’ouvrir les paramètres de l’ordinateur cible. Vérifiez qu’il est en ligne et autorise le contrôle à distance ; mettez Cindy à jour si nécessaire."
+    },
+    "moneyDisplay": {
+      "title": "Affichage des coûts",
+      "currency": "Devise affichée",
+      "original": "Devise d’origine",
+      "USD": "Dollar américain (USD)",
+      "CNY": "Yuan chinois (CNY)",
+      "rate": "1 USD = CNY",
+      "rateHint": "Taux fixe d’affichage. Par défaut 6,7.",
+      "hint": "≈ indique les montants convertis, y compris les coûts historiques en CNY. Cet appareil uniquement.",
+      "reset": "Rétablir les valeurs par défaut",
+      "invalidRate": "Saisissez un nombre fini supérieur à zéro.",
+      "saveFailed": "Échec de l’enregistrement. Réessayez."
     }
   },
   "remoteDevice": {

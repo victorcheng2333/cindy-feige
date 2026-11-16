@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/settings/moneyDisplayPreferences';
 import { StyleSheet, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +15,7 @@ export function UsageCostDetails({
 }: {
   rows: UsageCostRow[] | null | undefined;
 }) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   return (

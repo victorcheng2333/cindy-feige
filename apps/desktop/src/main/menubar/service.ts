@@ -1,3 +1,4 @@
+import { DEFAULT_MONEY_DISPLAY, type MoneyDisplayPreferences } from '@cindy/maker-shared/money-display';
 /**
  * macOS menu bar quota item: the native helper that presents the shared quota panel.
  *
@@ -43,6 +44,10 @@ export class MenubarService {
         ...(deps.overview ? { overview: deps.overview } : {}),
       },
     );
+  }
+
+  setMoneyDisplay(value: MoneyDisplayPreferences): void {
+    this.panel.setMoneyDisplay(value);
   }
 
   get state(): MenubarState {
@@ -96,10 +101,17 @@ export class MenubarService {
 }
 
 let service: MenubarService | null = null;
+let moneyDisplay = DEFAULT_MONEY_DISPLAY;
+
+export function setMenubarMoneyDisplay(value: MoneyDisplayPreferences): void {
+  moneyDisplay = value;
+  service?.setMoneyDisplay(value);
+}
 
 export function initMenubarService(deps: MenubarServiceDeps): void {
   if (service || !isMenubarSupportedPlatform(process.platform, os.release())) return;
   service = new MenubarService(deps);
+  service.setMoneyDisplay(moneyDisplay);
   service.init();
 }
 

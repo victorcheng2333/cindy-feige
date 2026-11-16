@@ -486,3 +486,22 @@ it.each(['logout', 'owner', 'boundary', 'session-invalidated'])('clears the pres
     releaseBoundary?.();
   }
 });
+
+// Unit regression: changing display settings must immediately republish the native panel.
+// Snapshot-only coverage misses controller wiring and accidental conversion of shared widget data.
+it('refreshes native display currency from cached usage without another collection', async () => {
+  const service = new MenubarService({ openNewTask() {}, overview });
+  mocks.collect.mockResolvedValue(emptyMenubarInputs(Date.now(), 'Fixture'));
+  service.init();
+  await vi.advanceTimersByTimeAsync(0);
+  const before = overview.latest()!;
+  const currency = before.view.moneySymbol === '$' ? 'CNY' : 'USD';
+  const reads = mocks.collect.mock.calls.length;
+  service.setMoneyDisplay({ currency, usdToCny: 6.7 });
+  expect(mocks.publish).toHaveBeenLastCalledWith(expect.objectContaining({ moneySymbol: currency === 'USD' ? '≈ $' : '≈ ¥' }));
+  expect(overview.latest()).toBe(before);
+  expect(mocks.collect.mock.calls.length).toBe(reads);
+  service.setMoneyDisplay({ currency: 'original', usdToCny: 6.7 });
+  expect(mocks.publish).toHaveBeenLastCalledWith(expect.objectContaining({ moneySymbol: before.view.moneySymbol }));
+  service.stop();
+});

@@ -503,5 +503,18 @@
   },
   "navigation": {
     "unavailable": "未能开启彼机设置。请验其在线且已允远控；版本旧则先更新 Cindy。"
+  },
+  "moneyDisplay": {
+    "title": "费用显示",
+    "currency": "显示币种",
+    "original": "原币",
+    "USD": "美元 (USD)",
+    "CNY": "人民币 (CNY)",
+    "rate": "1 USD = CNY",
+    "rateHint": "固定展示汇率，默认 6.7。",
+    "hint": "≈ 表示折算值，包含历史 CNY 费用。设置仅作用于当前设备。",
+    "reset": "恢复默认",
+    "invalidRate": "请输入大于零的有限数值。",
+    "saveFailed": "保存失败，请重试。"
   }
 }

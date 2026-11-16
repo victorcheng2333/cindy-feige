@@ -543,3 +543,33 @@ it('shows Cursor pools independently without adding them or choosing the smalles
   expect(view.details.cursor.saySecondary).toContain('not added');
   expect(isLowOnEverything(build)).toBe(false);
 });
+
+// Unit regression: the native panel previously ignored the renderer's USD preference.
+// Existing snapshots cover only ledger units. CNY 6.7 must become approximately USD 1
+// across chart, paid amount, models and tasks, while the cached ledger input stays intact.
+it('projects all native usage amounts to the selected display currency', () => {
+  const source = input([]);
+  source.moneySymbol = '¥';
+  source.moneyDisplay = { currency: 'USD', usdToCny: 6.7 };
+  const daily = source.usage.scopes.all.daily.at(-1)!;
+  daily.money = [6.7, 13.4, 0];
+  daily.paid = 6.7;
+  source.usage.scopes.all.models['30'] = [{ name: 'Model', harness: 'codex', money: 6.7, tokens: 10 }];
+  source.tasks = [{ sessionId: 'task', title: 'Task', harness: 'codex', model: 'Model',
+    valueToday: 6.7, tokensToday: 10, contextPercent: null, running: true, startedAtMs: NOW, lastActiveAtMs: NOW }];
+  const view = buildMenubarView(source);
+  expect(view.moneySymbol).toBe('≈ $');
+  expect(view.usage.scopes.all.daily.at(-1)?.money).toEqual([1, 2, 0]);
+  expect(view.usage.scopes.all.daily.at(-1)?.paid).toBe(1);
+  expect(view.usage.scopes.all.models['30'][0].money).toBe(1);
+  expect(view.tasks[0].value).toBe(1);
+  expect(view.statusTextByMode.today).toBe('≈ $3.00');
+  expect(view.statusTextByMode.task).toBe('≈ $1.00');
+  expect(daily.money).toEqual([6.7, 13.4, 0]);
+  expect(source.tasks[0].valueToday).toBe(6.7);
+  source.moneyDisplay = { currency: 'USD', usdToCny: 7 };
+  expect(buildMenubarView(source).tasks[0].value).toBeCloseTo(6.7 / 7);
+  source.moneyDisplay = { currency: 'original', usdToCny: 6.7 };
+  expect(buildMenubarView(source).moneySymbol).toBe('¥');
+  expect(buildMenubarView(source).tasks[0].value).toBe(6.7);
+});

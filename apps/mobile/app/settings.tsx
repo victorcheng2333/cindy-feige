@@ -1,3 +1,4 @@
+import { MoneyDisplaySettings } from '@/settings/MoneyDisplaySettings';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useUpdates } from 'expo-updates';
@@ -998,6 +999,8 @@ export default function SettingsScreen() {
           <UserBubbleSettings />
           {appIconChoice ? <AppIconSettings choice={appIconChoice} /> : null}
         </SettingsGroup>
+
+        <MoneyDisplaySettings />
 
         {/* 显示语言:默认跟随系统,手动选择即持久化 override(恢复跟随系统 = 清除 override) */}
         <SettingsGroup

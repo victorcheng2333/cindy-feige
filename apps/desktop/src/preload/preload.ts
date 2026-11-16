@@ -134,6 +134,7 @@ import {
 } from '../shared/windowBehavior';
 import {
   MENUBAR_GET_STATE_CHANNEL,
+  MENUBAR_SET_MONEY_DISPLAY_CHANNEL,
   MENUBAR_SET_ENABLED_CHANNEL,
   type MenubarState,
 } from '../shared/menubarQuota';
@@ -2144,6 +2145,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setLoginItem: (enabled: boolean): Promise<LoginItemState> =>
       ipcRenderer.invoke(LOGIN_ITEM_SET_CHANNEL, enabled),
     // macOS menu bar quota item; `available` is false on other platforms and before macOS 14.
+    setMenubarMoneyDisplay: (value: import('@cindy/maker-shared/money-display').MoneyDisplayPreferences): Promise<{ ok: true }> =>
+      ipcRenderer.invoke(MENUBAR_SET_MONEY_DISPLAY_CHANNEL, value),
     getMenubarState: (): Promise<MenubarState> => ipcRenderer.invoke(MENUBAR_GET_STATE_CHANNEL),
     setMenubarEnabled: (enabled: boolean): Promise<MenubarState> =>
       ipcRenderer.invoke(MENUBAR_SET_ENABLED_CHANNEL, enabled),

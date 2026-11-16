@@ -1,3 +1,4 @@
+import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { DisplayPricingDetails } from '@/components/DisplayPricingDetails';
 import { useModelContextLimit } from '@/hooks/useModelContextLimit';
 import { localizedModelName } from '@/lib/modelDisplayNames';
@@ -87,6 +88,7 @@ export function ModelConfigFlyout({
   onAddFavorite,
   onRemoveFavorite,
 }: ModelConfigFlyoutProps) {
+  useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const displayName = localizedModelName(entry.displayName, t);
   const showSlider = config.efforts.length > 1;
