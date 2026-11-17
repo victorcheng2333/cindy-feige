@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
  * SessionItem — 单条 CCS 会话行
  * ---------------------------------------------------------------------------
  * 从 CCAgentSidebarUpper 抽出，行为 100% 复用：
- *   - 200ms 防抖区分单击导航 / 双击重命名
- *   - 双击或 Pencil 图标进入重命名；Enter 提交、Escape 取消、Blur 提交
+ *   - 单击导航 / 双击在新窗口打开
+ *   - 菜单进入重命名；Enter 提交、Escape 取消、Blur 提交
  *   - 左侧 status zone 直接渲染 vendor mark（Claude=AA / Codex=六瓣）—— 同一 icon
  *     承担 vendor 标识 + 运行状态：idle 灰、running 切 Thinking Orange + 呼吸、
  *     需关注时叠右上红点、archived 改 Archive icon。**Pin 入口走右键菜单**
@@ -585,7 +585,7 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
   const rowRef = useRef<HTMLDivElement>(null);
   const dragStartTargetRef = useRef<Element | null>(null);
 
-  // ── Double-click rename ──
+  // ── Menu rename ──
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(displayTitle);
   // Guard: Enter fires commitTitle, then input unmounts → onBlur fires it
@@ -607,7 +607,7 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
   );
 
   // 单击 → 立即导航,无延迟。双击 → 浏览器在两次 click 之后再发 dblclick,
-  // 进入重命名;首击 navigate 到本 session,第二击因 id===activeSessionId 在
+  // 在新窗口打开;首击 navigate 到本 session,第二击因 id===activeSessionId 在
   // handleSessionClick 早 return(参见 CCAgentSidebarUpper handleSessionClick),
   // 不会重复导航。两路并存,无需 200ms 防抖。
   const handleClick = useCallback(
@@ -622,23 +622,6 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
     [isEditing, onClick, session.id],
   );
 
-  const handleDoubleClick = useCallback(
-    (e: React.MouseEvent) => {
-      // 已在编辑态时不重复进入:编辑器内部元素漏拦的 dblclick 冒泡到这里会
-      // setEditValue 重置草稿(与 handleClick 的 isEditing 守卫对称)。
-      if (isEditing || navigationOnly) return;
-      e.stopPropagation();
-      e.preventDefault();
-      if (remoteWritesBlocked) {
-        toast.warning(t('ccAgent.remoteSession.actionsUnavailable'));
-        return;
-      }
-      setEditValue(displayTitle);
-      committedRef.current = false;
-      setIsEditing(true);
-    },
-    [displayTitle, isEditing, navigationOnly, remoteWritesBlocked, t],
-  );
 
   // 置顶段使用原生 Sortable DnD：Sortable 负责侧栏内排序，原生 dragstart 同时写入
   // 分屏 MIME，因此同一整行可以根据落点完成排序或拖入右侧。普通 forceFallback
@@ -795,6 +778,17 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
     }
     void window.electronAPI.maker.openSessionInNewWindow(session.id, session.deviceLinkDeviceId);
   }, [remoteWritesBlocked, session.deviceLinkDeviceId, session.id, t]);
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditing || navigationOnly || isArchived || isEmpty ||
+        parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host') return;
+      e.stopPropagation();
+      e.preventDefault();
+      handleOpenInNewWindowSelect();
+    },
+    [handleOpenInNewWindowSelect, isEditing, navigationOnly, isArchived, isEmpty, session.deviceLinkDeviceId],
+  );
 
   // 复制 cindy://session/<id> 深度链接到剪贴板。三个变体(标准/Pinned/Archived/Draft)
   // 共用此 handler — sessionId 始终存在(draft 也是 DB-backed 的 Session row)。
@@ -1377,4 +1371,4 @@ function SessionAction({
     </Tip>
   );
 }
-import { isSharedTaskPeer } from '@cindy/device-link';
+import { isSharedTaskPeer, parseSharedTaskPeer } from '@cindy/device-link';

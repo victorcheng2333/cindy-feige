@@ -2,7 +2,7 @@ import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { ResolvedProjectIcon } from './ResolvedProjectIcon';
 import { sessionProjectDirectory } from '@cindy/maker-shared/worktree-paths';
 import { SessionTaskMenu } from './SessionTaskMenu';
-import { isSharedTaskPeer } from '@cindy/device-link';
+import { isSharedTaskPeer, parseSharedTaskPeer } from '@cindy/device-link';
 import { getSessionListActivityAt } from '@cindy/maker-shared/session-activity';
 import { TaskTagMenuSection, TaskTagEditor, TaskTagDots } from '@/features/task-tags/TaskTags';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
  *   标识与时间统一放在底部 metadata 槽。
  *
  * 交互 100% 对齐 SessionItem（props 签名完全一致，sections 内按 cardMode 二选一渲染）：
- *   - 单击导航 / 双击重命名（标题原位变 input）
+ *   - 单击导航 / 双击在新窗口打开（菜单进入重命名）
  *   - 右键 coordinate-anchored DropdownMenu（Pin/Rename/移动到项目/复制任务链接/新窗口/导出/Archive/Delete，
  *     archived / draft 变体同款分支）
  *   - hover 右上角仅 More（⋮）快捷钮；存档收进 ⋮ / 右键展开菜单的 Archive 项
@@ -424,23 +424,7 @@ export const SessionCard = withSidebarNavigation<SessionCardProps>(function Sess
     [isEditing, onClick, session.id],
   );
 
-  const handleDoubleClick = useCallback(
-    (e: React.MouseEvent) => {
-      // 已在编辑态时不重复进入:编辑器内部元素漏拦的 dblclick 冒泡到这里会
-      // setEditValue 重置草稿(与 handleClick 的 isEditing 守卫对称)。
-      if (isEditing || navigationOnly) return;
-      e.stopPropagation();
-      e.preventDefault();
-      if (remoteWritesBlocked) {
-        toast.warning(t('ccAgent.remoteSession.actionsUnavailable'));
-        return;
-      }
-      setEditValue(displayTitle);
-      committedRef.current = false;
-      setIsEditing(true);
-    },
-    [displayTitle, isEditing, navigationOnly, remoteWritesBlocked, t],
-  );
+
 
   useEffect(() => {
     if (isActive && !navigationOnly) scrollIntoNearestView(cardRef.current);
@@ -527,6 +511,17 @@ export const SessionCard = withSidebarNavigation<SessionCardProps>(function Sess
     }
     void window.electronAPI.maker.openSessionInNewWindow(session.id, session.deviceLinkDeviceId);
   }, [remoteWritesBlocked, session.deviceLinkDeviceId, session.id, t]);
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditing || navigationOnly || isArchived || isEmpty ||
+        parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host') return;
+      e.stopPropagation();
+      e.preventDefault();
+      handleOpenInNewWindowSelect();
+    },
+    [handleOpenInNewWindowSelect, isEditing, navigationOnly, isArchived, isEmpty, session.deviceLinkDeviceId],
+  );
 
   // 「导出会话…」——打成 .cshare 分享给同事。空草稿、remote / orca / device-link 会话不显示此入口
   // (转录在远端或协同关系不可移植，main 侧同样有双保险拒绝)。

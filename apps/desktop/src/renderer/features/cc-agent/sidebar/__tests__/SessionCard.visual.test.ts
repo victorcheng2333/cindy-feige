@@ -108,8 +108,8 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => children,
   DropdownMenuContent: ({ children }: { children: ReactNode }) =>
     mocks.dropdownMenuOpen ? createElement('div', { role: 'menu' }, children) : null,
-  DropdownMenuItem: ({ children, disabled }: { children: ReactNode; disabled?: boolean }) =>
-    createElement('div', { role: 'menuitem', 'aria-disabled': disabled || undefined }, children),
+  DropdownMenuItem: ({ children, disabled, onSelect }: { children: ReactNode; disabled?: boolean; onSelect?: () => void }) =>
+    createElement('div', { role: 'menuitem', 'aria-disabled': disabled || undefined, onClick: disabled ? undefined : onSelect }, children),
   DropdownMenuSeparator: () => null,
   DropdownMenuSub: ({ children }: { children: ReactNode }) => children,
   DropdownMenuSubContent: () => null,
@@ -277,6 +277,30 @@ describe('SessionCard visual cases', () => {
     } else {
       delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
     }
+  });
+
+  // 回归：上次只改顶部标题，左侧列表与卡片仍双击改名。
+  // unit：挂载真实三种行，双击后必须向宿主请求打开正确的本机/远程任务，且不出现编辑器。
+  // 原有测试只覆盖改名布局；最小失败输入为普通任务行的一次 dblclick。
+  it.each(['text', 'list', 'card'] as const)('opens the task in a new window on %s double-click', (variant) => {
+    const openSessionInNewWindow = vi.fn();
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true, value: { maker: { openSessionInNewWindow } },
+    });
+    for (const deviceLinkDeviceId of [undefined, 'remote-mac']) {
+      const session = { ...sessionCardVisualCases[0].session, deviceLinkDeviceId };
+      const props = { session, isActive: false, isRunning: false, hasAttentionNotification: false,
+        onClick: vi.fn(), onRename: vi.fn(), onAction: vi.fn(), onTogglePin: vi.fn() };
+      const view = render(variant === 'text'
+        ? createElement(SessionItem, props)
+        : createElement(SessionCard, { ...props, variant }));
+      fireEvent.doubleClick(view.container.querySelector('[data-sidebar-session-row="true"]')!);
+      expect(openSessionInNewWindow).toHaveBeenLastCalledWith(session.id, deviceLinkDeviceId);
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(props.onRename).not.toHaveBeenCalled();
+      view.unmount();
+    }
+    expect(openSessionInNewWindow).toHaveBeenCalledTimes(2);
   });
 
   it.each(['list', 'card'] as const)(
@@ -925,7 +949,8 @@ describe('SessionCard visual cases', () => {
     );
     expect(statusIconSlot).toBeTruthy();
 
-    fireEvent.doubleClick(card);
+    fireEvent.contextMenu(card);
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }));
 
     const input = card.querySelector<HTMLInputElement>('input')!;
     const editor = input.parentElement!;
@@ -964,7 +989,8 @@ describe('SessionCard visual cases', () => {
     const title = card.querySelector<HTMLElement>('.sidebar-title-marquee')!.parentElement!;
     expect(title.classList.contains('invisible')).toBe(false);
 
-    fireEvent.doubleClick(card);
+    fireEvent.contextMenu(card);
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }));
 
     const input = card.querySelector<HTMLInputElement>('input')!;
     const overlay = input.parentElement!;
