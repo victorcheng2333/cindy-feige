@@ -45,7 +45,10 @@ export function ChatPathChipSpan({
   // absPath 通道打开,可开性由 canOpenChatPathChip 在 verdict 定 kind 后裁决。
   const target = useMemo(() => {
     if (!ctx || !candidate) return null;
-    const absPath = resolveChatAbsPath(candidate.href, ctx.workdir);
+    // fs:stat-path expands home on the owning computer and returns resolvedPath.
+    const absPath = !ctx.remoteHostId && /^~[\\/]/.test(candidate.href)
+      ? candidate.href
+      : resolveChatAbsPath(candidate.href, ctx.workdir);
     return { absPath, relPath: toWorkdirRel(ctx.workdir, absPath) };
   }, [candidate, ctx]);
   const actionScope = useRef<{ ctx: typeof ctx; target: typeof target } | null>(null);
@@ -124,12 +127,14 @@ export function ChatPathChipSpan({
   }
   const activate = async (action: (value: ChatFilePathTarget) => void) => {
     let actionKind = kind;
-    if (explicitLink) {
+    let actionAbsPath = target.absPath;
+    if (explicitLink || /^~[\\/]/.test(target.absPath)) {
       // A visible authored link may be tapped before background verification,
       // or after a cached miss. Resolve the kind before opening or building its
       // menu; a directory without a trailing slash must not enter file preview.
       try {
         const stat = await ctx.statPath(target.absPath);
+        if (/^~[\\/]/.test(target.absPath)) actionAbsPath = stat.resolvedPath;
         if (stat.kind === 'dir') actionKind = 'directory';
         else if (stat.kind === 'file') actionKind = 'file';
       } catch {
@@ -138,11 +143,12 @@ export function ChatPathChipSpan({
       }
       if (actionScope.current?.ctx !== ctx || actionScope.current.target?.absPath !== target.absPath) return;
     }
-    if (!canOpenChatPathChip(actionKind, target.relPath)) return;
+    const actionRelPath = toWorkdirRel(ctx.workdir, actionAbsPath);
+    if (!canOpenChatPathChip(actionKind, actionRelPath)) return;
     action({
       kind: actionKind,
-      relPath: target.relPath,
-      absPath: target.absPath,
+      relPath: actionRelPath,
+      absPath: actionAbsPath,
       ...(actionKind === 'file' && candidate.line !== undefined ? { line: candidate.line } : {}),
     });
   };

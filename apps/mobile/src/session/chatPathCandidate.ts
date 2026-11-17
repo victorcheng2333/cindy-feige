@@ -448,19 +448,9 @@ const BARE_PATH_SEG = `[A-Za-z0-9._~@+\\-${BARE_PATH_CJK}]+`;
 const BARE_PATH_SEP = '\\\\/'; // 反斜杠 + 正斜杠,字符类内用
 // 锚点:盘符 `C:\` / `./` `../` / 单独的分隔符开头。
 //
-// **刻意不含 `~/`**:`~` 在本仓任何一层都没有展开 —— renderer 的 resolveLocalPath /
-// resolveChatAbsPath 只做 join,被控端的 fs:stat-path / fs:resolve-path 也不展开,于是
-// `~/logs/app.log` 会被 stat 成 `<workdir>/~/logs/app.log`:链路正常时判 nonfile、永远不
-// 点亮(白发一次 stat),链路断时还会按「绝对形状」乐观点亮、点开错误地址。
-// 在拿到可靠展开能力(被控端返回真实 home)之前,正文裸路径不认这个锚点
-// (PR #1144 review 实捉;行内 code / 显式链接入口的同一问题是既有行为,属另一处 —— 修它
-// 要改被控端协议,不是 renderer 能兜的,已在 PR 里记为 follow-up)。
+// Home-relative tokens are resolved by ChatPathChipSpan through the owner's
+// fs:stat-path; navigation uses the returned resolvedPath.
 const BARE_PATH_ANCHOR = `(?:[A-Za-z]:[${BARE_PATH_SEP}]|\\.{1,2}[${BARE_PATH_SEP}]|[${BARE_PATH_SEP}])`;
-// `SEG` 含 `~`(备份文件 `file~` 等中段用途),所以只改锚点挡不住 `~/x`:
-// `(?:SEG SEP)+` 一样能把 `~/` 当成「段+分隔符」吃下去。故在整条匹配前加负向前瞻,
-// 明确拒绝以 `~/` `~\` 开头的 token(实测过:只删锚点里的 `~` 时 `~/logs/app.log`
-// 仍然命中)。
-const BARE_PATH_NO_HOME = '(?!~[\\\\/])';
 // 右边界:匹配**不得停在段内字符或分隔符之前**。只排除字母数字是不够的 —— SEG 还允许
 // `_ ~ @ + -` 与 CJK,分隔符也会漏过去,于是这些形态会被切出一个错误前缀、后半段留成
 // 普通文本,而那个前缀形状上是「分隔符+扩展名」= 非歧义,断链时会被点亮、点开错误地址:
@@ -488,7 +478,7 @@ const BARE_PATH_LINE_SUFFIX = '(?::[1-9]\\d{0,6}(?::[1-9]\\d{0,6})?)?';
 // 左边界:前一个字符不能是路径字符 / 分隔符(`:` 不算,允许 `文件:src/x.ts`)。
 const BARE_PATH_LEFT_BOUNDARY = `(?<![A-Za-z0-9._~@+${BARE_PATH_CJK}${BARE_PATH_SEP}])`;
 const BARE_PATH_RE_SOURCE =
-  `${BARE_PATH_LEFT_BOUNDARY}${BARE_PATH_NO_HOME}(${BARE_PATH_BODY}${BARE_PATH_LINE_SUFFIX})`;
+  `${BARE_PATH_LEFT_BOUNDARY}(${BARE_PATH_BODY}${BARE_PATH_LINE_SUFFIX})`;
 
 /**
  * 边界后置过滤 —— 一条统一判据,替掉「一轮补一个字符类」。
