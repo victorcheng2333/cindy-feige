@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "於此目錄新開差事",
       "newTask": "新開差事",
       "allTasks": "諸差事",
       "search": "尋"

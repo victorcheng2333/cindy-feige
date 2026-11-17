@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "이 디렉터리에서 새 세션",
       "newTask": "새 작업",
       "allTasks": "모든 작업",
       "search": "검색"

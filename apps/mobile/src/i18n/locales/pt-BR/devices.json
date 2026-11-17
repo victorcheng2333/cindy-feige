@@ -246,6 +246,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "Nova sessão neste diretório",
       "newTask": "Nova tarefa",
       "allTasks": "Todas as tarefas",
       "search": "Pesquisar"

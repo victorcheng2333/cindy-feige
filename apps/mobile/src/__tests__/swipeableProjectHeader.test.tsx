@@ -61,7 +61,7 @@ vi.mock("@/platform/gestureHandler", async () => {
         el(
           "div",
           { "data-side": "right" },
-          props.renderRightActions({}, native.offset),
+          props.renderRightActions?.({}, native.offset),
         ),
         props.children,
       );
@@ -71,6 +71,7 @@ vi.mock("@/platform/gestureHandler", async () => {
 vi.mock("lucide-react-native", () => ({
   List: () => null,
   Search: () => null,
+  Settings: () => null,
   SquarePen: () => null,
 }));
 vi.mock("react-i18next", async (importOriginal) => ({
@@ -89,21 +90,19 @@ let root: Root;
 let host: HTMLDivElement;
 let registry: ReturnType<typeof createSwipeRowRegistry>;
 let destination: string;
-function render(projectKey = "project-a", edgeInset = 0) {
+function render(projectKey = "project-a", edgeInset = 0, withSettings = true) {
   act(() =>
     root.render(
       createElement(PaneEdgeInsetProvider, { value: edgeInset }, createElement(SwipeableProjectHeader, {
         projectKey,
         registry,
-        onNewTask: () => {
-          destination = "new";
-        },
         onOpenTasks: () => {
           destination = "tasks";
         },
         onSearch: () => {
           destination = "search";
         },
+        onSettings: withSettings ? () => { destination = "settings"; } : undefined,
         children: "Project",
       })),
     ),
@@ -120,73 +119,60 @@ beforeEach(() => {
 });
 afterEach(() => act(() => root.unmount()));
 
-// Unit: production project header at the native gesture boundary. Existing
-// session-row tests cover archive/pin and classic Animated, not these navigation
-// actions. Minimal failures: pull past the threshold then retract, or reuse an
-// opened project row while a task row owns the same page registry.
-// The requested side swap moves new-task and its full-swipe trigger to the right
-// panel; clicking the revealed left panel must still open tasks/search (unit).
+// Unit: production swipe header at the native gesture boundary. User correction
+// 2026-11-17: the trailing action replaces new-task with settings; settings must
+// open only after tapping, never on full swipe. Existing tests opened new-task
+// on release and placed settings on the opposite side. Minimal input: release a
+// full left swipe, then tap the revealed settings action.
 describe("project header navigation and swipe lifecycle", () => {
-  // #7083 unit: repeated parent renders/rotation must retain the native gesture
-  // inputs; full-swipe still uses the latest width and current project action.
-  it("does not re-register gestures on refresh or rotation", () => {
+  it("does not re-register gestures when a project row refreshes", () => {
     render();
     const initial = native.props;
-    native.width = 800;
     render("project-b");
-    for (const key of ["onSwipeableOpenStartDrag", "onSwipeableClose", "onSwipeableWillOpen", "hitSlop"]) {
+    for (const key of ["onSwipeableOpenStartDrag", "onSwipeableClose", "hitSlop"]) {
       expect(native.props[key]).toBe(initial[key]);
     }
-    // User decision 2026-11-12: beside a resizable pane edge the row leaves the
-    // edge's 24pt drag band to resizing; a coarse drag there opened row actions.
     render("project-b", 24);
     expect(native.props.hitSlop).toEqual({ left: -24, right: -24 });
-    native.offset.value = -260;
-    act(() => native.props.onSwipeableWillOpen("left"));
-    expect(destination).toBe("home");
-    native.offset.value = -500;
-    act(() => native.props.onSwipeableWillOpen("left"));
-    expect(destination).toBe("new");
-    expect(registry.closeOpenRow()).toBe(false);
   });
-  it.each([
-    ["left", -260, "new"],
-    ["left", -100, "home"],
-    ["right", 260, "home"],
-  ])(
-    "only opens new-task on a released full left swipe (%s, %s)",
-    (direction, end, target) => {
+
+  it.each([["left", -260], ["right", 260]])(
+    "reveals actions without navigating on full %s swipe",
+    (direction, offset) => {
       render();
       act(() => native.props.onSwipeableOpenStartDrag());
-      native.offset.value = -280;
+      native.offset.value = Number(offset);
+      act(() => native.props.onSwipeableWillOpen?.(direction));
       expect(destination).toBe("home");
-      native.offset.value = Number(end);
-      act(() => native.props.onSwipeableWillOpen(direction));
-      expect(destination).toBe(target);
-      if (target === "new") {
-        expect(native.close).toHaveBeenCalledOnce();
-        expect(registry.closeOpenRow()).toBe(false);
-      }
+      expect(host.querySelector('[aria-label="devices.list.projectActions.newTask"]')).toBeNull();
+      expect(native.close).not.toHaveBeenCalled();
     },
   );
 
   it.each([
-    ["newTask", "new", "right"],
     ["allTasks", "tasks", "left"],
     ["search", "search", "left"],
+    ["settings", "settings", "right"],
   ])("closes the revealed header before opening %s", (action, target, side) => {
     render();
     act(() => native.props.onSwipeableOpenStartDrag());
     act(() =>
       host
         .querySelector<HTMLButtonElement>(
-          `[data-side="${side}"] [aria-label="devices.list.projectActions.${action}"]`,
+          `[data-side="${side}"] [aria-label="${action === "settings" ? "settings.projectInfo.title" : `devices.list.projectActions.${action}`}"]`,
         )!
         .click(),
     );
     expect(destination).toBe(target);
     expect(native.close).toHaveBeenCalledOnce();
     expect(registry.closeOpenRow()).toBe(false);
+  });
+
+  it("omits settings when the project has no unambiguous settings target", () => {
+    render("project-a", 0, false);
+    expect(host.querySelector('[aria-label="settings.projectInfo.title"]')).toBeNull();
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="devices.list.projectActions.search"]')!.click());
+    expect(destination).toBe("search");
   });
 
   it("shares mutual exclusion with task rows and does not clear their newer registration", () => {

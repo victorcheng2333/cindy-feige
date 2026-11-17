@@ -1,4 +1,3 @@
-import { useWindowWidth } from '@/platform/windowDimension';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Animated, {
@@ -6,11 +5,10 @@ import Animated, {
   useAnimatedStyle,
   type SharedValue,
 } from "react-native-reanimated";
-import { List, Search, SquarePen, type LucideIcon } from "lucide-react-native";
+import { List, Search, Settings, type LucideIcon } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import {
   ReanimatedSwipeable,
-  SwipeDirection,
   type SwipeableMethods,
 } from "@/platform/gestureHandler";
 import type { SwipeRowRegistry } from "./swipeRowRegistry";
@@ -34,9 +32,9 @@ const EDGE_HIT_SLOP = { left: -spacing.xl };
 interface Props {
   projectKey: string;
   registry: SwipeRowRegistry;
-  onNewTask(): void;
   onOpenTasks(): void;
   onSearch(): void;
+  onSettings?: () => void;
   children: ReactNode;
 }
 
@@ -44,19 +42,17 @@ interface Props {
 export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
   projectKey,
   registry,
-  onNewTask,
   onOpenTasks,
   onSearch,
+  onSettings,
   children,
 }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const width = useWindowWidth();
   const methods = useRef<SwipeableMethods | null>(null);
   const edgeInset = usePaneEdgeInset();
   const hitSlop = useMemo(() => ({ ...EDGE_HIT_SLOP, right: -edgeInset }), [edgeInset]);
-  const translation = useRef<SharedValue<number> | null>(null);
   const rowKey = `project:${projectKey}`;
   const close = useCallback(() => methods.current?.close(), []);
   useEffect(() => {
@@ -72,10 +68,9 @@ export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
     [close, registry, rowKey],
   );
   // Keep RNGH's worklet graph registered across list updates and rotation.
-  // Release actions read the current committed project and full-swipe width.
-  const gestureInputs = useRef({ registry, rowKey, width, run, onNewTask });
+  const gestureInputs = useRef({ registry, rowKey });
   useLayoutEffect(() => {
-    gestureInputs.current = { registry, rowKey, width, run, onNewTask };
+    gestureInputs.current = { registry, rowKey };
   });
   const handleOpenStartDrag = useCallback(() => {
     const { registry, rowKey } = gestureInputs.current;
@@ -84,13 +79,6 @@ export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
   const handleClose = useCallback(() => {
     const { registry, rowKey } = gestureInputs.current;
     registry.onRowClose(rowKey);
-  }, []);
-  const handleWillOpen = useCallback((direction: (typeof SwipeDirection)[keyof typeof SwipeDirection]) => {
-    const { width, run, onNewTask } = gestureInputs.current;
-    // Release only. Right swipes always require an explicit action tap.
-    if (direction === SwipeDirection.LEFT && -(translation.current?.value ?? 0) >= width * 0.55) {
-      run(onNewTask);
-    }
   }, []);
 
   return (
@@ -104,9 +92,7 @@ export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
       overshootLeft={false}
       onSwipeableOpenStartDrag={handleOpenStartDrag}
       onSwipeableClose={handleClose}
-      onSwipeableWillOpen={handleWillOpen}
       renderLeftActions={(_progress, offset) => {
-        translation.current = offset;
         return (
           <View style={styles.leadingShell}>
             <ProjectAction
@@ -133,22 +119,21 @@ export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
           </View>
         );
       }}
-      renderRightActions={(_progress, offset) => {
-        translation.current = offset;
+      renderRightActions={onSettings ? (_progress, offset) => {
         return (
           <View style={styles.trailingShell}>
             <ProjectAction
-              icon={SquarePen}
-              label={t("devices.list.projectActions.newTask")}
-              onPress={() => run(onNewTask)}
+              icon={Settings}
+              label={t("settings.projectInfo.title")}
+              onPress={() => run(onSettings)}
               offset={offset}
               styles={styles}
-              background={colors.cta}
-              foreground={colors.ctaText}
+              background={colors.swipeActionNeutral}
+              foreground={colors.swipeActionText}
             />
           </View>
         );
-      }}
+      } : undefined}
     >
       {children}
     </ReanimatedSwipeable>

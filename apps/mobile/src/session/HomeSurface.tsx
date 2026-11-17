@@ -1,5 +1,4 @@
 import { ProjectSettingsSheet } from './ProjectSettingsSheet';
-import { Settings as ProjectSettingsIcon } from 'lucide-react-native';
 import { useStableHomeSections, type HomeDisplayOrder } from './homeStableOrder';
 import { playHaptic } from '@/platform/haptics';
 import { taskListSessionTarget } from './sessionDrawerNavigation';
@@ -4334,9 +4333,10 @@ function ProjectRow({
         <Text style={[styles.projectTitle, styles.projectFolderTitle]} numberOfLines={1}>{project.title}</Text>
         {machineIdentity ? <HomeProjectMachineLabel identity={machineIdentity} /> : null}
       </View>
-      {kind === 'project' && hostKey && project.deviceId && <Pressable accessibilityRole="button" accessibilityLabel={t('settings.projectInfo.title')}
-        hitSlop={8} onPress={event => {event.stopPropagation(); setSettingsOpen(true);}} style={{padding:8}}>
-        <ProjectSettingsIcon size={iconSize.lg} color={colors.textSecondary} strokeWidth={iconStroke.regular} />
+      {kind === 'project' && project.deviceId && project.workingDir && <Pressable accessibilityRole="button" accessibilityLabel={t('devices.list.projectActions.newInDirectory')}
+        hitSlop={spacing.sm} onPress={event => {event.stopPropagation(); swipe?.registry.closeOpenRow(); onNewTask();}}
+        style={{ padding: spacing.sm }}>
+        <SquarePen size={iconSize.lg} color={colors.textSecondary} strokeWidth={iconStroke.regular} />
       </Pressable>}
       <Text style={styles.projectCount} numberOfLines={1}>{project.sessionCount}</Text>
       {collapsedStatus?.dot ? (
@@ -4382,7 +4382,8 @@ function ProjectRow({
       ) : null}
       {actionable && swipe ? (
         <SwipeableProjectHeader projectKey={project.key} registry={swipe.registry}
-          onNewTask={onNewTask} onOpenTasks={onOpenProject} onSearch={onSearchProject}>
+          onOpenTasks={onOpenProject} onSearch={onSearchProject}
+          onSettings={hostKey ? () => setSettingsOpen(true) : undefined}>
           {dragGesture ? <GestureDetector gesture={dragGesture}>{header}</GestureDetector> : header}
         </SwipeableProjectHeader>
       ) : dragGesture ? <GestureDetector gesture={dragGesture}>{header}</GestureDetector> : header}

@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "このディレクトリで新規セッション",
       "newTask": "新しいタスク",
       "allTasks": "すべてのタスク",
       "search": "検索"

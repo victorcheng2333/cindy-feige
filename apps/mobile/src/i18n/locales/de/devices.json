@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "Neue Sitzung in diesem Verzeichnis",
       "newTask": "Neue Aufgabe",
       "allTasks": "Alle Aufgaben",
       "search": "Suchen"

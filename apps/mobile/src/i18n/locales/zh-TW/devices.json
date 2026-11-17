@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "在此目錄新建任務",
       "newTask": "新增任務",
       "allTasks": "全部任務",
       "search": "搜尋"

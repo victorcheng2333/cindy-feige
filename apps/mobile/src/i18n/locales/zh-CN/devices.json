@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "在此目录新建任务",
       "newTask": "新建任务",
       "allTasks": "全部任务",
       "search": "搜索"

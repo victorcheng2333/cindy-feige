@@ -243,6 +243,7 @@
   },
   "list": {
     "projectActions": {
+      "newInDirectory": "于此目录新开差事",
       "newTask": "新开差事",
       "allTasks": "诸差事",
       "search": "寻"
