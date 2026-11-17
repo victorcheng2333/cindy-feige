@@ -81,7 +81,8 @@ export default {
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('button', { name: /^OpenAI/ }).first().click();
       await dialog.getByRole('button', { name: await ui.t('subscriptionAccounts.signIn.anotherAccount'), exact: true }).click();
-      await page.waitForFunction(() => window.providerSourcesFixture.subscriptionControl.commands.some(c => c.action === 'connect' && c.target === 'new'));
+      await dialog.getByRole('button', { name: await ui.t('subscriptionAccounts.placement.signInContinue'), exact: true }).click();
+      await page.waitForFunction(() => window.providerSourcesFixture.subscriptionControl.commands.some(c => c.action === 'create'));
       if (ui.case === 'subscription-cancel') {
         await dialog.getByRole('button', { name: await ui.t('settings.providers.wizard.cancel'), exact: true }).last().click();
         await page.waitForFunction(() => window.providerSourcesFixture.subscriptionControl.commands.some(c => c.action === 'cancel'));

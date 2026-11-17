@@ -45,20 +45,18 @@ export default {
       // Regression: the card raised its list above ConfirmDialog, but its body-portaled
       // configuration stayed behind the scrim. Existing page/dialog pickers use another entry.
       // Exercise real hit testing (UI tier), not a z-index or class-name snapshot.
-      await page.locator('[data-row-customize]').first().click();
-      const flyout = page.getByTestId('unified-model-config-flyout');
+      const model = page.getByRole('option', { name: /Demo Model/ }).first();
+      await model.focus();
+      await model.press('ArrowLeft');
+      const flyout = page.getByRole('group', { name: `Demo Model ${await ui.t('newChat.modelSelector.options')}`, exact: true });
       await flyout.waitFor();
       await ui.capture('configuration');
-      const slider = flyout.getByRole('slider');
-      await slider.click();
-      await slider.press('End');
-      if (
-        (await slider.getAttribute('aria-valuenow')) !==
-        (await slider.getAttribute('aria-valuemax'))
-      ) {
+      const strongest = flyout.getByRole('option').last();
+      await strongest.click();
+      if (await strongest.getAttribute('aria-selected') !== 'true') {
         throw new Error('Model effort could not be changed in the card configuration');
       }
-      await slider.press('Escape');
+      await strongest.press('Escape');
       await flyout.waitFor({ state: 'hidden' });
       await page.getByRole('listbox').waitFor();
     }

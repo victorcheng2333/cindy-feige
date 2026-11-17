@@ -1,3 +1,6 @@
+import {
+  markRemoteDraftEngineManuallySelected, persistedDraftVendor, resetRemoteDraftEngineFollow,
+} from '@/features/cc-agent/remoteDraftEngineFollow';
 /**
  * newMakerDraft —— "/cc-agent/new" 草稿状态 + vendor 偏好的 localStorage 持久化。
  *
@@ -676,13 +679,18 @@ let preferenceSyncFallback: PreferenceSyncFallback = null;
  * 显式 tuple 操作先采用跨窗口持久真相，再只施加自己的字段变更。
  * 这样既不会带着旧整表复活已恢复的 override，也不会吞掉本窗口刚发生的真实选模意图。
  */
+function mergeStoredTuple(stored: StoredDefaultTuplePreference): NewMakerDraft {
+  const following = persistedDraftVendor(activeDataOwnerId, currentDraft.vendor) !== currentDraft.vendor;
+  return { ...currentDraft, ...stored, vendor: following ? currentDraft.vendor : stored.vendor };
+}
+
 function rebaseStoredDefaultTuplePreference(): void {
   const stored = readStoredDefaultTuplePreference();
   if (
     stored !== undefined &&
     !hasSameDefaultTuplePreference(stored, defaultTuplePreferenceOf(currentDraft))
   ) {
-    currentDraft = { ...currentDraft, ...stored };
+    currentDraft = mergeStoredTuple(stored);
     // 等价于 storage event 已到达：即使后续显式操作因同值短路，订阅者也必须看到这次收敛。
     emit();
   }
@@ -731,10 +739,10 @@ function scheduleWrite(
       defaultTuplePreferenceOf(currentDraft),
     )
   ) {
-    currentDraft = { ...currentDraft, ...storedDefaultTuplePreference };
+    currentDraft = mergeStoredTuple(storedDefaultTuplePreference);
   }
   try {
-    window.localStorage.setItem(storageKey(), JSON.stringify(currentDraft));
+    window.localStorage.setItem(storageKey(), JSON.stringify({ ...currentDraft, vendor: persistedDraftVendor(activeDataOwnerId, currentDraft.vendor) }));
     preferenceSyncFallback = null;
   } catch {
     // localStorage 满 / 私密窗口禁写——忽略,不影响内存状态。
@@ -792,8 +800,8 @@ const removeStorageListener = (() => {
     // 只有工作端级偏好跨窗口同步；deviceLinkDeviceId / extraDirs 等单窗口临时目标保持不动。
     currentDraft = {
       ...currentDraft,
+      ...(defaultTupleChanged && nextDefaultTuplePreference ? mergeStoredTuple(nextDefaultTuplePreference) : {}),
       ...(worktreeChanged ? nextWorktreePreference : {}),
-      ...(defaultTupleChanged ? nextDefaultTuplePreference : {}),
     };
     emit();
   };
@@ -821,7 +829,7 @@ export function getDraft(): NewMakerDraft {
  */
 export function getDraftForPreferenceSync(): NewMakerDraft {
   const stored = readStoredDraftRecord();
-  if (!stored || preferenceSyncFallback === 'full-draft') return currentDraft;
+  if (!stored || preferenceSyncFallback === 'full-draft') return { ...currentDraft, vendor: persistedDraftVendor(activeDataOwnerId, currentDraft.vendor) };
   const persistedDraft = sanitize(stored);
   return preferenceSyncFallback === 'worktree-only'
     ? {
@@ -841,6 +849,7 @@ export function getDraftForOwnerPreferenceSync(ownerId: string | null): NewMaker
 export function setNewMakerDraftOwner(ownerId: string | null): void {
   const normalized = typeof ownerId === 'string' && ownerId.trim().length > 0 ? ownerId : null;
   if (activeDataOwnerId === normalized) return;
+  resetRemoteDraftEngineFollow();
   activeDataOwnerId = normalized;
   agentLocationByVendor.clear();
   currentDraft = loadFromStorage();
@@ -860,7 +869,7 @@ export function setWorktreePreference(enabled: boolean): void {
   const worktreePreferenceCustomized = true;
   if (typeof window !== 'undefined') {
     const stored = readStoredDraftRecord();
-    const base = stored ?? currentDraft;
+    const base = stored ?? { ...currentDraft, vendor: persistedDraftVendor(activeDataOwnerId, currentDraft.vendor) };
     if (
       stored?.worktreeEnabled !== worktreeEnabled
       || stored?.worktreePreferenceCustomized !== worktreePreferenceCustomized
@@ -1034,8 +1043,12 @@ export function patchCollab(patch: Partial<CollabDraft>): void {
  *   2. 切到新 vendor
  * NewMakerDraftRoute 的 VendorSegmentedSwitcher 切换时调本函数;切回某 vendor 时 ChatInput 通过 lastByVendor[vendor] 取上次值。
  */
-export function switchVendor(next: MakerVendor, { restoreAgentLocation = true }: { restoreAgentLocation?: boolean } = {}): void {
-  rebaseStoredDefaultTuplePreference();
+export function switchVendor(next: MakerVendor, options?: { remoteFollow?: boolean; userSelected?: boolean; restoreAgentLocation?: boolean }): void {
+  if (options?.userSelected) markRemoteDraftEngineManuallySelected();
+  if (!options?.remoteFollow) {
+    rebaseStoredDefaultTuplePreference();
+  }
+  const restoreAgentLocation = options?.restoreAgentLocation ?? true;
   if (currentDraft.vendor === next) return;
   agentLocationByVendor.set(currentDraft.vendor, {
     agentDeviceId: currentDraft.agentDeviceId, agentDeviceName: currentDraft.agentDeviceName,
@@ -1421,6 +1434,7 @@ export function getPersistedVendorModel(vendor: MakerVendor): string {
 /** 测试用 —— 重置 store + 清 localStorage(其它代码不应调用)。 */
 export function __resetForTest(): void {
   agentLocationByVendor.clear();
+  resetRemoteDraftEngineFollow();
   currentDraft = makeDefault();
   activeDataOwnerId = null;
   if (typeof window !== 'undefined') {
@@ -1439,6 +1453,7 @@ export function __resetForTest(): void {
  */
 export function __reloadForTest(): void {
   agentLocationByVendor.clear();
+  resetRemoteDraftEngineFollow();
   activeDataOwnerId = null;
   preferenceSyncFallback = null;
   listeners.clear();

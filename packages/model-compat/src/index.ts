@@ -25,3 +25,4 @@ export { chatCompatibilityCapabilities } from './chat';
 export { isStrictCompatibleSchema } from './cindy/strict-schema';
 export { normalizeMiniMaxResponsesReasoning } from './providers/minimax';
 export { isGeminiModelId, isStandaloneClaudeTokenBudget, preserveGeminiTokenBudgetMessages } from './cindy/gemini-token-budget';
+export { normalizeUnsupportedCodexWebSearch } from './providers/mimo';

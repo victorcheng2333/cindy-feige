@@ -29,7 +29,7 @@ export default {
       data: { ...group.cases['long-thread'].data, messages: 2, sidebar: false, shortGrowth: true, controlled: true } },
     default: { about: 'History navigation temporarily replaces topic hints without changing scroll geometry',
       data: { ...group.cases['long-thread'].data, sidebar: false, threadUnread: true } },
-    'with-control': { about: 'Navigation replaces both topic and connection bubbles; idle/return restores them unchanged',
+    'with-control': { about: 'Controlled existing group stays notice-free while topic navigation preserves geometry',
       data: { ...group.cases['long-thread'].data, sidebar: false, threadUnread: true, controlled: true } },
   },
   async ready(page) {
@@ -38,7 +38,8 @@ export default {
       await page.evaluate(() => window.__uiPage.emit('controlledState', {
         controllers: [{ deviceId: 'fixture', name: 'Mac Studio' }],
       }));
-      await page.locator('[data-controlled-banner-chip]').waitFor();
+      assert.equal(await page.locator('[data-controlled-banner-chip]').count(), 0,
+        'Existing group chats remain free of connection notices');
     }
   },
   async check(page, ui) {
@@ -113,7 +114,7 @@ export default {
     await sameGeometry();
     await ui.capture('navigation-replaces-bubbles');
     await hint.waitFor({ state: 'visible', timeout: 3500 });
-    if (ui.data.controlled) assert.equal(await banner.isVisible(), true, 'connection bubble returns on idle');
+    if (ui.data.controlled) assert.equal(await banner.count(), 0, 'existing group remains notice-free on idle');
     await sameGeometry();
     await ui.capture('bubbles-restored-after-idle');
     await page.mouse.wheel(0, 80);
@@ -125,7 +126,7 @@ export default {
       return el.scrollHeight - el.scrollTop - el.clientHeight < 2;
     });
     await hint.waitFor({ state: 'visible' });
-    if (ui.data.controlled) assert.equal(await banner.isVisible(), true, 'connection bubble returns at the tail');
+    if (ui.data.controlled) assert.equal(await banner.count(), 0, 'existing group remains notice-free at the tail');
     await timeline.evaluate(el => { el.querySelector('article:last-of-type').style.minHeight = ''; });
     await sameGeometry();
     await ui.capture('returned-to-bottom');
@@ -136,6 +137,18 @@ export default {
 // resize (109px live / 156px history). Sample animation frames, not just endpoints.
 async function checkProcessDisclosure(page, ui) {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+  if (ui.case === 'live-process') {
+    // Keep history before the live work so upward input has actual room to scroll.
+    // The generic work fixture otherwise places most messages in the future.
+    await page.evaluate(async () => {
+      const { group } = await window.electronAPI.maker.getBotGroup('fixture-group');
+      const workAt = group.round.speakers[0].timelineAt;
+      group.messages = group.messages.map((message, index, messages) => ({ ...message,
+        createdAt: workAt - (messages.length - index) * 60_000,
+      }));
+      window.__uiPage.emit('botGroupChanged', { groupId: group.id, change: 'messages' });
+    });
+  }
   let surface = page;
   const preview = {
     content: '| ' + Array.from({ length: 10 }, (_, i) => `Column ${i + 1}`).join(' | ') + ' |\n| ' + Array(10).fill('---').join(' | ') + ' |\n| ' + Array(10).fill('wide_table_content').join(' | ') + ' |\n\n```mermaid\ngraph LR; A-->B\n```',
@@ -166,6 +179,18 @@ async function checkProcessDisclosure(page, ui) {
     }, preview);
     await page.locator('[data-thread-preview]').first().click();
     surface = page.locator('aside.thread-panel');
+    // Measure disclosure drift only after the topic panel's entrance has settled.
+    await surface.evaluate(el => new Promise(resolve => {
+      let previous = '', stable = 0;
+      const tick = () => {
+        const r = el.getBoundingClientRect();
+        const next = [r.x, r.y, r.width, r.height].join(',');
+        stable = next === previous ? stable + 1 : 0;
+        previous = next;
+        if (stable >= 4) resolve(undefined); else requestAnimationFrame(tick);
+      };
+      tick();
+    }));
   }
   const heading = surface.locator('[data-teammate-process] > button').last();
   await heading.waitFor();
@@ -248,6 +273,8 @@ async function checkProcessDisclosure(page, ui) {
     }
   }
   const reserve = await timeline.evaluate(el => parseFloat(el.firstElementChild.style.minHeight));
+  assert.ok(await timeline.evaluate(el => el.scrollTop) > 0,
+    'Process inspection must leave scrollable history before testing upward input');
   const box = await timeline.boundingBox();
   await page.mouse.move(box.x + 24, box.y + box.height / 2);
   await page.mouse.wheel(0, -400);

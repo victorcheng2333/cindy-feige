@@ -17,7 +17,7 @@ export default {
     default: { about: 'Unavailable primary and backup; status belongs to the model' },
     available: { about: 'Long available name with reasoning effort; no unavailable status on this model' },
     loading: { about: '#10207: local first snapshot pending, then ready while the saved model picker stays open' },
-    'loading-remote-favorite': { about: '#10207 review: ready other-computer favorite remains selectable while local catalog is pending' },
+    'loading-remote-favorite': { about: '#10207 review: explicitly select a ready remote source while the local catalog is pending and a saved remote favorite is present' },
     'four-backups': { about: 'Four visible backups with unbroken IDs and working reorder/remove controls' },
     'global-settings': { about: 'Global settings row uses the same wrapped picker' },
     'shared-only': { about: 'Shared-only Gemini/Terra labels resolve in primary and backup triggers' },
@@ -36,13 +36,18 @@ export default {
     if (ui.case === 'loading-remote-favorite') {
       await pickers.first().click();
       const list = page.getByRole('listbox');
+      // The fork keeps each computer's catalog separate; choose the source explicitly.
+      await page.getByRole('combobox', { name: await ui.t('newChat.modelSelector.source.railLabel') }).click();
+      await page.getByRole('option', { name: /Other computer/ }).click();
       await list.getByText('Shared Gemini', { exact: true }).waitFor();
       assert.equal(await list.getByRole('status').count(), 0);
-      await ui.capture('ready-favorite-local-pending');
-      await page.locator('[data-rail-item="favorites"]').click();
+      await ui.capture('ready-remote-source-local-pending');
       await list.getByText('Shared Gemini', { exact: true }).click();
       await pickers.first().getByText('Shared Gemini', { exact: true }).waitFor();
-      await ui.capture('selected-remote-favorite');
+      const routes = JSON.parse(await page.getByTestId('model-route-receipt').textContent());
+      assert.equal(routes[0].agentDeviceId, 'fixture-device');
+      assert.equal(routes[0].model, 'google/gemini-4-argon');
+      await ui.capture('selected-remote-source');
       return;
     }
     if (ui.case === 'loading') {

@@ -244,7 +244,8 @@ describe('useVendorAuthGate 本机运行时轴', () => {
       maker: { agent: { getStatus }, listProviders: async () => ({ providers: [provider({})] }) },
     });
     const { result } = renderHook(() => useVendorAuthGate());
-    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(4));
+    expect(getStatus).toHaveBeenCalledWith('cursor');
     getStatus.mockClear();
 
     await expect(result.current.checkAndConfirm('cc', { remoteHostId: 'ssh-host' }))

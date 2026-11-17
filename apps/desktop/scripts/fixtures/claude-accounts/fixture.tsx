@@ -57,7 +57,15 @@ void mountPage({
     const snapshot = () => ({ dataOwnerId: owner.dataOwnerId, ownerGeneration: owner.generation,
       providers: providers(), providerOrder: ['claude-a', 'claude-b'] });
     commitProvidersSnapshot(beginProvidersRefresh(), snapshot());
-    return { maker: {
+    return { subscriptionAccounts: {
+      onChanged: subscription('subscription-accounts'),
+      command: async (command: { action: string; providerId: string }) => {
+        if (command.action !== 'preview') throw new Error('This fixture only previews the system account; independent login must use the named connection');
+        return { providerId: command.providerId, configured: false, strategy: 'least', accounts: [{
+          id: 'default', directory: '/fixture/claude/default', status: 'signed-out', paused: false, limit: 4, weight: 1, running: 0,
+        }] };
+      },
+    }, maker: {
       listProviders: async () => snapshot(),
       onProvidersChanged: subscription('providers'),
       providerOAuthLogin: async (id: string) => { calls.push(`login:${id}`); secondConnected = true; return { ok: true }; },

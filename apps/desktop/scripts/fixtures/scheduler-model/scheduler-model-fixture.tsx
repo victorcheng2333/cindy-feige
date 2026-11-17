@@ -11,7 +11,7 @@ function SpeedEditor() {
   const [saved, setSaved] = useState<Schedule>({
     id: 'speed-fixture', name: '自动化速度验证', prompt: '总结项目动态。',
     agentKind: 'codex', modelAgentKind: 'codex', model: 'gpt-6.1-sol', providerId: 'openai',
-    modelAgentDeviceId: ctx.case === 'shared-speed' ? 'shared:fixture' : '',
+    modelAgentDeviceId: ctx.case === 'shared-speed' ? 'share:fixture' : '',
     effort: 'high', fastMode: false, manual: true, recurring: true,
     cronExpr: '0 9 * * *', timezone: 'Asia/Shanghai', workspaceKind: 'dialogue',
     useWorktree: false, notify: { desktop: false, feishu: false },

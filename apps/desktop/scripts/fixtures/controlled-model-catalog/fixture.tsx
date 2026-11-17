@@ -44,7 +44,7 @@ function Fixture({ scenario }: { scenario: string }) {
     catalogHostDeviceId="device-b" leadAgentDeviceId="share:b-only" remoteAgentDevices={devices}
     onClose={() => setOpen(false)} onCreate={form => { lastSelection = form; setOpen(false); }} />;
   return <main className="mx-auto w-full max-w-[720px] p-4">
-    <ModelSelectorContent modelId={model} currentProviderId={providerId} effort="high"
+    <ModelSelectorContent unifiedPanel modelId={model} currentProviderId={providerId} effort="high"
       onModelChange={setModel} onEffortChange={() => {}} reselectEmitsChange
       deviceId={local ? undefined : modelCatalogKey(source ?? 'device-b', 'device-b')}
       remoteAgent={local ? undefined : { devices, selectedDeviceId: source, homeDeviceId: 'device-b',

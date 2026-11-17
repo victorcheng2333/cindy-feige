@@ -106,9 +106,9 @@ function Fixture({ scenario }: { scenario: string }) {
     <main className="mx-auto w-full max-w-[720px] p-4">
       <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] p-3">
         <ModelSelectorContent
+          unifiedPanel={scenario !== 'custom-ids-legacy'}
           {...(custom ? {
             vendorKey: 'codex' as const,
-            unifiedPanel: scenario !== 'custom-ids-legacy',
             onProviderChange: () => {},
           } : {})}
           providersOverride={sourceProviders}

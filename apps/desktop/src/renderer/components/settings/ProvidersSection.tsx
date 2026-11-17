@@ -720,7 +720,7 @@ function DetailHeader({
 }) {
   const { t } = useTranslation();
   const management = useProviderManagement(provider);
-  // Borrowing another computer's sign-in: this computer's own accounts and "not connected" do not apply.
+  // Execution and models may be remote; local accounts remain manageable here.
   const { borrowed, borrowedCatalog, remote } = useProviderBorrow(provider);
   const borrowing = borrowed !== null;
   const displayProvider = remote?.provider ?? provider;
@@ -888,7 +888,12 @@ function DetailHeader({
               data-testid="provider-detail-actions"
               className="flex shrink-0 items-center gap-2.5"
             >
-              {remote ? null : status?.kind === 'connected' ? (
+              {borrowing && (status || primaryAction) && (
+                <span className="text-12 text-[var(--text-secondary)]">
+                  {t('settings.providers.detail.runLocation.optionLocal')}
+                </span>
+              )}
+              {status?.kind === 'connected' ? (
                 <ConnectedPill />
               ) : status?.kind === 'reconnect-required' ? (
                 <ReconnectRequiredPill />
@@ -897,11 +902,11 @@ function DetailHeader({
                   {status.label}
                 </span>
               ) : null}
-              {primaryAction && !remote && <PillButton {...primaryAction} />}
+              {primaryAction && <PillButton {...primaryAction} />}
             </div>
             {/* 供应商级低频动作(停用/启用):所有供应商详情头统一入口。停用 = 保留凭证、
               整体不可路由(model-disable-store);恢复入口在菜单与下方的已停用条带都有。 */}
-            {provider && (!remote || (borrowing && primaryAction)) && (
+            {provider && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Tip text={t('settings.providers.detail.moreActionsAria')}>
@@ -936,34 +941,30 @@ function DetailHeader({
                       {t('settings.providers.detail.runLocation.signInHere')}
                     </DropdownMenuItem>
                   )}
-                  {!remote && (
+                  {menuItems}
+                  <DropdownMenuItem
+                    onClick={() =>
+                      writeProviderDisabled(
+                        provider.id,
+                        !provider.suspended,
+                        t('settings.providers.models.accessWriteFailed'),
+                      )
+                    }
+                  >
+                    {t(
+                      provider.suspended
+                        ? 'settings.providers.menu.enableProvider'
+                        : 'settings.providers.menu.disableProvider',
+                    )}
+                  </DropdownMenuItem>
+                  {menuFooter}
+                  {resolvedDelete && (
                     <>
-                      {menuItems}
-                      <DropdownMenuItem
-                        onClick={() =>
-                          writeProviderDisabled(
-                            provider.id,
-                            !provider.suspended,
-                            t('settings.providers.models.accessWriteFailed'),
-                          )
-                        }
-                      >
-                        {t(
-                          provider.suspended
-                            ? 'settings.providers.menu.enableProvider'
-                            : 'settings.providers.menu.disableProvider',
-                        )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="danger" onClick={resolvedDelete.onClick} disabled={management.busy}>
+                        <Trash2 size={18} className="mr-2.5" />
+                        {resolvedDelete.label}
                       </DropdownMenuItem>
-                      {menuFooter}
-                      {resolvedDelete && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem variant="danger" onClick={resolvedDelete.onClick} disabled={management.busy}>
-                            <Trash2 size={18} className="mr-2.5" />
-                            {resolvedDelete.label}
-                          </DropdownMenuItem>
-                        </>
-                      )}
                     </>
                   )}
                 </DropdownMenuContent>
@@ -978,26 +979,27 @@ function DetailHeader({
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain [&>*]:shrink-0"
       >
         {detail && <div className="px-5 pb-4">{detail}</div>}
+        {!remote && provider?.subscriptionFastPolicy && <div className="px-5 pb-4"><SubscriptionFastSetting key={provider.id} provider={provider} /></div>}
+        {/* Account management is local even when model execution uses another computer. */}
+        {subscriptionPool && subscriptionKind && (
+          <SubscriptionAccountsSection
+            key={subscriptionPool}
+            providerId={subscriptionPool}
+            kind={subscriptionKind}
+            providerName={provider?.name}
+            locationLabel={borrowing ? t('settings.providers.detail.runLocation.optionLocal') : undefined}
+            expectAccounts={provider?.connected === true}
+            onDefaultLogin={onDefaultLogin}
+            defaultUsage={usageCard}
+            dashboard={dashboard ?? undefined}
+          />
+        )}
         {remote ? (
           <OwnRemoteProviderContent entry={remote} modelSection={borrowed && borrowedCatalog ? (
-            <BorrowedProviderModels key={`models:${remote.key}`} device={borrowed} catalog={borrowedCatalog} showNote={false} />
+            <BorrowedProviderModels key={'models:' + remote.key} device={borrowed} catalog={borrowedCatalog} showNote={false} />
           ) : undefined} />
         ) : (
           <>
-            {provider?.subscriptionFastPolicy && <div className="px-5 pb-4"><SubscriptionFastSetting key={provider.id} provider={provider} /></div>}
-            {/* Pooled subscription accounts show the provider card in the default account's row. */}
-            {subscriptionPool && subscriptionKind && !borrowing && (
-              <SubscriptionAccountsSection
-                key={subscriptionPool}
-                providerId={subscriptionPool}
-                kind={subscriptionKind}
-                providerName={provider?.name}
-                expectAccounts={provider?.connected === true}
-                onDefaultLogin={onDefaultLogin}
-                defaultUsage={usageCard}
-                dashboard={dashboard ?? undefined}
-              />
-            )}
             {assetModule ??
               (subscriptionPool ? null : usageCard ? (
                 <div
@@ -1369,7 +1371,7 @@ function CursorHeader({ provider, onChanged, children }: { provider: ProviderVie
     detail={error || editingKey || (pending && loginUrl) ? <div className="flex flex-col gap-2">
       {error && <p role="alert" className="text-13 text-[var(--text-primary)]">{error}</p>}
       {editingKey && <div className="flex items-center gap-2 pt-2">
-        <SettingsTextInput value={draftKey} onChange={setDraftKey}
+        <SettingsTextInput data-setting-id={providersSettings.providers.id} value={draftKey} onChange={setDraftKey}
           placeholder={t('settings.providers.builtinApiKey.keyPlaceholder')} size="sm" mono secret
           disabled={pending} className="min-w-0 flex-1" />
         <PillButton label={t('settings.providers.builtinApiKey.saveKey')} onClick={() => void saveKey()}
@@ -1377,7 +1379,7 @@ function CursorHeader({ provider, onChanged, children }: { provider: ProviderVie
       </div>}
       {pending && loginUrl && <div className="flex flex-wrap gap-2">
         <OAuthBrowserLink url={loginUrl} />
-        <Button variant="secondary" size="md" onClick={() => {
+        <Button data-settings-search-action="Copy the Cursor sign-in link" variant="secondary" size="md" onClick={() => {
           void navigator.clipboard.writeText(loginUrl)
             .then(() => toast.success(t('sharing.linkCopied')))
             .catch(() => toast.error(t('sharing.copyLinkFailed')));

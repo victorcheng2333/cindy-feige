@@ -36,7 +36,7 @@ function ComposerRunningSendRow() {
       trailing={
         <div className="cindy-segmented-row-actions">
           <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
-          <SegmentedControl
+          <SegmentedControl data-setting-id={personalizationDetailsSettings.composerRunningSendLabel.id}
             aria-label={t('settings.composer.runningSend.ariaLabel')}
             value={preference}
             onValueChange={setPreference}

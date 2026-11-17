@@ -9,6 +9,7 @@ import { lookupShareAvailability, allocateShareAvailability, reportShareAvailabi
  *  - 项目说明快照与记忆索引快照(记忆在本机，对方不读它自己的记忆库)；
  *  - 插件花名册快照(插件工具在本机，对方不看它自己装了什么)。
  */
+import type { PreserveAttachmentBatch } from '../../maker-host/attachmentPreservation.js';
 import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -62,6 +63,8 @@ import { authorizeSharedTaskExecutor, authorizeSharedTaskHistory, sharedTaskLeas
 
 export interface DeviceAgentServiceDeps {
   claudeApproval?: StartRemoteAgentDeps['claudeApproval'];
+  attachmentPreservation?(sessionId: string): PreserveAttachmentBatch;
+  attachmentStorageRoots?(sessionId: string): Record<string, string>;
   readImageDeliveryEpoch?(sessionId: string): Promise<number>;
   remoteInvoke(deviceId: string, channel: string, args: unknown[]): Promise<{ ok: boolean; result?: unknown; error?: { code?: string; message?: string } }>;
   /** Re-open the authenticated share link after a successful lease renewal. */
@@ -488,6 +491,8 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       reconnectAuthorization: (isCurrent, options) => reconnectAuthorization?.(isCurrent, options) ?? Promise.resolve(),
       onTaskGrantRenewable: (renewable) => { grantRenewable = renewable; },
       readImageDeliveryEpoch: deps.readImageDeliveryEpoch,
+      attachmentPreservation: deps.attachmentPreservation,
+      attachmentStorageRoots: deps.attachmentStorageRoots,
       invoke: poller.invoke,
       poller,
       pool: poolFor(target),

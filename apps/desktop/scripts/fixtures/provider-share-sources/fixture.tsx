@@ -85,7 +85,7 @@ mountPage({
         command: async (command: SubscriptionAccountCommand) => {
           subscriptionControl.commands.push(command);
           if (command.action === 'cancel') subscriptionControl.cancel();
-          if (command.action === 'add' || command.action === 'connect') {
+          if (command.action === 'add' || command.action === 'connect' || command.action === 'create') {
             if (ctx.case === 'subscription-cancel') await new Promise<void>((_resolve, reject) => {
               subscriptionControl.cancel = () => reject(new Error('SUBSCRIPTION_LOGIN_CANCELLED'));
             });

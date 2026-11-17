@@ -12,7 +12,8 @@ import {
   WorkerListToolbar,
 } from '../../../src/renderer/features/cc-agent/RolePillDropdown';
 import type { WorkerInfo } from '../../../src/renderer/features/cc-agent/hooks/useWorkers';
-import { mountPage } from '../../ui-page/harness';
+import { mountPage, subscription } from '../../ui-page/harness';
+import { getDataOwnerGeneration } from '../../../src/renderer/contexts/dataOwnerGeneration';
 import {
   WorkerProjectField,
   useWorkerProjectSelection,
@@ -129,6 +130,11 @@ void mountPage({
       throw new Error('fixture dialog unavailable');
     },
     localDb: {
+      projectAliases: {
+        snapshot: async () => ({ aliases: [], icons: {}, platform: 'darwin',
+          settingsSupported: true, settingsVersion: 5, ownerStamp: getDataOwnerGeneration() }),
+        onChanged: subscription('projectInfoChanged'),
+      },
       orcaWorkflows: {
         projectLabel: async (id: string) =>
           id === 'frontend' ? { name: 'design-system', path: '/projects/design-system' } : null,

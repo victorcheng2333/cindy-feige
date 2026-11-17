@@ -10,7 +10,7 @@ export default {
   },
   cases: {
     default: { about: 'Existing aggregate source rows show distinct suppliers; same model name on two routes' },
-    provider: { about: 'Existing descriptions replaced; unknown model remains single-line' },
+    provider: { about: 'Existing descriptions replaced; unknown model keeps its wire ID without an invented description' },
     narrow: { about: 'Same production rows at 320px', viewport: { width: 320, height: 520 } },
   },
   async check(page, ui) {
@@ -20,7 +20,12 @@ export default {
     const first = await rows.nth(0).innerText();
     const second = await rows.nth(1).innerText();
     if (!first.includes('Supplier A') || !second.includes('Supplier B')) throw Error('Supplier identity missing');
-    if (ui.case === 'provider' && await rows.nth(2).locator(':scope > *').count() !== 1) throw Error('Unknown model gained a second line');
+    if (ui.case === 'provider') {
+      const unknown = rows.nth(2);
+      await unknown.getByText('Unknown model', { exact: true }).waitFor();
+      await unknown.getByText('one/unknown-model', { exact: true }).waitFor();
+      if ((await unknown.innerText()).includes('Supplier A')) throw Error('Unknown model gained an invented description');
+    }
     await rows.nth(1).click();
     if (await rows.nth(1).getAttribute('data-model-selected') !== 'true') throw Error('Selection changed route');
   },

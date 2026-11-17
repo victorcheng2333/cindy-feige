@@ -62,6 +62,20 @@ export default {
         el.style.maxWidth = '100%';
         el.style.flex = 'none';
       }, width);
+      if (ui.case === 'reply-composer') {
+        // This state mounts the real standalone reply composer, not a timeline.
+        // Keep its narrow-layout coverage on the controls that are actually present.
+        const bounds = await subject.boundingBox();
+        assert.equal(await subject.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true);
+        assert.equal(await page.locator('textarea').inputValue(), 'A reply draft ready for dictation');
+        for (const button of await subject.getByRole('button').all()) {
+          const box = await button.boundingBox();
+          assert.ok(box && box.x >= bounds.x - 1 && box.x + box.width <= bounds.x + bounds.width + 1,
+            'Reply controls must fit inside the resized pane');
+        }
+        await ui.capture('reply-composer-' + width);
+        continue;
+      }
       await page.waitForFunction(() => {
         const timeline = document.querySelector('[data-testid="bot-group-timeline"]');
         const main = timeline.closest('main');

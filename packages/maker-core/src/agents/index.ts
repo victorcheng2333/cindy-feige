@@ -115,6 +115,7 @@ export { isNetworkishErrorMessage, PI_GATEWAY_DROP_REASON } from './shared/netwo
 export {
   AUTO_REVIEW_CONFIRM_UNDELIVERED_CODE,
   AUTO_REVIEW_UNAVAILABLE_CODE,
+  AUTO_REVIEW_NO_AVAILABLE_MODEL_CODE,
   AUTO_REVIEW_UNAVAILABLE_METADATA_KEY,
   AUTO_REVIEW_UNAVAILABLE_PROMPT_TEXT,
   AUTO_REVIEW_MAX_REQUEST_TIMEOUT_MS,
@@ -131,6 +132,7 @@ export {
   composeAutoReviewIntentWithApprovedPlan,
   composeAutoReviewIntentWithClarification,
   formatPermissionDenial,
+  isAutoReviewNoAvailableModelNotice,
   annotatePermissionRequestForUnavailableReview,
   annotatePermissionRequestForAutoReview,
   AUTO_REVIEW_REASON_METADATA_KEY,

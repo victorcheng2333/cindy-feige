@@ -19,6 +19,8 @@ export interface ClaudeCliLoginStatus {
   notSubscription?: true;
   authMethod?: string;
   subscriptionType?: string;
+  /** Official CLI tier (for example max_5x / max_20x); never inferred from usage. */
+  planTier?: string;
   email?: string;
   orgId?: string;
   orgName?: string;
@@ -56,6 +58,7 @@ export function parseClaudeCliLoginStatus(stdout: string): ClaudeCliLoginStatus 
     (apiProvider === undefined || apiProvider === 'firstParty');
   if (!subscription) return { loggedIn: false, notSubscription: true };
   const subscriptionType = optionalString(record.subscriptionType);
+  const planTier = optionalString(record.planTier);
   const email = optionalString(record.email);
   const orgId = optionalString(record.orgId);
   const orgName = optionalString(record.orgName);
@@ -67,6 +70,7 @@ export function parseClaudeCliLoginStatus(stdout: string): ClaudeCliLoginStatus 
     loggedIn: true,
     ...(authMethod ? { authMethod } : {}),
     ...(subscriptionType ? { subscriptionType } : {}),
+    ...(planTier ? { planTier } : {}),
     ...(email ? { email } : {}),
     ...(orgId ? { orgId } : {}),
     ...(orgName ? { orgName } : {}),

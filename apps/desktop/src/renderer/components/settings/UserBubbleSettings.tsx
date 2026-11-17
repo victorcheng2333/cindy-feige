@@ -141,6 +141,7 @@ export function UserBubbleSettings() {
           size="sm"
           compact
           aria-pressed={customOpen}
+          data-setting-id={appearanceSettings.userBubble.id}
           data-testid="settings.userBubble.custom"
           onClick={() => {
             const next = !customOpen;

@@ -41,7 +41,12 @@ export default {
         ['providerAccountUsage.kimi.limit_month_total', '90'],
       ]) {
         await settings.getByText(await ui.t(key), { exact: true }).waitFor();
-        await settings.getByText(await ui.t('quotaCard.remainingPercent', { percent }), { exact: true }).waitFor();
+        const percentText = await ui.t('quotaCard.remainingPercent', { percent });
+        const value = settings.getByTitle(percentText, { exact: true });
+        await value.waitFor();
+        assert.equal(await value.textContent(), `${percent}%`);
+        assert.ok((await settings.getByRole('progressbar').evaluateAll(bars =>
+          bars.map(bar => bar.getAttribute('aria-valuetext')))).includes(percentText));
       }
       if (ui.case === 'stale') await settings.getByText(await ui.t('providerAccountUsage.kimi.stale'), { exact: true }).waitFor();
     }

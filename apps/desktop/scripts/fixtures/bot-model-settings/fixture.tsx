@@ -36,6 +36,7 @@ function Fixture() {
         layout={ctx.case === 'global-settings' ? 'settings' : 'inline'}
         settingsRows={{ primaryLabel: t('bots.model.primary'), primaryHint: t('bots.modelChain.description') }} />
     </div>
+    <output hidden data-testid="model-route-receipt">{JSON.stringify(routes)}</output>
   </main>;
 }
 

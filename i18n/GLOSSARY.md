@@ -196,6 +196,8 @@
 | Quota | pt-PT | quota | 句中使用小写首字母；标题仍可使用大写首字母。 |
 | **Quota** | pt-BR | Cota | 默认 |
 | Quota | pt-BR | cota | 句中使用小写首字母；标题仍可使用大写首字母。 |
+| **Running** | fr | en cours d'exécution | 默认 |
+| Running | fr | En cours d'exécution | 状态标签或句首使用大写首字母；正文仍使用小写。 |
 | **Running** | zh-CN | 运行中 | 默认 |
 | Running | zh-CN | 正在运行 | 完整句子里作谓语时（"Agent 正在运行"），不是状态标签 |
 | **Running** | zh-TW | 執行中 | 默认 |
@@ -212,8 +214,6 @@
 | Running | de | laufend | 句中形容正在运行的任务或会话，允许相应屈折变化。 |
 | Running | de | Laufend | 句首形容正在运行的任务或会话。 |
 | Running | de | laufen | 复数主语的运行状态谓语。 |
-| **Running** | fr | en cours d'exécution | 默认 |
-| Running | fr | En cours d'exécution | 状态标签或句首使用大写首字母；正文仍使用小写。 |
 | **Session** | zh-CN | 任务 | 默认 |
 | Session | zh-CN | 对话 | 指任务内人与 AI 交流的过程或其内容（对话区、对话正文、对话记录、继续对话） |
 | **Session** | zh-TW | 任務 | 默认 |
@@ -1014,6 +1014,10 @@ Codex Subagent 的可选扩展调配开关。默认关闭以保留 Codex 原生 
 ### Steer
 
 任务运行时把消息送进当前这一轮，不等这一轮结束；与「排队」相对。桌面与手机共用此译法（手机曾用 Interject / Einschieben / Intervir 等）。
+
+### Header
+
+任务 PR/MR 关联展示的顶栏。沿用 ccAgent.gitContext.pr.manage.pin/hint 的既有译法；区别于系统窗口标题栏。
 
 ### Tag
 

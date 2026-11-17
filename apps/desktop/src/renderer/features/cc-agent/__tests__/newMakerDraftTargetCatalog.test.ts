@@ -1576,6 +1576,8 @@ describe('the seed keeps a restored explicit choice', () => {
       deviceProvidersUnsupported: false,
       deviceDraftDefaultsReady: true,
       deviceDraftDefaults: options.deviceDraftDefaults,
+      catalog: [provider('source', ['medium', 'high'])],
+      previousCatalog: { current: undefined },
       isAgentDeviceDraft: true,
       agentCatalogProviders: [provider('source', ['medium', 'high'])],
       shouldReseedDeviceLinkDraftDefaults,

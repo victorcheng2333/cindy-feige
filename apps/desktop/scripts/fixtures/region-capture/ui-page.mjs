@@ -32,7 +32,7 @@ export default {
       await page.mouse.click(editor ? box.x + 30 : 200, editor ? box.y + 30 : 200);
       await page.locator('textarea').fill('Keep this annotation');
       await page.getByRole('button', { name: await ui.t('regionScreenshot.cindy') }).click();
-      const name = (locale, language) => new Intl.DisplayNames([locale], { type: 'language' }).of(language);
+      const name = (locale, language) => new Intl.DisplayNames([locale], { type: 'language' }).of(language === 'zh-CN' ? 'zh-Hans' : language === 'zh-TW' ? 'zh-Hant' : language);
       const oldLabel = await ui.t('regionScreenshot.translation.action', { language: name(ui.locale, ui.locale) });
       await page.evaluate(() => window.captureLocaleChanged({ token: 'stale', locale: 'ja' }));
       await page.getByRole('menuitem', { name: oldLabel, exact: true }).waitFor();

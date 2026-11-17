@@ -29,7 +29,7 @@ export default {
   async check(page, ui) {
     // Issue #10224: the compact field still shows the original three lines; a long
     // prompt scrolls inside it, and the expand button above it opens a large editor.
-    const prompt = await page.locator('textarea').evaluate((el) => ({
+    const prompt = await page.getByRole('textbox', { name: await ui.t('scheduler.editor.fields.prompt'), exact: true }).evaluate((el) => ({
       height: el.getBoundingClientRect().height, clientHeight: el.clientHeight, scrollHeight: el.scrollHeight,
     }));
     console.log(`prompt field: ${JSON.stringify(prompt)}`);
@@ -52,7 +52,7 @@ export default {
           const box = document.querySelector('[role="dialog"]').getBoundingClientRect();
           const trigger = [...document.querySelectorAll('[role="radiogroup"]')]
             .find(el => el.getAttribute('aria-label') === triggerLabel).getBoundingClientRect();
-          const prompt = document.querySelector('textarea').getBoundingClientRect();
+          const prompt = document.querySelector('textarea[aria-label]').getBoundingClientRect();
           frames.push({y: box.y, height: box.height, triggerY: trigger.y, triggerX: trigger.x, promptY: prompt.y});
         };
         sample();
@@ -102,7 +102,7 @@ export default {
       await panel.waitFor();
       // Exactly one field may exist while expanded: a second, covered textarea
       // would take Tab and be announced twice.
-      assert.equal(await page.locator('textarea').count(), 1);
+      assert.equal(await page.locator('textarea').evaluateAll((els, label) => els.filter(el => el.getAttribute('aria-label') === label).length, await ui.t('scheduler.editor.fields.prompt')), 1);
       const field = await panel.locator('textarea').evaluate((el) => ({
         height: el.getBoundingClientRect().height, value: el.value.length,
       }));
@@ -113,7 +113,7 @@ export default {
       const collapse = await ui.t('scheduler.editor.promptDialog.collapsePrompt');
       await page.getByRole('button', { name: collapse, exact: true }).click();
       await panel.waitFor({ state: 'detached' });
-      const back = await page.locator('textarea').evaluate((el) => ({ height: el.getBoundingClientRect().height }));
+      const back = await page.getByRole('textbox', { name: await ui.t('scheduler.editor.fields.prompt'), exact: true }).evaluate((el) => ({ height: el.getBoundingClientRect().height }));
       assert.ok(back.height <= 60, `Collapsing did not restore the compact field: ${JSON.stringify(back)}`);
       // Focus returns to the entry button instead of restarting at the top.
       assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), expand);

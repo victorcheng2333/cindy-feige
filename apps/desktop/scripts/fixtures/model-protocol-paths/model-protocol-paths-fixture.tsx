@@ -2,6 +2,7 @@ import { mountPage, subscription } from '../../ui-page/harness';
 import { ModelAdvancedDrawer } from '../../../src/renderer/components/settings/ModelAdvancedDrawer';
 import { buildUnionRows } from '../../../src/renderer/components/settings/UnifiedModelList';
 import { BUNDLED_CATALOG, type AgentKind, type CatalogModel, type ModelInterfaceSnapshot, type PiModelApi, type ProviderView } from '@cindy/model-providers';
+import type { ModelPriceOverrideTarget } from '../../../src/shared/modelPriceOverride';
 
 type Api = 'anthropic-messages' | 'openai-responses' | 'openai-completions' | 'google-generative-ai';
 const WIRE = { 'anthropic-messages': 'anthropic-messages', 'openai-responses': 'openai-responses', 'openai-completions': 'openai-chat', 'google-generative-ai': 'google-generative-ai' } as const;
@@ -82,6 +83,10 @@ const scenarios: Record<string, Scenario> = {
 
 void mountPage({
   host: () => ({ maker: {
+    getModelPriceOverride: async (target: ModelPriceOverrideTarget) => ({
+      target, editable: false, reference: null, effective: null, override: null,
+      conflict: false, registryUpdatedAt: null, allowedCurrencies: ['USD'],
+    }),
     getModelImageInputOverride: async () => ({ value: null, mixed: false }),
     setModelImageInputOverride: async (_target: unknown, value: boolean | null) => ({ value, mixed: false }),
     getModelContextLimit: async () => ({ limit: null, isCustomized: false, compaction: { pct: 90, isCustomized: false } }),

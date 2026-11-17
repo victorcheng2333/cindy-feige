@@ -23,6 +23,7 @@ import type { AgentKind } from '@/hooks/useAgentCapabilities';
 
 import { ModelHarnessPicker } from './ModelHarnessPicker';
 import { EffortSlider } from '@/components/ui/effort-slider';
+import { Switch } from '@/components/ui/switch';
 import type { UnifiedEngine, UnifiedRowConfig } from './unifiedModelSelection';
 
 /** 底栏三态(等高,切态不改变浮层高度 —— 规格 §1.3「高度恒定」)。 */
@@ -50,6 +51,7 @@ export interface ModelConfigFlyoutProps {
   onEngineChange: (engine: UnifiedEngine) => void;
   onEffortChange: (effort: Effort) => void;
   onFastChange: (enabled: boolean | 'ultrafast') => void;
+  thinking?: { enabled: boolean; disabled?: boolean; onChange: (enabled: boolean) => void };
   onResetToRecommended: () => void;
   onAddFavorite: () => void;
   onRemoveFavorite: () => void;
@@ -84,6 +86,7 @@ export function ModelConfigFlyout({
   onEngineChange,
   onEffortChange,
   onFastChange,
+  thinking,
   onResetToRecommended,
   onAddFavorite,
   onRemoveFavorite,
@@ -91,7 +94,8 @@ export function ModelConfigFlyout({
   useMoneyDisplayPreferences();
   const { t } = useTranslation();
   const displayName = localizedModelName(entry.displayName, t);
-  const showSlider = config.efforts.length > 1;
+  const showThinking = config.agent === 'pi' && config.capability?.thinkingToggle === true;
+  const showSlider = !showThinking && config.efforts.length > 1;
   const contextLimit = useModelContextLimit(deviceId ? null : {
     providerId: entry.providerId,
     agent: config.engine === 'cc' ? 'claude-code' : config.engine,
@@ -183,6 +187,17 @@ export function ModelConfigFlyout({
         </p>
       )}
 
+      {showThinking && thinking && (
+        <div className="flex items-center justify-between gap-2 pt-3.5 text-13 text-[var(--text-primary)]">
+          <span>{t('newChat.modelSelector.thinking')}</span>
+          <Switch
+            aria-label={t('newChat.modelSelector.thinking')}
+            checked={thinking.enabled}
+            disabled={disabled || thinking.disabled}
+            onCheckedChange={thinking.onChange}
+          />
+        </div>
+      )}
       {(showSlider || config.fastCapable) && (
         // 设计稿 .fly-ctrl:first-of-type:第一个控件行上距 14px。
         <div className="flex items-center gap-2 pt-3.5">

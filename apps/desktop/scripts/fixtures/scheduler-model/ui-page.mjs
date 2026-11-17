@@ -19,13 +19,13 @@ export default {
   name: 'scheduler-model',
   entry: './scheduler-model-fixture.tsx',
   viewport: { width: 720, height: 600 },
-  real: 'ScheduleFormDialog, form serialization/restoration, ModelEffortChip, unified picker and speed menu, source icons, themes and translations',
-  notCovered: 'Live device/share discovery, authorization, database persistence and task execution; catalogs and JSON save boundary use fixture data',
+  real: 'ScheduleFormDialog, form serialization/restoration, ModelEffortChip, legacy picker and boolean Fast control, source icons, themes and translations',
+  notCovered: 'Live device/share discovery, authorization, database persistence and task execution; catalogs and JSON save boundary use fixture data; the fork legacy path has no ultrafast menu',
   stubs: {
-    'src/renderer/hooks/useModelRouteDevices': `const devices = [{ deviceId: 'shared:fixture', name: 'Shared Anthropic' }]; export const useModelRouteDevices = ({ leadAgentDeviceId }) => ({ devices, leadAgentDeviceId: leadAgentDeviceId ?? null });`,
+    'src/renderer/hooks/useModelRouteDevices': `const devices = [{ deviceId: 'share:fixture', name: 'Shared Anthropic' }]; export const useModelRouteDevices = ({ leadAgentDeviceId }) => ({ devices, leadAgentDeviceId: leadAgentDeviceId ?? null });`,
     'src/renderer/hooks/useProviders': { partial: `const snapshot = ${snapshot}; export const useProviders = () => snapshot;` },
     'src/renderer/hooks/useDeviceProviders': { partial: `const snapshot = ${snapshot}; export const useDeviceProviders = () => snapshot;` },
-    'src/renderer/hooks/useDevicesProviders': { partial: `const snapshot = ${snapshot}; const devices = new Map([['shared:fixture', snapshot]]); export const useDevicesProviders = () => devices;` },
+    'src/renderer/hooks/useDevicesProviders': { partial: `const snapshot = ${snapshot}; export const useDevicesProviders = keys => new Map(keys.map(key => [key, snapshot]));` },
     'src/renderer/hooks/useAgentCapabilities': { partial: `const capabilities = ${caps}; export const useAgentCapabilities = () => ({ capabilities, loading: false, error: null });` },
     'src/renderer/hooks/useAvailableAgents': { partial: `const agents = ['claude-code', 'codex']; export const useModelPickerAgents = () => agents; export const useAvailableAgents = () => ({availableVendors: new Set(['cc', 'codex']), loaded: true, loading: false});` },
     'src/renderer/hooks/useFeishuBot': 'export const useFeishuBot = () => ({status: "disconnected"});',
@@ -47,26 +47,24 @@ export default {
       // Tier: Electron UI integration, with the actual form/picker and a fixture save boundary.
       const openConfiguration = async () => {
         await page.getByRole('button', { name: /Codex · GPT-6.1-Sol/ }).click();
-        const row = page.locator('[data-unified-anchor]').filter({
-          has: page.getByText('GPT-6.1-Sol', { exact: true }),
-        });
-        await row.hover();
-        await row.locator('[data-row-customize]').click();
+        const row = page.getByRole('option', { name: /GPT-6.1-Sol/ }).first();
+        await row.focus();
+        await row.press('ArrowLeft');
       };
       await openConfiguration();
-      const speed = page.getByRole('button', { name: await ui.t('newChat.modelSelector.speed.label'), exact: true });
-      for (const [mode, saved] of [['fast', 'true'], ['ultrafast', 'ultrafast'], ['standard', 'false']]) {
-        await speed.click();
-        const choice = page.getByRole('menuitemradio', { name: await ui.t(`newChat.modelSelector.speed.${mode}`), exact: true });
-        await choice.waitFor();
-        const reachable = await choice.evaluate(element => {
-          const rect = element.getBoundingClientRect();
-          return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      const speed = page.getByRole('button', { name: 'Fast Mode', exact: true });
+      // This fork's real automation path uses the existing boolean Fast control.
+      // Preserve modal hit-testing and save/reopen coverage for both supported values.
+      for (const saved of ['true', 'false']) {
+        await speed.waitFor();
+        const reachable = await speed.evaluate(element => {
+          const r = element.getBoundingClientRect();
+          return element.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));
         });
-        await ui.capture(`${mode}-menu`);
-        assert.ok(reachable, 'Speed menu is covered by the automation editor');
-        await choice.click();
-        assert.equal(await speed.getAttribute('title'), await ui.t(`newChat.modelSelector.speed.${mode}`));
+        assert.ok(reachable, 'Fast control is covered by the automation editor');
+        await speed.click();
+        assert.equal(await speed.getAttribute('aria-pressed'), saved);
+        await ui.capture('fast-' + saved);
         await speed.press('Escape');
         await page.keyboard.press('Escape');
         await page.getByRole('button', { name: await ui.t('scheduler.editor.promptDialog.saveAria'), exact: true }).click();
@@ -75,22 +73,24 @@ export default {
         assert.equal(await reopen.getAttribute('data-saved-speed'), saved);
         await reopen.click();
         await openConfiguration();
-        assert.equal(await speed.getAttribute('title'), await ui.t(`newChat.modelSelector.speed.${mode}`));
-        await ui.capture(`${mode}-saved`);
+        assert.equal(await speed.getAttribute('aria-pressed'), saved);
+        await ui.capture('fast-saved-' + saved);
       }
       return;
     }
     const trigger = page.getByTestId('automation-model').getByRole('button');
     await trigger.click();
-    await page.getByRole('button', { name: 'Anthropic · Shared Anthropic', exact: true }).click();
+    await page.getByRole('combobox', { name: await ui.t('newChat.modelSelector.source.railLabel'), exact: true }).click();
+    await page.getByRole('option', { name: 'Anthropic · Shared Anthropic', exact: true }).click();
     await ui.capture('shared-catalog');
     await page.getByText('Claude Sonnet 4.6', { exact: true }).filter({ visible: true }).click();
-    await page.waitForFunction(() => document.querySelector('[data-testid="automation-model"]')?.getAttribute('data-device') === 'shared:fixture');
+    await page.waitForFunction(() => document.querySelector('[data-testid="automation-model"]')?.getAttribute('data-device') === 'share:fixture');
     assert.equal(await page.getByTestId('automation-model').getAttribute('data-provider'), 'anthropic');
     assert.equal(await trigger.locator('[data-remote-source-mark]').count(), 1);
     await ui.capture('shared-selected');
     await trigger.click();
-    await page.getByRole('button', { name: 'Anthropic', exact: true }).click();
+    await page.getByRole('combobox', { name: await ui.t('newChat.modelSelector.source.railLabel'), exact: true }).click();
+    await page.getByRole('option', { name: await ui.t('providerGroup.member.local'), exact: true }).click();
     await page.getByText('Claude Sonnet 4.6', { exact: true }).filter({ visible: true }).click();
     await page.waitForFunction(() => document.querySelector('[data-testid="automation-model"]')?.getAttribute('data-device') === '');
     assert.equal(await trigger.locator('[data-remote-source-mark]').count(), 0);

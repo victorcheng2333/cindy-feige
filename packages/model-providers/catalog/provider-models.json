@@ -74487,10 +74487,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0.14,
           "output": 0.28,
@@ -74516,7 +74514,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       },
       {
         "id": "mimo-v2.6-pro",
@@ -74535,10 +74534,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0.435,
           "output": 0.87,
@@ -74564,7 +74561,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       },
       {
         "id": "mimo-v2.6-pro-ultraspeed",
@@ -74583,10 +74581,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 4.35,
           "output": 8.7,
@@ -74612,7 +74608,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       }
     ],
     "xiaomi-token-plan-ams": [
@@ -74712,10 +74709,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0,
           "output": 0,
@@ -74741,7 +74736,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       },
       {
         "id": "mimo-v2.6-pro",
@@ -74760,10 +74756,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0,
           "output": 0,
@@ -74789,7 +74783,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       }
     ],
     "xiaomi-token-plan-cn": [
@@ -74889,10 +74884,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0,
           "output": 0,
@@ -74918,7 +74911,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       },
       {
         "id": "mimo-v2.6-pro",
@@ -74937,10 +74931,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0,
           "output": 0,
@@ -74966,7 +74958,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       }
     ],
     "xiaomi-token-plan-sgp": [
@@ -75066,10 +75059,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0,
           "output": 0,
@@ -75095,7 +75086,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       },
       {
         "id": "mimo-v2.6-pro",
@@ -75114,10 +75106,8 @@
         },
         "supportsImageInput": true,
         "reasoning": true,
-        "efforts": [
-          "high"
-        ],
-        "defaultEffort": "high",
+        "efforts": [],
+        "defaultEffort": null,
         "cost": {
           "input": 0,
           "output": 0,
@@ -75143,7 +75133,8 @@
               "thinkingFormat": "deepseek"
             }
           }
-        }
+        },
+        "thinkingToggle": true
       }
     ],
     "zai": [
@@ -75964,6 +75955,12 @@
   },
   "sourceVersion": "0.85.1",
   "supplementalSources": [
+    {
+      "url": "https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/text-generation/deep-thinking",
+      "modelIds": ["mimo-v2.6-pro", "mimo-v2.6-flash", "mimo-v2.6-pro-ultraspeed"],
+      "checkedAt": "2026-11-13",
+      "scope": "Official MiMo Chat API and CN/AMS/SGP Token Plan thinking switch; UI efforts empty, native Pi map retained. Applied by tools/pi/catalog-format.mjs without refreshing unrelated rows."
+    },
     {
       "url": "https://pi.dev/api/models/providers/opencode-go",
       "modelIds": [

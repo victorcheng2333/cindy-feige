@@ -7,6 +7,7 @@ import { AskUserQuestionBubble } from '../../../src/renderer/components/chat/Ask
 import type { ChatMessage, AskUserDraft, AskUserViewerState } from '../../../src/renderer/lib/makerChatStore';
 import type { VoiceQuestionTarget } from '../../../src/renderer/components/new-chat/voiceQuestionSelection';
 import { CompanionVoiceToolbar } from '../../../src/renderer/features/bots/voice/CompanionVoiceToolbar';
+import { EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES } from '../../../src/renderer/cindy-brain/PluginUiContributions';
 import { UserMessage } from '../../../src/renderer/components/chat/UserMessage';
 import { formatAsyncQuestionSupplement } from '@cindy/maker-shared/interaction';
 
@@ -20,7 +21,7 @@ function QuestionReplyFixture({ kind }: { kind: string }) {
     : kind === 'reply-legacy' ? formatAsyncQuestionSupplement([{ question }], { [question]: '已解锁' })
     : formatAsyncQuestionSupplement(questions, { [id]: '已解锁', [questions[1]?.id ?? '']: '保留登录。\n\n保留原有任务。' });
   return <main className="mx-auto w-full max-w-[720px] min-w-0 p-4" data-ui-page-subject>
-    <UserMessage workingDir="" content={content} messageClientId={kind === 'reply-literal' ? 'ordinary-user' : 'question-reply:fixture:answer'} />
+    <UserMessage pluginUi={EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES} workingDir="" content={content} messageClientId={kind === 'reply-literal' ? 'ordinary-user' : 'question-reply:fixture:answer'} />
   </main>;
 }
 

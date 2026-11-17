@@ -36,7 +36,15 @@ export default {
       await settings.getByText(await ui.t('quotaCard.noWindows'), { exact: true }).waitFor();
       assert.equal(await settings.getByRole('progressbar').count(), 0);
     } else {
-      await settings.getByText(await ui.t('quotaCard.remainingPercent', { percent: monthly ? '35' : '77' }), { exact: true }).waitFor();
+      const percent = monthly ? '35' : '77';
+      const percentText = await ui.t('quotaCard.remainingPercent', { percent });
+      // Embedded quota rows show the number compactly; the full meaning remains
+      // on the visible value's title and the progressbar's accessibility text.
+      const value = settings.getByTitle(percentText, { exact: true });
+      await value.waitFor();
+      assert.equal(await value.textContent(), `${percent}%`);
+      assert.ok((await settings.getByRole('progressbar').evaluateAll(bars =>
+        bars.map(bar => bar.getAttribute('aria-valuetext')))).includes(percentText));
       assert.equal(await settings.getByText(await ui.t('quotaCard.noWindows'), { exact: true }).count(), 0);
       assert.equal(await settings.getByRole('progressbar').count(), monthly || ['legacy', 'narrow'].includes(ui.case) ? 2 : 1);
       if (ui.case === 'stale') await settings.getByText(await ui.t('providerAccountUsage.kimi.stale'), { exact: true }).waitFor();

@@ -272,9 +272,6 @@ void mountPage({
   render: (ctx) => (
     <AppFrame>
       <div className="flex h-full min-h-0 flex-col">
-        <p className="shrink-0 px-5 py-2 text-12 text-[var(--text-secondary)]">
-          UI fixture · 测试数据 · Test data
-        </p>
         {ctx.case.startsWith('owner') ? (
           <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
             <ProviderShareManagePage

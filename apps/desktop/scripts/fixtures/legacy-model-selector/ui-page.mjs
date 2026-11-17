@@ -119,7 +119,10 @@ export default {
       assert.ok(widths.length > 5);
       assert.ok(Math.max(...widths) - Math.min(...widths) < 1, `content gutter changed: ${widths}`);
       console.log('Stable content gutter:', Math.min(...widths), Math.max(...widths));
-      assert.equal(await page.locator('[data-morph-side]').evaluate(panel => getComputedStyle(panel.firstElementChild).overflowY), 'hidden');
+      const outer = await page.locator('[data-morph-side]').evaluate(panel => ({
+        height: panel.firstElementChild.clientHeight, content: panel.firstElementChild.scrollHeight,
+      }));
+      assert.ok(outer.content <= outer.height + 1, 'Only the model list may overflow the panel');
       const footer = page.getByRole('button', { name: await ui.t('newChat.modelSelector.source.connect'), exact: true });
       const footerBox = await footer.boundingBox();
       const panelBox = await page.locator('[data-morph-side]').boundingBox();
@@ -128,6 +131,7 @@ export default {
         const bounds = await page.getByRole('listbox').evaluate(list => ({ height: list.clientHeight, content: list.scrollHeight }));
         assert.ok(bounds.content > bounds.height, 'list remains scrollable');
         await page.getByRole('listbox').evaluate(list => { list.scrollTop = list.scrollHeight; });
+        assert.deepEqual(await footer.boundingBox(), footerBox, 'The footer stays fixed while models scroll');
       }
     }
     if (ui.case.startsWith('compact-task')) {

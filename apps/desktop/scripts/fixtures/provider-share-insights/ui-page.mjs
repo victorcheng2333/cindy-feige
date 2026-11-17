@@ -110,11 +110,29 @@ export default {
       const models = page.getByTestId('provider-share-received-models');
       assert.equal(await models.getByRole('listitem').count(), 3);
       if (ui.case === 'default') {
-        const bounds = await models.getByRole('listitem').last().boundingBox();
-        assert.ok(
-          bounds && bounds.y + bounds.height <= ui.viewport.height,
-          'Default view shows models without scrolling',
-        );
+        // Read-only model rows may end in padding below the viewport; all actual
+        // model names and wire IDs must remain readable without any scrolling.
+        const contentBounds = await models.getByRole('listitem').evaluateAll(items => items.map(item => {
+          const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+          const boxes = [];
+          while (walker.nextNode()) {
+            if (!walker.currentNode.textContent.trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(walker.currentNode);
+            boxes.push(...Array.from(range.getClientRects(), r => ({ top: r.top, bottom: r.bottom })));
+          }
+          let top = 0, bottom = innerHeight;
+          for (let parent = item.parentElement; parent; parent = parent.parentElement) {
+            if (!/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)) continue;
+            const rect = parent.getBoundingClientRect();
+            top = Math.max(top, rect.top + parent.clientTop);
+            bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight);
+          }
+          return { boxes, top, bottom };
+        }));
+        assert.equal(await models.evaluate(el => el.scrollTop), 0);
+        assert.ok(contentBounds.every(({boxes, top, bottom}) => boxes.length && boxes.every(r => r.top >= top && r.bottom <= Math.min(bottom, ui.viewport.height))),
+          'Default view shows every model name and wire ID without scrolling');
         await ui.capture('collapsed-models');
       }
       const progress = page.getByRole('progressbar');
