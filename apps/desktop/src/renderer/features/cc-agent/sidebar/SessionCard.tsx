@@ -39,7 +39,7 @@ import type {
 } from 'react';
 import { Archive, ChevronRight, Crown, EllipsisVertical, Undo } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { withSidebarNavigation, type SidebarNavigationProps } from './sidebarNavigation';
+import { withSidebarNavigation, useSidebarClickIntent, type SidebarNavigationProps } from './sidebarNavigation';
 
 import { cn } from '@/lib/utils';
 import { SessionStatusIcon } from './SessionStatusIcon';
@@ -414,17 +414,25 @@ export const SessionCard = withSidebarNavigation<SessionCardProps>(function Sess
     [displayTitle, remoteWritesBlocked, session.id, onRename, t],
   );
 
+  const { schedule: scheduleNavigation, cancel: cancelNavigation } = useSidebarClickIntent(
+    `${session.deviceLinkDeviceId ?? ''}:${session.id}`,
+  );
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       if (isEditing) return;
-      // 多选(与列表 SessionItem 同口径):透传 shift/⌘/ctrl 修饰键,支持卡片区
-      // 范围/加减选;无修饰键即普通导航。
-      onClick(session.id, { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey });
+      const modifiers = { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey };
+      cancelNavigation();
+      // 多选、键盘合成点击和只读导航仍立即响应。
+      if (navigationOnly || isArchived || isEmpty ||
+        parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host' ||
+        e.detail === 0 || e.shiftKey || e.metaKey || e.ctrlKey) {
+        onClick(session.id, modifiers);
+      } else if (e.detail === 1) {
+        scheduleNavigation(() => onClick(session.id, modifiers));
+      }
     },
-    [isEditing, onClick, session.id],
+    [isEditing, navigationOnly, isArchived, isEmpty, onClick, session.id, session.deviceLinkDeviceId, scheduleNavigation, cancelNavigation],
   );
-
-
 
   useEffect(() => {
     if (isActive && !navigationOnly) scrollIntoNearestView(cardRef.current);
@@ -514,13 +522,14 @@ export const SessionCard = withSidebarNavigation<SessionCardProps>(function Sess
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      cancelNavigation();
       if (isEditing || navigationOnly || isArchived || isEmpty ||
         parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host') return;
       e.stopPropagation();
       e.preventDefault();
       handleOpenInNewWindowSelect();
     },
-    [handleOpenInNewWindowSelect, isEditing, navigationOnly, isArchived, isEmpty, session.deviceLinkDeviceId],
+    [cancelNavigation, handleOpenInNewWindowSelect, isEditing, navigationOnly, isArchived, isEmpty, session.deviceLinkDeviceId],
   );
 
   // 「导出会话…」——打成 .cshare 分享给同事。空草稿、remote / orca / device-link 会话不显示此入口
@@ -683,10 +692,12 @@ export const SessionCard = withSidebarNavigation<SessionCardProps>(function Sess
         if (e.target !== e.currentTarget) return;
         if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
+          cancelNavigation();
           onClick(session.id);
         }
       }}
       onContextMenu={(e) => {
+        cancelNavigation();
         if (isEditing) {
           // 同 SessionItem:编辑态放行系统可编辑菜单,但拦下冒泡,避免与滚动
           // 容器的空白处整理菜单叠弹(2026-08-13 实机回归)。

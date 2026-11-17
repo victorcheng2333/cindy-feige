@@ -271,6 +271,7 @@ describe('SessionCard visual cases', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     if (originalScrollIntoView) {
       Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
@@ -279,10 +280,11 @@ describe('SessionCard visual cases', () => {
     }
   });
 
-  // 回归：上次只改顶部标题，左侧列表与卡片仍双击改名。
+  // 回归：双击前的两次 click 不能切走原窗口里的任务。
   // unit：挂载真实三种行，双击后必须向宿主请求打开正确的本机/远程任务，且不出现编辑器。
-  // 原有测试只覆盖改名布局；最小失败输入为普通任务行的一次 dblclick。
+  // 旧覆盖只发送 dblclick，遗漏浏览器先发送两次 click 的时序；使用虚拟时钟避免真实等待。
   it.each(['text', 'list', 'card'] as const)('opens the task in a new window on %s double-click', (variant) => {
+    vi.useFakeTimers();
     const openSessionInNewWindow = vi.fn();
     Object.defineProperty(window, 'electronAPI', {
       configurable: true, value: { maker: { openSessionInNewWindow } },
@@ -294,13 +296,74 @@ describe('SessionCard visual cases', () => {
       const view = render(variant === 'text'
         ? createElement(SessionItem, props)
         : createElement(SessionCard, { ...props, variant }));
-      fireEvent.doubleClick(view.container.querySelector('[data-sidebar-session-row="true"]')!);
+      const row = view.container.querySelector('[data-sidebar-session-row="true"]')!;
+      fireEvent.click(row, { detail: 1 });
+      act(() => vi.advanceTimersByTime(100));
+      fireEvent.click(row, { detail: 2 });
+      fireEvent.doubleClick(row);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(props.onClick).not.toHaveBeenCalled();
       expect(openSessionInNewWindow).toHaveBeenLastCalledWith(session.id, deviceLinkDeviceId);
       expect(screen.queryByRole('textbox')).toBeNull();
       expect(props.onRename).not.toHaveBeenCalled();
+      // 单击仍能导航；修饰键多选与键盘导航不等待双击判定。
+      fireEvent.click(row, { detail: 1 });
+      expect(props.onClick).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1000));
+      expect(props.onClick).toHaveBeenCalledTimes(1);
+      fireEvent.click(row, { detail: 1, shiftKey: true });
+      expect(props.onClick).toHaveBeenCalledTimes(2);
+      fireEvent.keyDown(row, { key: 'Enter' });
+      expect(props.onClick).toHaveBeenCalledTimes(3);
+      // 列表消失后，尚未确认的单击不能再切换任务。
+      fireEvent.click(row, { detail: 1 });
       view.unmount();
+      act(() => vi.advanceTimersByTime(1000));
+      expect(props.onClick).toHaveBeenCalledTimes(3);
     }
     expect(openSessionInNewWindow).toHaveBeenCalledTimes(2);
+  });
+
+  // unit 回归：A 行待导航时，在 B 行双击/键盘/多选不得被 A 的迟到计时器切回。
+  it.each(['text', 'list', 'card'] as const)('cancels pending navigation across %s rows', (variant) => {
+    vi.useFakeTimers();
+    const openSessionInNewWindow = vi.fn();
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true, value: { maker: { openSessionInNewWindow } },
+    });
+    for (const gesture of ['double', 'keyboard', 'selection']) {
+      const onClick = vi.fn();
+      const base = { isActive: false, isRunning: false, hasAttentionNotification: false,
+        onClick, onRename: vi.fn(), onAction: vi.fn(), onTogglePin: vi.fn() };
+      const row = (id: string) => {
+        const props = { ...base, session: { ...sessionCardVisualCases[0].session, id } };
+        return variant === 'text' ? createElement(SessionItem, props)
+          : createElement(SessionCard, { ...props, variant });
+      };
+      const view = render(createElement('div', null, row('a'), row('b')));
+      const [a, b] = view.container.querySelectorAll('[data-sidebar-session-row="true"]');
+      fireEvent.click(a, { detail: 1 });
+      act(() => vi.advanceTimersByTime(100));
+      if (gesture === 'keyboard') fireEvent.keyDown(b, { key: 'Enter' });
+      else {
+        fireEvent.pointerDown(b);
+        fireEvent.click(b, { detail: 1, shiftKey: gesture === 'selection' });
+        if (gesture === 'double') {
+          fireEvent.pointerDown(b);
+          fireEvent.click(b, { detail: 2 });
+          fireEvent.doubleClick(b);
+        }
+      }
+      act(() => vi.advanceTimersByTime(1000));
+      if (gesture === 'double') {
+        expect(onClick).not.toHaveBeenCalled();
+        expect(openSessionInNewWindow).toHaveBeenLastCalledWith('b', undefined);
+      } else {
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(onClick.mock.calls[0][0]).toBe('b');
+      }
+      view.unmount();
+    }
   });
 
   it.each(['list', 'card'] as const)(

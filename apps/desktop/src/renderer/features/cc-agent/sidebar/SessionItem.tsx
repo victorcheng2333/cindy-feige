@@ -38,7 +38,7 @@ import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { Archive, ChevronRight, Crown, EllipsisVertical, Play, Undo } from 'lucide-react';
-import { withSidebarNavigation, type SidebarNavigationProps } from './sidebarNavigation';
+import { withSidebarNavigation, useSidebarClickIntent, type SidebarNavigationProps } from './sidebarNavigation';
 import { useStableTranslation as useTranslation } from '@/hooks/useStableTranslation';
 
 import { cn } from '@/lib/utils';
@@ -606,22 +606,25 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
     [displayTitle, session.id, onRename],
   );
 
-  // 单击 → 立即导航,无延迟。双击 → 浏览器在两次 click 之后再发 dblclick,
-  // 在新窗口打开;首击 navigate 到本 session,第二击因 id===activeSessionId 在
-  // handleSessionClick 早 return(参见 CCAgentSidebarUpper handleSessionClick),
-  // 不会重复导航。两路并存,无需 200ms 防抖。
-  const handleClick = useCallback(
-    (e: ReactMouseEvent<HTMLDivElement>) => {
-      if (isEditing) return;
-      onClick(session.id, {
-        shiftKey: e.shiftKey,
-        metaKey: e.metaKey,
-        ctrlKey: e.ctrlKey,
-      });
-    },
-    [isEditing, onClick, session.id],
+  const { schedule: scheduleNavigation, cancel: cancelNavigation } = useSidebarClickIntent(
+    `${session.deviceLinkDeviceId ?? ''}:${session.id}`,
   );
-
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditing) return;
+      const modifiers = { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey };
+      cancelNavigation();
+      // 多选、键盘合成点击和只读导航仍立即响应。
+      if (navigationOnly || isArchived || isEmpty ||
+        parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host' ||
+        e.detail === 0 || e.shiftKey || e.metaKey || e.ctrlKey) {
+        onClick(session.id, modifiers);
+      } else if (e.detail === 1) {
+        scheduleNavigation(() => onClick(session.id, modifiers));
+      }
+    },
+    [isEditing, navigationOnly, isArchived, isEmpty, onClick, session.id, session.deviceLinkDeviceId, scheduleNavigation, cancelNavigation],
+  );
 
   // 置顶段使用原生 Sortable DnD：Sortable 负责侧栏内排序，原生 dragstart 同时写入
   // 分屏 MIME，因此同一整行可以根据落点完成排序或拖入右侧。普通 forceFallback
@@ -781,13 +784,14 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      cancelNavigation();
       if (isEditing || navigationOnly || isArchived || isEmpty ||
         parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host') return;
       e.stopPropagation();
       e.preventDefault();
       handleOpenInNewWindowSelect();
     },
-    [handleOpenInNewWindowSelect, isEditing, navigationOnly, isArchived, isEmpty, session.deviceLinkDeviceId],
+    [cancelNavigation, handleOpenInNewWindowSelect, isEditing, navigationOnly, isArchived, isEmpty, session.deviceLinkDeviceId],
   );
 
   // 复制 cindy://session/<id> 深度链接到剪贴板。三个变体(标准/Pinned/Archived/Draft)
@@ -951,10 +955,12 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
         if (e.target !== e.currentTarget) return;
         if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
+          cancelNavigation();
           onClick(session.id);
         }
       }}
       onContextMenu={(e) => {
+        cancelNavigation();
         if (isEditing) {
           // 重命名输入框上的右键交给系统的可编辑菜单(剪切/复制/粘贴,main 侧
           // selection-context-menu),但必须拦下冒泡——否则会穿透到滚动容器的

@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useRef, type ComponentType } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, type ComponentType } from 'react';
 import {
   useNavigate,
   type NavigateFunction,
@@ -33,4 +33,30 @@ export function withSidebarNavigation<P extends object>(
     const navigate = useSidebarNavigate();
     return <Row {...props} navigate={navigate} />;
   });
+}
+
+/** Hold mouse navigation until the double-click gesture can cancel it. */
+export function useSidebarClickIntent(identity: string) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancel = useCallback(function cancelPendingNavigation() {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    document.removeEventListener('pointerdown', cancelPendingNavigation, true);
+    document.removeEventListener('keydown', cancelPendingNavigation, true);
+    window.removeEventListener('blur', cancelPendingNavigation);
+  }, []);
+  useEffect(() => cancel, [identity, cancel]);
+  const schedule = useCallback((navigate: () => void) => {
+    cancel();
+    timer.current = setTimeout(() => {
+      cancel();
+      navigate();
+    }, 500);
+    // A new gesture anywhere supersedes this row's pending navigation, including
+    // clicking another task, keyboard navigation and opening another window.
+    document.addEventListener('pointerdown', cancel, true);
+    document.addEventListener('keydown', cancel, true);
+    window.addEventListener('blur', cancel);
+  }, [cancel]);
+  return { schedule, cancel };
 }
