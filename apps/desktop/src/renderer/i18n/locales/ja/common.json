@@ -1415,7 +1415,16 @@
     "REMOTE_AGENT_SHARE_UNAVAILABLE": "モデルは切り替わっていません。共有されたプロバイダーは一時的に利用できません（共有した人のパソコンがオフラインか、共有が一時的にオフになっています）。後でもう一度試すか、別のモデルを選んでください。",
     "REMOTE_AGENT_SHARE_LEGACY_DISABLED": "モデルは切り替わっていません。これは旧方式の共有のため、「Agent-Net のみ使用」がオンの間は使えません。オフにするか、別のモデルを選んでください。",
     "SSH_HOST_KEY_MISMATCH": "SSH ホスト鍵が変更されました",
-    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy が元の添付ファイルを読み取れないため、メッセージは送信されていません。「ダウンロード」などアクセス可能なフォルダーにコピーを保存し、元の添付ファイルを削除してから、添付ボタンでコピーを追加し、再送信してください。"
+    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy が元の添付ファイルを読み取れないため、メッセージは送信されていません。「ダウンロード」などアクセス可能なフォルダーにコピーを保存し、元の添付ファイルを削除してから、添付ボタンでコピーを追加し、再送信してください。",
+    "UNSUPPORTED_CAPABILITY": "現在のタスクまたは環境ではこの操作に対応していません。",
+    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Cursor に切り替えられません：Cursor は読み取り専用の参照ディレクトリが追加されたタスクに対応していません。",
+    "CURSOR_HANDOFF_UNSUPPORTED": "Cursor に切り替えられません：通常のデスクトップタスクのみ Cursor に切り替えられます。",
+    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Cursor に切り替えられません：Cursor はこのタスクのコンピューター上でのみ実行できます。",
+    "CURSOR_CONNECTION_REQUIRED": "Cursor に切り替えられません：Cursor 接続配下のモデルを選択してください。",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Cursor に切り替えられません：先に権限モードを自動レビュー、フルアクセス、または計画モードに変更してください。",
+    "REVIEW_SETTINGS_FIXED": "レビュータスクの設定は元のタスクに固定されており、変更できません。",
+    "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "アーカイブ済みのタスクでは Harness を切り替えられません。",
+    "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共有タスクのゲストは Agent を別のコンピューターへ移動できません。"
   },
   "providerError": {
     "AUTH_INVALID": "このインターフェースで認証に失敗しました。アドレス、キー、認証方式を確認してください。",

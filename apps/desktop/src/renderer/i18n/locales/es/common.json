@@ -1446,7 +1446,16 @@
     "REMOTE_AGENT_SHARE_UNAVAILABLE": "Modelo no cambiado: el proveedor compartido no está disponible temporalmente (la computadora del propietario está desconectada o el uso compartido está desactivado por ahora). Vuelve a intentarlo más tarde o elige otro modelo.",
     "REMOTE_AGENT_SHARE_LEGACY_DISABLED": "Modelo no cambiado: este es un recurso compartido antiguo y no se puede usar mientras «Usar solo Agent-Net» esté activado. Desactívalo o elige otro modelo.",
     "SSH_HOST_KEY_MISMATCH": "Clave de host SSH cambiada",
-    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy no puede leer el archivo adjunto de origen; el mensaje no se envió. Guarda una copia en Descargas u otra carpeta accesible, quita el archivo adjunto original y agrega la copia con el botón de adjuntar antes de volver a enviarlo."
+    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy no puede leer el archivo adjunto de origen; el mensaje no se envió. Guarda una copia en Descargas u otra carpeta accesible, quita el archivo adjunto original y agrega la copia con el botón de adjuntar antes de volver a enviarlo.",
+    "UNSUPPORTED_CAPABILITY": "Esta operación no es compatible con la sesión o el entorno actual.",
+    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "No se puede cambiar a Cursor: Cursor no admite directorios de referencia de solo lectura en esta sesión.",
+    "CURSOR_HANDOFF_UNSUPPORTED": "No se puede cambiar a Cursor: solo las sesiones de escritorio normales pueden cambiar a Cursor.",
+    "CURSOR_LOCAL_EXECUTION_REQUIRED": "No se puede cambiar a Cursor: Cursor solo puede ejecutarse en la computadora de esta sesión.",
+    "CURSOR_CONNECTION_REQUIRED": "No se puede cambiar a Cursor: selecciona un modelo desde la conexión de Cursor.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "No se puede cambiar a Cursor: cambia primero el modo de permisos a Revisión automática, Acceso completo o Modo de plan.",
+    "REVIEW_SETTINGS_FIXED": "La configuración de la sesión de revisión está fijada a la sesión de origen y no se puede cambiar.",
+    "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Las sesiones archivadas no pueden cambiar de Harness.",
+    "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Los invitados de una sesión compartida no pueden mover el Agent a otra computadora."
   },
   "providerError": {
     "AUTH_INVALID": "La autenticación falló para esta interfaz. Comprueba la dirección, la clave y el método de autenticación.",

@@ -1428,7 +1428,16 @@
     "REMOTE_AGENT_SHARE_UNAVAILABLE": "Modell nicht geändert: Der geteilte Anbieter ist vorübergehend nicht verfügbar (der Computer des Eigentümers ist offline oder die Freigabe ist derzeit deaktiviert). Versuch es später erneut oder wähle ein anderes Modell.",
     "REMOTE_AGENT_SHARE_LEGACY_DISABLED": "Modell nicht geändert: Dies ist eine ältere Freigabe und nicht nutzbar, solange „Nur Agent-Net verwenden“ aktiviert ist. Schalte die Option aus oder wähle ein anderes Modell.",
     "SSH_HOST_KEY_MISMATCH": "SSH-Hostschlüssel geändert",
-    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy kann den ursprünglichen Anhang nicht lesen; die Nachricht wurde nicht gesendet. Speichere eine Kopie im Ordner Downloads oder einem anderen zugänglichen Ordner, entferne den ursprünglichen Anhang und füge die Kopie über die Anhang-Schaltfläche hinzu, bevor du erneut sendest."
+    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy kann den ursprünglichen Anhang nicht lesen; die Nachricht wurde nicht gesendet. Speichere eine Kopie im Ordner Downloads oder einem anderen zugänglichen Ordner, entferne den ursprünglichen Anhang und füge die Kopie über die Anhang-Schaltfläche hinzu, bevor du erneut sendest.",
+    "UNSUPPORTED_CAPABILITY": "Dieser Vorgang wird in der aktuellen Aufgabe oder Umgebung nicht unterstützt.",
+    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Cursor unterstützt keine schreibgeschützten Referenzverzeichnisse in dieser Aufgabe.",
+    "CURSOR_HANDOFF_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Nur normale Desktop-Aufgaben können zu Cursor wechseln.",
+    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Wechsel zu Cursor nicht möglich: Cursor kann nur auf dem Computer dieser Aufgabe ausgeführt werden.",
+    "CURSOR_CONNECTION_REQUIRED": "Wechsel zu Cursor nicht möglich: Bitte wähle ein Modell aus der Cursor-Verbindung.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Stelle den Berechtigungsmodus zuerst auf Automatische Prüfung, Vollzugriff oder Planmodus um.",
+    "REVIEW_SETTINGS_FIXED": "Die Einstellungen einer Review-Aufgabe sind an die Quellaufgabe gebunden und können nicht geändert werden.",
+    "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Archivierte Aufgaben können den Harness nicht wechseln.",
+    "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Gäste einer geteilten Aufgabe können den Agent nicht auf einen anderen Computer verschieben."
   },
   "providerError": {
     "AUTH_INVALID": "Authentifizierung für diese Schnittstelle fehlgeschlagen. Prüfe Adresse, Schlüssel und Authentifizierungsmethode.",

@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+vi.mock('electron', () => ({ app: { isPackaged: false, getPath: () => os.tmpdir(), getAppPath: () => os.tmpdir() }, net: { fetch: vi.fn() } }));
 import { CursorSdkManager, type CursorSdkManagerDeps } from '../cursor-sdk-manager.js';
+import { createCursorSdkNpmEnv } from '../cursor-sdk.js';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
@@ -71,5 +73,27 @@ describe('Cursor SDK selection', () => {
     expect(deps.install).not.toHaveBeenCalled();
     deps.lookup = vi.fn(async () => { throw new Error('offline'); });
     expect(await manager.check()).toMatchObject({ latestVersion: '1.1.0', checkFailed: true, updateAvailable: false });
+  });
+
+  // Regression: npm crashes with "double-loading config" when userconfig and globalconfig share os.devNull.
+  it('isolates npm userconfig and globalconfig into distinct empty files', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cursor-sdk-env-')); roots.push(root);
+    const configRoot = path.join(root, '.config'); fs.mkdirSync(configRoot);
+    const cacheRoot = path.join(root, 'npm-cache');
+    const nodePath = path.join(root, 'bin', 'node');
+    const env = await createCursorSdkNpmEnv(configRoot, cacheRoot, nodePath, {
+      PATH: '/usr/bin',
+      Path: 'C:\\Windows\\System32',
+      NPM_TOKEN: 'secret-token',
+    });
+    expect(env.npm_config_userconfig).toBe(path.join(configRoot, 'user.npmrc'));
+    expect(env.npm_config_globalconfig).toBe(path.join(configRoot, 'global.npmrc'));
+    expect(env.npm_config_userconfig).not.toBe(env.npm_config_globalconfig);
+    expect(fs.readFileSync(env.npm_config_userconfig!, 'utf8')).toBe('');
+    expect(fs.readFileSync(env.npm_config_globalconfig!, 'utf8')).toBe('');
+    expect(env.npm_config_cache).toBe(cacheRoot);
+    expect(env.PATH).toContain(path.join(root, 'bin'));
+    expect(env.Path).toBeUndefined();
+    expect(env.NPM_TOKEN).toBeUndefined();
   });
 });

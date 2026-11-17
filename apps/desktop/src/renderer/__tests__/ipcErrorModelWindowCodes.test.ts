@@ -58,4 +58,28 @@ describe('model-window switch IPC errors', () => {
       '模型未切换：远程任务无法为更小的上下文窗口安全整理上下文。请保留当前模型，或新建任务后选择目标模型',
     );
   });
+
+  it.each([
+    ['Cursor does not support read-only reference directories', 'ipcError.CURSOR_EXTRA_DIRS_UNSUPPORTED'],
+    ['Cursor handoff supports ordinary desktop tasks only', 'ipcError.CURSOR_HANDOFF_UNSUPPORTED'],
+    ['Cursor requires execution on the task computer', 'ipcError.CURSOR_LOCAL_EXECUTION_REQUIRED'],
+    ['Cursor requires execution on the controlled computer and a same-account controller', 'ipcError.CURSOR_LOCAL_EXECUTION_REQUIRED'],
+    ['Cursor requires the Cursor connection', 'ipcError.CURSOR_CONNECTION_REQUIRED'],
+    ['Choose Auto, Full access or Plan before switching to Cursor', 'ipcError.CURSOR_PERMISSION_MODE_UNSUPPORTED'],
+    ['Review task settings are fixed to the source task', 'ipcError.REVIEW_SETTINGS_FIXED'],
+    ['archived task cannot change harness', 'ipcError.ARCHIVED_HARNESS_SWITCH_UNSUPPORTED'],
+    ['shared task guests cannot move the agent to another computer', 'ipcError.SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED'],
+    ['some unknown capability restriction', 'ipcError.UNSUPPORTED_CAPABILITY'],
+  ] as const)('maps UNSUPPORTED_CAPABILITY (%s) to %s with localized copy', (message, expectedKey) => {
+    const error = new Error(
+      `Error invoking remote method 'maker:switch-session-agent': Error: [UNSUPPORTED_CAPABILITY] ${message}`,
+    );
+    expect(mapIpcErrorToI18nKey(error)).toBe(expectedKey);
+    expect(mapIpcErrorToI18nKey(error, { namespace: 'learn.ipcError' })).toBe('learn.ipcError.UNSUPPORTED_CAPABILITY');
+    const key = expectedKey.replace(/^ipcError\./, '') as keyof typeof en.ipcError;
+    for (const [locale, catalog] of Object.entries(locales)) {
+      expect(catalog.ipcError[key], `${locale}:${key}`).toEqual(expect.any(String));
+      expect(catalog.ipcError[key].length, `${locale}:${key}`).toBeGreaterThan(5);
+    }
+  });
 });

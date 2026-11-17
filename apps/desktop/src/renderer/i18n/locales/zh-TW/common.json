@@ -1415,7 +1415,16 @@
     "REMOTE_AGENT_SHARE_UNAVAILABLE": "模型未切換：分享的供應商暫時無法使用（對方電腦不在線，或對方暫時關閉了分享）。請稍後再試或換一個模型。",
     "REMOTE_AGENT_SHARE_LEGACY_DISABLED": "模型未切換：這是舊版分享，開啟「僅使用 Agent-Net」後暫時無法使用。關閉這個開關，或換一個模型。",
     "SSH_HOST_KEY_MISMATCH": "SSH 主機金鑰已變更",
-    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy 無法讀取來源附件，訊息未傳送。請將檔案另存到「下載」或其他可存取的資料夾，移除原附件，再用附件按鈕加入副本後傳送。"
+    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy 無法讀取來源附件，訊息未傳送。請將檔案另存到「下載」或其他可存取的資料夾，移除原附件，再用附件按鈕加入副本後傳送。",
+    "UNSUPPORTED_CAPABILITY": "目前任務或環境暫不支援此操作。",
+    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "無法切換到 Cursor：Cursor 不支援已掛載唯讀參考目錄的任務。",
+    "CURSOR_HANDOFF_UNSUPPORTED": "無法切換到 Cursor：僅支援一般桌面任務切換到 Cursor。",
+    "CURSOR_LOCAL_EXECUTION_REQUIRED": "無法切換到 Cursor：Cursor 只能在目前任務所在的電腦上執行。",
+    "CURSOR_CONNECTION_REQUIRED": "無法切換到 Cursor：請選擇 Cursor 連線下的模型。",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "無法切換到 Cursor：請先將權限模式切換為「自動審批」「完全訪問」或「計劃模式」。",
+    "REVIEW_SETTINGS_FIXED": "審查任務的設定固定跟隨原任務，無法修改。",
+    "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "已封存的任務無法切換 Harness。",
+    "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共享任務的訪客無法將 Agent 移到另一台電腦執行。"
   },
   "providerError": {
     "AUTH_INVALID": "目前介面驗證失敗，請檢查位址、金鑰和驗證方式",

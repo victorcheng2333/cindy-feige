@@ -1,7 +1,6 @@
 import { app, net } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { normalizeBinaryVersion as valid } from './binary-version-probe.js';
@@ -38,6 +37,29 @@ async function lookup(): Promise<CursorSdkRelease> {
   return parseCursorSdkRelease(await response.json());
 }
 
+export async function createCursorSdkNpmEnv(
+  configRoot: string,
+  cacheRoot: string,
+  nodePath: string,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Promise<NodeJS.ProcessEnv> {
+  const userConfig = path.join(configRoot, 'user.npmrc');
+  const globalConfig = path.join(configRoot, 'global.npmrc');
+  await fs.writeFile(userConfig, '');
+  await fs.writeFile(globalConfig, '');
+  const env = unverifiedPnpmEnv(baseEnv, configRoot);
+  const pathValue = `${path.dirname(nodePath)}${path.delimiter}${env.PATH ?? env.Path ?? ''}`;
+  for (const key of Object.keys(env)) {
+    if (/^path$/i.test(key)) delete env[key];
+  }
+  env.PATH = pathValue;
+  env.npm_config_cache = cacheRoot;
+  // npm aborts with "double-loading config" when userconfig and globalconfig share os.devNull.
+  env.npm_config_userconfig = userConfig;
+  env.npm_config_globalconfig = globalConfig;
+  return env;
+}
+
 async function installSdk(root: string, directory: string, release: CursorSdkRelease, signal: AbortSignal): Promise<void> {
   const artifact = makeToolCatalog(process.platform, process.arch).find(tool => tool.id === 'node');
   if (!artifact) throw new Error('Unsupported Cursor SDK platform');
@@ -60,10 +82,7 @@ async function installSdk(root: string, directory: string, release: CursorSdkRel
   } }));
   // npm verifies publisher SRI for the complete dependency graph. No lifecycle scripts,
   // project/user npm config, system-wide installation, or inherited Node injection.
-  const env = unverifiedPnpmEnv(process.env, configRoot);
-  env.PATH = `${path.dirname(node)}${path.delimiter}${env.PATH ?? env.Path ?? ''}`;
-  env.npm_config_cache = path.join(root, 'npm-cache');
-  env.npm_config_userconfig = os.devNull;
+  const env = await createCursorSdkNpmEnv(configRoot, path.join(root, 'npm-cache'), node);
   await run(node, [npm, 'install', '--ignore-scripts', '--include=optional', '--no-audit', '--no-fund',
     `--registry=${REGISTRY}`, '--fetch-retries=1'], {
     cwd: directory, env, signal, timeout: 8 * 60_000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,

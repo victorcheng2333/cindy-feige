@@ -29,4 +29,11 @@ describe('Cursor SDK IPC', () => {
     await expect(api.install({}, input)).rejects.toThrow('INVALID_PARAMS');
     expect(manager.install).not.toHaveBeenCalled();
   });
+  it('sanitizes install errors to INTERNAL install-failed while preserving version-changed', async () => {
+    const { api, manager } = fixture();
+    manager.install.mockRejectedValueOnce(new Error('npm double-loading config /secret/path'));
+    await expect(api.install({}, { source: 'upstream', version: '1.4.0' })).rejects.toThrow('[INTERNAL] install-failed');
+    manager.install.mockRejectedValueOnce(new Error('version-changed'));
+    await expect(api.install({}, { source: 'upstream', version: '1.4.0' })).rejects.toThrow('[PRECONDITION_FAILED] version-changed');
+  });
 });

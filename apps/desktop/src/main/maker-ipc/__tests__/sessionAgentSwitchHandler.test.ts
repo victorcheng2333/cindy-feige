@@ -159,8 +159,48 @@ describe('Cursor model picker admission', () => {
     expect(selectSameAgentModel).not.toHaveBeenCalled();
   });
 
+  it.each(['ask', 'acceptEdits', 'default', undefined] as const)(
+    'normalizes legacy permissionMode %s to auto when switching to Cursor',
+    async (permissionMode) => {
+      const { deps } = makeDeps({
+        getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cc', permissionMode })),
+      });
+      await expect(
+        performSessionAgentSwitch(deps, {
+          ...validParams,
+          targetAgentKind: 'cursor',
+          providerId: 'cursor',
+        }),
+      ).resolves.toMatchObject({ switched: true, agentKind: 'cursor', engineReady: true });
+      expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          agentKind: 'cursor',
+          permissionMode: 'auto',
+        }),
+      );
+    },
+  );
+
+  it.each(['auto', 'bypassPermissions', 'plan'] as const)(
+    'preserves Cursor-supported permissionMode %s when switching to Cursor',
+    async (permissionMode) => {
+      const { deps } = makeDeps({
+        getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cc', permissionMode })),
+      });
+      await expect(
+        performSessionAgentSwitch(deps, {
+          ...validParams,
+          targetAgentKind: 'cursor',
+          providerId: 'cursor',
+        }),
+      ).resolves.toMatchObject({ switched: true, agentKind: 'cursor', engineReady: true });
+      const patch = vi.mocked(deps.applyAgentSwitchToDb).mock.calls[0]?.[1];
+      expect(patch).not.toHaveProperty('permissionMode');
+    },
+  );
+
   it.each([
-    { permissionMode: 'ask' },
     { source: 'bot' },
     { orcaRemoteLead: 'remote-lead' },
     { orcaRole: 'worker' },

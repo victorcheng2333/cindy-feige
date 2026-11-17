@@ -33,7 +33,13 @@ export function createCursorSdkIpc<Event>(deps: {
           : { source: 'upstream', version: body.version as string });
       } catch (error) {
         const reason = error instanceof Error && ['busy', 'version-changed'].includes(error.message) ? error.message : 'install-failed';
-        log.warn('Cursor SDK update failed', { reason });
+        const rawDetail = error instanceof Error ? error.message : String(error);
+        const detail = rawDetail
+          .replace(/^Command failed:[^\n]*\n?/, '')
+          .replace(/(?:\/Users\/|\/home\/|[A-Za-z]:\\Users\\)[^\s/\\]+/g, '<home>')
+          .trim()
+          .slice(0, 500) || rawDetail.slice(0, 500);
+        log.warn('Cursor SDK update failed', { reason, detail });
         throwIpcError(reason === 'version-changed' ? 'PRECONDITION_FAILED' : 'INTERNAL', reason);
       }
     },

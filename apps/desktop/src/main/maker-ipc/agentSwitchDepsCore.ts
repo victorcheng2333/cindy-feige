@@ -28,6 +28,7 @@ export const readAgentSwitchSessionRow: SwitchDeps['getSessionRow'] = async (ses
         sdkSessionId: sessions.sdkSessionId,
         workingDir: sessions.workingDir,
         source: sessions.source,
+        permissionMode: sessions.permissionMode,
         agentDeviceId: sessions.agentDeviceId,
       })
       .from(sessions)

@@ -308,6 +308,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
       /** 目标引擎下的 effort / fastMode(意图登记时由 renderer 解析,apply 时一并落库)。 */
       effort?: string;
       fastMode?: boolean | 'ultrafast';
+      permissionMode?: 'ask' | 'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions';
       /** Agent 换电脑:undefined = 不动,null = 改回任务所在电脑。 */
       agentDeviceId?: string | null;
     },
@@ -828,9 +829,6 @@ export async function performSessionAgentSwitch(
       if (normalizedProviderId !== 'cursor') {
         throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires the Cursor connection');
       }
-      if (!['auto', 'bypassPermissions', 'plan'].includes(row.permissionMode ?? '')) {
-        throwIpcError('UNSUPPORTED_CAPABILITY', 'Choose Auto, Full access or Plan before switching to Cursor');
-      }
       await deps.assertCursorHandoffDirectories?.(sessionId);
     }
   }
@@ -1258,6 +1256,15 @@ export async function performSessionAgentSwitch(
     if (relocating) assertTransferCurrent();
     params.onRelocationMutationStart?.();
     // ---- commit point:此后切换生效 ----
+    // Cursor only supports auto, bypassPermissions, and plan. Re-read permissionMode at
+    // commit time so a concurrent permission switch cannot be overwritten by stale preflight data.
+    const latestPermissionMode =
+      targetAgentKind === 'cursor'
+        ? ((await deps.getSessionRow(sessionId))?.permissionMode ?? row.permissionMode)
+        : row.permissionMode;
+    const needsCursorAutoPermission =
+      targetAgentKind === 'cursor' &&
+      !['auto', 'bypassPermissions', 'plan'].includes(latestPermissionMode ?? '');
     try {
       await deps.applyAgentSwitchToDb(sessionId, {
         agentKind: toDbKind,
@@ -1266,6 +1273,7 @@ export async function performSessionAgentSwitch(
         sdkSessionId: relocatedNativeId ?? parked?.sdkSessionId ?? null,
         ...(typeof params.effort === 'string' && params.effort ? { effort: params.effort } : {}),
         ...((typeof params.fastMode === 'boolean' || params.fastMode === 'ultrafast') ? { fastMode: params.fastMode } : {}),
+        ...(needsCursorAutoPermission ? { permissionMode: 'auto' as const } : {}),
         // 组选回的当前位置在另一台电脑时也带上位置：提交按它判断窗口该查哪台的目录，不能拿本机目录。
         ...(agentDeviceChanges || (orcaGroupReturnRebuild && targetAgentDeviceId)
           ? { agentDeviceId: targetAgentDeviceId }

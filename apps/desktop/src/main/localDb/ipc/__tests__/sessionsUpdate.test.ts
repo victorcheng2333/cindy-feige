@@ -1089,6 +1089,25 @@ describe('local-db:sessions:update handler wiring', () => {
     }
   });
 
+  it('persists and broadcasts permissionMode when applyAgentSwitchToSessionRow switches to Cursor', async () => {
+    await applyAgentSwitchToSessionRow('cc-local', {
+      agentKind: 'cursor', model: 'gemini-4-hydrogen', providerId: 'cursor', permissionMode: 'auto',
+    });
+    const persisted = h
+      .sqlite!.prepare('SELECT agent_kind, model, provider_id, permission_mode FROM sessions WHERE id = ?')
+      .get('cc-local') as { agent_kind: string; model: string; provider_id: string; permission_mode: string };
+    expect(persisted).toEqual({
+      agent_kind: 'cursor',
+      model: 'gemini-4-hydrogen',
+      provider_id: 'cursor',
+      permission_mode: 'auto',
+    });
+    expect(h.tapWindowBroadcast).toHaveBeenCalledWith('local-db:sessions:patched', expect.objectContaining({
+      sessionId: 'cc-local',
+      patch: expect.objectContaining({ agentKind: 'cursor', permissionMode: 'auto' }),
+    }));
+  });
+
   it('rejects setting drift for retained Review tasks while preserving metadata edits', async () => {
     await expect(invokeUpdate('review-local', { effort: 'low' })).rejects.toThrow(
       /Review task settings are fixed/,

@@ -1446,7 +1446,16 @@
     "REMOTE_AGENT_SHARE_UNAVAILABLE": "Modèle non changé : le fournisseur partagé est temporairement indisponible (l'ordinateur du propriétaire est hors ligne ou le partage est désactivé pour le moment). Réessayez plus tard ou choisissez un autre modèle.",
     "REMOTE_AGENT_SHARE_LEGACY_DISABLED": "Modèle non changé : ceci est un ancien partage, inutilisable tant que « Utiliser uniquement Agent-Net » est activé. Désactivez cette option ou choisissez un autre modèle.",
     "SSH_HOST_KEY_MISMATCH": "La clé d'hôte SSH a changé",
-    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy ne peut pas lire la pièce jointe d'origine ; le message n'a pas été envoyé. Enregistrez-en une copie dans Téléchargements ou un autre dossier accessible, retirez la pièce jointe d'origine et ajoutez la copie avec le bouton de pièce jointe avant de renvoyer le message."
+    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy ne peut pas lire la pièce jointe d'origine ; le message n'a pas été envoyé. Enregistrez-en une copie dans Téléchargements ou un autre dossier accessible, retirez la pièce jointe d'origine et ajoutez la copie avec le bouton de pièce jointe avant de renvoyer le message.",
+    "UNSUPPORTED_CAPABILITY": "Cette opération n'est pas prise en charge dans la session ou l'environnement actuel.",
+    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Impossible de passer à Cursor : Cursor ne prend pas en charge les répertoires de référence en lecture seule attachés à cette session.",
+    "CURSOR_HANDOFF_UNSUPPORTED": "Impossible de passer à Cursor : seules les sessions de bureau ordinaires peuvent passer à Cursor.",
+    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Impossible de passer à Cursor : Cursor ne peut s'exécuter que sur l'ordinateur de cette session.",
+    "CURSOR_CONNECTION_REQUIRED": "Impossible de passer à Cursor : sélectionnez un modèle depuis la connexion Cursor.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Impossible de passer à Cursor : passez d'abord le mode de permissions sur Revue auto, Accès complet ou Mode plan.",
+    "REVIEW_SETTINGS_FIXED": "Les paramètres d'une session d'examen sont liés à la session source et ne peuvent pas être modifiés.",
+    "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Les sessions archivées ne peuvent pas changer de Harness.",
+    "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Les invités d'une session partagée ne peuvent pas déplacer l'Agent vers un autre ordinateur."
   },
   "providerError": {
     "AUTH_INVALID": "Échec de l'authentification pour cette interface. Vérifiez l'adresse, la clé et la méthode d'authentification.",

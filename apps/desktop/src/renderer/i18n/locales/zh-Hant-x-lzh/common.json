@@ -1415,7 +1415,16 @@
     "REMOTE_AGENT_SHARE_UNAVAILABLE": "模型未易：所分享之供方暫不可用（彼機不在線，或彼暫閉分享）。請稍後再試，或易一模型。",
     "REMOTE_AGENT_SHARE_LEGACY_DISABLED": "模型未易：此乃舊版分享，啟「唯用 Agent-Net」時暫不可用。請關此開關，或易一模型。",
     "SSH_HOST_KEY_MISMATCH": "SSH 主機金鑰已易",
-    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy 不能讀來源附件，訊未遣。請將檔案另存至「下載」或他可存取之卷匣，移除原附件，再以附件按鈕納其副本而後遣之。"
+    "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy 不能讀來源附件，訊未遣。請將檔案另存至「下載」或他可存取之卷匣，移除原附件，再以附件按鈕納其副本而後遣之。",
+    "UNSUPPORTED_CAPABILITY": "今差事或境未支此舉。",
+    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "未能易至 Cursor：Cursor 不支已掛唯讀參錄之差事。",
+    "CURSOR_HANDOFF_UNSUPPORTED": "未能易至 Cursor：惟常設桌面差事可易至 Cursor。",
+    "CURSOR_LOCAL_EXECUTION_REQUIRED": "未能易至 Cursor：Cursor 惟行於本差事所在電腦。",
+    "CURSOR_CONNECTION_REQUIRED": "未能易至 Cursor：請擇 Cursor 連結下之模型。",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "未能易至 Cursor：請先將權柄之式易為「自審」「完全存取」或「謀定模式」。",
+    "REVIEW_SETTINGS_FIXED": "審查差事之設隨原差事而定，不可更改。",
+    "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "已歸檔之差事不可易 Harness。",
+    "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共享差事之客不可將 Agent 移至他機運行。"
   },
   "providerError": {
     "AUTH_INVALID": "今介面驗證未成，請察位址、金鑰與驗證方式",

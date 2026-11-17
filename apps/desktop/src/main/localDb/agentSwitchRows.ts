@@ -16,6 +16,7 @@ export type AgentSwitchRowPatch = {
     /** 目标引擎下的 effort / fastMode(意图登记时 renderer 按目标目录解析,apply 一并落库)。 */
     effort?: string;
     fastMode?: boolean | 'ultrafast';
+    permissionMode?: 'ask' | 'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions';
     contextWindow?: number | null;
     /** 远程 Agent 换电脑:undefined = 不动,null = 改回任务所在电脑。 */
     agentDeviceId?: string | null;
@@ -71,6 +72,7 @@ export async function applyAgentSwitchToSessionRowWithPorts<OwnerScope>(
     setObj.effort = persistableEffort;
   }
   if (patch.fastMode !== undefined) setObj.fastMode = patch.fastMode;
+  if (patch.permissionMode !== undefined) setObj.permissionMode = patch.permissionMode;
   if (typeof patch.contextWindow === 'number' && patch.contextWindow > 0) {
     setObj.contextWindow = Math.floor(patch.contextWindow);
   }
@@ -93,6 +95,7 @@ export async function applyAgentSwitchToSessionRowWithPorts<OwnerScope>(
       ...(patch.agentDeviceId !== undefined ? { agentDeviceId: patch.agentDeviceId } : {}),
       ...(persistableEffort !== undefined ? { effort: persistableEffort } : {}),
       ...(patch.fastMode !== undefined ? { fastMode: patch.fastMode } : {}),
+      ...(patch.permissionMode !== undefined ? { permissionMode: patch.permissionMode } : {}),
       ...(typeof patch.contextWindow === 'number' && patch.contextWindow > 0
         ? { contextWindow: Math.floor(patch.contextWindow) }
         : {}),
