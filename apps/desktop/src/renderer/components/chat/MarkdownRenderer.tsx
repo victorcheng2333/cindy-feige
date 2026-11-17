@@ -1322,6 +1322,12 @@ function useResolvedMarkdownTarget(
   // 文件名自动搜子包是本机专属能力,远程按 join 结果判定)。
   const { origin: fileOrigin } = useChatSessionFile();
   const remoteOrigin = isRemoteFileOrigin(fileOrigin) ? fileOrigin : null;
+  const homeDeviceId =
+    remoteOrigin?.kind === 'device' &&
+    target.kind === 'local-candidate' &&
+    /^~[\\/]/.test(target.href)
+      ? remoteOrigin.deviceId
+      : undefined;
 
   // 远程点亮态**只有一个真值来源:模块缓存**;本组件不自己存任何结论,只存「缓存的
   // 哪一版」。原来是 syncResolved(useMemo)?? asyncResolved(useState)两处并存 —— memo
@@ -1332,9 +1338,9 @@ function useResolvedMarkdownTarget(
   // 三条都是「组件自己存了一份、而真值在可变缓存里」的同一个病。合并成纯派生后,
   // 任何一条边都只有 resolveFromCache 一个地方需要改对(PR #1144 第 10 轮止损重构)。
   const remoteAbsPath = useMemo(() => {
-    if (isStreaming || target.kind !== 'local-candidate' || !remoteOrigin) return '';
+    if (isStreaming || target.kind !== 'local-candidate' || !remoteOrigin || homeDeviceId) return '';
     return resolveLocalPath(target.href, workingDir) || '';
-  }, [isStreaming, target, workingDir, remoteOrigin]);
+  }, [isStreaming, target, workingDir, remoteOrigin, homeDeviceId]);
 
   // 缓存里**本 key** 的状态变了(确定态落库 / unknown 负缓存到期)→ 递增 → 重新派生。
   // 按 key 过滤:一屏几十个引用,全量通知会让首屏 N 次 stat 引发 N×N 次重渲染。
@@ -1379,6 +1385,14 @@ function useResolvedMarkdownTarget(
     if (isStreaming || target.kind !== 'local-candidate') return;
     const candidate = target;
     let cancelled = false;
+    if (homeDeviceId) {
+      void resolveLocalPathSmart(candidate.href, workingDir, { deviceId: homeDeviceId }).then((result) => {
+        if (!cancelled) setResolved(resolvedLocalFromResult(candidate, result));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
     if (remoteOrigin) {
       // 有确定结论就不必重验;unknown 的限流由 verifyRemotePathCached 内部的负缓存承担。
       if (!remoteAbsPath || peekRemotePathVerdict(remoteOrigin, workingDir, remoteAbsPath)) return;
@@ -1398,7 +1412,7 @@ function useResolvedMarkdownTarget(
       cancelled = true;
     };
     // cacheGen:本 key 的缓存状态变化(TTL 到期 / 别处写入确定态)→ 重新派生。
-  }, [isStreaming, remoteOrigin, target, workingDir, remoteAbsPath, resolveFromCache, cacheGen]);
+  }, [isStreaming, remoteOrigin, target, workingDir, remoteAbsPath, resolveFromCache, cacheGen, homeDeviceId]);
 
   return isResolvedForTarget(resolved, target) ? resolved : target;
 }
@@ -1578,7 +1592,12 @@ function MarkdownTargetLink({
       // resolution on click instead of trusting a cached "not found" result.
       try {
         let result: SmartResolveResult;
-        if (isRemoteFileOrigin(fileCtx.origin)) {
+        if (fileCtx.origin.kind === 'device' && /^~[\\/]/.test(target.href)) {
+          result = await resolveLocalPathSmart(target.href, workingDir, {
+            deviceId: fileCtx.origin.deviceId,
+            refresh: true,
+          });
+        } else if (isRemoteFileOrigin(fileCtx.origin)) {
           const absPath = resolveLocalPath(target.href, workingDir);
           const { verdict } = await window.electronAPI.fileBrowser.chatStat({
             origin: fileCtx.origin,

@@ -347,18 +347,22 @@ function toMainLookupHref(href: string, workingDir: string): string {
 export async function resolveLocalPathSmart(
   href: string,
   workingDir: string,
-  options: { refresh?: boolean } = {},
+  options: { refresh?: boolean; deviceId?: string } = {},
 ): Promise<SmartResolveResult> {
   const fallback = resolveLocalPath(href, workingDir);
   const lookupHref = toMainLookupHref(href, workingDir);
   const api = (typeof window !== 'undefined' ? window.electronAPI : undefined) as
-    | { resolvePath?: typeof window.electronAPI.resolvePath }
+    | { resolvePath?: typeof window.electronAPI.resolvePath; deviceLink?: typeof window.electronAPI.deviceLink }
     | undefined;
-  if (!api?.resolvePath) {
+  if (options.deviceId ? !api?.deviceLink?.invoke : !api?.resolvePath) {
     return { status: 'none', fallbackAbsPath: fallback };
   }
   try {
-    const r = await api.resolvePath({ href: lookupHref, workingDir, ...(options.refresh ? { refresh: true } : {}) });
+    const params = { href: lookupHref, workingDir, ...(options.refresh ? { refresh: true } : {}) };
+    // Home belongs to the file owner. Never resolve a remote ~/ link on the viewer.
+    const r = options.deviceId
+      ? await api!.deviceLink!.invoke(options.deviceId, 'fs:resolve-path', [params]) as Awaited<ReturnType<typeof window.electronAPI.resolvePath>>
+      : await api!.resolvePath!(params);
     if (r.status === 'unique' && r.candidates[0]) {
       return { status: 'unique', absPath: r.candidates[0], ...(r.kind ? { kind: r.kind } : {}) };
     }

@@ -293,6 +293,23 @@ describe('resolveToolFilePath (agent tool-input path absolutizer)', () => {
 });
 
 describe('resolveLocalPathSmart', () => {
+  // Unit regression: remote ~/ report links used to be joined beneath cwd.
+  // Existing cases only exercise local resolution. The owner must expand home,
+  // including when the viewer has a different home or the owner is disconnected.
+  it('resolves home paths on the owning device and never falls back to viewer files', async () => {
+    const resolvePath = vi.fn();
+    const invoke = vi.fn().mockResolvedValue({ status: 'unique', candidates: ['/Users/m5/Documents/报告.html'], kind: 'file' });
+    vi.stubGlobal('window', { electronAPI: { resolvePath, deviceLink: { invoke } } });
+    const options = { deviceId: 'm5', refresh: true };
+    await expect(resolveLocalPathSmart('~/Documents/报告.html', '/work', options)).resolves.toEqual({
+      status: 'unique', absPath: '/Users/m5/Documents/报告.html', kind: 'file',
+    });
+    expect(invoke).toHaveBeenCalledWith('m5', 'fs:resolve-path', [{ href: '~/Documents/报告.html', workingDir: '/work', refresh: true }]);
+    invoke.mockRejectedValueOnce(new Error('offline'));
+    await expect(resolveLocalPathSmart('~/Documents/报告.html', '/work', options)).resolves.toMatchObject({ status: 'none' });
+    expect(resolvePath).not.toHaveBeenCalled();
+  });
+
   // #7303: an explicit retry must reach the host's refresh option, not just
   // bypass this module's render cache (the real cache regression lives in main).
   it('passes explicit refresh through the existing resolution IPC', async () => {
