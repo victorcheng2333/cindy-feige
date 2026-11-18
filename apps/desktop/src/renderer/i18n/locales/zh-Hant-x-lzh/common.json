@@ -4699,7 +4699,7 @@
         "waiting": "請於瀏覽器登入，至多候五分鐘。",
         "stopWarning": "Cursor 方行之差事將止，舊錄仍存。",
         "loginFailed": "Cursor 登入未成，請察瀏覽器與網絡。",
-        "legacyPermission": "Cursor 無詢問權限之式，此任務以 Cursor 自動審閱。",
+        "legacyPermission": "Cursor 無詢問權限之式，此任務依自動之權行之，命令不經審閱而徑行。",
         "windowsSandbox": "Cursor 於 Windows 之沙箱未經驗證；自動模式仍由 Cursor 自動審閱。",
         "historyReset": "目前帳號下未見此差事之 Cursor 歷史，舊參照已清除。再次傳送將用新上下文，差事訊仍保留。",
         "historyUnavailable": "目前帳號無法還原此差事之 Cursor 歷史。請確認帳號及差事狀態後重試。"

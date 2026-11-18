@@ -4742,7 +4742,7 @@
         "waiting": "Schließe die Anmeldung im Browser ab. Dies kann bis zu fünf Minuten dauern.",
         "stopWarning": "Laufende Cursor-Aufgaben werden gestoppt. Ihr Verlauf bleibt erhalten.",
         "loginFailed": "Die Cursor-Anmeldung wurde nicht abgeschlossen. Prüfe den Browser und deine Verbindung.",
-        "legacyPermission": "Cursor unterstützt keinen Berechtigungsmodus mit Rückfragen. Diese Aufgabe verwendet die automatische Prüfung von Cursor.",
+        "legacyPermission": "Cursor unterstützt keinen Berechtigungsmodus mit Rückfragen. Diese Aufgabe läuft im automatischen Modus, in dem Befehle ohne Prüfung ausgeführt werden.",
         "windowsSandbox": "Die Sandbox von Cursor wurde unter Windows noch nicht überprüft. Der automatische Modus verwendet weiterhin die automatische Prüfung von Cursor.",
         "historyReset": "Der Cursor-Verlauf dieser Aufgabe ist im aktuellen Konto nicht verfügbar. Der alte Verweis wurde entfernt. Erneutes Senden verwendet einen neuen Kontext; die Nachrichten der Aufgabe bleiben erhalten.",
         "historyUnavailable": "Dieses Konto kann den Cursor-Verlauf der Aufgabe nicht wiederherstellen. Prüfe Konto und Aufgabenstatus und versuche es erneut."

@@ -308,9 +308,6 @@ export class CursorAgent extends BaseAgent {
       let productContextPending = !opts.resumeSessionId && !!productContext;
       let permissionNotice =
         opts.permissionMode !== undefined && opts.permissionMode !== mode;
-      // A resumed task already showed it; every worker rebuild would repeat it.
-      let windowsNotice =
-        process.platform === "win32" && !opts.resumeSessionId;
 
       function validate(options: SendOptions = {}) {
         assertCredentialCurrent();
@@ -496,29 +493,19 @@ export class CursorAgent extends BaseAgent {
             if (abortRequested) throw new Error("Cursor send was cancelled");
             if (productContextPending)
               input.text += `\n\n<cindy_context>\n${productContext}\n</cindy_context>`;
-            if (permissionNotice || windowsNotice) {
+            if (permissionNotice) {
               queue.push({
                 type: "text",
                 source: "cursor",
                 standaloneText: true,
                 data: {
-                  text: [
-                    permissionNotice
-                      ? (this.deps.getRuntimeNotice?.("legacyPermission") ??
-                        "Cursor does not support Ask permission mode. This task uses Cursor Auto-review.")
-                      : "",
-                    windowsNotice
-                      ? (this.deps.getRuntimeNotice?.("windowsSandbox") ??
-                        "Cursor's sandbox has not been verified on Windows. Auto mode still uses Cursor Auto-review.")
-                      : "",
-                  ]
-                    .filter(Boolean)
-                    .join("\n\n"),
+                  text:
+                    this.deps.getRuntimeNotice?.("legacyPermission") ??
+                    "Cursor does not support Ask permission mode. This task runs in Auto, where commands run without review.",
                   isFinal: true,
                 },
               });
               permissionNotice = false;
-              windowsNotice = false;
             }
             await applyPendingOpen();
             validate(options);

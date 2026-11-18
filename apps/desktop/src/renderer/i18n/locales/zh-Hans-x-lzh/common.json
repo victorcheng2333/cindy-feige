@@ -4699,7 +4699,7 @@
         "waiting": "请于浏览器登入，至多候五分钟。",
         "stopWarning": "Cursor 方行之差事将止，旧录仍存。",
         "loginFailed": "Cursor 登入未成，请察浏览器与网络。",
-        "legacyPermission": "Cursor 无询问权限之式，此任务以 Cursor 自动审阅。",
+        "legacyPermission": "Cursor 无询问权限之式，此任务依自动之权行之，命令不经审阅而径行。",
         "windowsSandbox": "Cursor 于 Windows 之沙箱未经验证；自动模式仍由 Cursor 自动审阅。",
         "historyReset": "目前账号下未见此差事之 Cursor 历史，旧参照已清除。再次传送将用新上下文，差事讯仍保留。",
         "historyUnavailable": "目前账号无法还原此差事之 Cursor 历史。请确认账号及差事状态后重试。"

@@ -4699,7 +4699,7 @@
         "waiting": "請在瀏覽器中完成登入，最多等待五分鐘。",
         "stopWarning": "正在執行的 Cursor 任務將停止，歷史記錄會保留。",
         "loginFailed": "Cursor 登入未完成，請檢查瀏覽器和網路連線。",
-        "legacyPermission": "Cursor 不支援詢問權限模式。此任務使用 Cursor 自動審閱。",
+        "legacyPermission": "Cursor 不支援詢問權限模式。此任務依自動權限執行，命令不經審閱直接執行。",
         "windowsSandbox": "Cursor 在 Windows 上的沙箱尚未經過驗證；自動模式仍由 Cursor 自動審閱。",
         "historyReset": "目前帳號下找不到此任務的 Cursor 歷史，舊參照已清除。再次傳送將使用新的上下文，任務訊息仍會保留。",
         "historyUnavailable": "目前帳號無法還原此任務的 Cursor 歷史。請確認帳號和任務狀態後重試。"

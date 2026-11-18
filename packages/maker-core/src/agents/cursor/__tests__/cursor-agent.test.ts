@@ -305,30 +305,6 @@ describe("CursorAgent", () => {
     await handle.close();
   });
 
-  // Tier: unit. Every worker rebuild (app restart, worker exit) re-sent the Windows notice
-  // into the same task. Minimal input: the same send on a new versus a resumed task.
-  it.each([
-    [undefined, 1],
-    ["existing-agent", 0],
-  ])(
-    "shows the Windows notice once per task (resume=%s)",
-    async (resumeSessionId, count) => {
-      const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
-      Object.defineProperty(process, "platform", { value: "win32" });
-      try {
-        const { handle, events } = await runFixture(fixture(), resumeSessionId);
-        expect(
-          events.filter(
-            (event) => event.type === "text" && event.standaloneText,
-          ),
-        ).toHaveLength(count);
-        await handle.close();
-      } finally {
-        Object.defineProperty(process, "platform", platform);
-      }
-    },
-  );
-
   // Tier: unit. Tool calls arrive from both onDelta and run.stream(). A stream echo of a call
   // the delta stream already placed flushed the text after it as a separate final segment.
   // Minimal input: delta tool start, text, stream echo of the same call, more text.

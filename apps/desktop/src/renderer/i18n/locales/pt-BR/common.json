@@ -4798,7 +4798,7 @@
         "waiting": "Conclua o login no navegador. Isso pode levar até cinco minutos.",
         "stopWarning": "As tarefas Cursor em execução serão interrompidas. O histórico será mantido.",
         "loginFailed": "O login no Cursor não foi concluído. Verifique o navegador e a conexão.",
-        "legacyPermission": "O Cursor não oferece o modo de permissões com confirmação. Esta tarefa usa a revisão automática do Cursor.",
+        "legacyPermission": "O Cursor não oferece o modo de permissões com confirmação. Esta tarefa é executada no modo automático, em que os comandos são executados sem revisão.",
         "windowsSandbox": "A sandbox do Cursor ainda não foi verificada no Windows. O modo automático continua usando a revisão automática do Cursor.",
         "historyReset": "O histórico do Cursor desta tarefa não está disponível na conta atual. A referência anterior foi removida. Um novo envio usará um novo contexto; as mensagens da tarefa serão mantidas.",
         "historyUnavailable": "Esta conta não consegue restaurar o histórico do Cursor da tarefa. Verifique a conta e o status da tarefa e tente novamente."

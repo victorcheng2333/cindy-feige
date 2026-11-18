@@ -13,11 +13,16 @@ export function cursorRuntimePolicy(
   mode: CursorOpenOptions["permissionMode"],
   planMode = false,
 ) {
+  const plan = planMode || mode === "plan";
+  // Local SDK runs deny, instead of asking about, every call Auto-review or the sandbox
+  // escalates, so Auto would block explicit requests such as a push. Only read-only plan
+  // runs keep them.
+  const guarded = plan && mode !== "bypassPermissions";
   return {
-    mode: planMode || mode === "plan" ? ("plan" as const) : ("agent" as const),
+    mode: plan ? ("plan" as const) : ("agent" as const),
     local: {
-      autoReview: mode !== "bypassPermissions",
-      sandboxOptions: { enabled: mode !== "bypassPermissions" },
+      autoReview: guarded,
+      sandboxOptions: { enabled: guarded },
     },
   };
 }

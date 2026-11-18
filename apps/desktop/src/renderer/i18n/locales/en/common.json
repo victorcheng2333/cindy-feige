@@ -4742,7 +4742,7 @@
         "waiting": "Finish signing in in your browser. This may take up to five minutes.",
         "stopWarning": "Running Cursor tasks will stop. Their history will be kept.",
         "loginFailed": "Cursor sign-in did not complete. Check the browser and your connection.",
-        "legacyPermission": "Cursor does not support Ask permission mode. This task uses Cursor Auto-review.",
+        "legacyPermission": "Cursor does not support Ask permission mode. This task runs in Auto, where commands run without review.",
         "windowsSandbox": "Cursor's sandbox has not been verified on Windows. Auto mode still uses Cursor Auto-review.",
         "historyReset": "This task’s Cursor history is unavailable under the current account. The old reference was cleared. Sending again will use fresh context; task messages are retained.",
         "historyUnavailable": "This account cannot restore the task’s Cursor history. Check the account and task status, then retry."

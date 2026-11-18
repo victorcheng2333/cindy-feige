@@ -4699,7 +4699,7 @@
         "waiting": "请在浏览器中完成登录，最多等待五分钟。",
         "stopWarning": "正在运行的 Cursor 任务将停止，历史记录会保留。",
         "loginFailed": "Cursor 登录未完成，请检查浏览器和网络连接。",
-        "legacyPermission": "Cursor 不支持询问权限模式。此任务使用 Cursor 自动审阅。",
+        "legacyPermission": "Cursor 不支持询问权限模式。此任务按自动权限运行，命令不经审核直接执行。",
         "windowsSandbox": "Cursor 在 Windows 上的沙箱尚未经过验证；自动模式仍由 Cursor 自动审阅。",
         "historyReset": "当前账号下找不到此任务的 Cursor 历史，旧引用已清除。再次发送将使用新的上下文，任务消息仍会保留。",
         "historyUnavailable": "当前账号无法恢复此任务的 Cursor 历史。请确认账号和任务状态后重试。"

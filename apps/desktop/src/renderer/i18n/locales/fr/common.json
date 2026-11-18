@@ -4798,7 +4798,7 @@
         "waiting": "Terminez la connexion dans votre navigateur. Cela peut prendre cinq minutes.",
         "stopWarning": "Les tâches Cursor en cours seront arrêtées. Leur historique sera conservé.",
         "loginFailed": "La connexion à Cursor n’a pas abouti. Vérifiez le navigateur et votre connexion.",
-        "legacyPermission": "Cursor ne prend pas en charge le mode de permissions avec confirmation. Cette tâche utilise la vérification automatique de Cursor.",
+        "legacyPermission": "Cursor ne prend pas en charge le mode de permissions avec confirmation. Cette tâche s’exécute en mode automatique : les commandes s’exécutent sans vérification.",
         "windowsSandbox": "Le bac à sable de Cursor n'a pas encore été vérifié sous Windows. Le mode automatique utilise toujours la vérification automatique de Cursor.",
         "historyReset": "L’historique Cursor de cette tâche est indisponible dans le compte actuel. L’ancienne référence a été supprimée. Un nouvel envoi utilisera un nouveau contexte ; les messages de la tâche sont conservés.",
         "historyUnavailable": "Ce compte ne peut pas restaurer l’historique Cursor de la tâche. Vérifiez le compte et l’état de la tâche, puis réessayez."
