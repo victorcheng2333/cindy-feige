@@ -1434,7 +1434,7 @@
     "CURSOR_HANDOFF_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Nur normale Desktop-Aufgaben können zu Cursor wechseln.",
     "CURSOR_LOCAL_EXECUTION_REQUIRED": "Wechsel zu Cursor nicht möglich: Cursor kann nur auf dem Computer dieser Aufgabe ausgeführt werden.",
     "CURSOR_CONNECTION_REQUIRED": "Wechsel zu Cursor nicht möglich: Bitte wähle ein Modell aus der Cursor-Verbindung.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Stelle den Berechtigungsmodus zuerst auf Automatische Prüfung, Vollzugriff oder Planmodus um.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Stelle den Berechtigungsmodus zuerst auf Automatisch, Vollzugriff oder Planmodus um.",
     "REVIEW_SETTINGS_FIXED": "Die Einstellungen einer Review-Aufgabe sind an die Quellaufgabe gebunden und können nicht geändert werden.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Archivierte Aufgaben können den Harness nicht wechseln.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Gäste einer geteilten Aufgabe können den Agent nicht auf einen anderen Computer verschieben."
@@ -4743,7 +4743,6 @@
         "stopWarning": "Laufende Cursor-Aufgaben werden gestoppt. Ihr Verlauf bleibt erhalten.",
         "loginFailed": "Die Cursor-Anmeldung wurde nicht abgeschlossen. Prüfe den Browser und deine Verbindung.",
         "legacyPermission": "Cursor unterstützt keinen Berechtigungsmodus mit Rückfragen. Diese Aufgabe läuft im automatischen Modus, in dem Befehle ohne Prüfung ausgeführt werden.",
-        "windowsSandbox": "Die Sandbox von Cursor wurde unter Windows noch nicht überprüft. Der automatische Modus verwendet weiterhin die automatische Prüfung von Cursor.",
         "historyReset": "Der Cursor-Verlauf dieser Aufgabe ist im aktuellen Konto nicht verfügbar. Der alte Verweis wurde entfernt. Erneutes Senden verwendet einen neuen Kontext; die Nachrichten der Aufgabe bleiben erhalten.",
         "historyUnavailable": "Dieses Konto kann den Cursor-Verlauf der Aufgabe nicht wiederherstellen. Prüfe Konto und Aufgabenstatus und versuche es erneut."
       }
@@ -14191,7 +14190,8 @@
       "modes": {
         "cursor": {
           "auto": {
-            "label": "Automatische Prüfung"
+            "label": "Automatisch",
+            "description": "Cursor führt Befehle ohne Freigabe und ohne Sandbox aus."
           },
           "bypassPermissions": {
             "label": "Vollzugriff"

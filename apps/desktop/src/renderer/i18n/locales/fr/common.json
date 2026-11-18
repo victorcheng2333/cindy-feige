@@ -1452,7 +1452,7 @@
     "CURSOR_HANDOFF_UNSUPPORTED": "Impossible de passer à Cursor : seules les sessions de bureau ordinaires peuvent passer à Cursor.",
     "CURSOR_LOCAL_EXECUTION_REQUIRED": "Impossible de passer à Cursor : Cursor ne peut s'exécuter que sur l'ordinateur de cette session.",
     "CURSOR_CONNECTION_REQUIRED": "Impossible de passer à Cursor : sélectionnez un modèle depuis la connexion Cursor.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Impossible de passer à Cursor : passez d'abord le mode de permissions sur Revue auto, Accès complet ou Mode plan.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Impossible de passer à Cursor : passez d'abord le mode de permissions sur Automatique, Accès complet ou Mode plan.",
     "REVIEW_SETTINGS_FIXED": "Les paramètres d'une session d'examen sont liés à la session source et ne peuvent pas être modifiés.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Les sessions archivées ne peuvent pas changer de Harness.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Les invités d'une session partagée ne peuvent pas déplacer l'Agent vers un autre ordinateur."
@@ -4799,7 +4799,6 @@
         "stopWarning": "Les tâches Cursor en cours seront arrêtées. Leur historique sera conservé.",
         "loginFailed": "La connexion à Cursor n’a pas abouti. Vérifiez le navigateur et votre connexion.",
         "legacyPermission": "Cursor ne prend pas en charge le mode de permissions avec confirmation. Cette tâche s’exécute en mode automatique : les commandes s’exécutent sans vérification.",
-        "windowsSandbox": "Le bac à sable de Cursor n'a pas encore été vérifié sous Windows. Le mode automatique utilise toujours la vérification automatique de Cursor.",
         "historyReset": "L’historique Cursor de cette tâche est indisponible dans le compte actuel. L’ancienne référence a été supprimée. Un nouvel envoi utilisera un nouveau contexte ; les messages de la tâche sont conservés.",
         "historyUnavailable": "Ce compte ne peut pas restaurer l’historique Cursor de la tâche. Vérifiez le compte et l’état de la tâche, puis réessayez."
       }
@@ -14306,7 +14305,8 @@
       "modes": {
         "cursor": {
           "auto": {
-            "label": "Revue auto"
+            "label": "Automatique",
+            "description": "Cursor exécute les commandes sans approbation ni bac à sable."
           },
           "bypassPermissions": {
             "label": "Accès complet"

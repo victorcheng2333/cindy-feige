@@ -1452,7 +1452,7 @@
     "CURSOR_HANDOFF_UNSUPPORTED": "Não é possível mudar para o Cursor: apenas sessões normais de computador podem mudar para o Cursor.",
     "CURSOR_LOCAL_EXECUTION_REQUIRED": "Não é possível mudar para o Cursor: o Cursor só pode ser executado no computador desta sessão.",
     "CURSOR_CONNECTION_REQUIRED": "Não é possível mudar para o Cursor: selecione um modelo a partir da ligação do Cursor.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Não é possível mudar para o Cursor: mude primeiro o modo de permissões para Revisão automática, Acesso total ou Modo de planeamento.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Não é possível mudar para o Cursor: mude primeiro o modo de permissões para Automático, Acesso total ou Modo de planeamento.",
     "REVIEW_SETTINGS_FIXED": "As definições da sessão de revisão estão fixadas à sessão de origem e não podem ser alteradas.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "As sessões arquivadas não podem mudar de Harness.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Os convidados de uma sessão partilhada não podem mover o Agent para outro computador."
@@ -4799,7 +4799,6 @@
         "stopWarning": "As tarefas Cursor em execução serão interrompidas. O histórico será mantido.",
         "loginFailed": "O início de sessão no Cursor não foi concluído. Verifique o navegador e a ligação.",
         "legacyPermission": "O Cursor não disponibiliza o modo de permissões com confirmação. Esta tarefa é executada no modo automático, em que os comandos são executados sem revisão.",
-        "windowsSandbox": "A sandbox do Cursor ainda não foi verificada no Windows. O modo automático continua a usar a revisão automática do Cursor.",
         "historyReset": "O histórico do Cursor desta tarefa não está disponível na conta atual. A referência anterior foi removida. Um novo envio usará um novo contexto; as mensagens da tarefa são mantidas.",
         "historyUnavailable": "Esta conta não consegue restaurar o histórico do Cursor da tarefa. Verifique a conta e o estado da tarefa e tente novamente."
       }
@@ -14306,7 +14305,8 @@
       "modes": {
         "cursor": {
           "auto": {
-            "label": "Revisão automática"
+            "label": "Automático",
+            "description": "O Cursor executa comandos sem aprovação nem sandbox."
           },
           "bypassPermissions": {
             "label": "Acesso total"

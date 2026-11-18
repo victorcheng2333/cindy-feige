@@ -101,7 +101,6 @@ export interface CursorAgentDeps extends AgentDeps {
   getRuntimeNotice?: (
     reason:
       | "legacyPermission"
-      | "windowsSandbox"
       | "historyReset"
       | "historyUnavailable",
   ) => string;
@@ -585,7 +584,6 @@ export class CursorAgent extends BaseAgent {
         events: () => queue,
         getUsageSnapshot: () => ({ ...usage }),
         setInteractionResolver: () => {},
-        getAutoReviewOwner: () => "native",
         setModel: async (id, settings) => {
           if (settings?.providerId && settings.providerId !== "cursor")
             throw new Error("Cursor requires the Cursor connection");

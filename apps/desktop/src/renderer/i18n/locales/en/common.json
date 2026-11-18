@@ -1434,7 +1434,7 @@
     "CURSOR_HANDOFF_UNSUPPORTED": "Cannot switch to Cursor: only ordinary desktop tasks can switch to Cursor.",
     "CURSOR_LOCAL_EXECUTION_REQUIRED": "Cannot switch to Cursor: Cursor can only run on this task’s computer.",
     "CURSOR_CONNECTION_REQUIRED": "Cannot switch to Cursor: select a model from the Cursor connection.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Cannot switch to Cursor: switch permission mode to Auto-review, Full access, or Plan mode first.",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Cannot switch to Cursor: switch permission mode to Auto, Full access, or Plan mode first.",
     "REVIEW_SETTINGS_FIXED": "Review task settings are fixed to the source task and cannot be changed.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Archived tasks cannot switch Harness.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Shared task guests cannot move the Agent to another computer."
@@ -4743,7 +4743,6 @@
         "stopWarning": "Running Cursor tasks will stop. Their history will be kept.",
         "loginFailed": "Cursor sign-in did not complete. Check the browser and your connection.",
         "legacyPermission": "Cursor does not support Ask permission mode. This task runs in Auto, where commands run without review.",
-        "windowsSandbox": "Cursor's sandbox has not been verified on Windows. Auto mode still uses Cursor Auto-review.",
         "historyReset": "This task’s Cursor history is unavailable under the current account. The old reference was cleared. Sending again will use fresh context; task messages are retained.",
         "historyUnavailable": "This account cannot restore the task’s Cursor history. Check the account and task status, then retry."
       }
@@ -14191,7 +14190,8 @@
       "modes": {
         "cursor": {
           "auto": {
-            "label": "Auto-review"
+            "label": "Auto",
+            "description": "Cursor runs commands without approval or a sandbox."
           },
           "bypassPermissions": {
             "label": "Full access"

@@ -1421,7 +1421,7 @@
     "CURSOR_HANDOFF_UNSUPPORTED": "无法切换到 Cursor：仅支持普通桌面任务切换到 Cursor。",
     "CURSOR_LOCAL_EXECUTION_REQUIRED": "无法切换到 Cursor：Cursor 只能在当前任务所在电脑上运行。",
     "CURSOR_CONNECTION_REQUIRED": "无法切换到 Cursor：请选择 Cursor 连接下的模型。",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "无法切换到 Cursor：请先将权限模式切换为「自动审批」「完全访问」或「计划模式」。",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "无法切换到 Cursor：请先将权限模式切换为「自动」「完全访问」或「计划模式」。",
     "REVIEW_SETTINGS_FIXED": "审查任务的设置固定跟随原任务，无法修改。",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "已归档任务无法切换 Harness。",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共享任务的访客无法将 Agent 移到另一台电脑运行。"
@@ -4700,7 +4700,6 @@
         "stopWarning": "正在运行的 Cursor 任务将停止，历史记录会保留。",
         "loginFailed": "Cursor 登录未完成，请检查浏览器和网络连接。",
         "legacyPermission": "Cursor 不支持询问权限模式。此任务按自动权限运行，命令不经审核直接执行。",
-        "windowsSandbox": "Cursor 在 Windows 上的沙箱尚未经过验证；自动模式仍由 Cursor 自动审阅。",
         "historyReset": "当前账号下找不到此任务的 Cursor 历史，旧引用已清除。再次发送将使用新的上下文，任务消息仍会保留。",
         "historyUnavailable": "当前账号无法恢复此任务的 Cursor 历史。请确认账号和任务状态后重试。"
       }
@@ -14137,7 +14136,8 @@
       "modes": {
         "cursor": {
           "auto": {
-            "label": "自动审批"
+            "label": "自动",
+            "description": "Cursor 命令直接执行，无需审批，也无沙箱隔离"
           },
           "bypassPermissions": {
             "label": "完全访问"

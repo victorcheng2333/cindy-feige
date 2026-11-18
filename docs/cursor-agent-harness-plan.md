@@ -180,13 +180,13 @@ flowchart LR
 
 | Cindy 档 | Cursor 设置 | 第一期 |
 | --- | --- | --- |
-| 自动（`auto`） | `autoReview: true`、沙箱开 | 支持；`getAutoReviewOwner()` 返回 `native` |
-| 完全访问（`bypassPermissions`） | `autoReview: false`、沙箱关；首次打开前预热 `cursorsandbox`（照 t3） | 支持，沿用现有 Full access 确认 |
-| 计划（`plan`） | `mode: 'plan'` | 支持 |
+| 自动（`auto`） | `autoReview: false`、沙箱关 | Cursor SDK 命令直接运行；插件的文件操作仍由 Cindy 审核 |
+| 完全访问（`bypassPermissions`） | `autoReview: false`、沙箱关 | 支持，沿用现有 Full access 确认 |
+| 计划（`plan`） | `mode: 'plan'`、`autoReview: true`、沙箱开 | 支持 |
 | 询问（`ask`） / `default` / `acceptEdits` | 无对应 | 不提供；`Capabilities` 不声明，UI 隐藏 |
 
-- 所有平台 Auto／Plan 均请求 SDK 沙箱；SDK 判断环境不支持时会报 `ConfigurationError`，不会自动关沙箱。
-  Windows 平台包存在 helper，不能仅由参考客户端推断「Windows 无沙箱」。现有 Windows 提示仍待实机核实和更正，未验收。
+- SDK 本地运行无法弹出逐次确认，自动审核或沙箱升级的请求会直接被拒绝。自动档关闭这两个选项；计划档继续请求 SDK 沙箱。
+  Windows 平台包存在 helper，计划档的沙箱仍待实机验证。
 - Auto-review 取决于连接后端是否启用分类器，不是安全边界；未启用时会回到 SDK 默认行为。
   SDK 沙箱约束 shell 及其子进程，读权限不局限于项目，默认禁止出网；依赖安装可能被拒。
   以上口径来自[官方 SDK 文档](https://cursor.com/docs/sdk/typescript#sandbox-options)，不等同于 Cindy 宿主审批。
@@ -327,9 +327,9 @@ Cursor 的 `systemPrompt` 是整段替换、且要 Cursor 按账号开通，不�
 | SDK 私有授权（© Anysphere，受 Cursor 服务条款约束） | 能否随开源包分发 | 本次未核验分发授权；正式分发或回馈 upstream 前确认条款 |
 | SDK 版本变化快（t3 半年内升级多次，修过多个行为差异） | 回归 | 固定版本；为翻译层录 SDK 回放夹具（照 t3 的 replay） |
 | 产品提示词只能放进用户消息 | 行为与其他引擎不一致 | 走 system prompt 门禁确认；实测评估 |
-| 没有「询问」档与 IM 确认 | 用户期待落空 | 界面与 IM 回执写明「Cursor 由自己的自动审阅决定」 |
-| Auto-review / 沙箱下 MCP 工具可能被拒 | Cindy 工具不可用 | P0 实测；必要时改用 `customTools` 转发 |
-| Windows 沙箱实际支持情况未知 | 启用 Auto／Plan 可能报配置错误；现有提示可能不准确 | 保持沙箱启用，不自动扩大权限；补 Windows 实机验证 |
+| 没有「询问」档与 IM 确认 | 用户期待落空 | 权限菜单说明自动档的命令执行方式；派发前拒绝无法落实的来源策略 |
+| 计划档下 MCP 工具可能被拒 | Cindy 工具不可用 | 结合计划档的只读契约实测 |
+| Windows 沙箱实际支持情况未知 | 计划档可能报配置错误 | 保持计划档沙箱启用，补 Windows 实机验证 |
 | SDK 自带 Statsig 埋点 | 隐私口径 | 在隐私说明里列出；不把 Cindy 日志写进 SDK |
 
 ## 10. 验证
@@ -659,7 +659,7 @@ Cursor 同引擎待应用配置，不开放跨引擎／跨电脑分配；旧控�
 | 项目 | 当前证据与下一步 |
 | --- | --- |
 | 产品上下文与压缩后补注入 | 当前仍仅首轮原样追加 `host-system-prompt.md`。建议复用现有回答投递说明、host 产品段、插件花名册、按现有开关决定的记忆规则／索引和用户自定义指令，顺序与 Pi 普通本机任务一致；不复制 Pi 专属目录／伙伴规则。会话启动时冻结稳定快照，成功发送后才确认交付，成功压缩后在下一条消息补一次。涉及 §4 门禁，具体组装与注入时机待维护者确认，尚未动手 |
-| Windows 沙箱 | 保持现有启用策略；实测 SDK helper 是否可用，再决定兼容路径及修正提示，不能静默退到无沙箱 |
+| Windows 沙箱 | 保持计划档启用沙箱，实测 SDK helper 是否可用 |
 | 系统代理 | worker 尚未接 Cindy 系统代理；需要在只有系统代理、没有 TUN 的网络下验证登录及模型调用，再选择复用入口 |
 | hooks 审批 | SDK 提供文件式 hooks；需验证超时、取消、身份和本地 socket 桥接，避免写入／污染用户项目配置，尚未开放 Ask／IM／调度 |
 | SDK 升级、计费明细与计划执行入口 | 文本 steer 已接入；getUsage、升级与计划执行入口仍待完成，升级需独立对比类型与运行行为，本轮未升级 |

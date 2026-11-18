@@ -1421,7 +1421,7 @@
     "CURSOR_HANDOFF_UNSUPPORTED": "未能易至 Cursor：惟常设桌面差事可易至 Cursor。",
     "CURSOR_LOCAL_EXECUTION_REQUIRED": "未能易至 Cursor：Cursor 惟行于本差事所在电脑。",
     "CURSOR_CONNECTION_REQUIRED": "未能易至 Cursor：请择 Cursor 连结下之模型。",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "未能易至 Cursor：请先将权柄之式易为「自审」「完全访问」或「谋定模式」。",
+    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "未能易至 Cursor：请先将权柄之式易为「自动」「完全访问」或「谋定模式」。",
     "REVIEW_SETTINGS_FIXED": "审查差事之设随原差事而定，不可更改。",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "已归档之差事不可易 Harness。",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共享差事之客不可将 Agent 移至他机运行。"
@@ -4700,7 +4700,6 @@
         "stopWarning": "Cursor 方行之差事将止，旧录仍存。",
         "loginFailed": "Cursor 登入未成，请察浏览器与网络。",
         "legacyPermission": "Cursor 无询问权限之式，此任务依自动之权行之，命令不经审阅而径行。",
-        "windowsSandbox": "Cursor 于 Windows 之沙箱未经验证；自动模式仍由 Cursor 自动审阅。",
         "historyReset": "目前账号下未见此差事之 Cursor 历史，旧参照已清除。再次传送将用新上下文，差事讯仍保留。",
         "historyUnavailable": "目前账号无法还原此差事之 Cursor 历史。请确认账号及差事状态后重试。"
       }
@@ -14137,7 +14136,8 @@
       "modes": {
         "cursor": {
           "auto": {
-            "label": "自审"
+            "label": "自动",
+            "description": "Cursor 命令直接执行，无需审批，也无沙箱隔离"
           },
           "bypassPermissions": {
             "label": "完全访问"
