@@ -4311,23 +4311,36 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       >
         {!catalogSection && <MenuHighlightLayer />}
         {!hasAnyModel && combinedRemoteDevices.length === 0 ? (
-          // 发现还在途、且用户没在搜索时不摆「无结果」:那句话和下方的「正在获取」自相矛盾,
-          // 而用户看到「没有模型」就会走。搜索无命中是本地过滤的确定结论,照常显示。
-          remoteStatusInList && trimmedQuery.length === 0 ? (
-            <RemoteModelLoadNotice
-              status={remoteStatusInList}
-              onRetry={retryRemoteModels}
-              message={remoteFailureMessage}
-            />
-          ) : localCatalogLoadingNotice ? localCatalogLoadingNotice : discoveringModels && trimmedQuery.length === 0 ? null : (
-            <div className="px-3 py-6 text-center text-13 text-[var(--text-tertiary)]">
-              {t(
-                deviceId && remoteModelListStatus === 'ready' && trimmedQuery.length === 0
-                  ? 'newChat.modelSelector.remoteEmpty'
-                  : 'newChat.modelSelector.search.noResults',
-              )}
-            </div>
-          )
+          <>
+            {/* 合并列表里的空目录也要带分隔线和电脑名,否则空提示会像是上一组供应商的。 */}
+            {catalogSection && (
+              <>
+                <div className="mx-1 my-1 h-px bg-[var(--model-dropdown-border)]" />
+                <div className="flex min-w-0 items-center gap-2 px-3 pb-0.5 pt-1 text-12 font-medium leading-[1.33] text-[var(--cmd-palette-item-meta)]">
+                  <span className="min-w-0 truncate">
+                    {deviceDisplayName(catalogSection.deviceId, remoteAgentDevices?.find((device) => device.deviceId === catalogSection.deviceId)?.name)}
+                  </span>
+                </div>
+              </>
+            )}
+            {/* 发现还在途、且用户没在搜索时不摆「无结果」:那句话和下方的「正在获取」自相矛盾,
+                而用户看到「没有模型」就会走。搜索无命中是本地过滤的确定结论,照常显示。 */}
+            {remoteStatusInList && trimmedQuery.length === 0 ? (
+              <RemoteModelLoadNotice
+                status={remoteStatusInList}
+                onRetry={retryRemoteModels}
+                message={remoteFailureMessage}
+              />
+            ) : localCatalogLoadingNotice ? localCatalogLoadingNotice : discoveringModels && trimmedQuery.length === 0 ? null : (
+              <div className={cn('px-3 text-13 text-[var(--text-tertiary)]', catalogSection ? 'py-2' : 'py-6 text-center')}>
+                {t(
+                  deviceId && remoteModelListStatus === 'ready' && trimmedQuery.length === 0
+                    ? 'newChat.modelSelector.remoteEmpty'
+                    : 'newChat.modelSelector.search.noResults',
+                )}
+              </div>
+            )}
+          </>
         ) : sections ? (
           // 按供应商分组:每组一个轻量标题 + 该供应商下的模型行。
           sections
