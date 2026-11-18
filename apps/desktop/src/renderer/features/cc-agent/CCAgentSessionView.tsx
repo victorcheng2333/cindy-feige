@@ -319,7 +319,6 @@ import {
 import type { SerializedComposerContent } from '@/components/new-chat/composerContentSerialization';
 import type { PastedTextRange, SlashCommandRange } from '@/lib/imageRef';
 import { createLogger } from '@/lib/logger';
-import { useStartingSessionIds } from '@/lib/sessionStartingStore';
 import { subscribeWorkLouderCodexAction } from '@/lib/workLouderCodexActions';
 import {
   copyCurrentTaskMarkdown,
@@ -1974,21 +1973,6 @@ function CCAgentSessionContent({
     updateQueueItemContent,
     chatDisplaySnapshot,
   } = useCCAgentChat(confirmedSessionId, handleTitleUpdate, { chatRealtime });
-  // 按下发送到 Agent 真正跑起来之间(读取历史、拉起进程、接入队列,常有一两秒)，输入框上方的
-  // 状态栏先出现并写「正在处理…」，不让用户对着一条静止的气泡猜有没有发出去。starting 由本端
-  // 发送置位(sessionStartingStore)，真 running 一到就由这里吸收；出错、尾部已有回复时不显示。
-  const runningSelfIds = useMemo(
-    () => (sessionId && agentStatus.isRunning ? new Set([sessionId]) : undefined),
-    [sessionId, agentStatus.isRunning],
-  );
-  const startingSessionIds = useStartingSessionIds(runningSelfIds);
-  const conversationTail = messages[messages.length - 1];
-  const awaitingRunStart =
-    !!sessionId &&
-    startingSessionIds.has(sessionId) &&
-    !agentStatus.isRunning &&
-    conversationTail?.role === 'user' &&
-    !error;
   useBotIslandVisibleSession(
     viewVisible && session?.id === sessionId && historyLoaded ? sessionId ?? null : null,
     ownsWindowRoute && !isCompactRail && !isOrcaMode,
@@ -2562,9 +2546,9 @@ function CCAgentSessionContent({
   // A retained error belongs to the previous turn until running clears it.
   // Only a newly received terminal event may settle this send's preparation.
   const settledStartingSessions = useMemo(() => new Set(
-    statusAgentDeviceId && sessionId && (agentStatus.isRunning || receivedRemoteResponse || receivedTerminalStatus
+    sessionId && (agentStatus.isRunning || (statusAgentDeviceId && (receivedRemoteResponse || receivedTerminalStatus
       || queuePaused || credentialSwitchWait
-      || pendingPermission || pendingAskUser || pendingPluginSetup || pendingPlanReview)
+      || pendingPermission || pendingAskUser || pendingPluginSetup || pendingPlanReview)))
       ? [sessionId] : [],
   ), [statusAgentDeviceId, sessionId, agentStatus.isRunning, receivedRemoteResponse, receivedTerminalStatus,
     queuePaused, credentialSwitchWait,
@@ -2572,6 +2556,10 @@ function CCAgentSessionContent({
   const startingSessions = useStartingSessionIds(settledStartingSessions);
   const waitingRemoteStart = Boolean(statusAgentDeviceId && sessionId
     && startingSessions.has(sessionId) && !settledStartingSessions.has(sessionId));
+  // 本机发送到 Agent 开始运行前先显示「正在处理…」。
+  const awaitingRunStart = Boolean(!statusAgentDeviceId && sessionId
+    && startingSessions.has(sessionId) && !settledStartingSessions.has(sessionId)
+    && messages[messages.length - 1]?.role === 'user' && !error);
   const composerStatus = runningWorkflow
     ? runningWorkflow.total > 0
       ? t('ccAgent.agentStatus.waitingWorkflowProgress', runningWorkflow)
@@ -6046,7 +6034,7 @@ function CCAgentSessionContent({
                 <RunningStatusBar
                   key={sessionId}
                   sessionKey={sessionId ?? null}
-                  status={awaitingRunStart && !waitingRemoteStart ? t('ccAgent.agentStatus.processing') : composerStatus}
+                  status={awaitingRunStart ? t('ccAgent.agentStatus.processing') : composerStatus}
                   messages={sideChatMessages}
                   reconnectStatus={reconnectStatus}
                   preparing={waitingRemoteStart}
