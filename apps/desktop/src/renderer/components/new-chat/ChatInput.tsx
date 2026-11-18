@@ -2272,7 +2272,8 @@ export function ChatInput({
   // 撤掉新会话工具条的 AgentSelect 后,它的 hiddenVendors 门禁就落到这里:Pi 二进制缺失
   // 时模型目录照样投影 Pi 模型,只看目录会让用户一路选到 requireAgent 的 not-registered。
   // 未加载完成 → 传 undefined；只有已有任务保留当前引擎，新任务严格按可选清单。
-  // Cursor's account/runtime belong to the task host, not the borrowed catalog.
+  // Cursor's account/runtime belong to the task host, for drafts as well as
+  // existing tasks, not the borrowed catalog.
   // Other engines can still execute on the provider computer (e.g. shared Pi
   // without Pi installed locally), so keep their existing catalog-scoped roster.
   const taskComputerAgents = useAvailableAgents(deviceLinkDeviceId ?? undefined);
@@ -2282,8 +2283,8 @@ export function ChatInput({
     if (!runtimeAgentsLoaded) return undefined;
     const kinds = UNIFIED_AGENT_KINDS.filter(
       (kind) => {
-        if (sessionId && kind === 'cursor') {
-          return kind === agentKind || !taskComputerAgents.loaded || taskComputerAgents.availableVendors.has('cursor');
+        if (kind === 'cursor') {
+          return (!!sessionId && kind === agentKind) || !taskComputerAgents.loaded || taskComputerAgents.availableVendors.has('cursor');
         }
         return (!!sessionId && kind === agentKind) || runtimeAvailableVendors.has(agentKindToVendor(kind));
       },

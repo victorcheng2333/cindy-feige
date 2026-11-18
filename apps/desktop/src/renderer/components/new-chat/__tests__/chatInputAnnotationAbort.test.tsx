@@ -48,6 +48,7 @@ const h = vi.hoisted(() => ({ t: (key: string) => key, confirm: vi.fn(), editor:
   micGranted: true,
   realModelSelector: false,
   scopedAgentRoster: false,
+  localCursorEnabled: true,
   listAgentSkills: vi.fn(),
   localProviders: [] as ProviderView[],
   deviceProviders: [] as ProviderView[],
@@ -129,10 +130,12 @@ vi.mock('@/hooks/useDevicesProviders', () => ({ useDevicesProviders: (ids: reado
   new Map(ids.map(id => [id, { providers: h.deviceProviders, loading: false, error: null }])) }));
 vi.mock('@/hooks/useConnectedSource', () => ({ useConnectedSource: () => ({ hasConnectedSource: true, loading: false }) }));
 vi.mock('@/hooks/useAvailableAgents', () => ({ useAvailableAgents: (deviceId?: string) => h.scopedAgentRoster
-  ? { availableVendors: new Set(deviceId ? ['cc', 'pi'] : ['cc', 'cursor']), loaded: true }
+  ? { availableVendors: new Set(deviceId ? ['cc', 'pi'] : ['cc', ...(h.localCursorEnabled ? ['cursor'] : [])]), loaded: true }
   : { agents: [], loading: false } }));
 vi.mock('@/hooks/useAgentCapabilities', async (original) => ({ ...await original<typeof import('@/hooks/useAgentCapabilities')>(), useAgentCapabilities: (_agent: unknown, deviceId?: string) => ({
-  capabilities: deviceId === 'share:composer' ? { availableModels: [], effortLevels: [], hasFastMode: false } : null,
+  capabilities: h.scopedAgentRoster && _agent === 'cursor' && !deviceId
+    ? { availableModels: [{ id: 'local-cursor', displayName: 'Local Cursor', efforts: [], defaultEffort: null }], effortLevels: [], hasFastMode: false }
+    : deviceId === 'share:composer' ? { availableModels: [], effortLevels: [], hasFastMode: false } : null,
   loading: false,
 }) }));
 
@@ -192,6 +195,7 @@ beforeEach(() => {
   h.micGranted = true;
   h.realModelSelector = false;
   h.scopedAgentRoster = false;
+  h.localCursorEnabled = true;
   h.cancel.mockReset().mockResolvedValue(undefined);
   h.atPanel = null;
   h.scan.mockReset().mockResolvedValue({ success: true, items: [], truncated: false });
@@ -687,26 +691,41 @@ it('returns focus to the editor after choosing a model from the real selector', 
 
 // Unit regression 2026-11-16: the installed app hid local Cursor while borrowing
 // Claude. Picker-only tests supply the roster and miss ChatInput's device choice.
-// Minimum input: a shared Claude task, shared cc/pi roster, local cc/cursor roster.
+// Minimum input: a shared Claude draft/task, shared cc/pi roster, local cc/cursor roster.
+// The previous regression only covered existing tasks and missed new-task filtering.
 // Assert the visible tab through the real composer/picker, not a supplied roster.
-it('offers task-computer Cursor when the borrowed Claude computer has no Cursor', async () => {
+it.each(['draft', 'session', 'disabled-draft'] as const)('uses task-computer Cursor availability when borrowing Claude (%s)', async kind => {
   h.realModelSelector = true;
   h.scopedAgentRoster = true;
+  h.localCursorEnabled = kind !== 'disabled-draft';
   supplyRangeGeometry();
   HTMLElement.prototype.scrollIntoView = vi.fn();
-  h.localProviders = [sshProvider('local', [sshModel('local-model')], 'claude-code')];
+  h.localProviders = [sshProvider('local', [sshModel('local-model')], 'claude-code'),
+    sshProvider('cursor', [sshModel('local-cursor')], 'cursor')];
   h.deviceProviders = [sshProvider('shared', [sshModel('shared-model')], 'claude-code')];
+  const onUnifiedDraftSelect = vi.fn();
   renderComposer({
-    sessionId: 'borrowed-claude-cursor', runtimeAgentKind: 'claude-code', sessionOrcaRole: null,
+    ...(kind === 'session' ? { sessionId: 'borrowed-claude-cursor', runtimeAgentKind: 'claude-code' as const, sessionOrcaRole: null } : {}),
+    draftEngineTabs: true, onUnifiedDraftSelect,
     agentDeviceId: 'share:composer', vendorKey: 'cc',
     initialModel: 'shared-model', initialProviderId: 'shared', initialEffort: 'high',
     hideRuntimeControls: false,
     remoteAgentDevices: [{ deviceId: 'share:composer', name: 'Shared source' }],
   });
-  fireEvent.click(screen.getByRole('button', { name: /newChat.modelSelector.trigger.ariaWithEffort/ }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /newChat.modelSelector.trigger.ariaWithEffort/ })); });
   expect(screen.getByRole('tab', { name: 'Pi' })).toBeTruthy();
+  if (kind === 'disabled-draft') {
+    expect(screen.queryByRole('tab', { name: 'Cursor' })).toBeNull();
+    return;
+  }
   await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Cursor' })); });
   expect(screen.getByRole('tab', { name: 'Cursor' }).getAttribute('aria-selected')).toBe('true');
+  if (kind === 'draft') {
+    await act(async () => { fireEvent.click(screen.getByRole('option', { name: /local-cursor/ })); });
+    expect(onUnifiedDraftSelect).toHaveBeenCalledWith(expect.objectContaining({
+      vendor: 'cursor', providerId: 'cursor', modelId: 'local-cursor', agentDevice: null,
+    }));
+  }
 });
 
 // Regression: ChatInput gated remote catalogs and draft selection on the disabled
