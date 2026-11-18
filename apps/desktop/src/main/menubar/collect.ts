@@ -438,7 +438,7 @@ export function subscriptionPoolSources(provider: ProviderView, pool: Subscripti
       id: account.id === 'default' ? provider.id : `${provider.id}:account:${account.id}`,
       account: identity,
       plan: (source.family === 'claude'
-        ? formatClaudeSubscriptionPlanLabel(account.plan, account.planTier)
+        ? formatClaudeSubscriptionPlanLabel(account.plan, account.planTier, account.planDisplayName)
         : formatCodexPlanLabel(account.planType ?? account.plan)) ?? source.plan,
       accountKeys: [...(source.accountKeys ?? []), ...(account.accountKey ? [`${source.family}:verified:${account.accountKey}`] : []), ...(identity ? [`${source.family}:identity:${identity.toLowerCase()}`] : [])],
       pooled: true,
@@ -488,7 +488,7 @@ export function claudeSource(
     brand: 'Claude',
     account: accountIdentity(provider),
     displayName: provider.name,
-    plan: formatClaudeSubscriptionPlanLabel(snapshot?.subscriptionType, snapshot?.planTier),
+    plan: formatClaudeSubscriptionPlanLabel(snapshot?.subscriptionType, snapshot?.planTier, snapshot?.planDisplayName),
     windows,
     credits: null,
     creditsUnlimited: false,

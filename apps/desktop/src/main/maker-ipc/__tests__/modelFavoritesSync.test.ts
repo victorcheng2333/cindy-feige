@@ -28,7 +28,7 @@ vi.mock('../../device-link/invoke-context.js', () => ({
   isDeviceLinkInvoke: () => h.remote,
   getDeviceLinkInvokeContext: () => ({ sameAccountController: h.sameAccount, sharedTask: h.sharedTask || undefined }),
 }));
-import { registerModelFavoritesSync } from '../modelFavoritesSync';
+import { applyHostModelFavorite, readHostModelPreferences, registerModelFavoritesSync } from '../modelFavoritesSync';
 import { MODEL_FAVORITES_APPLY, MODEL_FAVORITES_GET } from '@cindy/device-link';
 import {
   FAVORITE_HOST_READY,
@@ -129,4 +129,34 @@ it.each(['legacy', 'unverified', 'guest'])('does not admit Cursor from %s caller
     kind === 'legacy' ? undefined : { includeCursor: true },
   )).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
   expect(host.send).not.toHaveBeenCalled();
+});
+
+// Plugin /model-preferences (agent.modelPreferences) reuses this bridge instead of a second store:
+// reads ask the same host for recents too, mutations wait for its persisted reply, device-link GET
+// never asks for recents, and a malformed recents reply is not delivered.
+it('serves main-side plugin reads with recents and mutations through the same host', async () => {
+  const recent = { providerId: 'account', modelId: 'model', agent: 'codex', effort: 'high' };
+  const read = readHostModelPreferences();
+  const readRequest = host.send.mock.calls[0][1];
+  expect(readRequest).toMatchObject({ recents: true });
+  expect(readRequest.mutation).toBeUndefined();
+  h.on.get(FAVORITE_HOST_REPLY)!({ sender: host }, { requestId: readRequest.requestId, items: [item], recents: [recent] });
+  expect(await read).toEqual({ favorites: [item], recents: [recent] });
+
+  const apply = applyHostModelFavorite({ kind: 'remove', expected: item as never });
+  const applyRequest = host.send.mock.calls[1][1];
+  expect(applyRequest).toMatchObject({ mutation: { kind: 'remove', expected: item } });
+  expect(applyRequest.recents).toBeUndefined();
+  h.on.get(FAVORITE_HOST_REPLY)!({ sender: host }, { requestId: applyRequest.requestId, items: [] });
+  expect(await apply).toEqual([]);
+
+  void h.handle.get(MODEL_FAVORITES_GET)!({});
+  expect(host.send.mock.calls[2][1].recents).toBeUndefined();
+
+  const malformed = readHostModelPreferences();
+  const checked = expect(malformed).rejects.toMatchObject({ code: 'INTERNAL' });
+  h.on.get(FAVORITE_HOST_REPLY)!({ sender: host }, {
+    requestId: host.send.mock.calls[3][1].requestId, items: [item], recents: [{ ...recent, agent: 'other' }],
+  });
+  await checked;
 });

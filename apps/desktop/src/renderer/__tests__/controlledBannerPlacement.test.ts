@@ -22,6 +22,14 @@ describe('controlled banner placement', () => {
     expect(sessionViewSource).not.toContain('useControlledBy');
     expect(sessionViewSource).not.toContain('useComposerCollapsed');
     expect(sessionViewSource).not.toContain('rightLeadingSlot');
+    expect(sessionViewSource).not.toContain('<BotWorkingStatus');
+    // Both a pending plan and a text-only tool failure must hide stale Done.
+    expect(sessionViewSource).toContain(
+      "suppressContent={Boolean(pendingPlanReview) || errorReason === 'unexecuted-tool-markup'}",
+    );
+    expect(sessionViewSource).toContain(
+      'const isHidden = suppressContent || (!showContent && !visible);',
+    );
     expect(sessionViewSource).toContain('data-running-status-meta="true"');
   });
 

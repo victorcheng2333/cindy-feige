@@ -4360,6 +4360,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       // (review P2——此前只有目标流有这行,首条消息发送成功路径漏了,标注
       // 缓存文件永久留在本地)。
       composerAnnotationsRef.current?.forgetAllAttachments();
+      // 首条消息已交接:收起输入框与软键盘(与任务页发送同口径),进入任务页时不带着键盘。
+      setComposerVoiceHoldArmed(false);
+      firstMessageInputRef.current?.blur();
       router.replace({
         pathname: '/sessions/[sessionId]',
         params: { sessionId, deviceId: deviceIdSnapshot, deviceName: selectedDeviceName },

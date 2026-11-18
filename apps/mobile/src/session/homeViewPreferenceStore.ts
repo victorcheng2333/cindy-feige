@@ -24,6 +24,8 @@ export interface HomeViewPreferences {
   groupByProject: boolean;
   /** 默认归入「对话」文件夹，与桌面一致；显式显示偏好仍优先。 */
   groupDialogue: boolean;
+  /** 缺省关,与手机端「对话」同一默认:自动化运行的任务收进「自动化」目录。 */
+  groupAutomation: boolean;
   sortBy: HomeListSortBy;
   statusFilter: HomeStatusFilter;
   /** 缺省按最近活动;手动时项目行按 manualProjectOrder,对话仍跟任务排序。 */
@@ -48,6 +50,7 @@ export interface HomeViewPreferences {
 export interface HomeViewPreferencePatch {
   groupByProject?: boolean;
   groupDialogue?: boolean;
+  groupAutomation?: boolean;
   sortBy?: HomeListSortBy;
   statusFilter?: HomeStatusFilter;
   projectOrder?: HomeProjectOrder;
@@ -110,6 +113,7 @@ async function writeHomeViewPreferences(patch: HomeViewPreferencePatch): Promise
   };
   assign('groupByProject', patch.groupByProject);
   assign('groupDialogue', patch.groupDialogue);
+  assign('groupAutomation', patch.groupAutomation);
   assign('sortBy', patch.sortBy);
   assign('statusFilter', patch.statusFilter);
   assign('projectOrder', patch.projectOrder);
@@ -164,6 +168,7 @@ function emptyPreferences(): HomeViewPreferences {
   return {
     groupByProject: true,
     groupDialogue: true,
+    groupAutomation: false,
     selectedDevice: null,
     sortBy: 'recency',
     statusFilter: 'active',
@@ -190,6 +195,7 @@ function normalizeStoredPreferences(value: unknown): HomeViewPreferences {
       ? record.groupByProject
       : true,
     groupDialogue: record.groupDialogue !== false,
+    groupAutomation: record.groupAutomation === true,
     selectedDevice: deviceId
       ? { deviceId, name: deviceName || deviceId }
       : null,

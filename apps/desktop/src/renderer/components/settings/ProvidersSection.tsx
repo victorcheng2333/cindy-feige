@@ -1,6 +1,6 @@
 import { useRemoteProviderDisable } from '@/lib/remoteProviderDisable';
 import { Select } from '@/components/ui/select';
-import { sameRunLocationProvider, duplicateSubscriptionProviders, subscriptionModelsCoveredBy } from '@cindy/model-providers';
+import { duplicateSubscriptionProviders, listedSourceFolds } from '@cindy/model-providers';
 import { isProviderLogoKind } from '@cindy/model-providers/branding';
 import { providersSettings } from './ProvidersSection.settings-search';
 import {
@@ -106,6 +106,7 @@ import { canAccessBillingSettings } from './billingVisibility';
 import { resolveXdAssetModuleState } from './providerAssetModule';
 import { useProviderSubscriptionCard } from './useProviderSubscriptionCard';
 import { SubscriptionAccountsSection, SubscriptionPoolViewCache } from './SubscriptionAccountsSection';
+import { subscriptionAccountErrorKey } from './subscriptionAccountErrors';
 import { placementErrorKey } from './SubscriptionPlacement';
 import { isSubscriptionProvider, type SubscriptionPoolView } from '../../../shared/subscriptionAccounts';
 import type { SubscriptionProvider } from '../../../shared/subscriptionAccounts';
@@ -1042,6 +1043,7 @@ function NativeSubscriptionHeader({
   const [pool, setPool] = useState<SubscriptionPoolView | null>(null);
   const [busy, setBusy] = useState(false);
   const login = useRef<string | null>(null);
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     let revision = 0;
     const refresh = async () => {
@@ -1051,8 +1053,9 @@ function NativeSubscriptionHeader({
         if (requested === revision) setPool(view);
       } catch { /* Keep the last known pool state. */ }
     };
-    refresh();
-    const off = window.electronAPI.subscriptionAccounts.onChanged(event => { if (event.providerId === providerId) refresh(); });
+    refreshRef.current = refresh;
+    void refresh();
+    const off = window.electronAPI.subscriptionAccounts.onChanged(event => { if (event.providerId === providerId) void refresh(); });
     return () => {
       ++revision;
       off();
@@ -1064,13 +1067,21 @@ function NativeSubscriptionHeader({
   const poolConnected = pool?.accounts.some(account =>
     !(account.id === 'default' && reconnectRequired) &&
     (account.status === 'ready' || account.status === 'limited')) ?? (!reconnectRequired && provider?.connected === true);
+  const poolUnknown = !poolConnected && !reconnectRequired &&
+    (pool?.accounts.some(account => account.status === 'unavailable') ?? false);
   useEffect(() => {
-    onPoolConnectionChange?.(pooled ? poolConnected : null);
+    onPoolConnectionChange?.(pooled && !poolUnknown ? poolConnected : null);
     return () => onPoolConnectionChange?.(null);
-  }, [pooled, poolConnected, onPoolConnectionChange]);
+  }, [pooled, poolConnected, poolUnknown, onPoolConnectionChange]);
   if (!pooled) return fallback;
   const connected = poolConnected && !reconnectRequired;
   const act = async () => {
+    if (poolUnknown && !login.current) {
+      // Re-read only; a recovered account announces itself to the account list as well.
+      setBusy(true);
+      try { await refreshRef.current(); } finally { setBusy(false); }
+      return;
+    }
     if (login.current) {
       await window.electronAPI.subscriptionAccounts.command({ action: 'cancel', providerId, loginKey: login.current }).catch(() => {});
       return;
@@ -1087,19 +1098,16 @@ function NativeSubscriptionHeader({
       }
       onChanged();
     } catch (error) {
-      const code = extractIpcError(error)?.code;
-      if (code !== 'SUBSCRIPTION_LOGIN_CANCELLED')
-        toast.error(t(code === 'SUBSCRIPTION_CODEX_PROVIDER_AUTH'
-          ? 'subscriptionAccounts.providerManagedAuth'
-          : 'subscriptionAccounts.failed'));
+      const key = subscriptionAccountErrorKey(error);
+      if (key) toast.error(t(key));
     } finally { login.current = null; setBusy(false); }
   };
   return <DetailHeader provider={provider ? { ...provider, connected: poolConnected } : provider} onDefaultLogin={onDefaultLogin} children={children}
     icon={providerId === 'anthropic' ? <AnthropicMark size={18} /> : <OpenAIMark size={18} />}
     title={provider?.name ?? (providerId === 'anthropic' ? 'Anthropic' : 'OpenAI')}
     subtitle={t('subscriptionAccounts.title')}
-    status={{ kind: reconnectRequired ? 'reconnect-required' : connected ? 'connected' : 'neutral', label: t(busy ? 'settings.providers.pill.connecting' : 'settings.providers.pill.disconnected') }}
-    primaryAction={{ label: t(login.current ? 'settings.providers.button.cancel' : reconnectRequired ? 'subscriptionAccounts.loginAgain' : connected ? 'settings.providers.button.disconnect' : 'subscriptionAccounts.login'), onClick: () => void act(), disabled: busy && !login.current }} />;
+    status={{ kind: reconnectRequired ? 'reconnect-required' : connected ? 'connected' : 'neutral', label: t(busy ? 'settings.providers.pill.connecting' : poolUnknown ? 'subscriptionAccounts.unavailable' : 'settings.providers.pill.disconnected') }}
+    primaryAction={{ label: t(login.current ? 'settings.providers.button.cancel' : reconnectRequired ? 'subscriptionAccounts.loginAgain' : connected ? 'settings.providers.button.disconnect' : poolUnknown ? 'subscriptionAccounts.signIn.retry' : 'subscriptionAccounts.login'), onClick: () => void act(), disabled: busy && !login.current }} />;
 }
 
 /**
@@ -1113,12 +1121,16 @@ function CreatedSubscriptionHeader({ provider, kind, onChanged, children }: {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const [connected, setConnected] = useState(provider.connected);
+  const [unknown, setUnknown] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let current = true;
     const refresh = () => void window.electronAPI.subscriptionAccounts.command({ action: 'read', providerId: provider.id })
       .then((view) => {
-        if (current) setConnected(view.accounts.some((account) => account.status === 'ready' || account.status === 'limited'));
+        if (!current) return;
+        const ready = view.accounts.some((account) => account.status === 'ready' || account.status === 'limited');
+        setConnected(ready);
+        setUnknown(!ready && view.accounts.some((account) => account.status === 'unavailable'));
       }).catch(() => {});
     refresh();
     const off = window.electronAPI.subscriptionAccounts.onChanged((event) => { if (event.providerId === kind) refresh(); });
@@ -1145,7 +1157,7 @@ function CreatedSubscriptionHeader({ provider, kind, onChanged, children }: {
     icon={kind === 'anthropic' ? <AnthropicMark size={18} /> : <OpenAIMark size={18} />}
     title={provider.name}
     subtitle={t('subscriptionAccounts.title')}
-    status={{ kind: connected ? 'connected' : 'neutral', label: t('settings.providers.pill.disconnected') }}
+    status={{ kind: connected ? 'connected' : 'neutral', label: t(unknown ? 'subscriptionAccounts.unavailable' : 'settings.providers.pill.disconnected') }}
     deleteAction={busy ? undefined : { label: t('settings.providers.custom.deleteAria'), onClick: () => void remove() }} />;
 }
 
@@ -2625,6 +2637,8 @@ function ListRow({
   const title = providerDisplayName(remote?.provider ?? provider, t);
   return (
     <div
+      // Listed-source identity shared with the model picker rail (`local:<providerId>`).
+      data-listed-source={`local:${provider.id}`}
       className={cn(
         'relative flex w-full items-center rounded-lg text-left transition-colors',
         selected
@@ -3009,14 +3023,22 @@ export function ProvidersSection() {
     [orderedVisibleProviders, pendingProviderOrderIds],
   );
   const sharedLocalProviders = listProviders.filter(provider => ownedShares.get(null)?.has(provider.id));
-  const localDuplicates = duplicateSubscriptionProviders(listProviders.filter(provider =>
-    !ownedShares.get(null)?.has(provider.id) && providerGroups.ready && !providerGroups.groups[provider.id]));
-  const ordinaryLocalProviders = listProviders.filter(provider => !ownedShares.get(null)?.has(provider.id) && !localDuplicates.has(provider.id));
+  const localBase = listProviders.filter(provider => !ownedShares.get(null)?.has(provider.id));
+  const localExempt = (providerId: string) => !providerGroups.ready || !!providerGroups.groups[providerId];
+  // Which equal account connection a folded row opens (its account list lives on the root row).
+  const localDuplicates = duplicateSubscriptionProviders(localBase.filter(provider => !localExempt(provider.id)));
   const sharedRemoteProviders = ownRemoteProviders.filter(entry => ownedShares.get(entry.deviceId)?.has(entry.provider.id));
-  // The same provider on another computer folds into this computer's listed entry (run location lives there).
-  const foldsIntoLocal = (remote: ProviderView) => !remote.suspended && ordinaryLocalProviders.some(local => !local.suspended && !providerGroups.groups[local.id] && sameRunLocationProvider(local, remote) && subscriptionModelsCoveredBy(remote, local));
-  const ordinaryRemoteProviders = ownRemoteProviders.filter(entry => !ownedShares.get(entry.deviceId)?.has(entry.provider.id)
-    && (entry.group || !foldsIntoLocal(entry.provider)));
+  const unsharedRemoteProviders = ownRemoteProviders.filter(entry => !ownedShares.get(entry.deviceId)?.has(entry.provider.id));
+  // Same rule as both model pickers: an equal source is listed once; this computer's entry represents it.
+  const listedFolds = listedSourceFolds({
+    base: localBase,
+    baseExempt: localExempt,
+    others: [...new Set(unsharedRemoteProviders.map(entry => entry.deviceId))].map(deviceId => ({
+      deviceId, providers: unsharedRemoteProviders.filter(entry => entry.deviceId === deviceId).map(entry => entry.provider),
+    })),
+  });
+  const ordinaryLocalProviders = localBase.filter(provider => !listedFolds.hiddenBase.has(provider.id));
+  const ordinaryRemoteProviders = unsharedRemoteProviders.filter(entry => !listedFolds.hiddenOther.get(entry.deviceId)?.has(entry.provider.id));
 
   useEffect(() => {
     if (pendingProviderOrder && pendingProviderOrder.dataOwnerId !== dataOwnerId) {

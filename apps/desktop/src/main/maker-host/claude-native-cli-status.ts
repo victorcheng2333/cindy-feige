@@ -13,7 +13,7 @@ const revisions = new Map<string, number>();
 export function claudeCliLoginRevision(configDir?: string): number { return revisions.get(configDir ?? '') ?? 0; }
 
 const statuses = new Map<string, { status: ClaudeCliLoginStatus; at: number }>();
-const statusListeners = new Set<(status: ClaudeCliLoginStatus, configDir?: string) => void>();
+const statusListeners = new Map<(status: ClaudeCliLoginStatus, configDir?: string) => void, boolean>();
 let onListenerError: (error: unknown) => void = () => {};
 
 /** 最近一次读到的 CLI 登录态;尚未读过时为 null(调用方按未登录处理)。 */
@@ -27,9 +27,12 @@ export function isClaudeCliLoginStatusFresh(maxAgeMs: number, configDir?: string
   return !!cached && Date.now() - cached.at <= maxAgeMs;
 }
 
-/** 登录态变化(含首次读到)时回调;返回取消订阅函数。 */
-export function onClaudeCliLoginStatusChange(listener: (status: ClaudeCliLoginStatus, configDir?: string) => void): () => void {
-  statusListeners.add(listener);
+/** 登录态变化(含首次读到)时回调;模型发现等非展示消费者可排除仅显示名变化。 */
+export function onClaudeCliLoginStatusChange(
+  listener: (status: ClaudeCliLoginStatus, configDir?: string) => void,
+  options: { includeDisplayNameChanges?: boolean } = {},
+): () => void {
+  statusListeners.set(listener, options.includeDisplayNameChanges !== false);
   return () => statusListeners.delete(listener);
 }
 
@@ -38,7 +41,7 @@ export function setClaudeCliLoginStatusListenerErrorHandler(handler: (error: unk
   onListenerError = handler;
 }
 
-function sameStatus(a: ClaudeCliLoginStatus | null, b: ClaudeCliLoginStatus): boolean {
+function sameLoginStatus(a: ClaudeCliLoginStatus | null, b: ClaudeCliLoginStatus): boolean {
   return (
     a !== null &&
     a.loggedIn === b.loggedIn &&
@@ -56,15 +59,18 @@ function sameStatus(a: ClaudeCliLoginStatus | null, b: ClaudeCliLoginStatus): bo
 /** @internal 由 claude-native-cli 写入最新读取结果;变化时通知监听器。 */
 export function publishClaudeCliLoginStatus(status: ClaudeCliLoginStatus, configDir?: string): void {
   const previous = peekClaudeCliLoginStatus(configDir);
-  const changed = !sameStatus(previous, status);
+  const loginChanged = !sameLoginStatus(previous, status);
+  const changed = loginChanged || previous?.planDisplayName !== status.planDisplayName;
   statuses.set(configDir ?? '', { status, at: Date.now() });
   if (!changed) return;
   if (!previous || previous.loggedIn !== status.loggedIn || previous.email !== status.email ||
       previous.orgId !== status.orgId || previous.authMethod !== status.authMethod)
     revisions.set(configDir ?? '', ++revision);
-  for (const listener of statusListeners) {
+  for (const [listener, includeDisplayNameChanges] of statusListeners) {
+    if (!loginChanged && !includeDisplayNameChanges) continue;
     try {
-      listener(status, configDir);
+      if (configDir === undefined) listener(status);
+      else listener(status, configDir);
     } catch (err) {
       onListenerError(err);
     }

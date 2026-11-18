@@ -31,6 +31,7 @@ import {
 } from '@/state/agentDeviceFavorites';
 import type { FavoriteStore } from '@/state/useRemoteModelFavorites';
 import { useModelFavoritesHost } from '@/state/useModelFavoritesHost';
+import { __resetForTest as resetRecentModels, recordRecentModel, setRecentModelsOwner } from '@/state/recentModels';
 
 const config = {
   providerId: 'anthropic',
@@ -51,6 +52,7 @@ const mountLocal = (deviceId: string | undefined, homeDeviceId: string | null = 
 
 beforeEach(() => {
   __resetForTest();
+  resetRecentModels();
   window.localStorage.clear();
   setDataOwnerGeneration('owner', 1);
   setModelFavoritesOwner('owner');
@@ -219,4 +221,20 @@ describe('favorites of another computer live in the home list', () => {
     if (includeCursor) expect(items[0]!.agent).toBe('cursor');
   });
 
+  // Unit merge regression: one local Cursor recent must not invalidate the
+  // plugin's entire recents reply, whose wire parser accepts legacy engines.
+  it('keeps plugin recents readable when the owner recently used Cursor', () => {
+    setRecentModelsOwner('owner');
+    recordRecentModel(config);
+    recordRecentModel({ ...config, agent: 'cursor' });
+    const onRequest = vi.fn<ModelFavoritesHostApi['onRequest']>().mockReturnValue(() => {});
+    const reply = vi.fn<ModelFavoritesHostApi['reply']>();
+    vi.stubGlobal('electronAPI', { modelFavoritesHost: { onRequest, reply, ready: vi.fn(), changed: vi.fn() } });
+    renderHook(() => useModelFavoritesHost());
+    act(() => onRequest.mock.calls[0]![0]({
+      requestId: 'plugin-get', expiresAt: Date.now() + 1000, recents: true,
+      ownerStamp: { dataOwnerId: 'owner', ownerGeneration: 1 },
+    }));
+    expect(reply.mock.calls[0]![0].recents).toEqual([config]);
+  });
 });
