@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type { ProviderView } from '@cindy/model-providers/registry';
 import type { AgentKind } from '@cindy/model-providers/types';
+import type { MobileSessionAgentKind } from './sessionAgentSwitch';
 import type { OrcaExecutionDeviceView } from '@cindy/device-link';
 import type { MobileModelOption } from '@/session/agentCapabilities';
 import {
@@ -911,7 +912,7 @@ export function useOrcaWorkerForm(params: {
     return true;
   }, []);
 
-  const pickerAgents = useMemo<AgentKind[]>(() => [...agents], [agents]);
+  const pickerAgents = useMemo<MobileSessionAgentKind[]>(() => [...agents], [agents]);
   const roles = useMemo(
     () => listedOrcaRoles(roleEntries ?? BUILTIN_ORCA_ROLE_ENTRIES, customRoleMode ? null : form.role),
     [customRoleMode, form.role, roleEntries],

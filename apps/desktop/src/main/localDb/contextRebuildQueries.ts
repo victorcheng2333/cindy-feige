@@ -13,7 +13,7 @@ const messageRowid = sql<number>`rowid`;
 export async function findLatestContextRebuildMeta(sessionId: string): Promise<{
   reason?: string;
   sourceUserClientId?: string | null;
-  sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
+  sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   sourceModel?: string | null;
   sourceProviderId?: string | null;
 } | null> {

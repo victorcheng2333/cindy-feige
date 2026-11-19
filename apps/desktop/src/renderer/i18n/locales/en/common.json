@@ -3676,6 +3676,15 @@
       }
     },
     "providers": {
+      "agyProxy": {
+        "label": "Network proxy",
+        "save": "Save",
+        "hint": "Applies to agy on this Mac. Leave blank to use the standard launch environment. Running turns finish with their current proxy.",
+        "invalid": "Enter an HTTP, HTTPS or SOCKS5 proxy URL without credentials.",
+        "saved": "Proxy saved.",
+        "readFailed": "Could not read the proxy setting.",
+        "saveFailed": "Could not save the proxy setting."
+      },
       "llamacpp": {
         "ownedElsewhere": "The model service is running in another Cindy instance. Download models or change context there, or stop its service first.",
         "primaryPick": "Primary pick · try this first",

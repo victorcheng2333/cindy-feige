@@ -243,7 +243,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
   const startAttempt = async (input: StartInput, skipDirect: boolean,
     attempt: ReturnType<typeof registerPendingRemoteStart>, recoverLostHistoryGrant = true,
     reissuedHistory = false): Promise<AgentSessionHandle> => {
-    if (input.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
+    if (input.agentKind === 'cursor' || input.agentKind === 'antigravity') throw new Error('Cursor supports local desktop tasks only');
     const agentKind: RemoteAgentKind = input.agentKind;
     const initialShareId = parseProviderShareAgentDeviceId(input.deviceId);
     const initialAccessEpoch = initialShareId && findReceivedShare(initialShareId)?.status === 'active'
@@ -328,7 +328,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       const allocationStartedAt = Date.now();
       const allocationStartedMonotonic = performance.now();
       requireCurrent();
-      const history = await authorizeSharedTaskHistory(input.deviceId, sessionId, input.agentKind, opts.model, attempt.signal);
+      const history = await authorizeSharedTaskHistory(input.deviceId, sessionId, agentKind, opts.model, attempt.signal);
       if (attempt.signal.aborted) void releaseFailedDirectAllocation(history.generation);
       requireCurrent();
       const authorization = reissuedHistory ? { ...history, reused: false } : history;
@@ -397,7 +397,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
           const allocationStartedMonotonic = performance.now();
           const availability = cloudAllocation;
           const allocation = availability
-            ? await allocateShareAvailability(shareId, sessionId, input.agentKind, opts.model)
+            ? await allocateShareAvailability(shareId, sessionId, agentKind, opts.model)
             : await remoteAgentInvoker(input.deviceId, deps.remoteInvoke)([{
               op: 'allocate', agentKind: input.agentKind, model: opts.model, sessionId,
             }]);
@@ -477,7 +477,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
     // Keep this attempt's grant even if another start replaces the task's route cache.
     const openingDirectRoute = selectedDirectRoute;
     const startupAuthorization = opts.resumeSessionId && sessionId && openingDirectRoute
-      ? captureSharedTaskAuthorizationCheck(input.deviceId, sessionId, input.agentKind, opts.model, target) : null;
+      ? captureSharedTaskAuthorizationCheck(input.deviceId, sessionId, agentKind, opts.model, target) : null;
     let reusedHistory = openingDirectRoute?.reused === true;
     let leaseDeadline = openingDirectRoute?.leaseDeadline ?? performance.now();
     let wallDeadline = openingDirectRoute?.wallDeadline ?? Date.now();
@@ -1025,7 +1025,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         }
         stop(); await close(options);
       };
-      if (permissionCurrent()) rememberSharedTaskAuthorization(input.deviceId, sessionId, input.agentKind, authorizedModel,
+      if (permissionCurrent()) rememberSharedTaskAuthorization(input.deviceId, sessionId, agentKind, authorizedModel,
         { ...directTasks.get(taskKey)!, direct: true });
       offPermissionChange = onProviderShareReceivedChanged(() => { if (!permissionCurrent()) expireLive?.(); });
       if (!permissionCurrent()) {

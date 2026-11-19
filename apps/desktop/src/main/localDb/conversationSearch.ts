@@ -459,7 +459,7 @@ function sessionSummaryFromRow(
     projectDir: row.projectDir,
     ...(taskProjectDir ? { taskProjectDir } : {}),
     workspaceKind: row.workspaceKind,
-    agentKind: normalizeDbAgentKind(row.agentKind),
+    agentKind: row.agentKind === 'antigravity' ? 'antigravity' : normalizeDbAgentKind(row.agentKind),
     status: row.status,
     source: row.source,
     orcaRole: row.orcaRole,

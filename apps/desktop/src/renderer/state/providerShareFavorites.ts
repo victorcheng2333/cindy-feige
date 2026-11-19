@@ -13,6 +13,7 @@ import {
 import type { ProviderShareReceivedSnapshot } from '../../shared/providerShare';
 import {
   accessHostModelFavorites,
+  isRemoteModelFavorite,
   type ModelFavoriteConfig,
   type ModelFavoriteItem,
 } from './modelFavorites';
@@ -53,7 +54,7 @@ export function reconcileProviderShareFavorites(next: ProviderShareReceivedSnaps
     const sources = new Set(next.received.map(providerShareFavoriteSource));
     for (const item of items) {
       const source = parseProviderShareFavoriteSource(item.providerId);
-      if (!source || !next.confirmedRegions.includes(source.region) || sources.has(item.providerId)) continue;
+      if (!isRemoteModelFavorite(item) || !source || !next.confirmedRegions.includes(source.region) || sources.has(item.providerId)) continue;
       accessHostModelFavorites(next.ownerStamp.dataOwnerId, { kind: 'remove', expected: item });
     }
   } catch {
@@ -115,7 +116,7 @@ export function useProviderShareFavorites(
     const item = home
       ? home.store.get(uid)
       : accessHostModelFavorites(owner.dataOwnerId).find((item) => item.uid === uid);
-    if (!item || item.providerId !== source) throw new Error('Shared favorite unavailable');
+    if (!item || !isRemoteModelFavorite(item) || item.providerId !== source) throw new Error('Shared favorite unavailable');
     return item;
   };
   const store: FavoriteStore = {
@@ -125,6 +126,7 @@ export function useProviderShareFavorites(
     },
     add: (config: ModelFavoriteConfig) => {
       assertCurrent();
+      if (!isRemoteModelFavorite(config)) throw new Error('This favorite requires the local harness');
       if (config.providerId !== share!.providerId) throw new Error('Shared provider changed');
       if (home) return home.store.add({ ...config, providerId: source! });
       accessHostModelFavorites(owner.dataOwnerId, { kind: 'add', item: { ...config, providerId: source! } });
@@ -133,6 +135,7 @@ export function useProviderShareFavorites(
       const before = expected(uid);
       if (home) return home.store.update(uid, patch);
       const item = { ...before, ...patch };
+      if (!isRemoteModelFavorite(item)) throw new Error('This favorite requires the local harness');
       accessHostModelFavorites(owner.dataOwnerId, {
         kind: 'update', expected: before,
         item: { ...item, effort: item.effort ?? undefined, fast: item.fast ? true : undefined },

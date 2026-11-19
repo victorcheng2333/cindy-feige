@@ -62,7 +62,7 @@ export function availableModelInterfaces(
   registry: ModelRegistry | undefined, presetId: string, modelId: string,
   baseUrl: string, agent: AgentKind, capabilities: readonly string[] = MODEL_INTERFACE_CAPABILITIES,
 ): ModelInterfaceSnapshot[] {
-  if (agent === 'cursor' || !registry || registry.schemaVersion < 6) return [];
+  if (agent === 'cursor' || agent === 'antigravity' || !registry || registry.schemaVersion < 6) return [];
   const matches = registry.models.flatMap(entry => entry.routes
     .filter(route => route.providerId === presetId && route.modelId === modelId)
     .map(route => ({ entry, route })));
@@ -98,7 +98,7 @@ export function availableModelInterfaces(
 }
 
 export function providerInterfaceDefaultRoute(presetId: string, agent: AgentKind, baseUrl: string, registry: ModelRegistry = bundledRegistry) {
-  if (agent === 'cursor') return undefined;
+  if (agent === 'cursor' || agent === 'antigravity') return undefined;
   const profiles = (registry.interfaceProfiles ?? []).filter(p => p.providerId === presetId &&
     !p.retired && !p.modelIds &&
     [...p.inputBaseUrls, p.baseUrl].some(input => clean(input) === clean(baseUrl)));

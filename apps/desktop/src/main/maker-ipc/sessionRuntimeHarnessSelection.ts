@@ -155,7 +155,7 @@ export async function setSessionRuntimeHarness(
         };
       }
       const base = staged ?? effective;
-      if (base.agentKind === 'cursor') return { ok: false, errorCode: 'INVALID_ARGS', message: 'Cursor does not yet support changing harness' };
+      if (base.agentKind === 'cursor' || base.agentKind === 'antigravity') return { ok: false, errorCode: 'INVALID_ARGS', message: 'This harness change is unavailable' };
       const profile = await deps.resolve(
         {
           ...(patch.agentDeviceId !== undefined || base.agentDeviceId !== undefined

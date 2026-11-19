@@ -3635,6 +3635,15 @@
       }
     },
     "providers": {
+      "agyProxy": {
+        "label": "網路代理",
+        "save": "存",
+        "hint": "惟用於此 Mac 之 agy。空之則用啟動環境之常設。本輪未畢者仍用舊代理。",
+        "invalid": "請輸入無帳號口令之 HTTP、HTTPS 或 SOCKS5 代理址。",
+        "saved": "代理已存。",
+        "readFailed": "未能讀代理之設。",
+        "saveFailed": "未能存代理之設。"
+      },
       "llamacpp": {
         "ownedElsewhere": "模型服務方行於他一 Cindy 執行個體中。請於彼處取下模型或改上下文，或先止該執行個體之服務。",
         "primaryPick": "首薦 · 先試此",

@@ -1,4 +1,5 @@
-import { supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
+import { readAntigravityConnection } from '../maker-host/antigravity-host.js';
+import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readContextRecoverySessionWithPorts, classifyCodexHistoryWithPorts, commitContextRecoveryWithPorts, replayContextRecoveryWithPorts, contextRecoveryRebuilt, contextRecoveryAbortSignal } from './contextRecoveryAssembly.js';
 import { needsSubscriptionAccountHandoff, hasRestoredPooledCodexQuota } from '../subscription-accounts/runtime.js';
@@ -3427,9 +3428,9 @@ export function stopPiIdleReleaseWatcher(): void {
   piIdleReleaseWatcher = null;
 }
 
-function requireAgentKind(value: unknown): AgentKind {
-  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor') return value;
-  throwIpcError('INVALID_PARAMS', 'agentKind required');
+function requireAgentKind(value: unknown, errorMessage = 'agentKind required'): AgentKind {
+  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity') return value;
+  throwIpcError('INVALID_PARAMS', errorMessage);
 }
 
 type IpcUserMessage =
@@ -6998,7 +6999,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 选择入口(模型选择器、新建入口、手机与远程控制端)只拿「可选」= 已注册 − 用户在这台电脑上关掉的。
   // 执行与恢复仍读 maker.listAvailableAgents(),关掉 Harness 不打断已有任务。
   ipcMain.handle(MAKER_INVOKE.LIST_AVAILABLE_AGENTS, () => {
-    return selectableHarnesses(maker.listAvailableAgents());
+    return selectableHarnesses(maker.listAvailableAgents()).filter(kind => kind !== 'antigravity' || !getDeviceLinkInvokeContext() || isSameAccountTaskController());
   });
 
   const harnessPreferencesView = () => {
@@ -7379,12 +7380,18 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     },
   );
 
-  ipcMain.handle(MAKER_INVOKE.GET_CAPABILITIES, (_e, agentKind: unknown) => {
+  ipcMain.handle(MAKER_INVOKE.GET_CAPABILITIES, async (event, agentKind: unknown) => {
+    if (agentKind === 'antigravity') {
+      assertAntigravityTaskCreationAllowed({});
+      if (!isSameAccountTaskController()) assertTrustedAppRendererEvent(event);
+      await readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true });
+    }
     return {
       ...maker.getCapabilities(requireAgentKind(agentKind)),
       // host 级 optional 能力；旧 desktop 缺省为 false。两个 agent 查询都带回，
       // 手机读取当前 agent 快照即可决定是否展示切换入口。
-      supportsSessionAgentSwitch: true,
+      supportsSessionAgentSwitch: agentKind !== 'antigravity',
+      supportsControlledAntigravityCreation: agentKind === 'antigravity' && isSameAccountTaskController(),
       supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
       // Mobile 据此对已知受压缩窗降级为 fail closed。
@@ -7459,9 +7466,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       selectDraftAgent?: unknown;
       taskProviderId?: unknown;
     };
-    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') {
-      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor');
+    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' && p.agent !== 'antigravity') {
+      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor|antigravity');
     }
+    if (p.agent === 'antigravity') assertAntigravityTaskCreationAllowed({});
     if (p.providerId !== undefined && typeof p.providerId !== 'string') {
       throwIpcError('INVALID_PARAMS', 'providerId must be string');
     }
@@ -7547,9 +7555,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (typeof p.sessionId !== 'string' || !p.sessionId) {
       throwIpcError('INVALID_PARAMS', 'sessionId required');
     }
-    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') {
-      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor');
+    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' && p.agent !== 'antigravity') {
+      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor|antigravity');
     }
+    if (p.agent === 'antigravity') assertAntigravityTaskCreationAllowed({});
     if (typeof p.providerId !== 'string' || !p.providerId) {
       throwIpcError('INVALID_PARAMS', 'providerId required');
     }
@@ -7587,7 +7596,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (
       typeof p.sessionId !== 'string' ||
       !p.sessionId ||
-      (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor') ||
+      (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' && p.agent !== 'antigravity') ||
       typeof p.providerId !== 'string' ||
       !p.providerId ||
       typeof p.model !== 'string' ||
@@ -9141,7 +9150,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
 
   const appliedTaskPrompts = new WeakMap<Awaited<ReturnType<typeof maker.createSession>>, string>();
   const readTaskPrompt = (sessionId: string, agentKind: AgentKind, agentDeviceId?: string | null) =>
-    agentKind === 'cursor'
+    agentKind === 'cursor' || agentKind === 'antigravity'
       ? ''
       : ghostTaskSystemPrompt(sessionId, agentKind === 'claude-code' ? 'cc' : agentKind, !(agentKind === 'pi' && agentDeviceId));
   const createSessionWithRuntimePlugins = (o: CreateOpts, signal?: AbortSignal) => {
@@ -10203,7 +10212,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     assertSessionCreationCurrent();
     await ensureRemoteHostReady(remoteHostIdToEnsure);
     assertSessionCreationCurrent();
-    const ensureAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | null =
+    const ensureAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | null =
+      session?.agentKind === 'antigravity' ||
       session?.agentKind === 'cursor' ||
       session?.agentKind === 'codex' ||
       session?.agentKind === 'claude-code' ||
@@ -10212,10 +10222,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         : createOpts && typeof createOpts === 'object'
           ? (() => {
               const ak = (createOpts as { agentKind?: unknown }).agentKind;
-              return ak === 'cursor' || ak === 'codex' || ak === 'claude-code' || ak === 'pi' ? ak : null;
+              return ak === 'antigravity' || ak === 'cursor' || ak === 'codex' || ak === 'claude-code' || ak === 'pi' ? ak : null;
             })()
           : null;
     if (!ensureAgentKind) return;
+    if (ensureAgentKind === 'antigravity') assertAntigravityTaskCreationAllowed({ remoteHostId: remoteHostIdToEnsure });
 
     // claude-code 远端走 cc-mgr.mjs daemon。首次 /context 也必须像 send 一样
     // 触发 cc-manager 安装/升级, 否则 query/getContextUsage 可能因旧 bundle 不存在而失败。
@@ -10228,7 +10239,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       return;
     }
 
-    if (ensureAgentKind === 'cursor') return;
+    if (ensureAgentKind === 'cursor' || ensureAgentKind === 'antigravity') return;
 
     // pi 远端:走通用 silent install(probe 远端 pi 二进制,缺/版本不符则安装)。
     await ensureRemoteAgentInstalledOrInstall(remoteHostIdToEnsure, ensureAgentKind);
@@ -10503,6 +10514,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     closeCancelledSession: async session => { await maker.closeSessionIfCurrent(session); },
     bootstrapSession: async (co) => {
       assertSessionCreationCurrent();
+      if (co.agentKind === 'antigravity') assertAntigravityTaskCreationAllowed(co);
       if (co.agentKind === 'cursor') assertCursorTaskCreationAllowed(co);
       await ensureRemoteReadyForSessionStart({ createOpts: co });
       assertSessionCreationCurrent();
@@ -10662,7 +10674,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         await getDbClient().drizzle.insert(sessions).values(row).run();
       },
       bootstrapSession: async (opened, assertCurrent) => {
-        const agentKind = opened.agentKind === 'cursor' || opened.agentKind === 'codex' || opened.agentKind === 'pi'
+        const agentKind = opened.agentKind === 'antigravity' || opened.agentKind === 'cursor' || opened.agentKind === 'codex' || opened.agentKind === 'pi'
           ? opened.agentKind
           : 'claude-code';
         await bootstrapSession(buildCreateOptsWithStderr({
@@ -11053,7 +11065,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         ...(additionalWorkingDirs.length > 0 ? { additionalWorkingDirs } : {}),
       };
       return {
-        sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi' | 'cursor',
+        sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
         prompt: builtPrompt.prompt,
         replyLanguage: builtPrompt.replyLanguage,
         inputSummary: buildReviewInputSummary({
@@ -13509,6 +13521,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         isSelfDeviceId: id => id === getSelfDeviceId(),
         resolveLocal: async input => {
           const execution = await resolveSessionExecution({ agentKind: input.agentKind, model: input.model, effort: input.effort, fastMode: input.fast });
+          if (execution.agentKind === 'antigravity') throw Object.assign(new Error('Antigravity is available for local desktop tasks.'), { code: 'INVALID_ARGS' });
           if (execution.agentKind === 'cursor') throw Object.assign(new Error('Cursor supports local desktop tasks only'), { code: 'INVALID_ARGS' });
           return { ...execution, agentKind: execution.agentKind };
         },
@@ -14427,7 +14440,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         execution ??= await resolveSessionExecution(selection, sourceSessionId);
         assertPlugin(pluginId);
-        if (!execution.providerId || execution.agentKind === 'cursor') return routeUnavailable();
+        if (!execution.providerId || execution.agentKind === 'cursor' || execution.agentKind === 'antigravity') return routeUnavailable();
         return { ...execution, agentKind: execution.agentKind === 'claude-code' ? 'cc' : execution.agentKind,
           providerId: execution.providerId, effort: execution.effort ?? '' };
       } catch (error) {
@@ -14646,7 +14659,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         // A queued input will execute the accepted next-send route. Keep its
         // receipt stable as a deferred model/Harness switch reaches that boundary.
         const selected = runtime?.pendingMutation?.profile ?? runtime?.effective;
-        if (selected?.agentKind === 'cursor') return null;
+        if (selected?.agentKind === 'cursor' || selected?.agentKind === 'antigravity') return null;
         let resolvedConfig: PluginTaskRoute = selected
           ? { agentKind: selected.agentKind === 'claude-code' ? 'cc' : selected.agentKind,
             ...(selected.agentDeviceId ? { agentDeviceId: selected.agentDeviceId } : {}),
@@ -18335,7 +18348,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         if (executionDeviceId) {
           if (!orcaRemoteWorkersForHost) throw new Error('[HOST_NOT_READY] Worker service is not ready');
-          if (agent === 'cursor') throwIpcError('INVALID_PARAMS', 'Cursor does not support remote workers');
+          if (agent === 'cursor' || agent === 'antigravity') throwIpcError('INVALID_PARAMS', 'The selected harness does not support remote workers');
           const result = await orcaRemoteWorkersForHost.readModels(executionDeviceId, {
             ...(agent ? { agent } : {}), agentDeviceId: requestedAgentDeviceId ?? null,
           });
@@ -18447,7 +18460,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const profiles = await readSessionRuntimeProfiles(sessionId);
       if (!profiles) throw new Error('Task runtime unavailable');
       const route = profiles.pendingMutation?.profile ?? profiles.effective;
-      if (route.agentKind === 'cursor') throw new Error('Cursor is not available for plugin tasks');
+      if (route.agentKind === 'cursor' || route.agentKind === 'antigravity') throw new Error('The selected harness is not available for plugin tasks');
       return { agentKind: route.agentKind === 'claude-code' ? 'cc' : route.agentKind,
         model: route.model, providerId: route.providerId ?? 'xd',
         ...(route.agentDeviceId ? { agentDeviceId: route.agentDeviceId } : {}),
@@ -21058,14 +21071,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (!msg.createOpts || typeof msg.createOpts !== 'object') {
       throwIpcError('INVALID_PARAMS', 'queued.createOpts required');
     }
-    if (
-      msg.createOpts.agentKind !== 'claude-code' &&
-      msg.createOpts.agentKind !== 'codex' &&
-      msg.createOpts.agentKind !== 'pi' &&
-      msg.createOpts.agentKind !== 'cursor'
-    ) {
-      throwIpcError('INVALID_PARAMS', 'queued.createOpts.agentKind invalid');
-    }
+    const queuedAgentKind = requireAgentKind(msg.createOpts.agentKind, 'queued.createOpts.agentKind invalid');
+    if (queuedAgentKind === 'antigravity') assertAntigravityTaskCreationAllowed(msg.createOpts);
     const normalized: AgentInputQueuedMessage = { ...msg };
     if (normalized.origin?.kind === 'orca') {
       // 系统兜底合批标记只由 main 的 auto-bridge 入口盖章；wire 自报一律剥掉。
@@ -22706,7 +22713,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ? atomicSelection.effort
       : ((runtimeStatus.effort ?? null) as SessionRuntimeProfile['effort']);
     const targetFastMode = atomicSelection?.fastMode ?? runtimeStatus.fastMode;
-    const agentKind = dbToMakerAgentKind(runtimeStatus.agentKind as 'cc' | 'codex' | 'pi' | 'cursor');
+    const agentKind = dbToMakerAgentKind(runtimeStatus.agentKind as 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity');
     if (internalOptions.source === 'user' && !internalOptions.applyingUserSelectionOnSend) {
       assertRuntimeOwnerCurrent();
       assertSharedTaskCurrent.admit();

@@ -1,7 +1,7 @@
 /**
  * Tier: unit.
  * Production entry: `ClaudeCodeAgent.startSession`, `CodexAgent.startSession`,
- * `PiAgent.startSession`, and `CursorAgent.startSession` + `handle.send`.
+ * `PiAgent.startSession`, `CursorAgent.startSession` and `AntigravityAgent.startSession` + `handle.send`.
  *
  * Cross-harness contract binding `AGENT_PERSONALIZATION_SUPPORT` (SSOT) to each
  * adapter's real session startup / prompt assembly / memory injection path.
@@ -12,6 +12,8 @@
  *  - `makerMemoryEnabled: false` still injects memory rules/index
  *  - a `first-turn-context` harness (Cursor) re-injects `<cindy_context>` on resume
  */
+import { EventEmitter } from 'node:events';
+import { PassThrough, Writable } from 'node:stream';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,9 +21,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   claudeQuery: vi.fn(),
+  agyInput: '',
   piArgs: [] as string[],
   piSpawnCtx: undefined as Record<string, unknown> | undefined,
 }));
+
+vi.mock('node:child_process', async (load) => {
+  const original = await load<typeof import('node:child_process')>();
+  return {
+    ...original,
+    spawn: (...args: Parameters<typeof original.spawn>) => {
+      if (args[0] !== '/mock/agy') return original.spawn(...args);
+      const child = new EventEmitter();
+      return Object.assign(child, {
+        stdin: new Writable({
+          write(chunk, _encoding, callback) {
+            const frame = JSON.parse(String(chunk));
+            mocks.agyInput = frame.message.content;
+            callback();
+            queueMicrotask(() => child.emit('close'));
+          },
+        }),
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      });
+    },
+  };
+});
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   forkSession: vi.fn(),
@@ -73,6 +99,7 @@ vi.mock('../pi/rpc-client.js', () => ({
   },
 }));
 
+import { AntigravityAgent } from '../antigravity/index.js';
 import { ClaudeCodeAgent } from '../claude-code/index.js';
 import { CodexAgent } from '../codex/index.js';
 import { Method } from '../codex/app-server/protocol.js';
@@ -368,6 +395,36 @@ describe('Cross-harness personalization & memory contract', () => {
       };
     }
 
+    if (kind === 'antigravity') {
+      const agent = new AntigravityAgent({
+        auth: {
+          getState: async () => ({ authenticated: true }),
+          triggerLogin: async () => ({ authenticated: true }),
+          logout: async () => {},
+          getAuthEnv: async () => ({}),
+        },
+        runtimeConfig: { systemPrompt: 'HOST_SYSTEM_PROMPT' },
+        binaryPath: '/mock/agy',
+        logger: noopLogger,
+        makerMemory,
+        getStateDir: async () => tempRoot,
+        getModels: () => [],
+        getEnv: () => ({}),
+      });
+      const handle = await agent.startSession({
+        model: 'agy-model',
+        workingDir,
+        permissionMode: 'default',
+        userPrompt: scenario.userPrompt,
+        makerMemoryEnabled: scenario.makerMemoryEnabled,
+        reviewMode: scenario.reviewMode,
+      });
+      handlesToClose.push(handle);
+      await handle.send({ type: 'user', content: 'Hello' });
+      expect(mocks.agyInput).toBe('Hello');
+      return { deliveredPromptText: mocks.agyInput };
+    }
+
     // cursor
     const calls: Array<{ method: string; params: unknown }> = [];
     const rpc: CursorRpc = {
@@ -460,16 +517,21 @@ describe('Cross-harness personalization & memory contract', () => {
       }
 
       // 2. reviewMode=true must suppress both userPrompt and makerMemory
-      const review = await captureDelivery(kind, {
+      const review = captureDelivery(kind, {
         userPrompt: USER_PROMPT_CANARY,
         makerMemoryEnabled: true,
         reviewMode: true,
       });
-      expect(review.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
-      expect(review.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
-      expect(review.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
-      if (review.memoryMcpEnabled !== undefined) {
-        expect(review.memoryMcpEnabled).toBe(false);
+      if (kind === 'antigravity') {
+        await expect(review).rejects.toThrow('ordinary local desktop task');
+      } else {
+        const delivery = await review;
+        expect(delivery.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
+        expect(delivery.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
+        expect(delivery.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
+        if (delivery.memoryMcpEnabled !== undefined) {
+          expect(delivery.memoryMcpEnabled).toBe(false);
+        }
       }
 
       // 3. makerMemoryEnabled=false must omit memory rules/index while keeping userPrompt

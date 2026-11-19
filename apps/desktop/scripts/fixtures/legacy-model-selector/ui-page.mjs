@@ -9,6 +9,8 @@ export default {
   cases: {
     'compact-draft-height': { about: 'Codex and Cursor keep the same draft panel height' },
     'compact-draft-height-short': { about: 'Stable draft height fits a short viewport', viewport: { width: 390, height: 320 } },
+    'compact-draft-antigravity': { about: 'Select an Antigravity model from the local CLI account' },
+    'compact-draft-antigravity-narrow': { about: 'Select Antigravity at 390px', viewport: { width: 390, height: 640 } },
     'compact-draft': { about: 'Draft restores the remembered model when changing Harness' },
     'compact-draft-narrow': { about: 'Draft engine tabs at narrow width', viewport: { width: 390, height: 640 } },
     'cursor-local': { about: 'Local Cursor ignores unavailable remote model catalogs' },
@@ -64,6 +66,31 @@ export default {
       }
       assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `engine panel heights differ: ${heights.join(', ')}`);
       await page.keyboard.press('Escape');
+      return;
+    }
+    if (ui.case.startsWith('compact-draft-antigravity')) {
+      const tabs = page.getByRole('tablist', { name: 'Vendor switcher' });
+      assert.equal(await tabs.getByRole('tab').count(), 5);
+      const box = await tabs.boundingBox();
+      const viewport = await page.evaluate(() => innerWidth);
+      assert.ok(box && box.x >= 0 && box.x + box.width <= viewport);
+      if (viewport >= 480) assert.ok(box.width >= 370, `Five tabs only have ${box.width}px`);
+      await page.getByRole('tab', { name: 'agy', exact: true }).click();
+      const model = page.getByRole('option', { name: /Antigravity fixture/ });
+      await model.waitFor();
+      if (viewport >= 480) {
+        await model.press('ArrowLeft');
+        const options = page.getByRole('group', { name: /Antigravity fixture/ });
+        await options.getByRole('option', { name: '中', exact: true }).waitFor();
+        await ui.capture('antigravity-effort');
+      }
+      await ui.capture('antigravity-model');
+      await model.click();
+      await page.waitForFunction(() => window.__modelPickerSelection?.engine === 'antigravity'
+        && window.__modelPickerSelection?.providerId === 'antigravity');
+      await page.getByRole('listbox').waitFor({ state: 'hidden' });
+      assert.match(await page.locator('main button[aria-haspopup]').innerText(), /\bagy\b/);
+      assert.doesNotMatch(await page.locator('main button[aria-haspopup]').innerText(), /Codex/);
       return;
     }
     if (ui.case.startsWith('compact-draft')) {

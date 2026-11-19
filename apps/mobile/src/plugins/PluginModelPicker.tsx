@@ -140,7 +140,7 @@ export function PluginModelPicker({
           return true;
         },
         onSelect: async (value, source) => {
-          if (value.agent === "cursor") return false;
+          if (value.agent === "cursor" || value.agent === "antigravity") return false;
           return answer({
             ...(source?.deviceId ? { agentDeviceId: source.deviceId } : {}),
             agentKind: value.agent === "claude-code" ? "cc" : value.agent,

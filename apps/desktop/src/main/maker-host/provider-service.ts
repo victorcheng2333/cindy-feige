@@ -109,6 +109,7 @@ export interface ProviderServiceDeps {
    * 2026-07)的连接态判定:连接 = 该供应商的 key 已存(生产 = providerSecretStore.has)。
    * 缺省 = 一律未连接。
    */
+  antigravityConnected?: (options: ConnectionReadOptions) => boolean | Promise<boolean>;
   cursorConnected?: (options: ConnectionReadOptions) => boolean | Promise<boolean>;
   builtinApiKeyConnected?: (providerId: string) => boolean;
   /** Saved custom configuration is not evidence that its credential still exists. */
@@ -163,16 +164,17 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
       waitForDiscovery: opts?.waitForDiscovery === true,
       ...(opts?.getCatalog || opts?.catalog ? { includeBoundAccounts: true } : {}),
     };
-    const [xd, anthropic, openai, xai, cursor] = await Promise.all([
+    const [xd, anthropic, openai, xai, cursor, antigravity] = await Promise.all([
       Promise.resolve(deps.connection.xd(readOpts)),
       Promise.resolve(deps.connection.anthropic(readOpts)),
       Promise.resolve(deps.connection.openai(readOpts)),
       Promise.resolve(deps.connection.xai(readOpts)),
       Promise.resolve(deps.cursorConnected?.(readOpts) ?? false),
+      Promise.resolve(deps.antigravityConnected?.(readOpts) ?? false),
     ]);
     const sourceCatalog = opts?.getCatalog?.() ?? opts?.catalog ?? deps.getCatalog();
     const catalog = deps.projectCatalog?.(sourceCatalog, !!(opts?.getCatalog || opts?.catalog)) ?? sourceCatalog;
-    const connected: ConnectionState = { xd, anthropic, openai, xai, cursor };
+    const connected: ConnectionState = { xd, anthropic, openai, xai, cursor, antigravity };
     for (const p of catalog.providers) {
       // 无鉴权供应商无需任何登录或密钥：只要目录声明有效，就可立即参与模型选择。
       // 该规则与 source 无关，覆盖远端目录下发的 built-in/self-hosted 条目。

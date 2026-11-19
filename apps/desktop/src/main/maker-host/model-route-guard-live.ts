@@ -292,6 +292,7 @@ export async function resolveRouteCopyCapabilities(
  * 停用仍在 prompt 发出前拦住。
  */
 const DEFAULT_ONESHOT_MODEL: Partial<Record<AgentKind, string>> = {
+  antigravity: '',
   cursor: '', // Cursor does not implement one-shot; never borrow a gateway model.
   'claude-code': 'claude-haiku-4-5',
   // pi oneShot 未实现(BaseAgent 默认抛 NotSupported);占位与 claude 同款网关小模型。

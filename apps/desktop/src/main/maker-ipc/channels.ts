@@ -381,6 +381,8 @@ export const MAKER_INVOKE = {
   AUTH_TRIGGER_LOGIN: 'maker:auth:trigger-login',
   AUTH_CANCEL_LOGIN: 'maker:auth:cancel-login',
   AUTH_LOGOUT: 'maker:auth:logout',
+  AGY_PROXY_GET: 'maker:agy:proxy-get',
+  AGY_PROXY_SET: 'maker:agy:proxy-set',
   CURSOR_SET_API_KEY: 'maker:cursor:set-api-key',
   // 网关 API key presence-only 探测(只回 { present: boolean },不回密钥材料)——
   // 供 device-link 控制端(手机 / 远程桌面)判断折扣版是否置灰;判定真相在被控端

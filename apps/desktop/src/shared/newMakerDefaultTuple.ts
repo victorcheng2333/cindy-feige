@@ -12,10 +12,10 @@ import {
   type ProviderView,
 } from '@cindy/model-providers';
 
-type MakerVendor = 'cc' | 'codex' | 'pi' | 'cursor' | 'orca';
+type MakerVendor = 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'orca';
 
 export interface NewMakerDefaultTuple {
-  vendor: Extract<MakerVendor, 'cc' | 'codex' | 'pi' | 'cursor'>;
+  vendor: Extract<MakerVendor, 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>;
   providerId: string;
   model: string;
   effort: Effort | null;

@@ -19,7 +19,7 @@ export function createRemoteSessionExecutionResolver(deps: {
     const deviceId = input.agentDeviceId && !deps.isSelfDeviceId(input.agentDeviceId) ? input.agentDeviceId : null;
     if (!deviceId) return deps.resolveLocal(input);
     const defaults = deps.readDefault();
-    const agentKind = input.agentKind ?? (defaults?.agentKind === 'cursor' ? undefined : defaults?.agentKind);
+    const agentKind = input.agentKind ?? (defaults?.agentKind === 'cursor' || defaults?.agentKind === 'antigravity' ? undefined : defaults?.agentKind);
     if (!agentKind) throw new Error('Select an agent for the remote provider');
     let routing: Awaited<ReturnType<typeof deps.readRemoteRouting>>;
     try { routing = await deps.readRemoteRouting(deviceId, agentKind); }
@@ -34,6 +34,7 @@ export function createRemoteSessionExecutionResolver(deps: {
       hasCindyAiApiKey: true, locationChanged: true,
     });
     // Keep the destination's resolved provider explicit when execution moves computers.
+    if (selected.agentKind === 'antigravity') throw new Error('Antigravity is available for local desktop tasks.');
     if (selected.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
     return { ...selected, agentKind: selected.agentKind,
       providerId: selected.providerId ?? routing.resolveDefaultProviderIdForModel(agentKind, selected.model),

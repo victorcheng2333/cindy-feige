@@ -26,7 +26,7 @@ export function formatTokenCount(n: number): string {
  */
 export function getModelContextWindow(
   model: string,
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor',
+  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
   deviceId?: string,
 ): number | undefined {
   const found = getModelsForVendor(vendorKey, deviceId).find((m) => m.id === model);
@@ -53,7 +53,7 @@ export function ContextCapacityRing({
   providerId?: string | null;
   contextTokens: number;
   model: string;
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor';
+  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /** SDK-reported context window; 0 = not yet known → use hardcoded fallback. */
   sdkContextWindow: number;
   verifiedContextWindow?: number | null;
@@ -236,7 +236,7 @@ export function ContextCapacityRing({
     </div>
   );
 
-  if (sessionId) {
+  if (sessionId && vendorKey !== 'antigravity') {
     return (
       <ContextWindowBudgetChip
         sessionId={sessionId}

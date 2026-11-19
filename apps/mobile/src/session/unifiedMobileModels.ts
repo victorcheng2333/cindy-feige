@@ -1,6 +1,6 @@
 import { unifiedModelEntries, withEffectiveModelContextWindows, type UnifiedModelEntry } from '@cindy/model-providers';
 import { isModelVisible } from '@cindy/model-providers/sections';
-import type { AgentKind } from '@cindy/model-providers/types';
+import type { MobileSessionAgentKind as AgentKind } from './sessionAgentSwitch';
 import type { ProviderView } from '@cindy/model-providers/registry';
 import type { MobileModelMemoryAccessors } from './draftModelMemory';
 

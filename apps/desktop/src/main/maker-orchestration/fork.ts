@@ -111,7 +111,7 @@ function normalizePositiveInt(value: unknown): number {
 
 const messageRowid = sql<number>`rowid`;
 
-type DbAgentKind = 'cc' | 'codex' | 'pi' | 'cursor';
+type DbAgentKind = 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 interface MessagePosition {
   createdAt: number;
@@ -964,6 +964,7 @@ export async function forkSessionAtMessage(
   const isCodex = forkSource.agentKind === 'codex';
   // Cursor has no native transcript fork. Copy the visible history and hand the
   // new conversation that context on its first message.
+  if (forkSource.agentKind === 'antigravity') throw new Error('Antigravity does not support fork.');
   const isCursor = forkSource.agentKind === 'cursor';
   // pi 复用 codex 的粗粒度 tail-turn fork:countCodexTailTurns 只按 sdkSessionId
   // 数边界后的 user turn(引擎无关),pi 的 forkSdkSession 按 tailTurnsToDrop rewind
@@ -1043,7 +1044,7 @@ export async function forkSessionAtMessage(
       remoteHostId: source.remoteHostId ?? null,
     };
     const forkRemote = async () => {
-      if (agentKind === 'cursor') throw new Error('Cursor does not support fork');
+      if (agentKind === 'cursor' || agentKind === 'antigravity') throw new Error('Cursor does not support fork');
       const ownerRoute = forkSource.agentDeviceId!;
       const location = await authorizeSharedTaskHistory(ownerRoute, sourceSessionId, agentKind, forkSource.model);
       let childGeneration: string | undefined;

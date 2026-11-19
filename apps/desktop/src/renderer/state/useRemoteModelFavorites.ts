@@ -1,3 +1,4 @@
+import { isRemoteModelFavorite } from './modelFavorites';
 import { useEffect, useRef, useState } from 'react';
 import {
   MODEL_FAVORITES_GET,
@@ -130,15 +131,19 @@ export function useRemoteModelFavorites(deviceId?: string) {
   };
   const expected = (uid: string) => {
     const item = items.find((i) => i.uid === uid);
-    if (!item) throw new Error('Favorite unavailable');
+    if (!item || !isRemoteModelFavorite(item)) throw new Error('Favorite unavailable');
     return item;
   };
   const store: FavoriteStore = {
     get: (uid) => items.find((item) => item.uid === uid),
-    add: (item) => write({ kind: 'add', item }),
+    add: (item) => {
+      if (!isRemoteModelFavorite(item)) throw new Error('This favorite requires the local harness');
+      return write({ kind: 'add', item });
+    },
     update: (uid, patch) => {
       const before = expected(uid);
       const item = { ...before, ...patch };
+      if (!isRemoteModelFavorite(item)) throw new Error('This favorite requires the local harness');
       return write({
         kind: 'update',
         expected: before,

@@ -66,7 +66,7 @@ export interface ReadCreateSessionOptsDeps {
 }
 
 function readAgentKind(value: unknown): AgentKind {
-  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor') return value;
+  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity') return value;
   throwIpcError('INVALID_PARAMS', 'agentKind required');
 }
 

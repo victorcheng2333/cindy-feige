@@ -2,9 +2,17 @@ import { getDeviceLinkInvokeContext } from '../../device-link/invoke-context.js'
 import { throwIpcError } from '../../utils/ipcValidate.js';
 
 /** Identity is supplied by host dispatch, never by the create payload or platform. */
-export function supportsControlledCursorCreation(): boolean {
+export function isSameAccountTaskController(): boolean {
   const context = getDeviceLinkInvokeContext();
   return context?.sameAccountController === true && !context.sharedTask;
+}
+
+export const supportsControlledCursorCreation = isSameAccountTaskController;
+
+export function assertAntigravityTaskCreationAllowed(body: { remoteHostId?: unknown; agentDeviceId?: unknown; orcaRole?: unknown }): void {
+  if (body.remoteHostId || body.agentDeviceId || body.orcaRole || (getDeviceLinkInvokeContext() && !isSameAccountTaskController())) {
+    throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity is available for local desktop tasks.');
+  }
 }
 
 export function assertCursorTaskCreationAllowed(body: { remoteHostId?: unknown; agentDeviceId?: unknown; orcaRole?: unknown }): void {

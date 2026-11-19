@@ -9,7 +9,7 @@ import { throwIpcError } from '../utils/ipcValidate.js';
 
 /** The agent-switch row patch (applyAgentSwitchToSessionRow). */
 export type AgentSwitchRowPatch = {
-    agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
+    agentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     model: string;
     providerId: string | null | undefined;
     sdkSessionId?: string | null;
@@ -169,7 +169,7 @@ export interface ParkedEngineSession {
  */
 export async function findParkedEngineSession(
   sessionId: string,
-  targetDbKind: 'cc' | 'codex' | 'pi' | 'cursor',
+  targetDbKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
   fromAgentDeviceId?: string | null,
 ): Promise<ParkedEngineSession | null> {
   const db = getDbClient().drizzle;

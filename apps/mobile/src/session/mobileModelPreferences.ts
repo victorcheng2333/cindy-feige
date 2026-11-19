@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { useRemoteMobileFavorites } from './useRemoteMobileFavorites';
 import type { MobileModelPreferences, MobileModelFavorite } from './unifiedMobileModels';
-import type { AgentKind } from '@cindy/model-providers/types';
 const agents = new Set(['claude-code', 'codex', 'pi', 'cursor']);
 export function sanitizeModelPreferences(value: unknown): MobileModelPreferences {
   const result: MobileModelPreferences = { favorites: [], engines: {} };
@@ -13,7 +12,7 @@ export function sanitizeModelPreferences(value: unknown): MobileModelPreferences
     && typeof item.modelId === 'string' && !!item.modelId && agents.has(item.agent)
     && typeof item.effort === 'string' && (typeof item.fast === 'boolean' || item.fast === 'ultrafast'));
   if (raw.engines && typeof raw.engines === 'object') for (const [key, agent] of Object.entries(raw.engines)) {
-    if (agents.has(agent)) result.engines[key] = agent as AgentKind;
+    if (agents.has(agent)) result.engines[key] = agent;
   }
   return result;
 }

@@ -309,7 +309,7 @@ export function ModelGroupsSection() {
                         ariaContext={t('modelGroups.settings.addSource')}
                         fallbackOption={{ active: true, label: t('modelGroups.settings.chooseModel'), onSelect: () => undefined }}
                         onUnifiedSelect={({ engine, providerId, modelId, agentDevice }) => {
-                          if (engine === 'cursor') return false;
+                          if (engine === 'cursor' || engine === 'antigravity') return false;
                           const added: ModelGroupCandidate = {
                             agentKind: engine, providerId, model: modelId,
                             ...(agentDevice ? { agentDeviceId: agentDevice.deviceId } : {}),

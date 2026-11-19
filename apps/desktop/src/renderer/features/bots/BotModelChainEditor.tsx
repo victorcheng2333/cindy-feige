@@ -132,7 +132,7 @@ export function BotModelChainEditor({
         configurationEnabled
         unifiedAgents={unifiedAgents}
         onUnifiedSelect={(selection) => {
-          if (selection.engine === 'cursor' || !visibleVendors.includes(selection.engine)) return;
+          if (selection.engine === 'cursor' || selection.engine === 'antigravity' || !visibleVendors.includes(selection.engine)) return;
           replace(index, {
             harness: harnessFor(selection.engine),
             ...(route.agentDeviceId || selection.agentDevice ? { agentDeviceId: selection.agentDevice?.deviceId ?? null } : {}),

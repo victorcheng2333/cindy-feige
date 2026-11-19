@@ -40,7 +40,7 @@ import { isProviderShareAgentDeviceId } from '../../shared/providerShare.js';
 import { createSharedTaskPendingSelectionGuard, createSharedTaskSettingGuard } from './sharedTaskSetting.js';
 
 import { MAKER_INVOKE } from './channels.js';
-import { assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
+import { assertAntigravityTaskCreationAllowed, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import type { IpcHandlerRegistry } from './ipcHandlerRegistry.js';
 import {
   buildHandoff,
@@ -120,6 +120,7 @@ export function toMakerAgentKind(dbKind: string): AgentKind {
 
 /** 交接 framing 与边界卡展示用的引擎名。 */
 export function agentEngineLabel(dbKind: DbAgentKind): string {
+  if (dbKind === 'antigravity') return 'agy';
   if (dbKind === 'cursor') return 'Cursor';
   if (dbKind === 'codex') return 'Codex';
   if (dbKind === 'pi') return 'Pi';
@@ -213,7 +214,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
   resolveProviderGroupTarget?(
     sessionId: string,
     target: {
-      agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+      agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
       model: string;
       providerId: string | null;
       /** 用户选的位置(null = 任务所在电脑)。 */
@@ -251,7 +252,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
    * (测试最小 harness)。
    */
   assertModelRouteUsable?(
-    agent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+    agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
     model: string,
     providerId: string | null,
     /** 被切换的任务；Agent 在另一台电脑运行的任务按那台的目录裁决(本机不校验)。 */
@@ -265,7 +266,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
    */
   assertAgentDeviceRouteUsable?(
     deviceId: string,
-    agent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+    agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
     model: string,
     providerId: string | null,
   ): Promise<number | null | void>;
@@ -281,7 +282,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
   }): Promise<number | null>;
   listCompanionSessionIds?(sessionId: string): Promise<{ sessionIds: string[]; chatsTruncated: boolean } | undefined>;
   relocateNativeHistory?(input: {
-    sessionId: string; kind: 'claude-code' | 'codex' | 'pi' | 'cursor'; nativeId: string; workingDir: string;
+    sessionId: string; kind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'; nativeId: string; workingDir: string;
     fromDevice: string | null; toDevice: string | null; assertCurrent(): void;
   }): Promise<string | null>;
   closeSession(sessionId: string): Promise<void>;
@@ -795,8 +796,8 @@ export async function performSessionAgentSwitch(
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throwIpcError('INVALID_PARAMS', 'sessionId required');
   }
-  if (targetAgentKind !== 'claude-code' && targetAgentKind !== 'codex' && targetAgentKind !== 'pi' && targetAgentKind !== 'cursor') {
-    throwIpcError('INVALID_PARAMS', 'targetAgentKind must be claude-code | codex | pi | cursor');
+  if (targetAgentKind !== 'claude-code' && targetAgentKind !== 'codex' && targetAgentKind !== 'pi' && targetAgentKind !== 'cursor' && targetAgentKind !== 'antigravity') {
+    throwIpcError('INVALID_PARAMS', 'targetAgentKind must be claude-code | codex | pi | cursor | antigravity');
   }
   if (typeof model !== 'string' || model.length === 0) {
     throwIpcError('INVALID_PARAMS', 'model required');
@@ -812,6 +813,7 @@ export async function performSessionAgentSwitch(
   ) {
     throwIpcError('INVALID_PARAMS', 'agentDeviceId must be a device id or null');
   }
+  if (targetAgentKind === 'antigravity') assertAntigravityTaskCreationAllowed({ agentDeviceId: rawAgentDeviceId });
   let requestedAgentDeviceId = rawAgentDeviceId as string | null | undefined;
   // Cursor always runs on the task computer. A borrowed Claude/Codex/Pi source must
   // not become Cursor's destination — same as starting an unvisited harness locally.
@@ -841,6 +843,18 @@ export async function performSessionAgentSwitch(
   throwIfAgentSwitchAborted(signal);
   if (!row || row.status === 'deleted') {
     throwIpcError('NOT_FOUND', `Session ${sessionId} not found`);
+  }
+  if (row.agentKind === 'antigravity' || targetAgentKind === 'antigravity') {
+    assertAntigravityTaskCreationAllowed(row);
+    if (params.forceRelocation || params.providerGroupRelocation) {
+      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks do not support relocation');
+    }
+    if (row.agentKind !== 'antigravity' || targetAgentKind !== 'antigravity') {
+      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks only support model changes within agy');
+    }
+    if (normalizedProviderId && normalizedProviderId !== 'antigravity') {
+      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity requires its own model source');
+    }
   }
   // Local Cursor uses the shared bounded handoff and parked-thread resume flow.
   // Moving an already-Cursor runtime between computers is still unsupported.

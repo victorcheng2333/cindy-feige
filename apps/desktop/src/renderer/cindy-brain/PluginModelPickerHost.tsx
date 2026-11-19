@@ -189,7 +189,7 @@ export function PluginModelPickerPopover({
           }}
           onDismiss={close}
           onUnifiedSelect={async ({ providerId, modelId, engine, effort, fast, agentDevice }) => {
-            if (engine === 'cursor') { setError(true); return false; }
+            if (engine === 'cursor' || engine === 'antigravity') { setError(true); return false; }
             const next = {
               ...(agentDevice?.deviceId ? { agentDeviceId: agentDevice.deviceId } : {}),
               providerId,
@@ -284,7 +284,7 @@ export function PluginModelPickerDialog({
               setRoute((r) => (r ? { ...r, fastMode } : r));
             }}
             onUnifiedSelect={({ providerId, modelId, engine, effort, fast, agentDevice }) => {
-              if (engine === 'cursor') { setError(true); return false; }
+              if (engine === 'cursor' || engine === 'antigravity') { setError(true); return false; }
               setRoute({
                 ...(agentDevice?.deviceId ? { agentDeviceId: agentDevice.deviceId } : {}),
                 providerId,

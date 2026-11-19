@@ -134,6 +134,7 @@ import {
 } from '../../../shared/localModelRuntime';
 import { OAuthBrowserLink, OAuthDeviceCodeCard } from './OAuthDeviceCodeCard';
 import { ProviderImportDialog, ProviderImportBatchDialog, ProviderImportFileButton } from './ProviderImportDialog';
+import { AntigravityProxySettings } from './AntigravityProxySettings';
 import { SettingsTextInput } from './SettingsTextInput';
 import { buildUnionRows, UnifiedModelList } from './UnifiedModelList';
 import { AnthropicMark } from '@/components/icons/AnthropicMark';
@@ -2982,7 +2983,7 @@ export function ProvidersSection() {
         // 即使未做 OAuth 登录也需占行以便配置 / 管理图像 key。
         const openaiHasImageCap = p.id === 'openai' && (p.imageModels?.length ?? 0) > 0;
         if (
-          p.id === 'xd' || p.id === 'cursor' ||
+          p.id === 'xd' || p.id === 'cursor' || p.id === 'antigravity' ||
           p.connected ||
           // A provider created for subscription accounts stays listed while signed out, so its
           // accounts can be signed in again or the provider deleted (2026-11-13).
@@ -3488,6 +3489,12 @@ export function ProvidersSection() {
   const renderDetailHeader = (p: ProviderView, children: ReactNode): ReactNode => {
     if (isOrganizationManagedProvider(p)) return <ManagedProviderHeader key={p.id} provider={p} children={children} />;
     if (p.id === 'cursor') return <CursorHeader provider={p} onChanged={refetch}>{children}</CursorHeader>;
+    if (p.id === 'antigravity') return (
+      <DetailHeader icon={providerIcon(p, 18)} title={p.name} subtitle=""
+        provider={p} detail={<AntigravityProxySettings key={`${dataOwnerId}:${ownerGeneration}`} ownerId={dataOwnerId} generation={ownerGeneration} onChanged={refetch} />}>
+        {children}
+      </DetailHeader>
+    );
     if (p.id === 'xd')
       return <XdGatewayHeader children={children} provider={p} onChanged={refetch} />;
     if (p.id === 'anthropic' || p.id === 'openai') {
@@ -3888,7 +3895,7 @@ export function ProvidersSection() {
                   {/* 允许被远程调用 + 「远程与分享」入口(含供应商组)：供应商已连接且能跑 Agent 时出现。
                       本机未允许远程控制时整行仍显示，但开关不可用(provider-sharing.md §3)；入口始终可用，
                       只给本机用时也可以建组(provider-groups.md §10)。 */}
-                  {effectiveSelected.id !== 'cursor' && remoteControlEnabled !== null &&
+                  {effectiveSelected.id !== 'cursor' && effectiveSelected.id !== 'antigravity' && remoteControlEnabled !== null &&
                     ((!effectiveSelected.suspended &&
                     effectiveSelected.connected &&
                     effectiveSelected.agents.length > 0 &&

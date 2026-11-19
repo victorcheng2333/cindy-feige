@@ -21,7 +21,7 @@ describe('harnessPersonalization SSOT', () => {
     );
     expect(getUserPromptSupportedHarnesses()).toEqual(['claude-code', 'codex', 'pi', 'cursor']);
     expect(getMakerMemorySupportedHarnesses()).toEqual(['claude-code', 'codex', 'pi', 'cursor']);
-    expect(getMakerMemoryUnsupportedHarnesses()).toEqual([]);
+    expect(getMakerMemoryUnsupportedHarnesses()).toEqual(['antigravity']);
     expect(getMemorySettingsRowHarnesses()).toEqual(['claude-code', 'codex', 'pi']);
   });
 

@@ -16,7 +16,7 @@ import {
 } from "@cindy/device-link";
 import { useTranslation } from "react-i18next";
 import type { MobileProviderMarkProps } from "./MobileProviderMark";
-import type { AgentKind } from "@cindy/model-providers/types";
+import type { MobileSessionAgentKind as AgentKind } from "./sessionAgentSwitch";
 import { listedSourceFolds, resolveStoredModelEntry, sameRunLocationProvider, type ProviderView, type UnifiedModelEntry } from "@cindy/model-providers";
 import type { MobileAgentCapabilities } from "./agentCapabilities";
 import type { ModelPickerSheetProps } from "./ModelPickerSheet";
@@ -1397,7 +1397,7 @@ export function UnifiedModelPickerSheet(
         row
           ? {
               row,
-              agents: row.entry.candidates.filter(agent => p.unified.agents.includes(agent) &&
+              agents: row.entry.candidates.filter((agent): agent is AgentKind => p.unified.agents.includes(agent) &&
                 (agent !== "cursor" || !row.remoteDevice),
               ),
               fastCapable:

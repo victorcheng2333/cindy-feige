@@ -103,6 +103,7 @@ function pickCopy(
   if (readiness === 'binary-missing' && vendor === 'cc') return copy['cc-binary-missing'];
   if (readiness === 'binary-missing' && vendor === 'codex') return copy['codex-binary-missing'];
   if (readiness === 'binary-missing' && vendor === 'pi') return copy['pi-binary-missing'];
+  if (readiness === 'binary-missing' && vendor === 'antigravity') return copy['no-source'];
   if (readiness !== 'unauthenticated') return null;
   // 无可用来源:cc / codex 走同一条「连接来源」文案(send 门禁,与 agent 类型无关)。
   return copy['no-source'];
@@ -219,6 +220,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
   const codex = useVendorReadiness('codex');
   const pi = useVendorReadiness('pi');
   const cursor = useVendorReadiness('cursor');
+  const antigravity = useVendorReadiness('antigravity');
 
   const checkAndConfirm = useCallback(
     async (
@@ -252,6 +254,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       // provider:list 只有结构化 unsupported 才能回退 agent:status。真实网络 / 协议失败
       // 必须 fail closed，否则模型选择器已经显示读取失败，发送门禁却仍会放行旧快照。
       const deviceId = options?.deviceId;
+      if (vendor === 'antigravity' && (deviceId || options?.remoteHostId)) return { proceed: false };
       if (deviceId) {
         const providerAgent: ProviderAgentKind =
           vendor === 'cursor' ? 'cursor' : vendor === 'codex' ? 'codex' : vendor === 'pi' ? 'pi' : 'claude-code';
@@ -340,7 +343,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       }
 
       // 触发一次最新检查——避免 stale state 误放行。
-      const target = vendor === 'cursor' ? cursor : vendor === 'codex' ? codex : vendor === 'pi' ? pi : cc;
+      const target = vendor === 'antigravity' ? antigravity : vendor === 'cursor' ? cursor : vendor === 'codex' ? codex : vendor === 'pi' ? pi : cc;
       // 已建会话的发送门禁计入 suspended 来源(见 useVendorReadiness 注释);草稿不传。
       const readiness = await target.revalidate({
         includeSuspended: options?.existingSessionRoute === true,
@@ -364,7 +367,7 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       }
       return { proceed: false };
     },
-    [cc, codex, pi, cursor, confirm, copy, navigate, t],
+    [cc, codex, pi, cursor, antigravity, confirm, copy, navigate, t],
   );
 
   return { checkAndConfirm };

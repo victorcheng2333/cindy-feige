@@ -203,6 +203,9 @@ export {
 
 export type { PiCacheCompatibility } from './pi/cache-compatibility.js';
 
+export { parseAntigravityModels, type AgyModelDescriptor } from './antigravity/models.js';
+export { antigravityEnv } from './antigravity/environment.js';
+export { AntigravityAgent, ANTIGRAVITY_CAPABILITIES } from './antigravity/index.js';
 export { CursorAgent, CURSOR_CAPABILITIES } from './cursor/index.js';
 export type { CursorAgentDeps, CursorMcpServerContext } from './cursor/index.js';
 export { CursorRpcClient } from './cursor/rpc-client.js';

@@ -1652,7 +1652,7 @@ export const sessionGoals = sqliteTable(
     /** usageLimited 时记录的限额重置时刻(unix ms);到点自动续跑。其它状态为 null。 */
     usageResetAt: integer('usage_reset_at'),
     lastReason: text('last_reason'),
-    agentKind: text('agent_kind', { enum: ['claude-code', 'codex', 'pi', 'cursor'] }).notNull(),
+    agentKind: text('agent_kind', { enum: ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] }).notNull(),
     startedAt: integer('started_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -1981,7 +1981,7 @@ export const dailyModelUsage = sqliteTable(
   {
     /** 本地时区 YYYY-MM-DD 字符串 (localDayKey)。 */
     day: text('day').notNull(),
-    /** 'claude-code' | 'codex' | 'pi' | 'cursor' — 网关模型 id 可能跨 agent 撞名, 需区分。 */
+    /** 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' — 网关模型 id 可能跨 agent 撞名, 需区分。 */
     agentKind: text('agent_kind').notNull(),
     /** SDK 模型 id; 拿不到时兜底 'unknown'。 */
     model: text('model').notNull(),

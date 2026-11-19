@@ -15,13 +15,17 @@ const providers = [{
   id: 'cursor', name: 'Cursor', source: 'custom', agents: ['cursor'],
   auth: { method: 'api-key' }, routing: { cursor: {} }, connected: true,
   models: { cursor: [{ id: 'cursor-fixture', name: 'Cursor fixture', contextWindow: 200000, efforts: [] }] },
+}, {
+  id: 'antigravity', name: 'Antigravity', source: 'builtin', agents: ['antigravity'],
+  auth: { method: 'oauth' }, routing: { antigravity: {} }, connected: true,
+  models: { antigravity: [{ id: 'agy-fixture', name: 'Antigravity fixture', contextWindow: 0, efforts: ['low', 'medium', 'high'], defaultEffort: 'high' }] },
 }] as unknown as ProviderView[];
 // The parent owns per-Harness draft memory, as NewMakerDraftRoute does.
 function DraftModelSelector(props: ComponentProps<typeof ModelSelector>) {
-  const [vendor, setVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor'>('cc');
-  const rememberedModels = { cc: modelId, codex: 'gpt-fixture', pi: 'pi-fixture', cursor: 'cursor-fixture' };
+  const [vendor, setVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>('cc');
+  const rememberedModels = { cc: modelId, codex: 'gpt-fixture', pi: 'pi-fixture', cursor: 'cursor-fixture', antigravity: 'agy-fixture' };
   return <ModelSelector {...props} vendorKey={vendor} modelId={rememberedModels[vendor]}
-    currentProviderId={vendor === 'cursor' ? 'cursor' : 'tapsvc'}
+    currentProviderId={vendor === 'cursor' || vendor === 'antigravity' ? vendor : 'tapsvc'}
     agentIdentity={{ vendorKey: vendor, state: 'current' }} onDraftVendorChange={setVendor} />;
 }
 
@@ -55,7 +59,7 @@ void mountPage({
         providersOverrideState={{ status: 'ready', refresh: () => {} }}
         onModelChange={() => {}} onEffortChange={() => {}}
         draftEngineTabs={ctx.case.startsWith('compact-draft')}
-        unifiedAgents={ctx.case.startsWith('compact-draft-height') ? ['claude-code', 'codex', 'cursor'] : ctx.case.startsWith('compact-draft') ? ['claude-code', 'codex'] : ctx.case.startsWith('cursor') ? ['claude-code', 'codex', 'cursor'] : undefined}
+        unifiedAgents={ctx.case.startsWith('compact-draft-antigravity') ? ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] : ctx.case.startsWith('compact-draft-height') ? ['claude-code', 'codex', 'cursor'] : ctx.case.startsWith('compact-draft') ? ['claude-code', 'codex'] : ctx.case.startsWith('cursor') ? ['claude-code', 'codex', 'cursor'] : undefined}
         {...(ctx.case.startsWith('cursor') ? { onProviderChange: () => {} } : {})}
         {...((ctx.case === 'shared' || ctx.case.startsWith('compact') || ctx.case.startsWith('cursor')) ? {
           onProviderChange: () => {},

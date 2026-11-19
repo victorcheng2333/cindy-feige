@@ -57,6 +57,7 @@ export function mobileFavoriteMutation(
     throw new Error("Only one favorite may change at a time");
   if (removed.length) return { kind: "remove", expected: removed[0]! };
   const next = changed[0]!;
+  if (next.agent === 'antigravity') throw new Error('Remote agy favorites are unavailable');
   const item = {
     providerId: next.providerId,
     modelId: next.modelId,

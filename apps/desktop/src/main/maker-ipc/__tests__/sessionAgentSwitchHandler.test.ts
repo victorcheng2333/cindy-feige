@@ -82,6 +82,29 @@ function makeDeps(overrides: Partial<MakerSessionAgentSwitchHandlerDeps> = {}): 
   return { deps, calls };
 }
 
+describe('Antigravity model selection', () => {
+  // Unit regression for the installed composer route: a model-only choice on
+  // an agy task must stage the same-harness selection without closing its history.
+  const selection = { sessionId: 's1', targetAgentKind: 'antigravity', model: 'gemini-3.8-flash', providerId: 'antigravity', effort: 'low' };
+
+  it('passes a local agy model choice to the same-engine selection', async () => {
+    const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
+    const { deps, calls } = makeDeps({
+      getSessionRow: async () => makeRow({ agentKind: 'antigravity', providerId: 'antigravity', model: 'gemini-4-neon' }),
+      selectSameAgentModel,
+    });
+    expect(await performSessionAgentSwitch(deps, selection)).toMatchObject({ switched: false, model: 'gemini-3.8-flash', deferred: true });
+    expect(selectSameAgentModel.mock.calls).toHaveLength(1);
+    expect(calls).toEqual([]);
+  });
+
+  it('rejects a handoff from another engine into agy', async () => {
+    const { deps, calls } = makeDeps();
+    await expect(performSessionAgentSwitch(deps, selection)).rejects.toThrow('only support model changes within agy');
+    expect(calls).toEqual([]);
+  });
+});
+
 const validParams = {
   sessionId: 's1',
   targetAgentKind: 'codex',

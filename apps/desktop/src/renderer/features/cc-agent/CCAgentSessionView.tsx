@@ -3164,7 +3164,7 @@ function CCAgentSessionContent({
   // F-COLLAB: 协同模式真实状态。enabled 来自 session.orcaRole === 'lead';
   // worker(显示用)从 active workflow 的 Worker session 列表查到 agentKind。
   // 切换协同走 IPC enableOrca / disableOrca,失败时 toast。
-  const [collabWorker, setCollabWorker] = useState<'cc' | 'codex' | 'pi' | 'cursor'>('codex');
+  const [collabWorker, setCollabWorker] = useState<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>('codex');
   // enableBusy 只盖"开启协同"路径;关闭走 useStopOrcaCollab hook 自己管 busy。
   const [enableBusy, setEnableBusy] = useState(false);
   const [createWorkerOpen, setCreateWorkerOpen] = useState(false);
@@ -5054,7 +5054,7 @@ function CCAgentSessionContent({
     // 用三值化后的 agent 映射选默认模型:Pi 会话必须回退到 Pi 目录默认,而不是被
     // `isCodex ? 'codex' : 'cc'` 误写成 CC 首选(可能是更贵的 Opus)(codex review)。
     const defaultModel = getDefaultModelForVendor(
-      agent === 'cursor' ? 'cursor' : agent === 'pi' ? 'pi' : agent === 'codex' ? 'codex' : 'cc',
+      agent === 'antigravity' ? 'antigravity' : agent === 'cursor' ? 'cursor' : agent === 'pi' ? 'pi' : agent === 'codex' ? 'codex' : 'cc',
     );
     sessionService
       .update(sessionId, { model: defaultModel.id })

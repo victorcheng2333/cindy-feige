@@ -1277,7 +1277,7 @@ export function registerProviderHandlers(
       return {
         dataOwnerId,
         ownerGeneration: ownerAtIngress?.generation ?? 0,
-        providers: providers.filter(provider => trusted || provider.id !== 'cursor' || (
+        providers: providers.filter(provider => trusted || (provider.id !== 'cursor' && provider.id !== 'antigravity') || (
           getDeviceLinkInvokeContext()?.sameAccountController === true && !getDeviceLinkInvokeContext()?.sharedTask
         )).map((provider) => {
           const safe = withoutProviderHeaderCredentials(provider);

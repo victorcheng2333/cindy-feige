@@ -116,6 +116,7 @@ const AGENT_LABEL: Record<AgentKind, string> = {
   codex: 'Codex',
   pi: 'Pi',
   cursor: 'Cursor',
+  antigravity: 'Antigravity',
 };
 
 function presetRuntimeBaseUrl(

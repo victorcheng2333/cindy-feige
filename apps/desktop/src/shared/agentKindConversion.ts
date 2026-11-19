@@ -9,11 +9,12 @@
  */
 
 /** DB(sessions.agent_kind)与 renderer 侧的 agent 形态。 */
-export type DbAgentKind = 'cc' | 'codex' | 'pi' | 'cursor';
+export type DbAgentKind = 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 /** maker-core / IPC 契约侧的 agent 形态。 */
-export type MakerAgentKindWire = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type MakerAgentKindWire = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 export function dbToMakerAgentKind(db: string | null | undefined): MakerAgentKindWire {
+  if (db === 'antigravity') return 'antigravity';
   if (db === 'cursor') return 'cursor';
   if (db === 'codex') return 'codex';
   if (db === 'pi') return 'pi';
@@ -21,6 +22,7 @@ export function dbToMakerAgentKind(db: string | null | undefined): MakerAgentKin
 }
 
 export function makerToDbAgentKind(maker: string | null | undefined): DbAgentKind {
+  if (maker === 'antigravity') return 'antigravity';
   if (maker === 'cursor') return 'cursor';
   if (maker === 'codex') return 'codex';
   if (maker === 'pi') return 'pi';
@@ -29,5 +31,5 @@ export function makerToDbAgentKind(maker: string | null | undefined): DbAgentKin
 
 /** 宽输入归一成 DbAgentKind;非法值回落 'cc'(与 sessions 表 default 同语义)。 */
 export function normalizeDbAgentKind(value: string | null | undefined): DbAgentKind {
-  return value === 'cursor' || value === 'codex' || value === 'pi' ? value : 'cc';
+  return value === 'antigravity' || value === 'cursor' || value === 'codex' || value === 'pi' ? value : 'cc';
 }

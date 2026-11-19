@@ -3635,6 +3635,15 @@
       }
     },
     "providers": {
+      "agyProxy": {
+        "label": "네트워크 프록시",
+        "save": "저장",
+        "hint": "이 Mac의 agy에 적용됩니다. 비워 두면 표준 실행 환경을 사용합니다. 진행 중인 응답은 기존 프록시를 사용합니다.",
+        "invalid": "인증 정보가 없는 HTTP, HTTPS 또는 SOCKS5 프록시 URL을 입력하세요.",
+        "saved": "프록시를 저장했습니다.",
+        "readFailed": "프록시 설정을 읽을 수 없습니다.",
+        "saveFailed": "프록시 설정을 저장할 수 없습니다."
+      },
       "llamacpp": {
         "ownedElsewhere": "다른 Cindy 인스턴스에서 모델 서비스가 실행 중입니다. 해당 인스턴스에서 모델을 다운로드하거나 컨텍스트를 변경하거나, 먼저 서비스를 중지하세요.",
         "primaryPick": "우선 선택 · 먼저 사용",

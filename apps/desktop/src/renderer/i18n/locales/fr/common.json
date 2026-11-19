@@ -3725,6 +3725,15 @@
       }
     },
     "providers": {
+      "agyProxy": {
+        "label": "Proxy réseau",
+        "save": "Enregistrer",
+        "hint": "S’applique à agy sur ce Mac. Laissez vide pour utiliser l’environnement de démarrage standard. Les réponses en cours conservent leur proxy.",
+        "invalid": "Saisissez une URL de proxy HTTP, HTTPS ou SOCKS5 sans identifiants.",
+        "saved": "Proxy enregistré.",
+        "readFailed": "Impossible de lire le réglage du proxy.",
+        "saveFailed": "Impossible d’enregistrer le réglage du proxy."
+      },
       "llamacpp": {
         "ownedElsewhere": "Le service de modèles s'exécute dans une autre instance de Cindy. Téléchargez les modèles ou modifiez le contexte depuis celle-ci, ou arrêtez d'abord son service.",
         "primaryPick": "Choix principal · à essayer en premier",

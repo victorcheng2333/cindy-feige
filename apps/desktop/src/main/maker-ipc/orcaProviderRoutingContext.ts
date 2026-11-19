@@ -200,7 +200,7 @@ export function buildLocalProviderRoutingContext(views: ProviderView[], modelReg
             modelRegistry,
             provider.id,
             model.id,
-            (agent === 'pi' || agent === 'cursor') ? undefined : agent,
+            (agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : agent,
           );
           return matched ? [[model.id, matched.entry.id]] : [];
         }),
@@ -239,6 +239,7 @@ export function buildLocalProviderRoutingContext(views: ProviderView[], modelReg
       codex: availabilityFor('codex'),
       pi: availabilityFor('pi'),
       cursor: availabilityFor('cursor'),
+      antigravity: availabilityFor('antigravity'),
     },
     resolveDefaultProviderIdForModel: (agent, model) =>
       effectiveSourceIdForModel(views, null, model, agent),

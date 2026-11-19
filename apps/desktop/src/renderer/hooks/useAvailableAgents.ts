@@ -50,7 +50,7 @@ function refreshRemoteCapabilitiesOnce(deviceId: string): void {
   remoteCapabilitiesRefreshInFlight.set(deviceId, pending);
 }
 
-type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 /** runtime agent id → NewMaker vendor(其余保持同名)。 */
 function toVendor(agent: RuntimeAgentKind): MakerVendor {
@@ -83,7 +83,7 @@ async function fetchAvailableAgents(deviceId?: string | null): Promise<RuntimeAg
     if (!dl) throw new Error('device-link IPC not available');
     const raw = await invokeModelCatalog(dl, deviceId, 'maker:list-available-agents', []);
     return Array.isArray(raw) ? (raw.filter((v): v is RuntimeAgentKind =>
-      v === 'claude-code' || v === 'codex' || v === 'pi' || v === 'cursor') as RuntimeAgentKind[]) : [];
+      v === 'claude-code' || v === 'codex' || v === 'pi' || v === 'cursor' || v === 'antigravity') as RuntimeAgentKind[]) : [];
   }
   const api = getMakerApi();
   if (!api) throw new Error('maker IPC not available');
@@ -356,7 +356,7 @@ export function __resetAvailableAgentsCacheForTest(): void {
 export function useModelPickerAgents(current: RuntimeAgentKind, deviceId?: string | null): readonly RuntimeAgentKind[] | undefined {
   const { availableVendors, loaded } = useAvailableAgents(deviceId);
   if (!loaded) return undefined;
-  return (['claude-code', 'codex', 'pi', 'cursor'] as const).filter(
+  return (['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] as const).filter(
     (agent) => agent === current || availableVendors.has(toVendor(agent)),
   );
 }

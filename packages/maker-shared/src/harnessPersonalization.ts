@@ -9,7 +9,7 @@
  *  - Help KB and i18n copy guards
  */
 
-export type PersonalizationHarnessKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type PersonalizationHarnessKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 export type UserPromptDeliveryMode = 'system-prompt' | 'first-turn-context' | false;
 
@@ -33,6 +33,7 @@ export const HARNESS_PERSONALIZATION_ORDER: readonly PersonalizationHarnessKind[
   'codex',
   'pi',
   'cursor',
+  'antigravity',
 ] as const;
 
 export const HARNESS_PERSONALIZATION_SUPPORT: Readonly<
@@ -62,6 +63,15 @@ export const HARNESS_PERSONALIZATION_SUPPORT: Readonly<
     makerMemory: true,
     nativeMemory: false,
     makerMemorySubSetting: true,
+    subagentModel: false,
+    serverCompaction: false,
+  },
+  antigravity: {
+    displayName: 'Antigravity',
+    userPrompt: false,
+    makerMemory: false,
+    nativeMemory: false,
+    makerMemorySubSetting: false,
     subagentModel: false,
     serverCompaction: false,
   },

@@ -1269,6 +1269,7 @@ async function prepareInvocation(
       const agent = sourceAgent ?? providerModel.sourceAgent ?? (candidates.length === 1 ? candidates[0] : undefined);
       if (!agent) return failure('CONNECTION_AMBIGUOUS', '这个型号有多个实际连接，请选择 source_agent 后再 prepare', false, { source_agents: candidates });
       if (!candidates.includes(agent)) return failure('CONNECTION_UNAVAILABLE', '指定引擎没有这个媒体型号的可用连接');
+      if (agent === 'antigravity') return failure('CAPABILITY_NOT_SUPPORTED', 'Antigravity requires its native CLI for chat.');
       if (agent === 'cursor') return failure('CAPABILITY_NOT_SUPPORTED', 'Cursor 聊天连接不提供媒体 HTTP 凭证，请选择其它媒体连接');
       const connection = await resolveProviderHttpConnection(model.providerId, resolvedModelId, capability, agent);
       assertAuthScope(scope);

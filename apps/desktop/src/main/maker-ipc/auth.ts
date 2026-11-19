@@ -11,6 +11,10 @@
 
 import type { Maker } from '@cindy/maker-core';
 import { BrowserWindow } from 'electron';
+import { refreshAntigravityProxyRouting } from '../maker-host/antigravity-host.js';
+import { normalizeAntigravityProxy, readAntigravityProxy, writeAntigravityProxy } from '../maker-host/antigravity-proxy-settings-store.js';
+import { getActiveAppSession, isAppSessionBoundaryPending } from '../appSessionState.js';
+import { throwIpcError } from '../utils/ipcValidate.js';
 import { cancelCursorApiKeyValidation, setCursorApiKey } from '../maker-host/cursor-auth.js';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
 import { MAKER_INVOKE } from './channels.js';
@@ -40,6 +44,26 @@ function broadcast(channel: string, payload: unknown): void {
 export function registerMakerAuthIpc(maker: Maker): void {
   log.info('registering maker:auth:* IPC handlers');
   const registry = createElectronIpcHandlerRegistry();
+  function assertProxySettingsAccess(event: unknown) {
+    assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
+    if (isAppSessionBoundaryPending()) throwIpcError('PRECONDITION_FAILED', 'Wait for the account change to complete.');
+  }
+  registry.handle(MAKER_INVOKE.AGY_PROXY_GET, event => {
+    assertProxySettingsAccess(event);
+    return readAntigravityProxy() ?? normalizeAntigravityProxy(process.env.CINDY_AGY_PROXY) ?? '';
+  });
+  registry.handle(MAKER_INVOKE.AGY_PROXY_SET, (event, value: unknown, ownerId: unknown, generation: unknown) => {
+    assertProxySettingsAccess(event);
+    const owner = getActiveAppSession();
+    if (owner.dataOwnerId !== ownerId || owner.generation !== generation) {
+      throwIpcError('PRECONDITION_FAILED', 'The signed-in account changed. Open the proxy setting again.');
+    }
+    const address = normalizeAntigravityProxy(value);
+    if (address === undefined) throwIpcError('INVALID_PARAMS', 'Enter a proxy URL without credentials.');
+    writeAntigravityProxy(address);
+    refreshAntigravityProxyRouting();
+    return address;
+  });
   // This secret-writing endpoint is intentionally absent from Device Link allowlists.
   registry.handle(MAKER_INVOKE.CURSOR_SET_API_KEY, async (event, apiKey: unknown) => {
     assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);

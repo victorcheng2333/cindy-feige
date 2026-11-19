@@ -563,7 +563,7 @@ export function getProviderGroupRemoteGroups(): ProviderGroupRemoteGroups {
     pick: (ownerDeviceId, input) => continuityClient!.pick(ownerDeviceId, input),
     cool: (ownerDeviceId, input) => client.cool(ownerDeviceId, input),
     view: (ownerDeviceId, providerId, model, agentKind) => {
-      if (agentKind === 'cursor') return Promise.reject(new Error('Cursor does not support provider groups'));
+      if (agentKind === 'cursor' || agentKind === 'antigravity') return Promise.reject(new Error('Cursor does not support provider groups'));
       return client.view(ownerDeviceId, providerId, agentKind ? { model, agentKind } : model);
     },
     invalidate: (ownerDeviceId) => directoryFacade.invalidate(ownerDeviceId),

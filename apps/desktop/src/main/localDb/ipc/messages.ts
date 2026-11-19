@@ -1224,7 +1224,7 @@ export function commitContextRebuild(
       | 'idle-gap';
     sourceUserClientId: string | null;
     handoffCoverage?: HandoffCoverage;
-    sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
+    sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     sourceModel?: string | null;
     sourceProviderId?: string | null;
     expectedClearedAt?: number | null;
@@ -1553,7 +1553,7 @@ export async function createMessage(
      * agentMeta 需要它;main 侧 SDK 事件落库路径必传,renderer pending echo 等
      * 无 SDK 元信息的行留空(null 回落 session.agentKind)。
      */
-    agentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | null;
+    agentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | null;
     createdAt?: number;
   },
   opts?: {

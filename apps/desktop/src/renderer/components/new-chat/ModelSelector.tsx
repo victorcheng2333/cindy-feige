@@ -178,15 +178,17 @@ import { mergeSshCodexCatalog, type SshCodexCatalog } from '@/lib/sshCodexCatalo
 // 否则它在 220ms 开场内消失后，settle 补量会把面板再缩一次，形成“先变大再变小”。
 // 300ms 门槛也与仓库其它本地/远程混合 loading 提示一致；真正的秒级发现仍会明确反馈。
 const MODEL_DISCOVERY_INDICATOR_DELAY_MS = 300;
+const MODEL_PICKER_WIDTH = 360;
+const FIVE_HARNESS_PICKER_WIDTH = 400;
 
 /**
  * 工具栏紧凑统一面板宽度。规格 `docs/product-rules/model-selector-unified.md` §1.2：
- * max-content，下限 300px，上限 min(460px, 100vw-48px)。完整 class 字面量必须留在
+ * max-content，下限 min(360px, 100vw-48px)，上限 min(460px, 100vw-48px)。完整 class 字面量必须留在
  * 源码里给 Tailwind 扫描；改数字时同步规格。
  */
 export const UNIFIED_COMPACT_PANEL_MAX_WIDTH_PX = 460;
 export const UNIFIED_COMPACT_PANEL_WIDTH_CLASS =
-  'w-max min-w-[300px] max-w-[min(460px,calc(100vw-48px))]';
+  'w-max min-w-[min(360px,calc(100vw-48px))] max-w-[min(460px,calc(100vw-48px))]';
 
 /**
  * 标签降级按选择器 pane 宽度生效。这里的 width 是整个 pane 宽度，不是模型名
@@ -641,7 +643,7 @@ function RemoteModelLoadNotice({
 }
 
 export interface ModelSelectorAgentIdentity {
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor';
+  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /**
    * current = 已由会话/runtime 元数据确认的当前 Agent；
    * pending = 已登记、将在下一条消息应用的切换目标。
@@ -653,8 +655,8 @@ export function resolveModelSelectorAgentIdentity(
   runtimeAgentKind: AgentKind | null | undefined,
   pendingTarget: AgentKind | null | undefined,
 ): ModelSelectorAgentIdentity | undefined {
-  const toVendorKey = (kind: AgentKind): 'cc' | 'codex' | 'pi' | 'cursor' =>
-    kind === 'cursor' ? 'cursor' : kind === 'codex' ? 'codex' : kind === 'pi' ? 'pi' : 'cc';
+  const toVendorKey = (kind: AgentKind): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' =>
+    kind === 'antigravity' ? 'antigravity' : kind === 'cursor' ? 'cursor' : kind === 'codex' ? 'codex' : kind === 'pi' ? 'pi' : 'cc';
   if (pendingTarget) {
     return {
       vendorKey: toVendorKey(pendingTarget),
@@ -838,7 +840,7 @@ export interface ModelSelectorBaseProps {
   /** 非选中模型行的 effort/fast 全局预设读写器(按本机 / 被控设备隔离)。 */
   modelMemory?: ModelMemoryAccessors;
   /** When provided, only models with this vendorKey are shown in the dropdown. */
-  vendorKey?: 'cc' | 'codex' | 'pi' | 'cursor';
+  vendorKey?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /**
    * 已创建会话的 trigger 同时展示 Agent 与模型，避免 Claude Code 使用 OpenAI 模型时
    * 只看来源图标而误判成 Codex。必须由权威 session/runtime 身份或明确切换 intent 提供，
@@ -966,7 +968,7 @@ export interface ModelSelectorBaseProps {
   /** 草稿的引擎标签；无运行时切换提示。 */
   draftEngineTabs?: boolean;
   /** 点击草稿引擎标签后由调用方恢复该引擎上次选择，保持面板打开。 */
-  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor') => void;
+  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity') => void;
   /**
    * session-agent-switch:会话内显式两步切换引擎(先选 Agent,再选模型)。
    * 传入后列表顶部渲染 Claude / Codex 分段;切到非当前引擎的 tab 进入「浏览目标
@@ -975,14 +977,14 @@ export interface ModelSelectorBaseProps {
    * device-link / SSH 远程不传(v1 不支持切换)。
    */
   agentSwitch?: {
-    currentVendor: 'cc' | 'codex' | 'pi' | 'cursor';
+    currentVendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     /**
      * 返回值(若有)= 切换事务**真的登记成功了没有**;本两步分段路径不消费它,
      * 声明成宽联合只是为了让同一个 `performAgentSwitch` 能同时喂给这里与统一面板的
      * `onCrossEngineSelect`(后者按真实结果决定要不要做清理动作)。
      */
     onSwitch: (
-      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
+      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
       modelId: string,
       providerId: string | null,
       overrides?: { effort?: Effort; fastMode?: boolean | 'ultrafast' },
@@ -1021,7 +1023,7 @@ export interface ModelSelectorContentBaseProps {
   modelMemory?: ModelMemoryAccessors;
   /** Request-owned preferences; edits never reach the user's saved defaults. */
   preferenceStore?: ModelPickerPreferenceStore;
-  vendorKey?: 'cc' | 'codex' | 'pi' | 'cursor';
+  vendorKey?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /** device-link 远程会话所属被控端 id(列被控端模型)。 */
   deviceId?: string;
   /** SSH 远程会话隐藏订阅直连模型(语义同 ModelSelectorProps 同名字段)。 */
@@ -1125,7 +1127,7 @@ export interface ModelSelectorContentBaseProps {
     anchor: {
       uid: string;
       wireModelId: string;
-      engine: 'cc' | 'codex' | 'pi' | 'cursor';
+      engine: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
       /** 选中时的显式来源。来源也是锚点身份的一部分:同 wire id 同引擎、仅来源不同的
        *  配置是两份配置,少了它,别的窗口把会话来源从 A 切到 B 后,面板仍在 A 的收藏上
        *  打勾(2026-08-17 review)。 */
@@ -1150,7 +1152,7 @@ export interface ModelSelectorContentBaseProps {
     modelId: string;
     /** 该行生效档位;该 (模型, 引擎) 不可调档时为 undefined。 */
     effort?: Effort;
-    engine: 'cc' | 'codex' | 'pi' | 'cursor';
+    engine: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     fast: boolean | 'ultrafast';
     favoriteUid: string | null;
     /** 配置浮层「恢复推荐」的应用动作；调用方应删除 override，不得重新记忆推荐值。 */
@@ -1171,23 +1173,23 @@ export interface ModelSelectorContentBaseProps {
   optionsPanelUsesLayoutPositioning?: boolean;
   /**
    * field 形态:面板宽度绑定 trigger(DESIGN.md §4「Panel width must bind to the
-   * trigger width」),主菜单列由固定 320 改为撑满外层 PopoverContent。
+   * trigger width」),主菜单列由固定宽度改为撑满外层 PopoverContent。
    */
   fluidWidth?: boolean;
   /** 草稿的引擎标签；无运行时切换提示。 */
   draftEngineTabs?: boolean;
   /** 点击草稿引擎标签后由调用方恢复该引擎上次选择，保持面板打开。 */
-  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor') => void;
+  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity') => void;
   /** 语义同 ModelSelectorProps.agentSwitch(显式两步引擎切换)。 */
   agentSwitch?: {
-    currentVendor: 'cc' | 'codex' | 'pi' | 'cursor';
+    currentVendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     /**
      * 返回值(若有)= 切换事务**真的登记成功了没有**;本两步分段路径不消费它,
      * 声明成宽联合只是为了让同一个 `performAgentSwitch` 能同时喂给这里与统一面板的
      * `onCrossEngineSelect`(后者按真实结果决定要不要做清理动作)。
      */
     onSwitch: (
-      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
+      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
       modelId: string,
       providerId: string | null,
       overrides?: { effort?: Effort; fastMode?: boolean | 'ultrafast' },
@@ -1209,10 +1211,11 @@ export interface ModelSelectorContentBaseProps {
   interactionDisabled?: boolean;
 }
 
-function vendorKeyToAgentKind(v?: 'cc' | 'codex' | 'pi' | 'cursor'): AgentKind | null {
+function vendorKeyToAgentKind(v?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): AgentKind | null {
   if (v === 'cc') return 'claude-code';
   if (v === 'codex') return 'codex';
   if (v === 'pi') return 'pi';
+  if (v === 'antigravity') return 'antigravity';
   if (v === 'cursor') return 'cursor';
   return null;
 }
@@ -1288,7 +1291,7 @@ type ModelSelectorContentViewProps = ModelSelectorContentProps & {
   /** A catalog keeps its own route, visibility and preferences inside the combined list. */
   catalogSection?: {
     deviceId: string;
-    browseVendor: 'cc' | 'codex' | 'pi' | 'cursor';
+    browseVendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     catalogs: ReturnType<typeof useDevicesProviders>;
     boundGroup: RemoteProviderGroupEntry | null;
   };
@@ -1360,7 +1363,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const { t, i18n } = useTranslation();
   const modelGroupRows = useModelGroupPickerRows(modelGroups?.config ?? MODEL_GROUPS_DEFAULTS);
   const favoriteModelGroupCount = useFavoriteModelGroupCount(modelGroups?.config ?? MODEL_GROUPS_DEFAULTS);
-  const [localBrowseVendor, setBrowseVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor'>(
+  const [localBrowseVendor, setBrowseVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>(
     agentSwitch?.currentVendor ?? vendorKey ?? 'cc',
   );
   const browseVendor = catalogSection?.browseVendor ?? localBrowseVendor;
@@ -1377,7 +1380,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   );
   const combinedCatalogs = compactProviderList && !useUnifiedPanel && !!remoteAgent;
   // Cursor uses the task computer's own account; other computers cannot supply its models.
-  const remoteBrowse = useMemo(() => browseVendor === 'cursor' ? null : combinedCatalogs
+  const remoteBrowse = useMemo(() => browseVendor === 'cursor' || browseVendor === 'antigravity' ? null : combinedCatalogs
     ? (catalogSection ? { deviceId: catalogSection.deviceId, providerId: null } : null)
     : browseSource, [browseVendor, combinedCatalogs, catalogSection?.deviceId, browseSource]);
   // 落点在面板之外变了(那台电脑被解除配对而回到本机等):跟到新落点,不停在旧目录上。
@@ -1445,10 +1448,10 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // 非 fluid 选择器的契约宽度就是 320px。此前这里直接传 null，导致固定宽度的聊天
   // 选择器永远处于 full 密度，英文 Subscription 会把当前模型名挤成 GPT-...。
   // ResizeObserver 可用时仍以实际宽度为准；测试/首帧则用契约宽度避免标签闪现。
-  const modelTagDensity = modelTagDensityForWidth(paneWidth ?? (fluidWidth ? null : 320));
+  const modelTagDensity = modelTagDensityForWidth(paneWidth ?? (fluidWidth ? null : (requestedUnifiedAgents?.length ?? 0) >= 5 ? FIVE_HARNESS_PICKER_WIDTH : MODEL_PICKER_WIDTH));
   // session-agent-switch:两步式引擎切换的浏览态。browseVendor 初始 = 会话当前引擎;
   // 切到另一家 tab 只是「浏览目标引擎的模型」,选中模型行才真正触发切换事务。
-  const handleBrowseVendorChange = (next: 'cc' | 'codex' | 'pi' | 'cursor') => {
+  const handleBrowseVendorChange = (next: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity') => {
     if (interactionDisabled || next === browseVendor) return;
     setBrowseVendor(next);
     if (draftEngineTabs) onDraftVendorChange?.(next);
@@ -1471,9 +1474,9 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const unifiedAgents = (combinedCatalogs && !catalogSection || browsingSelectedCatalog ? requestedUnifiedAgents : undefined) ??
     (vendorKey && agentKind && !onUnifiedSelect && !agentSwitch && !sessionEngineFilter ? [agentKind] : undefined);
   const browseTargetLabel =
-    browseVendor === 'cursor' ? 'Cursor' : browseVendor === 'codex' ? 'Codex' : browseVendor === 'pi' ? 'Pi' : 'Claude Code';
+    browseVendor === 'antigravity' ? 'agy' : browseVendor === 'cursor' ? 'Cursor' : browseVendor === 'codex' ? 'Codex' : browseVendor === 'pi' ? 'Pi' : 'Claude Code';
   const enqueueAgentSwitch = (
-    targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
+    targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
     targetModelId: string,
     targetProviderId: string | null,
     overrides?: { effort?: Effort; fastMode?: boolean | 'ultrafast' },
@@ -1726,7 +1729,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // ── 远程 Agent 的左侧栏数据 ──────────────────────────────────────────────────
   // 栏位要同时列出本机与各台电脑的供应商,而列表此刻只装着其中一份目录:本机格与远程格
   // 各自按**自己的**目录与可见性派生,不借用正在浏览的那一份。
-  const remoteAgentDevices = browseVendor === 'cursor' ? undefined : remoteAgent?.devices;
+  const remoteAgentDevices = browseVendor === 'cursor' || browseVendor === 'antigravity' ? undefined : remoteAgent?.devices;
   const routedFavoriteSources = useMemo(() => remoteAgent?.catalogHostDeviceId
     ? new Map((remoteAgentDevices ?? []).flatMap(device => device.favoriteSource
       ? [[device.deviceId, device.favoriteSource] as const] : []))
@@ -2656,9 +2659,9 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     // trigger 来源 icon / 路由立即正确(null = flat 退化行,交给默认路由)。
     if (browsing && agentSwitch) {
       const applied = await runLiveWrite(() => enqueueAgentSwitch(
-        browseVendor === 'cursor' ? 'cursor' : browseVendor === 'codex' ? 'codex' : browseVendor === 'pi' ? 'pi' : 'claude-code',
+        browseVendor === 'antigravity' ? 'antigravity' : browseVendor === 'cursor' ? 'cursor' : browseVendor === 'codex' ? 'codex' : browseVendor === 'pi' ? 'pi' : 'claude-code',
         id,
-        providerId ?? (browseVendor === 'cursor' ? 'cursor' : null),
+        providerId ?? (browseVendor === 'antigravity' || browseVendor === 'cursor' ? browseVendor : null),
         { effort: effortOverride, fastMode: fastOverride },
       ));
       if (applied) dismissAfterSelection();
@@ -3591,7 +3594,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   );
   const unifiedAgentFastCapable = useCallback(
     (agent: AgentKind): boolean =>
-      (typeof fastModeConfigurable === 'boolean' ? fastModeConfigurable : fastModeConfigurable.includes(agent)) && !!(onFastModeChange || onUnifiedSelect) && (agent === 'cursor' ? !!cursor.capabilities?.hasFastMode : agent === 'claude-code'
+      agent !== 'antigravity' && (typeof fastModeConfigurable === 'boolean' ? fastModeConfigurable : fastModeConfigurable.includes(agent)) && !!(onFastModeChange || onUnifiedSelect) && (agent === 'cursor' ? !!cursor.capabilities?.hasFastMode : agent === 'claude-code'
         ? !!cc.capabilities?.hasFastMode
         : agent === 'codex'
           ? !!codex.capabilities?.hasFastMode
@@ -3623,7 +3626,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // 有引导卡时叠在下方,连接入口仍可用。
   if (!combinedCatalogs && localCatalogNotice && (localProviders.loading || emptyState)) {
     return (
-      <div className="flex w-[320px] max-w-full flex-col">
+      <div className="flex w-[min(360px,calc(100vw-32px))] max-w-full flex-col">
         <div className={emptyState ? 'p-2 pb-0' : 'p-2'}>{localCatalogNotice}</div>
         {emptyState}
       </div>
@@ -3816,6 +3819,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
             'max-h-[min(560px,calc(100vh-120px))]',
             // 紧凑宽度契约见 UNIFIED_COMPACT_PANEL_WIDTH_CLASS；field 入口仍绑 trigger。
             fluidWidth ? 'w-full min-w-0' : UNIFIED_COMPACT_PANEL_WIDTH_CLASS,
+            !fluidWidth && (unifiedAgents?.length ?? 0) >= 5 && 'min-w-[min(400px,calc(100vw-48px))]',
           )}
         >
           {/* 设计稿 .search-wrap:无框平铺行 + 底部 hairline(不是独立的胶囊输入框)。 */}
@@ -4163,7 +4167,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // An empty catalog for this Harness adds no empty-state block between providers.
   if (catalogSection && !hasAnyModel && !remoteStatusInList && !browsingSelectedCatalog) return null;
 
-  // ── 主菜单:自然宽度 320,可随外层弹层伸缩(field 形态绑 trigger 宽度),选项浮层
+  // ── 主菜单:自然宽度 360,可随外层弹层伸缩(field 形态绑 trigger 宽度),选项浮层
   //    portal 到 body,hover 时主菜单完全不重排 ─────
   const pane = (
     <div
@@ -4172,7 +4176,8 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       className={cn(
         'flex flex-col gap-1.5',
         catalogSection ? 'min-w-0 shrink-0' : 'min-h-0 p-2',
-        fluidWidth ? 'w-full min-w-0' : 'w-[320px]',
+        fluidWidth ? 'w-full min-w-0'
+          : (unifiedAgents?.length ?? 0) >= 5 ? 'w-[min(400px,calc(100vw-32px))]' : 'w-[min(360px,calc(100vw-32px))]',
       )}
     >
       {!compactProviderList && remoteAgent && (remoteAgentGroups.length > 0 || remoteBrowse) && (
@@ -4206,7 +4211,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
         <AgentSelect
           value={browseVendor}
           onChange={(next) => { if (next !== 'orca') void handleBrowseVendorChange(next); }}
-          hiddenVendors={(['cc', 'codex', 'pi', 'cursor'] as const).filter((vendor) =>
+          hiddenVendors={(['cc', 'codex', 'pi', 'cursor', 'antigravity'] as const).filter((vendor) =>
             !!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!),
           )}
           disabled={interactionDisabled}
@@ -4221,7 +4226,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
             onChange={(next) => {
               if (next !== 'orca') void handleBrowseVendorChange(next);
             }}
-            hiddenVendors={(['cc', 'codex', 'pi', 'cursor'] as const).filter((vendor) =>
+            hiddenVendors={(['cc', 'codex', 'pi', 'cursor', 'antigravity'] as const).filter((vendor) =>
               !!unifiedAgents && !unifiedAgents.includes(vendorKeyToAgentKind(vendor)!),
             )}
             disabled={interactionDisabled}
@@ -4839,9 +4844,11 @@ export function ModelSelector({
         : t('newChat.modelSelector.trigger.placeholder')));
   const agentName =
     agentIdentity && !fallbackOption?.active
-      ? agentIdentity.vendorKey === 'cursor'
-        ? 'Cursor'
-        : agentIdentity.vendorKey === 'cc'
+      ? agentIdentity.vendorKey === 'antigravity'
+        ? 'agy'
+        : agentIdentity.vendorKey === 'cursor'
+          ? 'Cursor'
+          : agentIdentity.vendorKey === 'cc'
           ? t('newChat.modelSelector.trigger.agent.claudeCode')
           : agentIdentity.vendorKey === 'pi'
             ? t('newChat.modelSelector.trigger.agent.pi')
@@ -4871,6 +4878,7 @@ export function ModelSelector({
     if (providers.some((p) => providerOffersModel(p, currentModel.id, 'codex'))) {
       return 'codex';
     }
+    if (currentProviderId === 'antigravity') return 'antigravity';
     if (providers.some((p) => providerOffersModel(p, currentModel.id, 'cursor'))) {
       return 'cursor';
     }
@@ -5008,7 +5016,7 @@ export function ModelSelector({
     const model = findCatalogModel(provider, selection.model, selection.agentKind);
     const selectionKey = JSON.stringify([deviceId ?? null, selection.providerId, selection.agentKind, selection.model]);
     const name = selectionKey === labelKey ? localizedName : model?.name ? localizedModelName(model.name, t) : undefined;
-    const vendor = selection.agentKind === 'cursor' ? 'Cursor' : selection.agentKind === 'claude-code' ? 'Claude Code' : selection.agentKind === 'pi' ? 'Pi' : 'Codex';
+    const vendor = selection.agentKind === 'antigravity' ? 'agy' : selection.agentKind === 'cursor' ? 'Cursor' : selection.agentKind === 'claude-code' ? 'Claude Code' : selection.agentKind === 'pi' ? 'Pi' : 'Codex';
     return [vendor, name ?? t('newChat.modelSelector.trigger.placeholder'), provider ? providerDisplayName(provider, t) : selection.providerId,
       selection.effort ? modelEffortLabel(t, model, selection.effort) : null,
       selection.fastMode ? t(selection.fastMode === 'ultrafast' ? 'newChat.modelSelector.speed.ultrafast' : 'newChat.modelSelector.meta.fastBadge') : null].filter(Boolean).join(' · ');
@@ -5512,7 +5520,7 @@ export function ModelSelector({
         wrapperClassName="min-w-0 max-w-full shrink"
         panelClassName="flex min-h-0 flex-col p-0"
         scrollContent={unifiedPanel}
-        panelWidth={unifiedPanel ? undefined : 320}
+        panelWidth={unifiedPanel ? undefined : (unifiedAgents?.length ?? 0) >= 5 ? FIVE_HARNESS_PICKER_WIDTH : MODEL_PICKER_WIDTH}
         // 宽度只进不退(2026-08-14 实测反馈):rail 筛选把内容变窄时面板宽度回缩,
         // rail 图标在指针底下移位。统一面板主体使用固定高度，仅随窗口可用空间收缩。
         stickyWidth

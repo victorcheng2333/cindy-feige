@@ -218,7 +218,7 @@ export interface XdGatewayModelInfo {
   cacheReadInputTokenCost?: number;
   cacheCreationInputTokenCost?: number;
   /** 进哪些 runtime tab；v3 由服务端完整下发。 */
-  agents?: Exclude<AgentKind, 'cursor'>[];
+  agents?: Exclude<AgentKind, 'cursor' | 'antigravity'>[];
   name?: string;
   group?: string;
   description?: string;
@@ -475,7 +475,7 @@ function resolveXdPiGatewayModelApi(model: XdGatewayModelInfo): PiModelApi | nul
   return resolveXdPiGatewayHintModelApi(model);
 }
 
-function xdGatewayTargetAgents(model: XdGatewayModelInfo): Exclude<AgentKind, 'cursor'>[] {
+function xdGatewayTargetAgents(model: XdGatewayModelInfo): Exclude<AgentKind, 'cursor' | 'antigravity'>[] {
   // Pi's exact binary catalog is probed only when a session starts, after capabilities are built.
   // Keep declared Pi membership provisional here unless Cindy Server has an exact Registry
   // tombstone; the final resolver removes or rejects any other unsafe Gateway route, while same-id
@@ -700,7 +700,7 @@ function modelRegistryMetaFields(
 ): RegistryMetaFields | undefined {
   // 模型 registry 的路由与 perAgent 覆盖只按 claude-code / codex 建键;Pi 是动态 BYOM,
   // 无 registry per-agent 覆盖,按 agent 无关处理(取条目基线元数据)。
-  const registryAgent = (agent === 'pi' || agent === 'cursor') ? undefined : agent;
+  const registryAgent = (agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : agent;
   const catalog = base ?? BUNDLED_CATALOG;
   const matched = findModelRegistryRoute(catalog.modelRegistry, providerId, modelId, registryAgent);
   if (!matched) return undefined;
@@ -989,8 +989,8 @@ function materializeXaiAccountModels(
     // The server catalog may predate a client-known variant. Its bundled visibility
     // remains a sparse fallback; explicit server and later user choices still win.
     const bundledEntry = findModelRegistryRoute(BUNDLED_CATALOG.modelRegistry, 'xai', entry.id,
-      (agent === 'pi' || agent === 'cursor') ? undefined : agent)?.entry;
-    const bundledDefaultEnabled = ((agent === 'pi' || agent === 'cursor') ? undefined : bundledEntry?.perAgent?.[agent]?.defaultEnabled)
+      (agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : agent)?.entry;
+    const bundledDefaultEnabled = ((agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : bundledEntry?.perAgent?.[agent]?.defaultEnabled)
       ?? bundledEntry?.defaultEnabled;
     const { efforts, defaultEffort } = resolveXaiAccountCapabilities(
       entry,
@@ -1791,7 +1791,7 @@ function computeMerged(codexModels: readonly CatalogModel[] = discoveredCodex, c
               b.modelRegistry,
               metadataProviderId,
               model.id,
-              (agent === 'pi' || agent === 'cursor') ? undefined : (agent as RootAgentKind),
+              (agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : (agent as RootAgentKind),
             )?.entry.modelRef ??
             (provider.id === MANAGED_OLLAMA_PROVIDER_ID
               ? effectiveLocalModels?.models.find((local) =>
@@ -1937,7 +1937,7 @@ function computeMerged(codexModels: readonly CatalogModel[] = discoveredCodex, c
           ? model.id.replace(/^chatgpt\//, '') : model.id;
         const matched = findModelRegistryRoute(
           b.modelRegistry, metadataProviderId, rootId,
-          (agent === 'pi' || agent === 'cursor') ? undefined : agent as RootAgentKind,
+          (agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : agent as RootAgentKind,
         );
         const identity = matched?.entry.modelRef ?? findBaseModel(b.modelRegistry, rootId)?.id;
         // Known public identities take precedence, including other vendors using
@@ -2047,9 +2047,9 @@ export function getActiveLocalModelCatalog() {
  * 同步返回当前生效目录(base + 自定义供应商)。未加载完成 → base 回落 `BUNDLED_CATALOG`
  * (安全兜底,绝不抛)。消费方(路由 / 标题 / 能力派生 / 注册表)统一走这里。
  */
-let localHarnessProviderReader: (() => Provider) | undefined;
+let localHarnessProviderReader: (() => Provider | readonly Provider[]) | undefined;
 /** Desktop injects account-scoped SDK metadata; this holder never imports Electron/auth. */
-export function setLocalHarnessProviderReader(reader: (() => Provider) | undefined): void {
+export function setLocalHarnessProviderReader(reader: (() => Provider | readonly Provider[]) | undefined): void {
   if (localHarnessProviderReader === reader) return;
   localHarnessProviderReader = reader;
   markChanged();
@@ -2064,7 +2064,9 @@ export function getActiveCatalog(): Catalog {
   }
   // Read outside the shared cache: an owner switch must immediately fence the old catalog.
   const local = localHarnessProviderReader?.();
-  return local ? { ...merged, providers: [...merged.providers.filter(p => p.id !== local.id), local] } : merged;
+  if (!local) return merged;
+  const providers = 'id' in local ? [local] : local;
+  return { ...merged, providers: [...merged.providers.filter(p => !providers.some(entry => entry.id === p.id)), ...providers] };
 }
 
 let pooledCodexProjection: { revision: number; catalogs: WeakMap<readonly CatalogModel[], Catalog> } | undefined;

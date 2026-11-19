@@ -21,7 +21,7 @@ import { captureSessionRuntimeControlOwnerEpoch } from './sessionRuntimeControl.
 export interface PendingCredentialSwitchAccessPorts {
   pendingCredentialSwitchHolder: PendingCredentialSwitchService | null;
   agentInputCoordinatorHolder: Pick<AgentInputCoordinator, 'wakeSession'> | null;
-  getSessionDbAgentKind: (sessionId: string) => 'cc' | 'codex' | 'pi' | 'cursor' | null;
+  getSessionDbAgentKind: (sessionId: string) => 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | null;
   getMaker: () => Maker;
 }
 

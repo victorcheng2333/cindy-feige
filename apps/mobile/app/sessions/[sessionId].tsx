@@ -9533,6 +9533,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     const targetCapabilities = normalizeMobileAgentCapabilities(
       await loadComposerAgentCapabilities(config.agent, catalogDeviceId));
     if (!targetCapabilities || deviceIdRef.current !== deviceId) return false;
+    if (config.agent === 'antigravity' && (sessionAgentKind !== 'antigravity' || catalogDeviceId
+      || !targetCapabilities.supportsControlledAntigravityCreation)) return false;
     if (config.agent === 'cursor' && sessionAgentKind !== 'cursor'
       && targetCapabilities.supportsControlledCursorCreation !== true) return false;
     if (config.fast && (!capability.supportsFastMode || !targetCapabilities.hasFastMode)) return false;

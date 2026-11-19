@@ -110,7 +110,7 @@ export interface CollabWorkerConfig {
 
 export interface CollabDraft {
   enabled: boolean;
-  worker: 'cc' | 'codex' | 'pi' | 'cursor';
+  worker: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   workerConfig?: CollabWorkerConfig;
 }
 
@@ -225,6 +225,7 @@ export interface NewMakerDraft {
  * 在目录里都是默认隐藏的模型 —— 种子默认模型压根不在用户看到的清单里。
  */
 function defaultVendorPrefs(vendor: MakerVendor): VendorPrefs {
+  if (vendor === 'antigravity') return { model: '', effort: 'medium', permissionMode: 'default', permissionModeCustomized: false, planMode: false, providerId: 'antigravity' };
   if (vendor === 'cursor') return { model: getDefaultModelForVendor('cursor').id, effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false, planMode: false, providerId: 'cursor' };
   if (vendor === 'pi') {
     return {
@@ -285,6 +286,7 @@ function makeDefault(): NewMakerDraft {
     extraDirs: [],
     writableDirs: [],
     lastByVendor: {
+      antigravity: defaultVendorPrefs('antigravity'),
       cursor: defaultVendorPrefs('cursor'),
       cc: defaultVendorPrefs('cc'),
       pi: defaultVendorPrefs('pi'),
@@ -406,7 +408,7 @@ function sanitize(raw: unknown): NewMakerDraft {
     r.newChatDefaultPermissionMode === 'auto' || r.newChatDefaultPermissionMode === 'bypassPermissions'
       ? r.newChatDefaultPermissionMode : null;
   const sanitizeVendorPrefs = (p: Partial<VendorPrefs> | undefined, v: MakerVendor): VendorPrefs => {
-    const fallback = { ...defaultVendorPrefs(v), permissionMode: newChatDefaultPermissionMode ?? 'auto' };
+    const fallback = { ...defaultVendorPrefs(v), permissionMode: v === 'antigravity' ? 'default' : newChatDefaultPermissionMode ?? 'auto' };
     const permissionModeCustomized = p?.permissionModeCustomized === true ||
       (p?.permissionModeCustomized === undefined && typeof p?.permissionMode === 'string' &&
         p.permissionMode !== 'auto' && (v === 'cursor' || p.permissionMode !== 'plan'));
@@ -528,6 +530,7 @@ function sanitize(raw: unknown): NewMakerDraft {
     extraDirs,
     writableDirs,
     lastByVendor: {
+      antigravity: sanitizeVendorPrefs(lastByVendorRaw.antigravity, 'antigravity'),
       cursor: sanitizeVendorPrefs(lastByVendorRaw.cursor, 'cursor'),
       cc: sanitizeVendorPrefs(lastByVendorRaw.cc, 'cc'),
       pi: sanitizeVendorPrefs(lastByVendorRaw.pi, 'pi'),
@@ -1075,7 +1078,7 @@ export function applyAppDefaultModelSelection(selection: AppDefaultModelSelectio
   const stored = readStoredDraftRecord();
   const base = stored ? sanitize(stored) : currentDraft;
   const prefs = base.lastByVendor[base.vendor];
-  const current: BotModelRoute | null = prefs.model ? {
+  const current: BotModelRoute | null = prefs.model && base.vendor !== 'antigravity' ? {
     harness: base.vendor === 'cc' || base.vendor === 'orca' ? 'claude' : base.vendor,
     model: prefs.model, providerId: prefs.providerId ?? null, effort: prefs.effort ?? '',
     fastMode: (base.fastModeByModel[prefs.model] ?? false),
@@ -1112,7 +1115,7 @@ export function fallbackUnavailableVendor(availableVendors: ReadonlySet<MakerVen
   rebaseStoredDefaultTuplePreference();
   const currentVendor = currentDraft.vendor;
   if (availableVendors.has(currentVendor)) return false;
-  const fallback = (['cc', 'codex', 'pi', 'cursor'] as const).find((vendor) =>
+  const fallback = (['cc', 'codex', 'pi', 'cursor', 'antigravity'] as const).find((vendor) =>
     availableVendors.has(vendor),
   );
   if (!fallback) return false;
@@ -1123,7 +1126,7 @@ export function fallbackUnavailableVendor(availableVendors: ReadonlySet<MakerVen
 }
 
 export interface SuggestedDefaultTuple {
-  vendor: Extract<MakerVendor, 'cc' | 'codex' | 'pi' | 'cursor'>;
+  vendor: Extract<MakerVendor, 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>;
   providerId: string;
   model: string;
   effort?: Effort | null;

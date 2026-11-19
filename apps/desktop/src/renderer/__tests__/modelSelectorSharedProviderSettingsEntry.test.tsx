@@ -389,7 +389,7 @@ describe('新任务引擎标签', () => {
     try {
       const onUnifiedSelect = vi.fn(async () => true);
       function DraftPicker() {
-        const [vendor, setVendor] = React.useState<'cc' | 'codex' | 'pi' | 'cursor'>('cc');
+        const [vendor, setVendor] = React.useState<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>('cc');
         return <ModelSelectorContent
           modelId={vendor === 'codex' ? 'codex-model' : 'a-model'}
           currentProviderId={vendor === 'codex' ? 'codex-source' : 'a-local'}

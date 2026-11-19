@@ -26,7 +26,7 @@ function mount() {
     openLink: vi.fn(async () => {}),
     maker: {
       listAvailableAgents: vi.fn(() => read.promise),
-      getCapabilities: vi.fn(async () => ({ supportsControlledCursorCreation: true })),
+      getCapabilities: vi.fn(async (): Promise<unknown> => ({ supportsControlledCursorCreation: true })),
     },
   };
   let visible: string[] = [];
@@ -86,4 +86,17 @@ it.each(['device', 'account'] as const)('isolates %s changes and ignores late ol
   expect(page.visible).toEqual(['claude-code', 'codex', 'pi']);
   await act(async () => page.read.resolve(['pi']));
   expect(page.visible).toEqual(['pi']);
+});
+
+// Unit: an older host may list unknown engines, but agy only becomes a new-task
+// choice after the selected Mac explicitly advertises same-account creation.
+it('gates agy on the selected Mac capability', async () => {
+  const page = mount();
+  await page.render();
+  await act(async () => page.read.resolve(['codex', 'antigravity']));
+  expect(page.visible).toEqual(['codex']);
+  page.bindings.maker.getCapabilities.mockResolvedValue({ supportsControlledAntigravityCreation: true });
+  await page.refresh();
+  await act(async () => page.read.resolve(['codex', 'antigravity']));
+  expect(page.visible).toEqual(['codex', 'antigravity']);
 });

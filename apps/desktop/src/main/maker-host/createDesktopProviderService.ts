@@ -1,4 +1,5 @@
 import { setLocalHarnessProviderReader } from './active-catalog.js';
+import { antigravityProvider, readAntigravityConnection } from './antigravity-host.js';
 import { readCursorConnection, cursorModelDiscoveryFailure, cursorProvider } from './cursor-auth.js';
 import { loadManagedClaudeModels, refreshManagedClaudeModels } from './claude-account-models.js';
 import { listEvaluationModels } from '../cindy-evaluate/models.js';
@@ -953,9 +954,14 @@ setMergedProviderPoolResolver((providerId) => {
   return ref && merged ? accountProviderId(ref.kind, merged) : undefined;
 });
 
+function getLocalHarnessProviders() {
+  const antigravity = antigravityProvider();
+  return antigravity ? [cursorProvider(), antigravity] : [cursorProvider()];
+}
+
 /** 进程内单例：注入 active-catalog（同步读）+ 实时连接状态读取器。 */
 export function getDesktopProviderService(options: { allowSideEffects?: boolean } = {}): ProviderService {
-  setLocalHarnessProviderReader(cursorProvider);
+  setLocalHarnessProviderReader(getLocalHarnessProviders);
   setGuestProviderModelCatalogReader(getDesktopProviderModelAccessCatalog);
   const authState = getAuthState();
   const ownerId = getActiveAppSession().dataOwnerId;
@@ -977,6 +983,7 @@ export function getDesktopProviderService(options: { allowSideEffects?: boolean 
   if (singleton) return singleton;
   singleton = createProviderService({
     cursorConnected: readCursorConnection,
+    antigravityConnected: readAntigravityConnection,
     modelDiscoveryFailure: (id, connected) => id === 'cursor' && connected ? cursorModelDiscoveryFailure() : null,
     getModelContextLimits: readModelContextLimits,
     projectProvider: provider => {

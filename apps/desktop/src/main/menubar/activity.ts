@@ -28,14 +28,14 @@ export function buildMenubarActivities(
       sessionId: session.sessionId,
       title: privacy
         ? t(companion ? 'ui.privateCompanion' : 'tasks.private', {
-            harness: harness === 'cursor' ? 'Cursor' : t(`harness.${harness}`),
+            harness: harness === 'antigravity' ? 'Antigravity' : harness === 'cursor' ? 'Cursor' : t(`harness.${harness}`),
           })
         : companion
           ? [companion.groupName, companion.name].filter(Boolean).join(' · ')
           : isDefaultDraftSessionTitle(session.title) || !session.title.trim()
             ? t('ui.untitledTask')
             : session.title,
-      logoSvg: MENUBAR_HARNESS_LOGOS[harness],
+      logoSvg: harness === 'antigravity' ? '' : MENUBAR_HARNESS_LOGOS[harness],
       companion: !!companion,
       attention: session.attention,
       phase: session.phase,

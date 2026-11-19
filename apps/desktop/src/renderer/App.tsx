@@ -173,14 +173,14 @@ function syncNewMakerPrefs(appDefaultModelRequestId?: string) {
   window.electronAPI.syncNewMakerDraft({
     ...(appDefaultModelRequestId ? { appDefaultModelRequestId } : {}),
     ownerStamp: { dataOwnerId: owner.dataOwnerId, ownerGeneration: owner.generation },
-    selectedRoute: {
+    ...(draft.vendor === 'antigravity' ? {} : { selectedRoute: {
       ...(draft.agentDeviceId ? { agentDeviceId: draft.agentDeviceId } : {}),
       harness: draft.vendor === 'cc' || draft.vendor === 'orca' ? 'claude' : draft.vendor,
       providerId: selected.providerId ?? null,
       model: selected.model,
       effort: selected.effort ?? '',
       fastMode: (draft.fastModeByModel[selected.model] ?? false),
-    },
+    } }),
     lastByVendor: {
       cc: {
         model: draft.lastByVendor.cc.model,

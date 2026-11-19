@@ -288,6 +288,7 @@ export function selectVisibleModels(params: {
   if (agentKind === 'codex') return codex;
   if (agentKind === 'pi') return pi;
   if (agentKind === 'cursor') return cursor;
+  if (agentKind === 'antigravity') return deviceId ? [] : deriveModelsFromProviders(providers, agentKind);
   const merged = [...cc];
   const seen = new Set(merged.map((m) => m.id));
   for (const list of [codex, pi]) {

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { assertCursorTaskCreationAllowed, supportsControlledCursorCreation } from '../cursorTaskCreation';
+import { assertAntigravityTaskCreationAllowed, assertCursorTaskCreationAllowed, supportsControlledCursorCreation } from '../cursorTaskCreation';
 
 const state = vi.hoisted(() => ({ context: null as any }));
 vi.mock('../../../device-link/invoke-context.js', () => ({ getDeviceLinkInvokeContext: () => state.context }));
@@ -28,4 +28,17 @@ it('keeps SSH and other-computer execution outside this capability', () => {
   for (const body of [{ remoteHostId: 'ssh-host' }, { agentDeviceId: 'other-mac' }, { agentDeviceId: 'share:provider' }, { orcaRole: 'lead' }, { orcaRole: 'worker' }]) {
     expect(() => assertCursorTaskCreationAllowed(body)).toThrow('UNSUPPORTED_CAPABILITY');
   }
+});
+
+// Unit: a phone can create agy tasks on its verified Mac, while guests cannot
+// borrow that Mac's CLI credentials or choose a different execution computer.
+it('allows controlled agy only on the same-account task computer', () => {
+  expect(() => assertAntigravityTaskCreationAllowed({})).not.toThrow();
+  for (const context of [{ sameAccountController: false }, { sameAccountController: true, sharedTask: {} }]) {
+    state.context = context;
+    expect(() => assertAntigravityTaskCreationAllowed({})).toThrow('UNSUPPORTED_CAPABILITY');
+  }
+  state.context = { sameAccountController: true };
+  expect(() => assertAntigravityTaskCreationAllowed({})).not.toThrow();
+  expect(() => assertAntigravityTaskCreationAllowed({ agentDeviceId: 'another-mac' })).toThrow('UNSUPPORTED_CAPABILITY');
 });

@@ -6,4 +6,5 @@ export const MODEL_HARNESS_COLOR: Readonly<Record<AgentKind, string>> = {
   codex: 'var(--engine-badge-codex)',
   pi: 'var(--engine-badge-pi)',
   cursor: 'var(--text-primary)',
+  antigravity: 'var(--text-primary)',
 };

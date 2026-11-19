@@ -15,13 +15,13 @@ interface MakerEvent {
 
 interface SessionInfo {
   sessionId: string;
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   workDir: string;
   capabilities: unknown;
 }
 
 interface CreateSessionParams {
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   workingDir: string;
   model: string;
   /** 与 maker-core/types/common.ts 的 Effort union 一致 */

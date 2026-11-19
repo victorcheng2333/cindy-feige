@@ -20,7 +20,7 @@ export async function commitContextRebuildWithPorts(
       | 'idle-gap';
     sourceUserClientId: string | null;
     handoffCoverage?: HandoffCoverage;
-    sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
+    sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     sourceModel?: string | null;
     sourceProviderId?: string | null;
     expectedClearedAt?: number | null;

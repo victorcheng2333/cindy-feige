@@ -62,7 +62,7 @@ export interface ConversationSearchSessionSummary {
   /** Display-only Buddy project membership; execution directories remain unchanged. */
   taskProjectDir?: string;
   workspaceKind: ConversationSearchWorkspaceKind;
-  agentKind: ConversationSearchAgentKind;
+  agentKind: ConversationSearchAgentKind | 'antigravity';
   status: ConversationSearchSessionStatus;
   source?: string | null;
   orcaRole?: ConversationSearchOrcaRole | null;

@@ -8,7 +8,7 @@ export function isLocalOnlyProviderForAgent(
   provider: Pick<Provider, 'id' | 'auth' | 'routing'>,
   agent: AgentKind,
 ): boolean {
-  if (agent === 'cursor' || provider.id === 'cursor') return true;
+  if (agent === 'cursor' || provider.id === 'cursor' || agent === 'antigravity' || provider.id === 'antigravity') return true;
   if (agent === 'codex' && provider.routing?.codex?.wireProtocol === 'openai-chat') return true;
   if (provider.auth?.method === 'oauth') {
     const brand = providerCatalogId(provider);

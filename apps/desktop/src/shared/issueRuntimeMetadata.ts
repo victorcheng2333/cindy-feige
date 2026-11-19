@@ -1,12 +1,13 @@
-export type IssueAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type IssueAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
-export type IssueHarness = 'Claude Code' | 'Codex' | 'Pi' | 'Cursor';
+export type IssueHarness = 'Claude Code' | 'Codex' | 'Pi' | 'Cursor' | 'Antigravity';
 
 const ISSUE_HARNESS_BY_AGENT_KIND: Record<IssueAgentKind, IssueHarness> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   pi: 'Pi',
   cursor: 'Cursor',
+  antigravity: 'Antigravity',
 };
 
 export const ISSUE_MODEL_ID_MAX = 200;
@@ -16,7 +17,7 @@ export function issueHarnessForAgentKind(agentKind: IssueAgentKind): IssueHarnes
 }
 
 export function parseIssueHarness(value: unknown): IssueHarness | undefined {
-  return value === 'Cursor' || value === 'Claude Code' || value === 'Codex' || value === 'Pi' ? value : undefined;
+  return value === 'Antigravity' || value === 'Cursor' || value === 'Claude Code' || value === 'Codex' || value === 'Pi' ? value : undefined;
 }
 
 /** Keep a custom model ID safe for a single Markdown environment line and the confirmation UI. */

@@ -5,7 +5,7 @@
 import type { MobileAgentCapabilities } from './agentCapabilities';
 import type { RemoteSession, RemoteSessionAgentSwitchIntent } from './types';
 
-export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 /** Match the host's ordinary-task handoff scope; execution still checks host authority.
  * A borrowed Claude/Codex/Pi source (`agentDeviceId`) can still hand off to local Cursor. */
@@ -27,6 +27,7 @@ export function normalizeSessionAgentSwitchIntent(
     && item.targetAgentKind !== 'codex'
     && item.targetAgentKind !== 'pi'
     && item.targetAgentKind !== 'cursor'
+    && item.targetAgentKind !== 'antigravity'
   ) return null;
   if (typeof item.model !== 'string' || item.model.length === 0) return null;
   // providerId 缺失(undefined)按 null 处理,与桌面 projectPendingAgentSwitchIntent 的
@@ -58,7 +59,7 @@ export function normalizeSessionAgentSwitchIntent(
 
 /** DB 会话行的 cc/codex 映射到 maker agent kind。 */
 export function sessionAgentKind(session: Pick<RemoteSession, 'agentKind'>): MobileSessionAgentKind {
-  return session.agentKind === 'cursor' || session.agentKind === 'codex' || session.agentKind === 'pi'
+  return session.agentKind === 'antigravity' || session.agentKind === 'cursor' || session.agentKind === 'codex' || session.agentKind === 'pi'
     ? session.agentKind
     : 'claude-code';
 }
@@ -73,14 +74,14 @@ export function supportsMobileSessionAgentSwitch(
 }
 
 export function mobileAgentLabel(agentKind: MobileSessionAgentKind): string {
-  return agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
+  return agentKind === 'antigravity' ? 'agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
 export function mobileAgentLabelFromUnknown(agentKind: unknown): string {
-  return agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
+  return agentKind === 'antigravity' ? 'agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
-export function mobileAgentVendor(agentKind: MobileSessionAgentKind): 'cc' | 'codex' | 'pi' | 'cursor' {
+export function mobileAgentVendor(agentKind: MobileSessionAgentKind): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
   return agentKind === 'claude-code' ? 'cc' : agentKind;
 }
 

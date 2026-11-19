@@ -98,7 +98,7 @@ export interface MakeDependencyProgress {
 }
 
 export interface CindyMakeTaskOptions {
-  agentKind?: 'cc' | 'codex' | 'pi' | 'cursor';
+  agentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   model?: string;
   effort?: string;
   providerId?: string | null;

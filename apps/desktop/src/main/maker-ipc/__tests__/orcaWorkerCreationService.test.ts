@@ -515,9 +515,9 @@ describe('providerRouteRequiresExplicitSelection', () => {
 });
 
 function providerRoutingContext(
-  partial: Partial<Record<Exclude<AgentKind, 'cursor'>, OrcaWorkerProviderSnapshot[]>>,
+  partial: Partial<Record<Exclude<AgentKind, 'cursor' | 'antigravity'>, OrcaWorkerProviderSnapshot[]>>,
 ): OrcaWorkerProviderRoutingContext {
-  const availability: Record<Exclude<AgentKind, 'cursor'>, OrcaWorkerProviderSnapshot[]> = {
+  const availability: Record<Exclude<AgentKind, 'cursor' | 'antigravity'>, OrcaWorkerProviderSnapshot[]> = {
     'claude-code': partial['claude-code'] ?? [],
     codex: partial.codex ?? [],
     pi: partial.pi ?? [],
@@ -525,7 +525,7 @@ function providerRoutingContext(
   return {
     availability,
     resolveDefaultProviderIdForModel: (agent, model) => (
-      (agent === 'cursor' ? [] : availability[agent]).find((provider) => provider.models.includes(model))?.id ?? null
+      (agent === 'cursor' || agent === 'antigravity' ? [] : availability[agent]).find((provider) => provider.models.includes(model))?.id ?? null
     ),
   };
 }
@@ -2375,7 +2375,7 @@ describe('OrcaWorkerCreationService', () => {
         { id: 'xd', name: 'XD Gateway', models: ['gpt-5.4'] },
       ],
       pi: [],
-    } satisfies Record<Exclude<AgentKind, 'cursor'>, OrcaWorkerProviderSnapshot[]>;
+    } satisfies Record<Exclude<AgentKind, 'cursor' | 'antigravity'>, OrcaWorkerProviderSnapshot[]>;
     const { deps, service } = createDeps({
       getWorkerDefaults: vi.fn(() => ({ model: 'gpt-5.5', providerId: 'custom-codex' })),
       getProviderRoutingContext: vi.fn(async () => providerRoutingContext(availability)),

@@ -21,7 +21,7 @@ import type { OrcaWorkerRoles } from '@cindy/device-link';
  * Vendor 名称差异: renderer 用 'cc' / 'codex' / 'pi'; worker spawn 路径用
  * 'claude-code' / 'codex' / 'pi'。getWorkerDefaultsFromNewMaker 内部做映射。
  */
-type VendorKey = 'cc' | 'codex' | 'pi' | 'cursor';
+type VendorKey = 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 interface VendorPrefsSnapshot {
   model?: string;
@@ -183,7 +183,7 @@ function applyPinnedThinkingIntents(
  * 读到用户刚选的值，避免新建会话用旧偏好。
  */
 export function setThinkingEnabledInMemory(
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
   providerId: string | null | undefined,
   model: string | undefined,
   enabled: boolean,
@@ -220,7 +220,7 @@ export interface WorkerDefaultsFromNewMaker {
  * 权威 `${agent}:*` 全局槽优先，来源副本兜底（被控端旧快照可能只写过来源槽）。
  */
 export function getThinkingEnabledFromMemory(
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
   providerId: string | null | undefined,
   model: string | undefined,
 ): boolean | undefined {
@@ -236,7 +236,7 @@ export function getThinkingEnabledFromMemory(
  * 缓存未就绪 / 该 vendor 没有偏好 → 返回空对象, 调用方按自己的兜底规则处理。
  */
 export function getWorkerDefaultsFromNewMaker(
-  workerAgent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+  workerAgent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
 ): WorkerDefaultsFromNewMaker {
   if (!cache) return {};
   const vendor: VendorKey = workerAgent === 'claude-code' ? 'cc' : workerAgent;
@@ -258,7 +258,7 @@ export function getWorkerDefaultsFromNewMaker(
  */
 export function getNewTaskDraftSelection(
   ownerScope: string,
-  agent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+  agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
 ): { model?: string; providerId?: string | null; chosenByUser: boolean } | null {
   if (!cache || selectedRouteOwner !== ownerScope) return null;
   const vendor: VendorKey = agent === 'claude-code' ? 'cc' : agent;
@@ -310,7 +310,7 @@ export interface RemoteNewMakerDefaults {
    * 「到这台电脑新建任务」时据此切到同一引擎,远程草稿与被控端自己的新建任务一致,不受控制端
    * 本机引擎影响。旧版被控端不回 → undefined → 控制端保持原引擎。
    */
-  selectedAgentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  selectedAgentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 }
 
 function selectedAgentKindFromRoute(route: BotModelRoute | undefined): RemoteNewMakerDefaults['selectedAgentKind'] {
@@ -320,7 +320,7 @@ function selectedAgentKindFromRoute(route: BotModelRoute | undefined): RemoteNew
 }
 
 export function getRemoteNewMakerDefaults(
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor',
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
 ): RemoteNewMakerDefaults {
   const vendor: VendorKey =
     agentKind === 'claude-code' ? 'cc' : agentKind;
@@ -373,7 +373,7 @@ export function getSelectedNewMakerRoute(ownerScope: string): BotModelRoute | un
 }
 
 /** Same snapshot as the selected route; never consume the unfenced legacy preference cache. */
-export function getNewMakerModelTuning(ownerScope: string, agent: 'claude-code' | 'codex' | 'pi' | 'cursor',
+export function getNewMakerModelTuning(ownerScope: string, agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
   providerId: string, model: string): { effort?: string; fastMode?: boolean | 'ultrafast' } {
   if (selectedRouteOwner !== ownerScope || !cache) return {};
   const memory = cache.providerModelMemory;

@@ -985,7 +985,7 @@ export function ScheduleFormDialog({
                                     fast,
                                     agentDevice,
                                   }) =>
-                                    selectModelConfiguration({
+                                    engine !== 'antigravity' && selectModelConfiguration({
                                       agentKind: engine === 'cc' ? 'claude-code' : engine,
                                       model: modelId,
                                       providerId,
@@ -999,7 +999,7 @@ export function ScheduleFormDialog({
                                       null,
                                       boundSessionReference?.agentKind === 'cc'
                                         ? 'claude-code'
-                                        : boundSessionReference?.agentKind,
+                                        : boundSessionReference?.agentKind === 'antigravity' ? undefined : boundSessionReference?.agentKind,
                                     )
                                   }
                                   agentKind={form.agentKind}

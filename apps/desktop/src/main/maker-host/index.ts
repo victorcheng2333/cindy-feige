@@ -1,3 +1,4 @@
+import { buildAntigravityAgent } from './antigravity-host.js';
 import { buildCursorAgent } from './cursor-host.js';
 import { setCursorSessionStopper } from './cursor-auth.js';
 import { refreshManagedClaudeModels } from './claude-account-models.js';
@@ -2431,6 +2432,8 @@ export function getMaker(): Maker {
     });
     const piAgent = buildPiAgentForDesktop();
     if (piAgent) makerAgents.pi = withSubscriptionAccounts(piAgent);
+    const antigravity = buildAntigravityAgent(desktopMakerLogger);
+    if (antigravity) makerAgents.antigravity = antigravity;
     const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger, makerMemoryManager);
     if (cursorAgent) {
       makerAgents.cursor = cursorAgent;

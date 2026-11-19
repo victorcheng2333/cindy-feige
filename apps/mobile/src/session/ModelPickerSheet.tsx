@@ -27,7 +27,6 @@ import type { MobileAgentCapabilities, MobileChoiceOption, MobileModelOption } f
 import type { DeviceApiKeyStatus } from '@/device-link/deviceModelMetaCache';
 import type { MobileModelPricingMap } from '@/device-link/mobileMakerTransport';
 import type { ProviderView } from '@cindy/model-providers/registry';
-import type { AgentKind } from '@cindy/model-providers/types';
 import { MobileModelPickerList, type ModelOptionsOpenTarget } from '@/session/MobileModelPickerList';
 import { MobileAgentSwitcher } from '@/session/MobileAgentSwitcher';
 import { MobilePermissionPickerList } from '@/session/MobilePermissionPickerList';
@@ -84,7 +83,7 @@ export interface ModelPickerSheetProps {
   providersReady?: boolean;
   /** True only when the host explicitly lacks provider:list. */
   providersUnsupported?: boolean;
-  agentKind: AgentKind;
+  agentKind: MobileSessionAgentKind;
   /** 已建会话可选：先浏览 Agent，再选模型登记下一条消息的切换意图。 */
   agentSwitch?: {
     currentAgentKind: MobileSessionAgentKind;

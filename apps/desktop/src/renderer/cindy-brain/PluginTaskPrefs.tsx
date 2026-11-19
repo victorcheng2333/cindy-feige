@@ -223,7 +223,7 @@ export function PluginTaskPrefs({
               disabled={saving || disabled}
               unifiedAgents={pickerAgents}
               onUnifiedSelect={({ engine, providerId, modelId, effort, fast, agentDevice }) =>
-                save({
+                engine !== 'antigravity' && save({
                   ...config,
                   agentKind: engine,
                   providerId,

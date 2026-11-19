@@ -4,7 +4,7 @@ import {
   getDataOwnerGeneration,
   isDataOwnerPushStampCurrent,
 } from '@/contexts/dataOwnerGeneration';
-import { accessHostModelFavorites, subscribeModelFavorites } from './modelFavorites';
+import { accessHostModelFavorites, isRemoteModelFavorite, subscribeModelFavorites } from './modelFavorites';
 import { accessHostRecentModels } from './recentModels';
 
 export function useModelFavoritesHost(): void {
@@ -19,7 +19,7 @@ export function useModelFavoritesHost(): void {
         // Plugin recents use the legacy engine set; Cursor opt-in applies only to favorites.
         const recents = request.recents
           ? accessHostRecentModels(request.ownerStamp.dataOwnerId)
-            .filter((item) => item.agent !== 'cursor' && item.providerId.length <= MODEL_FAVORITE_TEXT_MAX_LENGTH)
+            .filter(isRemoteModelFavorite).filter((item) => item.agent !== 'cursor' && item.providerId.length <= MODEL_FAVORITE_TEXT_MAX_LENGTH)
           : undefined;
         // Long local composite sources cannot be represented by the existing wire
         // protocol. Keep them on disk without breaking older readers' entire list.
