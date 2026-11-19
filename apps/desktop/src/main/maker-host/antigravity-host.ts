@@ -49,11 +49,11 @@ function currentModels() {
   return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.models : [];
 }
 
-export async function readAntigravityConnection(options: { allowSideEffects?: boolean; waitForDiscovery?: boolean } = {}) {
+export async function readAntigravityConnection(options: { allowSideEffects?: boolean; waitForDiscovery?: boolean; force?: boolean } = {}) {
   const bin = executable;
   if (!bin) return false;
   const scope = ownerScopedUserDataPath('antigravity');
-  if (snapshot?.scope === scope && Date.now() < snapshot.expiresAt) return snapshot.models.length > 0;
+  if (!options.force && snapshot?.scope === scope && Date.now() < snapshot.expiresAt) return snapshot.models.length > 0;
   if (!options.allowSideEffects) return currentModels().length > 0;
   if (discovery?.scope === scope) return options.waitForDiscovery ? discovery.promise : currentModels().length > 0;
   const token = Symbol();
@@ -68,6 +68,10 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
       models = parseAntigravityModels(stdout);
     } catch { /* CLI stdout and stderr may contain credentials or proxy diagnostics. */ }
     if (discovery?.token !== token || scope !== ownerScopedUserDataPath('antigravity')) return false;
+    if (options.force && !models.length && snapshot?.scope === scope && snapshot.models.length) {
+      snapshot = { ...snapshot, expiresAt: Date.now() + 30_000 };
+      return false;
+    }
     snapshot = { scope, models, expiresAt: Date.now() + (models.length ? 30 * 60_000 : 30_000) };
     notifyLocalHarnessProviderChanged();
     return models.length > 0;

@@ -12,6 +12,7 @@ describe('provider subtitle display', () => {
   it('renders supported agents from provider.agents', () => {
     expect(providerAgentSupportLabel({ agents: ['claude-code', 'codex'] })).toBe('Claude Code / Codex');
     expect(providerAgentSupportLabel({ agents: ['codex'] })).toBe('Codex');
+    expect(providerAgentSupportLabel({ agents: ['antigravity'] })).toBe('agy');
   });
 
   it('combines localized model label with dynamic agent support and optional suffix', () => {

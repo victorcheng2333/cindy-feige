@@ -757,18 +757,12 @@ function DetailHeader({
     displayProvider?.access?.kind === 'subscription' ? displayProvider.access.product : null;
   // 单 agent 供应商在头部统一说明(行级不再逐条标注,见 UnifiedModelList 头注释)。
   const singleAgentNote =
-    displayProvider && displayProvider.agents.length === 1
+    displayProvider?.agents.length === 1
       ? t('settings.providers.detail.singleAgentNote', {
-          agent:
-            displayProvider.agents[0] === 'cursor'
-              ? 'Cursor'
-              : displayProvider.agents[0] === 'claude-code'
-                ? 'Claude Code'
-                : displayProvider.agents[0] === 'pi'
-                  ? 'Pi'
-                  : 'Codex',
+          agent: providerSubtitleForDisplay(displayProvider, ''),
         })
       : null;
+  const detailSubtitle = [subtitle, singleAgentNote].filter(Boolean).join(' · ');
 
   // Account pool kind behind this provider: the built-in one, or (2026-11-13) a provider whose
   // accounts the host manages in that pool (created, or a legacy Codex connection with accounts).
@@ -868,18 +862,17 @@ function DetailHeader({
               </div>
               <span
                 className="flex min-w-0 items-center gap-1 text-13 leading-tight"
-                title={remote ? remote.deviceName : [subtitle, singleAgentNote].filter(Boolean).join(' · ')}
+                title={remote ? remote.deviceName : detailSubtitle}
                 style={{ color: 'var(--settings-integration-subtitle)' }}
               >
                 {provider ? (
                   <ProviderRunLocationSubtitle
                     provider={provider}
-                    subtitle={`${subtitle}${singleAgentNote ? ` · ${singleAgentNote}` : ''}`}
+                    subtitle={detailSubtitle}
                   />
                 ) : (
                   <span className="min-w-0 truncate">
-                    {subtitle}
-                    {singleAgentNote ? ` · ${singleAgentNote}` : ''}
+                    {detailSubtitle}
                   </span>
                 )}
               </span>
@@ -3434,9 +3427,14 @@ export function ProvidersSection() {
   /** 内置四家复用 main 已有的 provider-specific 真源刷新，不在 Renderer 复制网络逻辑。 */
   const handleRefreshBuiltinModels = useCallback(
     async (p: ProviderView) => {
-      if (!isBuiltinRefreshableProviderId(p.id) || !beginProviderRefresh(p.id)) return;
+      if ((!isBuiltinRefreshableProviderId(p.id) && p.id !== 'antigravity') || !beginProviderRefresh(p.id)) return;
       try {
-        await window.electronAPI.maker.refreshBuiltinProviderModels(p.id);
+        if (p.id === 'antigravity') {
+          const result = await window.electronAPI.maker.rediscoverModels(p.id);
+          if (!result.ok) throw new Error('Antigravity model discovery failed');
+        } else {
+          await window.electronAPI.maker.refreshBuiltinProviderModels(p.id);
+        }
         toast.success(t('settings.providers.models.refreshDone'));
         refetch();
       } catch (err) {
@@ -3913,6 +3911,7 @@ export function ProvidersSection() {
                   {!effectiveSelected.suspended &&
                     !selectedBorrowedModels &&
                     (providerHasModels(effectiveSelected) ||
+                      effectiveSelected.id === 'antigravity' ||
                       isCustomRoutedProvider(effectiveSelected) ||
                       (isBuiltinRefreshableProviderId(effectiveSelected.id) &&
                         !effectiveSelected.modelDiscoveryFailure) ||
@@ -3956,7 +3955,7 @@ export function ProvidersSection() {
                           }
                           compactWhenEmpty={isManagedLocalProvider(effectiveSelected.id)}
                           compact={isManagedLocalProvider(effectiveSelected.id)}
-                          {...(isBuiltinRefreshableProviderId(effectiveSelected.id)
+                          {...(effectiveSelected.id === 'antigravity' || isBuiltinRefreshableProviderId(effectiveSelected.id)
                             ? {
                                 onRefresh: () => void handleRefreshBuiltinModels(effectiveSelected),
                                 refreshing: refreshingProviderId === effectiveSelected.id,
@@ -3976,6 +3975,7 @@ export function ProvidersSection() {
                   {!effectiveSelected.suspended &&
                     !selectedBorrowedModels &&
                     !providerHasModels(effectiveSelected) &&
+                    effectiveSelected.id !== 'antigravity' &&
                     !isCustomRoutedProvider(effectiveSelected) &&
                     !isManagedLocalProvider(effectiveSelected.id) &&
                     (Boolean(effectiveSelected.modelDiscoveryFailure) ||

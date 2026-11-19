@@ -290,6 +290,23 @@ afterEach(() => {
 });
 
 describe('ProvidersSection — 双栏管理', () => {
+  // Unit regression: an empty agy catalog previously hid the only manual
+  // recovery control. Tap Refresh in the real provider detail and verify discovery.
+  it('offers an Antigravity model refresh even with an empty catalog', async () => {
+    providerSnapshotState.customOverride = {
+      id: 'antigravity', name: 'Antigravity', source: 'builtin', agents: ['antigravity'],
+      auth: { method: 'oauth' }, routing: {}, connected: false, models: { antigravity: [] },
+    };
+    const rediscoverModels = vi.fn(async () => ({ ok: true }));
+    window.electronAPI.maker.rediscoverModels = rediscoverModels;
+    window.electronAPI.maker.auth = { getAgyProxy: vi.fn(async () => '') } as unknown as typeof window.electronAPI.maker.auth;
+    render(<MemoryRouter><ProvidersSection /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /Antigravity/ }));
+    const refresh = await screen.findByRole('button', { name: 'settings.providers.models.refreshBuiltinAria' });
+    await act(async () => { fireEvent.click(refresh); });
+    expect(rediscoverModels).toHaveBeenCalledExactlyOnceWith('antigravity');
+  });
+
   // Reuse receiver-side disable, retaining the settings row for re-enabling.
   it('disables an extra remote provider and re-enables it from the same action menu after reopening', async () => {
     ownDevicesState.devices = [{ deviceId: 'peer', name: 'Other computer', platform: 'darwin' }];

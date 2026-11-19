@@ -7766,6 +7766,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     // Independent subscription ids use the same account routing as native refresh;
     // their editable display names never select a provider or CLI profile.
     rediscoverModels: async (providerId) => {
+      if (providerId === 'antigravity') {
+        const refreshed = await readAntigravityConnection({ force: true, allowSideEffects: true, waitForDiscovery: true });
+        if (!refreshed) throw new Error('Antigravity model discovery failed');
+        return null;
+      }
       const ref = resolveSubscriptionPoolProviderRef(providerId);
       if (ref && !(await getMaker().refreshAgentLocalModels(ref.kind === 'anthropic' ? 'claude-code' : 'codex', {
         providerId, credentialMode: 'oauth-bearer',
