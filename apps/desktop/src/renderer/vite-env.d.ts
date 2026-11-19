@@ -6954,6 +6954,9 @@ interface ElectronAPI {
       /** true = Codex 正忙, 存活会话的软重启在任务结束后自动补做 (设置已生效) */
       codexRestartDeferred: boolean;
     }>;
+    userPromptGet: () => Promise<{ value: string; isCustomized: boolean }>;
+    userPromptSet: (value: string) => Promise<{ value: string; isCustomized: boolean }>;
+    userPromptMigrateLegacy: (legacyValue: string) => Promise<{ value: string; isCustomized: boolean }>;
 
     /** IM 新会话默认 agent/model/effort/provider。传 channel 时按渠道独立读写。 */
     imDefaultSettingsGet: (channel?: ImDefaultSettingsChannel) => Promise<ImDefaultSettingsState>;

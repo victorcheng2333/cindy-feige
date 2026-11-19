@@ -167,6 +167,14 @@ export interface AgentRuntimeConfig {
   /** Host-owned answer presentation protocol. Shared by normal and Bot sessions;
    * appended to native instructions, never replaces the CLI's own prompt. */
   answerDeliveryPrompt?: string;
+  /**
+   * Host-persisted personal custom instructions fallback (Settings > Personalization).
+   * Used when main-side session starts (scheduled tasks, IM, hooks, direct createSession)
+   * omit `StartSessionOptions.userPrompt`. Explicit `opts.userPrompt` (including `""`)
+   * always wins, and adapters never apply this fallback in `reviewMode`,
+   * `isolatedBotProfile`, or `deviceHosted` sessions.
+   */
+  userPrompt?: string;
 
   /**
    * 是否启用 agent 的自动记忆 (Claude auto-memory / Codex experimental memories)。

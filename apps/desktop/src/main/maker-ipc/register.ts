@@ -814,11 +814,14 @@ import {
   setAutoReviewContextResolver,
 } from '../maker-host/index.js';
 import {
+  readMemorySettings,
   readMemorySettingsState,
   resetMemorySettings,
   type MemorySettings,
   writeMemorySetting,
 } from '../maker-host/memory-settings-store.js';
+import { readUserPrompt } from '../maker-host/user-prompt-settings-store.js';
+import { applyMainStartupPersonalizationDefaults } from './startupPersonalizationDefaults.js';
 import { updateMakerMemorySettings, type NativeMemoryPatch } from '../app-settings/memory.js';
 import {
   assertCollabProjectEnabled,
@@ -9233,6 +9236,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         });
       });
     }
+    applyMainStartupPersonalizationDefaults(o, {
+      readUserPrompt,
+      readMakerMemoryEnabled: () => maker.makerMemory?.isEnabled() ?? readMemorySettings().maker,
+    });
     o.hostStartupPreferences = {
       userPrompt: o.userPrompt,
       makerMemoryEnabled: o.makerMemoryEnabled,

@@ -443,6 +443,14 @@ export const MAKER_INVOKE = {
   /** 把旧 renderer/native memory 的关闭意图迁移为 main 端 maker:false override。 */
   MEMORY_PRESERVE_LEGACY_MAKER_DISABLED: 'maker:memory:preserve-legacy-maker-disabled',
   MEMORY_RESET_SETTINGS: 'maker:memory:reset-settings',
+  /**
+   * 用户自定义提示词（Settings > Personalization）的 main 端持久化通道。
+   * main 的 <ownerRoot>/user-prompt-settings.json 是 source of truth，供定时任务、
+   * IM、官方 hook 与 renderer 同步共用。
+   */
+  USER_PROMPT_GET: 'maker:user-prompt:get',
+  USER_PROMPT_SET: 'maker:user-prompt:set',
+  USER_PROMPT_MIGRATE_LEGACY: 'maker:user-prompt:migrate-legacy',
   /** IM 普通会话默认 agent/model/effort/provider；仅影响新 IM session 和 Feishu `/new`。 */
   IM_DEFAULT_SETTINGS_GET: 'maker:im-default-settings:get',
   IM_DEFAULT_SETTINGS_SET: 'maker:im-default-settings:set',

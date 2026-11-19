@@ -8126,6 +8126,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       defaults: { maker: boolean; claudeCode: boolean; codex: boolean; pi: boolean };
       codexRestartDeferred: boolean;
     }> => ipcRenderer.invoke('maker:memory:reset-settings'),
+    /** 用户自定义提示词（Settings > Personalization）的 main 端读写与旧版 localStorage 迁移。 */
+    userPromptGet: (): Promise<{ value: string; isCustomized: boolean }> =>
+      ipcRenderer.invoke('maker:user-prompt:get'),
+    userPromptSet: (value: string): Promise<{ value: string; isCustomized: boolean }> =>
+      ipcRenderer.invoke('maker:user-prompt:set', value),
+    userPromptMigrateLegacy: (legacyValue: string): Promise<{ value: string; isCustomized: boolean }> =>
+      ipcRenderer.invoke('maker:user-prompt:migrate-legacy', legacyValue),
 
     /** IM 新会话默认 agent/model/effort/provider。传 channel 时按渠道独立读写。 */
     imDefaultSettingsGet: (channel?: ImDefaultSettingsChannel): Promise<ImDefaultSettingsState> =>

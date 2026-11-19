@@ -3,23 +3,26 @@
  * ---------------------------------------------------------------------------
  * 设计取舍：
  *   - 不上服务器（隐私 + server 端没有 push 同步能力）。
- *   - 用 localStorage 落 `userData/Local Storage/`，重启不丢；跟 useTheme/
- *     useNotificationSettings 同源存储位置。
- *   - **不绑 React** —— 任何 renderer 路径都可以 `getUserPrompt()` 同步取值
- *     （例如 ChatInput 启 session 时透传），不需要 hook context。
- *   - hook (`useUserPrompt`) 是上层薄包装，订阅本 store 的变化。
- *
- * 跨进程：localStorage 仅 renderer 可达，main 进程的 maker-host 拿不到。
- * Agent 注入走「renderer 启 session 时透传 userPrompt 到 IPC」 ——
- * 跟 model/effort 完全同模式，main 不需要知道 storage 实现。
+ *   - main 端 `<ownerRoot>/user-prompt-settings.json` 是跨入口 source of truth
+ *     （供定时任务、个人 IM、官方 hook 与恢复任务直接读取）；
+ *     renderer 端 localStorage 保留同步镜像，让 ChatInput / makerChatStore 仍可
+ *     通过 `getUserPrompt()` 同步取值，不引入 async race。
+ *   - 启动与切换账号时 `bootstrapUserPromptFromMain()` 拉取 main 真值，并在首次升级
+ *     时自动把旧版仅存于 localStorage 的提示词迁移到 main。
  */
 
 const STORAGE_KEY_PREFIX = 'userPrompt.value';
 const LEGACY_STORAGE_KEY = STORAGE_KEY_PREFIX;
+const MAIN_MIGRATION_KEY_PREFIX = 'userPrompt.mainMigrationV1';
 let activeOwnerId: string | null = null;
+let localWriteRevision = 0;
 
 function storageKey(): string {
   return `${STORAGE_KEY_PREFIX}.${activeOwnerId ?? 'signed-out'}`;
+}
+
+function mainMigrationKey(): string {
+  return `${MAIN_MIGRATION_KEY_PREFIX}.${activeOwnerId ?? 'signed-out'}`;
 }
 
 function migrateLegacyPrompt(ownerId: string): void {
@@ -33,6 +36,32 @@ function migrateLegacyPrompt(ownerId: string): void {
   } catch {
     // localStorage 不可用时保留现有的空值回退语义。
   }
+}
+
+function hasCompletedMainMigration(): boolean {
+  try {
+    return localStorage.getItem(mainMigrationKey()) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markMainMigrationCompleted(): void {
+  try {
+    localStorage.setItem(mainMigrationKey(), '1');
+  } catch {
+    // localStorage 不可用时忽略；下次启动仍会安全重试。
+  }
+}
+
+function writeMirror(next: string): void {
+  localWriteRevision += 1;
+  try {
+    localStorage.setItem(storageKey(), next);
+  } catch {
+    // localStorage 不可用 —— 忽略，调用方应自行处理 UI 反馈。
+  }
+  subscribers.forEach((cb) => cb(next));
 }
 
 /** Select the owner namespace used by this renderer's personal prompt cache. */
@@ -57,14 +86,50 @@ export function getUserPrompt(): string {
   }
 }
 
-/** 同步写 —— 落盘 + 通知本 tab 内所有 subscriber（storage 事件本身不会触发当前 tab）。 */
+/** 同步写镜像，并尽最大努力同步到 main 持久化（适合同步调用方）。 */
 export function setUserPrompt(next: string): void {
+  writeMirror(next);
   try {
-    localStorage.setItem(storageKey(), next);
+    void window.electronAPI?.maker?.userPromptSet?.(next)?.catch(() => undefined);
   } catch {
-    // localStorage 不可用 —— 忽略，调用方应自行处理 UI 反馈。
+    // preload 未就绪时留待下次保存或启动同步。
   }
-  subscribers.forEach((cb) => cb(next));
+}
+
+/** 持久化写 —— 先落 main 真源，成功后再更新本地镜像；失败抛错给 UI 反馈。 */
+export async function saveUserPrompt(next: string): Promise<void> {
+  const persisted = window.electronAPI?.maker?.userPromptSet
+    ? (await window.electronAPI.maker.userPromptSet(next)).value
+    : next;
+  markMainMigrationCompleted();
+  writeMirror(persisted);
+}
+
+/**
+ * 启动期 / 切换账号后从 main 拉取真值同步到本地镜像。
+ * 若 main 尚未建立记录而旧版 localStorage 里已有提示词，则自动迁移一次到 main，
+ * 让已保存自定义提示词的用户升级后无需重新点击保存即可对定时任务与 IM 生效。
+ */
+export async function bootstrapUserPromptFromMain(): Promise<void> {
+  const api = window.electronAPI?.maker;
+  if (!api?.userPromptGet) return;
+  const revisionAtStart = localWriteRevision;
+  const ownerAtStart = activeOwnerId;
+  try {
+    let state = await api.userPromptGet();
+    if (localWriteRevision !== revisionAtStart || activeOwnerId !== ownerAtStart) return;
+    const localValue = getUserPrompt();
+    if (!state.isCustomized && !state.value && localValue.length > 0 && !hasCompletedMainMigration() && api.userPromptMigrateLegacy) {
+      state = await api.userPromptMigrateLegacy(localValue);
+      if (localWriteRevision !== revisionAtStart || activeOwnerId !== ownerAtStart) return;
+    }
+    markMainMigrationCompleted();
+    if (getUserPrompt() !== state.value) {
+      writeMirror(state.value);
+    }
+  } catch {
+    // preload 未就绪 / IPC 异常 — 保留本地镜像，不影响渲染挂载。
+  }
 }
 
 /** 订阅变化 —— hook 用，也可以给非 React 路径用。返回 unsubscribe。 */
@@ -74,6 +139,7 @@ export function subscribeUserPrompt(cb: Subscriber): () => void {
   // 监听跨实例 storage 事件（多窗口兜底；Electron 单窗口下几乎不触发）。
   const storageHandler = (e: StorageEvent) => {
     if (e.key !== storageKey()) return;
+    localWriteRevision += 1;
     cb(getUserPrompt());
   };
   window.addEventListener('storage', storageHandler);

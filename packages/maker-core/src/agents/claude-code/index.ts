@@ -4115,7 +4115,9 @@ export class ClaudeCodeAgent extends BaseAgent {
               botProfileContextPrompt:
                 reviewMode ? undefined : opts.botProfileContextPrompt,
               botUserProfilePrompt: reviewMode ? undefined : opts.botUserProfilePrompt,
-              userPrompt: reviewMode || isolatedBotProfile(opts.botRuntimeProfile) ? undefined : opts.userPrompt,
+              userPrompt: reviewMode || isolatedBotProfile(opts.botRuntimeProfile)
+                ? undefined
+                : (opts.userPrompt ?? (hosted ? undefined : this.deps.runtimeConfig.userPrompt)),
               ...(hosted ? { deviceHostedNote: deviceHostedClaudeNote(hosted, opts.workingDir) } : {}),
             });
             return {
@@ -4710,7 +4712,9 @@ export class ClaudeCodeAgent extends BaseAgent {
               botProfileContextPrompt:
                 reviewMode ? undefined : opts.botProfileContextPrompt,
               botUserProfilePrompt: reviewMode ? undefined : opts.botUserProfilePrompt,
-              userPrompt: reviewMode || isolatedBotProfile(opts.botRuntimeProfile) ? undefined : opts.userPrompt,
+              userPrompt: reviewMode || isolatedBotProfile(opts.botRuntimeProfile)
+                ? undefined
+                : (opts.userPrompt ?? (hosted ? undefined : this.deps.runtimeConfig.userPrompt)),
               ...(hosted ? { deviceHostedNote: deviceHostedClaudeNote(hosted, opts.workingDir) } : {}),
             });
             return {

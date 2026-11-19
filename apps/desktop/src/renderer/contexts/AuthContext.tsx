@@ -34,7 +34,7 @@ import {
   setCurrentUserName,
 } from '@/lib/makerChatStore';
 import { isSecondaryWindow } from '@/lib/secondaryWindow';
-import { setUserPromptOwner } from '@/lib/userPromptStore';
+import { bootstrapUserPromptFromMain, setUserPromptOwner } from '@/lib/userPromptStore';
 import { bootstrapMemorySettingsFromMain, setMemorySettingsOwner } from '@/lib/memorySettingsStore';
 import {
   refreshChatEmbeddingFromMain,
@@ -384,6 +384,7 @@ export function AuthProvider({
       if (ownerBoundaryCommitted || ownerRollbackProjection) {
         setMemorySettingsOwner(state.dataOwnerId);
         void bootstrapMemorySettingsFromMain();
+        void bootstrapUserPromptFromMain();
       }
       setMode(state.mode);
       setDataOwnerId(state.dataOwnerId);

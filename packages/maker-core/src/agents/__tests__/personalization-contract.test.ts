@@ -133,6 +133,8 @@ const noopLogger: Logger = {
 interface CaptureScenario {
   userPrompt?: string;
   makerMemoryEnabled?: boolean;
+  runtimeUserPrompt?: string;
+  runtimeMakerMemoryEnabled?: boolean;
   reviewMode?: true;
   resumeSessionId?: string;
 }
@@ -213,6 +215,10 @@ describe('Cross-harness personalization & memory contract', () => {
         runtimeConfig: {
           endpoint: 'http://127.0.0.1:9',
           systemPrompt: 'HOST_SYSTEM_PROMPT',
+          ...(scenario.runtimeUserPrompt !== undefined ? { userPrompt: scenario.runtimeUserPrompt } : {}),
+          ...(scenario.runtimeMakerMemoryEnabled !== undefined
+            ? { makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled }
+            : {}),
         },
         binaryPath: '/mock/claude',
         logger: noopLogger,
@@ -316,6 +322,10 @@ describe('Cross-harness personalization & memory contract', () => {
         runtimeConfig: {
           endpoint: 'http://127.0.0.1:9',
           systemPrompt: 'HOST_SYSTEM_PROMPT',
+          ...(scenario.runtimeUserPrompt !== undefined ? { userPrompt: scenario.runtimeUserPrompt } : {}),
+          ...(scenario.runtimeMakerMemoryEnabled !== undefined
+            ? { makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled }
+            : {}),
         },
         binaryPath: '/mock/codex',
         logger: noopLogger,
@@ -362,6 +372,10 @@ describe('Cross-harness personalization & memory contract', () => {
         runtimeConfig: {
           endpoint: 'http://127.0.0.1:9',
           systemPrompt: 'HOST_SYSTEM_PROMPT',
+          ...(scenario.runtimeUserPrompt !== undefined ? { userPrompt: scenario.runtimeUserPrompt } : {}),
+          ...(scenario.runtimeMakerMemoryEnabled !== undefined
+            ? { makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled }
+            : {}),
         },
         binaryPath: '/mock/pi',
         logger: noopLogger,
@@ -450,6 +464,10 @@ describe('Cross-harness personalization & memory contract', () => {
       },
       runtimeConfig: {
         systemPrompt: 'HOST_SYSTEM_PROMPT',
+        ...(scenario.runtimeUserPrompt !== undefined ? { userPrompt: scenario.runtimeUserPrompt } : {}),
+        ...(scenario.runtimeMakerMemoryEnabled !== undefined
+          ? { makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled }
+          : {}),
       },
       binaryPath: '/mock/cursor-host.js',
       logger: noopLogger,
@@ -561,6 +579,44 @@ describe('Cross-harness personalization & memory contract', () => {
         expect(resumed.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
         expect(resumed.memoryMcpEnabled).toBe(declared.makerMemory);
       }
+
+      // 5. Main-side session starts (scheduled tasks, IM, hooks) omit per-session
+      //    userPrompt and makerMemoryEnabled and rely on runtimeConfig live fallbacks.
+      const runtimeFallback = await captureDelivery(kind, {
+        runtimeUserPrompt: USER_PROMPT_CANARY,
+        runtimeMakerMemoryEnabled: true,
+      });
+      if (declared.userPrompt !== false) {
+        expect(runtimeFallback.deliveredPromptText).toContain(USER_PROMPT_CANARY);
+      }
+      if (declared.makerMemory) {
+        expect(runtimeFallback.deliveredPromptText).toContain(MAKER_MEMORY_RULES);
+        expect(runtimeFallback.deliveredPromptText).toContain(MEMORY_INDEX_CANARY);
+        if (runtimeFallback.memoryMcpEnabled !== undefined) {
+          expect(runtimeFallback.memoryMcpEnabled).toBe(true);
+        }
+      }
+
+      // Explicit empty userPrompt & false makerMemoryEnabled override runtimeConfig fallbacks,
+      // and reviewMode suppresses runtimeConfig fallbacks too.
+      const explicitOverride = await captureDelivery(kind, {
+        userPrompt: '',
+        makerMemoryEnabled: false,
+        runtimeUserPrompt: USER_PROMPT_CANARY,
+        runtimeMakerMemoryEnabled: true,
+      });
+      expect(explicitOverride.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
+      expect(explicitOverride.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
+      expect(explicitOverride.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
+
+      const reviewWithRuntimeFallback = await captureDelivery(kind, {
+        reviewMode: true,
+        runtimeUserPrompt: USER_PROMPT_CANARY,
+        runtimeMakerMemoryEnabled: true,
+      });
+      expect(reviewWithRuntimeFallback.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
+      expect(reviewWithRuntimeFallback.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
+      expect(reviewWithRuntimeFallback.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
     },
   );
 });
