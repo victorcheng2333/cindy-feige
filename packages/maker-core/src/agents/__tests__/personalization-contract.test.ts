@@ -417,7 +417,11 @@ describe('Cross-harness personalization & memory contract', () => {
           logout: async () => {},
           getAuthEnv: async () => ({}),
         },
-        runtimeConfig: { systemPrompt: 'HOST_SYSTEM_PROMPT' },
+        runtimeConfig: {
+          systemPrompt: 'HOST_SYSTEM_PROMPT',
+          userPrompt: scenario.runtimeUserPrompt,
+          makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled,
+        },
         binaryPath: '/mock/agy',
         logger: noopLogger,
         makerMemory,
@@ -609,14 +613,19 @@ describe('Cross-harness personalization & memory contract', () => {
       expect(explicitOverride.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
       expect(explicitOverride.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
 
-      const reviewWithRuntimeFallback = await captureDelivery(kind, {
+      const reviewWithRuntimeFallback = captureDelivery(kind, {
         reviewMode: true,
         runtimeUserPrompt: USER_PROMPT_CANARY,
         runtimeMakerMemoryEnabled: true,
       });
-      expect(reviewWithRuntimeFallback.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
-      expect(reviewWithRuntimeFallback.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
-      expect(reviewWithRuntimeFallback.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
+      if (kind === 'antigravity') {
+        await expect(reviewWithRuntimeFallback).rejects.toThrow('ordinary local desktop task');
+      } else {
+        const delivery = await reviewWithRuntimeFallback;
+        expect(delivery.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
+        expect(delivery.deliveredPromptText).not.toContain(MAKER_MEMORY_RULES);
+        expect(delivery.deliveredPromptText).not.toContain(MEMORY_INDEX_CANARY);
+      }
     },
   );
 });
