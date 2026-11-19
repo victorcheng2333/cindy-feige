@@ -439,6 +439,7 @@ import { draftModelMemoryFor, hydrateDraftModelMemory } from '@/session/draftMod
 import { effortLabelFromRuntime, rowFastEditable } from '@/session/modelPickerRows';
 import { useRemoteAgentCatalogs, useRemoteAgentCatalogsWithStatus } from '@/session/useRemoteAgentCatalogs';
 import { restoredRemoteAgentUnusable as restoredRemoteAgentUnusableCheck } from '@/session/remoteAgentCatalogs';
+import { isProviderShareAgentDeviceId } from '@/session/providerShareAgentDevice';
 import { useTheme, useThemedStyles, type ThemeColors } from '@/theme';
 import { fontWeight, iconSize, iconStroke, lineHeight, navigationChrome, radius, spacing, typeScale } from '@/theme/tokens';
 
@@ -2379,7 +2380,10 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     const remoteDeviceId = source?.deviceId ?? null;
     const deviceAtStart = selectedDeviceId;
     const sequence = ++runtimeActionSeqRef.current;
-    const targetCapabilities = normalizeMobileAgentCapabilities(await maker.getCapabilities(agent));
+    const capabilitiesMaker = remoteDeviceId && !isProviderShareAgentDeviceId(remoteDeviceId)
+      ? executionMakerForDevice(remoteDeviceId)
+      : maker;
+    const targetCapabilities = normalizeMobileAgentCapabilities(await capabilitiesMaker.getCapabilities(agent));
     if (!targetCapabilities || (agent === 'cursor' && !targetCapabilities.supportsControlledCursorCreation)) return false;
     const storedPermission = newSessionPreferences?.permissionModeByAgent[agent];
     const permission = agent === draft.agentKind ? draft.permissionMode
@@ -2418,7 +2422,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       },
     });
     return true;
-  }, [creating, selectedDeviceId, maker, newSessionPreferences, draft.agentKind, draft.permissionMode, requestHostChoiceWrite]);
+  }, [creating, selectedDeviceId, maker, executionMakerForDevice, newSessionPreferences, draft.agentKind, draft.permissionMode, requestHostChoiceWrite]);
 
   // 扁平回退(被控端 0 供应商):只落 model、清来源(默认路由),effort 跟随 capabilities reconcile。
   const selectFlatModel = useCallback((option: MobileModelOption) => {
