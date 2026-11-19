@@ -75,18 +75,34 @@ export interface ContextWindowBudgetChipProps {
   /** device-link 远程任务：档位必须按被控端的目录算（模型 id 跨设备不唯一）。 */
   deviceId?: string;
   disabled?: boolean;
+  /** The execution host differs from this renderer; no authoritative local price. */
+  hideLocalPricing?: boolean;
 }
 
-/** 该窗口落在哪条价带：band 的 maxInputTokens 是开区间，缺价继承报价基准价。 */
-function inputPriceAtTokens(quote: ModelPriceQuote | undefined, tokens: number): string | null {
-  if (!quote) return null;
-  const band = quote.inputTokenPriceBands
-    ?.filter((entry) => tokens >= entry.minInputTokens
-      && (entry.maxInputTokens === undefined || tokens < entry.maxInputTokens))
-    .at(-1);
-  const perMtok = band?.inputPerMtok ?? quote.inputPerMtok;
-  if (typeof perMtok !== 'number' || !Number.isFinite(perMtok) || perMtok <= 0) return null;
-  return formatModelPriceAmount(perMtok, quote.currency);
+function standardInputPrices(quote: ModelPriceQuote | undefined) {
+  if (!quote) return [];
+  const bands = quote.inputTokenPriceBands ?? [];
+  // Gateway bands can overlap (legacy thresholds) or omit the baseline.
+  // Official reference ranges can have unknown gaps. Follow billing's precedence.
+  const boundaries = [...new Set([0, ...bands.flatMap(({ minInputTokens, maxInputTokens }) =>
+    maxInputTokens === undefined ? [minInputTokens] : [minInputTokens, maxInputTokens],
+  )])].sort((a, b) => a - b);
+  const discount = quote.costDiscount ?? 0;
+  return boundaries.flatMap((min, index) => {
+    const band = bands.filter(({ minInputTokens, maxInputTokens }) => min >= minInputTokens
+      && (maxInputTokens === undefined || min < maxInputTokens))
+      .sort((a, b) => b.minInputTokens - a.minInputTokens)[0];
+    if (bands.length && !band && quote.source !== 'gateway') return [];
+    const price = (band?.inputPerMtok ?? quote.inputPerMtok) * (1 - discount);
+    if (!Number.isFinite(price) || price < 0) return [];
+    return [{ min, max: boundaries[index + 1], price: formatModelPriceAmount(price, quote.currency) }];
+  });
+}
+
+function formatInputRange(min: number, max: number | undefined, locale: string | undefined): string {
+  const count = new Intl.NumberFormat(locale);
+  if (max === undefined) return min > 0 ? `>${count.format(min - 1)}` : '';
+  return min > 0 ? `${count.format(min)}–${count.format(max - 1)}` : `≤${count.format(max - 1)}`;
 }
 
 export function ContextWindowBudgetChip({
@@ -102,8 +118,9 @@ export function ContextWindowBudgetChip({
   providers = null,
   deviceId,
   disabled = false,
+  hideLocalPricing = false,
 }: ContextWindowBudgetChipProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [committing, setCommitting] = useState(false);
   // 被控端不支持预算通道（老版本）：卡转只读直到会话换设备。
@@ -202,7 +219,6 @@ export function ContextWindowBudgetChip({
   }, [clearCardTimers]);
   // 在飞期间菜单项是 disabled（见 isDisabled）——用户看得见的禁用，而不是静默丢弃；
   // 跨窗口并发（两个 chip 实例各有自己的 state）由 main 侧的会话锁 + 终值比对负责收敛。
-  // 分档计费模型的档位就是价带：把每条档位的输入单价摆在选项里，用户选的是成本。
   const gatewayPricing = useGatewayModelPricing();
   const referencePricing = useReferenceModelPricing();
 
@@ -406,10 +422,11 @@ export function ContextWindowBudgetChip({
   // 远程任务不显示价带：两份报价（gateway 服务端报价 + 本地参考价/用户覆盖）都来自
   // **本机**配置，被控端用的是它自己的 provider 连接与价格覆盖，同名模型的价可能不同
   // （Greptile P2，2026-10-25）。拿不到被控端报价时宁可不显示，也不给一个会误导的价。
-  const quote = deviceId
+  const quote = deviceId || hideLocalPricing
     ? undefined
-    : getModelPriceQuote(gatewayPricing, providerId, model, agent)
-      ?? getModelPriceQuote(referencePricing, providerId, model, agent);
+    : getModelPriceQuote(gatewayPricing, limitProviderId, model, agent)
+      ?? getModelPriceQuote(referencePricing, limitProviderId, model, agent);
+  const inputPrices = standardInputPrices(quote);
 
   /**
    * 方向键在单选组内移动**焦点**（不提交）：`role="radio"` 语义下方向键必须能动，
@@ -638,7 +655,24 @@ export function ContextWindowBudgetChip({
               <p className="mt-0.5 text-12 font-normal leading-[1.5] text-[var(--text-secondary)]">
                 {t('ccAgent.contextWindowBudget.menuHint')}
               </p>
-              <p className="mt-1 text-12 leading-relaxed text-[var(--text-secondary)]">{t('ccAgent.contextRingPanel.costHint')}</p>
+              {inputPrices.length > 0 ? (
+                <div className="mt-1 text-12 leading-relaxed text-[var(--text-secondary)]">
+                  <p>{t('ccAgent.contextWindowBudget.requestInputPrices')}</p>
+                  <ul className="tabular-nums">
+                    {inputPrices.map(({ min, max, price }) => {
+                      const range = formatInputRange(min, max, i18n?.language);
+                      return (
+                        <li key={min}>
+                          {range && `${range} · `}
+                          {t('ccAgent.contextWindowBudget.inputPrice', { price })}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : (
+                <p className="mt-1 text-12 leading-relaxed text-[var(--text-secondary)]">{t('ccAgent.contextRingPanel.costHint')}</p>
+              )}
               {deviceId && !authoritativeBounds && (
                 // 没能从被控端拿到该路由的边界（老版本 / 拉取失败）：这里只能给出不超过
                 // 本地已知默认值的档位，文案必须如实说明，不能留给用户“能调大”的预期。
@@ -662,7 +696,6 @@ export function ContextWindowBudgetChip({
             </div>
             <div role="radiogroup" aria-label={t('ccAgent.contextWindowBudget.menuTitle')} onKeyDown={handleTierKeyDown}>
               {options.map((option, index) => {
-                const price = inputPriceAtTokens(quote, option.tokens);
                 return (
                   <TierRow
                     key={`${option.kind}-${option.tokens}`}
@@ -691,11 +724,6 @@ export function ContextWindowBudgetChip({
                     {option.kind === 'default' && (
                       <span className="ml-1.5 text-12 font-normal text-[var(--text-secondary)]">
                         {t('ccAgent.contextWindowBudget.optionDefault')}
-                      </span>
-                    )}
-                    {price && (
-                      <span className="ml-auto pl-3 text-12 font-normal tabular-nums text-[var(--text-secondary)]">
-                        {t('ccAgent.contextWindowBudget.inputPrice', { price })}
                       </span>
                     )}
                   </TierRow>

@@ -16384,6 +16384,7 @@
       "menuHint": "Afeta apenas esta tarefa. Aplica-se a partir da próxima mensagem.",
       "optionDefault": "Predefinição do modelo",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "Preços padrão por número de tokens de entrada por pedido",
       "inputPrice": "entrada {{price}}/M",
       "remoteUnsupported": "O dispositivo controlado não permite alterar a janela de contexto desta tarefa",
       "remoteTightenOnly": "O limite máximo do dispositivo controlado não está disponível, pelo que apenas são apresentados escalões inferiores.",

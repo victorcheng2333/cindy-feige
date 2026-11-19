@@ -16159,6 +16159,7 @@
       "menuHint": "只影响本任务，下一条消息生效。",
       "optionDefault": "模型默认",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "标准价按单次请求的输入 token 数分档",
       "inputPrice": "输入 {{price}}/M",
       "remoteUnsupported": "被控设备版本不支持调整任务上下文窗口",
       "remoteTightenOnly": "被控设备的上限不可用，这里只提供更小的档位。",

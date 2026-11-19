@@ -16159,6 +16159,7 @@
       "menuHint": "이 작업에만 적용됩니다. 다음 메시지부터 적용됩니다.",
       "optionDefault": "모델 기본값",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "요청당 입력 토큰 수에 따른 표준 요금",
       "inputPrice": "입력 {{price}}/M",
       "remoteUnsupported": "피제어 기기 버전에서는 이 작업의 컨텍스트 창을 변경할 수 없습니다",
       "remoteTightenOnly": "피제어 기기 상한을 읽을 수 없어 여기서는 더 작은 단계만 제공합니다.",

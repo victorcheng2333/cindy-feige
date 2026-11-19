@@ -6720,6 +6720,7 @@ function CCAgentSessionContent({
                         },
                       )}
                       deviceId={remoteDeviceId}
+                      hideLocalPricing={Boolean(taskLocation || session?.remoteHostId)}
                       onCompact={
                         // 按 agent 能力分流(#1927/#1933 review):claude-code 走 inputCoordinator,
                         // 其余声明 manualCompact.supported(Pi / Codex)走 compact-session 通道;

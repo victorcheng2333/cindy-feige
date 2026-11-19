@@ -54,6 +54,34 @@ describe("November 12 merged catalog prices", () => {
   });
 });
 
+// Unit: public quote resolution must cover the first long Standard request
+// for Terra and both Batch bands for GPT-6 models whose Batch quotes were missing.
+describe("verified November 18 OpenAI price gaps", () => {
+  // Unit regression: at the first long Standard request, the official lookup
+  // returned no price even though OpenAI publishes a long-context multiplier.
+  it("resolves Terra's published Standard long-context rate", () => {
+    const price = resolveModelReferencePrice(registry, "openai", "gpt-6.1-terra", {
+      at: "2026-11-18", officialOnly: true, inputTokens: 272001,
+    })?.price;
+    expect(price).toMatchObject({
+      inputPerMtok: 2, outputPerMtok: 7.5, cacheReadPerMtok: 0.1, cacheWritePerMtok: 2.5,
+    });
+  });
+  it.each([
+    ["gpt-6-sol", 1, 2, 7.5, 0.2, 2.5],
+    ["gpt-6-luna", 0.05, 0.1, 0.375, 0.01, 0.125],
+    ["gpt-6-astra", 5, 10, 37.5, 1, 12.5],
+  ] as const)("resolves %s Batch on both sides of the long-context threshold",
+    (model, shortInput, inputPerMtok, outputPerMtok, cacheReadPerMtok, cacheWritePerMtok) => {
+      const options = { at: "2026-11-18", variant: "batch", officialOnly: true } as const;
+      expect(resolveBaseModelReferencePrice(registry, model, { ...options, inputTokens: 272000 })?.price.inputPerMtok).toBe(shortInput);
+      expect(resolveBaseModelReferencePrice(registry, model, { ...options, inputTokens: 272001 })?.price).toMatchObject({
+        inputPerMtok, outputPerMtok, cacheReadPerMtok, cacheWritePerMtok,
+      });
+    },
+  );
+});
+
 // Unit: real shared price selectors previously returned unknown for K3 Batch.
 // Cover both markets, XD's official copy, cache TTLs and standard/date isolation.
 describe("Kimi K3 Batch tariffs adopted on November 7", () => {

@@ -16233,6 +16233,7 @@
       "menuHint": "Gilt nur für diese Aufgabe. Wirkt ab der nächsten Nachricht.",
       "optionDefault": "Modellstandard",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "Standardpreise nach Eingabetokens pro Anfrage",
       "inputPrice": "Eingabe {{price}}/M",
       "remoteUnsupported": "Das gesteuerte Gerät unterstützt keine Änderung des Kontextfensters dieser Aufgabe",
       "remoteTightenOnly": "Die Obergrenze des gesteuerten Geräts ist nicht verfügbar. Daher werden hier nur kleinere Stufen angeboten.",

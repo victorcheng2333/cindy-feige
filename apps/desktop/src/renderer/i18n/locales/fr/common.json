@@ -16384,6 +16384,7 @@
       "menuHint": "Concerne uniquement cette tâche. S'applique à partir du prochain message.",
       "optionDefault": "Par défaut du modèle",
       "optionPercent": "{{percent}} %",
+      "requestInputPrices": "Tarifs standard selon le nombre de tokens d’entrée par requête",
       "inputPrice": "entrée {{price}}/M",
       "remoteUnsupported": "L'appareil contrôlé ne permet pas de modifier la fenêtre de contexte de cette tâche",
       "remoteTightenOnly": "Le plafond de l'appareil contrôlé n'est pas disponible : seuls des paliers plus petits sont proposés ici.",

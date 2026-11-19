@@ -16159,6 +16159,7 @@
       "menuHint": "只影響本任務，下一則訊息生效。",
       "optionDefault": "模型預設",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "標準價依單次請求的輸入 token 數分級",
       "inputPrice": "輸入 {{price}}/M",
       "remoteUnsupported": "被控裝置版本不支援調整任務上下文視窗",
       "remoteTightenOnly": "被控裝置的上限無法讀取，這裡只提供調小檔。",

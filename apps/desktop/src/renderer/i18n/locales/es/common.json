@@ -16384,6 +16384,7 @@
       "menuHint": "Solo afecta a esta tarea. Se aplica a partir del próximo mensaje.",
       "optionDefault": "Valor predeterminado del modelo",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "Tarifas estándar según los tokens de entrada por solicitud",
       "inputPrice": "entrada {{price}}/M",
       "remoteUnsupported": "El dispositivo controlado no permite cambiar la ventana de contexto de esta tarea",
       "remoteTightenOnly": "El límite del dispositivo controlado no está disponible, por lo que aquí solo se ofrecen niveles más pequeños.",

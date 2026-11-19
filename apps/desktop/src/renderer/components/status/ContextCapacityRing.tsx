@@ -43,6 +43,7 @@ export function ContextCapacityRing({
   sdkContextWindow,
   verifiedContextWindow,
   deviceId,
+  hideLocalPricing,
   onCompact,
   providers,
   disabled,
@@ -58,6 +59,7 @@ export function ContextCapacityRing({
   verifiedContextWindow?: number | null;
   /** device-link 远程会话所属被控端 id;按被控端能力查 contextWindow(本机会话 undefined,行为不变)。 */
   deviceId?: string;
+  hideLocalPricing?: boolean;
   /** 提供时在圆环浮层里显示手动压缩操作，沿用已有确认流程。 */
   onCompact?: () => void;
   providers?: ComponentProps<typeof ContextWindowBudgetChip>['providers'];
@@ -244,6 +246,7 @@ export function ContextCapacityRing({
         agentKind={vendorKey}
         providers={providers}
         deviceId={deviceId}
+        hideLocalPricing={hideLocalPricing}
         disabled={disabled}
         details={details}
         onInspect={vendorKey === 'codex' ? () => setContextInspection((n) => n + 1) : undefined}

@@ -16159,6 +16159,7 @@
       "menuHint": "このタスクのみ。次のメッセージから適用。",
       "optionDefault": "モデル既定",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "リクエストごとの入力トークン数に応じた標準料金",
       "inputPrice": "入力 {{price}}/M",
       "remoteUnsupported": "被制御デバイスのバージョンではこのタスクのコンテキストウィンドウを変更できません",
       "remoteTightenOnly": "被制御デバイスの上限を取得できないため、ここではより小さい段階のみ表示します。",

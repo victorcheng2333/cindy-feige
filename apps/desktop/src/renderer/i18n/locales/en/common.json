@@ -16233,6 +16233,7 @@
       "menuHint": "Affects this task only. Applies from the next message.",
       "optionDefault": "Model default",
       "optionPercent": "{{percent}}%",
+      "requestInputPrices": "Standard rates by input tokens per request",
       "inputPrice": "input {{price}}/M",
       "remoteUnsupported": "The controlled device does not support changing this task's context window",
       "remoteTightenOnly": "The controlled device ceiling is unavailable, so only smaller tiers are offered here.",

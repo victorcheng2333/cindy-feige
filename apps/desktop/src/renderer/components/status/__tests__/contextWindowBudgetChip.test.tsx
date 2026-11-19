@@ -993,15 +993,15 @@ function chipText(): string {
     expect(options.map((el) => el.getAttribute('data-token'))).toEqual(['100000']);
   });
 
-  it('shows the price band each tier lands in', async () => {
+  // Unit regression: the real card used the budget as a request size. Two input bands
+  // are enough to show the misleading per-option price and the missing request threshold.
+  it('shows both request bands once outside the window options', async () => {
     mockGatewayPricing.mockReturnValue(tieredPricingCatalog);
     renderChip();
     const options = await openTierCard();
-    const cheap = options.find((el) => el.getAttribute('data-token') === '250000');
-    const boundary = options.find((el) => el.getAttribute('data-token') === '1000000');
-    expect(cheap?.textContent).toMatch(/\$0\.4/);
-    // 512K 及以上进入第二条价带（maxInputTokens 是开区间）。
-    expect(boundary?.textContent).toMatch(/\$1\.2/);
+    expect(options.every((el) => !/\$\d/.test(el.textContent ?? ''))).toBe(true);
+    expect(screen.getByText(/≤511,999.*\$0\.4/)).toBeTruthy();
+    expect(screen.getByText(/>511,999.*\$1\.2/)).toBeTruthy();
   });
 
   it('ships a remote (device-link) change through the tunnel command, not the local DB', async () => {
@@ -1347,21 +1347,21 @@ describe('ContextWindowBudgetChip — Greptile 2026-10-24 三条 P2', () => {
     expect(getBounds.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('hides the price band on remote tasks instead of showing local prices', async () => {
+  it.each([{ deviceId: 'device-a' }, { hideLocalPricing: true }])('hides local prices for a remote execution route %o', async (route) => {
     // 两份报价（gateway 服务端报价 + 本地参考价/用户覆盖）都来自本机配置，被控端用的是
     // 它自己的连接与价格覆盖 —— 远程任务给本机价会误导用户按错价比较档位
     // （Greptile P2，2026-10-25）。
     mockGatewayPricing.mockReturnValue(tieredPricingCatalog);
-    renderChip({ deviceId: 'device-a' });
+    renderChip(route);
     const options = await openTierCard();
     expect(options.length).toBeGreaterThan(0);
-    expect(options.every((el) => !/\$\d/.test(el.textContent ?? ''))).toBe(true);
+    expect(screen.queryByText(/\$0\.4/)).toBeNull();
 
     // 同一份目录在本地任务上照旧显示价带（确认隐藏只发生在远程）。
     cleanup();
     renderChip();
-    const localOptions = await openTierCard();
-    expect(localOptions.some((el) => /\$\d/.test(el.textContent ?? ''))).toBe(true);
+    await openTierCard();
+    expect(screen.getByText(/\$0\.4/)).toBeTruthy();
   });
 
   it('does not lock a new task when the previous device reports the channel too late', async () => {
