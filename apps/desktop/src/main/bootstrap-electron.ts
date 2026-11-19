@@ -937,6 +937,12 @@ import {
   readMemorySettingsState,
 } from './maker-host/memory-settings-store.js';
 import {
+  USER_PROMPT_MAX_LENGTH,
+  migrateLegacyUserPrompt,
+  readUserPromptState,
+  writeUserPrompt,
+} from './maker-host/user-prompt-settings-store.js';
+import {
   createAppFocusAutoRefreshTracker,
   refreshProviderModelsManually,
   requestProviderModelAutoRefresh,
@@ -5623,6 +5629,55 @@ const registerIpcHandlers = () => {
       }
     },
   );
+  // 用户自定义提示词（Settings > Personalization）—— 与 memory settings 同批提前挂载，
+  // 供 renderer 启动期拉取/迁移，并落盘到 owner-scoped user-prompt-settings.json，
+  // 让定时任务、IM、官方 hook 等 main 侧发起的任务也能读取。
+  ipcMain.handle(MAKER_IPC_INVOKE.USER_PROMPT_GET, async () => {
+    const state = readUserPromptState();
+    return { value: state.value.value, isCustomized: state.isCustomized };
+  });
+  ipcMain.handle(MAKER_IPC_INVOKE.USER_PROMPT_SET, async (event, rawValue: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    if (isAppSessionBoundaryPending()) {
+      throwIpcError('PRECONDITION_FAILED', 'Account switch in progress; retry saving instructions.');
+    }
+    if (typeof rawValue !== 'string') {
+      throwIpcError('INVALID_PARAMS', 'userPrompt must be a string');
+    }
+    if (rawValue.length > USER_PROMPT_MAX_LENGTH) {
+      throwIpcError('INVALID_PARAMS', `userPrompt exceeds max length of ${USER_PROMPT_MAX_LENGTH}`);
+    }
+    try {
+      const state = writeUserPrompt(rawValue);
+      return { value: state.value.value, isCustomized: state.isCustomized };
+    } catch (err) {
+      throwIpcError(
+        'INTERNAL',
+        `user prompt save failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+  ipcMain.handle(MAKER_IPC_INVOKE.USER_PROMPT_MIGRATE_LEGACY, async (event, rawLegacyValue: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    if (isAppSessionBoundaryPending()) {
+      throwIpcError('PRECONDITION_FAILED', 'Account switch in progress; deferring legacy prompt migration.');
+    }
+    if (typeof rawLegacyValue !== 'string') {
+      throwIpcError('INVALID_PARAMS', 'legacy userPrompt must be a string');
+    }
+    if (rawLegacyValue.length > USER_PROMPT_MAX_LENGTH) {
+      throwIpcError('INVALID_PARAMS', `legacy userPrompt exceeds max length of ${USER_PROMPT_MAX_LENGTH}`);
+    }
+    try {
+      const state = migrateLegacyUserPrompt(rawLegacyValue);
+      return { value: state.value.value, isCustomized: state.isCustomized };
+    } catch (err) {
+      throwIpcError(
+        'INTERNAL',
+        `user prompt legacy migration failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
   ipcMain.handle(MAKER_IPC_INVOKE.IM_DEFAULT_SETTINGS_GET, async (_e, rawChannel: unknown) => {
     return imDefaultSettingsWire(parseImDefaultSettingsChannel(rawChannel));
   });

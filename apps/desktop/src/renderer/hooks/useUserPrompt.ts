@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   getUserPrompt,
+  saveUserPrompt,
   setUserPrompt,
   subscribeUserPrompt,
 } from '@/lib/userPromptStore';
@@ -17,6 +18,7 @@ import {
 export function useUserPrompt(): {
   value: string;
   setValue: (next: string) => void;
+  saveValue: (next: string) => Promise<void>;
 } {
   const [value, setValueState] = useState<string>(getUserPrompt);
 
@@ -26,7 +28,9 @@ export function useUserPrompt(): {
     // 这里不重复 setValueState。
   }, []);
 
+  const saveValue = useCallback((next: string) => saveUserPrompt(next), []);
+
   useEffect(() => subscribeUserPrompt(setValueState), []);
 
-  return { value, setValue };
+  return { value, setValue, saveValue };
 }

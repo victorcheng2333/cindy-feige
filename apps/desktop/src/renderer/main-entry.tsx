@@ -16,6 +16,7 @@ import { createLogger } from './lib/logger';
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide';
 import { installIpcErrorToastText } from './lib/ipcErrorToastText';
 import { bootstrapMemorySettingsFromMain } from './lib/memorySettingsStore';
+import { bootstrapUserPromptFromMain } from './lib/userPromptStore';
 import {
   getVoiceInputSettings,
   migrateLegacyVoiceInputRendererStorage,
@@ -211,6 +212,7 @@ void (async () => {
   // toggle、回退入口不会在镜像迁移完成前和启动快照并发。浮窗不消费这些设置，跳过
   // 同步以免多个 renderer 争写共享 localStorage。
   await bootstrapMemorySettingsFromMain();
+  await bootstrapUserPromptFromMain();
   await bootstrapGitSafetySettingsFromMain();
 
   // 认证预热独立于统计同意与 SDK 生命周期;AuthProvider 复用同一任务和最新快照。

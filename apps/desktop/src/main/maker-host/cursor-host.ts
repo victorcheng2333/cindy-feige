@@ -15,6 +15,7 @@ import hostSystemPrompt from './host-system-prompt.md?raw';
 import cursorSystemPrompt from './cursor-system-prompt.md?raw';
 import { scanLocalCustomizations } from '../skillhub/customizationScanHost.js';
 import { readDisabledSkillPaths } from '../skillhub/activationPreferences.js';
+import { readUserPrompt } from './user-prompt-settings-store.js';
 
 const CURSOR_MCP_SERVERS = ['cindy_helper', 'cindy'] as const;
 const CURSOR_MCP_SERVERS_WITH_MEMORY = ['cindy_helper', 'cindy', 'cindy_memory'] as const;
@@ -42,6 +43,9 @@ export function buildCursorAgent(
       systemPrompt: `${hostSystemPrompt.trim()}\n\n${cursorSystemPrompt.trim()}`,
       get makerMemoryEnabled() {
         return makerMemory?.isEnabled() ?? false;
+      },
+      get userPrompt() {
+        return readUserPrompt();
       },
     },
     capabilityRouting: {

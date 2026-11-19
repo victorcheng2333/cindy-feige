@@ -31,6 +31,7 @@ import skillSourcePrecedencePrompt from './skill-source-precedence-prompt.md?raw
 import piSystemPrompt from './pi-system-prompt.md?raw';
 import { DEFAULT_MODEL_COMPACTION_PCT } from '../../shared/modelContextLimit.js';
 import { readMemorySettings } from './memory-settings-store.js';
+import { readUserPrompt } from './user-prompt-settings-store.js';
 import { readSubagentModelSettings } from './subagent-model-settings-store.js';
 import { shouldKeepSubagentOverrideForParent } from './subagent-override-route.js';
 import { toolchainThreadCapEnv } from './toolchain-thread-cap.js';
@@ -209,6 +210,10 @@ export function buildPiRuntimeConfig(host: PiRuntimeConfigHost): AgentRuntimeCon
       get: () => readMemorySettings().maker,
       enumerable: true,
     },
+    userPrompt: {
+      get: () => readUserPrompt(),
+      enumerable: true,
+    },
   });
   return config;
 }
@@ -318,6 +323,10 @@ export function createAgentRuntimeConfigs(ports: AgentRuntimeConfigPorts) {
       get makerMemoryEnabled() {
         return readMakerMemoryEnabled();
       },
+      // main-side session starts (scheduled tasks, IM, hooks) can omit per-session userPrompt.
+      get userPrompt() {
+        return readUserPrompt();
+      },
     };
     // 远端 cc-mgr 会话恒用真上游网关 —— 本地 endpoint 是 loopback proxy(远端够不到)。
     // 用 getter 而非构建期快照:model-access 凭据同步可能在 maker 构建后才把
@@ -402,6 +411,10 @@ export function createAgentRuntimeConfigs(ports: AgentRuntimeConfigPorts) {
       // Keep this fallback live for main-side session starts that do not pass CreateOpts.makerMemoryEnabled.
       get makerMemoryEnabled() {
         return readMakerMemoryEnabled();
+      },
+      // Keep this fallback live for main-side session starts that do not pass CreateOpts.userPrompt.
+      get userPrompt() {
+        return readUserPrompt();
       },
     };
   }

@@ -3927,7 +3927,9 @@ export class PiAgent extends BaseAgent {
       ['memoryRules', makerMemoryRules],
       ['memoryIndex', makerMemoryIndex.trim()],
       ['user', reviewMode ? undefined : opts.botUserProfilePrompt?.trim()],
-      ['user', reviewMode || isolatedBotProfile(opts.botRuntimeProfile) ? undefined : opts.userPrompt?.trim()],
+      ['user', reviewMode || isolatedBotProfile(opts.botRuntimeProfile)
+        ? undefined
+        : (opts.userPrompt ?? (hosted ? undefined : this.deps.runtimeConfig.userPrompt))?.trim()],
       ['directories', piExtraDirsPrompt(mutableExtraDirs, mutableWritableDirs, mutableLibraryRoot)],
     ];
     const promptSources: PiPromptSource[] = promptSourceEntries.flatMap(([source, text]) =>

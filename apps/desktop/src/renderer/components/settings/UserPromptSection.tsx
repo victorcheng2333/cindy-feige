@@ -13,13 +13,14 @@ import { formatHarnessNameList, getUserPromptSupportedHarnesses } from '@cindy/m
 import appI18n from 'i18next';
 
 export function UserPromptSection() {
-  const { value, setValue } = useUserPrompt();
+  const { value, setValue, saveValue } = useUserPrompt();
   const { t, i18n } = useTranslation();
   const setting = useSettingDefinition(personalizationDetailsSettings.userInstructions);
   const locale = i18n?.language ?? appI18n.language;
   const userPromptHarnesses = formatHarnessNameList(getUserPromptSupportedHarnesses(), locale);
 
   const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
 
   // 外部 storage 变化（其他 window 实例 setValue 触发的 storage event）时刷新草稿。
   // 单 Electron 窗口里几乎不会触发，留作兜底。
@@ -30,13 +31,24 @@ export function UserPromptSection() {
   const length = draft.length;
   const overLimit = length > USER_PROMPT_MAX_LENGTH;
   const dirty = draft !== value;
-  const canSave = dirty && !overLimit;
+  const canSave = dirty && !overLimit && !saving;
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!canSave) return;
-    setValue(draft);
-    toast.success(t('settings.personalization.toast.saved'));
-  }, [canSave, draft, setValue, t]);
+    setSaving(true);
+    try {
+      if (saveValue) {
+        await saveValue(draft);
+      } else {
+        setValue(draft);
+      }
+      toast.success(t('settings.personalization.toast.saved'));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('common.saveFailed', { defaultValue: 'Save failed' }));
+    } finally {
+      setSaving(false);
+    }
+  }, [canSave, draft, saveValue, setValue, t]);
 
   const counter = `${length.toLocaleString(appI18n.language)} / ${USER_PROMPT_MAX_LENGTH.toLocaleString(appI18n.language)}`;
 
@@ -83,7 +95,7 @@ export function UserPromptSection() {
             size="md"
             compact
             type="button"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={!canSave}
           >
             {t('settings.personalization.save')}

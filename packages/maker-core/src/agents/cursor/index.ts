@@ -364,7 +364,9 @@ export class CursorAgent extends BaseAgent {
         this.deps.runtimeConfig.systemPrompt?.trim(),
         makerMemoryRules.trim(),
         makerMemoryIndex.trim(),
-        reviewMode ? undefined : opts.userPrompt?.trim(),
+        reviewMode
+          ? undefined
+          : (opts.userPrompt ?? (opts.deviceHosted ? undefined : this.deps.runtimeConfig.userPrompt))?.trim(),
       ]
         .filter(Boolean)
         .join("\n\n");

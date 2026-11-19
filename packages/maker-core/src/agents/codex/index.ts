@@ -7311,7 +7311,9 @@ assertRouteCurrent();
       botProfilePrompt: reviewMode ? undefined : opts.botProfilePrompt,
       botProfileContextPrompt: reviewMode ? undefined : opts.botProfileContextPrompt,
       botUserProfilePrompt: reviewMode ? undefined : opts.botUserProfilePrompt,
-      userPrompt: reviewMode || isolatedBotProfile(opts.botRuntimeProfile) ? undefined : opts.userPrompt,
+      userPrompt: reviewMode || isolatedBotProfile(opts.botRuntimeProfile)
+        ? undefined
+        : (opts.userPrompt ?? (hosted ? undefined : this.deps.runtimeConfig.userPrompt)),
     });
     const useProxyChannel = isCodexProxyChannelReady();
     let threadId!: string;
