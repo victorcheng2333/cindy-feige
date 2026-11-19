@@ -7,6 +7,8 @@ export default {
   real: 'ModelSelector, MorphPopover, legacy model list and vendor switcher',
   notCovered: 'Live providers, model requests and persisted selections',
   cases: {
+    speed: { about: 'Codex speed follows the model capability and preserves the Ultrafast selection' },
+    'speed-narrow': { about: 'Codex speed options fit a narrow viewport', viewport: { width: 390, height: 640 } },
     'compact-draft-height': { about: 'Codex and Cursor keep the same draft panel height' },
     'compact-draft-height-short': { about: 'Stable draft height fits a short viewport', viewport: { width: 390, height: 320 } },
     'compact-draft': { about: 'Draft restores the remembered model when changing Harness' },
@@ -47,6 +49,34 @@ export default {
       });
     }
     await page.locator('main button[aria-haspopup]').click();
+    if (ui.case.startsWith('speed')) {
+      // UI regression: the legacy composer picker exposed only a boolean Fast
+      // switch even when the Codex model advertised Ultrafast.
+      await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
+      const row = page.getByRole('option', { name: /GPT fixture/ });
+      await row.hover({ position: { x: 12, y: 12 } });
+      await row.hover({ position: { x: 24, y: 12 } });
+      const speeds = page.getByRole('radiogroup', { name: await ui.t('newChat.modelSelector.speed.label') });
+      const ultrafast = speeds.getByRole('radio', { name: await ui.t('newChat.modelSelector.speed.ultrafast') });
+      await ultrafast.waitFor({ timeout: 3000 });
+      assert.equal(await speeds.getByRole('radio').count(), 3);
+      await ultrafast.click();
+      await ultrafast.and(page.locator('[aria-checked="true"]')).waitFor();
+      await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
+      const fits = await speeds.evaluate((control) => {
+        const bounds = control.getBoundingClientRect();
+        return bounds.left >= 0 && bounds.right <= innerWidth &&
+          bounds.top >= 0 && bounds.bottom <= innerHeight &&
+          control.scrollWidth <= control.clientWidth + 1;
+      });
+      assert.ok(fits, 'all speed options must fit inside the viewport');
+      await ui.capture('ultrafast-selected');
+      await page.getByRole('option', { name: /GPT Fast only/ }).press('ArrowLeft');
+      await page.getByRole('button', { name: 'Fast Mode' }).waitFor();
+      assert.equal(await speeds.count(), 0, 'a model with normal Fast alone keeps the switch');
+      await page.keyboard.press('Escape');
+      return;
+    }
     if (ui.case.startsWith('compact-draft-height')) {
       // Regression: Codex includes remote groups, Cursor has one local model.
       // Measure the real popup after animations, including the footer and tabs.
