@@ -7,6 +7,7 @@ import { SpeedIcon } from './SpeedIcon';
 import { ErrorNotice } from '@/components/ui/error-notice';
 import { DisplayPricingDetails } from '@/components/DisplayPricingDetails';
 import { Button } from '@/components/ui/button';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Select } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { localizedModelDescription } from '@/lib/modelDescriptions';
@@ -261,6 +262,7 @@ export interface ModelMemoryAccessors {
 // 配置面板锚在主菜单内缩 8px 的模型行上；补偿这段内缩，让两块面板贴边但不重叠。
 const MODEL_OPTIONS_SIDE_OFFSET = 8;
 const MODEL_OPTIONS_COLLISION_PADDING = 8;
+const MODEL_OPTIONS_WIDTH = 248;
 const MODEL_OPTIONS_COLLISION_BOUNDARY: Element[] = [];
 const MODEL_LIST_DEFAULT_MAX_HEIGHT_PX = 300;
 // 一级菜单只保留单行模型信息与必要标签：20px 内容 + 16px 纵向 padding。
@@ -278,6 +280,7 @@ export function modelListMaxHeightForRows(maxVisibleRows?: number): number | und
 
 interface ModelOptionsFloatingPanelProps {
   anchor: HTMLElement;
+  side: 'left' | 'top';
   panelRef: Ref<HTMLDivElement>;
   className?: string;
   onCancelClose: () => void;
@@ -293,6 +296,7 @@ interface ModelOptionsFloatingPanelProps {
  */
 function ModelOptionsFloatingPanel({
   anchor,
+  side,
   panelRef,
   className,
   onCancelClose,
@@ -303,7 +307,7 @@ function ModelOptionsFloatingPanel({
   useFocusGuards();
   const { refs, floatingStyles, isPositioned, placement } = useFloating<HTMLElement>({
     strategy: 'fixed',
-    placement: 'left',
+    placement: side,
     transform: false,
     open: true,
     elements: { reference: anchor },
@@ -338,15 +342,22 @@ function ModelOptionsFloatingPanel({
     ],
   });
 
-  const placedSide = placement.startsWith('left') ? 'left' : 'right';
+  const placedSide = placement.split('-')[0] as 'left' | 'right' | 'top' | 'bottom';
+  const transformOrigin = {
+    left: 'right center',
+    right: 'left center',
+    top: 'center bottom',
+    bottom: 'center top',
+  }[placedSide];
 
   return createPortal(
     <div
       ref={refs.setFloating}
       data-radix-popper-content-wrapper=""
-      className={cn('z-50 w-[248px]', className)}
+      className={cn('z-50 max-w-[calc(100vw_-_16px)]', className)}
       style={{
         ...floatingStyles,
+        width: MODEL_OPTIONS_WIDTH,
         visibility: isPositioned ? undefined : 'hidden',
         pointerEvents: isPositioned ? undefined : 'none',
         ...WINDOW_NO_DRAG_STYLE,
@@ -386,7 +397,7 @@ function ModelOptionsFloatingPanel({
               'animate-float-in border border-[var(--cmd-palette-border)] bg-[var(--cmd-palette-bg)]',
               className,
             )}
-            style={{ transformOrigin: placedSide === 'left' ? 'right center' : 'left center' }}
+            style={{ transformOrigin }}
           >
             {children}
           </div>
@@ -2880,6 +2891,14 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
 
   // effect 会清理失效状态；渲染门再保证清理提交前也绝不把 detached 锚点交给 Floating UI。
   const connectedOptionsAnchor = optionsAnchor?.isConnected ? optionsAnchor : null;
+  const optionsSide = useMemo(() => {
+    if (!connectedOptionsAnchor) return 'left';
+    const { left, right } = connectedOptionsAnchor.getBoundingClientRect();
+    const sideSpace = Math.max(left, document.documentElement.clientWidth - right);
+    return sideSpace < MODEL_OPTIONS_WIDTH + MODEL_OPTIONS_SIDE_OFFSET + MODEL_OPTIONS_COLLISION_PADDING
+      ? 'top'
+      : 'left';
+  }, [connectedOptionsAnchor]);
 
   // 浏览目标引擎态恒非 active(与 isSelectedRow 同口径):目标列表里可能出现与当前
   // 会话同 id 同来源的行(网关同一模型双引擎都供),悬浮面板里的改动绝不能写进
@@ -2904,6 +2923,15 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     (editingIsActive || inactiveProviderHasMemory || inactiveProviderCanSelectEffort) &&
     !!editingModel &&
     fastEditable(editingProviderId, editingModel);
+  const editShowUltrafast =
+    editShowFast &&
+    currentAgentKind === 'codex' &&
+    findCatalogModel(
+      providers.find((provider) => provider.id === (editingProviderId ?? activeSourceId)),
+      editingModel.id,
+      currentAgentKind,
+      { exact: true },
+    )?.supportsUltrafastMode === true;
   const editThinkingToggle =
     canConfigure && (currentAgentKind === 'pi' || currentAgentKind === 'cursor') && editingModel?.thinkingToggle === true;
   const editHasEfforts =
@@ -2937,7 +2965,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       handleRowSelect(editing.providerId, editingModel.id, false, e);
     }
   };
-  const handleEditFast = (enabled: boolean) => {
+  const handleEditFast = (enabled: boolean | 'ultrafast') => {
     if (interactionDisabled || !editing || !editingModel) return;
     if (editingIsActive) {
       // 当前选中模型的 Fast 是会话实时状态,必须等 onFastModeChange 持久化成功后再由
@@ -3017,14 +3045,32 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       )}
       {editShowFast && (
         <div {...menuSkipAttrs} className="px-0.5">
-          {/* 遵循设计稿:单色反色(轨/文字 --text-primary,钮 --surface-on-card),不用品牌橙。 */}
-          <FastModeToggle
-            enabled={!!editFastValue}
-            onToggle={() => handleEditFast(!editFastValue)}
-            hideIcon
-            accentVar="var(--text-primary)"
-            thumbVar="var(--surface-on-card)"
-          />
+          {editShowUltrafast ? (
+            <div className="flex flex-col gap-1 px-1.5 py-1">
+              <span className="text-12 text-[var(--text-secondary)]">
+                {t('newChat.modelSelector.speed.label')}
+              </span>
+              <SegmentedControl
+                aria-label={t('newChat.modelSelector.speed.label')}
+                value={editFastValue === 'ultrafast' ? 'ultrafast' : editFastValue ? 'fast' : 'standard'}
+                options={(['standard', 'fast', 'ultrafast'] as const).map((value) => ({
+                  value,
+                  label: t(`newChat.modelSelector.speed.${value}`),
+                }))}
+                onValueChange={(value) => handleEditFast(value === 'ultrafast' ? value : value === 'fast')}
+                fullWidth
+                preserveMouseFocus
+              />
+            </div>
+          ) : (
+            <FastModeToggle
+              enabled={!!editFastValue}
+              onToggle={() => handleEditFast(!editFastValue)}
+              hideIcon
+              accentVar="var(--text-primary)"
+              thumbVar="var(--surface-on-card)"
+            />
+          )}
         </div>
       )}
       {editShowFast && (editHasEfforts || editThinkingToggle) && (
@@ -3187,7 +3233,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
               })}
             </span>
           )}
-          {editingModel.supportsFastMode && (
+          {editingModel.supportsFastMode && !editShowUltrafast && (
             <span>{t('newChat.modelSelector.meta.fastBadge')}</span>
           )}
         </div>
@@ -3491,7 +3537,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
         {!optionsPanelUsesLayoutPositioning && isEditingThis && configPanel && (
           <PopoverContent
             ref={configPanelRef}
-            side="left"
+            side={optionsSide}
             align="center"
             sideOffset={MODEL_OPTIONS_SIDE_OFFSET}
             collisionPadding={MODEL_OPTIONS_COLLISION_PADDING}
@@ -3505,10 +3551,11 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
               scheduleOptionsClose();
             }}
             className={cn(
-              'w-[248px] overflow-hidden rounded-[12px] p-2 shadow-[shadow:var(--shadow-menu)] duration-100',
+              'max-w-[calc(100vw_-_16px)] overflow-hidden rounded-[12px] p-2 shadow-[shadow:var(--shadow-menu)] duration-100',
               'border border-[var(--cmd-palette-border)] bg-[var(--cmd-palette-bg)]',
               overlayContentClassName,
             )}
+            style={{ width: MODEL_OPTIONS_WIDTH }}
           >
             {configPanel}
           </PopoverContent>
@@ -4434,6 +4481,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       {optionsPanelUsesLayoutPositioning && connectedOptionsAnchor && configPanel && (
         <ModelOptionsFloatingPanel
           anchor={connectedOptionsAnchor}
+          side={optionsSide}
           panelRef={configPanelRef}
           className={overlayContentClassName}
           onCancelClose={cancelOptionsClose}

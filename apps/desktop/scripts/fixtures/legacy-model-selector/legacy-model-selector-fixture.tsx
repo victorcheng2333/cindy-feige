@@ -29,12 +29,48 @@ function DraftModelSelector(props: ComponentProps<typeof ModelSelector>) {
     agentIdentity={{ vendorKey: vendor, state: 'current' }} onDraftVendorChange={setVendor} />;
 }
 
+const speedProviders: ProviderView[] = [{
+  ...providers[0],
+  models: {
+    codex: [
+      { ...providers[0].models.codex![0], supportsFastMode: true, supportsUltrafastMode: true },
+      { ...providers[0].models.codex![0], id: 'gpt-fast-only', name: 'GPT Fast only', supportsFastMode: true },
+    ],
+  },
+}];
+
+function SpeedModelSelector() {
+  const [fastMode, setFastMode] = useState<boolean | 'ultrafast'>(false);
+  return (
+    <ModelSelector
+      modelId="gpt-fixture"
+      effort="high"
+      vendorKey="codex"
+      currentProviderId="tapsvc"
+      remoteAgent={undefined}
+      providersOverride={speedProviders}
+      providersOverrideState={{ status: 'ready', refresh: () => {} }}
+      fastMode={fastMode}
+      onFastModeChange={setFastMode}
+      onModelChange={() => {}}
+      onProviderChange={() => {}}
+      onEffortChange={() => {}}
+      compactProviderList
+      unifiedPanel={false}
+      useMorphPopover
+    />
+  );
+}
+
 let cursorLocal = false;
 let remoteReads = 0;
 
 void mountPage({
   host: { maker: {
     getModelContextLimit: async () => ({ limit: 200000, isCustomized: false }),
+    getCapabilities: async (agent: string) => ({
+      availableModels: [], effortLevels: [], permissionModes: [], hasFastMode: agent === 'codex',
+    }),
     onProvidersChanged: subscription('providersChanged'),
   }, deviceLink: {
     invoke: async (_deviceId: string, channel: string) => {
@@ -48,6 +84,9 @@ void mountPage({
     },
   } },
   render: ctx => {
+    if (ctx.case.startsWith('speed')) {
+      return <main className="flex h-screen items-end justify-end p-6"><SpeedModelSelector /></main>;
+    }
     const Picker = ctx.case.startsWith('compact-draft') ? DraftModelSelector : ModelSelector;
     cursorLocal = ctx.case.startsWith('cursor-local');
     (window as unknown as { __remoteModelReads: number }).__remoteModelReads = remoteReads;
