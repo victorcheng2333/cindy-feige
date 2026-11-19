@@ -1,0 +1,403 @@
+{
+  "measuredAt": "2026-11-05",
+  "scope": "Read/write benchmark on a temporary copy of one manually verified handoff task; SDK workspace prewarm without model requests",
+  "sdkVersion": "1.2.0",
+  "nodeVersion": "v22.22.2",
+  "platform": "darwin-arm64",
+  "store": {
+    "sdk": "1.2.0",
+    "node": "v22.22.2",
+    "checkpointRows": 348,
+    "files": {
+      "agents.ndjson": 920,
+      "runs.ndjson": 9442,
+      "run_events.ndjson": 992762,
+      "checkpoints.ndjson": 4009624
+    },
+    "readSweeps": [
+      {
+        "n": 348,
+        "minMs": 2.024874999999952,
+        "medianMs": 2.3390830000000165,
+        "maxMs": 5.3743750000001,
+        "totalMs": 812.2447120000015
+      },
+      {
+        "n": 348,
+        "minMs": 1.9832919999998921,
+        "medianMs": 2.3565830000000005,
+        "maxMs": 7.70616700000005,
+        "totalMs": 832.7601619999969
+      },
+      {
+        "n": 348,
+        "minMs": 1.9761669999998048,
+        "medianMs": 2.311666999999943,
+        "maxMs": 5.660374999999931,
+        "totalMs": 812.2479580000015
+      }
+    ],
+    "checkpointCreate1KiB": {
+      "n": 20,
+      "minMs": 17.71229200000016,
+      "medianMs": 18.793084000000363,
+      "maxMs": 20.833166000000347,
+      "totalMs": 373.5450400000018
+    },
+    "eventAppend100chars": {
+      "n": 30,
+      "minMs": 9.075209000000086,
+      "medianMs": 10.001208000000133,
+      "maxMs": 11.065042000000176,
+      "totalMs": 299.91433500000085
+    },
+    "sourceUnchanged": true
+  },
+  "workspaceTrials": [
+    {
+      "mode": "none",
+      "loadMs": 91.561542,
+      "settingSources": [],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": []
+        }
+      ],
+      "coldMs": 724.034292,
+      "heldWarmMs": 0.07770900000002712,
+      "ok": true,
+      "trial": 1
+    },
+    {
+      "mode": "none",
+      "loadMs": 79.58391699999999,
+      "settingSources": [],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": []
+        }
+      ],
+      "coldMs": 726.87575,
+      "heldWarmMs": 0.06279099999994742,
+      "ok": true,
+      "trial": 2
+    },
+    {
+      "mode": "none",
+      "loadMs": 79.309625,
+      "settingSources": [],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": []
+        }
+      ],
+      "coldMs": 709.4004580000001,
+      "heldWarmMs": 0.07950000000005275,
+      "ok": true,
+      "trial": 3
+    },
+    {
+      "mode": "project",
+      "loadMs": 80.299834,
+      "settingSources": [
+        "project"
+      ],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": []
+        }
+      ],
+      "coldMs": 732.0499169999999,
+      "heldWarmMs": 0.08904199999994944,
+      "ok": true,
+      "trial": 1
+    },
+    {
+      "mode": "project",
+      "loadMs": 79.339125,
+      "settingSources": [
+        "project"
+      ],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": []
+        }
+      ],
+      "coldMs": 720.7902919999999,
+      "heldWarmMs": 0.0923329999999396,
+      "ok": true,
+      "trial": 2
+    },
+    {
+      "mode": "project",
+      "loadMs": 79.243417,
+      "settingSources": [
+        "project"
+      ],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": []
+        }
+      ],
+      "coldMs": 725.80575,
+      "heldWarmMs": 0.07904199999995853,
+      "ok": true,
+      "trial": 3
+    },
+    {
+      "mode": "all",
+      "loadMs": 79.425625,
+      "settingSources": [
+        "project",
+        "user",
+        "team",
+        "mdm",
+        "plugins"
+      ],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-2",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.6690000000000964
+            }
+          ],
+          "exitCode": 1,
+          "signal": null
+        },
+        {
+          "label": "process-3",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.15516600000000835,
+              "durationMs": 1118.102084,
+              "ok": true
+            },
+            {
+              "method": "tools/list",
+              "startMs": 1119.9279580000002,
+              "durationMs": 1.6609579999999369,
+              "ok": true,
+              "toolCount": 25
+            }
+          ],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-4",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.08845900000005713
+            }
+          ],
+          "exitCode": 1,
+          "signal": null
+        },
+        {
+          "label": "process-5",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-6",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        }
+      ],
+      "coldMs": 1333.27075,
+      "heldWarmMs": 0.06045799999992596,
+      "ok": true,
+      "trial": 1
+    },
+    {
+      "mode": "all",
+      "loadMs": 90.38425,
+      "settingSources": [
+        "project",
+        "user",
+        "team",
+        "mdm",
+        "plugins"
+      ],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-2",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.7036249999998745
+            }
+          ],
+          "exitCode": 1,
+          "signal": null
+        },
+        {
+          "label": "process-3",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.08529199999998127,
+              "durationMs": 1162.834541,
+              "ok": true
+            },
+            {
+              "method": "tools/list",
+              "startMs": 1164.605375,
+              "durationMs": 1.6104579999996531,
+              "ok": true,
+              "toolCount": 25
+            }
+          ],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-4",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.09050000000002001
+            }
+          ],
+          "exitCode": 1,
+          "signal": null
+        },
+        {
+          "label": "process-5",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-6",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        }
+      ],
+      "coldMs": 1334.056792,
+      "heldWarmMs": 0.05720900000005713,
+      "ok": true,
+      "trial": 2
+    },
+    {
+      "mode": "all",
+      "loadMs": 94.89675,
+      "settingSources": [
+        "project",
+        "user",
+        "team",
+        "mdm",
+        "plugins"
+      ],
+      "noModelRequest": true,
+      "mcpTiming": [
+        {
+          "label": "process-1",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-2",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.5197499999999309
+            }
+          ],
+          "exitCode": 1,
+          "signal": null
+        },
+        {
+          "label": "process-3",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.05633299999999508,
+              "durationMs": 1082.6335840000002,
+              "ok": true
+            },
+            {
+              "method": "tools/list",
+              "startMs": 1084.5150830000002,
+              "durationMs": 1.700916999999663,
+              "ok": true,
+              "toolCount": 25
+            }
+          ],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-4",
+          "requests": [
+            {
+              "method": "initialize",
+              "startMs": 0.05075000000010732
+            }
+          ],
+          "exitCode": 1,
+          "signal": null
+        },
+        {
+          "label": "process-5",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        },
+        {
+          "label": "process-6",
+          "requests": [],
+          "exitCode": 0,
+          "signal": null
+        }
+      ],
+      "coldMs": 1736.659291,
+      "heldWarmMs": 0.059957999999824096,
+      "ok": true,
+      "trial": 3
+    }
+  ],
+  "limitations": [
+    "Fresh Node processes, warm OS file cache; not physical cold disk",
+    "All-checkpoint sweeps are not an instrumented native resume",
+    "Temporary store writes use 1 KiB checkpoints and 100-character event payloads",
+    "Explicit invalid placeholder API key; authenticated dashboard/team behavior not measured",
+    "Same settingSources and sandbox/auto-review flags as host; no Cindy per-session inline HTTP MCP map",
+    "Three configured stdio MCP processes started: one initialize/tools-list success, two exit code 1 without response",
+    "No actual model send or runtime optimization performed"
+  ]
+}

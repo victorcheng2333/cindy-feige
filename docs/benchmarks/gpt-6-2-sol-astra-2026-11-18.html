@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>GPT‑6.2 Sol 与 Astra 模型评测</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Poppins:wght@400;500;600;700&display=swap');
+:root{color-scheme:light dark;--page:#faf9f5;--text:#141413;--muted:#5e5d59;--line:#e8e6dc;--axis:#b0aea5;--note:#f0eee6;--astra:#d97757;--sol:#6a9bcc;--astra-text:#a8472a;--sol-text:#3f6d9c;--ink:#141413;--head:Poppins,Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;--body:Lora,Georgia,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",serif}
+@media (prefers-color-scheme:dark){:root{--page:#141413;--text:#faf9f5;--muted:#b0aea5;--line:#373631;--axis:#b0aea5;--note:#22211e;--astra-text:#d97757;--sol-text:#6a9bcc}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);font:1rem/1.8 var(--body)}
+main{max-width:960px;margin:auto;padding:clamp(24px,6vw,62px) clamp(18px,5vw,48px)}
+header{padding-bottom:1.35rem;border-bottom:1px solid var(--line)}
+h1,h2,h3,table,summary,.chart,.meta{font-family:var(--head)}
+h1,h2,h3{line-height:1.32;margin:0 0 .75rem}
+h1{font-size:clamp(2rem,5vw,3.25rem);letter-spacing:-.035em}
+.model-title{white-space:nowrap}
+h2{font-size:clamp(1.35rem,3.2vw,1.85rem)}
+h3{font-size:1.05rem}
+section{margin-top:2.3rem}
+p,ul{margin:.65rem 0;max-width:46em}
+ul{padding-left:1.35em}
+li+li{margin-top:.5rem}
+a{color:var(--sol-text);text-underline-offset:.18em;overflow-wrap:anywhere}
+:focus-visible{outline:2px solid var(--sol-text);outline-offset:3px;border-radius:4px}
+.meta,.muted,th{color:var(--muted)}
+.meta,.muted,figcaption{font-size:.88rem}
+.note,details{padding:.8rem 1rem;background:var(--note);border-radius:8px;margin:1rem 0}
+.note p,details p{margin:.3rem 0}
+details summary{cursor:pointer;font-weight:600}
+details[open] summary{margin-bottom:.45rem}
+.astra{color:var(--astra-text)}
+.sol{color:var(--sol-text)}
+.table-wrap{overflow-x:auto;margin:1rem 0}
+table{width:100%;border-collapse:collapse;font-size:.9rem;line-height:1.55;font-variant-numeric:tabular-nums}
+th,td{padding:.63rem .57rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th[scope=row]{color:var(--text);font-weight:500}
+.num{text-align:right;white-space:nowrap}
+.wide{min-width:530px}
+figure{margin:1.1rem 0 1.4rem}
+.chart{font-size:.9rem;font-variant-numeric:tabular-nums;line-height:1.5}
+.legend{display:flex;gap:1rem;flex-wrap:wrap;margin:.55rem 0 .85rem;font-weight:600}
+.metric{margin:0 0 .85rem}
+.metric h3{font-size:.9rem;margin:0 0 .28rem}
+.bars{border-left:1px solid var(--axis);background-image:linear-gradient(to right,var(--line) 1px,transparent 1px);background-size:25% 100%;border-right:1px solid var(--line);display:grid;gap:3px}
+.bar{width:var(--w);min-height:1.55rem;border-radius:0 4px 4px 0;display:flex;justify-content:flex-end;align-items:center;padding:0 .5rem;color:var(--ink);font-weight:600}
+.bar.astra{background:var(--astra)}
+.bar.sol{background:var(--sol)}
+.scale{position:relative;min-height:1.6em;border-top:1px solid var(--axis);color:var(--muted);font-size:.8rem}
+.scale span{position:absolute;left:var(--tick);transform:translateX(-50%)}
+.scale span:first-child{left:0;transform:none}
+.scale span:last-child{left:auto;right:0;transform:none}
+.sources h3{margin-top:1rem}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1><span class="model-title">GPT‑6.2 Sol 与 Astra</span> 模型评测</h1>
+<p class="meta">资料截至 2026 年 11 月 18 日 · 两款模型于 11 月 17 日发布 · 涵盖 Codex、专业工作和 API 成本</p>
+</header>
+
+<section aria-labelledby="findings">
+<h2 id="findings">日常编码优先 Sol，复杂任务升级 Astra</h2>
+<ul>
+<li><strong>常规代码改动，Sol 的成本优势最清楚。</strong> Artificial Analysis 在同一 Codex 评测中，两款模型都开到 max，代码修改分项同为 42 分（榜单取整）。整套编码评测里，Sol 49 分、每题 $1.22，Astra 53 分、每题 $5.12。<a href="#aa-code">AA 编码原表</a></li>
+<li><strong>Astra 的优势集中在持续做复杂任务。</strong> 同一 Codex 评测里，Astra 的终端和代码库问答分别领先 6 分和 9 分。Vals 的科学终端任务差距更大，Astra 71.43%，Sol 58.57%。<a href="#aa-code">AA 编码原表</a> · <a href="#vals">Vals 原表</a></li>
+<li><strong>升级到 6.2 后，综合能力与编码分数走向不同。</strong> AA 综合指数里 Astra 和 Sol 分别较各自前代涨 5 分和 2 分。同一机构的 Codex 编码指数里，Astra 持平，Sol 降 3 分。Sol 在代码库问答上掉了 14 分，同时在终端任务上提高 4 分。<a href="#aa">AA 首发报告</a> · <a href="#aa-code">AA 编码原表</a></li>
+</ul>
+</section>
+
+<section aria-labelledby="official">
+<h2 id="official">OpenAI 首发结果</h2>
+<p>OpenAI 公布的 <strong>FrontierCode 2.0</strong> 使用 Cognition 的真实代码库修改题。两款模型均为 max，Sol 与 Astra 相差不到 0.5 个百分点，单题成本约为 Astra 的五分之一。<a href="#openai">OpenAI 发布材料</a> · <a href="#frontier">Cognition 测试说明</a></p>
+<p>较长的专业工作更能拉开差距。OpenAI 披露 Astra 在 <strong>Agents’ Last Exam v1.1</strong> 比前代高 5.2 分，成本低于前代的三分之一。内部 <strong>GDPval v2</strong> 中，Astra 与 Sol 较各自前代分别提高 6.2 与 5.3 个百分点。PPT 模板还原和工作簿质量主要来自首发示例和早期客户反馈，证据适合用来选试跑场景。<a href="#openai">OpenAI 发布材料</a> · <a href="#ale">Agents’ Last Exam 口径</a></p>
+</section>
+
+<section aria-labelledby="coding">
+<h2 id="coding">Codex 同台测试中，代码库问答差距最大</h2>
+<figure>
+<figcaption class="muted">Artificial Analysis 编码排行榜，各分项按 0–100 显示，越高越好。两款模型均用 Codex、max 推理档，数值为榜单取整。</figcaption>
+<div class="chart" role="img" aria-label="Astra 和 Sol 分项评分。代码库问答 55 比 46，终端任务 64 比 58，代码修改 42 比 42。">
+<div aria-hidden="true">
+<div class="legend"><span class="astra">Astra · 每组上条</span><span class="sol">Sol · 每组下条</span></div>
+<div class="metric"><h3>代码库问答 · SWE-Atlas-QnA-AA</h3><div class="bars"><div class="bar astra" style="--w:55%">55</div><div class="bar sol" style="--w:46%">46</div></div></div>
+<div class="metric"><h3>终端任务 · Terminal-Bench 4.1</h3><div class="bars"><div class="bar astra" style="--w:64%">64</div><div class="bar sol" style="--w:58%">58</div></div></div>
+<div class="metric"><h3>代码修改 · FrontierCode-AA 2.0</h3><div class="bars"><div class="bar astra" style="--w:42%">42</div><div class="bar sol" style="--w:42%">42</div></div></div>
+<div class="scale"><span>0</span><span style="--tick:25%">25</span><span style="--tick:50%">50</span><span style="--tick:75%">75</span><span>100 分</span></div>
+</div>
+</div>
+</figure>
+<p>两套 FrontierCode 结果都指向接近的代码修改表现。AA 的编码指数还纳入终端和代码库问答，因此能反映不同的强弱。OpenAI 公布的 FrontierCode 2.0 与 AA 的 FrontierCode-AA 2.0 各用各自的运行和计分配置，绝对分数宜在原表内比较。<a href="#openai">OpenAI 发布材料</a> · <a href="#aa-code">AA 编码原表</a></p>
+<details>
+<summary>展开比较推理档、耗时与前代</summary>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Codex 编码档位与前代对比，可横向滚动">
+<table class="wide">
+<thead><tr><th scope="col">模型与推理档</th><th scope="col" class="num">编码指数</th><th scope="col" class="num">美元／题</th><th scope="col" class="num">分钟／题</th></tr></thead>
+<tbody>
+<tr><th scope="row">6.2 Astra max</th><td class="num">53</td><td class="num">$5.12</td><td class="num">25.1</td></tr>
+<tr><th scope="row">6.2 Astra xhigh</th><td class="num">53</td><td class="num">$3.20</td><td class="num">16.5</td></tr>
+<tr><th scope="row">6.2 Astra high</th><td class="num">52</td><td class="num">$2.37</td><td class="num">15.8</td></tr>
+<tr><th scope="row">6.2 Sol xhigh</th><td class="num">50</td><td class="num">$0.90</td><td class="num">12.6</td></tr>
+<tr><th scope="row">6.2 Sol max</th><td class="num">49</td><td class="num">$1.22</td><td class="num">17.5</td></tr>
+<tr><th scope="row">6.2 Sol high</th><td class="num">47</td><td class="num">$0.76</td><td class="num">10.6</td></tr>
+<tr><th scope="row">6 Astra max</th><td class="num">53</td><td class="num">$7.63</td><td class="num">26.0</td></tr>
+<tr><th scope="row">6.1 Sol max</th><td class="num">52</td><td class="num">$1.51</td><td class="num">21.9</td></tr>
+</tbody>
+</table>
+</div>
+<p class="muted">在这组样本中，Astra xhigh 达到与 max 相同的取整指数，Sol xhigh 甚至高 1 分。但两款模型在终端或代码修改分项上仍有变化，1 分差距也可能来自评测波动。<a href="#aa-code">AA 编码原表</a></p>
+</details>
+</section>
+
+<section aria-labelledby="independent">
+<h2 id="independent">科学与复杂推理的差距大于常规数据分析</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="独立评测分数">
+<table>
+<thead><tr><th scope="col">评测</th><th scope="col" class="num astra">Astra</th><th scope="col" class="num sol">Sol</th></tr></thead>
+<tbody>
+<tr><th scope="row">AA 综合指数 v5.0.1 · max</th><td class="num">62</td><td class="num">57</td></tr>
+<tr><th scope="row">Vals 综合指数 v2.2 · max</th><td class="num">67.66%</td><td class="num">66.06%</td></tr>
+<tr><th scope="row">Vals 科学指数 · max</th><td class="num">68.44%</td><td class="num">57.76%</td></tr>
+<tr><th scope="row">Vals 科学终端任务 · max</th><td class="num">71.43%</td><td class="num">58.57%</td></tr>
+<tr><th scope="row">AA 交互式 3D · 人类盲评 Elo</th><td class="num">1318</td><td class="num">1259</td></tr>
+<tr><th scope="row">Plotly 数据分析 · 单次运行</th><td class="num">41 / 43</td><td class="num">40 / 43</td></tr>
+</tbody>
+</table>
+</div>
+<p class="muted">指数、百分比、Elo 和答对题数的单位不同。各行独立比较。<a href="#aa">Artificial Analysis</a> · <a href="#vals">Vals</a> · <a href="#plotly">Plotly</a></p>
+<p><strong>综合榜无法直接预测开放式交付。</strong> Epoch AI 给 Astra 的 ECI 是 174，与 Claude Fable 5.2 并列。但在从 Epoch 自身研究工作抽取的任务里，Astra 平均 65%，落后 Fable 5.2 约 17 个百分点。这组试验没有给出 Sol 对照。<a href="#epoch">Epoch AI 原始评测</a></p>
+<p><strong>常规结构化分析里，Sol 已经很接近 Astra。</strong> Plotly 的 20 道常规分析题两者全部答对，差距出在需要主动发现隐藏模式的题。每款模型只跑了一次，Plotly 对其他模型的重复运行曾波动至多 3 题，因此这组结果不足以认定新版退步或两款之间存在稳定差距。<a href="#plotly">Plotly 原始评测</a></p>
+</section>
+
+<section aria-labelledby="cost">
+<h2 id="cost">Sol 的 API 标准单价是 Astra 的四分之一</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="API 成本对比">
+<table>
+<thead><tr><th scope="col">费用口径</th><th scope="col" class="num astra">Astra</th><th scope="col" class="num sol">Sol</th></tr></thead>
+<tbody>
+<tr><th scope="row">输入／百万 token</th><td class="num">$8.00</td><td class="num">$2.00</td></tr>
+<tr><th scope="row">缓存命中输入／百万 token</th><td class="num">$0.40</td><td class="num">$0.10</td></tr>
+<tr><th scope="row">输出／百万 token</th><td class="num">$40.00</td><td class="num">$10.00</td></tr>
+<tr><th scope="row">AA 综合指数 · max／题</th><td class="num">$4.00</td><td class="num">$1.01</td></tr>
+<tr><th scope="row">AA Codex 编码 · max／题</th><td class="num">$5.12</td><td class="num">$1.22</td></tr>
+</tbody>
+</table>
+</div>
+<p>两者均支持 105 万 token 上下文和最多 12.8 万输出。标准 API 请求超过 27.2 万输入 token 时，整次请求的输入与缓存费率翻倍，输出费率为短上下文的 1.5 倍。基准成本随工具调用、缓存和推理量变化，Codex 订阅额度采用自身的计量方式。<a href="#api">官方 API 规格与价格</a> · <a href="#work">Codex 与 Work 官方说明</a> · <a href="#aa">AA 综合指数</a></p>
+</section>
+
+<section id="community-reviews" aria-labelledby="community-title">
+<h2 id="community-title">X 与 Reddit 的首发使用反馈</h2>
+<p class="muted">2026 年 11 月 17–18 日。按可辨认的任务选取案例。X 页面直接读取返回 403，下文按可读的原帖存档或注明出处的媒体转述整理。Reddit 引用公开讨论串。样本无法估计好评率或问题发生率。</p>
+<p><strong>Astra 在完整项目里会不会过早收手？</strong> Every 的 Dan Shipper 称团队提前试用了数周。新版在团队多数编码题上与 Astra 6 接近，但从头做到尾的开发任务中常常提前停下；写作有时压缩到读者难以跟上推理。作为对照，Reddit 有用户用 Astra high 并行跑了约十项任务，称大多很快达到要求。两边没有发布同一套验收用例。<a href="https://x.com/danshipper/status/2122754729012777052">Shipper 的 X 原帖</a> · <a href="https://www.vibeleaderboard.ai/intel/c3920746-d6c2-4a1d-871c-e3c2527633bc">原帖文字存档</a> · <a href="https://www.reddit.com/r/codex/comments/1xytl9j/gpt62_sol_just_dropped_and_users_are_already/">Reddit 使用反馈</a></p>
+<p><strong>做得出视觉效果，能否按反馈改到位则有分歧。</strong> 据 VentureBeat 转述，Ethan Mollick 用 Astra 在 Blender 和 Unity 里做出可玩的太空电梯，同时觉得引导迭代较费劲。Theo Browne 描述两位测试者给不同游戏设计关卡，结果都围绕水、音乐和钟声，甚至用了同一个关卡名。这提供了一个具体的创意重复案例。<a href="https://x.com/emollick/status/2122755693191287009">Mollick 的 X 原帖</a> · <a href="https://x.com/theo/status/2122762384704258122">Browne 的 X 原帖</a> · <a href="https://venturebeat.com/technology/essentially-unusable-openai-launches-gpt-6-2-astra-and-sol-to-negative-reception-from-ai-power-users">VentureBeat 报道</a></p>
+<p><strong>Sol 的速度更容易感知，审查质量还需看任务。</strong> 一位 Reddit 用户实测可见输出从约 34 升至 44 token/秒。另一位用户拿旧 PR 重跑两款 6.2 模型，发现它们漏掉了较早模型能找到的缺陷，帖子未提供完整 PR 集和逐项结果。速度测量仅覆盖文字输出阶段。<a href="https://www.reddit.com/r/codex/comments/1xytdhy/anyone_else_notice_how_fast_sol_62_types/">Sol 输出速度实测</a> · <a href="https://www.reddit.com/r/codex/comments/1xys0fr/gpt_62_astra_is_equivalent_to_6_in_coding_62_sol/">PR 复测讨论</a></p>
+</section>
+
+<section aria-labelledby="recommendations">
+<h2 id="recommendations">按任务选择模型</h2>
+<p class="muted">证据强度按对实际任务的贴合度判断。强表示同一环境下有直接对照，并有其他结果支持。中表示直接对照来自一个评测体系，或实际任务与评测存在差异。弱表示主要依据小样本或首发示例。</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="模型适配矩阵，可横向滚动">
+<table class="wide">
+<thead><tr><th scope="col">任务</th><th scope="col">倾向</th><th scope="col">依据</th><th scope="col">证据强度</th></tr></thead>
+<tbody>
+<tr><th scope="row">明确需求的功能改动、测试和脚本</th><td><strong class="sol">Sol high</strong> 起步，较难任务试 xhigh</td><td>两套代码修改结果接近。AA 的 Sol xhigh 单题 $0.90。</td><td>强（成本与修改题表现）</td></tr>
+<tr><th scope="row">陌生仓库排障、跨模块定位</th><td><strong class="astra">Astra xhigh</strong> 起步</td><td>AA 的终端与代码库问答领先，xhigh 的编码总分接近 max。</td><td>中</td></tr>
+<tr><th scope="row">科学终端工作、复杂技术推理</th><td><strong class="astra">Astra</strong>，困难任务试 max</td><td>Vals 科学终端任务领先近 13 个百分点，AA 综合指数也领先。</td><td>强（基准内）</td></tr>
+<tr><th scope="row">交互式 3D、模板化幻灯片</th><td><strong class="astra">Astra</strong> 优先试作</td><td>AA‑3D 有人类盲评。幻灯片依据首发示例与早期客户反馈。</td><td>3D 中，幻灯片弱</td></tr>
+<tr><th scope="row">常规数据分析、结构化报告</th><td><strong class="sol">Sol</strong> 起步</td><td>Plotly 常规题持平，Sol 这次全套运行 $1.22，Astra $4.11。</td><td>弱（每款单次运行）</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note"><p><strong>如果正在从 6.1 Sol 升级。</strong> 对成本敏感的执行类工作可以优先试 6.2 Sol。代码阅读和解释占比高时，值得保留 6.1 Sol 做对照。用同一组真实任务记录验收率、关键事实遗漏、返工次数与耗时，能检验 AA 的分项变化是否出现在自己的工作里。</p></div>
+</section>
+
+<section aria-labelledby="limits">
+<h2 id="limits">局限与未验证项</h2>
+<ul>
+<li>本报告以首发公开证据为主，未在 Cindy 或用户自己的仓库、数据上复跑。各家默认推理档、工具权限、运行框架、超时与评分规则会影响结果。</li>
+<li>OpenAI 在两项内部评测中观察到，两款新版更容易漏报缺文件、搜索工具不可用等阻塞，并称 Codex 加入额外指令后有所改善。现有公开证据不足以估计其他客户端里的发生比例。<a href="#openai">OpenAI 发布材料</a></li>
+<li>社区反馈属于首发定性样本。11 月 17 日的讨论既有对 Sol 输出更快的体感，也有对新版编码体验的负面反馈。客户端、推理档和任务各异。<a href="#community">社区原帖</a></li>
+</ul>
+</section>
+
+<section class="sources" aria-labelledby="sources">
+<h2 id="sources">来源</h2>
+<h3>官方资料与厂商自报</h3>
+<ul>
+<li id="api"><a href="https://developers.openai.com/api/docs/models/gpt-6.2-astra">GPT‑6.2 Astra API 规格</a> · <a href="https://developers.openai.com/api/docs/models/gpt-6.2-sol">GPT‑6.2 Sol API 规格</a></li>
+<li id="work"><a href="https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol">ChatGPT Learn 的 Codex、Work 和 API 发布说明</a></li>
+<li id="openai"><a href="https://openai.com/index/introducing-gpt-6-2-astra-sol/">OpenAI 发布公告、基准图表和首发客户反馈</a></li>
+</ul>
+<h3>独立评测与基准维护方</h3>
+<ul>
+<li id="aa-code"><a href="https://artificialanalysis.ai/agents/coding-agents/comparisons/codex-vs-deepseek-harness">Artificial Analysis 编码榜的 Codex 原始结果</a></li>
+<li id="aa"><a href="https://artificialanalysis.ai/es/articles/openai-has-the-2-model-in-the-intelligence-index-with-the-release-of-gpt-6-2-astra-and-gpt-6-2-sol">Artificial Analysis 6.2 首发评测</a> · <a href="https://artificialanalysis.ai/models/gpt-6-2-astra">Astra 模型页</a> · <a href="https://artificialanalysis.ai/models/gpt-6-2-sol">Sol 模型页</a></li>
+<li id="vals"><a href="https://www.vals.ai/models/openai_gpt-6.2-astra">Vals Astra 结果</a> · <a href="https://www.vals.ai/models/openai_gpt-6.2-sol">Vals Sol 结果</a></li>
+<li id="plotly"><a href="https://plotly.com/blog/gpt-6-2-astra-plotly-data-analytics-bench/">Plotly Data Analytics Bench 原始对照</a></li>
+<li id="epoch"><a href="https://epoch.ai/models/gpt-6-2-astra">Epoch AI 的 ECI 模型数据</a> · <a href="https://epoch.ai/publications/how-good-are-fable-5-2-and-gpt-6-2-astra-at-real-work">Epoch AI 的开放式工作评测</a></li>
+<li id="frontier"><a href="https://cognition.com/blog/frontier-code-2.0">Cognition FrontierCode 2.0 方法</a> · <a href="https://cognition.com/frontiercode">原榜</a></li>
+<li id="ale"><a href="https://agents-last-exam.org/leaderboard">Agents’ Last Exam 榜单和方法</a></li>
+</ul>
+<h3>社区反馈</h3>
+<ul>
+<li id="community"><a href="https://www.reddit.com/r/codex/comments/1xytdhy/anyone_else_notice_how_fast_sol_62_types/">r/codex 的 Sol 速度讨论</a> · <a href="https://www.reddit.com/r/codex/comments/1xys0fr/gpt_62_astra_is_equivalent_to_6_in_coding_62_sol/">r/codex 的编码评测讨论</a></li>
+</ul>
+</section>
+</main>
+</body>
+</html>
