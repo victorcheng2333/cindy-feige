@@ -416,7 +416,7 @@ describe('本机这份用不了：可明确选择另一台电脑上的同一供�
       <ConfirmDialogProvider>
         <ModelSelectorContent
           modelId="a-model" effort="high" onModelChange={vi.fn()} onEffortChange={vi.fn()}
-          currentProviderId="a-local" onProviderChange={vi.fn()} vendorKey="cc"
+          currentProviderId="a-local" onProviderChange={vi.fn()} vendorKey="cc" unifiedPanel
           onUnifiedSelect={onUnifiedSelect} remoteAgent={{ devices: askDevices, selectedDeviceId: null }}
         />
       </ConfirmDialogProvider>,

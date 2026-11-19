@@ -4,6 +4,13 @@ import { GhostPluginActions } from '../../../src/renderer/features/plugin/GhostP
 import { InstallGithubReleaseDialog } from '../../../src/renderer/features/plugin/InstallGithubReleaseDialog';
 import { useConfirmDialog } from '../../../src/renderer/components/ui/confirm-dialog-provider';
 
+// The isolated HTTP fixture lacks secure-context randomUUID. These IDs only
+// correlate simulated install progress; production keeps its real UUID source.
+if (!crypto.randomUUID) {
+  let sequence = 0;
+  crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`;
+}
+
 function Fixture() {
   const [open, setOpen] = useState(false);
   const [instance, setInstance] = useState('');

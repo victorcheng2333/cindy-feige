@@ -52,7 +52,7 @@ mountPage({
   render: () => <div className="flex h-screen gap-4 p-4">
     <div className="min-w-0 flex-1"><ProvidersSection /></div>
     <div data-picker className="flex w-[360px] items-end">
-      <ModelSelector modelId="gpt-6-astra" currentProviderId="openai" agentKind="codex" effort="high"
+      <ModelSelector unifiedPanel modelId="gpt-6-astra" currentProviderId="openai" agentKind="codex" effort="high"
         onModelChange={() => {}} onEffortChange={() => {}} useMorphPopover
         remoteAgent={{ devices: devices.map(({ deviceId, name }) => ({ deviceId, name })), selectedDeviceId: null }} />
     </div>

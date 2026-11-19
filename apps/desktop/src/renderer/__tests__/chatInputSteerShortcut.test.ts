@@ -137,7 +137,8 @@ describe('ChatInput steer shortcut contract', () => {
     expect(composerSettingsSource).toContain("setPreference(enabled ? 'modifier-enter' : 'enter')");
     expect(chatInputSource).toContain('useComposerSendShortcutPreference()');
     expect(chatInputSource).toContain('getComposerSendShortcutLabel(');
-    expect(chatInputSource).toContain('${runningDeliveryMode}`)} · ${composerSendShortcutLabel}`');
+    // The live Settings-to-composer update is exercised through real components
+    // in chatInputModelLoading.test.tsx, rather than an obsolete tooltip template.
     expect(pendingQueuePanelSource).toContain('isPendingQueueSteerShortcut');
     expect(pendingQueuePanelSource).toContain('void onSteer(entry.clientId);');
   });

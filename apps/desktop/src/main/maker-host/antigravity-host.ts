@@ -43,7 +43,7 @@ function binaryPath(): string | undefined {
 
 let executable: string | undefined;
 let snapshot: { scope: string; models: AgyModelDescriptor[]; expiresAt: number } | undefined;
-let discovery: { scope: string; token: symbol; promise: Promise<boolean> } | undefined;
+let discovery: { scope: string; token: symbol; retainOnFailure: boolean; promise: Promise<boolean> } | undefined;
 
 function currentModels() {
   return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.models : [];
@@ -55,7 +55,10 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   const scope = ownerScopedUserDataPath('antigravity');
   if (!options.force && snapshot?.scope === scope && Date.now() < snapshot.expiresAt) return snapshot.models.length > 0;
   if (!options.allowSideEffects) return currentModels().length > 0;
-  if (discovery?.scope === scope) return options.waitForDiscovery ? discovery.promise : currentModels().length > 0;
+  if (discovery?.scope === scope) {
+    if (options.force) discovery.retainOnFailure = true;
+    return options.waitForDiscovery ? discovery.promise : currentModels().length > 0;
+  }
   const token = Symbol();
   const promise = (async () => {
     let models: AgyModelDescriptor[] = [];
@@ -68,7 +71,7 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
       models = parseAntigravityModels(stdout);
     } catch { /* CLI stdout and stderr may contain credentials or proxy diagnostics. */ }
     if (discovery?.token !== token || scope !== ownerScopedUserDataPath('antigravity')) return false;
-    if (options.force && !models.length && snapshot?.scope === scope && snapshot.models.length) {
+    if (discovery.retainOnFailure && !models.length && snapshot?.scope === scope && snapshot.models.length) {
       snapshot = { ...snapshot, expiresAt: Date.now() + 30_000 };
       return false;
     }
@@ -76,7 +79,7 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     notifyLocalHarnessProviderChanged();
     return models.length > 0;
   })();
-  discovery = { scope, token, promise };
+  discovery = { scope, token, retainOnFailure: options.force === true, promise };
   void promise.finally(() => { if (discovery?.promise === promise) discovery = undefined; });
   return options.waitForDiscovery ? promise : currentModels().length > 0;
 }

@@ -60,6 +60,7 @@ void mountPage({
         listDevices: async () => ({ devices: [] }),
         onPresenceChanged: subscription('presence'),
         onControlTargetChanged: subscription('controlTarget'),
+        onStatusChanged: subscription('deviceStatus'),
       },
       maker: {
         imDefaultSettingsGet: async () => state(),

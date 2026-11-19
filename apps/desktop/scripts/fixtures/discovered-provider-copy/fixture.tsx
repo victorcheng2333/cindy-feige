@@ -36,7 +36,7 @@ function Composer() {
   return (
     <div data-composer data-route={`${route.device?.deviceId ?? 'local'}:${route.providerId}`}
       className="flex w-full max-w-[640px] items-center rounded-2xl border border-[var(--border-default)] bg-[var(--surface-elevated)] px-3 py-2">
-      <ModelSelector modelId={route.modelId} currentProviderId={route.providerId} agentKind="claude-code" effort="high"
+      <ModelSelector unifiedPanel modelId={route.modelId} currentProviderId={route.providerId} agentKind="claude-code" effort="high"
         onModelChange={() => {}} onEffortChange={() => {}}
         {...(running ? {} : { onUnifiedSelect: apply })}
         remoteAgent={{

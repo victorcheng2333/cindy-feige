@@ -1120,7 +1120,7 @@
   },
   "awayGuard": {
     "status": "Cindy 正勞作",
-    "hint": "按任一鍵或 Touch ID 鍵即鎖屏，再以指紋或密碼解之",
+    "hint": "按任一鍵，乃可解鎖",
     "lockFailed": {
       "status": "Cindy 未能鎖此機",
       "hint": "觸機則再試鎖屏；仍不能鎖，以 Touch ID 或密碼驗之，乃可撤。亦可闔蓋或按電源鍵以鎖。",
@@ -6164,7 +6164,7 @@
     "sessionRuntimeFallback": {
       "cell": {
         "label": "差事模型自降",
-        "description": "連線或容量之故障連發時，先切至同名模型之他處已連來源，再試當前 Agent 明確所薦之模型；不換 Agent，亦不改君所存之選擇。常例為闔。"
+        "description": "模型組遇故，試組內可用之餘模。更換引擎，依舊法交接，存其新選。尋常差事屢敗，方於本引擎另試來源或所薦模型。初設為關。"
       },
       "toggleAria": "切換差事模型自降",
       "toast": {
@@ -8287,6 +8287,7 @@
         "cindyEmbedText": "可將文字送算為向量（用於語義檢索）",
         "cindyModelsDecisions": "可用決策模型（耗模型額度）",
         "cindyModelsRerank": "可用重排模型（耗模型額度）",
+        "cindyModelsMediaRequest": "可直用 Cindy AI 生圖、影片、語音合成及轉寫（耗模型額度）",
         "cindyEmbedTextDetail": "文字將送至系統之向量模型算為一串數字，每次至多 {{max}} 條，或生模型費用。所得向量僅交法器自存，不寫入君之資料庫。",
         "cindySearchWeb": "可用 Cindy AI 搜尋公網",
         "cindySearchWebDetail": "查詢將存取公網，或耗 Cindy AI 限額。",
@@ -11592,7 +11593,7 @@
         "projectDirChoose": "擇",
         "projectDirChange": "易",
         "projectDirClear": "清",
-        "projectDirNote": "分工行事時，同伴於此勞作。不擇亦可，將用此群議自有之卷匣；若擇 git 專案，每次分工將新開一 worktree 與分支，不動君手中之程式碼。",
+        "projectDirNote": "可擇本機既有之專案。未擇，則先取倉庫所繫，次取行事同伴之專案。Git 分工另闢 worktree。",
         "autoContinueSaveFailed": "分工交接未能存，請再試",
         "projectDirSaveFailed": "案之卷匣未能存，確其尚存後再試",
         "allowMemberInvites": "許諸成員邀友",
@@ -11920,15 +11921,15 @@
           "replyModeAssistant": "Cindy 答之",
           "replyModeAssistantNote": "群中 Cindy 答之。",
           "work": "分職",
-          "ownFolder": "群自有之卷匣",
+          "ownFolder": "自動擇取",
           "projectDirHint": "唯此機有效。",
-          "projectDirClearHint": "改用群自有之卷匣",
+          "projectDirClearHint": "復為自動擇項",
           "project": "案",
           "projectCaption": "同僚於群中應答、分工，皆於此案行之。庫為全群所共，資料夾唯存此機。",
           "githubRepo": "GitHub 庫",
-          "githubRepoHint": "書 owner/name。未擇資料夾之機，用本機此案；無之，則自取一份。",
+          "githubRepoHint": "GitHub · owner/name",
           "repository": "代碼之庫",
-          "repositoryHint": "GitHub 填 owner/name；GitLab（含公司自建）、CNB 等，貼庫之連結。未擇夾之機，用本機此項目，無則自取一份。",
+          "repositoryHint": "GitHub 可書 owner/name，餘庫可貼其址。此機既有之項，獨一相合者用之。",
           "repositoryPlaceholder": "owner/name 或庫之連結",
           "githubRepoSaveFailed": "庫未存，請察而再試。",
           "folderRepoFilled": "已依此夾填庫 {{repo}}，群中他人之機亦用之。",
@@ -14737,12 +14738,14 @@
       "runningWithWorktree_other": "它們結束前不能切換分支。用 worktree 現在就能在獨立副本裡開始，互不影響。",
       "runningWithWorktree_many": "它們結束前不能切換分支。用 worktree 現在就能在獨立副本裡開始，互不影響。"
     },
-    "followUpHint": {
-      "queueDefault": "差事行中所遣之訊，默從排隊。",
-      "steerDefault": "差事行中所遣之訊，默為插話於今之差事。",
+    "sendDelivery": {
+      "menuAria": "此訊遣法",
+      "queueHint": "待此輪畢",
+      "steerHint": "次步即理",
+      "setDefault": "立為默",
+      "nowDefault": "已立為默",
       "switchToSteer": "默改插話",
-      "switchToQueue": "默改排隊",
-      "dismiss": "關閉提示"
+      "switchToQueue": "默改排隊"
     }
   },
   "onboarding": {
@@ -16589,7 +16592,7 @@
       "confirmArchive": {
         "title": "封存差事",
         "description": "確欲封存此差事乎？封存後將自錄中除去。",
-        "dirtyWorktreeWarning": "未提交之改動，歸檔前先存之，日後可於任務中復原。",
+        "dirtyWorktreeWarning": "此差事有檔案改動尚未提交。封存時照例存之，日後可於差事中復原。",
         "discardChanges": "棄未提交之改動",
         "discardWarning": "未提交之改動及新檔，將不可復原。",
         "discardAndArchive": "棄而歸檔",
@@ -16832,6 +16835,7 @@
         "thisEvening": "今夕",
         "tomorrow": "明日",
         "nextWeek": "下週",
+        "indefinite": "無期",
         "custom": "自定…",
         "wakeAt": "喚回日期時辰",
         "timeZone": "本地時辰（{{zone}}）",
@@ -19574,6 +19578,9 @@
     }
   },
   "goal": {
+    "blockedTurnFailed": "此輪未成。",
+    "blockedReasonUnknown": "受阻之由未詳。",
+    "blockedNextStep": "可於此任務補述詳情；解其阻後，按「{{action}}」續行。",
     "status": {
       "active": "方趨目標",
       "paused": "已暫止",
@@ -19908,6 +19915,7 @@
         "empty": "今無贈予之記。",
         "incomplete": "贈予之記甚多，今唯示最近 {{count}} 筆。",
         "unnamed": "贈予餘資",
+        "rolloverName": "滾存額度",
         "giftCard": "禮品卡 · 來自 {{sender}}",
         "original": "原額",
         "used": "已用",
@@ -20145,6 +20153,8 @@
       "basicModels": "可用若干模型",
       "subscription": "訂閱之約",
       "rollover": "所餘可留至{{period}}，至多 {{amount}}",
+      "rolloverMonthly": "剩餘餘額最多滾存 {{amount}}，轉為贈送餘額\n1 個月內有效，不再繼續滾存\n優先於訂閱餘資和儲值餘資使用",
+      "rolloverMonthlySummary": "剩餘餘額最多滾存 {{amount}}，1 個月內有效",
       "nextPeriod": {
         "MONTH": "次月",
         "YEAR": "次年",
@@ -21738,14 +21748,14 @@
     },
     "taskInbox": {
       "title": "識收件匣",
-      "lead": "任務依其狀自分為待處理、進行中、待後處理、已處理。善用之道，在常清其匣：事畢者點「畢」，未及者待後處理。",
+      "lead": "數事並行，收件匣依其狀而分類。凡有新報或待君答者，皆列於待處理。",
       "pending": {
         "title": "待處理",
         "body": "任務事竣有果，或待君答，則現於此。"
       },
       "done": {
         "title": "畢",
-        "body": "事畢點「畢」，任務移入已處理；後有新進，自返其處。"
+        "body": "宜常清其匣，事畢即點「畢」。"
       },
       "snooze": {
         "title": "待後處理",
