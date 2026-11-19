@@ -17742,7 +17742,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const binding = row && await activeModelGroupBinding(sessionId, row);
       if (!binding || !current.providerId || current.agentDeviceId) return null;
       const currentAgentKind = makerToDbAgentKind(current.agentKind);
-      if (currentAgentKind === 'cursor') return null;
+      if (currentAgentKind === 'cursor' || currentAgentKind === 'antigravity') return null;
       const excluded = new Set(visited.map(key => key.replace(/^claude-code\u0000/, 'cc\u0000')));
 
       const offer = await readModelGroupRecoveryOffer(sessionId, { visited: excluded, ...recovery,
@@ -17757,7 +17757,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         providerId: offer.providerId, agentDeviceId: null, effort: (offer.effort as SessionRuntimeProfile['effort']) ?? null, fastMode: false },
         bindCommittedRoute: profile => {
           const agentKind = makerToDbAgentKind(profile.agentKind);
-          if (agentKind === 'cursor') return;
+          if (agentKind === 'cursor' || agentKind === 'antigravity') return;
           if (profile.providerId) bindModelGroupSession(sessionId, binding.selection, modelGroupCandidateKey({
             agentKind, model: profile.model, providerId: profile.providerId,
           }));
