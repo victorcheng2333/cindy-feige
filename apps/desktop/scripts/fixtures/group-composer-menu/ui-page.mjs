@@ -81,6 +81,8 @@ export default {
       }
     };
     const rows = menu.getByRole('menuitem');
+    const rowCount = await rows.count();
+    assert.ok(rowCount > 0, 'The attachment menu must contain an action');
     for (let repeat = 0; repeat < 2; repeat++) {
       for (let index = 0; index < await rows.count(); index++) {
         await rows.nth(index).hover();
@@ -90,7 +92,9 @@ export default {
       }
     }
     await page.mouse.move(600, 30);
-    for (const [key, index] of [['Home', 0], ['ArrowDown', 1], ['ArrowUp', 0]]) {
+    // Ordinary mentions replaced the division entry. With just the attachment
+    // action, ArrowDown wraps back to the first row instead of a missing second.
+    for (const [key, index] of [['Home', 0], ['ArrowDown', 1 % rowCount], ['ArrowUp', 0]]) {
       await page.keyboard.press(key);
       await stable();
       assert.equal(await rows.nth(index).evaluate(el => el === document.activeElement), true);

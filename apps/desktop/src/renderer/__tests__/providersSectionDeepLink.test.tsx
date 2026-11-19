@@ -299,7 +299,7 @@ describe('ProvidersSection — 深链定位', () => {
   // Existing local asset tests never mount an available remote XD provider.
   it('recovers local Cindy AI credentials while showing its borrowed remote models', async () => {
     vi.mocked(useApiKey).mockReturnValue({ key: 'fixture-key', hasSavedKey: true, canReadKey: true, isReconciling: false, clearKey: vi.fn(async () => true) });
-    providersState.providers = [makeProvider('xd', { auth: { method: 'managed' }, connected: false })];
+    providersState.providers = [{ ...makeProvider('xd', { auth: { method: 'managed' }, connected: false }), runLocation: 'remote-mac' }];
     remoteSources.devices = [{ deviceId: 'remote-mac', name: 'Remote Mac' }];
     remoteSources.catalogs.set('remote-mac', { providers: [makeProvider('xd', {
       auth: { method: 'managed' }, connected: true, remoteInvocationEnabled: true,
@@ -331,7 +331,7 @@ describe('ProvidersSection — 深链定位', () => {
           { id: 'local-model', name: 'Local model', contextWindow: 200_000, efforts: [], defaultEffort: null },
         ] : [] },
       }),
-      runLocation: connected ? 'remote-mac' : undefined,
+      runLocation: 'remote-mac',
     }];
     remoteSources.devices = [{ deviceId: 'remote-mac', name: 'Remote Mac' }];
     remoteSources.catalogs.set('remote-mac', { modelVisibilityOverrides: {}, providers: [makeProvider('anthropic', {

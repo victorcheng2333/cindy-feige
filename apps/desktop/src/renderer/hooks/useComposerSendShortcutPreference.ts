@@ -45,6 +45,7 @@ function parsePreference(raw: string | null): ComposerSendShortcutPreference | n
  * opposite action in Enter mode. `followUpBehavior` sets one delivery for every
  * send key. With neither, Enter queues and modifier+Enter in Enter mode steers.
  * Idle sends always queue.
+ * alternateOnModifier also enables the opposite delivery with modifier+Enter.
  */
 export function resolveComposerEnterIntent(
   event: ComposerEnterEvent,
@@ -54,6 +55,7 @@ export function resolveComposerEnterIntent(
     platform: string | undefined;
     runningDefault?: ComposerFollowUpBehavior;
     followUpBehavior?: ComposerFollowUpBehavior;
+    alternateOnModifier?: boolean;
   },
 ): ComposerEnterIntent {
   if (event.key !== 'Enter' || event.shiftKey || event.altKey) return null;
@@ -70,7 +72,7 @@ export function resolveComposerEnterIntent(
 
   const primary = options.runningDefault ?? options.followUpBehavior ?? 'queue';
   if (preference === 'enter' && hasModifier &&
-      (options.runningDefault !== undefined || options.followUpBehavior === undefined)) {
+      (options.runningDefault !== undefined || options.followUpBehavior === undefined || options.alternateOnModifier === true)) {
     return primary === 'steer' ? 'queue' : 'steer';
   }
   return primary;

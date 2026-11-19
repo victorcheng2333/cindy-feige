@@ -792,9 +792,9 @@ import {
 import { createCustomImageChannel, registerCustomImageChannels } from './customImageChannel.js';
 import { readByokCredential, readByokInferenceBase } from '../model-access/byokCredentials.js';
 import type { AgentKind } from '@cindy/model-providers';
-import { resolveCustomMediaConnection, isCustomVideoProvider, customMediaAgents as declaredCustomMediaAgents, customMediaGuideProtocol } from './customMediaConnection.js';
+import { resolveCustomMediaConnection, isCustomVideoProvider, customMediaAgents as declaredCustomMediaAgents, customMediaGuideProtocol, mediaGuideScope, mediaGuideTarget, isCustomMediaGuideProvider } from './customMediaConnection.js';
 import { videoConnectionRevision } from '../cindy-media/customVideoProtocol.js';
-import { createXaiVideoProvider } from '../cindy-proxy-media/video/providers/xai.js';
+import { createXaiVideoProviders } from '../cindy-proxy-media/video/providers/xai.js';
 import * as blobStore from '../cindy-media/blobStore.desktop.js';
 import { callCindyMedia } from '../cindy-media/invocationService.js';
 import { invokeLegacyMedia, legacyVideoReceipt } from '../cindy-media/legacyMediaInvocation.js';
@@ -816,8 +816,11 @@ import { resolveGhostMediaHandoverTarget } from './ghostMediaHandoverTargetTrack
 import { MAKER_PUSH } from '../maker-ipc/channels.js';
 import { ghostSetupNavigationForAction } from './ghostSetupNavigation.js';
 import { assessPluginSetup, pluginSetupProbes, pluginOauthReauthSuggestion } from './pluginSetupService.js';
+import { resolveGatewayConnection } from '../model-access/gatewayConnection.js';
+import { createPluginMediaRequester } from '../model-access/pluginMediaRequest.js';
 import { isModelAccessReady, isModelAccessTransientlyUnavailable } from '../model-access/readiness.js';
 import {
+  fetchMediaInvocationGuide,
   filterEnabledGatewayMediaModels,
   isMediaModelExecutable,
   isMediaModelExecutableForLegacyInput,
@@ -4935,20 +4938,18 @@ function getVideoProviderRegistry() {
       )
     : [];
   if (xaiCatalogProviderId && routableXaiAliases.some((alias) => !registry.hasAlias(alias))) {
-    registry.registerOrExtend(
-      createXaiVideoProvider({
-        modelAliases: routableXaiAliases,
-        hasOAuthLogin: () => hasGrokOAuthLogin(),
-        getAccessToken: () => getGrokAccessToken(),
-        getCredentialGeneration: () => getGrokOAuthCredentialGeneration(),
-        getOwnerScopeKey: () => activeOwnerScopeKey(),
-        isOwnerBoundaryPending: () => isAppSessionBoundaryPending(),
-        fetchImplementation: ((url, init) => outboundFetch(url as string, init)) as typeof fetch,
-        beforeDispatch: (model) => assertMediaModelStillEnabled('video', model),
-        onAuthRejected: (failure) => invalidateXaiBridgeAuth(failure),
-      }),
-      xaiCatalogProviderId,
-    );
+    const providers = createXaiVideoProviders({
+      modelAliases: routableXaiAliases,
+      hasOAuthLogin: () => hasGrokOAuthLogin(),
+      getAccessToken: () => getGrokAccessToken(),
+      getCredentialGeneration: () => getGrokOAuthCredentialGeneration(),
+      getOwnerScopeKey: () => activeOwnerScopeKey(),
+      isOwnerBoundaryPending: () => isAppSessionBoundaryPending(),
+      fetchImplementation: ((url, init) => outboundFetch(url as string, init)) as typeof fetch,
+      beforeDispatch: (model) => assertMediaModelStillEnabled('video', model),
+      onAuthRejected: (failure) => invalidateXaiBridgeAuth(failure),
+    });
+    for (const provider of providers) registry.registerOrExtend(provider, xaiCatalogProviderId);
   }
   return registry;
 }
@@ -5947,9 +5948,14 @@ function resolveCustomVideoConnection(providerId: string, modelId: string, agent
 }
 
 configureProviderMediaRuntime({
+  guideTarget: target => mediaGuideTarget(getActiveCatalog().providers.find(provider => provider.id === target.providerId), target),
   guideProtocol: target => {
     const provider = getActiveCatalog().providers.find(provider => provider.id === target.providerId);
-    return customMediaGuideProtocol(provider, target.modelId, target.agent);
+    if (provider && isCustomMediaGuideProvider(provider)) return customMediaGuideProtocol(provider, target.modelId, target.agent);
+    return customMediaGuideProtocol(provider, target.modelId, target.agent) ??
+      (provider?.imageModels?.some(model => model.id === target.modelId)
+        ? getImageChannelRegistry().protocolForProvider(target.providerId)
+        : target.providerId === 'xai' ? 'xai-videos' : undefined);
   },
   resolveHttpConnection: (providerId, modelId, capability, agent) => {
     const kind = capability.startsWith('image.') ? 'image' : 'video';
@@ -5974,13 +5980,7 @@ configureProviderMediaRuntime({
   },
   guideScope: target => {
     const provider = getActiveCatalog().providers.find(provider => provider.id === target.providerId);
-    const route = provider?.routing[target.agent];
-    const model = provider?.models[target.agent]?.find(model => model.id === target.modelId);
-    if (!provider || provider.source !== 'user' || provider.auth.native ||
-        !['apiKey', 'none'].includes(provider.auth.method) || !route || !model ||
-        !['image_generation', 'video_generation'].includes(model.mode ?? '')) return null;
-    return createHash('sha256').update(JSON.stringify([target, model.route?.baseUrl ?? route.upstream,
-      route.authStrategy, model.route?.wireProtocol ?? route.wireProtocol])).digest('hex');
+    return mediaGuideScope(provider, target);
   },
   resolveVideoConnection: (providerId, modelId, agent) => providerId === 'xai'
     ? resolveNativeVideoConnection(providerId, modelId)
@@ -6072,6 +6072,27 @@ export function getGhostCindySlot(): GhostCindySlot {
       getGhost: findGhostForInstanceId,
       getOwnerScopeKey: () => activeOwnerScopeKey(),
       isOwnerBoundaryPending: () => isGhostBoundaryPending(),
+      dispatchMediaRequest: createPluginMediaRequester({
+        getConnection: () => resolveGatewayConnection('xd'),
+        allowsModel: (model, operation) => {
+          const models = getXdGatewayModels();
+          const access = readModelDisableOverrides();
+          if (operation === 'audio.speech' || operation === 'audio.transcribe') {
+            const mode = operation === 'audio.speech' ? 'audio_speech' : 'audio_transcription';
+            const audioModels = models.filter(candidate => candidate.mode === mode);
+            return !isProviderDisabled(access, 'xd')
+              && audioModels.some(candidate => candidate.id === model && candidate.availability === 'available')
+              && !isModelDisabledWithUniqueLegacyBasename(access, 'xd', model, audioModels.map(candidate => candidate.id));
+          }
+          const kind = operation === 'image.generate' ? 'image' : 'video';
+          const capability = kind === 'image' ? 'image.generate' : 'video.generate';
+          return filterEnabledGatewayMediaModels(models, capability, access).some(candidate =>
+            candidate.id === model && isCatalogMediaModelVisible('xd', model, candidate.defaultEnabled, undefined, kind));
+        },
+        getGuide: model => fetchMediaInvocationGuide(model),
+        prepareBilling: async input => (await import('../usage/gatewayMediaBilling.js')).prepareGatewayMediaBilling(input),
+        send: outboundFetch,
+      }),
       // 旧协议只适配参数/结果；付费提交、轮询和入仓全部复用 Core。
       evaluate: (...args) => callEvaluate(...args),
       readEvaluationImage: (...args) => readEvaluationImageFile(...args),
@@ -9664,7 +9685,8 @@ export function registerGhostIpc(): void {
       ? networkSecretDecls.filter((s) => s.source === 'gh-cli')
       : [];
     const ghCliAvailable =
-      ghCliSecretDecls.length > 0 ? await getSharedGhCliTokenSource().probeAvailability() : false;
+      method === 'GET' && pathname === '/secrets' && ghCliSecretDecls.length > 0
+        ? await getSharedGhCliTokenSource().probeAvailability() : false;
     return handleGhostSecretsRequest({
       method,
       pathname,

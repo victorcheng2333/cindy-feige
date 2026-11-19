@@ -1,5 +1,5 @@
 import { appearanceSettings, UI_FONT_PRESETS, CODE_FONT_PRESETS, TERMINAL_FONT_PRESETS } from './AppearanceSection.settings-search';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Select } from '@/components/ui/select';
@@ -9,7 +9,6 @@ import {
   Copy,
   FolderOpen,
   Import as ImportIcon,
-  Palette,
   RefreshCw,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -263,7 +262,6 @@ function LocalThemeIconButton({
 
 interface FamilyDropdownProps {
   label: string;
-  createAction: ReactNode;
   ariaLabel: string;
   families: ThemeFamily[];
   selectedId: string;
@@ -294,7 +292,6 @@ function VariantBadge({ text }: { text: string | null }) {
  */
 function FamilyDropdown({
   label,
-  createAction,
   ariaLabel,
   families,
   selectedId,
@@ -307,7 +304,7 @@ function FamilyDropdown({
   return (
     <SettingsRow
       className="gap-6"
-      title={<span className="flex min-w-0 flex-wrap items-center gap-2">{label}{createAction}</span>}
+      title={label}
       trailing={
       <Select data-setting-id={appearanceSettings.themeLabel.id}
         label={ariaLabel}
@@ -580,23 +577,6 @@ export function AppearanceSection() {
           <SettingsCard id={appearanceSettings.themeLabel.targetId}>
             <FamilyDropdown
               label={t(appearanceSettings.themeLabel.titleKey)}
-              createAction={
-                <Tip text={t(appearanceSettings.createTheme.descriptionKey)}>
-                  <Button
-                    id={appearanceSettings.createTheme.targetId}
-                    data-setting-id={appearanceSettings.createTheme.id}
-                    variant="secondary"
-                    size="sm"
-                    compact
-                    type="button"
-                    loading={creatingTheme}
-                    onClick={() => { void handleCreateTheme(); }}
-                  >
-                    <Palette size={14} aria-hidden="true" />
-                    {t(appearanceSettings.createTheme.titleKey)}
-                  </Button>
-                </Tip>
-              }
               ariaLabel={t('settings.appearance.themeAriaLabel')}
               families={families}
               selectedId={familyId}
@@ -702,6 +682,19 @@ export function AppearanceSection() {
                     void handleRefresh();
                   }}
                 />
+                <Tip text={t(appearanceSettings.createTheme.descriptionKey)}>
+                  <Button
+                    id={appearanceSettings.createTheme.targetId}
+                    data-setting-id={appearanceSettings.createTheme.id}
+                    variant="secondary"
+                    size="lg"
+                    type="button"
+                    loading={creatingTheme}
+                    onClick={() => { void handleCreateTheme(); }}
+                  >
+                    {t(appearanceSettings.createTheme.titleKey)}
+                  </Button>
+                </Tip>
               </div>
               }
             />

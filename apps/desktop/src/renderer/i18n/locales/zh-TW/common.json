@@ -1120,7 +1120,7 @@
   },
   "awayGuard": {
     "status": "Cindy 正在工作",
-    "hint": "按任意鍵或 Touch ID 鍵鎖定，再用指紋或密碼解鎖",
+    "hint": "按任意鍵進入解鎖畫面",
     "lockFailed": {
       "status": "Cindy 沒能鎖定這台電腦",
       "hint": "碰一下電腦會再試一次鎖定；仍鎖不上時，用 Touch ID 或密碼驗證後即可撤下。也可以闔上螢幕或按電源鍵鎖定。",
@@ -6155,7 +6155,7 @@
     "sessionRuntimeFallback": {
       "cell": {
         "label": "任務模型自動降級",
-        "description": "連線或容量故障連續發生時，先切換到同名模型的其他已連線來源，再嘗試目前 Agent 明確推薦的模型；不會切換 Agent，也不會改掉你儲存的選擇。預設關閉。"
+        "description": "模型組遇到故障時會嘗試組內其他可用模型。跨引擎時沿用任務交接流程，並儲存新選擇。一般任務連續失敗時會在目前引擎內嘗試其他來源或建議模型。預設關閉。"
       },
       "toggleAria": "切換任務模型自動降級",
       "toast": {
@@ -8292,6 +8292,7 @@
         "cindyEmbedText": "可把文字送去算成向量（用於語義檢索）",
         "cindyModelsDecisions": "可呼叫決策模型（使用你的模型配額）",
         "cindyModelsRerank": "可呼叫重排模型（使用你的模型配額）",
+        "cindyModelsMediaRequest": "可直接呼叫 Cindy AI 生成圖片、影片、合成語音及轉錄（使用你的模型配額）",
         "cindyEmbedTextDetail": "文字會送到系統的向量模型算成一串數字，單次最多 {{max}} 條，可能產生模型費用。算出的向量只交給插件自己保管，不寫入你的資料庫。",
         "cindySearchWeb": "可使用 Cindy AI 搜尋公網",
         "cindySearchWebDetail": "查詢會存取公開網路，並可能消耗 Cindy AI 配額。",
@@ -11583,7 +11584,7 @@
         "projectDirChoose": "選擇",
         "projectDirChange": "更換",
         "projectDirClear": "清除",
-        "projectDirNote": "分工做事時，夥伴們在這裡工作。不選也行，會用這個群聊自己的資料夾；選了 git 專案，每次分工會新開一個 worktree 和分支，不動你手上的程式碼。",
+        "projectDirNote": "可選擇這台電腦上現有的專案。留空時，優先使用儲存庫對應的專案，其次使用執行夥伴自己的專案。Git 專案分工使用獨立 worktree。",
         "autoContinueSaveFailed": "分工交接沒能儲存，請再試一次",
         "projectDirSaveFailed": "專案資料夾沒能儲存，確認資料夾還在後再試",
         "allowMemberInvites": "允許所有成員邀請朋友",
@@ -11922,15 +11923,15 @@
           "replyModeAssistant": "Cindy 回答",
           "replyModeAssistantNote": "由群裡的 Cindy 回答。",
           "work": "分工",
-          "ownFolder": "群組自己的資料夾",
+          "ownFolder": "自動選擇",
           "projectDirHint": "只在這台電腦上生效。",
-          "projectDirClearHint": "改用群組自己的資料夾",
+          "projectDirClearHint": "恢復自動選擇專案",
           "project": "專案",
           "projectCaption": "夥伴在群裡回覆和分工都在這個專案裡做。儲存庫全群共用，資料夾只存在這台電腦上。",
           "githubRepo": "GitHub 儲存庫",
-          "githubRepoHint": "填 owner/name。沒選資料夾的電腦會用本機的這個專案，沒有就自動下載一份。",
+          "githubRepoHint": "GitHub · owner/name",
           "repository": "程式碼儲存庫",
-          "repositoryHint": "GitHub 填 owner/name；GitLab（含公司自建）、CNB 等貼上儲存庫連結。沒選資料夾的電腦會用本機的這個專案，沒有就自動下載一份。",
+          "repositoryHint": "GitHub 可填 owner/name，其他儲存庫可貼上連結。Cindy 會在這台電腦上尋找唯一相符的既有專案。",
           "repositoryPlaceholder": "owner/name 或儲存庫連結",
           "githubRepoSaveFailed": "儲存庫沒有儲存，請檢查後再試。",
           "folderRepoFilled": "已依這個資料夾填好儲存庫 {{repo}}，群裡其他人的電腦也會使用它。",
@@ -14728,12 +14729,14 @@
       "runningWithWorktree_other": "它們結束前不能切換分支。用 worktree 現在就能在獨立副本裡開始，互不影響。",
       "runningWithWorktree_many": "它們結束前不能切換分支。用 worktree 現在就能在獨立副本裡開始，互不影響。"
     },
-    "followUpHint": {
-      "queueDefault": "任務執行中傳送的訊息預設排隊。",
-      "steerDefault": "任務執行中傳送的訊息預設插話到當前任務。",
+    "sendDelivery": {
+      "menuAria": "這條訊息的傳送方式",
+      "queueHint": "等這一輪結束",
+      "steerHint": "下一步就處理",
+      "setDefault": "設為預設",
+      "nowDefault": "已設為預設",
       "switchToSteer": "預設改為插話",
-      "switchToQueue": "預設改為排隊",
-      "dismiss": "關閉提示"
+      "switchToQueue": "預設改為排隊"
     }
   },
   "onboarding": {
@@ -16580,7 +16583,7 @@
       "confirmArchive": {
         "title": "歸檔任務",
         "description": "確定要歸檔這個任務嗎？歸檔後將從列表中移除。",
-        "dirtyWorktreeWarning": "未提交的變更會在歸檔前儲存，可在任務中復原。",
+        "dirtyWorktreeWarning": "目前的任務有尚未提交的檔案變更。歸檔時預設會儲存這些變更，之後可在任務中還原。",
         "discardChanges": "捨棄未提交的變更",
         "discardWarning": "未提交的變更和新檔案將無法復原。",
         "discardAndArchive": "捨棄並歸檔",
@@ -16823,6 +16826,7 @@
         "thisEvening": "今晚",
         "tomorrow": "明天",
         "nextWeek": "下週",
+        "indefinite": "無限期",
         "custom": "自訂…",
         "wakeAt": "喚回日期與時間",
         "timeZone": "本地時間（{{zone}}）",
@@ -19565,6 +19569,9 @@
     }
   },
   "goal": {
+    "blockedTurnFailed": "本輪執行失敗。",
+    "blockedReasonUnknown": "未提供具體受阻原因。",
+    "blockedNextStep": "可在目前任務中補充資訊；處理受阻原因後，點擊「{{action}}」繼續。",
     "status": {
       "active": "目標推進中",
       "paused": "已暫停",
@@ -19899,6 +19906,7 @@
         "empty": "當前沒有贈送記錄。",
         "incomplete": "贈送記錄較多，當前僅顯示最近的 {{count}} 筆。",
         "unnamed": "贈送餘額",
+        "rolloverName": "滾存額度",
         "giftCard": "禮品卡 · 來自 {{sender}}",
         "original": "原始金額",
         "used": "已用",
@@ -20136,6 +20144,8 @@
       "basicModels": "可用部分模型",
       "subscription": "訂閱方案",
       "rollover": "剩餘餘額可留到{{period}}，最多 {{amount}}",
+      "rolloverMonthly": "剩餘餘額最多滾存 {{amount}}，轉為贈送餘額\n1 個月內有效，不再繼續滾存\n優先於訂閱餘額和儲值餘額使用",
+      "rolloverMonthlySummary": "剩餘餘額最多滾存 {{amount}}，1 個月內有效",
       "nextPeriod": {
         "MONTH": "下個月",
         "YEAR": "下一年",
@@ -21600,14 +21610,14 @@
     },
     "taskInbox": {
       "title": "認識收件匣",
-      "lead": "任務會依狀態自動分成待處理、進行中、稍後處理和已處理。最好的習慣是隨手清空收件匣：處理完按完成，不急的稍後處理。",
+      "lead": "收件匣適合同時追蹤多項任務的人。任務會依狀態自動分類，有新結果或需要你回應的，都在「待處理」裡。",
       "pending": {
         "title": "待處理",
         "body": "任務跑完有了結果，或者在等你回答，都會出現在這裡。"
       },
       "done": {
         "title": "完成",
-        "body": "處理好了按一下完成，任務移到已處理；之後有新進展會自動回來。"
+        "body": "養成清空收件匣的好習慣，處理完就按「完成」。"
       },
       "snooze": {
         "title": "稍後處理",

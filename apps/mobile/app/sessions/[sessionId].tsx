@@ -10370,7 +10370,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const openSessionLink = useCallback((url: string) => {
     const target = parseSessionDeepLinkUrl(url);
     if (!target) return;
-    if (target.sessionId === sessionId) {
+    const sharedPeer = isSharedTaskPeer(target.deviceId) ? target.deviceId : null;
+    if (target.sessionId === sessionId && (!sharedPeer || sharedPeer === deviceId)) {
       if (target.messageClientId) {
         router.setParams({
           focusClientId: target.messageClientId,
@@ -10381,7 +10382,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     }
     // 设备口径与 devices/index openSession 一致:可达优先(canonical → 物理 → 注册表);
     // 列表里没有的(已归档 / 尚未同步)退回深链冻结设备、当前任务所在设备。
-    const targetSession = remoteSessionStore.getSessions().find((item) => item.id === target.sessionId);
+    const targetSession = remoteSessionStore.getSessions().find((item) =>
+      item.id === target.sessionId && (!sharedPeer || item.deviceLinkDeviceId === sharedPeer));
     const targetDeviceId = resolveSessionLinkDeviceId({
       listedDeviceId: targetSession?.canonicalDeviceId
         ?? targetSession?.deviceLinkDeviceId
@@ -10400,7 +10402,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
         deviceId: targetDeviceId,
         deviceName: targetSession?.deviceLinkDeviceName
           ?? (targetDeviceId === deviceId ? deviceName : undefined)
-          ?? targetDeviceId,
+          ?? (sharedPeer ? t('sharedTask.hostDevice') : targetDeviceId),
         ...(target.messageClientId
           ? {
               focusClientId: target.messageClientId,
@@ -10421,7 +10423,9 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const resolvePastedSessionLinkLabel = useCallback(async (href: string) => {
     const target = parseSessionDeepLinkUrl(href);
     if (!target) return null;
-    const targetSession = remoteSessionStore.getSessions().find((item) => item.id === target.sessionId);
+    const sharedPeer = isSharedTaskPeer(target.deviceId) ? target.deviceId : null;
+    const targetSession = remoteSessionStore.getSessions().find((item) =>
+      item.id === target.sessionId && (!sharedPeer || item.deviceLinkDeviceId === sharedPeer));
     const targetDeviceId = resolveSessionLinkDeviceId({
       listedDeviceId: targetSession?.canonicalDeviceId
         ?? targetSession?.deviceLinkDeviceId
@@ -10581,6 +10585,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     }
   }, [applyComposerDocument, deviceId, maker, messageActionBusy, requestSync, rewindState, sessionId]);
 
+  const pinPermissionActions = activePendingKind === 'permission' && !activePendingCollapsed;
+  const expandedPendingSurface = pendingInteractionFullHeight && activePendingKind !== 'issue_confirm';
   const pendingInteractionDock = sessionOperationLayout.composerSlot === 'pending-interaction';
   const dockKeyboardFollow = Platform.OS === 'ios' && composerDock.enabled && nativeComposerFrameAvailable
     && adaptiveWindow.regions.length === 0
@@ -11487,6 +11493,11 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
             adaptiveWindow.regions.length > 0 && {
               maxHeight: composerRegion.height,
             },
+            // Bound the whole dock, including the goal bar above the permission card.
+            pendingInteractionDock && pinPermissionActions && {
+              maxHeight: Math.max(0, composerRegion.y + composerRegion.height
+                - Math.max(composerRegion.y, topChromeHeight + spacing.sm)),
+            },
             nativeComposerFrameAvailable && sessionOperationLayout.composerSlot === 'editable' && !shareSelectionActive
               && styles.sessionBottomFloating,
             shareSelectionActive && { overflow: 'visible' },
@@ -11511,6 +11522,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
             pointerEvents="box-none"
             style={[
               styles.sessionBottomContent,
+              pendingInteractionDock && pinPermissionActions && styles.shrinkToDock,
               // 待处理面板把 safe-area 收进自身 root，让问答 surface 延伸到
               // 屏幕底部且内容仍避开 home indicator；composer 继续由外层留 inset。
               {
@@ -11622,7 +11634,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
             <View
               style={[
                 styles.pendingInteractionSurface,
-                pendingInteractionFullHeight && activePendingKind !== 'issue_confirm'
+                pinPermissionActions && styles.shrinkToDock,
+                expandedPendingSurface
                   ? {
                     height: Math.min(nativeShellLayout.pendingSurfaceExpandedHeight, composerRegion.height),
                     maxHeight: Math.min(nativeShellLayout.pendingSurfaceExpandedHeight, composerRegion.height),
@@ -11631,13 +11644,13 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
               ]}
               testID="interaction.bottomSurface"
             >
-              {pendingInteractionFullHeight ? (
+              {pendingInteractionFullHeight || pinPermissionActions ? (
                 <View
                   style={[
                     styles.pendingInteractionFullContent,
                     // The native control region can be shorter than the screen-derived
                     // sheet height. Keep the pinned footer inside that clipping boundary.
-                    activePendingKind === 'issue_confirm'
+                    !expandedPendingSurface
                       ? { flexGrow: 0, flexShrink: 1, maxHeight: Math.min(nativeShellLayout.pendingSurfaceMaxHeight, composerRegion.height) }
                       : { height: Math.min(nativeShellLayout.pendingSurfaceExpandedHeight, composerRegion.height) },
                   ]}
@@ -11650,7 +11663,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                     safeAreaBottomInset={insets.bottom}
                     collapse={pendingInteractionCollapse}
                     deviceId={deviceId}
-                    fillAvailableHeight={activePendingKind !== 'issue_confirm'}
+                    fillAvailableHeight={expandedPendingSurface}
+                    pinPermissionActions={pinPermissionActions}
                     sessionId={sessionId}
                     interactions={pending}
                     activeRequestId={pendingInteractionActiveRequestId}
@@ -14514,6 +14528,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexShrink: 0,
     maxHeight: '62%',
   },
+  shrinkToDock: { flexShrink: 1, minHeight: 0 },
   pendingInteractionFullContent: {
     flexGrow: 1,
     minHeight: 0,
