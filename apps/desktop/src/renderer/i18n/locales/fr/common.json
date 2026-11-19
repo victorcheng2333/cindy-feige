@@ -5432,7 +5432,8 @@
       "description": "Gère la mémoire propre à chaque espace de travail. Après une modification des paramètres, il faut généralement démarrer une nouvelle session Agent pour qu'elle prenne effet. Si la mémoire se comporte mal, cliquez sur Réinitialiser ou désactivez-la.",
       "maker": {
         "label": "Cindy",
-        "description": "La mémoire est gérée par le point d'entrée de l'Agent, et non par chaque modèle. Les sessions Claude Code et Codex peuvent partager la mémoire au sein d'un même répertoire de travail.",
+        "description": "Une fois activé, toutes les nouvelles tâches {{harnesses}} dans un même répertoire de travail lisent et écrivent automatiquement la même mémoire partagée, remplaçant les options de mémoire native ci-dessous.",
+        "unsupportedSuffix": " Pas encore pris en charge par {{harnesses}}.",
         "toggleAria": "Activer ou désactiver la mémoire Cindy",
         "resetAria": "Réinitialiser les mémoires Cindy",
         "resetConfirm": {
@@ -5467,6 +5468,7 @@
         }
       },
       "agent": {
+        "managedByMakerHint": "Pris en charge par la mémoire partagée Cindy ci-dessus. Désactivez Cindy pour utiliser la mémoire native de {{label}} séparément.",
         "toggleAria": "Activer ou désactiver la mémoire {{label}}",
         "resetAria": "Réinitialiser les mémoires {{label}}",
         "toast": {
@@ -5571,7 +5573,7 @@
       "title": "Personnalisation",
       "subtitle": "Prompts personnalisés",
       "description": "Donnez à vos assistants des instructions et un contexte supplémentaires.",
-      "placeholder": "Saisissez vos instructions personnalisées ici. Elles seront ajoutées à la fin du prompt système de Claude / Codex.\n\n· S'applique uniquement aux sessions intégrées de {{appName}}. Les sessions existantes conservent leur instantané de démarrage ; les modifications prennent effet à la prochaine nouvelle session.\n· Pour l'imposer à toutes les sessions Claude Code (terminal, autres IDE, etc.), configurez un hook SessionStart dans ~/.claude/settings.json (application au niveau du Harness).\n· Codex CLI : configurez un hook SessionStart dans ~/.codex/hooks.json pour une injection déterministe (même mécanisme de Harness que CC) ; ou utilisez ~/.codex/AGENTS.md (chargé automatiquement, simple recommandation).",
+      "placeholder": "Saisissez vos instructions personnalisées ici. Elles s'appliquent aux nouvelles sessions {{harnesses}}.\n\n· S'applique uniquement aux sessions intégrées de {{appName}}. Les sessions existantes conservent leur instantané de démarrage ; les modifications prennent effet à la prochaine nouvelle session.\n· Pour l'imposer à toutes les sessions Claude Code (terminal, autres IDE, etc.), configurez un hook SessionStart dans ~/.claude/settings.json (application au niveau du Harness).\n· Codex CLI : configurez un hook SessionStart dans ~/.codex/hooks.json pour une injection déterministe (même mécanisme de Harness que CC) ; ou utilisez ~/.codex/AGENTS.md (chargé automatiquement, simple recommandation).",
       "ariaLabel": "Instructions personnalisées",
       "save": "Enregistrer",
       "overLimit": " (limite dépassée)",

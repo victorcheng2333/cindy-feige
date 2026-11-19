@@ -12,7 +12,7 @@ Memory lets the agents carry context across your conversations — facts about y
 
 **The "Cindy" master switch (default ON):**
 
-- Turning **Cindy** on enables a **shared memory** scoped to each working directory — Claude Code, Codex, and Pi tasks in the same working directory draw on the same memory.
+- Turning **Cindy** on enables a **shared memory** scoped to each working directory — Claude Code, Codex, Pi, and Cursor tasks in the same working directory draw on the same memory.
 - While it's on, the **Claude Code** and **Codex** native-memory rows below are **disabled / grayed out**, because the shared memory replaces them.
 - The **Pi** row is the opposite: it's only available while Cindy is on. It controls whether Pi saves its long-session compression summaries to Cindy memory for future Pi tasks.
 

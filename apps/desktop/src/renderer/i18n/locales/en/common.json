@@ -5376,7 +5376,8 @@
       "description": "Powers workspace-scoped memory. After changing settings you usually need to start a new agent session for it to take effect. If memory misbehaves, click Reset or turn it off.",
       "maker": {
         "label": "Cindy",
-        "description": "Memory is managed by the agent entry, not by each model. Claude Code and Codex sessions can share memory within the same working directory.",
+        "description": "When on, new {{harnesses}} tasks in the same working directory automatically read and write the same shared memory, replacing the native memory options below.",
+        "unsupportedSuffix": " Not yet supported by {{harnesses}}.",
         "toggleAria": "Toggle Cindy memory",
         "resetAria": "Reset Cindy memories",
         "resetConfirm": {
@@ -5410,6 +5411,7 @@
         }
       },
       "agent": {
+        "managedByMakerHint": "Managed by Cindy shared memory above. Turn off Cindy to use {{label}}'s own native memory instead.",
         "toggleAria": "Toggle {{label}} memory",
         "resetAria": "Reset {{label}} memories",
         "toast": {
@@ -5513,7 +5515,7 @@
       "title": "Personalization",
       "subtitle": "Custom Prompts",
       "description": "Give your assistants extra instructions and context.",
-      "placeholder": "Enter your custom instructions here. They will be appended to the end of the Claude / Codex system prompt.\n\n· Applies only to {{appName}}'s built-in sessions. Existing sessions keep their startup snapshot; changes take effect on the next new session.\n· To enforce this across all Claude Code sessions (terminal, other IDEs, etc.), configure a SessionStart hook in ~/.claude/settings.json (harness-level enforcement).\n· Codex CLI: configure a SessionStart hook in ~/.codex/hooks.json for deterministic injection (same harness mechanism as CC); or use ~/.codex/AGENTS.md (auto-loaded, soft-guidance only).",
+      "placeholder": "Enter your custom instructions here. They apply to new {{harnesses}} sessions.\n\n· Applies only to {{appName}}'s built-in sessions. Existing sessions keep their startup snapshot; changes take effect on the next new session.\n· To enforce this across all Claude Code sessions (terminal, other IDEs, etc.), configure a SessionStart hook in ~/.claude/settings.json (harness-level enforcement).\n· Codex CLI: configure a SessionStart hook in ~/.codex/hooks.json for deterministic injection (same harness mechanism as CC); or use ~/.codex/AGENTS.md (auto-loaded, soft-guidance only).",
       "ariaLabel": "Custom instructions",
       "save": "Save",
       "overLimit": " — over limit",

@@ -5333,7 +5333,8 @@
       "description": "用於幫助使用者實現基於工作區的記憶，改變設定之後理論上需要新建 Agent 會話才會生效，如果覺得記憶系統出現問題可以點選 Reset 或者關閉。",
       "maker": {
         "label": "Cindy",
-        "description": "記憶按 Agent 入口管理，而不是按具體模型管理；同一工作目錄下，Claude Code 和 Codex 入口的任務可以共享記憶",
+        "description": "開啟後，同一工作目錄下 {{harnesses}} 的新任務都會自動讀寫同一份共享記憶，並接管下方的原生記憶。",
+        "unsupportedSuffix": "；暫不支援 {{harnesses}}。",
         "toggleAria": "切換 Cindy 記憶",
         "resetAria": "重置 Cindy 記憶",
         "resetConfirm": {
@@ -5367,6 +5368,7 @@
         }
       },
       "agent": {
+        "managedByMakerHint": "已由上方 Cindy 共享記憶接管；關閉 Cindy 後可單獨啟用 {{label}} 原生記憶。",
         "toggleAria": "切換 {{label}} 記憶",
         "resetAria": "重置 {{label}} 記憶",
         "toast": {
@@ -5534,7 +5536,7 @@
       "title": "個人化",
       "subtitle": "自訂提示詞",
       "description": "為你的助手提供額外的指令和上下文。",
-      "placeholder": "在這裡輸入自訂指令，會追加到 Claude / Codex 的系統提示詞末尾。\n\n· 僅對 {{appName}} 內嵌的 Agent 會話生效；已有會話維持啟動時快照，修改後下一個新會話才套用。\n· 想讓所有 Claude Code 會話（含終端機直接執行、其他 IDE）硬性生效：在 ~/.claude/settings.json 裡設定 SessionStart hook（harness 級強制）。\n· Codex CLI 可在 ~/.codex/hooks.json 設定 SessionStart hook 強制注入（harness 級，和 CC 同款）；或透過 ~/.codex/AGENTS.md 自動載入（軟約束，模型可能忽略）。",
+      "placeholder": "在這裡輸入自訂指令，會套用到 {{harnesses}} 的新會話。\n\n· 僅對 {{appName}} 內嵌的 Agent 會話生效；已有會話維持啟動時快照，修改後下一個新會話才套用。\n· 想讓所有 Claude Code 會話（含終端機直接執行、其他 IDE）硬性生效：在 ~/.claude/settings.json 裡設定 SessionStart hook（harness 級強制）。\n· Codex CLI 可在 ~/.codex/hooks.json 設定 SessionStart hook 強制注入（harness 級，和 CC 同款）；或透過 ~/.codex/AGENTS.md 自動載入（軟約束，模型可能忽略）。",
       "ariaLabel": "自訂指令",
       "save": "儲存",
       "overLimit": " — 已超出長度限制",

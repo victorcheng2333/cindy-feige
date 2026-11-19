@@ -33,6 +33,8 @@ import {
 } from "../base-agent.js";
 import type { Capabilities } from "../../types/capabilities.js";
 import type { AgentEvent, UsageSnapshot } from "../../types/events.js";
+import { loadMemoryContext } from "../../memory/context.js";
+import { resolveMemoryScopeKey } from "../../memory/scope-resolver.js";
 import { createAsyncQueue } from "../shared/async-queue.js";
 import type { CursorRpc } from "./rpc-client.js";
 import { CursorTranslator } from "./translator.js";
@@ -90,11 +92,19 @@ export const CURSOR_CAPABILITIES: Capabilities = {
   manualCompact: supported,
 };
 
+export interface CursorMcpServerContext {
+  memoryEnabled: boolean;
+  memoryScopeKey?: string;
+}
+
 export interface CursorAgentDeps extends AgentDeps {
   getModel?: (id: string) => import("@cursor/sdk").ModelListItem | undefined;
   /** Owner + credential + business session scoped path outside the project. */
   getStateDir(options: StartSessionOptions): Promise<string>;
-  getMcpServers?(options: StartSessionOptions): Promise<{
+  getMcpServers?(
+    options: StartSessionOptions,
+    context?: CursorMcpServerContext,
+  ): Promise<{
     servers: Record<string, McpServerConfig>;
     dispose: () => void;
   }>;
@@ -184,10 +194,61 @@ export class CursorAgent extends BaseAgent {
       const apiKey = auth.CURSOR_API_KEY;
       if (!apiKey) throw new AgentNotAuthenticatedError("cursor");
       const stateDir = await this.deps.getStateDir(opts);
+      const reviewMode = opts.reviewMode === true;
+      const makerMemoryFlag = reviewMode
+        ? false
+        : opts.makerMemoryEnabled ??
+          this.deps.runtimeConfig.makerMemoryEnabled ??
+          false;
+      const makerMemory = this.deps.makerMemory;
+      const makerMemoryEnabled = makerMemoryFlag === true && !!makerMemory;
+      const memoryScopeKey = makerMemoryEnabled
+        ? (opts.makerMemoryScopeKey ??
+          (await resolveMemoryScopeKey(opts.workingDir, opts.remoteHostId)))
+        : (opts.makerMemoryScopeKey ?? opts.workingDir);
+      let makerMemoryRules = "";
+      let makerMemoryIndex = "";
+      let memoryUsesProjectDir = false;
+      if (makerMemoryEnabled && makerMemory) {
+        if (opts.resumeSessionId) {
+          try {
+            memoryUsesProjectDir = Boolean(
+              opts.makerMemoryProjectDir ??
+                makerMemory.getProjectMemoryDirectory?.(memoryScopeKey),
+            );
+          } catch (error) {
+            this.deps.logger.warn(
+              "Cursor maker memory project directory lookup failed",
+              { error: String(error) },
+            );
+          }
+        } else {
+          try {
+            const memoryContext = await loadMemoryContext({
+              manager: makerMemory,
+              scopeKey: memoryScopeKey,
+              hosted: false,
+              snapshot: opts.makerMemoryIndexSnapshot,
+              projectDirectory: opts.makerMemoryProjectDir,
+            });
+            makerMemoryRules = memoryContext.rules;
+            makerMemoryIndex = memoryContext.index;
+            memoryUsesProjectDir = Boolean(memoryContext.projectDirectory);
+          } catch (error) {
+            this.deps.logger.warn(
+              "Cursor maker memory load failed at session start (skipping injection)",
+              { error: String(error) },
+            );
+          }
+        }
+      }
       let mcpServers: Record<string, McpServerConfig> | undefined;
       const mcpStartedAt = performance.now();
       if (this.deps.getMcpServers) {
-        const bridge = await this.deps.getMcpServers(opts);
+        const bridge = await this.deps.getMcpServers(opts, {
+          memoryEnabled: makerMemoryEnabled && !memoryUsesProjectDir,
+          ...(makerMemoryEnabled ? { memoryScopeKey } : {}),
+        });
         mcpServers = bridge.servers;
         dispose = bridge.dispose;
       }
@@ -296,11 +357,14 @@ export class CursorAgent extends BaseAgent {
         costUsd: 0,
         ...opened.contextUsage,
       };
-      // Same order as the other engines: host product context, then the user's
-      // personalization instructions last so they take precedence.
+      // Same order as the other engines: host product context, shared memory
+      // rules + index snapshot, then the user's personalization instructions last
+      // so they take precedence.
       const productContext = [
         this.deps.runtimeConfig.systemPrompt?.trim(),
-        opts.reviewMode ? undefined : opts.userPrompt?.trim(),
+        makerMemoryRules.trim(),
+        makerMemoryIndex.trim(),
+        reviewMode ? undefined : opts.userPrompt?.trim(),
       ]
         .filter(Boolean)
         .join("\n\n");

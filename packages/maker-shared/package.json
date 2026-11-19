@@ -11,6 +11,7 @@
     "./money-display": "./src/moneyDisplay.ts",
     "./model-route": "./src/modelRoute.ts",
     "./agent-capabilities": "./src/agentCapabilities.ts",
+    "./harness-personalization": "./src/harnessPersonalization.ts",
     "./app-icons": "./src/appIcons.ts",
     "./agent-input-projection": "./src/agentInputProjection.ts",
     "./auto-review-intent": "./src/autoReviewIntent.ts",

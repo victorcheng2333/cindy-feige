@@ -10,7 +10,7 @@ Personalization is where you give the agents standing instructions that apply to
 
 - Open **Settings > Personalization**. The first section (**Personalization · Custom Prompts**) has a text box for your instructions.
 - Write your instructions, then click **Save**. The limit is 8,000 characters; a counter shows how much you've used.
-- They're appended to the end of the agent's system prompt in Cindy's own tasks.
+- They're applied to every new built-in task across Claude Code, Codex, Pi, and Cursor (appended to the system prompt for Claude Code, Codex, and Pi; injected into the first-turn context for Cursor).
 - Useful examples: "respond in Chinese", "default to TypeScript", "prefer pnpm over npm", "always check tests before reporting done".
 
 **Other sections on this page:**
@@ -26,7 +26,7 @@ Personalization is where you give the agents standing instructions that apply to
 **Notes:**
 
 - Custom instructions apply to **new tasks**; tasks that are already running keep the instructions they started with and don't rewrite earlier messages.
-- They apply only to Cindy's built-in tasks, not to Claude Code, Codex, or Pi you run yourself in a terminal or another IDE.
+- They apply only to Cindy's built-in tasks, not to Claude Code, Codex, Pi, or Cursor you run yourself in a terminal or another IDE.
 - Custom instructions are saved on this computer for your signed-in account; they don't sync to other devices.
 - For a stricter rule in one specific task, put it in that task's first message instead.
 - Don't put secrets here — the instructions are sent to the model with every task.

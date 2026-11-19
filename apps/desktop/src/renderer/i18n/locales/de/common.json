@@ -5376,7 +5376,8 @@
       "description": "Ermöglicht arbeitsbereichsbezogene Erinnerungen. Nach einer Einstellungsänderung musst du normalerweise eine neue Agent-Sitzung starten, damit sie wirksam wird. Wenn die Erinnerungsfunktion Probleme macht, klicke auf „Zurücksetzen“ oder schalte sie aus.",
       "maker": {
         "label": "Cindy",
-        "description": "Erinnerungen werden über den Agent-Eintrag verwaltet, nicht für jedes Modell einzeln. Claude Code- und Codex-Sitzungen können Erinnerungen im selben Arbeitsverzeichnis gemeinsam nutzen.",
+        "description": "Wenn aktiviert, lesen und schreiben alle neuen Aufgaben von {{harnesses}} im selben Arbeitsverzeichnis automatisch denselben gemeinsamen Speicher und übernehmen die nativen Speicheroptionen unten.",
+        "unsupportedSuffix": " Wird von {{harnesses}} noch nicht unterstützt.",
         "toggleAria": "Cindy-Gedächtnis umschalten",
         "resetAria": "Cindy-Erinnerungen zurücksetzen",
         "resetConfirm": {
@@ -5410,6 +5411,7 @@
         }
       },
       "agent": {
+        "managedByMakerHint": "Wird oben durch den gemeinsamen Cindy-Speicher übernommen. Schalte Cindy aus, um den nativen Speicher von {{label}} separat zu nutzen.",
         "toggleAria": "Gedächtnis für {{label}} umschalten",
         "resetAria": "Erinnerungen für {{label}} zurücksetzen",
         "toast": {
@@ -5513,7 +5515,7 @@
       "title": "Personalisierung",
       "subtitle": "Eigene Prompts",
       "description": "Deinen Assistenten zusätzliche Anweisungen und Kontext geben.",
-      "placeholder": "Gib hier deine eigenen Anweisungen ein. Sie werden am Ende des System-Prompts von Claude / Codex angehängt.\n\n· Gilt nur für integrierte Sitzungen von {{appName}}. Bestehende Sitzungen behalten ihren Stand vom Start; Änderungen gelten ab der nächsten neuen Sitzung.\n· Um dies für alle Claude Code-Sitzungen (Terminal, andere IDEs usw.) durchzusetzen, konfiguriere einen SessionStart-Hook in ~/.claude/settings.json (Durchsetzung auf Harness-Ebene).\n· Codex CLI: Konfiguriere einen SessionStart-Hook in ~/.codex/hooks.json für deterministisches Einfügen (derselbe Harness-Mechanismus wie bei CC); oder verwende ~/.codex/AGENTS.md (automatisch geladen, nur unverbindliche Vorgaben).",
+      "placeholder": "Gib hier deine eigenen Anweisungen ein. Sie gelten für neue Sitzungen von {{harnesses}}.\n\n· Gilt nur für integrierte Sitzungen von {{appName}}. Bestehende Sitzungen behalten ihren Stand vom Start; Änderungen gelten ab der nächsten neuen Sitzung.\n· Um dies für alle Claude Code-Sitzungen (Terminal, andere IDEs usw.) durchzusetzen, konfiguriere einen SessionStart-Hook in ~/.claude/settings.json (Durchsetzung auf Harness-Ebene).\n· Codex CLI: Konfiguriere einen SessionStart-Hook in ~/.codex/hooks.json für deterministisches Einfügen (derselbe Harness-Mechanismus wie bei CC); oder verwende ~/.codex/AGENTS.md (automatisch geladen, nur unverbindliche Vorgaben).",
       "ariaLabel": "Eigene Anweisungen",
       "save": "Speichern",
       "overLimit": " — Limit überschritten",

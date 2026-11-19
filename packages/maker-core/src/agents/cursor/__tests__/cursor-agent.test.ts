@@ -10,7 +10,13 @@ vi.mock("node:fs/promises", () => ({
   default: { mkdir: vi.fn(async () => {}), readFile: vi.fn() },
 }));
 import type { InteractionUpdate } from "@cursor/sdk";
-import { CursorAgent, type CursorAgentDeps } from "../index.js";
+import {
+  CursorAgent,
+  type CursorAgentDeps,
+  type CursorMcpServerContext,
+} from "../index.js";
+import { MAKER_MEMORY_RULES } from "../../../memory/system-prompt.js";
+import type { MakerMemoryManager } from "../../../memory/manager.js";
 import {
   cursorModelDescriptor,
   cursorModelSelection,
@@ -577,6 +583,130 @@ describe("CursorAgent", () => {
       );
       await handle.close();
     }
+  });
+
+  // Unit contract: Cursor injects userPrompt and Cindy Memory in the same precedence
+  // order as Claude Code / Codex / Pi, suppresses both in reviewMode, skips duplicate
+  // <cindy_context> on resume, and keeps cindy_memory MCP mounted whenever memory is on.
+  it("injects userPrompt and Cindy Memory on new sessions, suppresses in reviewMode, and keeps MCP on resume", async () => {
+    const fakeMemoryManager = {
+      getStore: vi.fn(async () => ({
+        getIndex: async () => "# MEMORY_INDEX_CANARY",
+      })),
+      getProjectMemoryDirectory: vi.fn(() => undefined),
+    } as unknown as MakerMemoryManager;
+
+    const runCase = async (opts: {
+      resumeSessionId?: string;
+      reviewMode?: true;
+      makerMemoryEnabled?: boolean;
+      runtimeMakerMemoryEnabled?: boolean;
+      userPrompt?: string;
+    }) => {
+      const f = fixture([], { result: "Answer" });
+      const mcpContexts: Array<CursorMcpServerContext | undefined> = [];
+      const agent = new CursorAgent({
+        ...f.deps,
+        makerMemory: fakeMemoryManager,
+        runtimeConfig: {
+          ...f.deps.runtimeConfig,
+          makerMemoryEnabled: opts.runtimeMakerMemoryEnabled,
+        },
+        getMcpServers: async (_startOpts, context) => {
+          mcpContexts.push(context);
+          return { servers: {}, dispose: () => {} };
+        },
+      });
+      const handle = await agent.startSession({
+        model: "fixture-model",
+        workingDir: "/fixture/work",
+        providerId: "cursor",
+        resumeSessionId: opts.resumeSessionId,
+        reviewMode: opts.reviewMode,
+        makerMemoryEnabled: opts.makerMemoryEnabled,
+        makerMemoryScopeKey: "/fixture/work",
+        userPrompt: opts.userPrompt,
+      });
+      const done = (async () => {
+        for await (const event of handle.events()) {
+          if (
+            event.type === "status" &&
+            (event.data as { isRunning: boolean }).isRunning === false
+          ) {
+            return;
+          }
+        }
+      })();
+      await handle.send({ type: "user", content: "Hello" });
+      await done;
+      const sendParams = f.calls.find((c) => c.method === "send")
+        ?.params as CursorSendOptions;
+      await handle.close();
+      return { text: sendParams.message.text, mcpContext: mcpContexts[0] };
+    };
+
+    const enabledNew = await runCase({
+      makerMemoryEnabled: true,
+      userPrompt: "USER_PROMPT_CANARY",
+    });
+    expect(enabledNew.mcpContext).toEqual({
+      memoryEnabled: true,
+      memoryScopeKey: "/fixture/work",
+    });
+    expect(enabledNew.text).toContain("Fixture product context");
+    expect(enabledNew.text).toContain(MAKER_MEMORY_RULES);
+    expect(enabledNew.text).toContain("# MEMORY_INDEX_CANARY");
+    expect(enabledNew.text).toContain("USER_PROMPT_CANARY");
+    expect(enabledNew.text.indexOf("Fixture product context")).toBeLessThan(
+      enabledNew.text.indexOf(MAKER_MEMORY_RULES),
+    );
+    expect(enabledNew.text.indexOf(MAKER_MEMORY_RULES)).toBeLessThan(
+      enabledNew.text.indexOf("# MEMORY_INDEX_CANARY"),
+    );
+    expect(enabledNew.text.indexOf("# MEMORY_INDEX_CANARY")).toBeLessThan(
+      enabledNew.text.indexOf("USER_PROMPT_CANARY"),
+    );
+
+    const resumed = await runCase({
+      resumeSessionId: "existing-agent",
+      makerMemoryEnabled: true,
+      userPrompt: "USER_PROMPT_CANARY",
+    });
+    expect(resumed.text).toBe("Hello");
+    expect(resumed.mcpContext).toEqual({
+      memoryEnabled: true,
+      memoryScopeKey: "/fixture/work",
+    });
+
+    const review = await runCase({
+      reviewMode: true,
+      makerMemoryEnabled: true,
+      userPrompt: "USER_PROMPT_CANARY",
+    });
+    expect(review.text).not.toContain("USER_PROMPT_CANARY");
+    expect(review.text).not.toContain(MAKER_MEMORY_RULES);
+    expect(review.text).not.toContain("# MEMORY_INDEX_CANARY");
+    expect(review.mcpContext).toEqual({ memoryEnabled: false });
+
+    const explicitlyDisabled = await runCase({
+      makerMemoryEnabled: false,
+      runtimeMakerMemoryEnabled: true,
+      userPrompt: "USER_PROMPT_CANARY",
+    });
+    expect(explicitlyDisabled.text).toContain("USER_PROMPT_CANARY");
+    expect(explicitlyDisabled.text).not.toContain(MAKER_MEMORY_RULES);
+    expect(explicitlyDisabled.text).not.toContain("# MEMORY_INDEX_CANARY");
+    expect(explicitlyDisabled.mcpContext).toEqual({ memoryEnabled: false });
+
+    const runtimeFallback = await runCase({
+      runtimeMakerMemoryEnabled: true,
+    });
+    expect(runtimeFallback.text).toContain(MAKER_MEMORY_RULES);
+    expect(runtimeFallback.text).toContain("# MEMORY_INDEX_CANARY");
+    expect(runtimeFallback.mcpContext).toEqual({
+      memoryEnabled: true,
+      memoryScopeKey: "/fixture/work",
+    });
   });
 
   it("does not report unfinished tools as successful on cancellation", async () => {

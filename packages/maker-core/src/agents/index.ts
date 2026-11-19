@@ -16,6 +16,20 @@ export type {
 } from './claude-code/subagent-model-access.js';
 export { CodexAgent } from './codex/index.js';
 export { findUnenforcedCapabilityRoutes } from './capability-route-support.js';
+export {
+  AGENT_PERSONALIZATION_ORDER,
+  AGENT_PERSONALIZATION_SUPPORT,
+  HARNESS_PERSONALIZATION_ORDER,
+  HARNESS_PERSONALIZATION_SUPPORT,
+  formatHarnessNameList,
+  getMakerMemorySupportedHarnesses,
+  getMakerMemoryUnsupportedHarnesses,
+  getMemorySettingsRowHarnesses,
+  getUserPromptSupportedHarnesses,
+  type HarnessPersonalizationSupport,
+  type PersonalizationHarnessKind,
+  type UserPromptDeliveryMode,
+} from './personalization-support.js';
 export { isCodexExplicitOnlyOverlayRoute } from './codex/capability-routing.js';
 export { isCodexHistoryRecoveryRequired } from './codex/history-recovery.js';
 export {
@@ -190,6 +204,6 @@ export {
 export type { PiCacheCompatibility } from './pi/cache-compatibility.js';
 
 export { CursorAgent, CURSOR_CAPABILITIES } from './cursor/index.js';
-export type { CursorAgentDeps } from './cursor/index.js';
+export type { CursorAgentDeps, CursorMcpServerContext } from './cursor/index.js';
 export { CursorRpcClient } from './cursor/rpc-client.js';
 export { cursorModelDescriptor } from './cursor/model-config.js';

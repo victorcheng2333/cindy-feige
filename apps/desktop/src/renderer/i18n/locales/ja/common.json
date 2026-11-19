@@ -5333,7 +5333,8 @@
       "description": "ワークスペース単位のメモリを提供します。設定の変更は、通常は新しい Agent セッションを開始すると反映されます。メモリの動作に問題があれば Reset するかオフにしてください。",
       "maker": {
         "label": "Cindy",
-        "description": "メモリはモデルごとではなく Agent の入口ごとに管理されます。同じ作業ディレクトリでは、Claude Code と Codex の入口から開始したセッションでメモリを共有できます。",
+        "description": "オンにすると、同じ作業ディレクトリの {{harnesses}} の新しいタスクはすべて同じ共有メモリを自動で読み書きし、下のネイティブメモリ設定を引き継ぎます。",
+        "unsupportedSuffix": "{{harnesses}} はまだ対応していません。",
         "toggleAria": "Cindy メモリを切り替え",
         "resetAria": "Cindy メモリをリセット",
         "resetConfirm": {
@@ -5367,6 +5368,7 @@
         }
       },
       "agent": {
+        "managedByMakerHint": "上の Cindy 共有メモリが引き継いでいます。{{label}} のネイティブメモリを個別に使うには、Cindy をオフにしてください。",
         "toggleAria": "{{label}} メモリを切り替え",
         "resetAria": "{{label}} メモリをリセット",
         "toast": {
@@ -5470,7 +5472,7 @@
       "title": "パーソナライズ",
       "subtitle": "カスタムプロンプト",
       "description": "アシスタントに追加の指示やコンテキストを与えます。",
-      "placeholder": "ここにカスタム指示を入力してください。Claude / Codex のシステムプロンプト末尾に追加されます。\n\n· {{appName}} の内蔵セッションのみに適用されます。既存のセッションは起動時スナップショットを保持し、変更は次回の新規セッションから有効になります。\n· すべての Claude Code セッション(ターミナルや他の IDE を含む)で強制的に有効にするには、~/.claude/settings.json に SessionStart フックを設定してください(harness レベルの強制)。\n· Codex CLI は ~/.codex/hooks.json に SessionStart フックを設定すると harness レベルで強制注入できます（CC と同等）。または ~/.codex/AGENTS.md による自動読み込み（ソフト制約、モデルが無視する場合あり）も利用できます。",
+      "placeholder": "ここにカスタム指示を入力してください。{{harnesses}} の新しいセッションに適用されます。\n\n· {{appName}} の内蔵セッションのみに適用されます。既存のセッションは起動時スナップショットを保持し、変更は次回の新規セッションから有効になります。\n· すべての Claude Code セッション(ターミナルや他の IDE を含む)で強制的に有効にするには、~/.claude/settings.json に SessionStart フックを設定してください(harness レベルの強制)。\n· Codex CLI は ~/.codex/hooks.json に SessionStart フックを設定すると harness レベルで強制注入できます（CC と同等）。または ~/.codex/AGENTS.md による自動読み込み（ソフト制約、モデルが無視する場合あり）も利用できます。",
       "ariaLabel": "カスタム指示",
       "save": "保存",
       "overLimit": " — 文字数制限を超過",

@@ -2431,7 +2431,7 @@ export function getMaker(): Maker {
     });
     const piAgent = buildPiAgentForDesktop();
     if (piAgent) makerAgents.pi = withSubscriptionAccounts(piAgent);
-    const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger);
+    const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger, makerMemoryManager);
     if (cursorAgent) {
       makerAgents.cursor = cursorAgent;
       _mcpProviders.cursor = piMcpProviders;

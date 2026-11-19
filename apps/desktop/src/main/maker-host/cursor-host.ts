@@ -1,6 +1,6 @@
 import { t } from '../i18n.desktop.js';
 import { CursorAgent } from '@cindy/maker-core';
-import type { McpProvider, Logger } from '@cindy/maker-core';
+import type { AgentDeps, McpProvider, Logger } from '@cindy/maker-core';
 import {
   cursorAuthAdapter,
   createCursorRpc,
@@ -17,8 +17,13 @@ import { scanLocalCustomizations } from '../skillhub/customizationScanHost.js';
 import { readDisabledSkillPaths } from '../skillhub/activationPreferences.js';
 
 const CURSOR_MCP_SERVERS = ['cindy_helper', 'cindy'] as const;
+const CURSOR_MCP_SERVERS_WITH_MEMORY = ['cindy_helper', 'cindy', 'cindy_memory'] as const;
 
-export function buildCursorAgent(providers: McpProvider[], logger: Logger): CursorAgent | null {
+export function buildCursorAgent(
+  providers: McpProvider[],
+  logger: Logger,
+  makerMemory?: AgentDeps['makerMemory'],
+): CursorAgent | null {
   if (!cursorRuntimeAvailable()) return null;
   const agent = new CursorAgent({
     auth: cursorAuthAdapter,
@@ -29,10 +34,16 @@ export function buildCursorAgent(providers: McpProvider[], logger: Logger): Curs
     // Auth and task execution share the production-safe utility process transport.
     createRpc: () => createCursorRpc(),
     logger,
+    makerMemory,
     getRuntimeNotice: (reason) => t(`settings.providers.cursor.${reason}`),
     // Cursor's SDK loads rules from every ancestor directory, so user-level Cursor rules
     // (such as calling Cursor App's rename_chat) still apply; the supplement covers that gap.
-    runtimeConfig: { systemPrompt: `${hostSystemPrompt.trim()}\n\n${cursorSystemPrompt.trim()}` },
+    runtimeConfig: {
+      systemPrompt: `${hostSystemPrompt.trim()}\n\n${cursorSystemPrompt.trim()}`,
+      get makerMemoryEnabled() {
+        return makerMemory?.isEnabled() ?? false;
+      },
+    },
     capabilityRouting: {
       overrides: ['webSearch', 'generateImage'].map((id) => ({
         capabilityId: id === 'webSearch' ? 'web-search' : 'image-generation',
@@ -44,16 +55,19 @@ export function buildCursorAgent(providers: McpProvider[], logger: Logger): Curs
       if (!opts.sessionId) throw new Error('Cursor requires a persistent task identity');
       return cursorStateDir(opts.sessionId);
     },
-    getMcpServers: async (opts) => {
+    getMcpServers: async (opts, context) => {
+      const memoryEnabled = context?.memoryEnabled === true;
       const bridge = await getPiExtraSpawnConfig(providers, logger, {
         agentKind: 'cursor',
         sessionId: opts.sessionId,
         sessionInstanceId: opts.sessionInstanceId,
         workingDir: opts.workingDir,
         vendorOptions: opts.vendorOptions,
+        memoryEnabled,
+        ...(context?.memoryScopeKey ? { memoryScopeKey: context.memoryScopeKey } : {}),
         // Each MCP server costs first-run connection time and prompt space. Cursor gets
-        // Cindy's host controls and the plugin gateway only; the rest belongs in Skills.
-        allowedServerNames: CURSOR_MCP_SERVERS,
+        // Cindy's host controls, plugin gateway, and shared memory (when enabled); the rest belongs in Skills.
+        allowedServerNames: memoryEnabled ? CURSOR_MCP_SERVERS_WITH_MEMORY : CURSOR_MCP_SERVERS,
       });
       const servers = Object.fromEntries(
         (bridge?.mcpBridge?.servers ?? []).map((server) => {

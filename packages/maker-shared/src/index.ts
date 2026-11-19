@@ -1,4 +1,5 @@
 export * from './agentCapabilities.js';
+export * from './harnessPersonalization.js';
 export * from './appIcons.js';
 export * from './projectSymbolIcons.js';
 export * from './agentInputProjection.js';

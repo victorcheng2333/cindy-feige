@@ -5432,7 +5432,8 @@
       "description": "Fornece memória por espaço de trabalho. Após alterar as configurações, geralmente é preciso iniciar uma nova sessão do Agent para que elas tenham efeito. Se a memória apresentar problemas, clique em Redefinir ou desative-a.",
       "maker": {
         "label": "Cindy",
-        "description": "A memória é gerenciada pela entrada do Agent, não por cada modelo. Sessões do Claude Code e do Codex podem compartilhar memória no mesmo diretório de trabalho.",
+        "description": "Quando ativado, todas as novas tarefas de {{harnesses}} no mesmo diretório de trabalho leem e gravam automaticamente na mesma memória compartilhada, substituindo as opções de memória nativa abaixo.",
+        "unsupportedSuffix": " Ainda não compatível com {{harnesses}}.",
         "toggleAria": "Alternar memória da Cindy",
         "resetAria": "Redefinir memórias da Cindy",
         "resetConfirm": {
@@ -5467,6 +5468,7 @@
         }
       },
       "agent": {
+        "managedByMakerHint": "Gerenciado pela memória compartilhada da Cindy acima. Desative a Cindy para usar a memória nativa do {{label}} separadamente.",
         "toggleAria": "Alternar memória de {{label}}",
         "resetAria": "Redefinir memórias de {{label}}",
         "toast": {
@@ -5571,7 +5573,7 @@
       "title": "Personalização",
       "subtitle": "Prompts personalizados",
       "description": "Dê aos seus assistentes instruções e contexto adicionais.",
-      "placeholder": "Insira suas instruções personalizadas aqui. Elas serão adicionadas ao final do prompt de sistema do Claude / Codex.\n\n· Aplica-se apenas às sessões integradas do {{appName}}. As sessões existentes mantêm a configuração inicial; as alterações entram em vigor na próxima nova sessão.\n· Para impor isso em todas as sessões do Claude Code (terminal, outras IDEs etc.), configure um hook SessionStart em ~/.claude/settings.json (aplicação no nível do Harness).\n· Codex CLI: configure um hook SessionStart em ~/.codex/hooks.json para injeção determinística (mesmo mecanismo de Harness do CC); ou use ~/.codex/AGENTS.md (carregado automaticamente, apenas orientação não obrigatória).",
+      "placeholder": "Insira suas instruções personalizadas aqui. Elas se aplicam às novas sessões de {{harnesses}}.\n\n· Aplica-se apenas às sessões integradas do {{appName}}. As sessões existentes mantêm a configuração inicial; as alterações entram em vigor na próxima nova sessão.\n· Para impor isso em todas as sessões do Claude Code (terminal, outras IDEs etc.), configure um hook SessionStart em ~/.claude/settings.json (aplicação no nível do Harness).\n· Codex CLI: configure um hook SessionStart em ~/.codex/hooks.json para injeção determinística (mesmo mecanismo de Harness do CC); ou use ~/.codex/AGENTS.md (carregado automaticamente, apenas orientação não obrigatória).",
       "ariaLabel": "Instruções personalizadas",
       "save": "Salvar",
       "overLimit": " — limite excedido",

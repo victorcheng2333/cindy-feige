@@ -29,11 +29,20 @@ import { CodexMark } from '@/components/icons/CodexMark';
 import { PiMark } from '@/components/icons/PiMark';
 import { createLogger } from '@/lib/logger';
 import { useMemorySettings } from '@/hooks/useMemorySettings';
+import {
+  HARNESS_PERSONALIZATION_ORDER,
+  HARNESS_PERSONALIZATION_SUPPORT,
+  formatHarnessNameList,
+  getMakerMemorySupportedHarnesses,
+  getMakerMemoryUnsupportedHarnesses,
+  getMemorySettingsRowHarnesses,
+  type PersonalizationHarnessKind,
+} from '@cindy/maker-shared';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 
 const log = createLogger('MemorySection');
 
-type AgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor';
+type AgentKind = PersonalizationHarnessKind;
 
 interface AgentDescriptor {
   kind: AgentKind;
@@ -44,21 +53,17 @@ interface AgentDescriptor {
   requiresMaker?: boolean;
 }
 
-const AGENTS: readonly AgentDescriptor[] = [
-  {
-    kind: 'claude-code',
-    Mark: () => <ClaudeMark size={18} className="text-[var(--settings-section-title)]" />,
-  },
-  {
-    kind: 'codex',
-    Mark: () => <CodexMark size={18} className="text-[var(--settings-section-title)]" />,
-  },
-  {
-    kind: 'pi',
-    Mark: () => <PiMark size={18} className="text-[var(--settings-section-title)]" />,
-    requiresMaker: true,
-  },
-] as const;
+const AGENT_MARKS: Partial<Record<AgentKind, () => ReactNode>> = {
+  'claude-code': () => <ClaudeMark size={18} className="text-[var(--settings-section-title)]" />,
+  codex: () => <CodexMark size={18} className="text-[var(--settings-section-title)]" />,
+  pi: () => <PiMark size={18} className="text-[var(--settings-section-title)]" />,
+};
+
+const AGENTS: readonly AgentDescriptor[] = getMemorySettingsRowHarnesses().map((kind) => ({
+  kind,
+  Mark: AGENT_MARKS[kind] ?? (() => <Sparkles size={18} className="text-[var(--settings-section-title)]" />),
+  requiresMaker: HARNESS_PERSONALIZATION_SUPPORT[kind].makerMemorySubSetting,
+}));
 
 interface MemorySlotState {
   /** undefined = 加载中; null = 不支持 (NotSupported / IPC 异常) */
@@ -69,21 +74,38 @@ interface MemorySlotState {
 
 const INITIAL: MemorySlotState = { enabled: undefined, pending: false };
 
+function createInitialSlots(): Record<AgentKind, MemorySlotState> {
+  const rowSet = new Set(AGENTS.map((a) => a.kind));
+  return Object.fromEntries(
+    HARNESS_PERSONALIZATION_ORDER.map((kind) => [
+      kind,
+      rowSet.has(kind) ? INITIAL : { enabled: null, pending: false },
+    ]),
+  ) as Record<AgentKind, MemorySlotState>;
+}
+
 export function MemorySection() {
   const settingsRevision = useAppSettingsRevision('memory');
   const { confirm } = useConfirmDialog();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n?.language;
+  const supportedMakerHarnesses = formatHarnessNameList(getMakerMemorySupportedHarnesses(), locale);
+  const unsupportedMakerHarnesses = getMakerMemoryUnsupportedHarnesses();
+  const makerHintBase = t(personalizationDetailsSettings.memoryMakerLabel.descriptionKey, {
+    harnesses: supportedMakerHarnesses,
+  });
+  const makerHint =
+    unsupportedMakerHarnesses.length > 0
+      ? `${makerHintBase}${t('settings.memory.maker.unsupportedSuffix', {
+          harnesses: formatHarnessNameList(unsupportedMakerHarnesses, locale),
+        })}`
+      : makerHintBase;
   // Maker Memory 启用时，下方 Claude Code / Codex 运行时的原生 toggle 强制 disable + 视觉变灰。
   // (manager.enable() 在 maker-core 层会自动调 setMemory(false), 这里 UI 防止用户
   // 在状态不同步的窗口里点击 toggle 引发误解)。
   const { makerEnabled, setMakerEnabled } = useMemorySettings();
   const [settingsCustomized, setSettingsCustomized] = useState(false);
-  const [slots, setSlots] = useState<Record<AgentKind, MemorySlotState>>({
-    'claude-code': INITIAL,
-    codex: INITIAL,
-    pi: INITIAL,
-    cursor: { enabled: null, pending: false },
-  });
+  const [slots, setSlots] = useState<Record<AgentKind, MemorySlotState>>(createInitialSlots);
   // pending 飞行中跳过 reload — 否则 toggle/reset 飞行期间 focus 触发 reload 会
   // 把用户刚改的乐观值或回滚状态覆盖掉。任一 slot pending 都跳过整轮 reload。
   const slotsRef = useRef(slots);
@@ -302,7 +324,7 @@ export function MemorySection() {
             </span>
           }
           title={t(personalizationDetailsSettings.memoryMakerLabel.titleKey)}
-          hint={t(personalizationDetailsSettings.memoryMakerLabel.descriptionKey)}
+          hint={makerHint}
           trailing={
             <div className="flex items-center gap-2">
               <Switch data-setting-id={personalizationDetailsSettings.memoryMakerLabel.id}
@@ -341,7 +363,10 @@ export function MemorySection() {
           // —— 各语种都保留品牌原文，只方便统一管理)。
           const definition = agent.kind === 'claude-code' ? personalizationDetailsSettings.memoryAgentsClaudeCodeLabel : agent.kind === 'codex' ? personalizationDetailsSettings.memoryAgentsCodexLabel : personalizationDetailsSettings.memoryAgentsPiLabel;
           const label = t(definition.titleKey);
-          const description = t(definition.descriptionKey);
+          const managedByMaker = !agent.requiresMaker && makerEnabled;
+          const description = managedByMaker
+            ? t('settings.memory.agent.managedByMakerHint', { label })
+            : t(definition.descriptionKey);
           return (
             <SettingsRow
               key={agent.kind}

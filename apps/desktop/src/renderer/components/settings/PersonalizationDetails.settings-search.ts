@@ -1,5 +1,6 @@
 import { defineSettings, type SettingsSearchModule } from './settingsSearchTypes';
 import { getComposerModifierShortcutLabel } from '@/voice-input/composerShortcut';
+import { formatHarnessNameList, getMakerMemorySupportedHarnesses } from '@cindy/maker-shared';
 
 /** Search metadata for cards rendered inside the long settings pages. */
 export const personalizationDetailsSettings = defineSettings({
@@ -56,6 +57,9 @@ export const personalizationDetailsSettings = defineSettings({
     titleKey: 'settings.memory.maker.label',
     sectionKey: 'settings.sections.memory',
     descriptionKey: 'settings.memory.maker.description',
+    textValues: (context) => ({
+      harnesses: formatHarnessNameList(getMakerMemorySupportedHarnesses(), context?.locale),
+    }),
     aliases: ['maker memory', '记忆'],
   },
   memoryAgentsClaudeCodeLabel: {

@@ -9,12 +9,15 @@ import { cn } from '@/lib/utils';
 import { useUserPrompt } from '@/hooks/useUserPrompt';
 import { USER_PROMPT_MAX_LENGTH } from '@/lib/userPrompt.constants';
 import { toast } from '@/lib/toast';
+import { formatHarnessNameList, getUserPromptSupportedHarnesses } from '@cindy/maker-shared';
 import appI18n from 'i18next';
 
 export function UserPromptSection() {
   const { value, setValue } = useUserPrompt();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const setting = useSettingDefinition(personalizationDetailsSettings.userInstructions);
+  const locale = i18n?.language ?? appI18n.language;
+  const userPromptHarnesses = formatHarnessNameList(getUserPromptSupportedHarnesses(), locale);
 
   const [draft, setDraft] = useState(value);
 
@@ -44,7 +47,7 @@ export function UserPromptSection() {
         <textarea {...setting.anchorProps} {...setting.controlProps}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={t('settings.personalization.placeholder')}
+          placeholder={t('settings.personalization.placeholder', { harnesses: userPromptHarnesses })}
           aria-label={t('settings.personalization.ariaLabel')}
           rows={7}
           className={cn(
