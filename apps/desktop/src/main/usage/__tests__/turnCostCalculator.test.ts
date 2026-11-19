@@ -135,8 +135,9 @@ describe('Astra subscription reference estimates', () => {
   it('does not price Ultrafast usage using the Standard or Fast tariff', () => {
     const segments = normalizeTurnUsageSegments([{ ...tokens, priceVariant: 'ultrafast' }]);
     expect(segments?.[0]?.priceVariant).toBe('ultrafast');
-    expect(computeGatewayTurnCost(tokens, astra, 'ultrafast')).toBeNull();
-    expect(computeGatewaySegmentedTurnCost(segments, astra)).toBeNull();
+    const quoteWithoutUltrafast = { ...astra!, ultrafast: undefined };
+    expect(computeGatewayTurnCost(tokens, quoteWithoutUltrafast, 'ultrafast')).toBeNull();
+    expect(computeGatewaySegmentedTurnCost(segments, quoteWithoutUltrafast)).toBeNull();
   });
 
   it('keeps the subscription reference window bound for both tariffs', () => {
@@ -149,6 +150,36 @@ describe('Astra subscription reference estimates', () => {
     expect(astra?.priority).toBeDefined();
     const incomplete = { ...astra!, priority: { ...astra!.priority, cacheCreatePerMtok: undefined, inputTokenPriceBands: undefined } };
     expect(computeGatewayTurnCost(tokens, incomplete, 'priority')).toBeNull();
+  });
+});
+
+describe('OpenAI Ultrafast reference estimates', () => {
+  // Unit regression at the quote → turn-money entry point: Codex already emits
+  // Ultrafast segments, but a published tariff previously still produced no cost.
+  it.each([
+    ['2027-03-01T07:59:59.999Z', 2.4582456],
+    ['2027-03-01T08:00:00.000Z', 4.9164912],
+  ])('uses the Pacific-time tariff at %s for a long-context Sol request', (at, expected) => {
+    const quote = providerReferencePriceQuote('openai', 'gpt-6.2-sol', BUNDLED_CATALOG.modelRegistry, {
+      agent: 'codex', at: new Date(at), officialOnly: true,
+    });
+    const tokens = { inputTokens: 200_000, outputTokens: 1, cacheReadTokens: 72_001, cacheCreateTokens: 1_000 };
+    const estimate = computePriceQuoteTurnMoney(tokens, quote, 'USD', [{ ...tokens, priceVariant: 'ultrafast' }]);
+    expect(estimate?.kind).toBe('value-estimate');
+    expect(estimate?.amount).toBeCloseTo(expected, 6);
+  });
+
+  it('sums mixed request tiers without applying the Ultrafast rate to the entire turn', () => {
+    const quote = providerReferencePriceQuote('openai', 'gpt-6.2-sol', BUNDLED_CATALOG.modelRegistry, {
+      agent: 'codex', at: '2026-11-20',
+    });
+    const tokens = { inputTokens: 100_000, outputTokens: 10_000, cacheReadTokens: 100_000, cacheCreateTokens: 20_000 };
+    const segments = normalizeTurnUsageSegments([
+      { ...tokens, priceVariant: 'standard' },
+      { ...tokens, priceVariant: 'priority' },
+      { ...tokens, priceVariant: 'ultrafast' },
+    ]);
+    expect(computeGatewaySegmentedTurnCost(segments, quote)).toBeCloseTo(2.16);
   });
 });
 

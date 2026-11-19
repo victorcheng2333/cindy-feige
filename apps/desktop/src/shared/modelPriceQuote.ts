@@ -307,6 +307,31 @@ interface ReferencePriceOptions {
   variant?: 'standard' | 'priority' | 'batch' | 'fast';
 }
 
+function referenceTariff(quote: ModelPriceQuote): NonNullable<ModelPriceQuote['priority']> {
+  return {
+    inputPerMtok: quote.inputPerMtok,
+    outputPerMtok: quote.outputPerMtok,
+    cacheReadPerMtok: quote.cacheReadPerMtok,
+    cacheCreatePerMtok: quote.cacheCreatePerMtok,
+    cacheCreate1hPerMtok: quote.cacheCreate1hPerMtok,
+    inputTokenPriceBands: quote.inputTokenPriceBands,
+  };
+}
+
+function openAiUltrafastMultiplier(modelId: string, at: ReferencePriceOptions['at']): number | undefined {
+  const model = modelId.startsWith(CHATGPT_MODEL_PREFIX) ? modelId.slice(CHATGPT_MODEL_PREFIX.length) : modelId;
+  if (model === 'gpt-6-astra' || model === 'gpt-6.1-sol') return 6;
+  if (model !== 'gpt-6.2-sol' && model !== 'gpt-6.2-astra') return undefined;
+  // OpenAI's API promotion ends at midnight Pacific time (PST on March 1).
+  // https://developers.openai.com/api/docs/pricing#flagship-models
+  const listRateStartsAt = Date.UTC(2027, 2, 1, 8);
+  const timestamp = at instanceof Date ? at.getTime() : at === undefined ? Date.now() : Date.parse(at);
+  const usesListRate = typeof at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(at)
+    ? at >= '2027-03-01'
+    : timestamp >= listRateStartsAt;
+  return usesListRate ? 6 : 3;
+}
+
 export function providerReferencePriceQuote(
   providerId: string,
   modelId: string,
@@ -320,17 +345,15 @@ export function providerReferencePriceQuote(
   const fast =
     referencePriceQuoteForVariant(providerId, modelId, registry, { ...options, variant: 'fast' }) ??
     referencePriceQuoteForVariant(providerId, modelId, registry, { ...options, variant: 'priority' });
-  if (!fast || fast.currency !== quote.currency) return quote;
-  const {
-    inputPerMtok, outputPerMtok, cacheReadPerMtok, cacheCreatePerMtok, cacheCreate1hPerMtok,
-    inputTokenPriceBands,
-  } = fast;
+  const ultrafastMultiplier = providerId === 'openai' && quote.currency === 'USD'
+    ? openAiUltrafastMultiplier(modelId, options.at)
+    : undefined;
   return {
     ...quote,
-    priority: {
-      inputPerMtok, outputPerMtok, cacheReadPerMtok, cacheCreatePerMtok, cacheCreate1hPerMtok,
-      inputTokenPriceBands,
-    },
+    ...(fast?.currency === quote.currency ? { priority: referenceTariff(fast) } : {}),
+    ...(ultrafastMultiplier === undefined ? {} : {
+      ultrafast: { standardTariff: referenceTariff(quote), multiplier: ultrafastMultiplier },
+    }),
   };
 }
 

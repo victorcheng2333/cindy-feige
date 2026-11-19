@@ -47,6 +47,11 @@ export interface ModelPriceQuote {
     cacheCreate1hPerMtok?: number;
     inputTokenPriceBands?: ModelPriceQuote['inputTokenPriceBands'];
   };
+  /** Ultrafast is quoted independently of Standard price overrides. */
+  ultrafast?: {
+    standardTariff: NonNullable<ModelPriceQuote['priority']>;
+    multiplier: number;
+  };
   /**
    * Context-length pricing bands. minInputTokens is inclusive and maxInputTokens
    * is exclusive; omitted prices inherit the quote's baseline field.

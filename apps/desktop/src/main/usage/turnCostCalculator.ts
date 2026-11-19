@@ -157,10 +157,10 @@ export function computeGatewayTurnCost(
   price: ModelPriceQuote | undefined,
   variant: PriceVariant = 'standard',
 ): number | null {
-  if (!price) return null;
-  if (variant === 'batch' || variant === 'ultrafast') return null;
+  if (!price || variant === 'batch') return null;
   const priority = variant === 'priority' || variant === 'fast';
-  const tariff = priority ? price.priority : price;
+  const ultrafast = variant === 'ultrafast' ? price.ultrafast : undefined;
+  const tariff = variant === 'ultrafast' ? ultrafast?.standardTariff : priority ? price.priority : price;
   if (!tariff) return null;
   const totalInputTokens = tokens.inputTokens + tokens.cacheReadTokens + tokens.cacheCreateTokens;
   const band = tariff.inputTokenPriceBands
@@ -204,14 +204,13 @@ export function computeGatewayTurnCost(
   ) {
     return null;
   }
-  return (
-    (tokens.inputTokens * (inputPrice ?? 0) +
-      tokens.outputTokens * (outputPrice ?? 0) +
-      tokens.cacheReadTokens * (cacheReadPrice ?? 0) +
-      cacheCreate5mTokens * (cacheCreatePrice ?? 0) +
-      cacheCreate1hTokens * (cacheCreate1hPrice ?? 0)) /
-    1_000_000
-  );
+  const amountPerMillion =
+    tokens.inputTokens * (inputPrice ?? 0) +
+    tokens.outputTokens * (outputPrice ?? 0) +
+    tokens.cacheReadTokens * (cacheReadPrice ?? 0) +
+    cacheCreate5mTokens * (cacheCreatePrice ?? 0) +
+    cacheCreate1hTokens * (cacheCreate1hPrice ?? 0);
+  return (amountPerMillion / 1_000_000) * (ultrafast?.multiplier ?? 1);
 }
 
 export function computeGatewaySegmentedTurnCost(

@@ -433,9 +433,12 @@ function mergedQuote(
     ...(cacheCreatePerMtok !== undefined && cacheCreate1hPerMtok !== undefined
       ? { cacheCreate1hPerMtok }
       : {}),
-    // Standard-price edits do not change the independent Fast tariff or its currency.
+    // Standard-price edits do not change either speed tariff or its currency.
     ...(mergeReference?.priority && mergeReference.currency === currency
       ? { priority: mergeReference.priority }
+      : {}),
+    ...(mergeReference?.ultrafast && mergeReference.currency === currency
+      ? { ultrafast: mergeReference.ultrafast }
       : {}),
   };
 }

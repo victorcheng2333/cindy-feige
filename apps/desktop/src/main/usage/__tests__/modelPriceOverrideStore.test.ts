@@ -31,7 +31,7 @@ describe('standard overrides preserve independent Fast reference prices', () => 
     cacheCreateTokens: 0,
   };
 
-  it('keeps Astra Fast prices and window bounds separate from saved standard edits', () => {
+  it('keeps Astra speed tariffs and window bounds separate from saved standard edits', () => {
     const merged = __testing.mergedQuote(
       target,
       reference,
@@ -46,6 +46,7 @@ describe('standard overrides preserve independent Fast reference prices', () => 
     expect(merged).toMatchObject({ source: 'user-override', inputPerMtok: 3, outputPerMtok: 7 });
     expect(merged?.priority).toEqual(reference.priority);
     expect(computeGatewayTurnCost(tokens, merged, 'fast')).toBeCloseTo(4.1);
+    expect(computeGatewayTurnCost(tokens, merged, 'ultrafast')).toBeCloseTo(12.3);
     expect(computeGatewayTurnCost(tokens, merged)).toBeCloseTo(0.607);
     expect(computeGatewayTurnCost({ ...tokens, inputTokens: 272_001 }, merged, 'fast')).toBeNull();
     expect(__testing.mergedQuote(target, reference, undefined)).toBe(reference);
@@ -70,7 +71,7 @@ describe('standard overrides preserve independent Fast reference prices', () => 
     },
   );
 
-  it('does not relabel USD Fast prices when the user enters CNY prices', () => {
+  it('does not relabel USD speed tariffs when the user enters CNY prices', () => {
     const values = __testing.sparseValues(
       { currency: 'CNY', inputPerMtok: 3, outputPerMtok: 7 },
       savedBase,
@@ -79,6 +80,7 @@ describe('standard overrides preserve independent Fast reference prices', () => 
     expect(merged?.currency).toBe('CNY');
     expect(merged?.priority).toBeUndefined();
     expect(computeGatewayTurnCost(tokens, merged, 'fast')).toBeNull();
+    expect(computeGatewayTurnCost(tokens, merged, 'ultrafast')).toBeNull();
   });
 
   it.each(['currency-change', 'missing-reference', 'missing-fast'] as const)(
