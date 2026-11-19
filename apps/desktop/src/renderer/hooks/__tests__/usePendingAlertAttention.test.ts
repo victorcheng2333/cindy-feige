@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 /**
- * 红点派生语义的行为规格(2026-07 统一):红点是「未处理告警」集合的投影 ——
- * 横幅不被处置就不消失。这些用例正是用户反馈的割裂点的回归护栏。
+ * 红点派生语义的行为规格：未读错误保留提醒，前台查看只清对应错误的红点。
  */
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   _resetPendingAlertAttentionForTests,
   noteSessionTurnStartedForAlerts,
   refreshPendingAlerts,
+  useAcknowledgeViewedTerminalError,
   usePendingAlertAttention,
 } from '@/hooks/usePendingAlertAttention';
 import {
@@ -103,6 +103,39 @@ describe('usePendingAlertAttention (派生收敛)', () => {
     // 告警仍未 dismissed,查询继续返回它 → 必须重新打点。
     await reconcile(['s1']);
     expect(addMock).toHaveBeenCalledWith('s1', 'error');
+  });
+
+  // Unit regression through the real view acknowledgement and alert reconciliation.
+  // A read error row keeps its retry banner, so it is still returned by the host.
+  // Existing coverage only exercises dismissing the alert or clearing an unviewed dot.
+  it('keeps a viewed error dot cleared on refresh and marks a different error in the same task', async () => {
+    const errorTailPendingDetails = vi.fn().mockResolvedValue([{ sessionId: 's1', clientId: 'error-1' }]);
+    Object.assign(window.electronAPI.localDb.sessions, { errorTailPendingDetails });
+    await refreshPendingAlerts();
+    expect(addMock).toHaveBeenCalledWith('s1', 'error');
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    try {
+      const view = renderHook(() => useAcknowledgeViewedTerminalError('s1', 'error-1'));
+      expect(clearMock).not.toHaveBeenCalled();
+      focus.mockReturnValue(true);
+      act(() => window.dispatchEvent(new Event('focus')));
+      expect(clearMock).toHaveBeenCalledWith('s1', { intent: 'explicit' });
+      view.unmount();
+
+      addMock.mockClear();
+      clearMock.mockClear();
+      await refreshPendingAlerts();
+      expect(addMock).not.toHaveBeenCalled();
+      expect(clearMock).not.toHaveBeenCalled();
+
+      errorTailPendingDetails.mockResolvedValue([{ sessionId: 's1', clientId: 'error-2' }]);
+      await refreshPendingAlerts();
+      expect(addMock).toHaveBeenCalledWith('s1', 'error');
+    } finally {
+      focus.mockRestore();
+      visibility.mockRestore();
+    }
   });
 
   it('告警消失(横幅被处置)才清点,且用 explicit 意图', async () => {

@@ -1,13 +1,7 @@
 /**
- * pending-alert-attention:错误红点的**派生**真源。
- *
- * 语义(2026-07 统一决策,取代此前的「未读」模型):红点不是可独立清除的已读标记,
- * 而是「未处理告警」集合的投影 —— 只要输入框上方的红色横幅还在(没被继续 / 重试 /
- * 关闭处置掉),列表红点就一直在。不存在「看到了但没处理」这个中间态。
- *
- * 此前的模型是:banner 在视图里聚焦驻留 1.5s(useErrorReadAck)或干脆 mount 即
- * explicit 清点,于是「红点已灭、横幅仍在」—— 用户反馈的割裂点。现在展示不再产生
- * 已读,只有处置才收敛。
+ * The task list derives error dots from unresolved alerts. A foreground view
+ * acknowledges the exact ordinary error it displays for this window; its
+ * recovery actions and history stay available. Interruptions still require action.
  *
  * 数据源是 main 侧纯 DB 查询,因此对**未打开的会话同样成立** —— 这是把红点从
  * renderer 内存态改为派生态的前提。makerChatStore 的 live error 有两个不可靠处
@@ -42,7 +36,7 @@
  */
 
 import { useEffect } from 'react';
-import { isDataOwnerPushCurrent } from '@/contexts/dataOwnerGeneration';
+import { getDataOwnerGeneration, isDataOwnerPushCurrent } from '@/contexts/dataOwnerGeneration';
 import { getCindyMakeMessageAttention } from '../../shared/cindyMakeAttention';
 import {
   addSessionAttention,
@@ -50,6 +44,7 @@ import {
   getSessionAttentionKind,
 } from '../lib/sessionAttentionStore';
 import { createLogger } from '../lib/logger';
+import { isWindowVisiblyFocused, useWindowVisible } from './useWindowVisible';
 
 const log = createLogger('pending-alert-attention');
 
@@ -57,9 +52,61 @@ const MAX_INITIAL_ATTEMPTS = 5;
 let _startedThisWindow = false;
 /** 启动首拉打的**中断**点 —— 只由 lastTurnEndedAt patch 清除,不参与周期性重算。 */
 const _interruptedOwned = new Set<string>();
-/** 上一轮**错误尾行**查询命中的会话 —— 用于差分出「告警已消失」的清点范围,
- *  不作为「是否需要打点」的短路依据(见 reconcileErrorTail 的无条件重打点)。 */
+/** 上一轮仍需提醒的错误尾行，用于差分清点。 */
 const _errorTailOwned = new Set<string>();
+const viewedTerminalErrors = new Map<string, string>();
+let viewedErrorOwnerId = getDataOwnerGeneration().dataOwnerId;
+
+function viewedErrors() {
+  const { dataOwnerId } = getDataOwnerGeneration();
+  if (viewedErrorOwnerId !== dataOwnerId) {
+    viewedTerminalErrors.clear();
+    viewedErrorOwnerId = dataOwnerId;
+  }
+  return viewedTerminalErrors;
+}
+
+export function isTerminalErrorViewed(sessionId: string, clientId?: string | null): boolean {
+  return !!clientId && viewedErrors().get(sessionId) === clientId;
+}
+
+function acknowledgeViewedTerminalError(sessionId: string, clientId: string): void {
+  if (isTerminalErrorViewed(sessionId, clientId)) return;
+  viewedErrors().set(sessionId, clientId);
+  if (_interruptedOwned.has(sessionId)) return;
+  const kind = getSessionAttentionKind(sessionId);
+  if (kind === undefined || kind === 'error') {
+    // The view consumed our previous dot. A later query for the same row
+    // must not clear an independent live error that arrived in the meantime.
+    _errorTailOwned.delete(sessionId);
+    clearSessionAttention(sessionId, { intent: 'explicit' });
+  }
+}
+
+/** A retained, hidden, or loading task view cannot acknowledge a failure. */
+export function useAcknowledgeViewedTerminalError(sessionId: string | null, clientId: string | null): void {
+  const enabled = sessionId !== null && clientId !== null
+    && typeof window !== 'undefined'
+    && !!window.electronAPI?.localDb?.sessions?.errorTailPendingDetails;
+  const visible = useWindowVisible(enabled);
+  useEffect(() => {
+    if (enabled && visible && sessionId && clientId && isWindowVisiblyFocused()) {
+      acknowledgeViewedTerminalError(sessionId, clientId);
+    }
+  }, [enabled, visible, sessionId, clientId]);
+}
+
+async function listErrorTails(): Promise<{ sessionId: string; clientId?: string }[]> {
+  const sessions = window.electronAPI.localDb.sessions;
+  if (sessions.errorTailPendingDetails) return sessions.errorTailPendingDetails();
+  return (await sessions.errorTailPending()).map((sessionId) => ({ sessionId }));
+}
+
+function unreadErrorTails(alerts: readonly { sessionId: string; clientId?: string }[]): string[] {
+  return alerts
+    .filter(({ sessionId, clientId }) => !isTerminalErrorViewed(sessionId, clientId))
+    .map(({ sessionId }) => sessionId);
+}
 /** 重查合流:进行中再来请求只置脏,完成后补跑一次(避免 turn 起落时打爆 IPC)。 */
 let _refreshInFlight: Promise<void> | null = null;
 let _refreshDirty = false;
@@ -83,6 +130,7 @@ export function _resetPendingAlertAttentionForTests(): void {
   _startedThisWindow = false;
   _interruptedOwned.clear();
   _errorTailOwned.clear();
+  viewedTerminalErrors.clear();
   _interruptedAckedEarly.clear();
   _refreshInFlight = null;
   _refreshDirty = false;
@@ -107,17 +155,15 @@ function clearAlertIfStillError(sessionId: string): void {
  */
 async function reconcileErrorTail(): Promise<void> {
   const gen = ++_queryGen;
-  const ids = await window.electronAPI.localDb.sessions.errorTailPending();
+  const owner = getDataOwnerGeneration();
+  const alerts = await listErrorTails();
   // 只有更新的查询**已成功应用**才作废本次结果(见 _appliedGen 注释)。
-  if (gen < _appliedGen) return;
+  if (gen < _appliedGen || owner !== getDataOwnerGeneration()) return;
   _appliedGen = gen;
-  const next = new Set(ids);
+  const next = new Set(unreadErrorTails(alerts));
 
-  // 无条件重打点,不做「已 owned 就跳过」的短路:红点是查询结果的投影,每次重算都要
-  // 对齐。别的 explicit 路径(Retry / 关闭 live ErrorBanner / turn 启动的 orphan 清理 /
-  // worktree 横幅处置)会清掉共享的 attention 条目,若这里短路跳过,未 dismissed 的
-  // 横幅仍在而红点再也不会回来 —— 正是本次要消灭的割裂。addSessionAttention 自身幂等
-  // (kind 未变时直接 return,不 emit、不发 IPC),所以无额外开销。
+  // 其它操作可能清过共享 attention 条目，所以每次都重新投影未读告警。
+  // 已有同种提醒时 addSessionAttention 幂等，不重复发布。
   for (const id of next) {
     _errorTailOwned.add(id);
     markAlert(id);
@@ -195,9 +241,9 @@ export function noteSessionTurnStartedForAlerts(sessionId: string): void {
 async function initialFetch(): Promise<void> {
   const gen = ++_queryGen;
   const sessions = window.electronAPI.localDb.sessions;
-  const [interrupted, errorTail] = await Promise.all([
+  const [interrupted, alerts] = await Promise.all([
     sessions.interruptedPending(),
-    sessions.errorTailPending(),
+    listErrorTails(),
   ]);
   // 中断腿**不受代数守卫**:它是 startup-only 的一次性结果,没有「更新的版本」会
   // 取代它。若跟着错误尾行一起被丢弃,这个窗口内的中断会话就永远拿不到红点了
@@ -211,6 +257,7 @@ async function initialFetch(): Promise<void> {
   // 错误尾行受代数守卫:仅当更晚的重算**已成功应用**结果时才跳过(见 _appliedGen)。
   if (gen < _appliedGen) return;
   _appliedGen = gen;
+  const errorTail = unreadErrorTails(alerts);
   for (const id of errorTail) {
     _errorTailOwned.add(id);
     markAlert(id);

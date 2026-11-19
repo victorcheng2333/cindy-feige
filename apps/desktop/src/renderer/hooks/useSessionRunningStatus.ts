@@ -24,9 +24,8 @@
  *      NOT being the active session.
  *
  * Notifications are cleared when:
- *    - The user navigates to that session (clicks it) — done / awaiting only。
- *      'error' 例外:红角标是未处理告警的派生投影(hooks/usePendingAlertAttention),
- *      展示不构成已读 —— 只有用户处置横幅或告警本身消失才清。
+ *    - Navigation clears done / awaiting. A visible error banner
+ *      acknowledges its exact ordinary error through usePendingAlertAttention.
  *    - The pending state that caused the notification disappears (e.g. the
  *      ask-user or permission was resolved elsewhere) — 同样不清 'error'。
  *
@@ -57,6 +56,7 @@ import {
   isSessionDoneSilenced,
 } from '@/lib/silencedSessionDoneStore';
 import {
+  isTerminalErrorViewed,
   noteSessionTurnStartedForAlerts,
   refreshPendingAlerts,
 } from '@/hooks/usePendingAlertAttention';
@@ -305,11 +305,11 @@ export function useSessionRunningStatus(
         // Session 不在任何列表里,挂上的角标用户永远点不掉(docs/product-rules/bot-group-chat.md §3)。
         if (makerChatStore.wasLastStopGroupLane(sessionId)) continue;
         if (hasError) {
-          // 即使是当前活跃会话也挂红角标:红点跟随「告警未处理」而非「是否看到」,
-          // 横幅就在眼前时列表同样亮点(2026-07 统一决策)。不能沿用「活跃会话不亮」
-          // 的 done 语义。清除只能来自用户处置横幅或 pending-alerts 派生收敛。
-          addSessionAttention(sessionId, 'error');
-          liveErrorMarkedRef.current.add(sessionId);
+          // The error banner can render before this stop edge is consumed.
+          if (!isTerminalErrorViewed(sessionId, makerChatStore.getSnapshot(sessionId).errorPersistId)) {
+            addSessionAttention(sessionId, 'error');
+            liveErrorMarkedRef.current.add(sessionId);
+          }
           if (!notificationOwnedByScheduler) {
             const turnAlertId = sessionAlertEventId('error', info?.turnStartedAt);
             const turnClock = turnAlertId
@@ -547,8 +547,7 @@ export function useSessionRunningStatus(
   }, []);
 
   // When the active session changes, clear its notification if any.
-  // 默认 passive:切到会话 ≠ 处置了报错。store 会保住 'error' 红角标,
-  // 只有用户处置横幅或告警本身消失才清。
+  // Navigation can precede history and error rendering, so it uses a passive clear.
   useEffect(() => {
     if (!activeSessionId) return;
     clearSessionAttention(activeSessionId);

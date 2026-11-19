@@ -125,6 +125,7 @@ import { noteSessionClearBoundary } from '../../messagePersistBroadcaster.deskto
 import {
   ackSessionTurnEndedDurable,
   ackSessionTurnEndedIfUnchanged,
+  listErrorTailPendingAlerts,
   listErrorTailPendingRows,
   listErrorTailPendingSessionIds,
   listInterruptedPendingRows,
@@ -1401,9 +1402,9 @@ export function registerSessionIpc(
   // §5 —— 存量未迁完不构成新 handler 省略校验的理由)。这两个 channel 都**不在**
   // device-link allowlist 里,只由本机顶层 renderer 调用,所以 guard 不会挡掉隧道
   // dispatch;将来若要放行跨端,必须连这道 guard 一起重新设计。
-  ipcMain.handle('local-db:sessions:error-tail-pending', async (event) => {
+  ipcMain.handle('local-db:sessions:error-tail-pending', async (event, includeClientIds?: unknown) => {
     assertTrustedAppRendererEvent(event);
-    return listErrorTailPendingSessionIds();
+    return includeClientIds === true ? listErrorTailPendingAlerts() : listErrorTailPendingSessionIds();
   });
 
   // 批量处置未处理告警(自动化分组右键「全部标为已读」)。红点是告警的派生投影,

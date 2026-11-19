@@ -19,12 +19,9 @@ import {
 export type AttentionKind = 'done' | 'awaiting' | 'error';
 
 /**
- * 清除 attention 的意图。'error' 红角标是**未处理告警**的派生投影(2026-07 统一,
- * 见 hooks/usePendingAlertAttention.ts):
+ * 清除 attention 的意图:
  *   - 'passive'  导航 / 窗口聚焦 / 路由可见等被动信号 —— **不允许**清 'error' 红角标。
- *                展示不构成已读:横幅还在就说明告警未处理,红点必须留着。
- *   - 'explicit' 告警已被处置(用户操作了报错横幅)或告警本身已消失(pending-alerts
- *                派生收敛、运行历史面板的失败已读、「全部标为已读」)—— 可清任何 kind。
+ *   - 'explicit' 确认普通本机错误已显示、用户处置告警、或告警已消失 —— 可清任何 kind。
  * intent 随 IPC 透传到 main(appBadgeService → 灵动岛的 explicit/passive ack),
  * main 侧对 passive 同样免疫,双层兜底(renderer 重载丢 kind 后 main 仍安全)。
  * 默认 'passive'(fail-safe):忘了声明的新调用点不会误吞未处理的报错。
@@ -451,8 +448,7 @@ export function addSessionAttention(sessionId: string, kind: AttentionKind = 'do
 /**
  * 清某会话的 attention。默认 intent='passive':'error' 红角标对被动清除免疫
  * (不删、不发 IPC),守卫内聚在 store 这一个咽喉,调用点无需各自记 kind 判断;
- * 只有告警被**处置**(用户操作横幅)或告警本身消失(pending-alerts 派生收敛)的
- * 路径才显式传 intent:'explicit' 清 error。展示不构成清除理由。
+ * 普通本机错误在前台显示、告警处置或派生收敛时，显式传 intent:'explicit'。
  */
 export function clearSessionAttention(
   sessionId: string,

@@ -50,6 +50,7 @@ vi.mock('@/lib/makerChatStore', () => ({
       };
     },
     getRunningSnapshot: () => storeMock.snapshot,
+    getSnapshot: () => ({ errorPersistId: null }),
     hasSessionTerminalError: (sessionId: string) => storeMock.terminalErrorSessions.has(sessionId),
     hasSessionRecoveryPending: (sessionId: string) => storeMock.recoverySessions.has(sessionId),
     wasLastStopQuietCompletion: (sessionId: string) =>
@@ -69,6 +70,7 @@ vi.mock('@/lib/sessionAttentionStore', () => ({
 }));
 
 vi.mock('@/hooks/usePendingAlertAttention', () => ({
+  isTerminalErrorViewed: () => false,
   noteSessionTurnStartedForAlerts: vi.fn(),
   refreshPendingAlerts: vi.fn(async () => {}),
 }));

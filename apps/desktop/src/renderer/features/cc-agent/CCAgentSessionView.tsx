@@ -177,7 +177,7 @@ import {
   CONTINUE_AFTER_ERROR_PROMPT,
 } from '../../../shared/interruptedTurn';
 import { CLAUDE_SUBSCRIPTION_OPUS_PLAN_MISMATCH_REASON } from '../../../shared/claudeGatewayError';
-import { refreshPendingAlerts } from '@/hooks/usePendingAlertAttention';
+import { refreshPendingAlerts, useAcknowledgeViewedTerminalError } from '@/hooks/usePendingAlertAttention';
 import { CredentialSwitchWaitBanner } from '@/components/chat/CredentialSwitchWaitBanner';
 import { UpgradeBanner } from '@/components/chat/UpgradeBanner';
 import { WorktreeRestoreBanner } from '@/components/chat/WorktreeRestoreBanner';
@@ -5594,6 +5594,15 @@ function CCAgentSessionContent({
   const bannerErrorClientId = showLiveErrorBanner
     ? getLiveErrorMessageClientId({ error, errorPersistId, historyLoaded, messages, disposedErrorPersistId })
     : showErrorTailBanner ? errorTailMsg!.clientId : null;
+  const viewedErrorClientId = showLiveErrorBanner && errorReason !== APP_EXIT_INTERRUPTED_REASON
+    ? errorPersistId
+    : showErrorTailBanner && errorTailKind === 'error' ? bannerErrorClientId : null;
+  useAcknowledgeViewedTerminalError(
+    viewVisible && historyLoaded && confirmedSessionId === sessionId && !remoteDeviceId
+      ? sessionId ?? null
+      : null,
+    viewedErrorClientId,
+  );
   const queueNotices = <>
             {/* Error display.
               - agentKind 传到 ErrorBanner 让 codex 401 / Missing bearer 不仅在远端

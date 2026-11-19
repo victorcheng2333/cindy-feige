@@ -532,13 +532,18 @@ export async function listErrorTailPendingRows(): Promise<
   return rows;
 }
 
-/** Native Make failures use the same unresolved-alert projection, not synthetic error rows. */
-export async function listErrorTailPendingSessionIds(): Promise<string[]> {
+/** Only ordinary error rows carry a message identity for view acknowledgement. */
+export async function listErrorTailPendingAlerts(): Promise<{ sessionId: string; clientId?: string }[]> {
   const [rows, makeFailures] = await Promise.all([
     listErrorTailPendingRows(),
     listCindyMakePendingFailureSessionIds(),
   ]);
-  return [...new Set([...rows.map((r) => r.sessionId), ...makeFailures])];
+  return [...rows, ...makeFailures.map((sessionId) => ({ sessionId }))];
+}
+
+export async function listErrorTailPendingSessionIds(): Promise<string[]> {
+  const alerts = await listErrorTailPendingAlerts();
+  return [...new Set(alerts.map(({ sessionId }) => sessionId))];
 }
 
 /**
