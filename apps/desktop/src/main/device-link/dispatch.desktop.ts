@@ -100,8 +100,6 @@ export const {
   hasProviderShares,
   providerShareActiveControllers,
   revokeProviderShareControllers,
-  revokeControllerModelUse,
-  notifyControllerModelUseRestored,
   abortProviderShareReshareRuns,
   __testing,
   remoteAgentLimitUsage

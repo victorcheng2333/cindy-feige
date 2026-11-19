@@ -53,6 +53,8 @@ export interface MobileAgentCapabilities {
   supportsScheduleAgentDeviceSelection?: boolean;
   /** host 是否在 set-model 内执行强制模型窗口保护；旧 host 缺省 false。 */
   supportsModelWindowSwitchGuard?: boolean;
+  /** Owner Device Link selections can rebuild at dispatch using the host's verified window. */
+  supportsRemoteModelWindowRebuild?: boolean;
 }
 
 export interface MobileSessionRuntimeOptions {
@@ -184,6 +186,7 @@ export function normalizeMobileAgentCapabilities(value: unknown): MobileAgentCap
     supportsSessionAgentSwitch: value.supportsSessionAgentSwitch === true,
     supportsControlledCursorCreation: value.supportsControlledCursorCreation === true,
     supportsModelWindowSwitchGuard: value.supportsModelWindowSwitchGuard === true,
+    supportsRemoteModelWindowRebuild: value.supportsRemoteModelWindowRebuild === true,
     supportsOrcaWorkerPermissionMode: value.supportsOrcaWorkerPermissionMode === true,
     supportsOrcaWorkerUpdate: value.supportsOrcaWorkerUpdate === true,
     supportsOrcaWorkerAgentDevice: value.supportsOrcaWorkerAgentDevice === true,

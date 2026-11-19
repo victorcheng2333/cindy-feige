@@ -29,7 +29,7 @@ export interface ReverseHttpRouterDeps {
   /** The caller granted its own tools only, not access to native file/shell tools. */
   hostToolsOnly?: boolean;
   /** Runs on the task computer immediately before a device-hosted Claude tool executes. */
-  approve?<T>(name: string, input: Record<string, unknown>, execute: (approved: Record<string, unknown>) => Promise<T>, signal?: AbortSignal): Promise<T>;
+  approve?<T>(name: string, input: Record<string, unknown>, execute: (approved: Record<string, unknown>) => Promise<T>, signal?: AbortSignal, serverName?: string): Promise<T>;
   executor: RemoteExecutor;
   /** 本任务可用的本机 MCP 服务，按名字查。 */
   mcpTarget(name: string): LocalMcpTarget | undefined;
@@ -110,12 +110,16 @@ function errorStatus(code: string): number {
   }
 }
 
-export function mapRemoteMcpArguments(workspace: ExecutorWorkspace, value: unknown, key = '', handoffText?: ReadonlySet<string>, textContent = true): unknown {
+export function mapRemoteMcpArguments(workspace: ExecutorWorkspace, value: unknown, serverName?: string): unknown {
+  return mapArgument(workspace, value, '', serverName === undefined ? undefined : HANDOFF_TEXT_ARGUMENTS.get(serverName));
+}
+
+function mapArgument(workspace: ExecutorWorkspace, value: unknown, key: string, handoffText: ReadonlySet<string> | undefined, textContent = true): unknown {
   if (typeof value === 'string') {
     if (key === 'args') {
       try {
         const parsed = JSON.parse(value);
-        if (parsed && typeof parsed === 'object') return JSON.stringify(mapRemoteMcpArguments(workspace, parsed, '', handoffText, textContent));
+        if (parsed && typeof parsed === 'object') return JSON.stringify(mapArgument(workspace, parsed, '', handoffText, textContent));
       } catch { /* Plain string arguments stay unchanged. */ }
     }
     if (/^(?:cmd|command)$/.test(key)) return workspace.mapCommand(value, resolveExecutorShell().dialect);
@@ -126,14 +130,14 @@ export function mapRemoteMcpArguments(workspace: ExecutorWorkspace, value: unkno
     if (textContent && TEXT_ARGUMENTS.has(key.replace(/_/g, '').toLowerCase()) && !hasNonTextContent(value)) return localText(value, workspace);
     return value;
   }
-  if (Array.isArray(value)) return value.map(item => mapRemoteMcpArguments(workspace, item, key, handoffText, textContent));
+  if (Array.isArray(value)) return value.map(item => mapArgument(workspace, item, key, handoffText, textContent));
   if (!value || typeof value !== 'object') return value;
   const encoding = (value as Record<string, unknown>).encoding;
   const hasContent = Object.keys(value).some(name => name.toLowerCase() === 'content');
   return Object.fromEntries(Object.entries(value).map(([name, item]) => {
     const field = name.toLowerCase();
     const encoded = hasContent ? field === 'content' : ENCODED_TEXT_ARGUMENTS.has(field);
-    return [name, mapRemoteMcpArguments(workspace, item, name, handoffText, textContent && (!encoded || isTextEncoding(encoding)))];
+    return [name, mapArgument(workspace, item, name, handoffText, textContent && (!encoded || isTextEncoding(encoding)))];
   }));
 }
 
@@ -141,7 +145,6 @@ export function createReverseHttpRouter(deps: ReverseHttpRouterDeps) {
   const doFetch = deps.fetch ?? fetch;
   const workspace = deps.executor.workspace;
 
-  const mapArguments = (value: unknown, handoffText?: ReadonlySet<string>) => mapRemoteMcpArguments(workspace, value, '', handoffText);
   const projectResult = (value: unknown, key = ''): unknown => {
     if (typeof value === 'string') {
       if (value.startsWith('file://')) {
@@ -184,7 +187,7 @@ export function createReverseHttpRouter(deps: ReverseHttpRouterDeps) {
         try {
           const message = JSON.parse(body.toString('utf8'));
           if (!localArguments && message.method === 'tools/call' && message.params?.arguments) {
-            message.params.arguments = mapArguments(message.params.arguments, HANDOFF_TEXT_ARGUMENTS.get(name));
+            message.params.arguments = mapRemoteMcpArguments(workspace, message.params.arguments, name);
           }
           return Buffer.from(JSON.stringify(message));
         } catch { return body; }
@@ -292,7 +295,7 @@ export function createReverseHttpRouter(deps: ReverseHttpRouterDeps) {
         return await deps.approve(`mcp__${name}__${toolName}`, args as Record<string, unknown>, async approved => {
           const next = { ...message, params: message.method === 'resources/read' ? approved : { ...params, arguments: approved } };
           return dispatch(Buffer.from(JSON.stringify(next)), true);
-        }, signal);
+        }, signal, message.method === 'tools/call' ? name : undefined);
       } catch (error) {
         const reason = workspace.mapTextForAgent(error instanceof Error && error.name === 'ToolPermissionDenied' ? error.message : 'Tool approval could not be completed.');
         return json(200, message.method === 'tools/call'

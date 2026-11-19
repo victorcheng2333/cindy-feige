@@ -60,6 +60,8 @@ const catalogs = vi.hoisted(() => {
     ...extra,
   });
   return {
+    shareError: null as string | null,
+    shareLoading: false,
     local: [provider('a-local', 'A Local', 'a-model')] as unknown[],
     byDevice: {
       'device-b': [provider('b-main', 'B Main', 'b-model'),
@@ -78,9 +80,9 @@ vi.mock('@/hooks/useDeviceProviders', () => ({
   evictDeviceProviders: vi.fn(),
   prefetchDeviceProviders: vi.fn(async () => {}),
   useDeviceProviders: (deviceId?: string) => ({
-    providers: deviceId ? (catalogs.byDevice[deviceId] ?? []) : [],
-    loading: false,
-    error: null,
+    providers: deviceId === 'share:abc' && (catalogs.shareError || catalogs.shareLoading) ? [] : deviceId ? (catalogs.byDevice[deviceId] ?? []) : [],
+    loading: deviceId === 'share:abc' && catalogs.shareLoading,
+    error: deviceId === 'share:abc' ? catalogs.shareError : null,
     unsupported: false,
   }),
 }));
@@ -89,7 +91,9 @@ vi.mock('@/hooks/useDevicesProviders', () => ({
     new Map(
       deviceIds.map((deviceId) => [
         deviceId,
-        { providers: catalogs.byDevice[deviceId] ?? [], loading: false, error: null },
+        { providers: deviceId === 'share:abc' && (catalogs.shareError || catalogs.shareLoading) ? [] : catalogs.byDevice[deviceId] ?? [],
+          loading: deviceId === 'share:abc' && catalogs.shareLoading,
+          error: deviceId === 'share:abc' ? catalogs.shareError : null },
       ]),
     ),
 }));
@@ -109,6 +113,7 @@ vi.mock('@/hooks/useRemoteClaudeSubscriptionUsage', () => ({
 }));
 
 import { ModelSelectorContent } from '@/components/new-chat/ModelSelector';
+import { prefetchDeviceProviders } from '@/hooks/useDeviceProviders';
 import { __resetForTest as resetEnginePrefs } from '@/state/modelEnginePrefs';
 import { __resetForTest as resetFavorites } from '@/state/modelFavorites';
 
@@ -124,9 +129,9 @@ function renderPanel(
   props: Partial<ModelSelectorContentBaseProps> = {},
 ) {
   const onNavigateToProviders = vi.fn();
-  render(
-    React.createElement(ModelSelectorContent, {
-      // This suite exercises the retained unified panel's source rail.
+  const onUnifiedSelect = vi.fn(async () => true);
+  const panel = () => React.createElement(ModelSelectorContent, {
+      // This suite also exercises the retained unified panel's source rail.
       unifiedPanel: true,
       modelId: 'a-model',
       effort: 'high',
@@ -134,14 +139,14 @@ function renderPanel(
       onEffortChange: vi.fn(),
       currentProviderId: 'a-local',
       onProviderChange: vi.fn(),
-      onUnifiedSelect: vi.fn(async () => true),
+      onUnifiedSelect,
       vendorKey: 'cc',
       onNavigateToProviders,
       remoteAgent: { devices: [studio, share], selectedDeviceId: null, ...remoteAgent },
       ...props,
-    }),
-  );
-  return { onNavigateToProviders };
+    });
+  const result = render(panel());
+  return { onNavigateToProviders, onUnifiedSelect, refresh: () => result.rerender(panel()) };
 }
 
 async function browse(name: string) {
@@ -152,6 +157,9 @@ async function browse(name: string) {
 
 beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
+  catalogs.shareError = null;
+  catalogs.shareLoading = false;
+  vi.clearAllMocks();
   resetEnginePrefs();
   resetFavorites();
 });
@@ -161,6 +169,27 @@ afterEach(() => {
 });
 
 describe('模型面板底部「配置模型」', () => {
+  // Unit / #10826: a known share with no cached catalog must expose retry and
+  // recover selection. Existing fixtures only exercised already-loaded shares.
+  it('keeps a first-load failed share browsable and selects its model after retry', async () => {
+    catalogs.shareError = 'share catalog unavailable';
+    const panel = renderPanel();
+    await browse(share.name);
+    expect(screen.getByRole('alert').textContent).toContain('newChat.modelSelector.remoteLoadFailed');
+    await browse('newChat.modelSelector.retryRemoteModels');
+    expect(prefetchDeviceProviders).toHaveBeenCalledWith('share:abc');
+    catalogs.shareError = null;
+    catalogs.shareLoading = true;
+    panel.refresh();
+    expect(screen.getByRole('button', { name: share.name })).toBeTruthy();
+    catalogs.shareLoading = false;
+    panel.refresh();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('option', { name: 's-model high' })); });
+    expect(panel.onUnifiedSelect).toHaveBeenCalledWith(expect.objectContaining({
+      providerId: 's-shared', modelId: 's-model', agentDevice: share,
+    }));
+  });
   it('本机目录照旧显示，打开供应商页不带目标', () => {
     const { onNavigateToProviders } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: ENTRY }));
@@ -234,6 +263,7 @@ describe('旧版选择器分享来源', () => {
     expect(onRelocate).toHaveBeenCalledWith(expect.objectContaining({
       providerId: 's-shared', modelId: 's-model', agent: 'claude-code',
       agentDevice: { deviceId: share.deviceId, name: share.name },
+      retryQueuedSend: true,
     }));
     expect(onProviderChange).not.toHaveBeenCalled();
   });
@@ -299,7 +329,7 @@ describe('合并供应商列表', () => {
 // task picker, switch its tab, and verify local handoff / remote relocation.
 // Standalone Vitest run: 3.64s (12 tests, 397ms execution).
 describe('精简任务列表跨 harness 切换', () => {
-  it.each(['codex', 'pi'] as const)('保留合并来源，确认后切到 %s', async agent => {
+  it.each(['codex', 'pi'] as const)('浏览 %s 保留合并来源，选模型后才登记切换', async agent => {
     const originalLocal = catalogs.local;
     const originalRemote = catalogs.byDevice['share:abc'];
     const provider = (id: string) => ({
@@ -310,21 +340,18 @@ describe('精简任务列表跨 harness 切换', () => {
     catalogs.local = [...originalLocal, provider('target-local')];
     catalogs.byDevice['share:abc'] = [...originalRemote, provider('target-remote')];
     try {
-      const confirmBrowseSwitch = vi.fn(async () => false);
       const onSwitch = vi.fn(async () => true);
       const onRelocate = vi.fn(async () => true);
       const onProviderChange = vi.fn();
       renderPanel({ devices: [share], onRelocate }, {
         unifiedPanel: false, compactProviderList: true, onUnifiedSelect: undefined,
-        onProviderChange, agentSwitch: { currentVendor: 'cc', confirmBrowseSwitch, onSwitch },
+        onProviderChange, agentSwitch: { currentVendor: 'cc', onSwitch },
       });
       const tab = screen.getByRole('tab', { name: agent === 'codex' ? 'Codex' : 'Pi' });
       await act(async () => { fireEvent.click(tab); });
-      expect(screen.queryByText(`${agent}-model`)).toBeNull();
+      expect(tab.getAttribute('aria-selected')).toBe('true');
       expect(onSwitch).not.toHaveBeenCalled();
-      confirmBrowseSwitch.mockResolvedValue(true);
-      await act(async () => { fireEvent.click(tab); });
-      expect(confirmBrowseSwitch).toHaveBeenLastCalledWith(agent);
+      expect(onRelocate).not.toHaveBeenCalled();
       expect(screen.getAllByRole('tablist')).toHaveLength(1);
       expect(screen.getAllByRole('listbox')).toHaveLength(1);
       expect(screen.queryByRole('textbox')).toBeNull();
@@ -402,6 +429,7 @@ describe('远程目录 Cursor 入口', () => {
     });
     await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Cursor' })); });
     expect(screen.getByRole('tab', { name: 'Cursor' }).getAttribute('aria-selected')).toBe('true');
+    expect(onSwitch).not.toHaveBeenCalled();
     // The active task is still Claude: browsing Cursor must load the controlled
     // computer's capabilities before an engine switch, rather than local/empty caps.
     await act(async () => { fireEvent.click(screen.getAllByText('M5 Cursor model')[0]!); });

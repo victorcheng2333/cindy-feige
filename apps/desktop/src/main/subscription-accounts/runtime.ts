@@ -167,6 +167,7 @@ let runtime: OwnerRuntime | undefined;
 const listeners = new Set<(providerId: SubscriptionProvider, resetAccountId?: string, change?: 'usage' | 'load') => void>();
 const codexModelListeners = new Set<() => void>();
 const claudeModelListeners = new Set<() => void>();
+const signInEvidenceListeners = new Set<(provider: SubscriptionProvider) => void>();
 type ClaudeModelProbe = (account: NativeSubscriptionAccount, previous: readonly CatalogModel[]) => Promise<CatalogModel[] | null>;
 let claudeModelProbe: ClaudeModelProbe | null = null;
 
@@ -895,6 +896,7 @@ async function snapshot(
     if (provider === 'anthropic') publishClaudeCatalogChange(state);
     else if (!availabilityChanged) publishCodexCatalogChange(state);
     if (availabilityChanged) changed(provider);
+    noteSignInEvidence(state, provider, previous, result);
     return result;
   })();
   state.flights.set(key, { promise: flight, forceUsage });
@@ -942,6 +944,30 @@ export function hasConnectedSubscriptionPool(providerId: string, options: { incl
     .some((a) => state.cache.get(keyOf(found.kind, a.id))?.auth.authenticated);
 }
 
+/**
+ * What the last completed read of an account showed, without reading again. A failed read is
+ * cached as signed out with `unavailable`; that is not evidence of a sign-out, so it is unknown.
+ */
+export function subscriptionAccountSignInEvidence(kind: SubscriptionProvider, accountId: string): 'signed-in' | 'signed-out' | 'unknown' {
+  return signInEvidenceOf(currentRuntime().cache.get(keyOf(kind, accountId)));
+}
+type CachedAccount = ReturnType<OwnerRuntime['cache']['get']>;
+function signInEvidenceOf(cached: CachedAccount): 'signed-in' | 'signed-out' | 'unknown' {
+  if (!cached || cached.unavailable) return 'unknown';
+  return cached.auth.authenticated ? 'signed-in' : 'signed-out';
+}
+/** Notified when a read changes what {@link subscriptionAccountSignInEvidence} reports for an account. */
+export function onSubscriptionAccountSignInEvidenceChanged(listener: (provider: SubscriptionProvider) => void): () => void {
+  signInEvidenceListeners.add(listener);
+  return () => { signInEvidenceListeners.delete(listener); };
+}
+function noteSignInEvidence(state: OwnerRuntime, provider: SubscriptionProvider, previous: CachedAccount, next: CachedAccount): void {
+  if (state !== runtime || state.owner !== activeOwnerScopeKey() || signInEvidenceOf(previous) === signInEvidenceOf(next)) return;
+  for (const listener of signInEvidenceListeners) {
+    try { listener(provider); } catch { /* Observers cannot invalidate a completed account read. */ }
+  }
+}
+
 /** Complete cached identity set of this provider, for presentation on the owner's devices.
  * Unknown, paused, signed-out and historical-only accounts never imply equivalence.
  */
@@ -966,9 +992,11 @@ export function resetDefaultSubscriptionCodexDiscovery(authenticated: boolean): 
   const state = currentRuntime();
   state.defaultCodexAuthEpoch += 1;
   state.codexModels.delete('default');
+  const previous = state.cache.get(keyOf('openai', 'default'));
   if (authenticated) state.cache.delete(keyOf('openai', 'default'));
   else state.cache.set(keyOf('openai', 'default'), { auth: { authenticated: false }, at: Date.now() });
   publishCodexCatalogChange(state);
+  noteSignInEvidence(state, 'openai', previous, state.cache.get(keyOf('openai', 'default')));
 }
 
 /** The native CLI login listener owns only the default profile, even when it was moved. */
@@ -977,9 +1005,11 @@ export function resetDefaultSubscriptionClaudeDiscovery(authenticated: boolean):
   const state = currentRuntime();
   state.defaultClaudeAuthEpoch += 1;
   state.claudeModels.delete('default');
+  const previous = state.cache.get(keyOf('anthropic', 'default'));
   if (authenticated) state.cache.delete(keyOf('anthropic', 'default'));
   else state.cache.set(keyOf('anthropic', 'default'), { auth: { authenticated: false }, at: Date.now() });
   publishClaudeCatalogChange(state);
+  noteSignInEvidence(state, 'anthropic', previous, state.cache.get(keyOf('anthropic', 'default')));
 }
 
 /** Read SDK membership on every saved Claude profile, without borrowing the default login or
@@ -1387,7 +1417,7 @@ const ACCOUNT_SWITCH_PROBE_BUDGET_MS = 2_000;
 export async function readSubscriptionSessionAccount(
   provider: SubscriptionProvider,
   keys: { sessionId?: string; nativeSessionId?: string; model?: string; legacyProviderId?: string; routeProviderId?: string },
-  /** ownComputer：远程读取来自自己的其他电脑(不是受邀者)，换号探测也认「让我的其他电脑用本机模型」。 */
+  /** ownComputer：远程读取来自自己的其他电脑(不是受邀者)。 */
   options: { remote?: boolean; ownComputer?: boolean } = {},
 ): Promise<SubscriptionSessionAccountView> {
   // Replacement admission is optional. Share a short budget with the original bound-account
@@ -1445,7 +1475,7 @@ export async function readSubscriptionSessionAccount(
       assertOwner(state);
     }
   };
-  const binding = [
+  const resolveBinding = () => [
     keys.sessionId ? `task:${keys.sessionId}` : '',
     keys.nativeSessionId ? `native:${keys.nativeSessionId}` : '',
   ]
@@ -1454,6 +1484,7 @@ export async function readSubscriptionSessionAccount(
     .find(Boolean) ?? (legacyAccountId ? { accountId: legacyAccountId } : undefined)
     ?? ((requestedRef.providerId !== provider || keys.nativeSessionId) && pinnedOwnAccount(requestedRef)
       ? { accountId: pinnedOwnAccount(requestedRef)! } : undefined);
+  const binding = resolveBinding();
   if (pinnedLegacyAccountId && binding?.accountId !== pinnedLegacyAccountId
     && (!binding || !('via' in binding) || binding.via !== requestedRoute))
     return { providerId: provider, state: 'unavailable' };
@@ -1500,6 +1531,12 @@ export async function readSubscriptionSessionAccount(
   // Quota alone cannot authorize retiring native history. Probe actual replacement admission
   // without reserving or rebinding, within the original query's shared budget.
   const switchAvailable = (blocked || config.paused) && await canReplace(config.id);
+  const latestPool = readPool(provider);
+  if (!latestPool || disconnectedFor(latestPool, provider, config.id)
+    || !latestPool.accounts.some(account => account.id === config.id)
+    || resolveBinding()?.accountId !== config.id
+    || (config.id === 'default' && !defaultAccountBound(provider)))
+    return { providerId: provider, state: 'unavailable' };
   const destination = accountProviderId(provider, config.id);
   return {
     providerId: provider,
@@ -1523,6 +1560,7 @@ export async function readSubscriptionSessionAccount(
             ? 'limited'
             : 'ready',
       ...(info.auth.authenticated ? accountUsage(info.usage) : {}),
+      ...(info.auth.authenticated && info.usageAt !== undefined ? { usageUpdatedAt: info.usageAt } : {}),
       ...(blocked ? { blocked: true as const, switchAvailable } : {}),
       ...((keys.routeProviderId || keys.legacyProviderId) && config.paused ? { switchAvailable } : {}),
       // The task follows its account (subscription-account-pools.md 任务跟着账号走). Tell the local
@@ -2086,7 +2124,7 @@ export async function acquireSubscriptionAccount(
   control = false,
   options: {
     remote?: boolean;
-    /** 远程调用来自自己的其他电脑(不是受邀者)：旧版导入的 Codex 账号也认「让我的其他电脑用本机模型」。 */
+    /** 远程调用来自自己的其他电脑(不是受邀者)。 */
     ownComputer?: boolean;
     accountId?: string;
     resuming?: boolean;
@@ -2495,6 +2533,7 @@ export async function acquireSubscriptionAccount(
 
 export async function runSubscriptionAccountCommand(
   command: SubscriptionAccountCommand,
+  assertCanMerge?: () => void,
 ): Promise<SubscriptionPoolView> {
   const state = currentRuntime();
   assertOwner(state);
@@ -2518,7 +2557,7 @@ export async function runSubscriptionAccountCommand(
   const managed = target && command.action !== 'login'
     ? await managedAccountProfiles(state, provider, owned, target) : new Set<string>();
   if (command.action === 'place' || command.action === 'merge' || command.action === 'remove-provider') {
-    await changeAccountPlacement(state, ref, command, managed);
+    await changeAccountPlacement(state, ref, command, managed, assertCanMerge);
     assertOwner(state);
     changed(provider);
     // A deleted provider no longer resolves; answer with the built-in one of its kind.
@@ -2817,6 +2856,7 @@ async function changeAccountPlacement(
   ref: SubscriptionPoolProviderRef,
   command: Extract<SubscriptionAccountCommand, { action: 'place' | 'merge' | 'remove-provider' }>,
   managed: ReadonlySet<string>,
+  assertCanMerge?: () => void,
 ): Promise<void> {
   const kind = ref.kind;
   const pool = readPool(kind);
@@ -2862,7 +2902,9 @@ async function changeAccountPlacement(
     // The built-in provider holds the CLI default login and is never merged away as a whole, even
     // when its pool has no default account (a pool migrated without one); move accounts instead.
     if (ref.providerId === kind) throw new Error('The built-in provider cannot be merged into another provider');
-    await placeSubscriptionAccount(kind, accounts.map(account => account.id), target);
+    if (assertCanMerge && (accounts.length !== 1 || accounts[0]?.id !== ref.ownAccount))
+      throw new Error('Subscription upgrade repair no longer applies');
+    await placeSubscriptionAccount(kind, accounts.map(account => account.id), target, assertCanMerge);
     return;
   }
   // Deleting a created provider stops using its accounts; their CLI logins and histories stay.

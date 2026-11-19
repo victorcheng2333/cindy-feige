@@ -161,6 +161,15 @@ describe('collectMenubarInputs', () => {
     expect(collected.sources).toEqual([expect.objectContaining({ id: 'cursor', kind: 'subscription', family: 'cursor', windows: [] })]);
   });
 
+  it('includes auxiliary task tokens without charging them at the conversation model rate', async () => {
+    const input = usage([task('mixed')]);
+    input.taskDaily![0].tokens = 10100;
+    input.taskDaily![0].auxiliaryTokens = 10000;
+    const collected = await collectMenubarInputs(deps({ readUsage: async () => input }));
+    expect(collected.tasks[0].tokensToday).toBe(10100);
+    expect(collected.tasks[0].valueToday).toBeCloseTo(0.1);
+  });
+
   it('keeps the other sources when one reader fails', async () => {
     const errors: string[] = [];
     const collected = await collectMenubarInputs(deps({ onError: (scope) => errors.push(scope) }));
@@ -711,4 +720,19 @@ it('keeps Cursor usage separate and maps independent pools without a fake limiti
   })).toEqual(snapshot);
   expect(cursorQuotaFromRead({ providerId: 'cursor', status: 'unavailable', snapshot: null })).toBeNull();
   expect(cursorQuotaFromRead({ pools: [{ id: 'auto', usedPercent: -1 }], resetsAtMs: null, fetchedAtMs: 1 })).toBeNull();
+});
+
+// Unit: the fork's Cursor slot must not absorb auxiliary tokens on either an auxiliary-only or mixed day.
+it('includes auxiliary tokens in widget totals without attributing them to a harness', () => {
+  const money = { amount: 0, currency: 'USD', approximate: false, kind: 'actual-cost' } as const;
+  const helper = { day: '2026-11-17', agentKind: 'auxiliary', model: 'helper',
+    tokens: 1100, money, apiMoney: money, subscriptionEstimateMoney: money } as const;
+  const cursor = { ...helper, day: '2026-11-18', agentKind: 'cursor', model: 'composer', tokens: 42 } as const;
+  const payload = { modelDaily: [helper, { ...helper, day: cursor.day }, cursor] } as UsageHistoryPayload;
+  const scope = usageScope(payload, [helper.day, cursor.day], []);
+  expect(scope.daily.map(day => day.tokens)).toEqual([[0, 0, 0, 0, 1100], [0, 0, 0, 42, 1100]]);
+  expect(scope.daily[1].tokens.reduce((a, b) => a + b, 0)).toBe(1142);
+  expect(scope.models['30']).toEqual([{ name: 'composer', harness: 'cursor', money: 0, tokens: 42 }]);
+  expect(scope.modelSeries?.models).toEqual([{ name: 'helper', harness: 'auxiliary' }, { name: 'composer', harness: 'cursor' }]);
+  expect(scope.modelSeries?.tokens).toEqual([[1100, 0, 0], [1100, 42, 0]]);
 });

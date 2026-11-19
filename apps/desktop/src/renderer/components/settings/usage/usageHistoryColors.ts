@@ -32,6 +32,7 @@ export function usageHistoryAgentColor(agentKind: UsageAgentKind): string {
     pi: MODEL_COLORS[0],
     media: 'var(--text-secondary)',
     cursor: 'var(--text-primary)',
+    auxiliary: 'var(--text-tertiary)',
   };
   return colors[agentKind];
 }

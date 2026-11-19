@@ -1,3 +1,4 @@
+import { BotRosterLoadError } from './BotRosterLoadError';
 import { TeammateStatusDot, TeammateRowStatus, TeammateRunningPreview } from './TeammateStatusDot';
 import { aggregateTeammateStatus } from '@cindy/maker-shared/teammate-status';
 import { localTeammateStatus, remoteTeammateStatus, groupTeammateStatus } from './teammateRosterStatus';
@@ -26,6 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { Tip } from '@/components/ui/tooltip';
+import { Spinner } from '@/components/ui/spinner';
 import { SectionCollapse } from '@/features/cc-agent/sidebar/SectionCollapse';
 import { useCollapsibleShowAll } from '@/features/cc-agent/sidebar/hooks/useCollapsibleShowAll';
 import { SIDEBAR_LIST_ROW_ACTIVE_CLASS, SIDEBAR_LIST_ROW_HEIGHT_CLASS } from '@/features/cc-agent/sidebar/listRowStyle';
@@ -72,6 +74,8 @@ import {
   setBotHidden,
   setBotPinned,
   useBotProfiles,
+  useBotProfilesLoadState,
+  hasLoadedBotProfiles,
   useBotUnreadCounts,
   type BotProfile,
 } from './botStore';
@@ -134,7 +138,6 @@ export function TeammatesSection() {
   const deviceId = remoteRoute?.params.deviceId;
   const selectedGroupId = matchPath('/bots/groups/:groupId', pathname)?.params.groupId;
   const [collapsed, setCollapsed] = useState(() => readTeammatesSectionCollapsed(dataOwnerId));
-  const [keepSelectedChat, setKeepSelectedChat] = useState(true);
   const [viewMode, setViewMode] = useState(() => readTeammatesViewMode(dataOwnerId));
   const [showCollapsedAvatars, setShowCollapsedAvatars] = useState(() => readCollapsedTeammateAvatars(dataOwnerId));
   const changeCollapsedAvatars = (enabled: boolean) => {
@@ -157,10 +160,6 @@ export function TeammatesSection() {
   const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
-    if (next) {
-      // An explicit collapse overrides the temporary protection of a read chat.
-      setKeepSelectedChat(Boolean(selectedChat && needsAttention(selectedChat)));
-    }
     writeTeammatesSectionCollapsed(dataOwnerId, next);
   };
   const cloud = useCompanionCloud();
@@ -174,6 +173,8 @@ export function TeammatesSection() {
     ...remoteBots.map((bot) => ({ deviceId: bot.deviceId, name: bot.deviceName })),
   ];
   const allBots = useBotProfiles();
+  const profileLoadState = useBotProfilesLoadState();
+  const profilesLoaded = hasLoadedBotProfiles();
   // A demoted local copy runs on its main computer now; it is listed there, not here.
   const bots = useMemo(() => withoutShadowedBots(allBots, cloud), [allBots, cloud]);
   const { groups } = useBotGroupList();
@@ -321,7 +322,7 @@ export function TeammatesSection() {
       const rowIsVisible = visibleGroups.some(group => group.id === pending.groupId);
       if (row && rowIsVisible) {
         pendingArchiveFocusRef.current = null;
-        row.focus();
+        (row.matches('button') ? row : row.querySelector<HTMLButtonElement>('button'))?.focus();
         return;
       }
 
@@ -365,28 +366,6 @@ export function TeammatesSection() {
   if (selectedChat && !previewChats.includes(selectedChat)) {
     previewChats[CHAT_PREVIEW_LIMIT - 1] = selectedChat;
   }
-  const needsAttention = (entry: (typeof visibleChats)[number]) => {
-    const unread = entry.kind === 'group' ? isBotGroupUnread(entry.group)
-      : entry.kind === 'cindy' ? cindyOptions.some(option => option.unread)
-        : 'deviceId' in entry.bot ? isRemoteBotUnread(entry.bot) : (unreadByBotId[entry.bot.id] ?? 0) > 0;
-    const status = entry.kind === 'group' ? groupTeammateStatus(entry.group, bots, islandActivity, unread)
-      : entry.kind === 'cindy' ? cindyStatus : statusForBot(entry.bot);
-    return unread || status === 'awaiting' || status === 'error';
-  };
-  const selectedChatKey = selectedChat?.kind === 'group' ? `group:${selectedChat.group.id}`
-    : selectedChat?.kind === 'cindy' ? 'cindy-devices'
-      : selectedChat ? ('deviceId' in selectedChat.bot ? remoteBotKey(selectedChat.bot) : `local:${selectedChat.bot.id}`) : null;
-  const selectedNeedsAttention = Boolean(selectedChat && needsAttention(selectedChat));
-  // Switching chats or receiving new attention starts a new retention period.
-  // Manual collapse can end it without changing the currently open conversation.
-  useEffect(() => {
-    setKeepSelectedChat(true);
-  }, [selectedChatKey, dataOwnerId]);
-  useEffect(() => {
-    if (selectedNeedsAttention) setKeepSelectedChat(true);
-  }, [selectedNeedsAttention]);
-  const attentionChats = visibleChats.filter(entry =>
-    (keepSelectedChat && entry === selectedChat) || needsAttention(entry));
   const displayedChats = showAllChats ? visibleChats : previewChats;
   const collapsedAvatars = collapsed && showCollapsedAvatars;
   const showIconStrip = viewMode === 'icons' || collapsedAvatars;
@@ -489,7 +468,10 @@ export function TeammatesSection() {
   const renderGroupRow = (group: BotGroupSummary) => (
     <BotGroupSidebarRow key={'group:' + group.id} group={group} bots={bots}
       islandActivity={islandActivity} now={now} selected={group.id === selectedGroupId}
-      onOpenGroup={id => navigate('/bots/groups/' + encodeURIComponent(id))}
+      onOpenGroup={(id, reply) => {
+        const query = reply ? '?' + new URLSearchParams(reply).toString() : '';
+        navigate('/bots/groups/' + encodeURIComponent(id) + query);
+      }}
       onContextMenu={event => {
         event.preventDefault(); event.stopPropagation();
         openContextMenu('group', group.id, event.currentTarget, event.clientX, event.clientY);
@@ -671,6 +653,17 @@ export function TeammatesSection() {
         </div>
       ) : null}
 
+      {!profilesLoaded && profileLoadState === 'pending' ? (
+        <div role="status" className="flex items-center gap-2 px-3 py-3 text-12 text-[var(--text-secondary)]">
+          <Spinner size={14} />
+          {t('ccAgent.common.loading')}
+        </div>
+      ) : null}
+
+      {profileLoadState === 'error' ? (
+        <div className="pt-1 pr-0 pl-3"><BotRosterLoadError /></div>
+      ) : null}
+
       <SectionCollapse collapsed={showIconStrip || collapsed}>
       <div className="flex flex-col pt-1 pr-0 pl-3">
 
@@ -678,9 +671,11 @@ export function TeammatesSection() {
 
       <div>
         {roster.visible.length === 0 && roster.hidden.length === 0 && archivedBots.length === 0 && remoteBots.length === 0 && visibleGroups.length === 0 ? (
-          <div className="px-3 py-3">
-            <BotCreateMenu label={t('bots.add')} />
-          </div>
+          profilesLoaded && profileLoadState === 'ready' ? (
+            <div className="px-3 py-3">
+              <BotCreateMenu label={t('bots.add')} />
+            </div>
+          ) : null
         ) : (
           <div className="flex flex-col gap-0.5">
             {displayedChats.map(entry => {

@@ -31,7 +31,8 @@ describe('official CLI subscription display name', () => {
     const status = await readClaudeCliLoginStatusBySpawn(options);
     expect(status).toEqual({
       loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'pro', planTier: 'pro',
-      email: 'user@example.com', planDisplayName: 'Ultra',
+      email: 'user@example.com', orgId: 'example-org', orgName: 'Example organization',
+      planDisplayName: 'Ultra',
     });
     expect(vi.mocked(execFile).mock.calls.map(call => call[1])).toEqual([
       ['auth', 'status', '--json'], ['auth', 'status', '--text'],

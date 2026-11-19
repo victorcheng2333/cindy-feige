@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { getVoiceInputSettings } from './useVoiceInputSettings';
+import type { ComposerFollowUpBehavior } from './useComposerFollowUpPreference';
 import { findComposerVoiceInputConflict } from '@/voice-input/composerVoiceInputConflict';
 import { getComposerModifierShortcutLabel, hasComposerModifier } from '@/voice-input/composerShortcut';
 
@@ -39,6 +40,11 @@ function parsePreference(raw: string | null): ComposerSendShortcutPreference | n
  * The resolver deliberately does not perform any side effect. Callers can
  * therefore share the same preference semantics while keeping their own
  * event-target and delivery plumbing.
+ *
+ * `runningDefault` sets the primary delivery and keeps modifier+Enter as the
+ * opposite action in Enter mode. `followUpBehavior` sets one delivery for every
+ * send key. With neither, Enter queues and modifier+Enter in Enter mode steers.
+ * Idle sends always queue.
  */
 export function resolveComposerEnterIntent(
   event: ComposerEnterEvent,
@@ -46,11 +52,8 @@ export function resolveComposerEnterIntent(
   options: {
     turnRunning: boolean;
     platform: string | undefined;
-    /**
-     * Delivery of the primary send key while a turn is running. In Enter mode
-     * the modifier shortcut performs the other delivery. Defaults to queue.
-     */
-    runningDefault?: 'queue' | 'steer';
+    runningDefault?: ComposerFollowUpBehavior;
+    followUpBehavior?: ComposerFollowUpBehavior;
   },
 ): ComposerEnterIntent {
   if (event.key !== 'Enter' || event.shiftKey || event.altKey) return null;
@@ -62,13 +65,15 @@ export function resolveComposerEnterIntent(
     return isSendShortcut ? 'ignore' : 'native';
   }
 
-  const primary = options.turnRunning ? (options.runningDefault ?? 'queue') : 'queue';
-  if (preference === 'modifier-enter') {
-    return hasModifier ? primary : 'native';
-  }
+  if (preference === 'modifier-enter' && !hasModifier) return 'native';
+  if (!options.turnRunning) return 'queue';
 
-  if (!hasModifier || !options.turnRunning) return primary;
-  return primary === 'steer' ? 'queue' : 'steer';
+  const primary = options.runningDefault ?? options.followUpBehavior ?? 'queue';
+  if (preference === 'enter' && hasModifier &&
+      (options.runningDefault !== undefined || options.followUpBehavior === undefined)) {
+    return primary === 'steer' ? 'queue' : 'steer';
+  }
+  return primary;
 }
 
 /** Module-level memory is the synchronous source of truth for event handlers. */

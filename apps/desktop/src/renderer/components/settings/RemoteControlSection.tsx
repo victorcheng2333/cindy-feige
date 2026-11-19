@@ -33,7 +33,6 @@ import { Switch } from '@/components/ui/switch';
 import { MyDevicesPanel } from './MyDevicesPanel';
 import { RelayServicePanel, useSelfHostedRelayState } from './RelayServicePanel';
 import { RemoteDesktopSetting } from './RemoteDesktopSetting';
-import { OwnComputerModelAccessSetting } from './OwnComputerModelAccessSetting';
 import { RemoteSection } from './RemoteSection';
 import { SystemScreenSharingSetting } from './SystemScreenSharingSetting';
 import { CollapsibleSubSection } from './CollapsibleSubSection';
@@ -184,7 +183,7 @@ export function RemoteControlSection({ children }: { children?: ReactNode }) {
               <MyDevicesPanel
                 s={s}
                 variant="self"
-                selfSettings={<div className="flex flex-col gap-2"><OwnComputerModelAccessSetting /><RemoteDesktopSetting /></div>}
+                selfSettings={<div className="flex flex-col gap-2"><RemoteDesktopSetting /></div>}
                 focusDeviceId={deepLink.focusDeviceId}
                 focusRequestKey={deepLink.focusRequestKey}
               />
@@ -207,7 +206,7 @@ export function RemoteControlSection({ children }: { children?: ReactNode }) {
                   <MyDevicesPanel
                     s={s}
                     variant="self"
-                    selfSettings={<div className="flex flex-col gap-2"><OwnComputerModelAccessSetting /><RemoteDesktopSetting /></div>}
+                    selfSettings={<div className="flex flex-col gap-2"><RemoteDesktopSetting /></div>}
                     focusDeviceId={deepLink.focusDeviceId}
                     focusRequestKey={deepLink.focusRequestKey}
                   />

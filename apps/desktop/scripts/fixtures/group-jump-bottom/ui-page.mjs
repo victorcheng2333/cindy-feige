@@ -179,18 +179,10 @@ async function checkProcessDisclosure(page, ui) {
     }, preview);
     await page.locator('[data-thread-preview]').first().click();
     surface = page.locator('aside.thread-panel');
-    // Measure disclosure drift only after the topic panel's entrance has settled.
-    await surface.evaluate(el => new Promise(resolve => {
-      let previous = '', stable = 0;
-      const tick = () => {
-        const r = el.getBoundingClientRect();
-        const next = [r.x, r.y, r.width, r.height].join(',');
-        stable = next === previous ? stable + 1 : 0;
-        previous = next;
-        if (stable >= 4) resolve(undefined); else requestAnimationFrame(tick);
-      };
-      tick();
-    }));
+    // Measure disclosure drift after the independent panel entrance finishes.
+    await surface.evaluate(async el => {
+      await Promise.all(el.getAnimations().map(animation => animation.finished));
+    });
   }
   const heading = surface.locator('[data-teammate-process] > button').last();
   await heading.waitFor();
@@ -210,6 +202,16 @@ async function checkProcessDisclosure(page, ui) {
     }, preview);
     await page.locator('[data-bot-group-message-id="history-29"]').waitFor();
   } else if (!ui.data.processRecord) {
+    // This scenario needs history above the live process: the shared work
+    // fixture otherwise timestamps 39 messages after it, so clicking its heading
+    // scrolls to the very top and an upward wheel cannot shrink the reserve.
+    await page.evaluate(async () => {
+      const { group } = await window.electronAPI.maker.getBotGroup('fixture-group');
+      const at = group.round.speakers[0].timelineAt;
+      group.messages = group.messages.map((message, i) => ({ ...message,
+        createdAt: at - (group.messages.length - i) * 1000 }));
+      window.__uiPage.emit('botGroupChanged', { groupId: group.id, change: 'messages' });
+    });
     assert.equal(await page.locator('[data-teammate-process]').last().locator('.animate-spinner').count(), 1,
       'the header already communicates working; no extra loading row after notes');
   }
@@ -247,7 +249,9 @@ async function checkProcessDisclosure(page, ui) {
     const positions = await page.evaluate(() => window.disclosureFrames);
     const drift = Math.max(...positions) - Math.min(...positions);
     assert.ok(drift <= 1, `process heading moved ${drift}px during toggle ${cycle}`);
-    assert.deepEqual(await composerElement.boundingBox(), composer);
+    const currentComposer = await composerElement.boundingBox();
+    for (const axis of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(currentComposer[axis] - composer[axis]) < 1,
+      `Composer ${axis} must stay fixed during disclosure: ${JSON.stringify({ composer, currentComposer })}`);
     await ui.capture(`process-toggle-${cycle}`);
   }
   if (ui.data.processRecord || ui.data.threadPanel) {

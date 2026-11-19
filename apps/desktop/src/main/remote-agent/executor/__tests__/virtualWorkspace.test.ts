@@ -9,6 +9,7 @@ import type { AgentEvent } from '@cindy/maker-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { ClaudeToolApproval } from '../../controller/claudeToolApproval';
 import { RemoteEventProjection } from '../../controller/eventProjection';
 import { mapExecServerParams, mapExecServerResult, execServerActions } from '../../controller/execServerRelay';
 import { RemoteExecutor } from '../executor';
@@ -1000,12 +1001,14 @@ describe('virtual workspace', () => {
    *   消息的正文里，远程 Agent 写下的虚拟路径是否落成接收方读得到的本机路径。
    * - Bug 依据：2026-11-10 协同任务，Lead 的 Agent 在另一台电脑，给五个 Worker 的任务说明路径全是
    *   Lead 自己虚拟工作区里的路径，五个 Worker 全部读不到、无法开工。
-   * - 现有覆盖缺口：此前只有 prompt 字段（#8728）做了还原，协同与任务间消息的正文原样转发。
-   * - 最小失败输入：cindy_orca create_workers 的 initial_task 含一个虚拟工作区路径。
-   * - tier：unit（临时目录 + 内存里的 MCP 转发）。
+   * - 现有覆盖缺口：普通转发会还原交接正文，但设备托管 Claude 审批路径曾漏用服务对应的字段表。
+   * - 最小失败输入：开启工具审批，cindy_orca create_workers 的 initial_task 含一个虚拟工作区路径。
+   * - tier：unit（临时目录 + 内存里的审批和 MCP 转发）。
    */
-  it.each(['/home/agent/workspace', 'C:\\Agent\\workspace'])('hands task text to other tasks with local paths at %s', async (virtual) => {
-    const { project, executor } = setup(virtual);
+  it.each(['/home/agent/workspace', 'C:\\Agent\\workspace'].flatMap(virtual =>
+    [false, true].map(withApproval => ({ virtual, withApproval })),
+  ))('hands task text to other tasks with local paths at $virtual (approval: $withApproval)', async ({ virtual, withApproval }) => {
+    const { project, workspace, executor } = setup(virtual);
     const agentPath = virtual.startsWith('C:') ? path.win32 : path.posix;
     const brief = path.join(project, 'briefs', 'task.md');
     fs.mkdirSync(path.dirname(brief), { recursive: true });
@@ -1018,8 +1021,25 @@ describe('virtual workspace', () => {
       args?: { message: string };
     }
     const forwarded: ForwardedArguments[] = [];
+    const confirmedInputs: Record<string, unknown>[] = [];
+    const approval = withApproval ? new ClaudeToolApproval({
+      workspace, cwd: () => executor.executionCwd,
+      scope: () => ({ permissionMode: 'default', extraDirs: [], writableDirs: [], model: 'fixture' }),
+      isReadOnlyPath: () => false,
+      servers: () => new Set(['cindy_orca', 'orca_worker_bridge', 'cindy_helper', 'some_plugin']),
+      localTools: new Set(), readOnlyTools: [],
+      review: async () => ({ verdict: 'ask' }), mcpPolicy: () => 'prompt',
+      ask: async request => {
+        if (request.kind !== 'permission') throw new Error('Expected tool confirmation');
+        confirmedInputs.push(request.input);
+        return { kind: 'permission', behavior: 'allow' };
+      },
+      grant: action => executor.grantReviewedAction(action), newId: () => 'handoff-confirmation',
+    }) : undefined;
+    approval?.input({ type: 'user', content: 'Hand off the task brief.' }, undefined, false);
     const router = createReverseHttpRouter({
       executor,
+      approve: approval?.run.bind(approval),
       mcpTarget: () => ({ url: 'http://unused', headers: {} }),
       fetch: async (_url, options) => {
         const request = JSON.parse(Buffer.from(options!.body as Uint8Array).toString());
@@ -1031,7 +1051,10 @@ describe('virtual workspace', () => {
       await router({ method: 'POST', path: '/mcp/' + server, headers: [], body: Buffer.from(JSON.stringify({
         jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args },
       })).toString('base64') });
-      return forwarded.at(-1)!;
+      const dispatched = forwarded.splice(0);
+      expect(dispatched).toHaveLength(1);
+      if (withApproval) expect(confirmedInputs.splice(0)).toEqual(dispatched);
+      return dispatched[0];
     };
     const sameSeparators = (value: string) => value.replace(/\\/g, '/');
     try {

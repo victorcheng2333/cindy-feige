@@ -165,12 +165,12 @@ export class ClaudeToolApproval {
     return this.current(epoch) ? decision : { verdict: 'block', reason: 'Task authorization changed.' };
   }
 
-  async run<T>(name: string, raw: Record<string, unknown>, execute: (input: Record<string, unknown>) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  async run<T>(name: string, raw: Record<string, unknown>, execute: (input: Record<string, unknown>) => Promise<T>, signal?: AbortSignal, serverName?: string): Promise<T> {
     const epoch = this.epoch;
     if (!this.current(epoch, signal)) throw new ToolPermissionDenied('Task authorization is not active.');
     signal = AbortSignal.any([this.cancellation.signal, ...(signal ? [signal] : [])]);
     // Review exactly the local arguments the router/executor will use, never a supplier's verdict or scope.
-    let input = mapRemoteMcpArguments(this.deps.workspace, JSON.parse(JSON.stringify(raw))) as Record<string, unknown>;
+    let input = mapRemoteMcpArguments(this.deps.workspace, JSON.parse(JSON.stringify(raw)), serverName) as Record<string, unknown>;
     const builtin = name.startsWith('mcp__cindy_exec__') ? name.slice('mcp__cindy_exec__'.length) : name;
     const action = name.startsWith('mcp__') && !name.startsWith('mcp__cindy_exec__')
       ? toolAutoReviewAction(name, input) : normalizeBuiltinToolForAutoReview(builtin, input);

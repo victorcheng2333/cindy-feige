@@ -366,10 +366,13 @@ async function writeClaudeJsonl(
   sdkSessionId: string,
   workingDir: string,
   lines: unknown[],
+  configDir?: string,
 ): Promise<void> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'xdt-claude-anchor-'));
-  tempDirs.push(root);
-  process.env.CLAUDE_CONFIG_DIR = root;
+  const root = configDir ?? await fs.mkdtemp(path.join(os.tmpdir(), 'xdt-claude-anchor-'));
+  if (!configDir) {
+    tempDirs.push(root);
+    process.env.CLAUDE_CONFIG_DIR = root;
+  }
   const projectDir = path.join(root, 'projects', workingDir.replace(/[^a-zA-Z0-9]/g, '-'));
   await fs.mkdir(projectDir, { recursive: true });
   await fs.writeFile(
@@ -615,13 +618,33 @@ describe('commitRewindAtMessage', () => {
     });
   });
 
-  // Standard regression: a secondary account's real transcript must also beat stale DB ancestry.
-  it.each([false, true])('uses JSONL parent chain instead of stale target transcriptParentUuid (secondary=%s)', async (secondary) => {
-    await writeClaudeJsonl('sdk-uuid-old', '/repo', [
+  // P1 rewind regression (unit): a retained independent home must beat a stale
+  // pool binding, which the default and legacy-only cases cannot exercise.
+  it.each(['default', 'legacy pool', 'independent account'] as const)('uses JSONL parent chain instead of stale target transcriptParentUuid (%s)', async (source) => {
+    let sdkSessionId = 'sdk-uuid-old';
+    let ownerRoot: string | undefined;
+    let configDir: string | undefined;
+    if (source === 'independent account') {
+      sdkSessionId = 'a406e4e5-5ead-4528-8599-5ef0bf2bcb00';
+      fakeSession!.sdkSessionId = sdkSessionId;
+      ownerRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cindy-rewind-owner-'));
+      tempDirs.push(ownerRoot);
+      const providerId = 'independent-claude';
+      const homeId = '28336cc5-d739-423c-a3af-c2c6ec28b141';
+      const bindingDir = path.join(ownerRoot, 'claude-history-homes');
+      await fs.mkdir(bindingDir);
+      await fs.writeFile(
+        path.join(bindingDir, `${sdkSessionId}.json`),
+        JSON.stringify({ version: 1, providerId, homeId }),
+      );
+      configDir = path.join(ownerRoot, 'claude-accounts', providerId, 'homes', homeId);
+      readBoundClaudeConfigDirMock.mockReturnValue(path.join(ownerRoot, 'stale-pool-home'));
+    }
+    await writeClaudeJsonl(sdkSessionId, '/repo', [
       {
         type: 'assistant',
         uuid: 'real-assistant-uuid',
-        sessionId: 'sdk-uuid-old',
+        sessionId: sdkSessionId,
         message: { id: 'msg_real_asst', content: [{ type: 'text', text: 'hi' }] },
       },
       {
@@ -629,17 +652,17 @@ describe('commitRewindAtMessage', () => {
         subtype: 'compact_boundary',
         uuid: 'compact-boundary-uuid',
         parentUuid: 'real-assistant-uuid',
-        sessionId: 'sdk-uuid-old',
+        sessionId: sdkSessionId,
       },
       {
         type: 'user',
         uuid: 'sdk-msg-uuid-target',
         parentUuid: 'compact-boundary-uuid',
-        sessionId: 'sdk-uuid-old',
+        sessionId: sdkSessionId,
         message: { content: 'next' },
       },
-    ]);
-    if (secondary) {
+    ], configDir);
+    if (source === 'legacy pool') {
       const configDir = process.env.CLAUDE_CONFIG_DIR!;
       readBoundClaudeConfigDirMock.mockImplementation((id) => id === 'sdk-uuid-old' ? configDir : undefined);
       const emptyHome = await fs.mkdtemp(path.join(os.tmpdir(), 'cindy-rewind-empty-home-'));
@@ -652,7 +675,7 @@ describe('commitRewindAtMessage', () => {
       makeUserMessageRow({
         agentMeta: JSON.stringify({
           uuid: 'sdk-msg-uuid-target',
-          sdkSessionId: 'sdk-uuid-old',
+          sdkSessionId,
           transcriptParentUuid: 'stale-db-parent-uuid',
         }),
       }),
@@ -660,12 +683,19 @@ describe('commitRewindAtMessage', () => {
     selectQueue.push([]); // agent_switch 边界守卫:无边界
     selectQueue.push([
       makeAssistantMessageRow({
-        agentMeta: JSON.stringify({ uuid: 'stale-db-parent-uuid', sdkSessionId: 'sdk-uuid-old' }),
+        agentMeta: JSON.stringify({ uuid: 'stale-db-parent-uuid', sdkSessionId }),
       }),
     ]);
-    selectQueue.push([makeSessionRow()]);
+    selectQueue.push([makeSessionRow({ sdkSessionId })]);
 
-    await commitRewindAtMessage('sess-1', 'client-id');
+    const ownerPathSpy = ownerRoot
+      ? vi.spyOn(appSessionState, 'ownerScopedUserDataPath').mockImplementation((...parts) => path.join(ownerRoot, ...parts))
+      : undefined;
+    try {
+      await commitRewindAtMessage('sess-1', 'client-id');
+    } finally {
+      ownerPathSpy?.mockRestore();
+    }
 
     expect(commitRewindFilesMock).toHaveBeenCalledWith(
       'sdk-msg-uuid-target',

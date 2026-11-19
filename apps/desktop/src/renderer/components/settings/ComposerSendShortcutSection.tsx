@@ -1,49 +1,41 @@
 import { personalizationDetailsSettings } from './PersonalizationDetails.settings-search';
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Switch } from '@/components/ui/switch';
-import {
-  DEFAULT_COMPOSER_RUNNING_SEND,
-  useComposerRunningSendPreference,
-  type ComposerRunningSendPreference,
-} from '@/hooks/useComposerRunningSendPreference';
+import { useComposerFollowUpPreference } from '@/hooks/useComposerFollowUpPreference';
 import {
   getComposerModifierShortcutLabel,
+  getComposerSendShortcutLabel,
   useComposerSendShortcutPreference,
 } from '@/hooks/useComposerSendShortcutPreference';
 import { toast } from '@/lib/toast';
 import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
-import { DefaultOverrideControls } from './DefaultOverrideControls';
+import { useSettingDefinition } from './useSettingDefinition';
 
-const RUNNING_SEND_OPTIONS: readonly ComposerRunningSendPreference[] = ['queue', 'steer'];
-
-function ComposerRunningSendRow() {
+// The follow-up row has no restore control: Queue is the default, so choosing it
+// removes the override (see useComposerFollowUpPreference).
+function ComposerFollowUpRow() {
   const { t } = useTranslation();
-  const { preference, isCustomized, setPreference } = useComposerRunningSendPreference();
-  const shortcut = getComposerModifierShortcutLabel(window.electronAPI?.platform);
-
-  const onReset = useCallback(() => {
-    setPreference(DEFAULT_COMPOSER_RUNNING_SEND);
-    toast.success(t('settings.defaults.restored'));
-  }, [setPreference, t]);
+  const { preference: sendShortcut } = useComposerSendShortcutPreference();
+  const { preference, setPreference } = useComposerFollowUpPreference();
+  const setting = useSettingDefinition(personalizationDetailsSettings.composerFollowUpBehaviorLabel);
+  const send = getComposerSendShortcutLabel(sendShortcut, window.electronAPI?.platform);
 
   return (
     <SettingsRow
-      title={t('settings.composer.runningSend.label')}
-      hint={t('settings.composer.runningSend.hint', { shortcut })}
+      {...setting.anchorProps}
+      className="cindy-segmented-row"
+      title={setting.title}
+      hint={t(`settings.composer.followUp.hint${preference === 'steer' ? 'Steer' : 'Queue'}`, { send })}
       trailing={
         <div className="cindy-segmented-row-actions">
-          <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
-          <SegmentedControl data-setting-id={personalizationDetailsSettings.composerRunningSendLabel.id}
-            aria-label={t('settings.composer.runningSend.ariaLabel')}
+          <SegmentedControl
+            {...setting.controlProps}
+            aria-label={t('settings.composer.followUp.ariaLabel')}
             value={preference}
             onValueChange={setPreference}
-            options={RUNNING_SEND_OPTIONS.map((value) => ({
-              value,
-              label: t(`settings.composer.runningSend.options.${value}`),
-            }))}
+            options={setting.options}
           />
         </div>
       }
@@ -53,23 +45,22 @@ function ComposerRunningSendRow() {
 
 export function ComposerSendShortcutSection() {
   const { t } = useTranslation();
-  const { preference, isCustomized, setPreference } = useComposerSendShortcutPreference();
+  const { preference, setPreference } = useComposerSendShortcutPreference();
   const shortcut = getComposerModifierShortcutLabel(window.electronAPI?.platform);
-
-  const onReset = useCallback(() => {
-    setPreference('enter');
-    toast.success(t('settings.defaults.restored'));
-  }, [setPreference, t]);
 
   return (
     <SettingsSection title={t('settings.composer.title')}>
       <SettingsCard>
         <SettingsRow
           title={t(personalizationDetailsSettings.composerSendShortcutLabel.titleKey, { shortcut })}
-          hint={t(personalizationDetailsSettings.composerSendShortcutLabel.descriptionKey, { shortcut })}
+          hint={t(
+            preference === 'modifier-enter'
+              ? 'settings.composer.sendShortcut.hintModifierEnter'
+              : personalizationDetailsSettings.composerSendShortcutLabel.descriptionKey,
+            { shortcut },
+          )}
           trailing={
             <div className="flex shrink-0 items-center gap-2">
-              <DefaultOverrideControls isCustomized={isCustomized} onReset={onReset} />
               <Switch data-setting-id={personalizationDetailsSettings.composerSendShortcutLabel.id}
                 checked={preference === 'modifier-enter'}
                 onCheckedChange={(enabled) => {
@@ -83,7 +74,7 @@ export function ComposerSendShortcutSection() {
             </div>
           }
         />
-        <ComposerRunningSendRow />
+        <ComposerFollowUpRow />
       </SettingsCard>
     </SettingsSection>
   );

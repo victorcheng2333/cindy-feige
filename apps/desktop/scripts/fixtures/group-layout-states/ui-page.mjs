@@ -62,18 +62,23 @@ export default {
         el.style.maxWidth = '100%';
         el.style.flex = 'none';
       }, width);
+      // The standalone reply composer has no timeline. Check its real input and
+      // controls at both narrow widths instead of querying a nonexistent main.
       if (ui.case === 'reply-composer') {
-        // This state mounts the real standalone reply composer, not a timeline.
-        // Keep its narrow-layout coverage on the controls that are actually present.
-        const bounds = await subject.boundingBox();
-        assert.equal(await subject.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true);
-        assert.equal(await page.locator('textarea').inputValue(), 'A reply draft ready for dictation');
-        for (const button of await subject.getByRole('button').all()) {
-          const box = await button.boundingBox();
-          assert.ok(box && box.x >= bounds.x - 1 && box.x + box.width <= bounds.x + bounds.width + 1,
-            'Reply controls must fit inside the resized pane');
-        }
-        await ui.capture('reply-composer-' + width);
+        const input = subject.locator('textarea');
+        await input.fill(`Reply at ${width}px`);
+        assert.equal(await input.inputValue(), `Reply at ${width}px`);
+        const geometry = await subject.evaluate(el => {
+          const limit = el.getBoundingClientRect();
+          return { overflow: el.scrollWidth - el.clientWidth,
+            outside: [...el.querySelectorAll('textarea, button')].filter(node => {
+              const r = node.getBoundingClientRect();
+              return r.width > 0 && r.height > 0 && (r.left < limit.left - 1 || r.right > limit.right + 1);
+            }).length };
+        });
+        assert.ok(geometry.overflow <= 1 && geometry.outside === 0,
+          `Reply input and controls must fit ${width}px: ${JSON.stringify(geometry)}`);
+        await ui.capture(`narrow-${width}-reply`);
         continue;
       }
       await page.waitForFunction(() => {
