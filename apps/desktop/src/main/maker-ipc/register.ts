@@ -1,4 +1,4 @@
-import { discardAntigravityDraftState, readAntigravityConnection, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
+import { antigravityModelDiscoveryFailure, discardAntigravityDraftState, readAntigravityConnection, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
 import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readContextRecoverySessionWithPorts, classifyCodexHistoryWithPorts, commitContextRecoveryWithPorts, replayContextRecoveryWithPorts, contextRecoveryRebuilt, contextRecoveryAbortSignal } from './contextRecoveryAssembly.js';
@@ -7791,8 +7791,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     rediscoverModels: async (providerId) => {
       if (providerId === 'antigravity') {
         const refreshed = await readAntigravityConnection({ force: true, allowSideEffects: true, waitForDiscovery: true });
-        if (!refreshed) throw new Error('Antigravity model discovery failed');
-        return null;
+        if (refreshed) return null;
+        const failure = antigravityModelDiscoveryFailure();
+        if (failure) return failure;
+        throw new Error('Antigravity model discovery failed');
       }
       const ref = resolveSubscriptionPoolProviderRef(providerId);
       if (ref && !(await getMaker().refreshAgentLocalModels(ref.kind === 'anthropic' ? 'claude-code' : 'codex', {

@@ -14154,6 +14154,7 @@
       "remoteLoading": "Loading models from the remote device…",
       "remoteLoadFailed": "Couldn't load models from the remote device. Check the connection and try again.",
       "remoteLoadFailedShort": "Model loading failed",
+      "agySignInForModels": "Agy couldn’t load models. Run agy in Terminal to sign in, then retry.",
       "retryRemoteModels": "Reload models",
       "remoteEmpty": "This device has no available models",
       "effortLabel": "Reasoning Effort",

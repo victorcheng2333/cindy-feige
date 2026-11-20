@@ -14269,6 +14269,7 @@
       "remoteLoading": "Carregando modelos do dispositivo remoto…",
       "remoteLoadFailed": "Não foi possível carregar os modelos do dispositivo remoto. Verifique a conexão e tente novamente.",
       "remoteLoadFailedShort": "Falha ao carregar modelos",
+      "agySignInForModels": "Faça login para carregar os modelos do Agy. Execute agy no terminal e tente novamente após fazer login.",
       "retryRemoteModels": "Recarregar modelos",
       "remoteEmpty": "Este dispositivo não tem modelos disponíveis",
       "effortLabel": "Esforço de raciocínio",

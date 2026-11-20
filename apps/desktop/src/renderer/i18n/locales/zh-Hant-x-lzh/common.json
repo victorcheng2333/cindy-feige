@@ -14099,6 +14099,7 @@
       "remoteLoading": "方自遠端裝置讀模型…",
       "remoteLoadFailed": "不能讀遠端裝置上之模型。請查連線後再試。",
       "remoteLoadFailedShort": "模型讀取未成",
+      "agySignInForModels": "Agy 須登入方可讀取模型。請在終端機執行 agy，登入後再試。",
       "retryRemoteModels": "重讀模型",
       "remoteEmpty": "此裝置無可用模型",
       "effortLabel": "思之深淺",

@@ -22,6 +22,8 @@ export default {
     'compact-motion': { about: 'Content width stays stable across animated opening' },
     'compact-short': { about: 'Only model rows scroll when height is constrained', viewport: { width: 760, height: 320 } },
     'compact-selected': { about: 'Opening focuses the selected remote model instead of the first local row' },
+    'compact-task-agy-height': { about: 'Existing task keeps a usable model list when switching to empty Agy and back' },
+    'compact-task-agy-height-short': { about: 'An empty tab and a long list both fit a short viewport', viewport: { width: 390, height: 320 } },
     'compact-task': { about: 'Task handoff tabs with combined providers' },
     'compact-task-narrow': { about: 'Task handoff at narrow width', viewport: { width: 390, height: 640 } },
     compact: { about: 'Local and authorized remote providers in one list without engine or search controls' },
@@ -96,6 +98,61 @@ export default {
       }
       assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `engine panel heights differ: ${heights.join(', ')}`);
       await page.keyboard.press('Escape');
+      return;
+    }
+    if (ui.case.startsWith('compact-task-agy-height')) {
+      // UI regression: existing tasks use agentSwitch, which the draft height case does not cover.
+      // One long list and one empty tab reproduce the old height sticking on the return switch.
+      const panel = page.locator('[data-morph-side][data-state="open"]');
+      const list = panel.getByRole('listbox');
+      const codex = panel.getByRole('tab', { name: 'Codex', exact: true });
+      const agy = panel.getByRole('tab', { name: 'Agy', exact: true });
+      const footer = panel.getByRole('button', { name: await ui.t('newChat.modelSelector.source.connect') });
+      const signIn = list.getByText(await ui.t('newChat.modelSelector.agySignInForModels'), { exact: true });
+      const lastRow = list.getByRole('option', { name: /GPT fixture 12/ });
+      await lastRow.waitFor();
+      const sample = async (label) => {
+        await panel.evaluate(el => Promise.all(el.getAnimations({ subtree: true })
+          .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+          .map(animation => animation.finished.catch(() => {}))));
+        await ui.capture(label, { locator: panel });
+        const box = await panel.boundingBox();
+        const footerBox = await footer.boundingBox();
+        assert.ok(box && box.y >= 0 && box.y + box.height <= await page.evaluate(() => innerHeight));
+        assert.ok(footerBox && footerBox.y + footerBox.height <= box.y + box.height + 1, 'footer must stay inside the popup');
+        return list.evaluate(el => el.clientHeight);
+      };
+      const long = await sample('codex-before');
+      await agy.click();
+      await signIn.waitFor();
+      const short = await sample('agy-sign-in');
+      const transition = list.evaluate(el => new Promise(resolve => {
+        const heights = [];
+        const start = performance.now();
+        const frame = () => {
+          heights.push(el.clientHeight);
+          if (performance.now() - start < 250) requestAnimationFrame(frame);
+          else resolve(heights);
+        };
+        requestAnimationFrame(frame);
+      }));
+      await codex.press('Enter');
+      await lastRow.waitFor();
+      const restored = await sample('codex-restored');
+      assert.ok(Math.abs(long - restored) <= 1, `Codex viewport failed to recover: ${long} → ${short} → ${restored}px`);
+      assert.ok(short >= long - 30, `Empty tab collapsed the list: ${long} → ${short}px`);
+      assert.ok(Math.min(...await transition) >= Math.min(long, short) - 1, 'switching tabs must not briefly collapse the list');
+      assert.equal(await page.evaluate(() => window.__modelPickerSelection), undefined, 'browsing another tab must not switch the task');
+      await lastRow.scrollIntoViewIfNeeded();
+      await agy.click();
+      await panel.getByRole('button', { name: await ui.t('settings.providers.button.retry'), exact: true }).click();
+      const model = list.getByRole('option', { name: /Antigravity fixture/ });
+      await model.waitFor();
+      await sample('agy-recovered');
+      await model.click();
+      await page.waitForFunction(() => window.__modelPickerSelection?.agent === 'antigravity'
+        && window.__modelPickerSelection?.provider === 'antigravity');
+      await panel.waitFor({ state: 'hidden' });
       return;
     }
     if (ui.case.startsWith('compact-draft-antigravity')) {

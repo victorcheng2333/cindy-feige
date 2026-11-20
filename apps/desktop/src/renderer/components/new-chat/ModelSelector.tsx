@@ -57,7 +57,7 @@ import { cn } from '@/lib/utils';
 import { flashScrollbar } from '@/lib/scrollbarAutoHide';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { WINDOW_NO_DRAG_STYLE } from '@/components/layout/windowDrag';
-import { MorphPopover } from '@/components/ui/morph-popover';
+import { MORPH_CONTENT_RESIZE_EVENT, MorphPopover } from '@/components/ui/morph-popover';
 import { currentFocusedRow } from '@/components/ui/dropdown-menu-highlight';
 import {
   COMPOSER_MENU_ROW,
@@ -141,6 +141,7 @@ import {
   isSubscriptionDirectModel,
 } from '../../../shared/subscriptionModels';
 import { extractIpcError } from '@/utils/ipcError';
+import { toast } from '@/lib/toast';
 import { isModelEnabled, useModelVisibilityVersion } from '@/state/modelVisibilityPrefs';
 import { seedDefaultFavorite } from '@/state/modelFavorites';
 import { useProviderModelMemoryVersion } from '@/state/providerModelMemory';
@@ -1480,6 +1481,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const agentKind = hasEngineBrowser
     ? vendorKeyToAgentKind(browseVendor)
     : vendorKeyToAgentKind(vendorKey);
+  const showEngineTabs = !catalogSection && (!!agentSwitch || (draftEngineTabs && !!onUnifiedSelect));
   // A field that only persists a model must not offer another Harness.
   // The combined list's root owns the engine tabs for the whole task. Its local
   // catalog can differ from the selected remote model source; that must not
@@ -1604,6 +1606,13 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   void storeVersion;
 
   const listRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!showEngineTabs) return;
+    // The list can fill the previous shell height without resizing its wrapper.
+    // Remeasure on tab changes even when ResizeObserver cannot see the new content.
+    listRef.current?.dispatchEvent(new CustomEvent(MORPH_CONTENT_RESIZE_EVENT, { bubbles: true }));
+  }, [browseVendor, showEngineTabs]);
+  const agyDiscovery = useModelDiscoveryPending();
   // Classic list and options panel: one glide highlight each, following the pointer, the
   // keyboard-focused row or the row whose options are open (MorphPopover owns the width).
   const highlightOptions = {
@@ -3686,6 +3695,9 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
 
   const hasAnyModel = sections ? sections.length > 0 : (flatModels?.length ?? 0) > 0;
   const trimmedQuery = query.trim();
+  const agyDiscoveryFailure = !deviceId && agentKind === 'antigravity' && !hasAnyModel && !trimmedQuery
+    ? providers.find(p => p.id === 'antigravity' && !p.suspended)?.modelDiscoveryFailure
+    : undefined;
   const remoteStatusInList =
     deviceId && (remoteModelListStatus === 'loading' || remoteModelListStatus === 'error')
       ? remoteModelListStatus
@@ -4270,7 +4282,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
           side="bottom"
         />
       )}
-      {!catalogSection && (agentSwitch || (draftEngineTabs && onUnifiedSelect)) && (
+      {showEngineTabs && (
         <>
           <VendorSegmentedSwitcher
             value={browseVendor}
@@ -4338,7 +4350,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
             : {
                 maxHeight: constrainedListMaxHeight,
                 // 引擎间模型数量不同也保持列表高度；受限窗口仍由外层 flex 收缩。
-                ...(draftEngineTabs ? { height: constrainedListMaxHeight ?? 300, minHeight: 0 } : {}),
+                ...(showEngineTabs ? { height: constrainedListMaxHeight ?? MODEL_LIST_DEFAULT_MAX_HEIGHT_PX, minHeight: 0 } : {}),
               }
         }
         role={catalogSection ? undefined : "listbox"}
@@ -4374,6 +4386,30 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
                 status={remoteStatusInList}
                 onRetry={retryRemoteModels}
                 message={remoteFailureMessage}
+              />
+            ) : agyDiscoveryFailure ? (
+              <ErrorNotice
+                role="alert"
+                className="mx-1"
+                message={t(agyDiscoveryFailure.kind === 'unauthorized'
+                  ? 'newChat.modelSelector.agySignInForModels'
+                  : `settings.providers.detail.discoveryFailed.${agyDiscoveryFailure.kind}`)}
+                actions={
+                  <Button
+                    size="sm"
+                    compact
+                    disabled={interactionDisabled || agyDiscovery.pending}
+                    onClick={() => agyDiscovery.begin(async () => {
+                      try {
+                        await window.electronAPI.maker.rediscoverModels('antigravity');
+                      } catch {
+                        toast.error(t('settings.providers.models.refreshFailed'));
+                      }
+                    })}
+                  >
+                    {t(agyDiscovery.pending ? 'settings.providers.button.retrying' : 'settings.providers.button.retry')}
+                  </Button>
+                }
               />
             ) : localCatalogLoadingNotice ? localCatalogLoadingNotice : discoveringModels && trimmedQuery.length === 0 ? null : (
               <div className={cn('px-3 text-13 text-[var(--text-tertiary)]', catalogSection ? 'py-2' : 'py-6 text-center')}>

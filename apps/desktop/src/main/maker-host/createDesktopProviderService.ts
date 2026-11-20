@@ -1,5 +1,5 @@
 import { setLocalHarnessProviderReader } from './active-catalog.js';
-import { antigravityProvider, readAntigravityConnection } from './antigravity-host.js';
+import { antigravityModelDiscoveryFailure, antigravityProvider, readAntigravityConnection } from './antigravity-host.js';
 import { readCursorConnection, cursorModelDiscoveryFailure, cursorProvider } from './cursor-auth.js';
 import { loadManagedClaudeModels, refreshManagedClaudeModels } from './claude-account-models.js';
 import { listEvaluationModels } from '../cindy-evaluate/models.js';
@@ -984,7 +984,10 @@ export function getDesktopProviderService(options: { allowSideEffects?: boolean 
   singleton = createProviderService({
     cursorConnected: readCursorConnection,
     antigravityConnected: readAntigravityConnection,
-    modelDiscoveryFailure: (id, connected) => id === 'cursor' && connected ? cursorModelDiscoveryFailure() : null,
+    modelDiscoveryFailure: (id, connected) => {
+      if (id === 'antigravity') return antigravityModelDiscoveryFailure();
+      return id === 'cursor' && connected ? cursorModelDiscoveryFailure() : null;
+    },
     getModelContextLimits: readModelContextLimits,
     projectProvider: provider => {
       const accountKeys = subscriptionProviderAccountKeys(provider.id)

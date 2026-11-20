@@ -14154,6 +14154,7 @@
       "remoteLoading": "Modelle werden vom entfernten Gerät geladen…",
       "remoteLoadFailed": "Modelle konnten nicht vom entfernten Gerät geladen werden. Prüfe die Verbindung und versuche es erneut.",
       "remoteLoadFailedShort": "Modelle konnten nicht geladen werden",
+      "agySignInForModels": "Melde dich an, um Agy-Modelle zu laden. Führe agy im Terminal aus und versuche es nach der Anmeldung erneut.",
       "retryRemoteModels": "Modelle neu laden",
       "remoteEmpty": "Auf diesem Gerät sind keine Modelle verfügbar",
       "effortLabel": "Denkintensität",

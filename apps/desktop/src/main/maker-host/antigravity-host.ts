@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { AntigravityAgent, antigravityEnv, parseAntigravityModels, type AgentDeps, type AuthAdapter, type AgyModelDescriptor } from '@cindy/maker-core';
-import type { Provider } from '@cindy/model-providers';
+import type { Provider, ProviderModelDiscoveryFailure } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
 import { parseBinaryVersionOutput } from '../agent-binaries/binary-version-probe.js';
@@ -46,7 +46,12 @@ function binaryPath(): string | undefined {
 }
 
 let executable: string | undefined;
-let snapshot: { scope: string; models: AgyModelDescriptor[]; expiresAt: number } | undefined;
+let snapshot: {
+  scope: string;
+  models: AgyModelDescriptor[];
+  expiresAt: number;
+  failure: ProviderModelDiscoveryFailure | null;
+} | undefined;
 let discovery: { scope: string; token: symbol; retainOnFailure: boolean; promise: Promise<boolean> } | undefined;
 let quota: { scope: string; expiresAt: number; connected: boolean; snapshot: AntigravityQuotaSnapshot | null } | undefined;
 let quotaRead: { scope: string; token: symbol; promise: Promise<AntigravityQuotaSnapshot | null> } | undefined;
@@ -131,6 +136,24 @@ function currentModels() {
   return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.models : [];
 }
 
+export function antigravityModelDiscoveryFailure(): ProviderModelDiscoveryFailure | null {
+  return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.failure : null;
+}
+
+function discoveryFailureKind(error: unknown): ProviderModelDiscoveryFailure['kind'] {
+  if (!error || typeof error !== 'object') return 'upstream';
+  const failure = error as { stdout?: string; stderr?: string; code?: string | number; killed?: boolean; signal?: string };
+  // Match CLI diagnostics here and publish only the category. The original output
+  // can contain private account or proxy information.
+  const output = `${failure.stderr ?? ''}\n${failure.stdout ?? ''}`;
+  if (/please sign in to view available models|authentication expired/i.test(output)) return 'unauthorized';
+  if (/user location is not supported/i.test(output)) return 'regionBlocked';
+  if ((failure.killed && failure.signal === 'SIGTERM') || /deadline exceeded|timed out/i.test(output)) return 'timeout';
+  if (/proxyconnect|no such host|connection refused|network is unreachable/i.test(output) ||
+      failure.code === 'ECONNREFUSED' || failure.code === 'ENETUNREACH') return 'network';
+  return 'upstream';
+}
+
 export async function readAntigravityConnection(options: { allowSideEffects?: boolean; waitForDiscovery?: boolean; force?: boolean } = {}) {
   const bin = executable;
   if (!bin) return false;
@@ -144,6 +167,7 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   const token = Symbol();
   const promise = (async () => {
     let models: AgyModelDescriptor[] = [];
+    let failureKind: ProviderModelDiscoveryFailure['kind'] | null = null;
     try {
       const probe = path.join(scope, 'discovery');
       await mkdir(probe, { recursive: true, mode: 0o700 });
@@ -151,13 +175,18 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
         cwd: probe, env: configuredEnvironment(), timeout: 20_000, maxBuffer: 512 * 1024,
       });
       models = parseAntigravityModels(stdout);
-    } catch { /* CLI stdout and stderr may contain credentials or proxy diagnostics. */ }
-    if (discovery?.token !== token || scope !== ownerScopedUserDataPath('antigravity')) return false;
-    if (discovery.retainOnFailure && !models.length && snapshot?.scope === scope && snapshot.models.length) {
-      snapshot = { ...snapshot, expiresAt: Date.now() + 30_000 };
-      return false;
+      if (!models.length) failureKind = 'empty';
+    } catch (error) {
+      failureKind = discoveryFailureKind(error);
     }
-    snapshot = { scope, models, expiresAt: Date.now() + (models.length ? 30 * 60_000 : 30_000) };
+    if (discovery?.token !== token || scope !== ownerScopedUserDataPath('antigravity')) return false;
+    const now = Date.now();
+    const failure = failureKind ? { kind: failureKind, at: new Date(now).toISOString() } : null;
+    // Last known models remain useful after a failed manual refresh, except when
+    // the CLI explicitly reports that it cannot use the saved sign-in.
+    const retainedModels = failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope
+      ? snapshot.models : models;
+    snapshot = { scope, models: retainedModels, failure, expiresAt: now + (failure ? 30_000 : 30 * 60_000) };
     notifyLocalHarnessProviderChanged();
     return models.length > 0;
   })();

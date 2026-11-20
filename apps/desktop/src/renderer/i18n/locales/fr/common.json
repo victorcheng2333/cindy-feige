@@ -14269,6 +14269,7 @@
       "remoteLoading": "Chargement des modèles depuis l'appareil distant…",
       "remoteLoadFailed": "Impossible de charger les modèles depuis l'appareil distant. Vérifiez la connexion et réessayez.",
       "remoteLoadFailedShort": "Échec du chargement des modèles",
+      "agySignInForModels": "Connectez-vous pour charger les modèles Agy. Exécutez agy dans le terminal, puis réessayez après vous être connecté.",
       "retryRemoteModels": "Recharger les modèles",
       "remoteEmpty": "Aucun modèle disponible sur cet appareil",
       "effortLabel": "Effort de raisonnement",

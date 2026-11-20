@@ -14100,6 +14100,7 @@
       "remoteLoading": "원격 기기에서 모델을 불러오는 중…",
       "remoteLoadFailed": "원격 기기의 모델을 불러오지 못했습니다. 연결을 확인한 후 다시 시도하세요.",
       "remoteLoadFailedShort": "모델 불러오기 실패",
+      "agySignInForModels": "Agy 모델을 불러오려면 로그인해야 합니다. 터미널에서 agy를 실행해 로그인한 뒤 다시 시도하세요.",
       "retryRemoteModels": "모델 다시 불러오기",
       "remoteEmpty": "이 기기에 사용 가능한 모델이 없습니다",
       "effortLabel": "추론 강도",

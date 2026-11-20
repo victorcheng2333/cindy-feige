@@ -14100,6 +14100,7 @@
       "remoteLoading": "正在从远程设备读取模型…",
       "remoteLoadFailed": "无法读取远程设备上的模型。请检查连接后重试。",
       "remoteLoadFailedShort": "模型读取失败",
+      "agySignInForModels": "Agy 需要登录才能读取模型。请在终端运行 agy，登录后重试。",
       "retryRemoteModels": "重新读取模型",
       "remoteEmpty": "这台设备没有可用模型",
       "effortLabel": "推理强度",
