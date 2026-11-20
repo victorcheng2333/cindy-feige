@@ -130,7 +130,17 @@ export interface ModelPickerSheetProps {
 }
 
 export function ModelPickerSheet(props: ModelPickerSheetProps) {
-  if (props.unified && !props.providersUnsupported) return <UnifiedModelPickerSheet {...props} unified={props.unified} />;
+  const preferredUnified = !!props.unified && !props.providersUnsupported;
+  const [presentation, setPresentation] = useState(() => ({
+    visible: props.visible,
+    unified: preferredUnified,
+  }));
+  const opening = props.visible && !presentation.visible;
+  const unified = opening ? preferredUnified : presentation.unified;
+  // The native legacy sheet and the unified modal have separate transition
+  // lifecycles. A provider refresh must not replace an open presentation.
+  if (presentation.visible !== props.visible) setPresentation({ visible: props.visible, unified });
+  if (unified && props.unified) return <UnifiedModelPickerSheet {...props} unified={props.unified} />;
   return <LegacyModelPickerSheet {...props} />;
 }
 function LegacyModelPickerSheet({

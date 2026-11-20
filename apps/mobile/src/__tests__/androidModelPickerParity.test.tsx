@@ -996,6 +996,20 @@ describe("Android legacy model sheet exposes permissions as a standalone row lik
     };
   }
 
+  // Unit: ModelPickerSheet must keep the same presentation mounted when the
+  // provider response changes the picker flavor. The next open may use it.
+  it("keeps the open legacy sheet mounted until the next open after provider recovery", () => {
+    const props = sheetProps({ unified: {}, providersUnsupported: true });
+    render(createElement(ModelPickerSheet, props as never));
+    const legacyRow = byId("modelSheet.permissionTrigger");
+    expect(legacyRow).not.toBeNull();
+    render(createElement(ModelPickerSheet, { ...props, providersUnsupported: false } as never));
+    expect(byId("modelSheet.permissionTrigger")).toBe(legacyRow);
+    render(createElement(ModelPickerSheet, { ...props, visible: false, providersUnsupported: false } as never));
+    render(createElement(ModelPickerSheet, { ...props, providersUnsupported: false } as never));
+    expect(byId("modelSheet.permissionTrigger")).toBeNull();
+  });
+
   it("shows a Permissions row with the current mode and opens the permission page", () => {
     const props = sheetProps();
     render(createElement(ModelPickerSheet, props as never));
