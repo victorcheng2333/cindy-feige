@@ -187,7 +187,7 @@ import {
   getAgentCapabilitiesGeneration,
   getCachedAgentCapabilities,
   isAgentCapabilitiesGenerationCurrent,
-  subscribeAgentCapabilities, fetchAgentCapabilities,
+  subscribeAgentCapabilities,
 } from '@/session/agentCapabilitiesCache';
 import {
   ContextSheet,
@@ -1969,10 +1969,11 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       setCapabilitiesLoading(true);
     }
     setCapabilitiesError(null);
-    void fetchAgentCapabilities(selectedDeviceId, agentKind, () => withTransientRemoteRetry(async () => {
+    // The maker transport already joins concurrent capability reads.
+    void withTransientRemoteRetry(async () => {
       await openLink(selectedDeviceId);
       return maker.getCapabilities(agentKind);
-    }))
+    })
       .then((result) => {
         if (capabilitiesSeqRef.current !== seq) return;
         const normalized = normalizeMobileAgentCapabilities(result);

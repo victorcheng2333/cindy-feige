@@ -1382,6 +1382,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const contextSheetMediaLibraryEnabled = canBrowsePhotoLibraryDirectly(Platform.OS);
   // 模型 + 权限浮窗(ContextSheet 同款 Modal,含二级「模型选项 / 权限」叠层)。
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  const [capabilityRefresh, setCapabilityRefresh] = useState(0);
   useEffect(() => {
     if (!modelSheetOpen) return;
     // The native sheet hides the keyboard without clearing the composer's focus.
@@ -3810,16 +3811,13 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
         setCapabilitiesError(formatRemoteError(err));
       })
       .finally(() => {
-        if (
-          capabilitiesLoadSeqRef.current === seq
-          && isAgentCapabilitiesGenerationCurrent(deviceId, generation)
-        ) setCapabilitiesLoading(false);
+        if (!cancelled && capabilitiesLoadSeqRef.current === seq) setCapabilitiesLoading(false);
       });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [currentAgentKind, deviceId, maker, openLink]);
+  }, [currentAgentKind, deviceId, maker, openLink, capabilityRefresh]);
 
   useEffect(() => {
     if (
@@ -9692,9 +9690,15 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       setModelSheetOpen(false);
       return;
     }
+    // A recent-history task can open from its cached model catalog before
+    // the host switch capability arrives. Retry a missing/stale verdict on open.
+    if (!sessionAgentSwitchSupported && !currentSession?.remoteHostId) {
+      setCapabilityRefresh(value => value + 1);
+    }
     setModelSheetAgentKind(agentSwitchIntent?.targetAgentKind ?? sessionAgentKind);
     setModelSheetOpen(true);
-  }, [agentSwitchIntent, canConfigureSessionModel, modelSheetOpen, sessionAgentKind]);
+  }, [agentSwitchIntent, canConfigureSessionModel, currentSession?.remoteHostId, modelSheetOpen,
+    sessionAgentKind, sessionAgentSwitchSupported]);
 
   // 账号限额按需拉取(会话信息面板打开时):优先走 Codex app-server 权威控制面,
   // 同时拿窗口和 reset credits。老被控端没有新通道时回退既有只读 usage channel;
