@@ -10,6 +10,7 @@ function readStepUsage(value: unknown): AgyStepUsage | null {
     return typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0;
   };
   const inputTokens = count('input_tokens');
+  // In the CLI usage payload, thinking_tokens is a subset of output_tokens.
   const outputTokens = count('output_tokens');
   const cacheReadTokens = count('cache_read_tokens');
   return inputTokens + outputTokens + cacheReadTokens > 0 ? { inputTokens, outputTokens, cacheReadTokens } : null;
@@ -54,9 +55,12 @@ export class AgyTurn {
     this.text = '';
   }
 
-  step(step: Record<string, unknown>) {
+  step(step: Record<string, unknown>, stopping = false) {
+    // Drain completion receipts while the original process owns the turn.
+    // Suppress late text and in-progress updates after Stop.
+    if (stopping && step.state !== 'DONE' && step.state !== 'ERROR') return;
     if (step.step_type === 'agent_response') {
-      if (typeof step.text_delta === 'string' && step.text_delta) {
+      if (!stopping && typeof step.text_delta === 'string' && step.text_delta) {
         this.text += step.text_delta;
         this.sawText = true;
         this.emit('text', { text: step.text_delta, isFinal: false });

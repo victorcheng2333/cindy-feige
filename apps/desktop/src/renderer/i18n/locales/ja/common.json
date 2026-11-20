@@ -14228,6 +14228,16 @@
       "listAria": "権限モード",
       "autoFallback": "自動レビューは一時的に利用できないため、デフォルト権限に切り替えました。必要な操作は確認します。",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "デフォルト",
+            "description": "agy の権限チェックを使用します。承認が必要な操作はブロックされることがあります。"
+          },
+          "bypassPermissions": {
+            "label": "フルアクセス",
+            "description": "agy の権限チェックを省略し、確認なしでツールを実行できます。"
+          }
+        },
         "cursor": {
           "auto": {
             "label": "自動",

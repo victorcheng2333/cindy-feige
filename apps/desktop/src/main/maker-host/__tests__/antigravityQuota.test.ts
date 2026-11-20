@@ -1,5 +1,12 @@
 import { expect, it } from 'vitest';
-import { parseAntigravityQuota } from '../antigravity-quota.js';
+import { parseAntigravityQuota, supportsAntigravityQuota } from '../antigravity-quota.js';
+
+it('only probes quota on supported CLI versions, including newer majors', () => {
+  expect(supportsAntigravityQuota('1.5.11')).toBe(false);
+  expect(supportsAntigravityQuota('1.5.12')).toBe(true);
+  expect(supportsAntigravityQuota('2.0.0')).toBe(true);
+  expect(supportsAntigravityQuota('1.5.12-beta')).toBe(false);
+});
 
 // Unit: the stdout boundary reads published CLI groups, without manufacturing a
 // missing window or carrying uppercase percentages over from error text.

@@ -435,6 +435,7 @@
     "enterProjectPath": "Saisissez le chemin du projet sur l'ordinateur.",
     "enterModel": "Saisissez un modèle.",
     "modelLoading": "Chargement du modèle…",
+    "agyTextOnly": "agy accepte uniquement le texte. Retirez les pièces jointes ou changez de modèle pour les envoyer.",
     "enterFirstMessageOrAttachment": "Saisissez un premier message ou ajoutez une pièce jointe.",
     "noSessionIdReturned": "Impossible de confirmer la création de la nouvelle session sur l'ordinateur distant. Synchronisez à nouveau pour vérifier.",
     "sessionIdNotAdopted": "La version de Cindy sur l'ordinateur distant est incompatible. Mettez-la à jour et réessayez.",

@@ -187,7 +187,7 @@ import {
   getAgentCapabilitiesGeneration,
   getCachedAgentCapabilities,
   isAgentCapabilitiesGenerationCurrent,
-  subscribeAgentCapabilities,
+  subscribeAgentCapabilities, fetchAgentCapabilities,
 } from '@/session/agentCapabilitiesCache';
 import {
   ContextSheet,
@@ -268,7 +268,7 @@ import {
   compensatePrecreatedWorktree,
   resolveStartedDowngradeOrCommit,
   resolveSubmitGuardCatalog,
-  validateNewSessionDraft,
+  validateNewSessionDraft, newSessionSupportsAttachments,
   type SubmitGuardCatalog,
   type NewSessionAgentKind,
   type NewSessionDraft,
@@ -651,7 +651,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // Context 面板(+ 号弹出的可拖动 sheet):open + 子视图(主视图 / 截图列表 / 目标草稿)。
   const [contextSheetOpen, setContextSheetOpen] = useState(false);
   const [contextSheetView, setContextSheetView] = useState<'main' | 'goal' | 'collab'>('main');
-  const contextSheetMediaLibraryEnabled = canBrowsePhotoLibraryDirectly(Platform.OS);
+  const canAttachToDraft = newSessionSupportsAttachments(draft.agentKind);
+  const contextSheetMediaLibraryEnabled = canAttachToDraft && canBrowsePhotoLibraryDirectly(Platform.OS);
   // 新建即协同(对齐桌面 NewMakerDraftRoute 的协同草稿):确认后只武装草稿,发送首条消息 /
   // 建目标时在 createSession 之后开启(首轮 Lead 才有协同工具)。一次性:创建后复位。
   const [collabDraft, setCollabDraft] = useState<OrcaWorkerFormValue | null>(null);
@@ -1968,10 +1969,10 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       setCapabilitiesLoading(true);
     }
     setCapabilitiesError(null);
-    void withTransientRemoteRetry(async () => {
+    void fetchAgentCapabilities(selectedDeviceId, agentKind, () => withTransientRemoteRetry(async () => {
       await openLink(selectedDeviceId);
       return maker.getCapabilities(agentKind);
-    })
+    }))
       .then((result) => {
         if (capabilitiesSeqRef.current !== seq) return;
         const normalized = normalizeMobileAgentCapabilities(result);
@@ -2000,10 +2001,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         setCapabilitiesError(formatRemoteError(err));
       })
       .finally(() => {
-        if (
-          capabilitiesSeqRef.current === seq
-          && isAgentCapabilitiesGenerationCurrent(selectedDeviceId, generation)
-        ) setCapabilitiesLoading(false);
+        if (!cancelled && capabilitiesSeqRef.current === seq) setCapabilitiesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -5756,9 +5754,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
                   onSelectionChange={(event) => changeNewSessionVoiceSelection(voiceSelectionInput, event.nativeEvent.selection)}
                   onContentSizeChange={handleFirstMessageInputContentSizeChange}
                   onFocus={() => setFirstMessageInputFocused(true)}
-                  onPasteImages={(uris) => void addPastedImageAttachments(uris)}
-                  onPasteImagesLoading={beginPastePlaceholders}
-                  onPasteImagesLoadFailed={failPastePlaceholders}
+                  onPasteImages={canAttachToDraft ? (uris) => void addPastedImageAttachments(uris) : undefined}
+                  onPasteImagesLoading={canAttachToDraft ? beginPastePlaceholders : undefined}
+                  onPasteImagesLoadFailed={canAttachToDraft ? failPastePlaceholders : undefined}
 
                   placeholderTextColor={colors.textPlaceholder}
                   grabberTestID="newSession.composerResizeGrabber"
@@ -5901,33 +5899,35 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         {contextSheetView === 'main' ? (
           <>
 
-            <ContextSheetGroup label={Platform.OS === 'ios' && contextSheetMediaLibraryEnabled ? '' : t('session.common.groupAdd')}>
-              <ContextSheetRow
-                disabled={creating}
-                icon={<Image color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.regular} />}
-                label={t('session.common.photosAndVideos')}
-                onPress={() => void addLocalImageAttachments('library')}
-                dismissBeforePress
+            {canAttachToDraft && (
+              <ContextSheetGroup label={Platform.OS === 'ios' && contextSheetMediaLibraryEnabled ? '' : t('session.common.groupAdd')}>
+                <ContextSheetRow
+                  disabled={creating}
+                  icon={<Image color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.regular} />}
+                  label={t('session.common.photosAndVideos')}
+                  onPress={() => void addLocalImageAttachments('library')}
+                  dismissBeforePress
                   testID="newSession.contextSheetPhotoRow"
-              />
-              <ContextSheetRow
-                disabled={creating}
-                icon={<Camera color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.regular} />}
-                label={t('session.common.takePhoto')}
-                onPress={() => void addLocalImageAttachments('camera')}
-                dismissBeforePress
+                />
+                <ContextSheetRow
+                  disabled={creating}
+                  icon={<Camera color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.regular} />}
+                  label={t('session.common.takePhoto')}
+                  onPress={() => void addLocalImageAttachments('camera')}
+                  dismissBeforePress
                   testID="newSession.contextSheetCameraRow"
-              />
-              <ContextSheetRow
-                disabled={creating}
-                icon={<Folder color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.regular} />}
-                label={t('session.common.file')}
-                onPress={() => void addLocalFileAttachment()}
-                dismissBeforePress
+                />
+                <ContextSheetRow
+                  disabled={creating}
+                  icon={<Folder color={colors.textPrimary} size={iconSize.lg} strokeWidth={iconStroke.regular} />}
+                  label={t('session.common.file')}
+                  onPress={() => void addLocalFileAttachment()}
+                  dismissBeforePress
                   testID="newSession.contextSheetFileRow"
-              />
-            </ContextSheetGroup>
-<ContextSheetGroup label={t('session.common.groupMode')}>
+                />
+              </ContextSheetGroup>
+            )}
+            <ContextSheetGroup label={t('session.common.groupMode')}>
               {planModeSupported ? (
                 // 点击即切换计划模式并关面板(产品决策,不做开关);已开启时显示 ✓,再点退出。
                 <ContextSheetRow

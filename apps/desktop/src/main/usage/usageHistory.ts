@@ -811,7 +811,7 @@ export async function readUsageHistoryWith(
   // 避免历史重合并按 model-day 逐行 stat 覆盖文件。
   const priceOverrides = deps.getModelPriceOverridesSnapshot();
   const hasMissingPendingSubscriptionPrice = modelRows.some((r) =>
-    r.agentKind !== 'cursor' &&
+    r.agentKind !== 'cursor' && r.agentKind !== 'antigravity' &&
     isSubscriptionUsageModel(r.model) &&
     r.money.kind !== 'value-estimate' &&
     !getSubscriptionValuePriceFor(

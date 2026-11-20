@@ -77,6 +77,10 @@ export function subscribeAgentCapabilities(
 }
 
 /** 只提交当前设备代际的结果；成功后通知已挂载页面一次性换入完整快照。 */
+export function hasAgentCapabilitiesSubscribers(deviceId: string, agentKind: string): boolean {
+  return listeners.has(buildAgentCapabilitiesCacheKey(deviceId, agentKind));
+}
+
 export function commitAgentCapabilities(
   deviceId: string,
   agentKind: string,

@@ -14397,6 +14397,16 @@
       "listAria": "Modos de permissão",
       "autoFallback": "A revisão automática está temporariamente indisponível. As permissões foram alteradas para Padrão e será solicitada confirmação quando necessário.",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "Padrão",
+            "description": "Usa as verificações de permissão do agy. Ações que exigem aprovação podem ser bloqueadas."
+          },
+          "bypassPermissions": {
+            "label": "Acesso total",
+            "description": "Ignora as verificações de permissão do agy. As ferramentas podem ser executadas sem confirmação."
+          }
+        },
         "cursor": {
           "auto": {
             "label": "Automático",

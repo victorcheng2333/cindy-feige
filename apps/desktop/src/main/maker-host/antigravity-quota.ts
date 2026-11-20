@@ -10,6 +10,13 @@ export interface AntigravityQuotaSnapshot {
   fetchedAtMs: number;
 }
 
+export function supportsAntigravityQuota(version: string): boolean {
+  const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:\s|$)/);
+  if (!match) return false;
+  const [major, minor, patch] = match.slice(1).map(Number);
+  return major > 1 || (major === 1 && (minor > 5 || (minor === 5 && patch >= 12)));
+}
+
 /** Official agy print-mode usage report. Accept only recognized quota rows. */
 export function parseAntigravityQuota(stdout: string, fetchedAtMs: number): AntigravityQuotaSnapshot | null {
   const windows = new Map<string, AntigravityQuotaWindow>();

@@ -13,6 +13,28 @@ const catalog = (id: string) => ({ providers: [{ id } as ProviderView] });
 const flush = async () => { await vi.advanceTimersByTimeAsync(50); };
 
 describe('catalog invalidation under a slow device link', () => {
+  it('re-reads mounted agy capabilities after invalidating an in-flight read', async () => {
+    const { createDeviceCatalogRefresh } = await import('@/device-link/deviceCatalogRefresh');
+    const caps = await import('@/session/agentCapabilitiesCache');
+    const stale = deferred<unknown>();
+    const oldRead = caps.fetchAgentCapabilities('a', 'antigravity', () => stale.promise);
+    const listener = vi.fn();
+    const unsubscribe = caps.subscribeAgentCapabilities('a', 'antigravity', listener);
+    const readCapabilities = vi.fn(async () => ({ availableModels: [], permissionModes: [] }));
+    const refresh = createDeviceCatalogRefresh({ readProviders: async () => catalog('new'),
+      readCapabilities, connectionEpoch: () => 1 });
+    refresh.notify('a');
+    await flush();
+    expect(readCapabilities).not.toHaveBeenCalledWith('a', 'antigravity');
+    stale.resolve(null);
+    await oldRead;
+    await flush();
+    expect(readCapabilities).toHaveBeenCalledWith('a', 'antigravity');
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+    refresh.dispose();
+  });
+
   it.each(['cancel', 'clear', 'dispose'] as const)('does not revive blocked work after %s', async (action) => {
     const { createDeviceCatalogRefresh } = await import('@/device-link/deviceCatalogRefresh');
     let available = false;

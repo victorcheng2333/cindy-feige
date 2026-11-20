@@ -14282,6 +14282,16 @@
       "listAria": "Permission modes",
       "autoFallback": "Auto-review is temporarily unavailable. Switched to Default permissions and will ask when needed.",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "Default",
+            "description": "Uses the agy permission checks. Actions that require approval may be blocked."
+          },
+          "bypassPermissions": {
+            "label": "Full access",
+            "description": "Skips agy permission checks. Tools can run without confirmation."
+          }
+        },
         "cursor": {
           "auto": {
             "label": "Auto",

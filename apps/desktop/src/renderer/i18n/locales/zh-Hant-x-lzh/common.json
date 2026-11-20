@@ -14228,6 +14228,16 @@
       "listAria": "權柄模式",
       "autoFallback": "自動審批暫不可用，已切換為預設權柄；需時將詢問君。",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "預設",
+            "description": "循 agy 權限檢查，須經准許之操作或被阻止。"
+          },
+          "bypassPermissions": {
+            "label": "完全存取",
+            "description": "略過 agy 權限檢查，工具可徑行。"
+          }
+        },
         "cursor": {
           "auto": {
             "label": "自動",

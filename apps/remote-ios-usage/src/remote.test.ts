@@ -371,7 +371,19 @@ it("loads agy periods through the dedicated read without adding absent windows",
     { label: "Gemini Models", minutes: 10080, left: 72, reset: null },
     { label: "Claude and GPT models", minutes: 10080, left: 0, reset: null },
   ] });
+
+  invoke.mockImplementation(async (_device, request) => (
+    request.channel === "maker:usage:antigravity-subscription"
+      ? { ok: false, error: { code: "IPC_ERROR", message: "temporary failure" } }
+      : { ok: true, result: { providers: [] } }
+  ));
+  expect((await r.usage("mac"))[0]).toMatchObject({
+    service: "Antigravity", failed: false, updated: 1793750400000,
+    error: "本次刷新失败，显示上次读取的额度。",
+  });
+  expect(await r.usage("another-mac")).toEqual([]);
 });
+
 
 it("does not allow a queued route write to survive logout", async () => {
   const remote = new Remote({} as CindyAuthClient);

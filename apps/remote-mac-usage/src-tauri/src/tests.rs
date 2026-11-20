@@ -662,6 +662,12 @@ impl DeviceLinkSession for CursorMockLink {
             })));
         }
         if channel == "maker:usage:antigravity-subscription" {
+            if self.transport_error.load(Ordering::SeqCst) {
+                return Ok(InvokeOutcome::Err {
+                    code: "IPC_ERROR".to_string(),
+                    message: "link reset".to_string(),
+                });
+            }
             return Ok(InvokeOutcome::Ok(json!({
                 "providerId": "antigravity", "connected": true, "status": "ready",
                 "snapshot": {
@@ -801,4 +807,11 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
         cursor_failed.error.as_deref(),
         Some("暂时读不到 Cursor 额度，请稍后刷新。")
     );
+    let agy_stale = snap3.devices[0].accounts.iter()
+        .find(|a| a.service == ServiceKind::Antigravity)
+        .expect("last successfully read agy quota remains visible");
+    assert!(!agy_stale.failed);
+    assert_eq!(&agy_stale.windows, &agy.windows);
+    assert_eq!(agy_stale.updated_at, agy.updated_at);
+    assert_eq!(agy_stale.error.as_deref(), Some("本次刷新失败，显示上次读取的额度。"));
 }

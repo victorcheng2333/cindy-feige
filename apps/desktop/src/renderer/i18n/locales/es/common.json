@@ -14397,6 +14397,16 @@
       "listAria": "Modos de permisos",
       "autoFallback": "La revisión automática no está disponible temporalmente. Se cambió a los permisos predeterminados y se te pedirá autorización cuando sea necesario.",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "Predeterminado",
+            "description": "Aplica los controles de permisos de agy. Las acciones que requieren aprobación pueden bloquearse."
+          },
+          "bypassPermissions": {
+            "label": "Acceso completo",
+            "description": "Omite los controles de permisos de agy. Las herramientas pueden ejecutarse sin confirmación."
+          }
+        },
         "cursor": {
           "auto": {
             "label": "Automático",

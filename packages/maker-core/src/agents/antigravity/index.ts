@@ -65,11 +65,26 @@ type Process = {
   requestedModel: string;
   child: ChildProcessWithoutNullStreams;
   exited: Promise<void>;
-  stopping: boolean;
+  stopping?: Promise<void>;
   hasSent: boolean;
   initializedId?: string;
   rejectedWhileIdle?: true;
 };
+
+async function waitForAgyTransition(wait: Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (!signal) return wait;
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+  });
+  try {
+    await Promise.race([wait, cancelled]);
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
+}
 
 function messageText(content: UserMessage['content']): string {
   if (typeof content === 'string') return content;
@@ -121,49 +136,51 @@ export class AntigravityAgent extends BaseAgent {
     let id = opts.resumeSessionId || pendingId;
     let runtime: Process | undefined;
     let turn: AgyTurn | undefined;
+    let turnCompletion: { promise: Promise<void>; resolve: () => void } | undefined;
     let closed = false;
-    let reconfiguring = false;
+    let configuration: Promise<void> | undefined;
 
     const finish = (outcome: 'success' | 'stopped' | 'error', result?: Record<string, unknown>) => {
       if (!turn) return;
       turn.finish(outcome, result);
       turn = undefined;
+      turnCompletion?.resolve();
+      turnCompletion = undefined;
     };
 
     const signal = (process: Process, name: NodeJS.Signals) => {
       try {
         if (process.child.pid) globalThis.process.kill(-process.child.pid, name);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+          this.agyDeps.logger.warn('Could not signal Antigravity process group', { signal: name });
+        }
       }
     };
 
     const stop = async (graceful = false) => {
       const process = runtime;
       if (!process) return;
-      if (!process.stopping) {
-        process.stopping = true;
-        if (graceful) process.child.stdin.end();
-        else signal(process, 'SIGINT');
-      }
+      if (process.stopping) return process.stopping;
       const kill = setTimeout(() => signal(process, 'SIGKILL'), 2_000);
-      try {
-        await process.exited;
-      } finally {
-        clearTimeout(kill);
-      }
+      process.stopping = process.exited.finally(() => clearTimeout(kill));
+      if (!graceful) signal(process, 'SIGINT');
+      process.child.stdin.end();
+      return process.stopping;
     };
 
     const applyConfiguration = async (update: () => void) => {
-      if (closed || turn || reconfiguring || (runtime?.stopping && !runtime.rejectedWhileIdle))
+      if (closed || (turn && !runtime?.stopping) || configuration)
         throw new Error('Wait for Antigravity to finish before changing its configuration.');
-      reconfiguring = true;
-      try {
+      configuration = (async () => {
         await stop(true);
         if (closed) throw new Error('Antigravity session is closed.');
         update();
+      })();
+      try {
+        await configuration;
       } finally {
-        reconfiguring = false;
+        configuration = undefined;
       }
     };
     const setSelection = async (nextModel: string, nextEffort?: Effort) => {
@@ -200,7 +217,6 @@ export class AntigravityAgent extends BaseAgent {
         proxyFingerprint: proxyFingerprint(env),
         requestedModel,
         hasSent: false,
-        stopping: false,
         exited: new Promise(resolve => child.once('close', () => resolve())),
       };
       runtime = process;
@@ -225,7 +241,7 @@ export class AntigravityAgent extends BaseAgent {
         void stop(idle).catch(() => this.agyDeps.logger.warn('Could not stop rejected Antigravity process'));
       };
       lines.on('line', line => {
-        if (runtime !== process || process.stopping) return;
+        if (runtime !== process) return;
         let event: Record<string, unknown>;
         try { event = record(JSON.parse(line)); } catch { return; }
         if (event.event === 'init') {
@@ -233,12 +249,12 @@ export class AntigravityAgent extends BaseAgent {
           const expectedId = process.initializedId ?? (id === pendingId ? undefined : id);
           if (typeof nativeId !== 'string' || !/^[\w-]+$/.test(nativeId) ||
               (expectedId !== undefined && expectedId !== nativeId)) {
-            rejectStartup('agy returned a different conversation. The saved conversation was kept.');
+            if (!process.stopping) rejectStartup('agy returned a different conversation. The saved conversation was kept.');
             return;
           }
           const actualModel = record(event.init).model;
           if (typeof actualModel === 'string' && actualModel !== requestedModel) {
-            rejectStartup('agy started with a different model than selected.');
+            if (!process.stopping) rejectStartup('agy started with a different model than selected.');
             return;
           }
           // The CLI can allocate its own conversation while the composer is still
@@ -248,21 +264,29 @@ export class AntigravityAgent extends BaseAgent {
           return;
         }
         if (!turn) {
-          if (!process.hasSent && event.event === 'result') rejectStartup('agy exited during startup.');
+          if (!process.stopping && !process.hasSent && event.event === 'result') rejectStartup('agy exited during startup.');
           return;
         }
         if (event.event === 'step_update' && process.initializedId) {
           const step = record(event.step_update);
           if (step.conversation_id === process.initializedId) {
             publishConversation(process);
-            turn.step(step);
+            turn.step(step, !!process.stopping);
           }
-        } else if (event.event === 'result') {
+        } else if (event.event === 'result' && !process.stopping) {
           const result = record(event.result);
           const matchesConversation = !!process.initializedId && result.conversation_id === process.initializedId;
           if (matchesConversation) publishConversation(process);
           const succeeded = matchesConversation && result.status === 'SUCCESS';
-          finish(succeeded ? 'success' : 'error', succeeded ? result : undefined);
+          if (matchesConversation && result.finished_reason === 'interrupted') {
+            void stop(true);
+          } else if (succeeded) {
+            finish('success', result);
+          } else {
+            finish('error', result.finished_reason === 'print_timeout'
+              ? { message: 'agy timed out before completing the turn.' }
+              : undefined);
+          }
         }
       });
       return process;
@@ -280,7 +304,7 @@ export class AntigravityAgent extends BaseAgent {
       get model() { return model; },
       validateSendOptions,
       prewarm: () => {
-        if (closed || turn || runtime || reconfiguring) return;
+        if (closed || turn || runtime || configuration) return;
         try {
           open(getEnv());
         } catch {
@@ -289,36 +313,48 @@ export class AntigravityAgent extends BaseAgent {
       },
       async send(message, options = {}) {
         validateSendOptions(options);
-        options.signal?.throwIfAborted();
-        if (closed) throw new Error('Antigravity session is closed.');
-        if (turn || reconfiguring || (runtime?.stopping && !runtime.rejectedWhileIdle))
-          throw new Error('Antigravity is still working.');
         const text = messageText(message.content);
-        const env = getEnv();
-        if (runtime && (runtime.rejectedWhileIdle || runtime.proxyFingerprint !== proxyFingerprint(env) ||
-            (!runtime.hasSent && runtime.requestedModel !== resolveAgyModel(getModels(), model, effort)))) {
-          await applyConfiguration(() => {});
+        // The host queues ordinary turns. Its terminal event can arrive while
+        // this handle is still retiring the old transport or applying settings.
+        // Wait before writing anything so a follow-up is delivered only once.
+        for (;;) {
           options.signal?.throwIfAborted();
-        }
-        const process = runtime ?? open(env);
-        const currentTurn = new AgyTurn(emit, usage);
-        turn = currentTurn;
-        process.hasSent = true;
-        const frame = { event: 'user', message: { role: 'user', content: text } };
-        await new Promise<void>((resolve, reject) => {
-          process.child.stdin.write(JSON.stringify(frame) + '\n', error => {
-            if (!error) {
-              if (turn === currentTurn && !process.stopping) publishConversation(process);
-              resolve();
-              return;
-            }
-            if (turn === currentTurn) {
-              finish('error', { message: 'agy did not accept the message.' });
-              void stop();
-            }
-            reject(new Error('agy did not accept the message.'));
+          if (closed) throw new Error('Antigravity session is closed.');
+          const pending = configuration ?? runtime?.stopping ?? turnCompletion?.promise;
+          if (pending) {
+            await waitForAgyTransition(pending, options.signal);
+            continue;
+          }
+          const env = getEnv();
+          if (runtime && (runtime.rejectedWhileIdle || runtime.proxyFingerprint !== proxyFingerprint(env) ||
+              (!runtime.hasSent && runtime.requestedModel !== resolveAgyModel(getModels(), model, effort)))) {
+            await applyConfiguration(() => {});
+            continue;
+          }
+          const process = runtime ?? open(env);
+          const currentTurn = new AgyTurn(emit, usage);
+          turn = currentTurn;
+          let resolve!: () => void;
+          const promise = new Promise<void>(done => { resolve = done; });
+          turnCompletion = { promise, resolve };
+          process.hasSent = true;
+          const frame = { event: 'user', message: { role: 'user', content: text } };
+          await new Promise<void>((resolve, reject) => {
+            process.child.stdin.write(JSON.stringify(frame) + '\n', error => {
+              if (!error) {
+                if (turn === currentTurn && !process.stopping) publishConversation(process);
+                resolve();
+                return;
+              }
+              if (turn === currentTurn) {
+                finish('error', { message: 'agy did not accept the message.' });
+                void stop();
+              }
+              reject(new Error('agy did not accept the message.'));
+            });
           });
-        });
+          return;
+        }
       },
       async steer() { throw new Error('Antigravity does not support interrupting with a follow-up message.'); },
       abort: () => stop(),

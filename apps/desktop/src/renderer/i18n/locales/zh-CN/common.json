@@ -14228,6 +14228,16 @@
       "listAria": "权限模式",
       "autoFallback": "自动审批暂时不可用，已切换为默认权限；需要时会询问你。",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "默认",
+            "description": "使用 agy 的权限检查。需要审批的操作可能会被阻止。"
+          },
+          "bypassPermissions": {
+            "label": "完全访问",
+            "description": "跳过 agy 的权限检查，工具可以直接运行。"
+          }
+        },
         "cursor": {
           "auto": {
             "label": "自动",

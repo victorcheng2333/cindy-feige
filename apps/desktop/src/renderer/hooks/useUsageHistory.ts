@@ -211,7 +211,7 @@ function finiteNumber(value: unknown, fallback = 0): number {
 
 function isAgentKind(value: unknown): value is UsageHistoryModel['agentKind'] {
   return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor'
-    || value === 'media' || value === 'auxiliary';
+    || value === 'antigravity' || value === 'media' || value === 'auxiliary';
 }
 
 function parseDevices(value: unknown): UsageHistoryDevice[] | undefined {

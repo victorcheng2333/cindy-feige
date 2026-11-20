@@ -404,7 +404,7 @@ impl UsageService {
             message: String,
         }
 
-        let outcome: Result<(Vec<Account>, bool), String> = async {
+        let outcome: Result<(Vec<Account>, bool, bool), String> = async {
             self.check_epoch(epoch).await?;
             link.close_link(device_id, "user");
             let accepted = link.open_link(device_id, Duration::from_secs(15)).await?;
@@ -560,11 +560,14 @@ impl UsageService {
             for t in tasks {
                 accounts.push(t.await);
             }
+            let mut agy_refresh_failed = antigravity_read.as_ref().err()
+                .is_some_and(|err| err.code.as_deref() != Some("CHANNEL_NOT_ALLOWED"));
             if let Ok(payload) = antigravity_read {
                 if payload.get("providerId").and_then(Value::as_str) == Some("antigravity") &&
                     payload.get("connected").and_then(Value::as_bool) == Some(true) {
                     let p = Map::from_iter([("id".to_string(), json!("antigravity"))]);
                     if let Ok(account) = parse_account(&p, &payload, now_ms()) {
+                        agy_refresh_failed = account.failed;
                         accounts.push(account);
                     }
                 }
@@ -576,7 +579,7 @@ impl UsageService {
                 ServiceKind::Cursor => 2,
                 ServiceKind::Antigravity => 3,
             });
-            Ok((accounts, cursor_unsupported))
+            Ok((accounts, cursor_unsupported, agy_refresh_failed))
         }
         .await;
 
@@ -592,7 +595,17 @@ impl UsageService {
                 .find(|d| d.device_id == device_id)
             {
                 match outcome {
-                    Ok((accounts, cursor_unsupported)) => {
+                    Ok((mut accounts, cursor_unsupported, agy_refresh_failed)) => {
+                        if agy_refresh_failed {
+                            if let Some(previous) = dev.accounts.iter().find(|a| {
+                                a.service == ServiceKind::Antigravity && !a.failed && !a.windows.is_empty()
+                            }) {
+                                accounts.retain(|a| a.service != ServiceKind::Antigravity);
+                                let mut stale = previous.clone();
+                                stale.error = Some("本次刷新失败，显示上次读取的额度。".to_string());
+                                accounts.push(stale);
+                            }
+                        }
                         dev.accounts = accounts;
                         dev.cursor_unsupported = if cursor_unsupported { Some(true) } else { None };
                         dev.checked_at = Some(now_ms());

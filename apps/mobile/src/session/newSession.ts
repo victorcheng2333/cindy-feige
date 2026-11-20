@@ -276,8 +276,12 @@ export function withAgentDefaults(
     permissionMode: defaultPermissionModeForNewSessionAgent(agentKind),
     // 换 agent → 来源选择作废(各 agent 的供应商集不同),回到默认路由由被控端定。
     providerId: null,
-    fastMode: agentKind === 'claude-code' ? false : draft.fastMode,
+    fastMode: agentKind === 'claude-code' || agentKind === 'antigravity' ? false : draft.fastMode,
   };
+}
+
+export function newSessionSupportsAttachments(agentKind: NewSessionAgentKind): boolean {
+  return agentKind !== 'antigravity';
 }
 
 export function validateNewSessionDraft(
@@ -288,6 +292,9 @@ export function validateNewSessionDraft(
     return i18n.t('session.new.enterProjectPath');
   }
   if (!draft.model.trim()) return i18n.t('session.new.enterModel');
+  if (!newSessionSupportsAttachments(draft.agentKind) && normalizeAttachmentCount(content.attachmentCount) > 0) {
+    return i18n.t('session.new.agyTextOnly');
+  }
   if (!hasFirstMessagePayload(draft, content)) return i18n.t('session.new.enterFirstMessageOrAttachment');
   return null;
 }

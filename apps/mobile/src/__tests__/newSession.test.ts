@@ -1534,6 +1534,19 @@ describe('new session model', () => {
     })).toMatchObject({ agentKind: 'pi', fastMode: true });
   });
 
+  it('keeps an attachment-only agy draft from creating a task', () => {
+    const draft = { ...DRAFT_WITH_MODEL, agentKind: 'antigravity' as const, workingDir: '/repo', firstMessage: '' };
+    expect(validateNewSessionDraft(draft, { attachmentCount: 1 })).toContain('agy');
+    expect(validateNewSessionDraft({ ...draft, agentKind: 'codex' }, { attachmentCount: 1 })).toBeNull();
+  });
+
+  it('clears Codex Fast before producing an agy draft for the controlled host', () => {
+    const draft = withAgentDefaults({ ...DRAFT_WITH_MODEL, agentKind: 'codex', fastMode: 'ultrafast' }, 'antigravity');
+    expect(buildRemoteCreateSessionOptions({ ...draft, model: 'gemini-4-neon' }))
+      .not.toHaveProperty('fastMode', 'ultrafast');
+    expect(draft.fastMode).toBe(false);
+  });
+
   it('filters the new-session agent options by the controlled device runtime-registered set', () => {
     // null(未拉到)→ fail-open,全部保留。
     expect(availableNewSessionAgentOptions(null).map((o) => o.kind)).toEqual([

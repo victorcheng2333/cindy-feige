@@ -14397,6 +14397,16 @@
       "listAria": "Modes d'autorisation",
       "autoFallback": "La revue automatique est temporairement indisponible. Passage aux autorisations par défaut ; une confirmation sera demandée si nécessaire.",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "Par défaut",
+            "description": "Applique les contrôles d’autorisation d’agy. Les actions nécessitant une approbation peuvent être bloquées."
+          },
+          "bypassPermissions": {
+            "label": "Accès complet",
+            "description": "Ignore les contrôles d’autorisation d’agy. Les outils peuvent s’exécuter sans confirmation."
+          }
+        },
         "cursor": {
           "auto": {
             "label": "Automatique",

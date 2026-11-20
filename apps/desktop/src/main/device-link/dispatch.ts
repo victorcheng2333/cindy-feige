@@ -5217,9 +5217,13 @@ async function executeRemoteInvoke(src: string, payload: InvokePayload | undefin
   if (payload.channel === 'maker:usage:antigravity-subscription') {
     if (!isSameAccountController(src)) return { ok: false, error: { code: 'IPC_ERROR', message: '[FORBIDDEN] Same-account connection required' } };
     if ((payload.args ?? []).length) return { ok: false, error: { code: 'IPC_ERROR', message: '[INVALID_PARAMS] agy quota takes no arguments' } };
+    const snapshot = await readAntigravityQuota();
     const connected = antigravityQuotaAvailable();
-    const snapshot = connected ? await readAntigravityQuota() : null;
-    return { ok: true, result: { providerId: 'antigravity', connected, status: snapshot ? 'ready' : 'unavailable', snapshot } };
+    return { ok: true, result: {
+      providerId: 'antigravity', connected,
+      status: connected && snapshot ? 'ready' : 'unavailable',
+      snapshot: connected ? snapshot : null,
+    } };
   }
   if (payload.channel === 'maker:usage:kimi-coding') {
     const request = parseKimiUsageRequest((payload.args ?? [])[0]);

@@ -5,7 +5,7 @@ import {
 } from './deviceProvidersCache';
 import {
   commitAgentCapabilities, evictAgentCapabilitiesForDevice, fetchAgentCapabilities,
-  getAgentCapabilitiesGeneration,
+  getAgentCapabilitiesGeneration, hasAgentCapabilitiesSubscribers,
 } from '@/session/agentCapabilitiesCache';
 import { normalizeMobileAgentCapabilities } from '@/session/agentCapabilities';
 
@@ -13,7 +13,7 @@ import { normalizeMobileAgentCapabilities } from '@/session/agentCapabilities';
  * parallel RPCs. Reuse peer recovery's serialized rerun and cancellation rules. */
 export function createDeviceCatalogRefresh(options: {
   readProviders(deviceId: string): Promise<DeviceProvidersPayload>;
-  readCapabilities(deviceId: string, agent: 'claude-code' | 'codex' | 'pi' | 'cursor'): Promise<unknown>;
+  readCapabilities(deviceId: string, agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'): Promise<unknown>;
   connectionEpoch(deviceId: string): number;
   canRead?(deviceId: string): boolean;
 }) {
@@ -36,11 +36,14 @@ export function createDeviceCatalogRefresh(options: {
       if (disposed || options.canRead?.(id) === false || getAgentCapabilitiesGeneration(id) !== generation) return Promise.reject(new Error('Catalog refresh superseded'));
       return fetcher();
     };
+    const agents = ['claude-code', 'codex', 'pi', 'cursor'] as const;
+    const refreshAgents = hasAgentCapabilitiesSubscribers(id, 'antigravity')
+      ? [...agents, 'antigravity' as const] : agents;
     await Promise.allSettled([
       fetchDeviceProviders(id, () => read(() => options.readProviders(id))).then(() => {
         if (!disposed && getDeviceProvidersGen(id) === providerGeneration) markDeviceFetchEpoch(id, epoch);
       }),
-      ...(['claude-code', 'codex', 'pi', 'cursor'] as const).map(async (agent) => {
+      ...refreshAgents.map(async (agent) => {
         const raw = await fetchAgentCapabilities(id, agent, () => read(() => options.readCapabilities(id, agent)));
         const normalized = normalizeMobileAgentCapabilities(raw);
         if (!disposed && normalized) commitAgentCapabilities(id, agent, generation, normalized);

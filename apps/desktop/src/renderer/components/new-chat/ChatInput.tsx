@@ -8017,7 +8017,7 @@ export function ChatInput({
     // 换 Agent 位置与普通任务同一套(2026-10-16)；被控电脑上的协同任务要被控端声明
     // supportsOrcaAgentRelocation 才开放(旧版被控端会拒绝)。运行设备 Worker 同样可换(2026-11-12)，
     // 远程查看时要它所在的电脑声明 supportsOrcaRemoteWorkerAgentRelocation。
-    if (!sessionId || !agentLocationAware || remoteHostId || !sessionEngineFilter ||
+    if (!sessionId || !agentLocationAware || remoteHostId || !sessionEngineFilter || runtimeAgentKind === 'antigravity' ||
         sessionOrcaRole === undefined ||
         (sessionOrcaRole !== null && deviceLinkDeviceId && !hostSupportsOrcaAgentRelocation) ||
         (sessionOrcaRemoteWorker && deviceLinkDeviceId && !hostSupportsOrcaRemoteWorkerAgentRelocation)) return undefined;
@@ -8068,6 +8068,7 @@ export function ChatInput({
     taskComputerModelMemory,
     remoteHostId,
     sessionEngineFilter,
+    runtimeAgentKind,
     sessionOrcaRole,
     sessionOrcaRemoteWorker,
     hostSupportsOrcaAgentRelocation,

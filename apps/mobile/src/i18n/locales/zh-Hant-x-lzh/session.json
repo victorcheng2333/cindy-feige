@@ -434,6 +434,7 @@
     "enterProjectPath": "請書電腦端之案路徑。",
     "enterModel": "請書模型。",
     "modelLoading": "方讀模型…",
+    "agyTextOnly": "agy 惟受文字。請除附件，或易模型而後發。",
     "enterFirstMessageOrAttachment": "請書首訊或增附件。",
     "noSessionIdReturned": "未能確認遠方之機已立新差事，請重新同步後察之。",
     "sessionIdNotAdopted": "遠方之機上之 Cindy 版本不相容，請更新後再試。",

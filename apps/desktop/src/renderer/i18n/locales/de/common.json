@@ -14282,6 +14282,16 @@
       "listAria": "Berechtigungsmodi",
       "autoFallback": "Die automatische Prüfung ist vorübergehend nicht verfügbar. Auf Standardberechtigungen umgestellt; bei Bedarf wirst du gefragt.",
       "modes": {
+        "antigravity": {
+          "default": {
+            "label": "Standard",
+            "description": "Verwendet die Berechtigungsprüfungen von agy. Aktionen mit Freigabepflicht können blockiert werden."
+          },
+          "bypassPermissions": {
+            "label": "Vollzugriff",
+            "description": "Überspringt die Berechtigungsprüfungen von agy. Tools können ohne Bestätigung ausgeführt werden."
+          }
+        },
         "cursor": {
           "auto": {
             "label": "Automatisch",

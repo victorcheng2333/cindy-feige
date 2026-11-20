@@ -55,6 +55,7 @@ export class Remote {
   private refreshedAt = 0;
   private loggingOut = false;
   private refreshing: Promise<string> | null = null;
+  private agyByDevice = new Map<string, Account>();
   constructor(readonly auth: CindyAuthClient) {}
   async rememberDevice(deviceId: string | null) {
     const ownerId = this.tokens?.membership.id, generation = this.generation;
@@ -89,6 +90,7 @@ export class Remote {
       }),
     );
     if (generation !== this.generation) throw Error("登录已取消");
+    if (this.tokens?.membership.id !== tokens.membership.id) this.agyByDevice.clear();
     this.tokens = tokens;
     this.refreshedAt = Date.now();
   }
@@ -168,7 +170,8 @@ export class Remote {
         await SecureStore.deleteItemAsync(LAST_DEVICE_KEY);
         await SecureStore.deleteItemAsync(SESSION_KEY);
       });
-      this.tokens = null;
+      this.agyByDevice.clear();
+    this.tokens = null;
       this.refreshedAt = 0;
     } catch {
       throw Error("退出登录未完成，无法清除本机登录记录，请重试。");
@@ -335,7 +338,10 @@ export class Remote {
       accounts.push(account);
     }
     // Cursor execution remains local-only, so its quota has a dedicated discovery read.
-    const agyRead = read("maker:usage:antigravity-subscription").catch(() => null);
+    const agyRead = read("maker:usage:antigravity-subscription").then(
+      value => ({ value, failed: false }),
+      error => ({ value: null, failed: error?.code !== "CHANNEL_NOT_ALLOWED" }),
+    );
     try {
       const cursor = cursorAccount(await read("maker:usage:cursor-subscription"));
       if (cursor) accounts.push(cursor);
@@ -346,9 +352,19 @@ export class Remote {
           ? '这台电脑尚不支持 Cursor 额度读取，更新 Cindy 后可显示。'
           : '暂时无法检查 Cursor 额度，请稍后刷新。' });
     }
-    const agy = antigravityAccount(await agyRead);
+    const agyResult = await agyRead;
     if (generation !== this.generation) throw Error("连接已结束");
-    if (agy) accounts.push(agy);
+    const agy = antigravityAccount(agyResult.value);
+    const previous = this.agyByDevice.get(device);
+    if (agy && !agy.failed) {
+      this.agyByDevice.set(device, agy);
+      accounts.push(agy);
+    } else if (previous && (agyResult.failed || agy?.failed)) {
+      accounts.push({ ...previous, error: "本次刷新失败，显示上次读取的额度。" });
+    } else {
+      this.agyByDevice.delete(device);
+      if (agy) accounts.push(agy);
+    }
     const order = { Claude: 0, ChatGPT: 1, Cursor: 2, Antigravity: 3 };
     return accounts.sort((a, b) => order[a.service] - order[b.service]);
   }

@@ -21,7 +21,7 @@ export {
  * —— 不放过这层前缀,已知原因就会被漏成未分类摘要(#10301 的 Windows 共享凭证连不上正是
  * 走这条路到手机端的)。前缀只认「大写错误码 + 冒号 + 空格」这一种形态,不会吞掉正文。
  */
-const AGENT_NOT_AUTHENTICATED_RE = /^(?:\[[A-Z_]+\] )?(?:[A-Z][A-Z0-9_]*: )?(claude-code|codex|pi|cursor) not authenticated: ?(.*)$/;
+const AGENT_NOT_AUTHENTICATED_RE = /^(?:\[[A-Z_]+\] )?(?:[A-Z][A-Z0-9_]*: )?(claude-code|codex|pi|cursor|antigravity) not authenticated: ?(.*)$/;
 
 const CONNECTION_ISSUE_COPY_KEYS: Record<
   DeviceLinkConnectionIssueKind,
@@ -117,7 +117,7 @@ export function parseAgentAuthError(error: string | null | undefined): { agent: 
   if (!error) return null;
   const matched = AGENT_NOT_AUTHENTICATED_RE.exec(error.trim());
   if (!matched) return null;
-  const agent = matched[1] === 'cursor' ? 'Cursor' : matched[1] === 'claude-code' ? 'Claude' : matched[1] === 'pi' ? 'Pi' : 'Codex';
+  const agent = matched[1] === 'antigravity' ? 'agy' : matched[1] === 'cursor' ? 'Cursor' : matched[1] === 'claude-code' ? 'Claude' : matched[1] === 'pi' ? 'Pi' : 'Codex';
   return { agent, reason: (matched[2] || 'unknown').trim() };
 }
 

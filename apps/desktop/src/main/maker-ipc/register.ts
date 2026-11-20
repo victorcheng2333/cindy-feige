@@ -1,4 +1,4 @@
-import { readAntigravityConnection } from '../maker-host/antigravity-host.js';
+import { discardAntigravityDraftState, readAntigravityConnection } from '../maker-host/antigravity-host.js';
 import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readContextRecoverySessionWithPorts, classifyCodexHistoryWithPorts, commitContextRecoveryWithPorts, replayContextRecoveryWithPorts, contextRecoveryRebuilt, contextRecoveryAbortSignal } from './contextRecoveryAssembly.js';
@@ -10497,6 +10497,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     controller: string;
     route: string;
     workingDir: string | null;
+    stateWorkdir?: string;
+    dialogue: boolean;
+    ready: boolean;
   }>();
   const agyDraftRoute = (opts: CreateOpts): string | null => {
     if (opts.agentKind !== 'antigravity' || (opts.workspaceKind !== 'project' && opts.workspaceKind !== 'dialogue') ||
@@ -10518,7 +10521,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const live = maker.getSession(sessionId);
       if (live) await live.closeIfIdle();
       if (maker.getSession(sessionId)) return;
-      await discardProvisionalSessionRow(sessionId);
+      const discarded = await discardProvisionalSessionRow(sessionId);
+      if (discarded && entry.stateWorkdir && getCurrentDbClientSnapshot() === entry.owner) {
+        await discardAntigravityDraftState(sessionId, entry.stateWorkdir).catch(() => {
+          log.warn('Failed to remove unused Antigravity draft state');
+        });
+      }
     }
     controlledAgyDrafts.delete(sessionId);
   };
@@ -10575,10 +10583,28 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         if (agyDraftRoute(co) !== prepared.route ||
             normalizeWorkingDirForStorage(co.workingDir) !== prepared.workingDir) {
+          const reusedDialoguePath = prepared.dialogue && co.workspaceKind === 'dialogue' &&
+            normalizeWorkingDirForStorage(co.workingDir) === prepared.workingDir;
           await discardControlledAgyDraft(preparedId);
           if (controlledAgyDrafts.has(preparedId)) {
             throwIpcError('PRECONDITION_FAILED', 'Previous draft is still closing');
           }
+          if (reusedDialoguePath) {
+            assertSessionCreationCurrent();
+            co.workingDir = ensureDialogueWorkspaceDir(preparedId, Date.now());
+          }
+        }
+      } else if (co.agentKind === 'antigravity' && co.id && co.workspaceKind === 'dialogue' &&
+          isSameAccountTaskController() && path.basename(co.workingDir) === co.id &&
+          isManagedDialogueWorkspace(co.workingDir)) {
+        // Expiry can remove an empty prewarmed directory while create is
+        // waiting for this session's lock. Restore through the normal allocator.
+        try {
+          await statWorkingDirectory(co.workingDir);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          assertSessionCreationCurrent();
+          co.workingDir = ensureDialogueWorkspaceDir(co.id, Date.now());
         }
       }
       await ensureRemoteReadyForSessionStart({ createOpts: co });
@@ -10620,7 +10646,17 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     },
     markOrcaRoleIfNeeded,
     markKnownNonOrcaIfApplicable,
-    allocateDialogueWorkspace: ensureDialogueWorkspaceDir,
+    allocateDialogueWorkspace: (id, now) => {
+      const draft = controlledAgyDrafts.get(id);
+      if (draft?.dialogue && draft.ready && draft.workingDir && draft.owner === getCurrentDbClientSnapshot() &&
+          draft.controller === getDeviceLinkInvokeContext()?.controllerDeviceId && isSameAccountTaskController()) {
+        const proposed = buildDialogueWorkspaceDir(id, now);
+        if (path.dirname(path.dirname(proposed)) === path.dirname(path.dirname(draft.workingDir))) {
+          return draft.workingDir;
+        }
+      }
+      return ensureDialogueWorkspaceDir(id, now);
+    },
     createSessionId: createId,
     now: Date.now,
     withSessionLock: withSendToSessionLock,
@@ -19667,7 +19703,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         for (const [id, entry] of controlledAgyDrafts) {
           if (entry.owner !== owner) controlledAgyDrafts.delete(id);
         }
-        if (controlledAgyDrafts.size >= 2) return { accepted: false };
         // Resolve the dialogue's proposed path without creating it. The
         // standard provisional session service allocates and owns cleanup.
         const draftId = createId();
@@ -19679,7 +19714,21 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         );
         const route = agyDraftRoute(opts);
         if (!route) return { accepted: false };
-        const entry = { owner, controller, route, workingDir: null as string | null };
+        if (controlledAgyDrafts.size >= 2) {
+          const oldest = [...controlledAgyDrafts].find(([, draft]) =>
+            draft.owner === owner && draft.controller === controller && draft.ready);
+          if (!oldest) return { accepted: false };
+          await withSendToSessionLock(oldest[0], async () => {
+            if (controlledAgyDrafts.get(oldest[0]) !== oldest[1]) return;
+            await discardControlledAgyDraft(oldest[0]);
+            if (!controlledAgyDrafts.has(oldest[0])) agentPrewarmer.markUsed(oldest[0]);
+          });
+          if (getCurrentDbClientSnapshot() !== owner || controlledAgyDrafts.size >= 2) return { accepted: false };
+        }
+        const entry = {
+          owner, controller, route, workingDir: null as string | null, stateWorkdir: undefined as string | undefined,
+          dialogue: opts.workspaceKind === 'dialogue', ready: false,
+        };
         controlledAgyDrafts.set(draftId, entry);
         let prepared = false;
         try {
@@ -19695,12 +19744,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           }, { senderId: 0, userDataDir: app.getPath('userData'), notifyPluginSessionCreated() {} });
           if (getCurrentDbClientSnapshot() !== owner || !draft.workingDir) return { accepted: false };
           entry.workingDir = normalizeWorkingDirForStorage(draft.workingDir);
+          entry.stateWorkdir = draft.workingDir;
           const outcome = await agentPrewarmer.request(draftId, {
             id: draftId, agentKind: 'antigravity', workspaceKind: opts.workspaceKind,
             workingDir: draft.workingDir, model: opts.model, effort: opts.effort,
             providerId: 'antigravity', permissionMode: opts.permissionMode,
           });
           if (outcome === 'started' && getCurrentDbClientSnapshot() === owner) {
+            entry.ready = true;
             prepared = true;
             return { accepted: true, draftSessionId: draftId };
           }

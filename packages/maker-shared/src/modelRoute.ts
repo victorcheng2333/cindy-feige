@@ -14,6 +14,9 @@ export interface ModelRoute {
 export function normalizeModelRoute(value: unknown): ModelRoute | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   let record = value as Record<string, unknown>;
+  // Companion execution cannot run agy. Reject the route before legacy
+  // harness normalization can turn it into a Claude route.
+  if (record.harness === 'antigravity') return null;
   if (typeof record.providerId === 'string' && record.providerId.startsWith(REMOTE_SOURCE_PREFIX)) {
     try {
       const source: unknown = JSON.parse(record.providerId.slice(REMOTE_SOURCE_PREFIX.length));

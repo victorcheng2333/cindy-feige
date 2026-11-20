@@ -18,10 +18,10 @@ class AgyProcess extends EventEmitter {
   readonly stderr = new PassThrough();
   readonly input: string[] = [];
 
-  constructor() {
+  constructor(closeOnEof = true) {
     super();
     this.stdin.on('data', (chunk: Buffer) => this.input.push(chunk.toString()));
-    this.stdin.once('finish', () => this.emit('close'));
+    if (closeOnEof) this.stdin.once('finish', () => this.emit('close'));
   }
 
   init(id: string, model = 'gemini-4-neon-high') {
@@ -43,8 +43,8 @@ class AgyProcess extends EventEmitter {
 const spawnMock = vi.mocked(spawn);
 const models = parseAntigravityModels('gemini-4-neon-high\tGemini 4 Neon (High)\ngemini-4-neon-low\tGemini 4 Neon (Low)');
 
-function addProcess() {
-  const child = new AgyProcess();
+function addProcess(closeOnEof = true) {
+  const child = new AgyProcess(closeOnEof);
   spawnMock.mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
   return child;
 }
@@ -78,6 +78,75 @@ async function closeAndReadEvents(handle: AgentSessionHandle) {
 // have no child. The minimum regression is an init frame arriving before the first send.
 describe('Antigravity native prewarm', () => {
   beforeEach(() => spawnMock.mockReset());
+
+  it('keeps a follow-up off stdin until the active turn finishes', async () => {
+    const child = addProcess();
+    const handle = await startSession('saved-conversation');
+    await handle.send({ type: 'user', content: 'first' });
+    child.init('saved-conversation');
+    const pending = handle.send({ type: 'user', content: 'second' });
+    expect(child.input).toHaveLength(1);
+    child.respond('saved-conversation');
+    await pending;
+    expect(child.input.map(line => JSON.parse(line).message.content)).toEqual(['first', 'second']);
+    expect(spawnMock).toHaveBeenCalledOnce();
+    child.respond('saved-conversation');
+    await closeAndReadEvents(handle);
+  });
+
+  it('does not deliver a follow-up cancelled while waiting for the active turn', async () => {
+    const child = addProcess();
+    const handle = await startSession('saved-conversation');
+    await handle.send({ type: 'user', content: 'first' });
+    child.init('saved-conversation');
+    const controller = new AbortController();
+    const pending = handle.send({ type: 'user', content: 'cancelled' }, { signal: controller.signal });
+    controller.abort(new Error('cancelled while queued'));
+    await expect(pending).rejects.toThrow('cancelled while queued');
+    child.respond('saved-conversation');
+    await closeAndReadEvents(handle);
+    expect(child.input.map(line => JSON.parse(line).message.content)).toEqual(['first']);
+  });
+
+  // The public handle used to reject an accepted follow-up while the
+  // interrupted child was still closing. A late result must not cause a replay.
+  it('waits for a stopped child and sends the follow-up once on the saved conversation', async () => {
+    const child = addProcess(false);
+    const next = addProcess();
+    const handle = await startSession('saved-conversation');
+    await handle.send({ type: 'user', content: 'first' });
+    child.init('saved-conversation');
+    const step = (data: Record<string, unknown>) => child.stdout.write(JSON.stringify({
+      event: 'step_update', step_update: { conversation_id: 'saved-conversation', ...data },
+    }) + '\n');
+    step({ step_type: 'tool', step_index: 1, tool_name: 'write_file', state: 'ACTIVE' });
+    const stopping = handle.abort();
+    const followUp = handle.send({ type: 'user', content: 'follow-up' });
+    step({ step_type: 'tool', step_index: 1, tool_name: 'write_file', state: 'DONE',
+      tool_info: { output: 'Saved' } });
+    step({ step_type: 'agent_response', step_index: 2, state: 'DONE', text_delta: 'late text',
+      usage: { input_tokens: 50, output_tokens: 10 } });
+    child.respond('saved-conversation');
+    expect(spawnMock).toHaveBeenCalledOnce();
+    expect(child.stdin.writableEnded).toBe(true);
+    child.emit('close');
+    await Promise.all([stopping, followUp]);
+    expect(spawnMock.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['--conversation', 'saved-conversation']));
+    expect(next.input.map(line => JSON.parse(line).message.content)).toEqual(['follow-up']);
+    next.init('saved-conversation');
+    next.respond('saved-conversation');
+    const events = await closeAndReadEvents(handle);
+    expect(events.filter(event => event.type === 'tool_result_full')).toMatchObject([
+      { data: { fullText: 'Saved', isError: false } },
+    ]);
+    expect(events.filter(event => event.type === 'text')).not.toContainEqual(
+      expect.objectContaining({ data: expect.objectContaining({ text: 'late text' }) }),
+    );
+    expect(events.filter(event => event.type === 'done')).toMatchObject([
+      { data: { status: 'stopped', usage: { inputTokens: 50, outputTokens: 10 } } },
+      { data: { status: 'completed' } },
+    ]);
+  });
 
   it('holds the early init until a real message and uses the same child for its reply', async () => {
     const child = addProcess();

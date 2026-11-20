@@ -252,6 +252,9 @@ async function loadRewindContext(
       .from(sessions)
       .where(eq(sessions.id, sessionId))
       .limit(1);
+    if (row?.agentKind === 'antigravity') {
+      throw rewindError('REWIND_UNSUPPORTED_HISTORY', 'agy does not support rewinding conversation history');
+    }
     if (row?.agentKind !== 'cc' || activeSdkSessionId(row.sdkSessionId ?? undefined)) {
       throw rewindError(
         'NO_LIVE_QUERY',

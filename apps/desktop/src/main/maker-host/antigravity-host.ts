@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { accessSync, constants, statSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -10,7 +10,7 @@ import type { Provider } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
 import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
-import { parseAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
+import { parseAntigravityQuota, supportsAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
 
 const exec = promisify(execFile);
 
@@ -47,11 +47,11 @@ function binaryPath(): string | undefined {
 let executable: string | undefined;
 let snapshot: { scope: string; models: AgyModelDescriptor[]; expiresAt: number } | undefined;
 let discovery: { scope: string; token: symbol; retainOnFailure: boolean; promise: Promise<boolean> } | undefined;
-let quota: { scope: string; expiresAt: number; snapshot: AntigravityQuotaSnapshot | null } | undefined;
+let quota: { scope: string; expiresAt: number; connected: boolean; snapshot: AntigravityQuotaSnapshot | null } | undefined;
 let quotaRead: { scope: string; token: symbol; promise: Promise<AntigravityQuotaSnapshot | null> } | undefined;
 
 export function antigravityQuotaAvailable(): boolean {
-  return typeof executable === 'string';
+  return quota?.scope === quotaScope() && quota.connected;
 }
 
 function quotaScope() {
@@ -69,13 +69,14 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
   const dir = ownerScopedUserDataPath('antigravity', 'quota');
   const promise = (async () => {
     let snapshot: AntigravityQuotaSnapshot | null = null;
+    let supported: boolean | undefined;
     try {
       await mkdir(dir, { recursive: true, mode: 0o700 });
       if (!isCurrent()) return null;
       const env = { ...configuredEnvironment(), NO_COLOR: '1', LC_ALL: 'en_US.UTF-8' };
       const { stdout: version } = await exec(bin, ['--version'], { cwd: dir, env, timeout: 2_000, maxBuffer: 4096 });
-      const parts = version.trim().match(/^1\.(\d+)\.(\d+)(?:\s|$)/);
-      if (parts && (Number(parts[1]) > 5 || (Number(parts[1]) === 5 && Number(parts[2]) >= 12)) && isCurrent()) {
+      supported = supportsAntigravityQuota(version);
+      if (supported && isCurrent()) {
         const { stdout } = await exec(bin, [`--gemini_dir=${dir}`, '--print-timeout', '8s', '-p', '/usage'], {
           cwd: dir, env, timeout: 10_000, maxBuffer: 64 * 1024,
         });
@@ -85,7 +86,10 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
     if (!isCurrent()) return null;
     const now = Date.now();
     const futureResets = snapshot?.windows.flatMap(w => w.resetsAtMs && w.resetsAtMs > now ? [w.resetsAtMs] : []) ?? [];
-    quota = { scope, expiresAt: Math.min(now + (snapshot ? 60_000 : 30_000), ...futureResets), snapshot };
+    const previouslyConnected = quota?.scope === scope && quota.connected;
+    const connected = supported !== false && (!!snapshot || previouslyConnected ||
+      (supported === true && currentModels().length > 0));
+    quota = { scope, connected, expiresAt: Math.min(now + (snapshot ? 60_000 : 30_000), ...futureResets), snapshot };
     return snapshot;
   })();
   quotaRead = { scope, token, promise };
@@ -162,6 +166,16 @@ const auth: AuthAdapter = {
   async getAuthEnv() { return {}; },
 };
 
+function antigravityStateDir(sessionId: string, workingDir: string): string {
+  const key = createHash('sha256').update(JSON.stringify([sessionId, workingDir])).digest('hex');
+  return ownerScopedUserDataPath('antigravity', 'sessions', key);
+}
+
+/** Only for a provisional row whose deletion and process exit were confirmed. */
+export async function discardAntigravityDraftState(sessionId: string, workingDir: string): Promise<void> {
+  await rm(antigravityStateDir(sessionId, workingDir), { recursive: true, force: true });
+}
+
 export function buildAntigravityAgent(logger: AgentDeps['logger']) {
   executable = binaryPath();
   if (!executable) return null;
@@ -174,10 +188,9 @@ export function buildAntigravityAgent(logger: AgentDeps['logger']) {
     getModels: currentModels,
     async getStateDir(opts) {
       if (!opts.sessionId) throw new Error('Antigravity requires a saved task.');
-      const key = createHash('sha256').update(JSON.stringify([opts.sessionId, opts.workingDir])).digest('hex');
-      const dir = ownerScopedUserDataPath('antigravity', 'sessions', key);
+      const dir = antigravityStateDir(opts.sessionId, opts.workingDir);
       await readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true });
-      if (dir !== ownerScopedUserDataPath('antigravity', 'sessions', key)) {
+      if (dir !== antigravityStateDir(opts.sessionId, opts.workingDir)) {
         throw new Error('The Antigravity task owner changed during startup.');
       }
       await mkdir(dir, { mode: 0o700, recursive: true });
