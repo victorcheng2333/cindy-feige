@@ -112,8 +112,10 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
       const { stdout: version } = await exec(bin, ['--version'], { cwd: dir, env, timeout: 2_000, maxBuffer: 4096 });
       supported = supportsAntigravityQuota(version);
       if (supported && isCurrent()) {
-        const { stdout } = await exec(bin, [`--gemini_dir=${dir}`, '--print-timeout', '8s', '-p', '/usage'], {
-          cwd: dir, env, timeout: 10_000, maxBuffer: 64 * 1024,
+        // A cold /usage read can take about 20s. Leave shutdown headroom
+        // within the existing 30s device-link deadline, including the version check.
+        const { stdout } = await exec(bin, [`--gemini_dir=${dir}`, '--print-timeout', '20s', '-p', '/usage'], {
+          cwd: dir, env, timeout: 25_000, maxBuffer: 64 * 1024,
         });
         snapshot = parseAntigravityQuota(stdout, Date.now());
       }

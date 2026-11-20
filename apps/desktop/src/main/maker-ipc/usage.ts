@@ -1,3 +1,4 @@
+import { antigravityQuotaAvailable, readAntigravityQuota } from '../maker-host/antigravity-host.js';
 import { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
 import { claudeCliLoginRevision } from '../maker-host/claude-native-cli-status.js';
 import { claudeAccountPrincipal } from '../maker-host/claude-account-auth.js';
@@ -431,6 +432,19 @@ export function registerMakerUsageIpc(maker: Maker): void {
     },
     readClaudeSubscriptionUsageSnapshot: readClaudeSubscriptionUsageSnapshotForDeviceLink,
     readXaiSubscriptionUsageSnapshot: readXaiSubscriptionUsageSnapshotForDeviceLink,
+    readAntigravitySubscriptionUsage: async () => {
+      if (isAppSessionBoundaryPending()) throw new Error('PRECONDITION_FAILED: Account scope changing');
+      const scope = activeOwnerScopeKey();
+      const snapshot = await readAntigravityQuota();
+      if (isAppSessionBoundaryPending() || scope !== activeOwnerScopeKey()) throw new Error('PRECONDITION_FAILED: Account scope changed');
+      const connected = antigravityQuotaAvailable();
+      return {
+        providerId: 'antigravity',
+        connected,
+        status: connected && snapshot ? 'ready' : 'unavailable',
+        snapshot: connected ? snapshot : null,
+      };
+    },
     readCursorSubscriptionUsage: async () => {
       const snapshot = await readCursorQuota();
       const connected = cursorConnected();

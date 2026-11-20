@@ -1,14 +1,5 @@
-export interface AntigravityQuotaWindow {
-  group: string;
-  minutes: 300 | 10080;
-  remaining: number;
-  resetsAtMs: number | null;
-}
-
-export interface AntigravityQuotaSnapshot {
-  windows: AntigravityQuotaWindow[];
-  fetchedAtMs: number;
-}
+import type { AntigravityQuotaSnapshot, AntigravityQuotaWindow } from '../../shared/antigravityQuota.js';
+export type { AntigravityQuotaSnapshot } from '../../shared/antigravityQuota.js';
 
 export function supportsAntigravityQuota(version: string): boolean {
   const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:\s|$)/);

@@ -12,6 +12,7 @@ import type {
   MobileCodexRateLimitsResult,
 } from '@cindy/maker-shared/device-link-contract';
 import type { ClaudeSubscriptionUsageSnapshot } from '../../shared/claudeSubscriptionUsage.js';
+import type { AntigravitySubscriptionUsageRead } from '../../shared/antigravityQuota.js';
 import type { CursorSubscriptionUsageRead } from '../../shared/cursorQuota.js';
 import type { XaiSubscriptionUsageSnapshot } from '../../shared/xaiSubscriptionUsage.js';
 import type { ClaudeAccountUsageSnapshot } from '../usage/claudeAccountUsage.js';
@@ -81,6 +82,7 @@ export interface MakerUsageHandlerDeps {
   consumeCodexRateLimitReset(idempotencyKey: string, providerId?: string): Promise<MobileCodexRateLimitResetResult>;
   readClaudeSubscriptionUsageSnapshot(providerId?: string): Promise<ClaudeSubscriptionUsageSnapshot | null>;
   readXaiSubscriptionUsageSnapshot(providerId?: string): Promise<XaiSubscriptionUsageSnapshot | null>;
+  readAntigravitySubscriptionUsage(): Promise<AntigravitySubscriptionUsageRead>;
   readCursorSubscriptionUsage(): Promise<CursorSubscriptionUsageRead>;
   /**
    * 用量历史会读取完整的 sessions 表，必须在任何参数解析或 DB 查询前确认
@@ -171,6 +173,12 @@ export function registerMakerUsageHandlers(
   registry.handle(MAKER_INVOKE.USAGE_XAI_SUBSCRIPTION, async (event, providerId) => {
     deps.assertTrustedSender?.(event);
     return await deps.readXaiSubscriptionUsageSnapshot(providerId === undefined ? undefined : requireString(providerId, 'providerId'));
+  });
+
+  registry.handle(MAKER_INVOKE.USAGE_ANTIGRAVITY_SUBSCRIPTION, async (event, ...args: unknown[]) => {
+    deps.assertTrustedSender(event);
+    if (args.length) throwIpcError('INVALID_PARAMS', 'Agy quota takes no arguments');
+    return await deps.readAntigravitySubscriptionUsage();
   });
 
   registry.handle(MAKER_INVOKE.USAGE_CURSOR_SUBSCRIPTION, async (event) => {

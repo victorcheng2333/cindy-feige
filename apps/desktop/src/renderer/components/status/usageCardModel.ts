@@ -1,4 +1,5 @@
 /** Provider snapshots are adapted here; the card renders only this common presentation model. */
+import type { AntigravityQuotaSnapshot } from '../../../shared/antigravityQuota';
 import type { CursorQuotaSnapshot } from '../../../shared/cursorQuota';
 import { kimiUsageWindowMinutes, type KimiCodingUsageSnapshot } from '../../../shared/kimiCodingUsage';
 import type { TFunction } from 'i18next';
@@ -288,6 +289,29 @@ export function buildCursorUsageCard(
       `${t('menubar.cursor.extra')} · ${t('menubar.cursor.extraHint')}`,
     ],
     emptyText: windows.length ? undefined : t('quotaCard.noWindows'),
+  };
+}
+
+/** Agy returns remaining percentages for each model group and period independently. */
+export function buildAntigravityUsageCard(
+  snapshot: AntigravityQuotaSnapshot | null,
+  t: TFunction,
+  waiting: boolean,
+): UsageCardAccount {
+  const windows: UsageCardWindow[] = (snapshot?.windows ?? []).map(row => ({
+    key: `${row.group}:${row.minutes}`,
+    title: `${row.group} · ${quotaWindowLabel(row.minutes, t)}`,
+    showRemaining: true,
+    window: {
+      utilization: 100 - row.remaining,
+      resetsAt: row.resetsAtMs == null ? null : row.resetsAtMs / 1000,
+    },
+  }));
+  return {
+    title: 'Agy',
+    windows,
+    updatedAt: snapshot?.fetchedAtMs,
+    emptyText: windows.length ? undefined : t(waiting ? 'quotaCard.waiting' : 'quotaCard.noWindows'),
   };
 }
 

@@ -1253,6 +1253,9 @@ describe('maker usage IPC handlers', () => {
       consumeCodexRateLimitReset: vi.fn(),
       readClaudeSubscriptionUsageSnapshot: vi.fn().mockResolvedValue(null),
       readXaiSubscriptionUsageSnapshot: vi.fn().mockResolvedValue(null),
+      readAntigravitySubscriptionUsage: vi.fn().mockResolvedValue({
+        providerId: 'antigravity', connected: false, status: 'unavailable', snapshot: null,
+      }),
       readCursorSubscriptionUsage: vi.fn().mockResolvedValue({
         providerId: 'cursor',
         connected: false,
@@ -1325,6 +1328,26 @@ describe('maker usage IPC handlers', () => {
       /PERMISSION_DENIED/,
     );
     expect(readCursorSubscriptionUsage).toHaveBeenCalledOnce();
+  });
+
+  // Unit: the Agy task card's local read is only available to trusted renderers.
+  // Existing device-link coverage does not exercise the local IPC sender check.
+  it('restricts Agy subscription quota to trusted calls with no arguments', async () => {
+    const harness = new IpcHarness();
+    const result = {
+      providerId: 'antigravity', connected: true, status: 'ready',
+      snapshot: { fetchedAtMs: 1, windows: [{ group: 'Gemini Pro', minutes: 300, remaining: 0, resetsAtMs: null }] },
+    };
+    const readAntigravitySubscriptionUsage = vi.fn().mockResolvedValue(result);
+    const assertTrustedSender = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('[PERMISSION_DENIED] untrusted'); });
+    registerMakerUsageHandlers(harness, makeUsageDeps({
+      assertTrustedSender, readAntigravitySubscriptionUsage,
+    }));
+    await expect(harness.invoke(MAKER_INVOKE.USAGE_ANTIGRAVITY_SUBSCRIPTION)).rejects.toThrow(/PERMISSION_DENIED/);
+    await expect(harness.invoke(MAKER_INVOKE.USAGE_ANTIGRAVITY_SUBSCRIPTION, 'other-account')).rejects.toThrow(/INVALID_PARAMS/);
+    await expect(harness.invoke(MAKER_INVOKE.USAGE_ANTIGRAVITY_SUBSCRIPTION)).resolves.toEqual(result);
+    expect(readAntigravitySubscriptionUsage).toHaveBeenCalledOnce();
   });
 
   it('rejects SuperGrok usage reads from untrusted senders', async () => {

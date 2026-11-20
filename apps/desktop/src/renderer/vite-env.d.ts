@@ -7481,6 +7481,9 @@ interface ElectronAPI {
       getXaiSubscription: (providerId?: string) => Promise<unknown | null>;
       onXaiSubscriptionChanged: (cb: (payload: unknown) => void, providerId?: string) => () => void;
       /** Cursor plan pools for the task status chip. Null snapshot means the reading is unknown. */
+      getAntigravitySubscription: () => Promise<
+        import('../shared/antigravityQuota').AntigravitySubscriptionUsageRead
+      >;
       getCursorSubscription: () => Promise<
         import('../shared/cursorQuota').CursorSubscriptionUsageRead
       >;

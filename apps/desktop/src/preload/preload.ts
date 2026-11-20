@@ -8691,6 +8691,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('maker:usage:claude-subscription', providerId),
       getXaiSubscription: (providerId?: string): Promise<unknown | null> =>
         ipcRenderer.invoke('maker:usage:xai-subscription', providerId),
+      getAntigravitySubscription: (): Promise<import('../shared/antigravityQuota').AntigravitySubscriptionUsageRead> =>
+        ipcRenderer.invoke('maker:usage:antigravity-subscription'),
       /** Cursor 账期分池余量。信封与 device-link 的 maker:usage:cursor-subscription 相同。 */
       getCursorSubscription: (): Promise<import('../shared/cursorQuota').CursorSubscriptionUsageRead> =>
         ipcRenderer.invoke('maker:usage:cursor-subscription'),

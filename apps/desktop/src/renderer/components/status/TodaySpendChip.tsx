@@ -1,3 +1,4 @@
+import { useAntigravitySubscriptionUsage } from '@/hooks/useAntigravitySubscriptionUsage';
 import { useMoneyDisplayPreferences } from '@/lib/moneyDisplayPreferences';
 import { isKimiCodingProviderView, kimiUsageWindowMinutes } from '../../../shared/kimiCodingUsage';
 import { isOpenCodeGoProviderView, opencodeGoUsageWindowMinutes } from '../../../shared/opencodeGoUsage';
@@ -140,6 +141,7 @@ import { QuotaResetConfetti } from './QuotaResetConfetti';
 import { quotaFullCelebrations } from './quotaFullCelebrations';
 import {
   buildClaudeUsageCard,
+  buildAntigravityUsageCard,
   buildCursorUsageCard,
   buildCodexUsageCard,
   buildDeepSeekUsageCard,
@@ -1311,6 +1313,11 @@ export function TodaySpendChip({
   const quotaCardSessionUsage = toQuotaHoverCardSessionUsage(sessionUsage, sessionTokens);
   const quotaCardTurnUsage = toQuotaHoverCardTurnUsage(latestTurnUsage, t);
   const [quotaPopoverOpen, setQuotaPopoverOpen] = React.useState(false);
+  const showsAntigravityQuota = vendorKey === 'antigravity' && !remoteHostId && !accountUnreadable;
+  const antigravityQuota = useAntigravitySubscriptionUsage(
+    quotaPopoverOpen && showsAntigravityQuota,
+    accountDeviceId,
+  );
   const refreshRemoteCodex = React.useCallback(() => {
     if (liveRemoteCodex && remoteCodexDeviceId) requestRemoteCodexLiveRefresh(remoteCodexDeviceId, providerId ?? 'openai');
   }, [liveRemoteCodex, remoteCodexDeviceId, providerId]);
@@ -2013,6 +2020,10 @@ export function TodaySpendChip({
       //   - 文字段内统一加 tabular-nums + slashed-zero, 数字等宽对齐
       labelNode = renderSegmentedLabel(chipSegments);
     }
+  }
+
+  if (showsAntigravityQuota) {
+    account = buildAntigravityUsageCard(antigravityQuota.snapshot, t, antigravityQuota.waiting);
   }
 
   if (
