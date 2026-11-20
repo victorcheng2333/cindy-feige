@@ -1194,6 +1194,7 @@ export function TodaySpendChip({
   const sessionUsage = useSessionUsageMoney(sessionId, sessionInitialMoney, sessionInitialCostUsd);
   const sessionTokens = useSessionTokens(
     vendorKey === 'cursor' ||
+      vendorKey === 'antigravity' ||
       vendorKey === 'pi' ||
       isCodexApi ||
       isCodexSubscription ||
@@ -1928,7 +1929,7 @@ export function TodaySpendChip({
         : null;
     if (
       codexApiHasTokenFallback ||
-      (vendorKey === 'cursor' && !slots.session.available && hasPositiveSessionTokens(sessionTokens))
+      ((vendorKey === 'cursor' || vendorKey === 'antigravity') && !slots.session.available && hasPositiveSessionTokens(sessionTokens))
     ) {
       chipSegments.push(
         t('todaySpend.codex.sessionTokensLine', {

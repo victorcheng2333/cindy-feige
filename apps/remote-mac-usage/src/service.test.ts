@@ -92,7 +92,7 @@ describe('standalone remote quota service', () => {
     const h = harness(); await h.service.restore(); expect(h.service.snapshot().signedIn).toBe(true);
     await h.service.refresh();
     expect(h.service.snapshot().devices.map(d => d.accounts[0].windows[0].remaining)).toEqual([68, 68]);
-    expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription', 'maker:usage:cursor-subscription']));
+    expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription', 'maker:usage:cursor-subscription', 'maker:usage:antigravity-subscription']));
     expect(JSON.stringify(h.service.snapshot())).not.toContain('fake-access'); h.service.dispose();
   });
   // Unit regression: a paused default OpenAI account returned null through
@@ -266,6 +266,30 @@ it('discovers Cursor, reads separate pools, and keeps unavailable different from
 });
 
 // Unit: live Cursor responses have sub-percent spend; integer rounding hid it as unused.
+it('discovers agy by quota read and keeps model groups and periods independent', async () => {
+  const h = harness();
+  h.link.invoke.mockImplementation(async (_id, request) => {
+    if (request.channel === 'maker:provider:list') return { ok: true, result: { providers: [] } } as never;
+    if (request.channel === 'maker:usage:antigravity-subscription') {
+      return { ok: true, result: { providerId: 'antigravity', connected: true, status: 'ready', snapshot: {
+        fetchedAtMs: 1793750400000, windows: [
+          { group: 'Gemini Models', minutes: 300, remaining: 0, resetsAtMs: 4102444800000 },
+          { group: 'Gemini Models', minutes: 10080, remaining: 72.5, resetsAtMs: null },
+          { group: 'Claude and GPT models', minutes: 10080, remaining: 100, resetsAtMs: null },
+        ],
+      } } } as never;
+    }
+    return { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED', message: 'old host' } } as never;
+  });
+  await h.service.restore(); await h.service.refresh();
+  expect(h.service.snapshot().devices[0].accounts).toEqual([expect.objectContaining({ service: 'Antigravity', windows: [
+    { label: 'Gemini Models', minutes: 300, remaining: 0, resetsAt: 4102444800 },
+    { label: 'Gemini Models', minutes: 10080, remaining: 72.5, resetsAt: null },
+    { label: 'Claude and GPT models', minutes: 10080, remaining: 100, resetsAt: null },
+  ] })]);
+  h.service.dispose();
+});
+
 it('keeps sub-percent Cursor usage visible without claiming a full or empty pool', () => {
   expect(poolPercent(99.6)).toBe('99.6');
   expect(poolPercent(0.4)).toBe('0.4');

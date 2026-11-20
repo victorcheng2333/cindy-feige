@@ -2,7 +2,7 @@ import { selectCodexUsageForModel } from '../../../packages/maker-shared/src/cod
 
 export interface Quota { minutes: number | null; remaining: number; resetsAt: number | null; label?: string }
 export interface Account {
-  id: string; name: string; service: 'Claude' | 'ChatGPT' | 'Cursor'; plan: string;
+  id: string; name: string; service: 'Claude' | 'ChatGPT' | 'Cursor' | 'Antigravity'; plan: string;
   windows: Quota[]; updatedAt: number | null; failed: boolean; error?: string;
 }
 export interface Device {
@@ -62,12 +62,32 @@ export function subscriptionProviders(raw: unknown): Record<string, unknown>[] {
 }
 export function emptyAccount(p: Record<string, unknown>): Account {
   if (p.id === 'cursor') return { id: 'cursor', name: 'Cursor', service: 'Cursor', plan: '', windows: [], updatedAt: null, failed: false };
+  if (p.id === 'antigravity') return { id: 'antigravity', name: 'agy', service: 'Antigravity', plan: '', windows: [], updatedAt: null, failed: false };
   const openai = record(p.auth).native === 'codex' || p.id === 'openai';
   return { id: String(p.id), name: text(p.name, openai ? 'ChatGPT' : 'Claude'), service: openai ? 'ChatGPT' : 'Claude',
     plan: '', windows: [], updatedAt: null, failed: false };
 }
 export function parseAccount(p: Record<string, unknown>, payload: unknown): Account {
   const a = emptyAccount(p), raw = record(payload);
+  if (a.service === 'Antigravity') {
+    if (raw.providerId !== 'antigravity') throw Error('Antigravity account mismatch');
+    if (raw.status === 'ready') {
+      const snapshot = record(raw.snapshot);
+      a.updatedAt = timestamp(snapshot.fetchedAtMs);
+      const seen = new Set<string>();
+      if (Array.isArray(snapshot.windows)) for (const item of snapshot.windows.slice(0, 32)) {
+        const w = record(item), group = text(w.group).trim(), minutes = w.minutes;
+        if (!group || (minutes !== 300 && minutes !== 10080) ||
+          !finite(w.remaining) || w.remaining < 0 || w.remaining > 100) continue;
+        const key = JSON.stringify([group, minutes]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const reset = timestamp(w.resetsAtMs);
+        a.windows.push({ minutes, label: group, remaining: w.remaining, resetsAt: reset === null ? null : reset / 1000 });
+      }
+    }
+    return a.windows.length ? a : { ...a, failed: true, error: '暂未读到 agy 额度，请确认远端 CLI 已登录且能联网。' };
+  }
   if (a.service === 'Cursor') {
     if (raw.providerId !== 'cursor') throw Error('Cursor account mismatch');
     if (raw.status !== 'ready') return { ...a, failed: true, error: '远端暂未读到 Cursor 额度，请确认连接状态后刷新。' };

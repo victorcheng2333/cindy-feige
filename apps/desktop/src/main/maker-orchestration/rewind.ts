@@ -239,6 +239,9 @@ async function loadRewindContext(
   // 1. session live 校验 + running 守卫 (改走 maker.getSession, 重构前是 agentManager.getLiveSession)
   const maker = getMaker();
   const makerSession = maker.getSession(sessionId);
+  if (makerSession?.agentKind === 'antigravity') {
+    throw rewindError('REWIND_UNSUPPORTED_HISTORY', 'agy does not support rewinding conversation history');
+  }
   let detached = false;
   if (!makerSession) {
     // session 不在内存中:app 刚启动 / 这条 session 还没在新链路激活过。

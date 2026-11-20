@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 /** Supported task handoffs; Cursor remains on the controlled task computer. */
-const SESSION_SWITCH_AGENT_KINDS = ['claude-code', 'codex', 'pi', 'cursor'] as const;
+const SESSION_SWITCH_AGENT_KINDS = ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] as const;
 
 /**
  * 已有任务里「切换引擎」可选的 Harness:被控电脑上开着的(maker:list-available-agents,
@@ -12,9 +12,11 @@ export function sessionSwitchAgentKinds<K extends string>(
   available: ReadonlySet<string> | null,
   current: K,
   allowCursor = false,
+  allowAntigravity = false,
 ): Array<K | (typeof SESSION_SWITCH_AGENT_KINDS)[number]> {
   const kinds: Array<K | (typeof SESSION_SWITCH_AGENT_KINDS)[number]> = SESSION_SWITCH_AGENT_KINDS
     .filter((kind) => (kind !== 'cursor' || allowCursor || kind === current)
+      && (kind !== 'antigravity' || (allowAntigravity && available?.has(kind)) || kind === current)
       && (!available || kind === current || available.has(kind)));
   return kinds.includes(current) ? kinds : [current, ...kinds];
 }

@@ -65,6 +65,7 @@ export interface NewSessionCreationPreparationInput {
   authOwnerAtCreate: MobileAuthOwnerGeneration;
   worktreeAccountId: string;
   creatingWorktree: boolean;
+  claimPreparedSession?: (draft: NewSessionDraft) => string | undefined;
   worktreeIntent: WorktreeCreateIntentSnapshot;
   isCurrentOwner: () => boolean;
   ensureDeviceAlive: () => boolean;
@@ -181,7 +182,9 @@ export async function prepareNewSessionCreation(
   const recoveryIdentity = recovering
     ? outboxCreationRetryIdentity(recovering, createNewSessionId)
     : null;
-  const sessionId = recoveryIdentity?.sessionId ?? createNewSessionId();
+  const sessionId = recoveryIdentity?.sessionId ??
+    (!recovering && !creatingWorktree ? input.claimPreparedSession?.(effectiveDraft) : undefined) ??
+    createNewSessionId();
   if (recovering) {
     // Editing creation parameters is allowed only after the original task is proven absent.
     let found = false;

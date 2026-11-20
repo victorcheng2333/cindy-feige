@@ -51,7 +51,8 @@ export function tombstoneGuardOptions(
 
 /** 该 agent 的静态原生默认来源偏好(nativeDefaultSourceId 的无 rail 近似)。 */
 export function staticNativeDefaults(agent: AgentKind): readonly string[] {
-  return agent === 'cursor' ? ['cursor'] : agent === 'codex' ? ['openai', 'xd'] : ['xd'];
+  if (agent === 'cursor' || agent === 'antigravity') return [agent];
+  return agent === 'codex' ? ['openai', 'xd'] : ['xd'];
 }
 
 /**

@@ -96,7 +96,7 @@ export interface UsageHistoryDay {
 }
 
 function usageAgentKind(value: string): UsageHistoryModel['agentKind'] {
-  return value === 'codex' || value === 'pi' || value === 'cursor' || value === 'media' || value === 'auxiliary'
+  return value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity' || value === 'media' || value === 'auxiliary'
     ? value : 'claude-code';
 }
 
@@ -551,7 +551,7 @@ export function getSubscriptionValuePriceFor(
   overrides?: ModelPriceOverridesSnapshot,
 ): ModelPriceQuote | undefined {
   // Cursor uses its own native billing report, not another harness's model prices.
-  if (agentKind === 'media' || agentKind === 'cursor' || agentKind === 'auxiliary') return undefined;
+  if (agentKind === 'media' || agentKind === 'cursor' || agentKind === 'antigravity' || agentKind === 'auxiliary') return undefined;
   if (agentKind === 'codex') {
     return (
       getSubscriptionDirectValuePrice(model, 'codex', pricing, at, overrides) ??

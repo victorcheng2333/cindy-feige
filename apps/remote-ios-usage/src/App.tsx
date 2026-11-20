@@ -401,6 +401,40 @@ function UsageApp() {
       {txt("两个额度池分别计量，不合并百分比。一个池用完，不代表整个订阅都已用完。", { fontSize: 12, lineHeight: 20, color: c.muted })}
     </View>;
   };
+  const agyGroups = (a: Account) => {
+    const groups = new Map<string, Quota[]>();
+    for (const window of a.windows) {
+      if (!window.label) continue;
+      const own = groups.get(window.label) ?? [];
+      own.push(window);
+      groups.set(window.label, own);
+    }
+    return <View style={{ gap: 16 }}>
+      {a.error ? txt(a.error, { color: c.muted, fontSize: 13 }) : null}
+      {[...groups].map(([group, windows]) => (
+        <View key={group} style={{ gap: 8 }}>
+          {txt(group === "Gemini Models" ? "Gemini 模型" : group === "Claude and GPT models" ? "Claude／GPT 模型" : group,
+            { fontWeight: "600" })}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            {windows.sort((left, right) => (left.minutes ?? 0) - (right.minutes ?? 0)).map((window) => {
+              const usable = !a.failed && valid(window);
+              const heading = window.minutes === 300 ? "5 小时" : "每周";
+              return <View key={window.minutes} style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                {txt(`${heading} · 剩余`, { color: c.muted, fontSize: 13 })}
+                {txt(usable ? `${poolPercent(window.left)}%` : "—",
+                  { fontSize: 29, lineHeight: 39, fontWeight: "500", fontVariant: ["tabular-nums"] })}
+                <View style={{ height: 5, borderRadius: 8, backgroundColor: c.track, overflow: "hidden" }}>
+                  {usable ? <View style={{ height: 5, width: `${window.left}%`, backgroundColor: window.left <= 25 ? c.accent : c.muted }} /> : null}
+                </View>
+                {txt(resetText(window), { fontSize: 12, color: c.muted })}
+                {usable ? txt(`已用 ${poolPercent(100 - window.left)}%`, { fontSize: 12, color: c.muted }) : null}
+              </View>;
+            })}
+          </View>
+        </View>
+      ))}
+    </View>;
+  };
   if (restoring)
     return (
       <SafeAreaView
@@ -741,12 +775,12 @@ function UsageApp() {
                   { backgroundColor: c.card, borderColor: c.line },
                 ]}
               >
-                {current.service === "Cursor" ? cursorPools(current) : <View style={{ flexDirection: "row", gap: 30 }}>
+                {current.service === "Cursor" ? cursorPools(current) : current.service === "Antigravity" ? agyGroups(current) : <View style={{ flexDirection: "row", gap: 30 }}>
                   {quota(300, current)}
                   {quota(10080, current)}
                 </View>}
               </View>
-              {current.service === "Cursor" ? txt("Cursor 模型池用于 Grok、Composer 等；其他模型池用于第三方模型。池耗尽后的扣费规则和额外付费状态，以 Cursor 账单为准。", { color: c.muted, fontSize: 13 }) : current.windows.map((q, i) => (
+              {current.service === "Cursor" ? txt("Cursor 模型池用于 Grok、Composer 等；其他模型池用于第三方模型。池耗尽后的扣费规则和额外付费状态，以 Cursor 账单为准。", { color: c.muted, fontSize: 13 }) : current.service === "Antigravity" ? null : current.windows.map((q, i) => (
                 <View
                   key={i}
                   style={[
@@ -788,7 +822,7 @@ function UsageApp() {
                       color: c.muted,
                     })}
                   </View>
-                  {a.service === "Cursor" ? <View style={{ marginVertical: 16 }}>{cursorPools(a)}</View> : <View
+                  {a.service === "Cursor" || a.service === "Antigravity" ? <View style={{ marginVertical: 16 }}>{a.service === "Cursor" ? cursorPools(a) : agyGroups(a)}</View> : <View
                     style={{ flexDirection: "row", gap: 30, marginVertical: 16 }}>
                     {quota(300, a)}
                     {quota(10080, a)}
@@ -804,7 +838,7 @@ function UsageApp() {
                 </Pressable>
               ))}
               {!busy && !accounts.length
-                ? txt("暂无 Claude / ChatGPT / Cursor 订阅账号，或尚未读取到数据。", {
+                ? txt("暂无 Claude / ChatGPT / Cursor / agy 订阅账号，或尚未读取到数据。", {
                     color: c.muted,
                   })
                 : null}

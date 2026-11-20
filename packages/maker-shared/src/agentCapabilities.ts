@@ -31,6 +31,8 @@ export interface MobileAgentCapabilities {
   /** Same-account controller may create Cursor tasks on the controlled host. */
   supportsControlledCursorCreation?: boolean;
   supportsControlledAntigravityCreation?: boolean;
+  supportsAntigravitySessionSwitch?: boolean;
+  supportsControlledAntigravityDraftPrewarm?: boolean;
   /** host 是否支持创建 Orca Worker 时显式选择 Worker 权限；旧 host 缺省 false(不得开启协同)。 */
   supportsOrcaWorkerPermissionMode?: boolean;
   /** host 是否支持创建后修改 Orca Worker 的角色名/标识(update_worker)；旧 host 缺省 false。 */
@@ -187,6 +189,8 @@ export function normalizeMobileAgentCapabilities(value: unknown): MobileAgentCap
     supportsSessionAgentSwitch: value.supportsSessionAgentSwitch === true,
     supportsControlledCursorCreation: value.supportsControlledCursorCreation === true,
     supportsControlledAntigravityCreation: value.supportsControlledAntigravityCreation === true,
+    supportsAntigravitySessionSwitch: value.supportsAntigravitySessionSwitch === true,
+    supportsControlledAntigravityDraftPrewarm: value.supportsControlledAntigravityDraftPrewarm === true,
     supportsModelWindowSwitchGuard: value.supportsModelWindowSwitchGuard === true,
     supportsRemoteModelWindowRebuild: value.supportsRemoteModelWindowRebuild === true,
     supportsOrcaWorkerPermissionMode: value.supportsOrcaWorkerPermissionMode === true,

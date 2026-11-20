@@ -31,7 +31,7 @@ vi.mock('../turnUsageContext.js', () => ({
   turnBillingSource: () => ({ providerId: 'cursor', providerName: 'Cursor', billingSource: 'subscription' }),
 }));
 
-import { recordSessionCursorTurnUsage } from '../sessionCursorTurnUsage.js';
+import { recordSessionNativeSubscriptionTurnUsage as recordSessionCursorTurnUsage } from '../sessionCursorTurnUsage.js';
 
 // Bug 2026-11-04: dozens of Cursor runs left sessions.total_token_usage = 0 and no
 // daily_model_usage rows, because no recorder consumed Cursor's done usage. Unit, real
@@ -123,5 +123,31 @@ describe('recordSessionCursorTurnUsage', () => {
     await recordSessionCursorTurnUsage(deps, { id: 's1' } as Session, { type: 'done', source: 'cursor', data: {} } as AgentEvent, undefined);
     expect(h.recordSessionTurnTokens).not.toHaveBeenCalled();
     expect(h.recordModelTurnUsage).not.toHaveBeenCalled();
+  });
+
+  it('writes agy uncached input and cache separately, without estimating subscription cost', async () => {
+    vi.clearAllMocks();
+    h.catalog = BUNDLED_CATALOG;
+    const marker = { amount: 0, currency: 'USD', kind: 'value-estimate' } as never;
+    const deps = {
+      turnUsageContextBySession: new Map(),
+      turnModelPromiseBySession: new Map([['s1', Promise.resolve('gemini-3.8-flash')]]),
+      readSessionModelForUsage: vi.fn(async () => 'unused'),
+      unpricedSubscriptionValueMarker: () => marker,
+    };
+    const event = {
+      source: 'antigravity', type: 'done',
+      data: { usage: { inputTokens: 2_131, outputTokens: 6, cacheReadTokens: 7_591 } },
+    } as AgentEvent;
+    await recordSessionCursorTurnUsage(deps, { id: 's1' } as Session, event, 'assistant-agy');
+    expect(h.recordSessionTurnTokens).toHaveBeenCalledWith('s1', 9_728);
+    expect(h.recordModelTurnUsage).toHaveBeenCalledWith({
+      sessionId: 's1', agentKind: 'antigravity', model: 'gemini-3.8-flash', money: marker,
+      inputTokensDelta: 2_131, outputTokensDelta: 6, cacheReadTokensDelta: 7_591, cacheCreateTokensDelta: 0,
+    });
+    expect(h.recordTurnUsageOnMessage).toHaveBeenCalledWith(expect.objectContaining({
+      clientId: 'assistant-agy', turnUsageDetails: expect.objectContaining({ totalTokens: 9_728 }),
+    }));
+    expect(h.recordSchedulerTurnCost).not.toHaveBeenCalled();
   });
 });

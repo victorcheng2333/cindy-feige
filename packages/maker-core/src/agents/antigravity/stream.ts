@@ -1,6 +1,20 @@
 import { parseMessageToolUse } from '@cindy/maker-shared/message-normalize';
 import type { AgentEvent, UsageSnapshot } from '../../types/events.js';
 
+type AgyStepUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number };
+
+function readStepUsage(value: unknown): AgyStepUsage | null {
+  const raw = record(value);
+  const count = (key: string) => {
+    const n = raw[key];
+    return typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0;
+  };
+  const inputTokens = count('input_tokens');
+  const outputTokens = count('output_tokens');
+  const cacheReadTokens = count('cache_read_tokens');
+  return inputTokens + outputTokens + cacheReadTokens > 0 ? { inputTokens, outputTokens, cacheReadTokens } : null;
+}
+
 export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -14,6 +28,8 @@ const toolNames: Readonly<Record<string, string>> = {
   write_file: 'Write',
   write_to_file: 'Write',
   replace_file_content: 'Edit',
+  edit_file: 'Edit',
+  multi_replace_file_content: 'Edit',
   list_directory: 'LS',
   find_by_name: 'Glob',
   grep_search: 'Grep',
@@ -23,6 +39,7 @@ export class AgyTurn {
   private text = '';
   private sawText = false;
   private readonly tools = new Map<number, { id: string; finished: boolean }>();
+  private readonly usageByStep = new Map<number, AgyStepUsage>();
 
   constructor(
     private readonly emit: (type: AgentEvent['type'], data: unknown) => void,
@@ -44,7 +61,13 @@ export class AgyTurn {
         this.sawText = true;
         this.emit('text', { text: step.text_delta, isFinal: false });
       }
-      if (step.state === 'DONE') this.flush();
+      if (step.state === 'DONE') {
+        const counts = readStepUsage(step.usage);
+        if (counts && typeof step.step_index === 'number' && Number.isSafeInteger(step.step_index)) {
+          this.usageByStep.set(step.step_index, counts);
+        }
+        this.flush();
+      }
       return;
     }
     if (step.step_type !== 'tool' || typeof step.step_index !== 'number') return;
@@ -61,7 +84,8 @@ export class AgyTurn {
       const args = record(info.parameters);
       const input = { ...args };
       if (name === 'run_command') input.command = args.CommandLine;
-      if ('FilePath' in args || 'TargetFile' in args) input.file_path = args.FilePath ?? args.TargetFile;
+      const filePath = args.FilePath ?? args.TargetFile ?? args.Path;
+      if (typeof filePath === 'string') input.file_path = filePath;
       const toolName = name === 'call_mcp_tool' && typeof args.ServerName === 'string' && typeof args.ToolName === 'string'
         ? `mcp__${args.ServerName}__${args.ToolName}`
         : (Object.hasOwn(toolNames, name) ? toolNames[name] : name);
@@ -91,23 +115,34 @@ export class AgyTurn {
     if (!this.sawText && typeof result.response === 'string' && result.response) {
       this.emit('text', { text: result.response, isFinal: true, isFullText: true });
     }
-    const counts = record(result.usage);
-    const count = (key: string) => {
-      const value = counts[key];
-      return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
-    };
-    this.usage.tokenUsage = count('total_tokens');
-    this.usage.outputTokens = count('output_tokens');
+    // The CLI's result.usage is process-cumulative. Final model steps are
+    // per-request and report cache reads separately from uncached input.
+    const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+    let lastIndex = -1;
+    for (const [index, counts] of this.usageByStep) {
+      totals.inputTokens += counts.inputTokens;
+      totals.outputTokens += counts.outputTokens;
+      totals.cacheReadTokens += counts.cacheReadTokens;
+      if (index > lastIndex) {
+        lastIndex = index;
+        this.usage.contextTokens = counts.inputTokens + counts.cacheReadTokens + counts.outputTokens;
+      }
+    }
+    this.usage.tokenUsage = totals.inputTokens + totals.outputTokens + totals.cacheReadTokens;
+    this.usage.outputTokens = totals.outputTokens;
+    const usage = this.usage.tokenUsage > 0 ? { usage: totals } : {};
     if (outcome === 'error') {
       this.emit('error', {
         message: result.message ?? 'agy could not complete this turn. Check your CLI login, model, and network.',
         isTerminal: true,
+        ...usage,
       });
     } else {
       this.emit('done', {
         type: 'antigravity/turn-ended',
         status: outcome === 'stopped' ? 'stopped' : 'completed',
         result: typeof result.response === 'string' ? result.response : undefined,
+        ...usage,
       });
     }
     this.emit('status', { ...this.usage, status: 'Done', isRunning: false });

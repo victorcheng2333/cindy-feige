@@ -211,6 +211,7 @@ it("reads ChatGPT generic quota instead of the most recent model-specific bucket
   ).toEqual([
     { channel: "maker:usage:codex-rate-limits", args: ["openai", "default-subscription-account"] },
     { channel: "maker:usage:codex-rate-limits", args: ["second"] },
+    { channel: "maker:usage:antigravity-subscription", args: [] },
     { channel: "maker:usage:cursor-subscription", args: [] },
   ]);
 });
@@ -348,6 +349,28 @@ it("reads Cursor pools with precise values, seconds conversion and stable servic
   expect(accounts[2].windows[1].left).toBe(0);
   invoke.mockImplementation(async (_d, request) => request.channel === 'maker:provider:list' ? { ok: true, result: { providers: [] } } : { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED' } });
   expect((await r.usage('old'))[0]).toMatchObject({ noticeOnly: true, failed: true, windows: [], error: expect.stringContaining('更新 Cindy') });
+});
+
+// Unit: the actual same-account request must preserve model groups, a genuine
+// zero and missing windows independently.
+it("loads agy periods through the dedicated read without adding absent windows", async () => {
+  const { r, invoke } = make();
+  invoke.mockImplementation(async (_d, request) => ({ ok: true, result:
+    request.channel === "maker:provider:list" ? { providers: [] }
+      : request.channel === "maker:usage:antigravity-subscription"
+        ? { providerId: "antigravity", connected: true, status: "ready", snapshot: {
+          fetchedAtMs: 1793750400000,
+          windows: [
+            { group: "Gemini Models", minutes: 300, remaining: 92.5, resetsAtMs: 4102444800000 },
+            { group: "Gemini Models", minutes: 10080, remaining: 72, resetsAtMs: null },
+            { group: "Claude and GPT models", minutes: 10080, remaining: 0, resetsAtMs: null },
+          ],
+        } } : {} }));
+  expect((await r.usage("mac"))[0]).toMatchObject({ service: "Antigravity", failed: false, windows: [
+    { label: "Gemini Models", minutes: 300, left: 92.5, reset: 4102444800 },
+    { label: "Gemini Models", minutes: 10080, left: 72, reset: null },
+    { label: "Claude and GPT models", minutes: 10080, left: 0, reset: null },
+  ] });
 });
 
 it("does not allow a queued route write to survive logout", async () => {

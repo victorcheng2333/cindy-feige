@@ -1,4 +1,5 @@
 import { useNewSessionAgentRoster } from '@/session/useNewSessionAgentRoster';
+import { useAntigravityDraftPrewarm } from '@/session/useAntigravityDraftPrewarm';
 import { useRemoteProjectAliases as useProjectInfoSnapshots } from '@/session/remoteProjectAliases';
 import { ProjectSettingsSheet } from '@/session/ProjectSettingsSheet';
 import { ProjectPickerIcon } from '@/session/ProjectPickerIcon';
@@ -1501,6 +1502,14 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // 2026-09-11: show this draft's explicit choice, otherwise the last host mirror.
   // Eligibility failures still cannot silently downgrade an enabled worktree.
   const worktreeChecked = worktreeEnabled;
+  const claimAntigravityDraft = useAntigravityDraftPrewarm({
+    enabled: isShareTargetFocused && !!selectedDeviceId && deviceLinkStatus === 'online' && !(worktreeApplicable && worktreeEnabled) &&
+      !planModeDraftOn && capabilities?.supportsControlledAntigravityDraftPrewarm === true,
+    ownerGeneration: outboxOwner.generation,
+    deviceId: selectedDeviceId,
+    draft,
+    maker,
+  });
 
   const settleRenderedWorktreeBranchTransaction = useCallback((
     key: string,
@@ -4222,6 +4231,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         authOwnerAtCreate,
         worktreeAccountId,
         creatingWorktree,
+        claimPreparedSession: claimAntigravityDraft,
         worktreeIntent,
         isCurrentOwner,
         ensureDeviceAlive,
@@ -4404,6 +4414,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   }, [
     agentAuthVerdict,
     auth.user?.id,
+    claimAntigravityDraft,
     collabDraft,
     collabWorkerDeviceId,
     collabDeviceProviders.providers,

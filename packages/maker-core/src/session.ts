@@ -1887,6 +1887,10 @@ export class Session {
     return this.handle.getUsageSnapshot();
   }
 
+  prewarmNativeRuntime(): void {
+    if (this.handle.prewarm && this.isIdleForRuntimeRecycling()) this.handle.prewarm();
+  }
+
   retryFailedRuntimeCapabilityCapture(): void {
     this.handle.retryFailedRuntimeCapabilityCapture?.();
   }

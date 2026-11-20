@@ -5276,6 +5276,29 @@ describe('Agent prewarm', () => {
     expect(deps.bootstrapSession).toHaveBeenCalledWith(expect.objectContaining({ userPrompt: 'mine', workingDir: '/repo' }));
     expect(live?.send).toHaveBeenCalledOnce();
   });
+
+  // Unit: lazy creation alone used to leave agy unstarted. Draft prewarm
+  // must start native preparation before sending, without invoking send.
+  it('starts native preparation during a draft prewarm before any user input', async () => {
+    let live: MakerSendTransactionSession | undefined;
+    const prewarmNativeRuntime = vi.fn();
+    const { deps } = createDeps({
+      getSession: () => live,
+      bootstrapSession: vi.fn(async (opts: MakerSessionCreateOpts) => {
+        live = createSession({
+          id: opts.id, agentKind: 'antigravity', workDir: opts.workingDir, prewarmNativeRuntime,
+        });
+        return { session: live, didInjectOrcaInstructions: false, didInjectProjectContext: false };
+      }),
+    });
+    const transaction = createMakerSendTransaction(deps);
+    const createOpts = { id: 'session-1', agentKind: 'antigravity', workingDir: '/repo' } as MakerSessionCreateOpts;
+
+    await expect(transaction.prewarmSession('session-1', createOpts)).resolves.toBe(true);
+    await expect(transaction.prewarmSession('session-1', createOpts)).resolves.toBe(false);
+    expect(prewarmNativeRuntime).toHaveBeenCalledOnce();
+    expect(live?.send).not.toHaveBeenCalled();
+  });
 });
 
 // #10187 / unit: exercise lazy creation and the real wire/persist split together.

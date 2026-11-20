@@ -12203,6 +12203,7 @@ function dbAgentKindToMakerKind(
   if (dbKind === 'cc') return 'claude-code';
   if (dbKind === 'pi') return 'pi';
   if (dbKind === 'cursor') return 'cursor';
+  if (dbKind === 'antigravity') return 'antigravity';
   return fallback;
 }
 

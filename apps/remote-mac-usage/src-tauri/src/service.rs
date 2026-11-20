@@ -7,7 +7,7 @@ use crate::model::{
     LoginChoice, LoginView, ServiceKind, Snapshot,
 };
 use crate::storage::{AuthTokenPair, SavedView, SessionStore};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
@@ -457,7 +457,11 @@ impl UsageService {
             // through its dedicated read instead of exposing runnable Cursor models remotely.
             let mut cursor_result: Option<Value> = None;
             let mut cursor_unsupported = false;
-            match invoke_read("maker:usage:cursor-subscription", Vec::new()).await {
+            let (cursor_read, antigravity_read) = tokio::join!(
+                invoke_read("maker:usage:cursor-subscription", Vec::new()),
+                invoke_read("maker:usage:antigravity-subscription", Vec::new()),
+            );
+            match cursor_read {
                 Ok(val) => {
                     if val.get("connected").and_then(Value::as_bool) == Some(true)
                         && !providers
@@ -499,6 +503,7 @@ impl UsageService {
                     ServiceKind::Claude => "anthropic",
                     ServiceKind::ChatGPT => "openai",
                     ServiceKind::Cursor => "cursor",
+                    ServiceKind::Antigravity => unreachable!(),
                 };
                 if base.service == ServiceKind::Cursor {
                     let cached = cursor_result.clone();
@@ -535,7 +540,7 @@ impl UsageService {
                 let channel = match base.service {
                     ServiceKind::Claude => "maker:usage:claude-subscription",
                     ServiceKind::ChatGPT => "maker:usage:codex-rate-limits",
-                    ServiceKind::Cursor => unreachable!(),
+                    ServiceKind::Cursor | ServiceKind::Antigravity => unreachable!(),
                 };
                 let fut = invoke_read(channel, args);
                 tasks.push(Box::pin(async move {
@@ -555,11 +560,21 @@ impl UsageService {
             for t in tasks {
                 accounts.push(t.await);
             }
+            if let Ok(payload) = antigravity_read {
+                if payload.get("providerId").and_then(Value::as_str) == Some("antigravity") &&
+                    payload.get("connected").and_then(Value::as_bool) == Some(true) {
+                    let p = Map::from_iter([("id".to_string(), json!("antigravity"))]);
+                    if let Ok(account) = parse_account(&p, &payload, now_ms()) {
+                        accounts.push(account);
+                    }
+                }
+            }
             self.check_epoch(epoch).await?;
             accounts.sort_by_key(|a| match a.service {
                 ServiceKind::Claude => 0,
                 ServiceKind::ChatGPT => 1,
                 ServiceKind::Cursor => 2,
+                ServiceKind::Antigravity => 3,
             });
             Ok((accounts, cursor_unsupported))
         }

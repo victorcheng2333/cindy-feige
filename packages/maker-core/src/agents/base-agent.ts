@@ -2538,6 +2538,8 @@ export interface AgentMcpServerToolsReport {
 }
 
 export interface AgentSessionHandle {
+  /** Start optional native preparation without sending input or publishing a new session ID. */
+  prewarm?(): void;
   /** Canonical physical Skill identities frozen at native runtime startup. */
   readonly disabledSkillPaths?: readonly string[];
   getCodexContextWindowInfo?(): Promise<CodexContextWindowInfo | null>;

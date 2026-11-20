@@ -635,6 +635,8 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   'maker:usage:opencode-go',
   // Same-account read-only Cursor pools; no credentials or account mutation.
   'maker:usage:cursor-subscription',
+  // Same-account agy model groups and quota windows, no account credentials.
+  'maker:usage:antigravity-subscription',
   // cc 默认路由会话的生效计费路由观察值(只读,'gateway' | 'subscription' | null):
   // 控制端远程会话据此判定订阅 / 网关显示形态 —— 路由真值在被控端 proxy 的按请求
   // 观察 registry 里,控制端拿本机凭证状态重算必然张冠李戴。入参 sessionId,无

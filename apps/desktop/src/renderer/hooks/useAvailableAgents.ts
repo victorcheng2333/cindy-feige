@@ -356,7 +356,8 @@ export function __resetAvailableAgentsCacheForTest(): void {
 export function useModelPickerAgents(current: RuntimeAgentKind, deviceId?: string | null): readonly RuntimeAgentKind[] | undefined {
   const { availableVendors, loaded } = useAvailableAgents(deviceId);
   if (!loaded) return undefined;
-  return (['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] as const).filter(
+  // Secondary pickers feed scheduler, IM, Orca and plugin tasks.
+  return (['claude-code', 'codex', 'pi', 'cursor'] as const).filter(
     (agent) => agent === current || availableVendors.has(toVendor(agent)),
   );
 }

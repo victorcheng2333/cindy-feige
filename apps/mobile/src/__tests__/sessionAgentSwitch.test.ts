@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canSwitchSessionToAntigravity,
   canSwitchSessionToCursor,
   effectiveAgentDeviceId,
   intentChangesAgentLocation,
@@ -18,6 +19,16 @@ import type { MobileAgentCapabilities } from '@/session/agentCapabilities';
 import { sessionSwitchAgentKinds } from '@/session/sessionSelectableAgents';
 
 describe('mobile session Agent switch contract', () => {
+  it('offers agy handoff only on an eligible task with a compatible host', () => {
+    const task = { remoteHostId: null, agentDeviceId: null, orcaRole: null, orcaRemoteLead: null, source: 'desktop' };
+    const caps = { supportsAntigravitySessionSwitch: true } as MobileAgentCapabilities;
+    const available = new Set(['codex', 'antigravity']);
+    expect(sessionSwitchAgentKinds(available, 'codex', false, canSwitchSessionToAntigravity(task, caps)))
+      .toEqual(['codex', 'antigravity']);
+    expect(canSwitchSessionToAntigravity(task, null)).toBe(false);
+    expect(canSwitchSessionToAntigravity({ ...task, agentDeviceId: 'borrowed' }, caps)).toBe(false);
+    expect(sessionSwitchAgentKinds(available, 'codex')).toEqual(['codex']);
+  });
   // Unit regression: old tasks used a fixed three-engine roster. Exercise the
   // production roster and the host-matching task scope, not source-code strings.
   it('offers Cursor handoff on ordinary local tasks and respects its Harness switch', () => {

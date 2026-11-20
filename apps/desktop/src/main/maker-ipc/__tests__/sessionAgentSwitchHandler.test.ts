@@ -98,9 +98,20 @@ describe('Antigravity model selection', () => {
     expect(calls).toEqual([]);
   });
 
-  it('rejects a handoff from another engine into agy', async () => {
-    const { deps, calls } = makeDeps();
-    await expect(performSessionAgentSwitch(deps, selection)).rejects.toThrow('only support model changes within agy');
+  it('hands a local task to agy, retaining history and using supported permissions', async () => {
+    const { deps } = makeDeps();
+    await expect(performSessionAgentSwitch(deps, selection)).resolves.toMatchObject({ switched: true });
+    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
+      agentKind: 'antigravity', providerId: 'antigravity', sdkSessionId: null, permissionMode: 'default', fastMode: false,
+    }));
+    expect(deps.setPendingHandoff).toHaveBeenCalled();
+  });
+
+  it('blocks agy handoff before mutation while Plan mode is active', async () => {
+    const { deps, calls } = makeDeps({
+      getSessionRow: async () => makeRow({ planModeEnabled: true }),
+    });
+    await expect(performSessionAgentSwitch(deps, selection)).rejects.toThrow('Exit Plan mode');
     expect(calls).toEqual([]);
   });
 });

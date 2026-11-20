@@ -1,4 +1,4 @@
-import { cursorAccount } from "./cursorQuota";
+import { antigravityAccount, cursorAccount } from "./cursorQuota";
 import {
   CindyAuthClient,
   AuthApiError,
@@ -41,7 +41,7 @@ export type Account = {
   id: string;
   name: string;
   plan: string;
-  service: "Claude" | "ChatGPT" | "Cursor";
+  service: "Claude" | "ChatGPT" | "Cursor" | "Antigravity";
   error?: string;
   noticeOnly?: boolean;
   windows: Quota[];
@@ -335,6 +335,7 @@ export class Remote {
       accounts.push(account);
     }
     // Cursor execution remains local-only, so its quota has a dedicated discovery read.
+    const agyRead = read("maker:usage:antigravity-subscription").catch(() => null);
     try {
       const cursor = cursorAccount(await read("maker:usage:cursor-subscription"));
       if (cursor) accounts.push(cursor);
@@ -345,8 +346,10 @@ export class Remote {
           ? '这台电脑尚不支持 Cursor 额度读取，更新 Cindy 后可显示。'
           : '暂时无法检查 Cursor 额度，请稍后刷新。' });
     }
+    const agy = antigravityAccount(await agyRead);
     if (generation !== this.generation) throw Error("连接已结束");
-    const order = { Claude: 0, ChatGPT: 1, Cursor: 2 };
+    if (agy) accounts.push(agy);
+    const order = { Claude: 0, ChatGPT: 1, Cursor: 2, Antigravity: 3 };
     return accounts.sort((a, b) => order[a.service] - order[b.service]);
   }
 }

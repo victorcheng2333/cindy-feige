@@ -1,6 +1,6 @@
 # 猫猫 Mac
 
-独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor 订阅额度。当前版本 0.2.0（Rust / Tauri 2 + `WKWebView` 原生构建）。
+独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor / agy 订阅额度。当前版本 0.2.0（Rust / Tauri 2 + `WKWebView` 原生构建）。
 当前 Mac 不需要运行 Cindy；提供额度的电脑需要运行 Cindy、在线并允许相应远程访问。
 中国大陆版，独立 Bundle ID `com.chengfei.quotacat.cn`。
 
@@ -10,10 +10,11 @@
 ## 使用
 
 打开「猫猫.app」，用与远端电脑相同的 Cindy 账号登录。企业 SSO 默认标识为 `xd`，可修改。
-登录后直接进入全部电脑的额度总览；订阅固定按 Claude → OpenAI（ChatGPT）→ Cursor 排序。
+登录后直接进入全部电脑的额度总览；订阅固定按 Claude → OpenAI（ChatGPT）→ Cursor → agy 排序。
 Claude / ChatGPT 按来源实际返回的周期显示：有 5 小时与每周额度时并排显示，仅有每周时只显示每周，
 不为来源未返回的周期画空栏；其他周期也直接显示。模型专项额度仍放在详情中。
 Cursor 使用独立双池卡片：Cursor 模型、其他模型分别显示剩余／已用百分比与重置日期，不能相加或用最低值代表整个账号；只有总额度时明确显示汇总，缺失池显示未知。保留一位小数，非零的极小用量显示为 `<0.1%`，接近满额显示为 `>99.9%`，不把少量消耗四舍五入成从未使用。额外付费状态不作推测。
+agy 从提供额度的 Cindy 使用官方 CLI 的 `/usage` 查询。各模型组分别显示五小时和每周的剩余、已用和重置时间；只显示实际返回的窗口。
 电脑筛选、模型专项额度、重置时间均可直接查看。相同订阅在不同电脑共享额度，不作相加。
 
 关闭窗口会保留菜单栏猫猫图标，点击即可再次打开；右键菜单可刷新或退出应用。
@@ -66,7 +67,7 @@ pnpm --dir apps/remote-mac-usage package
 - 不读取 Cindy 的 userData、登录文件或 Claude / ChatGPT 凭证。Renderer 不接收 token 或授权 ticket。
   只暴露固定登录／查看命令，Main 校验参数和窗口来源；页面无 Node、无网络能力，导航和下载关闭。
 - 复用 `@cindy/auth-client`、`@cindy/device-link` 与共享 Codex 限额桶选择逻辑，沿用现有加密 invoke 协议，不修改服务端或中转。
-  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`、`maker:usage:cursor-subscription`。
+  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`、`maker:usage:cursor-subscription`、`maker:usage:antigravity-subscription`。
   内置 Claude / OpenAI 卡片使用既有 `default-subscription-account` 可选作用域，读取默认账号自身额度；
   暂停任务分配不影响查看，不借用账号池中其他账号的额度。旧 Cindy 忽略附加作用域，仍读取原默认账号。
   Cursor 通道要求新版 Cindy；旧端返回不支持时明确提示更新。

@@ -22,6 +22,7 @@ pub enum ServiceKind {
     Claude,
     ChatGPT,
     Cursor,
+    Antigravity,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -238,11 +239,12 @@ pub fn empty_account(p: &Map<String, Value>) -> Account {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    if id == "cursor" {
+    if id == "cursor" || id == "antigravity" {
+        let cursor = id == "cursor";
         return Account {
             id,
-            name: "Cursor".to_string(),
-            service: ServiceKind::Cursor,
+            name: if cursor { "Cursor" } else { "agy" }.to_string(),
+            service: if cursor { ServiceKind::Cursor } else { ServiceKind::Antigravity },
             plan: String::new(),
             windows: Vec::new(),
             updated_at: None,
@@ -369,6 +371,34 @@ pub fn parse_account(p: &Map<String, Value>, payload: &Value, current_ms: f64) -
     let mut a = empty_account(p);
     let empty_map = Map::new();
     let raw = payload.as_object().unwrap_or(&empty_map);
+    if a.service == ServiceKind::Antigravity {
+        if raw.get("providerId").and_then(Value::as_str) != Some("antigravity") {
+            return Err("Antigravity account mismatch".to_string());
+        }
+        if raw.get("status").and_then(Value::as_str) == Some("ready") {
+            let snapshot = raw.get("snapshot").and_then(Value::as_object).unwrap_or(&empty_map);
+            a.updated_at = positive_timestamp(snapshot.get("fetchedAtMs"));
+            let mut seen = std::collections::HashSet::new();
+            if let Some(windows) = snapshot.get("windows").and_then(Value::as_array) {
+                for item in windows.iter().take(32) {
+                    let Some(w) = item.as_object() else { continue };
+                    let Some(minutes @ (300 | 10080)) = w.get("minutes").and_then(Value::as_i64) else { continue };
+                    let group = bounded_text(w.get("group"), "");
+                    let Some(remaining) = finite_number(w.get("remaining")).filter(|r| (0.0..=100.0).contains(r)) else { continue };
+                    if group.trim().is_empty() || !seen.insert((group.clone(), minutes)) { continue; }
+                    a.windows.push(Quota {
+                        minutes: Some(minutes), remaining, label: Some(group),
+                        resets_at: positive_timestamp(w.get("resetsAtMs")).map(|ms| ms / 1000.0),
+                    });
+                }
+            }
+        }
+        if a.windows.is_empty() {
+            a.failed = true;
+            a.error = Some("暂未读到 agy 额度，请确认远端 CLI 已登录且能联网。".to_string());
+        }
+        return Ok(a);
+    }
     if a.service == ServiceKind::Cursor {
         if raw.get("providerId").and_then(Value::as_str) != Some("cursor") {
             return Err("Cursor account mismatch".to_string());
@@ -419,6 +449,7 @@ pub fn parse_account(p: &Map<String, Value>, payload: &Value, current_ms: f64) -
         ServiceKind::Claude => "anthropic",
         ServiceKind::ChatGPT => "openai",
         ServiceKind::Cursor => "cursor",
+        ServiceKind::Antigravity => unreachable!(),
     };
     let resp_provider_id = raw.get("providerId");
     let has_provider_id = resp_provider_id.is_some() && !resp_provider_id.unwrap().is_null();
@@ -483,7 +514,7 @@ pub fn parse_account(p: &Map<String, Value>, payload: &Value, current_ms: f64) -
                 }
             }
         }
-        ServiceKind::Cursor => unreachable!(),
+        ServiceKind::Cursor | ServiceKind::Antigravity => unreachable!(),
     }
     Ok(a)
 }
@@ -651,6 +682,18 @@ pub fn tray_window_position(tray: IntRect, work_area: IntRect, size: (i32, i32))
 pub fn demo_snapshot() -> Snapshot {
     let now = now_ms();
     let reset = |hours: f64| now / 1000.0 + hours * 3600.0;
+    let agy = Account {
+        id: "antigravity".into(), name: "agy".into(), service: ServiceKind::Antigravity,
+        plan: String::new(), updated_at: Some(now), failed: false, error: None,
+        windows: [
+            ("Gemini Models", 300, 92.0, 3.0),
+            ("Gemini Models", 10080, 72.0, 112.0),
+            ("Claude and GPT models", 300, 100.0, 4.0),
+            ("Claude and GPT models", 10080, 100.0, 118.0),
+        ].into_iter().map(|(group, minutes, remaining, hours)| Quota {
+            minutes: Some(minutes), remaining, resets_at: Some(reset(hours)), label: Some(group.into()),
+        }).collect(),
+    };
     Snapshot {
         signed_in: true,
         busy: false,
@@ -746,6 +789,7 @@ pub fn demo_snapshot() -> Snapshot {
                             },
                         ],
                     },
+                    agy,
                 ],
             },
             Device {

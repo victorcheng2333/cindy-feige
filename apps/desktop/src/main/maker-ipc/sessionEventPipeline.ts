@@ -25,7 +25,7 @@ import {
   type RecordSessionPiTurnUsageDeps,
 } from './sessionPiTurnUsage.js';
 import {
-  recordSessionCursorTurnUsage,
+  recordSessionNativeSubscriptionTurnUsage,
   type RecordSessionCursorTurnUsageDeps,
 } from './sessionCursorTurnUsage.js';
 
@@ -73,8 +73,8 @@ export function handleSessionEvent(
   );
   recordSessionCodexTurnUsage(deps, session, event, terminal.turnAssistantPersistId);
   recordSessionPiTurnUsage(deps, session, event, terminal.turnAssistantPersistId);
-  void recordSessionCursorTurnUsage(deps, session, event, terminal.turnAssistantPersistId).catch(() => {
-    deps.log?.warn?.('Cursor turn usage persistence failed');
+  void recordSessionNativeSubscriptionTurnUsage(deps, session, event, terminal.turnAssistantPersistId).catch(() => {
+    deps.log?.warn?.('Native subscription turn usage persistence failed');
   });
   deps.recordProviderPartyUsage?.(session, event);
 }

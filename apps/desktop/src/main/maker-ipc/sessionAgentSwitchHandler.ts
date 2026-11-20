@@ -196,6 +196,7 @@ export interface AgentSwitchSessionRow {
   workingDir?: string | null;
   source?: string | null;
   permissionMode?: string | null;
+  planModeEnabled?: boolean;
   /** Agent 在哪台电脑运行(null / 缺省 = 任务所在电脑)。 */
   agentDeviceId?: string | null;
 }
@@ -206,6 +207,7 @@ const AGENT_DEVICE_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
 export interface MakerSessionAgentSwitchHandlerDeps {
   /** Reject unsupported reference-directory grants before committing a Cursor handoff. */
   assertCursorHandoffDirectories?(sessionId: string): Promise<void>;
+  assertAntigravityHandoffDirectories?(sessionId: string): Promise<void>;
   /**
    * 任务要换到供应商组那一项(组所在电脑上那个建了组的供应商)时，由组按它的状态选一台能用的电脑
    * (docs/product-rules/provider-groups.md §6)：返回选中那台的位置；不是组那一项或组读不到返回 null(照用户选的位置)；
@@ -849,11 +851,19 @@ export async function performSessionAgentSwitch(
     if (params.forceRelocation || params.providerGroupRelocation) {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks do not support relocation');
     }
-    if (row.agentKind !== 'antigravity' || targetAgentKind !== 'antigravity') {
-      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks only support model changes within agy');
+    const changesHarness = row.agentKind !== targetAgentKind;
+    if (changesHarness && (row.orcaRemoteLead || (row.source && row.source !== 'desktop'))) {
+      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity handoff supports ordinary tasks only');
     }
-    if (normalizedProviderId && normalizedProviderId !== 'antigravity') {
+    if (targetAgentKind === 'antigravity' && normalizedProviderId && normalizedProviderId !== 'antigravity') {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity requires its own model source');
+    }
+    if (changesHarness && targetAgentKind === 'antigravity') {
+      if (row.planModeEnabled || row.permissionMode === 'plan') {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Exit Plan mode before switching to agy');
+      }
+      await deps.assertAntigravityHandoffDirectories?.(sessionId);
+      normalizedProviderId = 'antigravity';
     }
   }
   // Local Cursor uses the shared bounded handoff and parked-thread resume flow.
@@ -1317,10 +1327,13 @@ export async function performSessionAgentSwitch(
     // ---- commit point:此后切换生效 ----
     // Cursor only supports auto, bypassPermissions, and plan. Re-read permissionMode at
     // commit time so a concurrent permission switch cannot be overwritten by stale preflight data.
-    const latestPermissionMode =
-      targetAgentKind === 'cursor'
-        ? ((await deps.getSessionRow(sessionId))?.permissionMode ?? row.permissionMode)
-        : row.permissionMode;
+    const latestTargetRow = targetAgentKind === 'cursor' || targetAgentKind === 'antigravity'
+      ? (await deps.getSessionRow(sessionId)) ?? row
+      : row;
+    const latestPermissionMode = latestTargetRow.permissionMode;
+    if (targetAgentKind === 'antigravity' && (latestTargetRow.planModeEnabled || latestPermissionMode === 'plan')) {
+      throwIpcError('UNSUPPORTED_CAPABILITY', 'Exit Plan mode before switching to agy');
+    }
     const needsCursorAutoPermission =
       targetAgentKind === 'cursor' &&
       !['auto', 'bypassPermissions', 'plan'].includes(latestPermissionMode ?? '');
@@ -1331,8 +1344,11 @@ export async function performSessionAgentSwitch(
         providerId: normalizedProviderId,
         sdkSessionId: relocatedNativeId ?? parked?.sdkSessionId ?? null,
         ...(typeof params.effort === 'string' && params.effort ? { effort: params.effort } : {}),
-        ...((typeof params.fastMode === 'boolean' || params.fastMode === 'ultrafast') ? { fastMode: params.fastMode } : {}),
+        ...(targetAgentKind === 'antigravity' ? { fastMode: false } :
+          ((typeof params.fastMode === 'boolean' || params.fastMode === 'ultrafast') ? { fastMode: params.fastMode } : {})),
         ...(needsCursorAutoPermission ? { permissionMode: 'auto' as const } : {}),
+        ...(targetAgentKind === 'antigravity' && latestPermissionMode !== 'bypassPermissions'
+          ? { permissionMode: 'default' as const } : {}),
         // 同机换连接／组选回的当前位置在另一台电脑时也带上位置：提交按它判断窗口该查哪台的目录，不能拿本机目录。
         ...(agentDeviceChanges || ((orcaGroupReturnRebuild || providerConnectionChanges) && targetAgentDeviceId)
           ? { agentDeviceId: targetAgentDeviceId }

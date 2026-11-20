@@ -25,7 +25,7 @@ export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity
 // capability 生命周期(预取 / 驱逐通知 / 本地快照刷新 / 启动预载)必须覆盖全部 agent，
 // 少一个就会让该 agent 的远程会话在断链或 provider revision 后收不到 loading 事件、
 // 也不再被重新预取，界面永久停在旧模型/能力快照(codex review)。新增 agent 只改这里。
-const ALL_AGENT_KINDS = ['claude-code', 'codex', 'pi', 'cursor'] as const;
+const ALL_AGENT_KINDS = ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] as const;
 
 // renderer 视角: id 全部是不透明 string, 渲染只读 displayName。
 // effort 的合法 id 集合 = capabilities.effortLevels 上每个项的 id。
@@ -115,6 +115,7 @@ export interface AgentCapabilities {
    * 模型选择器顶部的 Agent 分段(它同时也没收录切换 channel,点了必失败)。
    */
   supportsSessionAgentSwitch?: boolean;
+  supportsAntigravitySessionSwitch?: boolean;
   /**
    * 同引擎重选是否返回可供 SET_MODEL 二次校验的 CAS 修订号。首版切换 host 只有上面的
    * 基础能力位；远程控制端必须同时看到本位才开放入口，避免旧 host 的清除回流先于 ack
@@ -316,6 +317,7 @@ function parseAgentCapabilities(value: unknown): AgentCapabilities {
     !Array.isArray(value.permissionModes) ||
     !value.permissionModes.every(isNamedDescriptor) ||
     !isOptionalBoolean(value.supportsSessionAgentSwitch) ||
+    !isOptionalBoolean(value.supportsAntigravitySessionSwitch) ||
     !isOptionalBoolean(value.supportsSessionAgentSwitchCas) ||
     !isOptionalBoolean(value.supportsRemoteModelWindowRebuild) ||
     !isOptionalBoolean(value.supportsQueueHeadRetry) ||

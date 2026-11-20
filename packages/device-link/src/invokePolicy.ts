@@ -25,6 +25,7 @@ const BACKGROUND_INVOKE_CHANNELS = new Set([
   'git-context:mr-status',
   'maker:schedule:list-sidebar-index-runs',
   'maker:usage:device-rows',
+  'maker:usage:antigravity-subscription',
   // 远程任务状态栏的定时复查(每 15 秒两次只读);后台任务面板挂载水合同用,可让位于用户操作。
   'maker:session-background-activity',
   'maker:session-background-tasks:list',

@@ -2068,6 +2068,10 @@ export function ChatInput({
     deviceLinkDeviceId ? 'codex' : null,
     deviceLinkDeviceId ?? undefined,
   );
+  const hostSupportsAntigravitySessionSwitch = !deviceLinkDeviceId ||
+    (!isScopedPeer(deviceLinkDeviceId) &&
+      (hostCcCaps.capabilities?.supportsAntigravitySessionSwitch === true ||
+        hostCodexCaps.capabilities?.supportsAntigravitySessionSwitch === true));
   const hostSupportsRemoteModelWindowRebuild = !!deviceLinkDeviceId && !isScopedPeer(deviceLinkDeviceId) &&
     !remoteHostId && !isProviderShareAgentDeviceId(agentDeviceId) && !(agentDeviceId && runtimeAgentKind === 'pi') &&
     (runtimeAgentKind === 'pi' ? piCaps : hostCcCaps)
@@ -2306,7 +2310,10 @@ export function ChatInput({
     const kinds = UNIFIED_AGENT_KINDS.filter(
       (kind) => {
         if (kind === 'antigravity') {
-          return sessionId ? agentKind === kind : !catalogDeviceId && runtimeAvailableVendors.has('antigravity');
+          if (!sessionId) return !catalogDeviceId && runtimeAvailableVendors.has('antigravity');
+          return agentKind === kind || (sessionAgentSwitchSupported && hostSupportsAntigravitySessionSwitch &&
+            !catalogDeviceId && !agentDeviceId && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
+            taskComputerAgents.availableVendors.has('antigravity'));
         }
         if (kind === 'cursor') {
           return (!!sessionId && kind === agentKind) || !taskComputerAgents.loaded || taskComputerAgents.availableVendors.has('cursor');
@@ -2316,7 +2323,8 @@ export function ChatInput({
     );
     return kinds;
   }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId,
-    taskComputerAgents.loaded, taskComputerAgents.availableVendors, catalogDeviceId]);
+    taskComputerAgents.loaded, taskComputerAgents.availableVendors, catalogDeviceId, sessionAgentSwitchSupported,
+    hostSupportsAntigravitySessionSwitch, agentDeviceId, remoteHostId, sessionOrcaRole, sessionOrcaRemoteWorker]);
   // 已有 device-link 任务在断链时仍有 pinned deviceId + renderer outbox 可接住发送，
   // 不能因为被控端 provider 目录暂时拉不到就禁用 composer。远程草稿没有既有 session
   // 可以排队，仍与本地任务一样保留来源门禁。

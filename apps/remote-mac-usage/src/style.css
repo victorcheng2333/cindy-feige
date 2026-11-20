@@ -65,6 +65,8 @@ summary { cursor:pointer; min-height:28px; padding:3px 0; } .detail-row { paddin
 :root { --pool-low-fill:#f3a115; --pool-crit-fill:#ef4444; --pool-a:#a8472a; --pool-a-fill:#d97757; --pool-a-surface:#faf0eb; --pool-b:#3f6d9c; --pool-b-fill:#6a9bcc; --pool-b-surface:#edf3f8; }
 @media(prefers-color-scheme:dark) { :root { --pool-a:#e69b7d; --pool-a-surface:#392b26; --pool-b:#9dc1e5; --pool-b-surface:#26313d; } }
 .cursor-account { padding:18px; }
+.agy-quota-group + .agy-quota-group { margin-top:14px; }
+.agy-quota-group h4 { margin:6px 0 8px; font-size:13px; }
 .cursor-title { display:flex; align-items:center; gap:10px; }
 .cursor-title h3 { font-size:19px; letter-spacing:-.3px; }
 .cursor-mark { display:grid; place-items:center; width:34px; height:34px; background:var(--ink); color:var(--card); border-radius:8px; font-size:22px; font-weight:600; }

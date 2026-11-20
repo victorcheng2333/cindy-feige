@@ -16,6 +16,14 @@ export function canSwitchSessionToCursor(
     && (!session.source || session.source === 'desktop');
 }
 
+export function canSwitchSessionToAntigravity(
+  session: Parameters<typeof canSwitchSessionToCursor>[0],
+  capabilities: MobileAgentCapabilities | null,
+): boolean {
+  return capabilities?.supportsAntigravitySessionSwitch === true &&
+    !session.agentDeviceId && canSwitchSessionToCursor(session);
+}
+
 /** 将不可信 device-link payload 收窄为公开 intent；非法值按“无意图”处理。 */
 export function normalizeSessionAgentSwitchIntent(
   value: unknown,

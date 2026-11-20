@@ -8611,7 +8611,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       setAgyProxy: (address: string, ownerId: string | null, generation: number | null): Promise<string> => ipcRenderer.invoke('maker:agy:proxy-set', address, ownerId, generation),
       setCursorApiKey: (apiKey: string): Promise<import('@cindy/maker-core').AuthState> =>
         ipcRenderer.invoke('maker:cursor:set-api-key', apiKey),
-      getState: (agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'cursor'): Promise<unknown> =>
+      getState: (agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'): Promise<unknown> =>
         ipcRenderer.invoke('maker:auth:get-state', agentKind),
       triggerLogin: (
         agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',

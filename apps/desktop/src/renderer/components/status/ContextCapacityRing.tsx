@@ -79,7 +79,7 @@ export function ContextCapacityRing({
     sdkContextWindow,
     verifiedContextWindow,
     runtimeWindowAuthoritative: vendorKey === 'codex',
-    allowDefaultWindow: vendorKey !== 'cursor',
+    allowDefaultWindow: vendorKey !== 'cursor' && vendorKey !== 'antigravity',
     nativeContextWindow: codexContext?.contextWindow,
     nativeContextPending: codexContext?.pendingApply,
     modelContextWindow: getModelContextWindow(model, vendorKey, deviceId),

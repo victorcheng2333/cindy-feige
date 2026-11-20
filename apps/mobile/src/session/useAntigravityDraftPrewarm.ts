@@ -1,0 +1,59 @@
+import { useCallback, useEffect, useRef } from 'react';
+import type { MobileMakerTransport } from '@/device-link/mobileMakerTransport';
+import { buildRemoteCreateSessionOptions, type NewSessionDraft } from './newSession';
+import { createNewSessionId } from './newSessionCreation';
+
+function agyDraftKey(draft: NewSessionDraft): string | null {
+  if (draft.agentKind !== 'antigravity' ||
+      (draft.workspaceKind === 'project' && !draft.workingDir.trim()) || !draft.model.trim() || draft.agentDeviceId ||
+      draft.extraDirs?.length || (draft.permissionMode !== 'default' && draft.permissionMode !== 'bypassPermissions')) {
+    return null;
+  }
+  return JSON.stringify(buildRemoteCreateSessionOptions(draft));
+}
+
+export function useAntigravityDraftPrewarm(input: {
+  enabled: boolean;
+  ownerGeneration: number;
+  deviceId: string;
+  draft: NewSessionDraft;
+  maker: Pick<MobileMakerTransport, 'prewarmSession'>;
+}) {
+  const { enabled, ownerGeneration, deviceId, draft, maker } = input;
+  const key = enabled && draft.firstMessage.trim() ? agyDraftKey(draft) : null;
+  const scope = key ? JSON.stringify([ownerGeneration, deviceId, key]) : null;
+  const prepared = useRef<{ scope: string; id: string; claimed: boolean } | null>(null);
+  useEffect(() => {
+    if (!scope || !key) return;
+    let cancelled = false;
+    let receipt: NonNullable<typeof prepared.current> | undefined;
+    const discard = (id: string) =>
+      void maker.prewarmSession(id, { purpose: 'antigravity-draft-discard' }).catch(() => undefined);
+    const timer = setTimeout(() => {
+      void maker.prewarmSession(createNewSessionId(), {
+        ...JSON.parse(key),
+        purpose: 'antigravity-draft',
+      }).then((value) => {
+        if (!value || typeof value !== 'object' || !('draftSessionId' in value) ||
+            !('accepted' in value) || value.accepted !== true ||
+            typeof value.draftSessionId !== 'string' || !/^[a-z0-9]{24}$/i.test(value.draftSessionId)) return;
+        if (cancelled) { discard(value.draftSessionId); return; }
+        receipt = { scope, id: value.draftSessionId, claimed: false };
+        prepared.current = receipt;
+      }).catch(() => undefined);
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (receipt && !receipt.claimed) discard(receipt.id);
+      if (prepared.current === receipt) prepared.current = null;
+    };
+  }, [key, scope, maker]);
+
+  return useCallback((currentDraft: NewSessionDraft) => {
+    const ready = prepared.current;
+    if (!scope || !ready || ready.claimed || ready.scope !== scope || agyDraftKey(currentDraft) !== key) return;
+    ready.claimed = true;
+    return ready.id;
+  }, [key, scope]);
+}

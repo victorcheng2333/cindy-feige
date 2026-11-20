@@ -435,6 +435,7 @@ import { permissionModeOrAsk } from '@cindy/maker-shared/permission-mode';
 import { projectDraftSessionTitle } from '@cindy/maker-shared/session-title';
 import {
   canSwitchSessionToCursor,
+  canSwitchSessionToAntigravity,
   effectiveAgentDeviceId,
   resolveAgentLocationPick,
   intentChangesAgentLocation,
@@ -9533,8 +9534,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     const targetCapabilities = normalizeMobileAgentCapabilities(
       await loadComposerAgentCapabilities(config.agent, catalogDeviceId));
     if (!targetCapabilities || deviceIdRef.current !== deviceId) return false;
-    if (config.agent === 'antigravity' && (sessionAgentKind !== 'antigravity' || catalogDeviceId
-      || !targetCapabilities.supportsControlledAntigravityCreation)) return false;
+    if (config.agent === 'antigravity' && (catalogDeviceId || !targetCapabilities.supportsControlledAntigravityCreation
+      || (sessionAgentKind !== 'antigravity' && !canSwitchSessionToAntigravity(currentSession, targetCapabilities)))) return false;
     if (config.agent === 'cursor' && sessionAgentKind !== 'cursor'
       && targetCapabilities.supportsControlledCursorCreation !== true) return false;
     if (config.fast && (!capability.supportsFastMode || !targetCapabilities.hasFastMode)) return false;
@@ -11100,7 +11101,8 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                     },
               scope: JSON.stringify([auth.user?.id, deviceId, orcaRemoteAgentDeviceId]),
               agents: sessionAgentSwitchSupported ? sessionSwitchAgentKinds(selectableAgentKinds, sessionAgentKind,
-                canSwitchSessionToCursor(currentSession)) : [sessionAgentKind],
+                canSwitchSessionToCursor(currentSession),
+                !isScopedPeer(deviceId) && canSwitchSessionToAntigravity(currentSession, capabilities)) : [sessionAgentKind],
               loadCapabilities: async (agent) => {
                 const result = normalizeMobileAgentCapabilities(await loadComposerAgentCapabilities(agent));
                 if (!result) throw new Error('Capabilities unavailable');

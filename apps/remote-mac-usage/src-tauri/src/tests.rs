@@ -661,6 +661,19 @@ impl DeviceLinkSession for CursorMockLink {
                 }
             })));
         }
+        if channel == "maker:usage:antigravity-subscription" {
+            return Ok(InvokeOutcome::Ok(json!({
+                "providerId": "antigravity", "connected": true, "status": "ready",
+                "snapshot": {
+                    "fetchedAtMs": 1_793_750_400_000.0,
+                    "windows": [
+                        { "group": "Gemini Models", "minutes": 300, "remaining": 92.5, "resetsAtMs": 4_102_444_800_000.0 },
+                        { "group": "Gemini Models", "minutes": 10080, "remaining": 72.0 },
+                        { "group": "Claude and GPT models", "minutes": 10080, "remaining": 0.0 }
+                    ]
+                }
+            })));
+        }
         if channel == "maker:usage:claude-subscription" {
             return Ok(InvokeOutcome::Ok(json!({
                 "providerId": "anthropic",
@@ -736,7 +749,7 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
             .iter()
             .map(|a| a.service)
             .collect::<Vec<_>>(),
-        vec![ServiceKind::Claude, ServiceKind::ChatGPT, ServiceKind::Cursor]
+        vec![ServiceKind::Claude, ServiceKind::ChatGPT, ServiceKind::Cursor, ServiceKind::Antigravity]
     );
     let cursor_acc = &snap.devices[0].accounts[2];
     assert!(!cursor_acc.failed);
@@ -746,6 +759,18 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
     assert_eq!(cursor_acc.windows[0].resets_at, Some(4_102_444_800.0));
     assert_eq!(cursor_acc.windows[1].label.as_deref(), Some("其他模型"));
     assert_eq!(cursor_acc.windows[1].remaining, 0.0);
+    // Model groups and periods are independent. A missing window is not 0%.
+    let agy = &snap.devices[0].accounts[3];
+    assert_eq!(agy.windows.len(), 3);
+    assert_eq!(agy.windows[0].minutes, Some(300));
+    assert_eq!(agy.windows[0].remaining, 92.5);
+    assert_eq!(agy.windows[0].resets_at, Some(4_102_444_800.0));
+    assert_eq!(agy.windows[1].minutes, Some(10080));
+    assert_eq!(agy.windows[1].resets_at, None);
+    assert_eq!(agy.windows[2].label.as_deref(), Some("Claude and GPT models"));
+    assert_eq!(agy.windows[2].remaining, 0.0);
+    assert!(link.calls.lock().unwrap().iter().any(|(channel, args)|
+        channel == "maker:usage:antigravity-subscription" && args.is_empty()));
     assert_eq!(snap.devices[0].cursor_unsupported, None);
 
     link.channel_not_allowed.store(true, Ordering::SeqCst);

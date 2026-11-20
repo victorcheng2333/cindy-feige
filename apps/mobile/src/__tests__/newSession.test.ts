@@ -1523,7 +1523,7 @@ describe('new session model', () => {
 
   it('exposes Pi as a first-class agent and preserves Fast for Pi sessions', () => {
     expect(NEW_SESSION_AGENT_OPTIONS.map((option) => option.kind)).toEqual([
-      'claude-code', 'codex', 'pi', 'cursor',
+      'claude-code', 'codex', 'pi', 'cursor', 'antigravity',
     ]);
     const pi = withAgentDefaults({ ...DRAFT_WITH_MODEL, fastMode: true }, 'pi');
     expect(pi).toMatchObject({ agentKind: 'pi', model: '', fastMode: true });
@@ -2250,9 +2250,14 @@ describe('new session worktree wiring (source locks)', () => {
       '!recovery.storageReadable',
       recovery,
     );
-    const sessionId = newSource.indexOf(
-      'const sessionId = recoveryIdentity?.sessionId ?? createNewSessionId();',
+    const preparation = newSource.indexOf(
+      'const prepared = await prepareNewSessionCreation({',
       pendingGuard,
+    );
+    const implementation = newSource.indexOf('export async function prepareNewSessionCreation(');
+    const sessionId = newSource.indexOf(
+      'const sessionId = recoveryIdentity?.sessionId ??',
+      implementation,
     );
     const worktreeCreate = newSource.indexOf(
       'await maker.worktree.create(createRequest)',
@@ -2261,17 +2266,16 @@ describe('new session worktree wiring (source locks)', () => {
 
     expect(recovery).toBeGreaterThan(-1);
     expect(pendingGuard).toBeGreaterThan(recovery);
-    expect(sessionId).toBeGreaterThan(pendingGuard);
+    expect(preparation).toBeGreaterThan(pendingGuard);
+    expect(implementation).toBeGreaterThan(preparation);
+    expect(sessionId).toBeGreaterThan(implementation);
     expect(worktreeCreate).toBeGreaterThan(sessionId);
     expect(newSource.slice(recovery, pendingGuard)).toContain(
       'record.deviceId !== selectedDeviceId',
     );
-    expect(newSource.slice(pendingGuard, sessionId)).toContain(
-      'recovery.retained > 0',
-    );
-    expect(newSource.slice(pendingGuard, sessionId)).toContain(
-      "setError(t('session.new.worktreeCleanupPending'))",
-    );
+    const cleanupGuard = newSource.slice(pendingGuard, preparation);
+    expect(cleanupGuard).toContain('recovery.retained > 0');
+    expect(cleanupGuard).toMatch(/setError\(t\('session\.new\.worktreeCleanupPending'\)\);\s*return;/);
   });
 
   it('binds the new-screen recovery and background pipeline to the auth-owner generation', () => {

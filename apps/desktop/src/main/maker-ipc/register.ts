@@ -520,6 +520,7 @@ import {
   hasInputDeliveryCancellation,
 } from '../localDb/agentInputQueueSnapshots.js';
 import {
+  buildDialogueWorkspaceDir,
   ensureDialogueWorkspaceDir,
   dialogueWorkspaceRoots,
   isManagedDialogueWorkspace,
@@ -1101,6 +1102,7 @@ import {
 } from './makerSendTransaction.js';
 import { createAgentPrewarmer, isAgentPrewarmEligible } from './agentPrewarm.js';
 import { isProvisionalSession } from '../localDb/provisionalSessions.js';
+import { createUserSession } from '../localDb/ipc/createUserSession.js';
 import {
   installDesktopInteractionHandler,
   installInteractionLifecycleObserver,
@@ -1297,7 +1299,7 @@ import {
 } from '../usage/accountUsageLimit.js';
 import { UsageLimitAutoResume } from './usageLimitAutoResume.js';
 import { createUsageLimitRecoveryStore, type SavedUsageLimitWait } from './usageLimitRecoveryStore.js';
-import { type MakerSessionCreateOpts, createSessionStderrOptions, isSessionRunningError } from './sessionRequest.js';
+import { type MakerSessionCreateOpts, createSessionStderrOptions, isSessionRunningError, readCreateSessionOpts } from './sessionRequest.js';
 import { createScheduledSessionBootstrap, type ScheduledSessionBootstrap } from './scheduledSessionBootstrap.js';
 import {
   hydrateProviderIdBeforeSessionStart as restoreProviderIdBeforeSessionStart,
@@ -7396,7 +7398,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ...maker.getCapabilities(requireAgentKind(agentKind)),
       // host 级 optional 能力；旧 desktop 缺省为 false。两个 agent 查询都带回，
       // 手机读取当前 agent 快照即可决定是否展示切换入口。
-      supportsSessionAgentSwitch: agentKind !== 'antigravity',
+      supportsSessionAgentSwitch: true,
+      supportsAntigravitySessionSwitch: true,
+      supportsControlledAntigravityDraftPrewarm: agentKind === 'antigravity' && isSameAccountTaskController(),
       supportsControlledAntigravityCreation: agentKind === 'antigravity' && isSameAccountTaskController(),
       supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
@@ -10488,6 +10492,36 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   };
 
   const makerSessionRegistry = createElectronIpcHandlerRegistry();
+  const controlledAgyDrafts = new Map<string, {
+    owner: ReturnType<typeof getCurrentDbClientSnapshot>;
+    controller: string;
+    route: string;
+    workingDir: string | null;
+  }>();
+  const agyDraftRoute = (opts: CreateOpts): string | null => {
+    if (opts.agentKind !== 'antigravity' || (opts.workspaceKind !== 'project' && opts.workspaceKind !== 'dialogue') ||
+        !opts.workingDir || !path.isAbsolute(opts.workingDir) || !opts.model ||
+        (opts.providerId && opts.providerId !== 'antigravity') ||
+        opts.remoteHostId || opts.agentDeviceId || opts.orcaRole || opts.resumeSessionId ||
+        opts.reviewMode || opts.botRuntimeProfile ||
+        opts.planMode || opts.fastMode || opts.extraDirs?.length || opts.writableDirs?.length ||
+        (opts.permissionMode !== 'default' && opts.permissionMode !== 'bypassPermissions')) return null;
+    return JSON.stringify([opts.workspaceKind, opts.workspaceKind === 'project' ? normalizeWorkingDirForStorage(opts.workingDir) : null, opts.model,
+      opts.effort ?? null, opts.permissionMode]);
+  };
+  // Runs under the existing send lock. Only this controller's provisional
+  // task can be discarded; leaving a sent task alone is mandatory.
+  const discardControlledAgyDraft = async (sessionId: string) => {
+    const entry = controlledAgyDrafts.get(sessionId);
+    if (!entry || getCurrentDbClientSnapshot() !== entry.owner) return;
+    if (isProvisionalSession(sessionId)) {
+      const live = maker.getSession(sessionId);
+      if (live) await live.closeIfIdle();
+      if (maker.getSession(sessionId)) return;
+      await discardProvisionalSessionRow(sessionId);
+    }
+    controlledAgyDrafts.delete(sessionId);
+  };
   // A picker reads several source catalogs concurrently. Share only the in-flight
   // directory request within one account; retain no authorization snapshot.
   let controlledLocationsRead: {
@@ -10531,6 +10565,22 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       assertSessionCreationCurrent();
       if (co.agentKind === 'antigravity') assertAntigravityTaskCreationAllowed(co);
       if (co.agentKind === 'cursor') assertCursorTaskCreationAllowed(co);
+      const preparedId = co.id && controlledAgyDrafts.has(co.id) ? co.id : undefined;
+      if (preparedId) {
+        const prepared = controlledAgyDrafts.get(preparedId)!;
+        if (getCurrentDbClientSnapshot() !== prepared.owner ||
+            !isSameAccountTaskController() ||
+            getDeviceLinkInvokeContext()?.controllerDeviceId !== prepared.controller) {
+          throwIpcError('PRECONDITION_FAILED', 'Task draft belongs to a different controller');
+        }
+        if (agyDraftRoute(co) !== prepared.route ||
+            normalizeWorkingDirForStorage(co.workingDir) !== prepared.workingDir) {
+          await discardControlledAgyDraft(preparedId);
+          if (controlledAgyDrafts.has(preparedId)) {
+            throwIpcError('PRECONDITION_FAILED', 'Previous draft is still closing');
+          }
+        }
+      }
       await ensureRemoteReadyForSessionStart({ createOpts: co });
       assertSessionCreationCurrent();
       if (!co.remoteHostId && !co.resumeSessionId && co.workspaceKind !== 'dialogue' && co.orcaRole !== 'worker') {
@@ -10541,6 +10591,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       }
       const result = await bootstrapSession(co, assertSessionCreationCurrent);
       assertSessionCreationCurrent();
+      if (preparedId && controlledAgyDrafts.has(preparedId)) {
+        if (!(await commitProvisionalSession(preparedId))) {
+          throwIpcError('PRECONDITION_FAILED', 'Task draft could not be committed');
+        }
+        agentPrewarmer.markUsed(preparedId);
+        controlledAgyDrafts.delete(preparedId);
+        assertSessionCreationCurrent();
+      }
       // maker:create-session 是手机 / device-link 的创建入口，不经过
       // local-db:sessions:create，因此后者维护 recent_workdirs 的逻辑不会运行。
       // worktree 两步流此时 co.workingDir 已是隔离目录；picker 需要记住用户选的
@@ -11584,6 +11642,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const grants = directoryGrantsForRuntime(await readSessionExtraDirsFromDb(sessionId));
       if (grants.extraDirs?.length) {
         throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor does not support read-only reference directories');
+      }
+    },
+    assertAntigravityHandoffDirectories: async (sessionId) => {
+      const grants = directoryGrantsForRuntime(await readSessionExtraDirsFromDb(sessionId));
+      if (grants.extraDirs?.length || (await readSessionWritableDirsFromDb(sessionId)).length) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'agy requires a task without extra directory grants');
       }
     },
     getSessionRow: readAgentSwitchSessionRow,
@@ -18920,6 +18984,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     closeIfUnused: (sessionId, stillUnused) => withSendToSessionLock(sessionId, async () => {
       if (!stillUnused()) return;
       if (agentInputCoordinatorHolder?.hasPendingQueuedWork(sessionId)) return;
+      if (controlledAgyDrafts.has(sessionId)) {
+        await discardControlledAgyDraft(sessionId);
+        return;
+      }
       const live = maker.getSession(sessionId);
       if (!live || live.isTurnRunning()) return;
       await live.closeIfIdle();
@@ -18960,7 +19028,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (typeof sessionId !== 'string') return await sendToAgentAcceptedUnlocked(...args);
     agentPrewarmer.markUsed(sessionId);
     // 新建页的未发送任务第一次发送：renderer 通常已先转正，这里兜底。
-    if (isProvisionalSession(sessionId)) await commitProvisionalSession(sessionId);
+    if (isProvisionalSession(sessionId)) {
+      const prepared = controlledAgyDrafts.get(sessionId);
+      if (prepared && (getCurrentDbClientSnapshot() !== prepared.owner ||
+          getDeviceLinkInvokeContext()?.controllerDeviceId !== prepared.controller)) {
+        throwIpcError('PRECONDITION_FAILED', 'Task draft belongs to a different controller');
+      }
+      if (await commitProvisionalSession(sessionId)) controlledAgyDrafts.delete(sessionId);
+    }
     if (cindyMakeManager.isTaskPreparing(sessionId) && (args[3] as Record<PropertyKey, unknown> | undefined)?.[CINDY_MAKE_TASK_DISPATCH] !== true) {
       throwIpcError('PRECONDITION_FAILED', 'Cindy Make is still preparing this task');
     }
@@ -19566,12 +19641,80 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   // 尽力而为：立即返回，启动在后台进行；不支持、已在运行或启动失败都只是下一次发送照常冷启动。
   ipcMain.handle(
     MAKER_INVOKE.SESSION_PREWARM,
-    async (event, sessionId: unknown, createOpts?: unknown): Promise<{ accepted: boolean; piRuntimePrepared?: true; pendingRouteApplied?: true }> => {
+    async (event, sessionId: unknown, createOpts?: unknown): Promise<{
+      accepted: boolean; piRuntimePrepared?: true; pendingRouteApplied?: true; draftSessionId?: string;
+    }> => {
       const sid = requireSessionId(sessionId);
       if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
       if (getDeviceLinkInvokeContext()?.sharedTask) return { accepted: false };
       if (!createOpts || typeof createOpts !== 'object' || Array.isArray(createOpts)) {
         throwIpcError('INVALID_PARAMS', 'createOpts required');
+      }
+      if ('purpose' in createOpts && (createOpts.purpose === 'antigravity-draft' ||
+          createOpts.purpose === 'antigravity-draft-discard')) {
+        const controller = getDeviceLinkInvokeContext()?.controllerDeviceId;
+        const owner = getCurrentDbClientSnapshot();
+        if (!controller || !owner || !isSameAccountTaskController()) return { accepted: false };
+        if (createOpts.purpose === 'antigravity-draft-discard') {
+          return withSendToSessionLock(sid, async () => {
+            const entry = controlledAgyDrafts.get(sid);
+            if (entry?.owner !== owner || entry.controller !== controller) return { accepted: false };
+            await discardControlledAgyDraft(sid);
+            if (!controlledAgyDrafts.has(sid)) agentPrewarmer.markUsed(sid);
+            return { accepted: !controlledAgyDrafts.has(sid) };
+          });
+        }
+        for (const [id, entry] of controlledAgyDrafts) {
+          if (entry.owner !== owner) controlledAgyDrafts.delete(id);
+        }
+        if (controlledAgyDrafts.size >= 2) return { accepted: false };
+        // Resolve the dialogue's proposed path without creating it. The
+        // standard provisional session service allocates and owns cleanup.
+        const draftId = createId();
+        const rawOpts = createOpts as Record<string, unknown>;
+        if (rawOpts.workspaceKind === 'dialogue' && rawOpts.workingDir !== undefined) return { accepted: false };
+        const opts = readCreateSessionOpts(
+          { ...rawOpts, id: draftId },
+          { allocateDialogueWorkspace: buildDialogueWorkspaceDir },
+        );
+        const route = agyDraftRoute(opts);
+        if (!route) return { accepted: false };
+        const entry = { owner, controller, route, workingDir: null as string | null };
+        controlledAgyDrafts.set(draftId, entry);
+        let prepared = false;
+        try {
+          if (opts.workspaceKind === 'project' && !(await statWorkingDirectory(opts.workingDir)).isDirectory()) {
+            return { accepted: false };
+          }
+          if (getCurrentDbClientSnapshot() !== owner) return { accepted: false };
+          const draft = await createUserSession({
+            id: draftId, agentKind: 'antigravity', workspaceKind: opts.workspaceKind,
+            ...(opts.workspaceKind === 'project' ? { workingDir: opts.workingDir } : {}),
+            model: opts.model, effort: opts.effort,
+            providerId: 'antigravity', permissionMode: opts.permissionMode, provisional: true,
+          }, { senderId: 0, userDataDir: app.getPath('userData'), notifyPluginSessionCreated() {} });
+          if (getCurrentDbClientSnapshot() !== owner || !draft.workingDir) return { accepted: false };
+          entry.workingDir = normalizeWorkingDirForStorage(draft.workingDir);
+          const outcome = await agentPrewarmer.request(draftId, {
+            id: draftId, agentKind: 'antigravity', workspaceKind: opts.workspaceKind,
+            workingDir: draft.workingDir, model: opts.model, effort: opts.effort,
+            providerId: 'antigravity', permissionMode: opts.permissionMode,
+          });
+          if (outcome === 'started' && getCurrentDbClientSnapshot() === owner) {
+            prepared = true;
+            return { accepted: true, draftSessionId: draftId };
+          }
+        } catch {
+          // Preparation is optional. The ordinary create still performs every check.
+        } finally {
+          if (!prepared) {
+            await withSendToSessionLock(draftId, async () => {
+              await discardControlledAgyDraft(draftId);
+              if (!isProvisionalSession(draftId)) controlledAgyDrafts.delete(draftId);
+            });
+          }
+        }
+        return { accepted: false };
       }
       if ('purpose' in createOpts && createOpts.purpose === 'pi-skill-dispatch') {
         const request = createOpts as Record<string, unknown>;
@@ -23470,10 +23613,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       await assertReviewSettingsUnlocked(sessionId);
       await beforeMutation?.();
       assertOwnerCurrent();
-      const [row] = await snapshot!.client.drizzle.select({permissionMode: sessions.permissionMode})
+      const [row] = await snapshot!.client.drizzle.select({permissionMode: sessions.permissionMode, agentKind: sessions.agentKind})
         .from(sessions).where(eq(sessions.id, sessionId)).limit(1);
       assertOwnerCurrent();
       if (!row) throwIpcError('NOT_FOUND', 'session not found');
+      if (row.agentKind === 'antigravity' && mode !== 'default' && mode !== 'bypassPermissions') {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'agy supports Default and Full access');
+      }
       await beforeMutation?.();
       const sess = maker.getSession(sessionId);
       let runtimeChanged = false;
@@ -23551,10 +23697,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         assertOwnerCurrent();
         await assertReviewSettingsUnlocked(sessionId);
         assertOwnerCurrent();
-        const [row] = await snapshot!.client.drizzle.select({planModeEnabled: sessions.planModeEnabled})
+        const [row] = await snapshot!.client.drizzle.select({planModeEnabled: sessions.planModeEnabled, agentKind: sessions.agentKind})
           .from(sessions).where(eq(sessions.id, sessionId)).limit(1);
         assertOwnerCurrent();
         if (!row) throwIpcError('NOT_FOUND', 'session not found');
+        if (row.agentKind === 'antigravity' && enabled) throwIpcError('UNSUPPORTED_CAPABILITY', 'agy does not support Plan mode');
         const sess = maker.getSession(sessionId);
         try {
           if (sess) await sess.setPlanMode(enabled);

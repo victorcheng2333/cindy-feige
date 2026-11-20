@@ -410,12 +410,12 @@ export function prepareSessionEvent(
         markSessionTurnStarted(session.id);
       }
       if (
-        (event.source === 'claude-code' || event.source === 'codex' || event.source === 'pi') &&
+        (event.source === 'claude-code' || event.source === 'codex' || event.source === 'pi' || event.source === 'antigravity') &&
         !deps.turnModelPromiseBySession.has(session.id)
       ) {
         deps.turnModelPromiseBySession.set(session.id, deps.readSessionModelForUsage(session.id));
       }
-      if ((event.source === 'pi' || event.source === 'codex' || event.source === 'claude-code')
+      if ((event.source === 'pi' || event.source === 'codex' || event.source === 'claude-code' || event.source === 'antigravity')
         && (!wasInTurn || !deps.turnUsageContextBySession.has(session.id))) {
         deps.turnUsageContextBySession.set(session.id, captureTurnUsageContext(session.id));
       }

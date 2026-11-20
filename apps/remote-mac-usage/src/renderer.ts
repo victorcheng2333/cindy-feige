@@ -23,12 +23,15 @@ function until(q: Quota | undefined, available: boolean) {
   return minutes >= 1440 ? `${Math.floor(minutes / 1440)} 天 ${Math.floor(minutes % 1440 / 60)} 小时后重置` :
     minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分后重置` : `${minutes} 分钟后重置`;
 }
-function quota(q: Quota | undefined, label: string, available: boolean) {
+function quota(q: Quota | undefined, label: string, available: boolean, precise = false) {
   const valid = available && currentQuota(q), remaining = valid ? q.remaining : 0;
+  const value = precise ? poolPercent(remaining) : String(Math.round(remaining));
   return `<div class="quota ${valid && remaining <= 25 ? 'low' : ''}"><div class="label">${escape(label)} · 剩余</div>
-    <div class="number">${valid ? Math.round(remaining) : '—'}${valid ? '<small>%</small>' : ''}</div>
-    <progress max="100" value="${remaining}" aria-label="${escape(label)}剩余${valid ? Math.round(remaining) + '%' : '未知'}"></progress>
-    <div class="reset">${escape(until(q, available))}</div></div>`;
+    <div class="number">${valid ? escape(value) : '—'}${valid ? '<small>%</small>' : ''}</div>
+    <progress max="100" value="${remaining}" aria-label="${escape(label)}剩余${valid ? escape(value) + '%' : '未知'}"></progress>
+    <div class="reset">${escape(until(q, available))}</div>${precise && valid && q.resetsAt
+      ? `<div class="reset">${escape(date(q.resetsAt * 1000))} 重置</div>` : ''}
+    ${precise && valid ? `<div class="pool-used">已用 ${escape(poolPercent(100 - q.remaining))}%</div>` : ''}</div>`;
 }
 function cursorAccount(a: Account, d: Device) {
   const available = d.online && d.remoteControlEnabled && !d.error && !a.failed;
@@ -55,6 +58,22 @@ function cursorAccount(a: Account, d: Device) {
 function account(a: Account, d: Device) {
   if (a.service === 'Cursor') return cursorAccount(a, d);
   const available = d.online && d.remoteControlEnabled && !d.error && !a.failed;
+  if (a.service === 'Antigravity') {
+    const groups = new Map<string, Quota[]>();
+    for (const q of a.windows) {
+      if (!q.label) continue;
+      const windows = groups.get(q.label) ?? [];
+      windows.push(q);
+      groups.set(q.label, windows);
+    }
+    return `<article class="account"><div class="account-heading"><h3>agy</h3><span class="brand">${a.updatedAt
+      ? `更新于 ${escape(date(a.updatedAt))}` : '等待有效读数'}</span></div>
+      ${a.error ? `<p class="pool-error" role="status">${escape(a.error)}</p>` : ''}
+      ${[...groups].map(([name, windows]) => `<section class="agy-quota-group"><h4>${escape(name === 'Gemini Models'
+        ? 'Gemini 模型' : name === 'Claude and GPT models' ? 'Claude／GPT 模型' : name)}</h4>
+      <div class="quotas">${windows.sort((left, right) => (left.minutes ?? 0) - (right.minutes ?? 0))
+        .map(q => quota(q, q.minutes === 300 ? '5 小时' : '每周', !!available, true)).join('')}</div></section>`).join('')}</article>`;
+  }
   const windows = a.windows.filter(q => !q.label).sort((a, b) => (a.minutes ?? Infinity) - (b.minutes ?? Infinity));
   const title = a.failed ? '暂未获取额度' : a.updatedAt ? `数据更新于 ${date(a.updatedAt)}` : d.checkedAt ? `读取于 ${date(d.checkedAt)} · 数据更新时间未知` : '等待首次读取';
   return `<article class="account"><div class="account-heading"><h3>${escape(a.name)}</h3><span class="brand">${escape(a.service)}${a.plan ? `<br>${escape(a.plan)}` : ''}</span></div>

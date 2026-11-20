@@ -266,6 +266,7 @@ export interface MakerSendTransactionSession {
   agentKind: AgentKind;
   workDir: string;
   remoteHostId: string | null;
+  prewarmNativeRuntime?(): void;
   /** Error sessions stay registered while their underlying handle cleanup is retried. */
   retryFailedRuntimeCapabilityCapture?(): void;
   getStatus?(): 'active' | 'aborting' | 'closed' | 'error';
@@ -1134,7 +1135,9 @@ export function createMakerSendTransaction(deps: MakerSendTransactionDeps): Make
     async prewarmSession(sessionId, createOpts) {
       if (deps.getSession(sessionId)) return false;
       const lazy = await lazyCreateSession(sessionId, createOpts);
-      return lazy.kind === 'session';
+      if (lazy.kind !== 'session') return false;
+      lazy.session.prewarmNativeRuntime?.();
+      return true;
     },
     async hydrateActiveOrcaSession(sessionId, createOpts) {
       const sess = deps.getSession(sessionId);

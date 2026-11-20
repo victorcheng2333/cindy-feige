@@ -5,6 +5,7 @@ import { configureStandbyGuestCleanup } from './providerShareAvailabilityGuests.
 import { prepareShareAvailability } from './providerShareAvailability.js';
 import { readKimiCodingAccountUsage, readOpenCodeGoAccountUsage } from '../maker-host/provider-account-usage.js';
 import { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
+import { antigravityQuotaAvailable, readAntigravityQuota } from '../maker-host/antigravity-host.js';
 import { executeTaskTags, TASK_TAG_CHANNEL } from '../localDb/ipc/taskTags.js';
 import { requestFilePeer, stopFilePeers } from './filePeer';
 import { requestTaskMigration } from '../task-migration/service';
@@ -114,6 +115,8 @@ export const {
   readKimiCodingAccountUsage,
   readOpenCodeGoAccountUsage,
   readCursorQuota,
+  antigravityQuotaAvailable,
+  readAntigravityQuota,
   cursorConnected,
   executeTaskTags: (...args) => executeTaskTags(...args),
   TASK_TAG_CHANNEL,

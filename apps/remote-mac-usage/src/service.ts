@@ -138,6 +138,7 @@ export class UsageService {
               // Cursor runtime remains local-only in the provider catalog. Discover quota
               // through its dedicated read instead of exposing runnable Cursor models remotely.
               let cursorResult: unknown;
+              const antigravityRead = read('maker:usage:antigravity-subscription').catch(() => null);
               device.cursorUnsupported = false;
               try {
                 cursorResult = await read('maker:usage:cursor-subscription');
@@ -159,8 +160,12 @@ export class UsageService {
                 }
                 catch (error) { return { ...a, failed: true, ...(a.service === 'Cursor' ? { error: error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED' ? '请更新这台电脑上的 Cindy，以读取 Cursor 额度。' : '暂时读不到 Cursor 额度，请稍后刷新。' } : {}) }; }
               }));
+              const antigravity = record(await antigravityRead);
+              if (antigravity.connected === true && antigravity.providerId === 'antigravity') {
+                accounts.push(parseAccount({ id: 'antigravity' }, antigravity));
+              }
               this.check(epoch);
-              const serviceOrder = { Claude: 0, ChatGPT: 1, Cursor: 2 };
+              const serviceOrder = { Claude: 0, ChatGPT: 1, Cursor: 2, Antigravity: 3 };
               device.accounts = accounts.sort((a, b) => serviceOrder[a.service] - serviceOrder[b.service]);
               device.checkedAt = Date.now(); device.error = null;
             } catch (e) {

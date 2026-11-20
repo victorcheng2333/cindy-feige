@@ -19,7 +19,7 @@ export interface RecordSessionCursorTurnUsageDeps {
 }
 
 /** Cursor SDK `TokenUsage`: `inputTokens` already includes cache reads and writes. */
-export function cursorUsageToTokens(raw: unknown): {
+export function cursorUsageToTokens(raw: unknown, inputIncludesCache = true): {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -35,7 +35,7 @@ export function cursorUsageToTokens(raw: unknown): {
   const cacheReadTokens = count('cacheReadTokens');
   const cacheCreateTokens = count('cacheWriteTokens');
   return {
-    inputTokens: Math.max(0, input - cacheReadTokens - cacheCreateTokens),
+    inputTokens: inputIncludesCache ? Math.max(0, input - cacheReadTokens - cacheCreateTokens) : input,
     outputTokens: count('outputTokens'),
     cacheReadTokens,
     cacheCreateTokens,
@@ -47,27 +47,30 @@ export function cursorUsageToTokens(raw: unknown): {
  * Persist token facts per model and per task; apply a value-estimate only when
  * the model's standard API tariff is unambiguous across buckets.
  */
-export async function recordSessionCursorTurnUsage(
+export async function recordSessionNativeSubscriptionTurnUsage(
   deps: RecordSessionCursorTurnUsageDeps,
   session: Session,
   event: AgentEvent,
   clientId: string | undefined,
 ): Promise<void> {
-  if (event.source !== 'cursor' || (event.type !== 'done' && event.type !== 'error')) return;
+  const source = event.source;
+  if ((source !== 'cursor' && source !== 'antigravity') || (event.type !== 'done' && event.type !== 'error')) return;
+  if (source === 'antigravity' && event.type === 'error' &&
+      (event.data as { isTerminal?: boolean } | undefined)?.isTerminal !== true) return;
   const owner = captureDataOwnerBroadcastScope();
   const turnContext = deps.turnUsageContextBySession.get(session.id) ?? captureTurnUsageContext(session.id);
   deps.turnUsageContextBySession.delete(session.id);
   const modelPromise =
     deps.turnModelPromiseBySession.get(session.id) ?? deps.readSessionModelForUsage(session.id);
   deps.turnModelPromiseBySession.delete(session.id);
-  const tokens = cursorUsageToTokens((event.data as { usage?: unknown } | undefined)?.usage);
+  const tokens = cursorUsageToTokens((event.data as { usage?: unknown } | undefined)?.usage, source === 'cursor');
   if (!tokens) return;
   const totalTokens = tokens.inputTokens + tokens.outputTokens + tokens.cacheReadTokens + tokens.cacheCreateTokens;
   if (totalTokens <= 0) return;
 
-  const registry = getActiveCatalog()?.modelRegistry;
-  const currency = currentLedgerCurrency();
-  const pricedAt = new Date().toISOString();
+  const pricing = source === 'cursor'
+    ? { registry: getActiveCatalog()?.modelRegistry, currency: currentLedgerCurrency(), at: new Date().toISOString() }
+    : null;
   let model = session.model ?? 'unknown';
   await recordSessionTurnTokens(session.id, totalTokens);
   try {
@@ -77,7 +80,7 @@ export async function recordSessionCursorTurnUsage(
   }
   if (!isDataOwnerBroadcastScopeCurrent(owner)) return;
 
-  const money = cursorApiValue(registry, model, tokens, currency, pricedAt);
+  const money = pricing ? cursorApiValue(pricing.registry, model, tokens, pricing.currency, pricing.at) : undefined;
   const details = buildTurnUsageDetails({
     ...turnBillingSource(turnContext, 'subscription'),
     ...tokens,
@@ -86,8 +89,8 @@ export async function recordSessionCursorTurnUsage(
   });
   await recordModelTurnUsage({
     sessionId: session.id,
-    agentKind: 'cursor',
-    model: cursorSubscriptionUsageModelKey(model),
+    agentKind: source,
+    model: source === 'cursor' ? cursorSubscriptionUsageModelKey(model) : model,
     money: money ?? deps.unpricedSubscriptionValueMarker(),
     inputTokensDelta: tokens.inputTokens,
     outputTokensDelta: tokens.outputTokens,

@@ -7,9 +7,10 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { AntigravityAgent, antigravityEnv, parseAntigravityModels, type AgentDeps, type AuthAdapter, type AgyModelDescriptor } from '@cindy/maker-core';
 import type { Provider } from '@cindy/model-providers';
-import { ownerScopedUserDataPath } from '../appSessionState.js';
+import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
 import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
+import { parseAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
 
 const exec = promisify(execFile);
 
@@ -21,6 +22,8 @@ function configuredEnvironment() {
 export function refreshAntigravityProxyRouting(): void {
   snapshot = undefined;
   discovery = undefined;
+  quota = undefined;
+  quotaRead = undefined;
   void readAntigravityConnection({ allowSideEffects: true }).catch(() => undefined);
 }
 function binaryPath(): string | undefined {
@@ -44,6 +47,51 @@ function binaryPath(): string | undefined {
 let executable: string | undefined;
 let snapshot: { scope: string; models: AgyModelDescriptor[]; expiresAt: number } | undefined;
 let discovery: { scope: string; token: symbol; retainOnFailure: boolean; promise: Promise<boolean> } | undefined;
+let quota: { scope: string; expiresAt: number; snapshot: AntigravityQuotaSnapshot | null } | undefined;
+let quotaRead: { scope: string; token: symbol; promise: Promise<AntigravityQuotaSnapshot | null> } | undefined;
+
+export function antigravityQuotaAvailable(): boolean {
+  return typeof executable === 'string';
+}
+
+function quotaScope() {
+  return JSON.stringify([getActiveAppSession().generation, ownerScopedUserDataPath('antigravity'), executable]);
+}
+
+export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot | null> {
+  const bin = executable;
+  if (!bin) return null;
+  const scope = quotaScope();
+  if (quota?.scope === scope && Date.now() < quota.expiresAt) return quota.snapshot;
+  if (quotaRead?.scope === scope) return quotaRead.promise;
+  const token = Symbol();
+  const isCurrent = () => quotaRead?.token === token && quotaScope() === scope;
+  const dir = ownerScopedUserDataPath('antigravity', 'quota');
+  const promise = (async () => {
+    let snapshot: AntigravityQuotaSnapshot | null = null;
+    try {
+      await mkdir(dir, { recursive: true, mode: 0o700 });
+      if (!isCurrent()) return null;
+      const env = { ...configuredEnvironment(), NO_COLOR: '1', LC_ALL: 'en_US.UTF-8' };
+      const { stdout: version } = await exec(bin, ['--version'], { cwd: dir, env, timeout: 2_000, maxBuffer: 4096 });
+      const parts = version.trim().match(/^1\.(\d+)\.(\d+)(?:\s|$)/);
+      if (parts && (Number(parts[1]) > 5 || (Number(parts[1]) === 5 && Number(parts[2]) >= 12)) && isCurrent()) {
+        const { stdout } = await exec(bin, [`--gemini_dir=${dir}`, '--print-timeout', '8s', '-p', '/usage'], {
+          cwd: dir, env, timeout: 10_000, maxBuffer: 64 * 1024,
+        });
+        snapshot = parseAntigravityQuota(stdout, Date.now());
+      }
+    } catch { /* Raw CLI output may contain account or proxy diagnostics. */ }
+    if (!isCurrent()) return null;
+    const now = Date.now();
+    const futureResets = snapshot?.windows.flatMap(w => w.resetsAtMs && w.resetsAtMs > now ? [w.resetsAtMs] : []) ?? [];
+    quota = { scope, expiresAt: Math.min(now + (snapshot ? 60_000 : 30_000), ...futureResets), snapshot };
+    return snapshot;
+  })();
+  quotaRead = { scope, token, promise };
+  void promise.finally(() => { if (quotaRead?.token === token) quotaRead = undefined; });
+  return promise;
+}
 
 function currentModels() {
   return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.models : [];

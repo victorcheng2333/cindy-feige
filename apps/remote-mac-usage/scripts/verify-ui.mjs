@@ -166,6 +166,22 @@ try {
   await electron.evaluate(({BrowserWindow},state)=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',state),weeklyOnly);
   await page.getByText('3 小时 · 剩余',{exact:true}).waitFor();
   assert.equal(await page.locator('.quota .number').textContent(),'65%');
+  // The native viewer sends the same snapshot shape. Keep the long quota card
+  // separate from the drag fixture, which needs both handles in one viewport.
+  weeklyOnly.devices[0].accounts = [{
+    id:'antigravity', name:'agy', service:'Antigravity', plan:'', failed:false, updatedAt:Date.now(),
+    windows:[
+      { label:'Gemini Models', minutes:300, remaining:92.5, resetsAt:Date.now()/1000+7200 },
+      { label:'Gemini Models', minutes:10080, remaining:72, resetsAt:Date.now()/1000+518400 },
+      { label:'Claude and GPT models', minutes:10080, remaining:0, resetsAt:null },
+    ],
+  }];
+  await electron.evaluate(({BrowserWindow},state)=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',state),weeklyOnly);
+  await page.getByRole('heading',{name:'agy',exact:true}).waitFor();
+  assert.deepEqual(await page.locator('.agy-quota-group h4').allTextContents(), ['Gemini 模型','Claude／GPT 模型']);
+  assert.deepEqual(await page.locator('.agy-quota-group .quota .number').allTextContents(), ['92.5%','72%','0%']);
+  assert.equal(await page.locator('.agy-quota-group').last().locator('.quota').count(),1);
+  for (const theme of ['light','dark']) { await page.emulateMedia({colorScheme:theme}); await check(`${theme}-agy-quota`); }
   // Render a secret-free login snapshot through the real preload subscription.
   await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',{
     signedIn:false,busy:false,error:null,login:{kind:'idle'},devices:[],updatedAt:null,demo:false,selectedDeviceIds:[],deviceOrder:[],

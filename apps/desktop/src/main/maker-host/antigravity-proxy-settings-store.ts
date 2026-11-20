@@ -24,7 +24,11 @@ function settingsPath(): string {
 export function readAntigravityProxy(): string | undefined {
   const text = readAtomicFileSync(settingsPath());
   if (text === null) return undefined;
-  return normalizeAntigravityProxy(JSON.parse(text));
+  try {
+    return normalizeAntigravityProxy(JSON.parse(text));
+  } catch {
+    return undefined;
+  }
 }
 
 export function writeAntigravityProxy(address: string): void {
