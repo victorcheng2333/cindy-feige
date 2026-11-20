@@ -11,6 +11,7 @@ export default {
   cases: {
     default: { about: 'Opening a local Agy task shows both plan windows and distinguishes zero from missing quota' },
     'agy-quota-remote': { about: 'A narrow controlled task uses the execution computer’s quota', viewport: { width: 390, height: 480 } },
+    'agy-quota-remote-rejected': { about: 'An older controlled host ends the loading state when the quota query is rejected' },
     'agy-quota-unavailable': { about: 'An unavailable snapshot does not invent a remaining percentage' },
   },
   async check(page, ui) {
@@ -25,7 +26,7 @@ export default {
     await page.waitForFunction(() => document.documentElement.dataset.localAgyReads ||
       document.documentElement.dataset.remoteAgyReads);
     await page.evaluate(() => document.dispatchEvent(new Event('fixture:release-agy-quota')));
-    if (ui.case === 'agy-quota-unavailable') {
+    if (ui.case === 'agy-quota-unavailable' || ui.case === 'agy-quota-remote-rejected') {
       await card.getByText(await ui.t('quotaCard.noWindows'), { exact: true }).waitFor();
       assert.equal(await card.getByRole('progressbar').count(), 0);
     } else {
@@ -35,7 +36,7 @@ export default {
       const box = await card.boundingBox();
       assert.ok(box && box.x >= 0 && box.x + box.width <= await page.evaluate(() => innerWidth));
     }
-    assert.deepEqual(await readCounts(), ui.case === 'agy-quota-remote' ? [0, 1] : [1, 0]);
+    assert.deepEqual(await readCounts(), ui.case.startsWith('agy-quota-remote') ? [0, 1] : [1, 0]);
     await ui.capture('task-quota');
   },
 };

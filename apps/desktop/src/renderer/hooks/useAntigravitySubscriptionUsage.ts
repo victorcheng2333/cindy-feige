@@ -38,11 +38,12 @@ const remote = createRemoteDeviceUsageMirror<QuotaRead>({
 export function useAntigravitySubscriptionUsage(enabled: boolean, deviceId: string | null) {
   const localSnapshot = local.useSnapshot(enabled && !deviceId, { live: true });
   const remoteDevice = enabled ? deviceId : null;
-  const remoteSnapshot = remote.useMirror(remoteDevice, undefined, { poll: false, live: true });
+  // Subscribe to request state before the mirror's mount effect starts the read.
   const remoteState = remote.useReadState(remoteDevice);
+  const remoteSnapshot = remote.useMirror(remoteDevice, undefined, { poll: false, live: true });
   const read = deviceId ? remoteSnapshot : localSnapshot;
   return {
     snapshot: read?.snapshot ?? null,
-    waiting: enabled && !read && !remoteState.failed,
+    waiting: enabled && !read && (!deviceId || remoteState.refreshing),
   };
 }

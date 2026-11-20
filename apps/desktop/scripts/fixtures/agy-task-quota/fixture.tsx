@@ -32,6 +32,10 @@ void mountPage({
             throw new Error('Unexpected Agy quota route');
           }
           document.documentElement.dataset.remoteAgyReads = String(++remoteReads);
+          if (ctx.case === 'agy-quota-remote-rejected') {
+            await read();
+            throw new Error('[DEVICE_LINK_CHANNEL_NOT_ALLOWED] Quota reader unavailable');
+          }
           return read();
         },
       },
@@ -40,7 +44,7 @@ void mountPage({
   render: ctx => (
     <main className="flex h-screen items-end justify-end bg-content-area p-4">
       <TodaySpendChip vendorKey="antigravity" providerId="antigravity" sessionId="fixture"
-        deviceLinkDeviceId={ctx.case === 'agy-quota-remote' ? 'task-computer' : undefined} />
+        deviceLinkDeviceId={ctx.case.startsWith('agy-quota-remote') ? 'task-computer' : undefined} />
     </main>
   ),
 });
