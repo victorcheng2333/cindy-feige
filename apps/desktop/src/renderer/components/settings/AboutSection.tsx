@@ -28,6 +28,7 @@ import { useAnalyticsSettings } from '@/hooks/useAnalyticsSettings';
 import { useLogUploadSettings } from '@/hooks/useLogUploadSettings';
 import { OpenLogsRow, UploadLogsRow } from '@/components/log-support/LogSupportActions';
 import { PiKernelVersionRow } from './PiKernelVersionRow';
+import { AntigravityCliVersionRow } from './AntigravityCliVersionRow';
 import { CursorSdkVersionRow } from './CursorSdkVersionRow';
 import { HARNESS_MENU_ITEM_CLASS, HarnessMenuFootnote, HarnessVersionMenuItem, HarnessVersionMenuRow } from './HarnessVersionMenuRow';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
@@ -195,6 +196,9 @@ export function AgentVersionsRows() {
       </SettingsBlock>
       <SettingsBlock className="p-0">
         <CursorSdkVersionRow />
+      </SettingsBlock>
+      <SettingsBlock className="p-0">
+        <AntigravityCliVersionRow />
       </SettingsBlock>
     </>
   );

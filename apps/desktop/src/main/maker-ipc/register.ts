@@ -1,4 +1,4 @@
-import { discardAntigravityDraftState, readAntigravityConnection } from '../maker-host/antigravity-host.js';
+import { discardAntigravityDraftState, readAntigravityConnection, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
 import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readContextRecoverySessionWithPorts, classifyCodexHistoryWithPorts, commitContextRecoveryWithPorts, replayContextRecoveryWithPorts, contextRecoveryRebuilt, contextRecoveryAbortSignal } from './contextRecoveryAssembly.js';
@@ -7010,11 +7010,27 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     return selectableHarnesses(maker.listAvailableAgents()).filter(kind => kind !== 'antigravity' || !getDeviceLinkInvokeContext() || isSameAccountTaskController());
   });
 
+  // Device-local maintenance. Renderer supplies no command, path, or version.
+  ipcMain.handle(MAKER_INVOKE.ANTIGRAVITY_CLI_VERSION, (event) => {
+    assertTrustedAppRendererEvent(event);
+    return readAntigravityCliVersion();
+  });
+  ipcMain.handle(MAKER_INVOKE.ANTIGRAVITY_CLI_UPDATE, async (event) => {
+    assertTrustedAppRendererEvent(event);
+    if (maker.listActiveSessions().some(session => session.agentKind === 'antigravity' && session.isTurnRunning())) {
+      return { status: 'busy' as const };
+    }
+    try {
+      return { status: 'updated' as const, version: await updateAntigravityCli() };
+    } catch {
+      return { status: 'failed' as const };
+    }
+  });
   const harnessPreferencesView = () => {
     const registered = maker.listAvailableAgents();
     const disabled = readDisabledHarnesses();
     // 已知的 Harness 固定在前;关掉清单里本版本还不认识的 id 不展示(仍保留在文件里)。
-    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', 'cursor', ...registered])];
+    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', 'cursor', 'antigravity', ...registered])];
     return {
       harnesses: kinds.map((kind) => ({
         kind,

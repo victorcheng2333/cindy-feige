@@ -3049,6 +3049,13 @@
         "openFailed": "リリースノートを開けませんでした。",
         "restartRequired": "Pi {{version}} をインストールしました。Cindy を再起動すると使用できます。"
       },
+      "agyCli": {
+        "label": "agy CLI バージョン",
+        "update": "agy CLI を更新",
+        "description": "このコンピュータで公式の agy 更新コマンドを実行します。Cindy とターミナルで使う agy CLI が更新されます。",
+        "busy": "現在の agy タスクが完了してから更新してください。",
+        "failed": "agy CLI を更新できませんでした。"
+      },
       "cursorSdk": {
         "label": "Cursor SDK バージョン",
         "manage": "Cursor SDK を管理",

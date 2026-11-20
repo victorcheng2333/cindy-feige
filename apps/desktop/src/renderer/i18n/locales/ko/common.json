@@ -3049,6 +3049,13 @@
         "openFailed": "릴리스 노트를 열 수 없습니다.",
         "restartRequired": "Pi {{version}}이 설치되었습니다. Cindy를 재시작하면 사용할 수 있습니다."
       },
+      "agyCli": {
+        "label": "agy CLI 버전",
+        "update": "agy CLI 업데이트",
+        "description": "이 컴퓨터에서 공식 agy 업데이트를 실행합니다. Cindy와 터미널에서 사용하는 agy CLI가 업데이트됩니다.",
+        "busy": "현재 agy 작업이 끝난 후 업데이트하세요.",
+        "failed": "agy CLI를 업데이트하지 못했습니다."
+      },
       "cursorSdk": {
         "label": "Cursor SDK 버전",
         "manage": "Cursor SDK 관리",

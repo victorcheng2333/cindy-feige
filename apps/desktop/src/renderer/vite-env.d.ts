@@ -7313,6 +7313,11 @@ interface ElectronAPI {
       ) => () => void;
     };
 
+    antigravityCli: {
+      getVersion(): Promise<string | null>;
+      update(): Promise<{ status: 'updated'; version: string } | { status: 'busy' | 'failed' }>;
+    };
+
     cursorSdk: {
       getState: (check?: boolean) => Promise<import('../shared/cursorSdk').CursorSdkState>;
       install: (request: import('../shared/cursorSdk').CursorSdkInstallRequest) => Promise<import('../shared/cursorSdk').CursorSdkState>;

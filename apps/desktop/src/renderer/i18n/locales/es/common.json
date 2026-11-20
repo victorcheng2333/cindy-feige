@@ -3117,6 +3117,13 @@
         "openFailed": "No se pudieron abrir las notas de la versión.",
         "restartRequired": "Pi {{version}} está instalado. Reinicia Cindy para habilitar Pi."
       },
+      "agyCli": {
+        "label": "Versión del SDK de Cursor",
+        "update": "Actualizar agy CLI",
+        "description": "Ejecuta el actualizador oficial de agy en este equipo. Se actualiza la CLI que usan Cindy y la terminal.",
+        "busy": "Espera a que termine la tarea actual de agy.",
+        "failed": "No se pudo actualizar agy CLI."
+      },
       "cursorSdk": {
         "label": "Versión del SDK de Cursor",
         "manage": "Gestionar el SDK de Cursor",

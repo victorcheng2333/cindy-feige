@@ -8629,6 +8629,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       onLoginProgress: fanOutMakerAuthLoginProgress,
     },
 
+    antigravityCli: {
+      getVersion: (): Promise<string | null> => ipcRenderer.invoke('maker:agent:antigravity-cli-version'),
+      update: (): Promise<{ status: 'updated'; version: string } | { status: 'busy' | 'failed' }> =>
+        ipcRenderer.invoke('maker:agent:antigravity-cli-update'),
+    },
+
     cursorSdk: {
       getState: (check = false): Promise<import('../shared/cursorSdk').CursorSdkState> =>
         ipcRenderer.invoke('maker:agent:cursor-sdk-state', check),

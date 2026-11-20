@@ -9,6 +9,7 @@ import { AntigravityAgent, antigravityEnv, parseAntigravityModels, type AgentDep
 import type { Provider } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
+import { parseBinaryVersionOutput } from '../agent-binaries/binary-version-probe.js';
 import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
 import { parseAntigravityQuota, supportsAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
 
@@ -52,6 +53,35 @@ let quotaRead: { scope: string; token: symbol; promise: Promise<AntigravityQuota
 
 export function antigravityQuotaAvailable(): boolean {
   return quota?.scope === quotaScope() && quota.connected;
+}
+
+export async function readAntigravityCliVersion(bin = executable ?? binaryPath()): Promise<string | null> {
+  if (!bin) return null;
+  try {
+    const { stdout, stderr } = await exec(bin, ['--version'], {
+      env: { ...configuredEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
+      timeout: 5_000, maxBuffer: 4096,
+    });
+    return parseBinaryVersionOutput(stdout, stderr);
+  } catch {
+    return null;
+  }
+}
+
+let cliUpdate: Promise<string> | undefined;
+export async function updateAntigravityCli(): Promise<string> {
+  if (cliUpdate) return cliUpdate;
+  const bin = executable ?? binaryPath();
+  if (!bin) throw new Error('agy is not installed');
+  cliUpdate = (async () => {
+    await exec(bin, ['update'], { env: configuredEnvironment(), timeout: 120_000, maxBuffer: 64 * 1024 });
+    const version = await readAntigravityCliVersion(bin);
+    if (!version) throw new Error('Updated agy version unavailable');
+    refreshAntigravityProxyRouting();
+    return version;
+  })();
+  try { return await cliUpdate; }
+  finally { cliUpdate = undefined; }
 }
 
 function quotaScope() {

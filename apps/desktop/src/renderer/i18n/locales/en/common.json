@@ -3079,6 +3079,13 @@
         "openFailed": "Could not open the release notes.",
         "restartRequired": "Pi {{version}} is installed. Restart Cindy to enable Pi."
       },
+      "agyCli": {
+        "label": "agy CLI version",
+        "update": "Update agy CLI",
+        "description": "Run the official agy updater on this computer. This updates the CLI used by Cindy and your terminal.",
+        "busy": "Wait for the current agy task to finish before updating.",
+        "failed": "Could not update agy CLI."
+      },
       "cursorSdk": {
         "label": "Cursor SDK version",
         "manage": "Manage Cursor SDK",

@@ -17,6 +17,9 @@ import { ConfirmDialogProvider } from '@/components/ui/confirm-dialog-provider';
 const getBinaryVersion = vi.fn();
 const getState = vi.fn();
 const getCursorState = vi.fn();
+const getAgyVersion = vi.fn();
+const updateAgy = vi.fn();
+const setHarnessEnabled = vi.fn();
 const installCursor = vi.fn();
 const cursorState = { currentVersion: '1.3.1', bundledVersion: '1.3.1', source: 'bundled', latestVersion: null, checkedAt: null, checkFailed: false, updateAvailable: false, operation: null };
 const relaunchForHarnessUpdate = vi.fn();
@@ -40,7 +43,7 @@ function mockOnline(byKind: Partial<Record<'claude-code' | 'codex', Online>>) {
   );
 }
 
-async function openMenu(name: 'Claude Code' | 'Codex') {
+async function openMenu(name: 'Claude Code' | 'Codex' | 'agy CLI') {
   await waitFor(() => expect(screen.queryByText('settings.about.harnessChecking')).toBeNull());
   fireEvent.keyDown(screen.getByRole('button', { name: `settings.about.harnessManage ${name}` }), { key: 'ArrowDown' });
   await screen.findByRole('menu');
@@ -60,6 +63,9 @@ describe('AboutSection agent binary versions', () => {
     getState.mockResolvedValue({ currentVersion: '0.84.4', restartRequired: false, official: { release: null }, upstream: { release: null }, operation: null });
     getCursorState.mockReset().mockResolvedValue(cursorState);
     installCursor.mockReset();
+    getAgyVersion.mockReset().mockResolvedValue('1.5.13');
+    updateAgy.mockReset().mockResolvedValue({ status: 'updated', version: '1.6.0' });
+    setHarnessEnabled.mockReset().mockResolvedValue({ harnesses: [{ kind: 'antigravity', registered: true, enabled: false }] });
     anyActivityBlockingRelaunch.mockResolvedValue(false);
     HTMLElement.prototype.scrollIntoView = vi.fn();
     (window as unknown as { electronAPI: unknown }).electronAPI = {
@@ -67,6 +73,13 @@ describe('AboutSection agent binary versions', () => {
       prepareHarnessUpdate,
       anyActivityBlockingRelaunch,
       maker: {
+        antigravityCli: { getVersion: getAgyVersion, update: updateAgy },
+        getHarnessPreferences: async () => ({ harnesses: [
+          { kind: 'codex', registered: true, enabled: true },
+          { kind: 'antigravity', registered: true, enabled: true },
+        ] }),
+        setHarnessEnabled,
+        onAgentsChanged: vi.fn(),
         cursorSdk: { getState: getCursorState, install: installCursor },
         piKernel: { getState },
         agent: {
@@ -136,6 +149,23 @@ describe('AboutSection agent binary versions', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'settings.about.cursorSdk.update' }));
     await waitFor(() => expect(installCursor).toHaveBeenCalledWith({ source: 'upstream', version: '1.4.0' }));
     expect(relaunchForHarnessUpdate).not.toHaveBeenCalled();
+  });
+
+  // Unit: the About menu must expose agy through the same preference API,
+  // and invoke the local CLI update only after the confirmation.
+  it('shows the agy CLI version, update action, and model picker switch', async () => {
+    mockOnline({});
+    renderRows();
+    await screen.findByText('1.5.13');
+    await openMenu('agy CLI');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.about.agyCli.update' }));
+    expect(updateAgy).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.about.piKernel.updateConfirm' }));
+    await screen.findByText('1.6.0');
+    expect(updateAgy).toHaveBeenCalledOnce();
+    await openMenu('agy CLI');
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'settings.about.harnessShowInPicker' }));
+    await waitFor(() => expect(setHarnessEnabled).toHaveBeenCalledWith('antigravity', false));
   });
 
   it('shows the existing not-ready state when Pi is unavailable', async () => {

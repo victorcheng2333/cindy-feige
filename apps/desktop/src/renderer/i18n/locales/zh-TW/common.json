@@ -3049,6 +3049,13 @@
         "openFailed": "無法開啟更新說明。",
         "restartRequired": "Pi {{version}} 已安裝，重新啟動 Cindy 後可用。"
       },
+      "agyCli": {
+        "label": "agy CLI 版本號",
+        "update": "更新 agy CLI",
+        "description": "在這台電腦上執行 agy 官方更新命令。Cindy 和終端機使用的 agy CLI 將一併更新。",
+        "busy": "請等 agy 目前的任務結束再更新。",
+        "failed": "agy CLI 更新失敗。"
+      },
       "cursorSdk": {
         "label": "Cursor SDK 版本號",
         "manage": "管理 Cursor SDK",

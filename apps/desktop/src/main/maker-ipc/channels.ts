@@ -393,6 +393,8 @@ export const MAKER_INVOKE = {
   // Agent 二进制 --version 输出 (About 面板用) —— spawn binary, 进程内缓存
   AGENT_BINARY_VERSION: 'maker:agent:binary-version',
   PI_KERNEL_STATE: 'maker:agent:pi-kernel-state',
+  ANTIGRAVITY_CLI_VERSION: 'maker:agent:antigravity-cli-version',
+  ANTIGRAVITY_CLI_UPDATE: 'maker:agent:antigravity-cli-update',
   CURSOR_SDK_STATE: 'maker:agent:cursor-sdk-state',
   CURSOR_SDK_INSTALL: 'maker:agent:cursor-sdk-install',
   PI_KERNEL_INSTALL: 'maker:agent:pi-kernel-install',
