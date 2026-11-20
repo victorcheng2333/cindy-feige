@@ -3119,10 +3119,10 @@
       },
       "agyCli": {
         "label": "Version du SDK Cursor",
-        "update": "Mettre à jour agy CLI",
-        "description": "Lance la mise à jour officielle d’agy sur cet ordinateur. Elle concerne la CLI utilisée par Cindy et le terminal.",
-        "busy": "Attendez la fin de la tâche agy en cours.",
-        "failed": "Impossible de mettre à jour agy CLI."
+        "update": "Mettre à jour Agy CLI",
+        "description": "Lance la mise à jour officielle d’Agy sur cet ordinateur. Elle concerne la CLI utilisée par Cindy et le terminal.",
+        "busy": "Attendez la fin de la tâche Agy en cours.",
+        "failed": "Impossible de mettre à jour Agy CLI."
       },
       "cursorSdk": {
         "label": "Version du SDK Cursor",
@@ -3735,7 +3735,7 @@
       "agyProxy": {
         "label": "Proxy réseau",
         "save": "Enregistrer",
-        "hint": "S’applique à agy sur ce Mac. Laissez vide pour utiliser l’environnement de démarrage standard. Les réponses en cours conservent leur proxy.",
+        "hint": "S’applique à Agy sur ce Mac. Laissez vide pour utiliser l’environnement de démarrage standard. Les réponses en cours conservent leur proxy.",
         "invalid": "Saisissez une URL de proxy HTTP, HTTPS ou SOCKS5 sans identifiants.",
         "saved": "Proxy enregistré.",
         "readFailed": "Impossible de lire le réglage du proxy.",
@@ -14407,11 +14407,11 @@
         "antigravity": {
           "default": {
             "label": "Par défaut",
-            "description": "Applique les contrôles d’autorisation d’agy. Les actions nécessitant une approbation peuvent être bloquées."
+            "description": "Applique les contrôles d’autorisation d’Agy. Les actions nécessitant une approbation peuvent être bloquées."
           },
           "bypassPermissions": {
             "label": "Accès complet",
-            "description": "Ignore les contrôles d’autorisation d’agy. Les outils peuvent s’exécuter sans confirmation."
+            "description": "Ignore les contrôles d’autorisation d’Agy. Les outils peuvent s’exécuter sans confirmation."
           }
         },
         "cursor": {

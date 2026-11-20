@@ -1488,7 +1488,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const unifiedAgents = (combinedCatalogs && !catalogSection || browsingSelectedCatalog ? requestedUnifiedAgents : undefined) ??
     (vendorKey && agentKind && !onUnifiedSelect && !agentSwitch && !sessionEngineFilter ? [agentKind] : undefined);
   const browseTargetLabel =
-    browseVendor === 'antigravity' ? 'agy' : browseVendor === 'cursor' ? 'Cursor' : browseVendor === 'codex' ? 'Codex' : browseVendor === 'pi' ? 'Pi' : 'Claude Code';
+    browseVendor === 'antigravity' ? 'Agy' : browseVendor === 'cursor' ? 'Cursor' : browseVendor === 'codex' ? 'Codex' : browseVendor === 'pi' ? 'Pi' : 'Claude Code';
   const enqueueAgentSwitch = (
     targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
     targetModelId: string,
@@ -4904,7 +4904,7 @@ export function ModelSelector({
   const agentName =
     agentIdentity && !fallbackOption?.active
       ? agentIdentity.vendorKey === 'antigravity'
-        ? 'agy'
+        ? 'Agy'
         : agentIdentity.vendorKey === 'cursor'
           ? 'Cursor'
           : agentIdentity.vendorKey === 'cc'
@@ -5075,7 +5075,7 @@ export function ModelSelector({
     const model = findCatalogModel(provider, selection.model, selection.agentKind);
     const selectionKey = JSON.stringify([deviceId ?? null, selection.providerId, selection.agentKind, selection.model]);
     const name = selectionKey === labelKey ? localizedName : model?.name ? localizedModelName(model.name, t) : undefined;
-    const vendor = selection.agentKind === 'antigravity' ? 'agy' : selection.agentKind === 'cursor' ? 'Cursor' : selection.agentKind === 'claude-code' ? 'Claude Code' : selection.agentKind === 'pi' ? 'Pi' : 'Codex';
+    const vendor = selection.agentKind === 'antigravity' ? 'Agy' : selection.agentKind === 'cursor' ? 'Cursor' : selection.agentKind === 'claude-code' ? 'Claude Code' : selection.agentKind === 'pi' ? 'Pi' : 'Codex';
     return [vendor, name ?? t('newChat.modelSelector.trigger.placeholder'), provider ? providerDisplayName(provider, t) : selection.providerId,
       selection.effort ? modelEffortLabel(t, model, selection.effort) : null,
       selection.fastMode ? t(selection.fastMode === 'ultrafast' ? 'newChat.modelSelector.speed.ultrafast' : 'newChat.modelSelector.meta.fastBadge') : null].filter(Boolean).join(' · ');

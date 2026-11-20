@@ -82,11 +82,11 @@ export function supportsMobileSessionAgentSwitch(
 }
 
 export function mobileAgentLabel(agentKind: MobileSessionAgentKind): string {
-  return agentKind === 'antigravity' ? 'agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
+  return agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
 export function mobileAgentLabelFromUnknown(agentKind: unknown): string {
-  return agentKind === 'antigravity' ? 'agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
+  return agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
 export function mobileAgentVendor(agentKind: MobileSessionAgentKind): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' {

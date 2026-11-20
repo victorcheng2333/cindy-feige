@@ -32,7 +32,7 @@ const VENDOR_PRESENTATION: Record<SelectableVendor, Omit<AgentOption, 'vendor'>>
   cc: { label: 'Claude', Mark: ClaudeMark },
   codex: { label: 'Codex', Mark: CodexMark },
   pi: { label: 'Pi', Mark: PiMark },
-  antigravity: { label: 'agy', Mark: Sparkles },
+  antigravity: { label: 'Agy', Mark: Sparkles },
   cursor: { label: 'Cursor', Mark: CursorMark },
 };
 

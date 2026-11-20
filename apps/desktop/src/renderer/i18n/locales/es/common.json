@@ -3119,10 +3119,10 @@
       },
       "agyCli": {
         "label": "Versión del SDK de Cursor",
-        "update": "Actualizar agy CLI",
-        "description": "Ejecuta el actualizador oficial de agy en este equipo. Se actualiza la CLI que usan Cindy y la terminal.",
-        "busy": "Espera a que termine la tarea actual de agy.",
-        "failed": "No se pudo actualizar agy CLI."
+        "update": "Actualizar Agy CLI",
+        "description": "Ejecuta el actualizador oficial de Agy en este equipo. Se actualiza la CLI que usan Cindy y la terminal.",
+        "busy": "Espera a que termine la tarea actual de Agy.",
+        "failed": "No se pudo actualizar Agy CLI."
       },
       "cursorSdk": {
         "label": "Versión del SDK de Cursor",
@@ -3735,7 +3735,7 @@
       "agyProxy": {
         "label": "Proxy de red",
         "save": "Guardar",
-        "hint": "Se aplica a agy en este Mac. Déjalo en blanco para usar el entorno de inicio estándar. Los turnos en curso conservan su proxy.",
+        "hint": "Se aplica a Agy en este Mac. Déjalo en blanco para usar el entorno de inicio estándar. Los turnos en curso conservan su proxy.",
         "invalid": "Introduce una URL de proxy HTTP, HTTPS o SOCKS5 sin credenciales.",
         "saved": "Proxy guardado.",
         "readFailed": "No se pudo leer la configuración del proxy.",
@@ -14407,11 +14407,11 @@
         "antigravity": {
           "default": {
             "label": "Predeterminado",
-            "description": "Aplica los controles de permisos de agy. Las acciones que requieren aprobación pueden bloquearse."
+            "description": "Aplica los controles de permisos de Agy. Las acciones que requieren aprobación pueden bloquearse."
           },
           "bypassPermissions": {
             "label": "Acceso completo",
-            "description": "Omite los controles de permisos de agy. Las herramientas pueden ejecutarse sin confirmación."
+            "description": "Omite los controles de permisos de Agy. Las herramientas pueden ejecutarse sin confirmación."
           }
         },
         "cursor": {

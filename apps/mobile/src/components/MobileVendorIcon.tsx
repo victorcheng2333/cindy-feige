@@ -87,7 +87,7 @@ export function MobileVendorIcon({
   return (
     <Animated.View
       accessible
-      accessibilityLabel={vendor === 'antigravity' ? 'agy' : vendor === 'cursor' ? 'Cursor' : vendor === 'codex' ? 'Codex' : vendor === 'pi' ? 'Pi' : 'Claude Code'}
+      accessibilityLabel={vendor === 'antigravity' ? 'Agy' : vendor === 'cursor' ? 'Cursor' : vendor === 'codex' ? 'Codex' : vendor === 'pi' ? 'Pi' : 'Claude Code'}
       accessibilityRole="image"
       style={{ alignItems: 'center', height: size, justifyContent: 'center', opacity, width: size }}
     >

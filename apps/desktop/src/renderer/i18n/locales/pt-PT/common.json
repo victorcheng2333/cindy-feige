@@ -3119,10 +3119,10 @@
       },
       "agyCli": {
         "label": "Versão do SDK do Cursor",
-        "update": "Atualizar agy CLI",
-        "description": "Executa o atualizador oficial do agy neste computador. A CLI utilizada pelo Cindy e pelo terminal será atualizada.",
-        "busy": "Aguarde até a tarefa atual do agy terminar.",
-        "failed": "Não foi possível atualizar o agy CLI."
+        "update": "Atualizar Agy CLI",
+        "description": "Executa o atualizador oficial do Agy neste computador. A CLI utilizada pelo Cindy e pelo terminal será atualizada.",
+        "busy": "Aguarde até a tarefa atual do Agy terminar.",
+        "failed": "Não foi possível atualizar o Agy CLI."
       },
       "cursorSdk": {
         "label": "Versão do SDK do Cursor",
@@ -3735,7 +3735,7 @@
       "agyProxy": {
         "label": "Proxy de rede",
         "save": "Guardar",
-        "hint": "Aplica-se ao agy neste Mac. Deixe em branco para utilizar o ambiente de arranque padrão. As respostas em curso mantêm o proxy atual.",
+        "hint": "Aplica-se ao Agy neste Mac. Deixe em branco para utilizar o ambiente de arranque padrão. As respostas em curso mantêm o proxy atual.",
         "invalid": "Introduza um URL de proxy HTTP, HTTPS ou SOCKS5 sem credenciais.",
         "saved": "Proxy guardado.",
         "readFailed": "Não foi possível ler a definição do proxy.",
@@ -14407,11 +14407,11 @@
         "antigravity": {
           "default": {
             "label": "Predefinição",
-            "description": "Usa as verificações de permissões do agy. As ações que exigem aprovação podem ser bloqueadas."
+            "description": "Usa as verificações de permissões do Agy. As ações que exigem aprovação podem ser bloqueadas."
           },
           "bypassPermissions": {
             "label": "Acesso total",
-            "description": "Ignora as verificações de permissões do agy. As ferramentas podem ser executadas sem confirmação."
+            "description": "Ignora as verificações de permissões do Agy. As ferramentas podem ser executadas sem confirmação."
           }
         },
         "cursor": {

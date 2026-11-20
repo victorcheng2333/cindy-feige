@@ -838,7 +838,7 @@ function UsageApp() {
                 </Pressable>
               ))}
               {!busy && !accounts.length
-                ? txt("暂无 Claude / ChatGPT / Cursor / agy 订阅账号，或尚未读取到数据。", {
+                ? txt("暂无 Claude / ChatGPT / Cursor / Agy 订阅账号，或尚未读取到数据。", {
                     color: c.muted,
                   })
                 : null}

@@ -243,7 +243,7 @@ pub fn empty_account(p: &Map<String, Value>) -> Account {
         let cursor = id == "cursor";
         return Account {
             id,
-            name: if cursor { "Cursor" } else { "agy" }.to_string(),
+            name: if cursor { "Cursor" } else { "Agy" }.to_string(),
             service: if cursor { ServiceKind::Cursor } else { ServiceKind::Antigravity },
             plan: String::new(),
             windows: Vec::new(),
@@ -395,7 +395,7 @@ pub fn parse_account(p: &Map<String, Value>, payload: &Value, current_ms: f64) -
         }
         if a.windows.is_empty() {
             a.failed = true;
-            a.error = Some("暂未读到 agy 额度，请确认远端 CLI 已登录且能联网。".to_string());
+            a.error = Some("暂未读到 Agy 额度，请确认远端 CLI 已登录且能联网。".to_string());
         }
         return Ok(a);
     }
@@ -683,7 +683,7 @@ pub fn demo_snapshot() -> Snapshot {
     let now = now_ms();
     let reset = |hours: f64| now / 1000.0 + hours * 3600.0;
     let agy = Account {
-        id: "antigravity".into(), name: "agy".into(), service: ServiceKind::Antigravity,
+        id: "antigravity".into(), name: "Agy".into(), service: ServiceKind::Antigravity,
         plan: String::new(), updated_at: Some(now), failed: false, error: None,
         windows: [
             ("Gemini Models", 300, 92.0, 3.0),

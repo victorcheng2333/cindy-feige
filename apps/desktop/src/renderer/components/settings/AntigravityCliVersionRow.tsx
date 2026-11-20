@@ -46,7 +46,7 @@ export function AntigravityCliVersionRow() {
     <HarnessVersionMenuRow
       harnessKind="antigravity"
       label={label}
-      manageLabel={t('settings.about.harnessManage', { name: 'agy CLI' })}
+      manageLabel={t('settings.about.harnessManage', { name: 'Agy CLI' })}
       version={version ?? t(version === undefined ? 'settings.about.version.loading' : 'settings.about.version.notReady')}
       status={updating ? t('settings.about.cursorSdk.installing') : ''}
       pending={updating}

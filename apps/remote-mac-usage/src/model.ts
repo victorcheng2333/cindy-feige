@@ -62,7 +62,7 @@ export function subscriptionProviders(raw: unknown): Record<string, unknown>[] {
 }
 export function emptyAccount(p: Record<string, unknown>): Account {
   if (p.id === 'cursor') return { id: 'cursor', name: 'Cursor', service: 'Cursor', plan: '', windows: [], updatedAt: null, failed: false };
-  if (p.id === 'antigravity') return { id: 'antigravity', name: 'agy', service: 'Antigravity', plan: '', windows: [], updatedAt: null, failed: false };
+  if (p.id === 'antigravity') return { id: 'antigravity', name: 'Agy', service: 'Antigravity', plan: '', windows: [], updatedAt: null, failed: false };
   const openai = record(p.auth).native === 'codex' || p.id === 'openai';
   return { id: String(p.id), name: text(p.name, openai ? 'ChatGPT' : 'Claude'), service: openai ? 'ChatGPT' : 'Claude',
     plan: '', windows: [], updatedAt: null, failed: false };

@@ -66,7 +66,7 @@ function account(a: Account, d: Device) {
       windows.push(q);
       groups.set(q.label, windows);
     }
-    return `<article class="account"><div class="account-heading"><h3>agy</h3><span class="brand">${a.updatedAt
+    return `<article class="account"><div class="account-heading"><h3>Agy</h3><span class="brand">${a.updatedAt
       ? `更新于 ${escape(date(a.updatedAt))}` : '等待有效读数'}</span></div>
       ${a.error ? `<p class="pool-error" role="status">${escape(a.error)}</p>` : ''}
       ${[...groups].map(([name, windows]) => `<section class="agy-quota-group"><h4>${escape(name === 'Gemini Models'

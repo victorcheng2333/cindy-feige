@@ -224,7 +224,7 @@ export function coldStartModelIdForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'cu
 
 /** 冷启动占位的展示名(与占位 id 同源,仅首帧短暂可见)。 */
 function coldStartLabelForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): string {
-  if (vendorKey === 'antigravity') return 'Antigravity';
+  if (vendorKey === 'antigravity') return 'Agy';
   if (vendorKey === 'cursor') return 'Cursor';
   return vendorKey === 'codex' ? 'GPT-5.6-Sol' : vendorKey === 'pi' ? 'Sonnet 5' : 'Opus 5';
 }

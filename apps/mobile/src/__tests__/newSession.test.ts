@@ -1536,7 +1536,7 @@ describe('new session model', () => {
 
   it('keeps an attachment-only agy draft from creating a task', () => {
     const draft = { ...DRAFT_WITH_MODEL, agentKind: 'antigravity' as const, workingDir: '/repo', firstMessage: '' };
-    expect(validateNewSessionDraft(draft, { attachmentCount: 1 })).toContain('agy');
+    expect(validateNewSessionDraft(draft, { attachmentCount: 1 })).toContain('Agy');
     expect(validateNewSessionDraft({ ...draft, agentKind: 'codex' }, { attachmentCount: 1 })).toBeNull();
   });
 

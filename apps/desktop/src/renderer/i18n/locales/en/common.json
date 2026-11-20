@@ -3080,11 +3080,11 @@
         "restartRequired": "Pi {{version}} is installed. Restart Cindy to enable Pi."
       },
       "agyCli": {
-        "label": "agy CLI version",
-        "update": "Update agy CLI",
-        "description": "Run the official agy updater on this computer. This updates the CLI used by Cindy and your terminal.",
-        "busy": "Wait for the current agy task to finish before updating.",
-        "failed": "Could not update agy CLI."
+        "label": "Agy CLI version",
+        "update": "Update Agy CLI",
+        "description": "Run the official Agy updater on this computer. This updates the CLI used by Cindy and your terminal.",
+        "busy": "Wait for the current Agy task to finish before updating.",
+        "failed": "Could not update Agy CLI."
       },
       "cursorSdk": {
         "label": "Cursor SDK version",
@@ -3686,7 +3686,7 @@
       "agyProxy": {
         "label": "Network proxy",
         "save": "Save",
-        "hint": "Applies to agy on this Mac. Leave blank to use the standard launch environment. Running turns finish with their current proxy.",
+        "hint": "Applies to Agy on this Mac. Leave blank to use the standard launch environment. Running turns finish with their current proxy.",
         "invalid": "Enter an HTTP, HTTPS or SOCKS5 proxy URL without credentials.",
         "saved": "Proxy saved.",
         "readFailed": "Could not read the proxy setting.",
@@ -14292,11 +14292,11 @@
         "antigravity": {
           "default": {
             "label": "Default",
-            "description": "Uses the agy permission checks. Actions that require approval may be blocked."
+            "description": "Uses the Agy permission checks. Actions that require approval may be blocked."
           },
           "bypassPermissions": {
             "label": "Full access",
-            "description": "Skips agy permission checks. Tools can run without confirmation."
+            "description": "Skips Agy permission checks. Tools can run without confirmation."
           }
         },
         "cursor": {

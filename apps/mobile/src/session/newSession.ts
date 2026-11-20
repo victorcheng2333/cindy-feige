@@ -34,7 +34,7 @@ export const NEW_SESSION_AGENT_OPTIONS: readonly { kind: NewSessionAgentKind; la
   { kind: 'codex', label: 'Codex' },
   { kind: 'pi', label: 'Pi' },
   { kind: 'cursor', label: 'Cursor' },
-  { kind: 'antigravity', label: 'agy' },
+  { kind: 'antigravity', label: 'Agy' },
 ];
 
 /**
@@ -320,7 +320,7 @@ export function summarizeNewSessionDraft(
   content: NewSessionDraftContentState = {},
 ): NewSessionDraftSummary {
   const validationMessage = validateNewSessionDraft(draft, content);
-  const agentLabel = draft.agentKind === 'antigravity' ? 'agy' : draft.agentKind === 'cursor' ? 'Cursor' : draft.agentKind === 'codex' ? 'Codex' : draft.agentKind === 'pi' ? 'Pi' : 'Claude';
+  const agentLabel = draft.agentKind === 'antigravity' ? 'Agy' : draft.agentKind === 'cursor' ? 'Cursor' : draft.agentKind === 'codex' ? 'Codex' : draft.agentKind === 'pi' ? 'Pi' : 'Claude';
   const model = draft.model.trim() || i18n.t('session.new.noModelSelected');
   const effort = draft.effort.trim();
   const workspaceLabel = draft.workspaceKind === 'dialogue'

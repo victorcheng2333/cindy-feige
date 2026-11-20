@@ -3050,11 +3050,11 @@
         "restartRequired": "Pi {{version}} 已裝，重啟 Cindy 後可用。"
       },
       "agyCli": {
-        "label": "agy CLI 版本號",
-        "update": "更新 agy CLI",
-        "description": "於本機行 agy 官方更新之令。Cindy 與終端同用之 agy CLI 將並更。",
-        "busy": "俟 agy 今務畢而後更。",
-        "failed": "agy CLI 更新未成。"
+        "label": "Agy CLI 版本號",
+        "update": "更新 Agy CLI",
+        "description": "於本機行 Agy 官方更新之令。Cindy 與終端同用之 Agy CLI 將並更。",
+        "busy": "俟 Agy 今務畢而後更。",
+        "failed": "Agy CLI 更新未成。"
       },
       "cursorSdk": {
         "label": "Cursor SDK 版本號",
@@ -3645,7 +3645,7 @@
       "agyProxy": {
         "label": "網路代理",
         "save": "存",
-        "hint": "惟用於此 Mac 之 agy。空之則用啟動環境之常設。本輪未畢者仍用舊代理。",
+        "hint": "惟用於此 Mac 之 Agy。空之則用啟動環境之常設。本輪未畢者仍用舊代理。",
         "invalid": "請輸入無帳號口令之 HTTP、HTTPS 或 SOCKS5 代理址。",
         "saved": "代理已存。",
         "readFailed": "未能讀代理之設。",
@@ -14238,11 +14238,11 @@
         "antigravity": {
           "default": {
             "label": "預設",
-            "description": "循 agy 權限檢查，須經准許之操作或被阻止。"
+            "description": "循 Agy 權限檢查，須經准許之操作或被阻止。"
           },
           "bypassPermissions": {
             "label": "完全存取",
-            "description": "略過 agy 權限檢查，工具可徑行。"
+            "description": "略過 Agy 權限檢查，工具可徑行。"
           }
         },
         "cursor": {

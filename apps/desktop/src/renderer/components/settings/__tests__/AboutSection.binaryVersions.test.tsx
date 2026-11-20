@@ -43,7 +43,7 @@ function mockOnline(byKind: Partial<Record<'claude-code' | 'codex', Online>>) {
   );
 }
 
-async function openMenu(name: 'Claude Code' | 'Codex' | 'agy CLI') {
+async function openMenu(name: 'Claude Code' | 'Codex' | 'Agy CLI') {
   await waitFor(() => expect(screen.queryByText('settings.about.harnessChecking')).toBeNull());
   fireEvent.keyDown(screen.getByRole('button', { name: `settings.about.harnessManage ${name}` }), { key: 'ArrowDown' });
   await screen.findByRole('menu');
@@ -157,13 +157,13 @@ describe('AboutSection agent binary versions', () => {
     mockOnline({});
     renderRows();
     await screen.findByText('1.5.13');
-    await openMenu('agy CLI');
+    await openMenu('Agy CLI');
     fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.about.agyCli.update' }));
     expect(updateAgy).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'settings.about.piKernel.updateConfirm' }));
     await screen.findByText('1.6.0');
     expect(updateAgy).toHaveBeenCalledOnce();
-    await openMenu('agy CLI');
+    await openMenu('Agy CLI');
     fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'settings.about.harnessShowInPicker' }));
     await waitFor(() => expect(setHarnessEnabled).toHaveBeenCalledWith('antigravity', false));
   });

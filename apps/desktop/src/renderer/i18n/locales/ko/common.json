@@ -3050,11 +3050,11 @@
         "restartRequired": "Pi {{version}}이 설치되었습니다. Cindy를 재시작하면 사용할 수 있습니다."
       },
       "agyCli": {
-        "label": "agy CLI 버전",
-        "update": "agy CLI 업데이트",
-        "description": "이 컴퓨터에서 공식 agy 업데이트를 실행합니다. Cindy와 터미널에서 사용하는 agy CLI가 업데이트됩니다.",
-        "busy": "현재 agy 작업이 끝난 후 업데이트하세요.",
-        "failed": "agy CLI를 업데이트하지 못했습니다."
+        "label": "Agy CLI 버전",
+        "update": "Agy CLI 업데이트",
+        "description": "이 컴퓨터에서 공식 Agy 업데이트를 실행합니다. Cindy와 터미널에서 사용하는 Agy CLI가 업데이트됩니다.",
+        "busy": "현재 Agy 작업이 끝난 후 업데이트하세요.",
+        "failed": "Agy CLI를 업데이트하지 못했습니다."
       },
       "cursorSdk": {
         "label": "Cursor SDK 버전",
@@ -3645,7 +3645,7 @@
       "agyProxy": {
         "label": "네트워크 프록시",
         "save": "저장",
-        "hint": "이 Mac의 agy에 적용됩니다. 비워 두면 표준 실행 환경을 사용합니다. 진행 중인 응답은 기존 프록시를 사용합니다.",
+        "hint": "이 Mac의 Agy에 적용됩니다. 비워 두면 표준 실행 환경을 사용합니다. 진행 중인 응답은 기존 프록시를 사용합니다.",
         "invalid": "인증 정보가 없는 HTTP, HTTPS 또는 SOCKS5 프록시 URL을 입력하세요.",
         "saved": "프록시를 저장했습니다.",
         "readFailed": "프록시 설정을 읽을 수 없습니다.",
@@ -14238,11 +14238,11 @@
         "antigravity": {
           "default": {
             "label": "기본값",
-            "description": "agy의 권한 검사를 사용합니다. 승인이 필요한 작업은 차단될 수 있습니다."
+            "description": "Agy의 권한 검사를 사용합니다. 승인이 필요한 작업은 차단될 수 있습니다."
           },
           "bypassPermissions": {
             "label": "전체 접근",
-            "description": "agy의 권한 검사를 건너뛰어 확인 없이 도구를 실행합니다."
+            "description": "Agy의 권한 검사를 건너뛰어 확인 없이 도구를 실행합니다."
           }
         },
         "cursor": {

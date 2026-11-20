@@ -3050,11 +3050,11 @@
         "restartRequired": "Pi {{version}} をインストールしました。Cindy を再起動すると使用できます。"
       },
       "agyCli": {
-        "label": "agy CLI バージョン",
-        "update": "agy CLI を更新",
-        "description": "このコンピュータで公式の agy 更新コマンドを実行します。Cindy とターミナルで使う agy CLI が更新されます。",
-        "busy": "現在の agy タスクが完了してから更新してください。",
-        "failed": "agy CLI を更新できませんでした。"
+        "label": "Agy CLI バージョン",
+        "update": "Agy CLI を更新",
+        "description": "このコンピュータで公式の Agy 更新コマンドを実行します。Cindy とターミナルで使う Agy CLI が更新されます。",
+        "busy": "現在の Agy タスクが完了してから更新してください。",
+        "failed": "Agy CLI を更新できませんでした。"
       },
       "cursorSdk": {
         "label": "Cursor SDK バージョン",
@@ -3645,7 +3645,7 @@
       "agyProxy": {
         "label": "ネットワークプロキシ",
         "save": "保存",
-        "hint": "この Mac の agy に適用されます。空欄の場合は標準の起動環境を使用します。実行中のターンは現在のプロキシを使います。",
+        "hint": "この Mac の Agy に適用されます。空欄の場合は標準の起動環境を使用します。実行中のターンは現在のプロキシを使います。",
         "invalid": "認証情報を含まない HTTP、HTTPS、または SOCKS5 の URL を入力してください。",
         "saved": "プロキシを保存しました。",
         "readFailed": "プロキシ設定を読み込めませんでした。",
@@ -14238,11 +14238,11 @@
         "antigravity": {
           "default": {
             "label": "デフォルト",
-            "description": "agy の権限チェックを使用します。承認が必要な操作はブロックされることがあります。"
+            "description": "Agy の権限チェックを使用します。承認が必要な操作はブロックされることがあります。"
           },
           "bypassPermissions": {
             "label": "フルアクセス",
-            "description": "agy の権限チェックを省略し、確認なしでツールを実行できます。"
+            "description": "Agy の権限チェックを省略し、確認なしでツールを実行できます。"
           }
         },
         "cursor": {

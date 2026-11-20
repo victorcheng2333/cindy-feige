@@ -3119,10 +3119,10 @@
       },
       "agyCli": {
         "label": "Versão do SDK do Cursor",
-        "update": "Atualizar agy CLI",
-        "description": "Executa o atualizador oficial do agy neste computador. A CLI usada pelo Cindy e pelo terminal será atualizada.",
-        "busy": "Aguarde a tarefa atual do agy terminar.",
-        "failed": "Não foi possível atualizar o agy CLI."
+        "update": "Atualizar Agy CLI",
+        "description": "Executa o atualizador oficial do Agy neste computador. A CLI usada pelo Cindy e pelo terminal será atualizada.",
+        "busy": "Aguarde a tarefa atual do Agy terminar.",
+        "failed": "Não foi possível atualizar o Agy CLI."
       },
       "cursorSdk": {
         "label": "Versão do SDK do Cursor",
@@ -3735,7 +3735,7 @@
       "agyProxy": {
         "label": "Proxy de rede",
         "save": "Salvar",
-        "hint": "Aplica-se ao agy neste Mac. Deixe em branco para usar o ambiente padrão de inicialização. Os turnos em andamento mantêm o proxy atual.",
+        "hint": "Aplica-se ao Agy neste Mac. Deixe em branco para usar o ambiente padrão de inicialização. Os turnos em andamento mantêm o proxy atual.",
         "invalid": "Informe uma URL de proxy HTTP, HTTPS ou SOCKS5 sem credenciais.",
         "saved": "Proxy salvo.",
         "readFailed": "Não foi possível ler a configuração do proxy.",
@@ -14407,11 +14407,11 @@
         "antigravity": {
           "default": {
             "label": "Padrão",
-            "description": "Usa as verificações de permissão do agy. Ações que exigem aprovação podem ser bloqueadas."
+            "description": "Usa as verificações de permissão do Agy. Ações que exigem aprovação podem ser bloqueadas."
           },
           "bypassPermissions": {
             "label": "Acesso total",
-            "description": "Ignora as verificações de permissão do agy. As ferramentas podem ser executadas sem confirmação."
+            "description": "Ignora as verificações de permissão do Agy. As ferramentas podem ser executadas sem confirmação."
           }
         },
         "cursor": {

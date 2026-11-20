@@ -3081,10 +3081,10 @@
       },
       "agyCli": {
         "label": "Cursor-SDK-Version",
-        "update": "agy CLI aktualisieren",
+        "update": "Agy CLI aktualisieren",
         "description": "Führt das offizielle agy-Update auf diesem Computer aus. Die von Cindy und dem Terminal genutzte CLI wird aktualisiert.",
         "busy": "Warte mit dem Update, bis die aktuelle agy-Aufgabe beendet ist.",
-        "failed": "agy CLI konnte nicht aktualisiert werden."
+        "failed": "Agy CLI konnte nicht aktualisiert werden."
       },
       "cursorSdk": {
         "label": "Cursor-SDK-Version",
@@ -3686,7 +3686,7 @@
       "agyProxy": {
         "label": "Netzwerkproxy",
         "save": "Speichern",
-        "hint": "Gilt für agy auf diesem Mac. Leer lassen, um die Standard-Startumgebung zu verwenden. Laufende Antworten behalten ihren Proxy.",
+        "hint": "Gilt für Agy auf diesem Mac. Leer lassen, um die Standard-Startumgebung zu verwenden. Laufende Antworten behalten ihren Proxy.",
         "invalid": "Gib eine HTTP-, HTTPS- oder SOCKS5-Proxy-URL ohne Zugangsdaten ein.",
         "saved": "Proxy gespeichert.",
         "readFailed": "Proxy-Einstellung konnte nicht gelesen werden.",
@@ -14292,11 +14292,11 @@
         "antigravity": {
           "default": {
             "label": "Standard",
-            "description": "Verwendet die Berechtigungsprüfungen von agy. Aktionen mit Freigabepflicht können blockiert werden."
+            "description": "Verwendet die Berechtigungsprüfungen von Agy. Aktionen mit Freigabepflicht können blockiert werden."
           },
           "bypassPermissions": {
             "label": "Vollzugriff",
-            "description": "Überspringt die Berechtigungsprüfungen von agy. Tools können ohne Bestätigung ausgeführt werden."
+            "description": "Überspringt die Berechtigungsprüfungen von Agy. Tools können ohne Bestätigung ausgeführt werden."
           }
         },
         "cursor": {

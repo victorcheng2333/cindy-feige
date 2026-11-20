@@ -435,7 +435,7 @@
     "enterProjectPath": "Introduza o caminho do projeto no computador.",
     "enterModel": "Introduza um modelo.",
     "modelLoading": "A carregar o modelo…",
-    "agyTextOnly": "O agy apenas aceita texto. Remova os anexos ou mude de modelo para os enviar.",
+    "agyTextOnly": "O Agy apenas aceita texto. Remova os anexos ou mude de modelo para os enviar.",
     "enterFirstMessageOrAttachment": "Introduza uma primeira mensagem ou adicione um anexo.",
     "noSessionIdReturned": "Não foi possível confirmar que a nova sessão foi criada no computador remoto. Sincronize novamente para verificar.",
     "sessionIdNotAdopted": "A versão do Cindy no computador remoto é incompatível. Atualize-a e tente novamente.",

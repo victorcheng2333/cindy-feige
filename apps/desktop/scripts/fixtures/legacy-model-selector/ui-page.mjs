@@ -105,7 +105,7 @@ export default {
       const viewport = await page.evaluate(() => innerWidth);
       assert.ok(box && box.x >= 0 && box.x + box.width <= viewport);
       if (viewport >= 480) assert.ok(box.width >= 370, `Five tabs only have ${box.width}px`);
-      await page.getByRole('tab', { name: 'agy', exact: true }).click();
+      await page.getByRole('tab', { name: 'Agy', exact: true }).click();
       const model = page.getByRole('option', { name: /Antigravity fixture/ });
       await model.waitFor();
       if (viewport >= 480) {
@@ -119,7 +119,7 @@ export default {
       await page.waitForFunction(() => window.__modelPickerSelection?.engine === 'antigravity'
         && window.__modelPickerSelection?.providerId === 'antigravity');
       await page.getByRole('listbox').waitFor({ state: 'hidden' });
-      assert.match(await page.locator('main button[aria-haspopup]').innerText(), /\bagy\b/);
+      assert.match(await page.locator('main button[aria-haspopup]').innerText(), /\bAgy\b/);
       assert.doesNotMatch(await page.locator('main button[aria-haspopup]').innerText(), /Codex/);
       return;
     }

@@ -170,7 +170,7 @@ export function antigravityProvider(): Provider | undefined {
   if (!executable) return undefined;
   return {
     id: 'antigravity',
-    name: 'Antigravity',
+    name: 'Agy',
     source: 'builtin',
     agents: ['antigravity'],
     auth: { method: 'oauth' },

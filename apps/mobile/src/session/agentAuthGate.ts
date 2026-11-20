@@ -46,6 +46,6 @@ export function agentAuthGateVerdict(input: AgentAuthGateInput): AgentAuthGateVe
 
 /** 未鉴权时的提示文案(与 describeAgentAuthError 的引导口径一致)。 */
 export function agentAuthGateHint(agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'): string {
-  const label = agentKind === 'antigravity' ? 'agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'claude-code' ? 'Claude' : agentKind === 'pi' ? 'Pi' : 'Codex';
+  const label = agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'claude-code' ? 'Claude' : agentKind === 'pi' ? 'Pi' : 'Codex';
   return i18n.t('session.row.authGateHint', { agent: label });
 }

@@ -24,7 +24,7 @@ const AGENT_LABEL: Record<AgentKind, string> = {
   codex: 'Codex',
   pi: 'Pi',
   cursor: 'Cursor',
-  antigravity: 'Antigravity',
+  antigravity: 'Agy',
 };
 
 interface Props {

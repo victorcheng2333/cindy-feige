@@ -117,7 +117,7 @@ export function parseAgentAuthError(error: string | null | undefined): { agent: 
   if (!error) return null;
   const matched = AGENT_NOT_AUTHENTICATED_RE.exec(error.trim());
   if (!matched) return null;
-  const agent = matched[1] === 'antigravity' ? 'agy' : matched[1] === 'cursor' ? 'Cursor' : matched[1] === 'claude-code' ? 'Claude' : matched[1] === 'pi' ? 'Pi' : 'Codex';
+  const agent = matched[1] === 'antigravity' ? 'Agy' : matched[1] === 'cursor' ? 'Cursor' : matched[1] === 'claude-code' ? 'Claude' : matched[1] === 'pi' ? 'Pi' : 'Codex';
   return { agent, reason: (matched[2] || 'unknown').trim() };
 }
 

@@ -27,7 +27,7 @@ export function cursorAccount(value: unknown): Account | null {
 export function antigravityAccount(value: unknown): Account | null {
   const raw = record(value);
   if (raw.providerId !== 'antigravity' || raw.connected !== true) return null;
-  const account: Account = { id: 'antigravity', name: 'agy', service: 'Antigravity', plan: '',
+  const account: Account = { id: 'antigravity', name: 'Agy', service: 'Antigravity', plan: '',
     windows: [], updated: null, failed: false };
   const snapshot = record(raw.snapshot);
   if (raw.status === 'ready' && Array.isArray(snapshot.windows)) {
@@ -47,7 +47,7 @@ export function antigravityAccount(value: unknown): Account | null {
   }
   if (!account.windows.length) {
     account.failed = true;
-    account.error = '暂未读到 agy 额度，请确认远端 CLI 已登录且能联网。';
+    account.error = '暂未读到 Agy 额度，请确认远端 CLI 已登录且能联网。';
   }
   return account;
 }

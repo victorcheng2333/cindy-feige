@@ -169,7 +169,7 @@ try {
   // The native viewer sends the same snapshot shape. Keep the long quota card
   // separate from the drag fixture, which needs both handles in one viewport.
   weeklyOnly.devices[0].accounts = [{
-    id:'antigravity', name:'agy', service:'Antigravity', plan:'', failed:false, updatedAt:Date.now(),
+    id:'antigravity', name:'Agy', service:'Antigravity', plan:'', failed:false, updatedAt:Date.now(),
     windows:[
       { label:'Gemini Models', minutes:300, remaining:92.5, resetsAt:Date.now()/1000+7200 },
       { label:'Gemini Models', minutes:10080, remaining:72, resetsAt:Date.now()/1000+518400 },
@@ -177,7 +177,7 @@ try {
     ],
   }];
   await electron.evaluate(({BrowserWindow},state)=>BrowserWindow.getAllWindows()[0].webContents.send('cat:state',state),weeklyOnly);
-  await page.getByRole('heading',{name:'agy',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Agy',exact:true}).waitFor();
   assert.deepEqual(await page.locator('.agy-quota-group h4').allTextContents(), ['Gemini 模型','Claude／GPT 模型']);
   assert.deepEqual(await page.locator('.agy-quota-group .quota .number').allTextContents(), ['92.5%','72%','0%']);
   assert.equal(await page.locator('.agy-quota-group').last().locator('.quota').count(),1);

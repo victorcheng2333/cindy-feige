@@ -5,7 +5,7 @@ const AGENT_DISPLAY_LABELS: Record<AgentKind, string> = {
   codex: 'Codex',
   pi: 'Pi',
   cursor: 'Cursor',
-  antigravity: 'agy',
+  antigravity: 'Agy',
 };
 
 export function providerAgentSupportLabel(provider?: Pick<ProviderView, 'agents'> | null): string {
