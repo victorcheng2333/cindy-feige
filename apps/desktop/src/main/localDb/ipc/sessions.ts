@@ -9,6 +9,7 @@ import { captureSessionCreationCancellation } from '../sessionRuntimeCleanup.js'
 import { pagePermissionSessionChanged } from '../../mcp-apps/pagePermissions.js';
 import { scheduleNativeHistoryBackupCleanup } from '../../remote-agent/controller/nativeHistoryBackup.js';
 import { removeSessionModelInterface } from '../../maker-host/session-model-interface.js';
+import { removeAntigravityTaskState } from '../../maker-host/antigravity-state.js';
 import { isEndedWriteSuppressed } from '../sessionActiveTurn.js';
 import { ensureOpenedProjectGit, openSession } from '../sessionOpening.js';
 import {
@@ -2931,6 +2932,9 @@ function removeImAttachmentsIfStillDeleted(sessionId: string): Promise<void> {
 function cleanupSessionTerminalArtifacts(sessionId: string, status: unknown): void {
   if (status !== 'deleted' && status !== 'archived') return;
   if (status === 'deleted') {
+    void removeAntigravityTaskState(sessionId).catch(() => {
+      log.warn('Agy task state cleanup failed', { sessionId });
+    });
     try { removeSessionModelInterface(sessionId); } catch (error) {
       log.warn('session interface snapshot cleanup failed', { sessionId, error: String(error) });
     }

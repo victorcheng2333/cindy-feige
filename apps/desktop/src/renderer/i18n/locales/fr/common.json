@@ -3733,6 +3733,8 @@
     },
     "providers": {
       "agyProxy": {
+        "logoutShared": "La déconnexion vous déconnecte aussi d’Agy dans le terminal.",
+        "authFailed": "Impossible de modifier la connexion à Agy. Vérifiez le réseau et réessayez.",
         "label": "Proxy réseau",
         "save": "Enregistrer",
         "hint": "S’applique à Agy sur ce Mac. Laissez vide pour utiliser l’environnement de démarrage standard. Les réponses en cours conservent leur proxy.",

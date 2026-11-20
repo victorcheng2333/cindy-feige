@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   claudeQuery: vi.fn(),
-  agyInput: '',
+  agyPrompt: '',
   piArgs: [] as string[],
   piSpawnCtx: undefined as Record<string, unknown> | undefined,
 }));
@@ -33,18 +33,28 @@ vi.mock('node:child_process', async (load) => {
     spawn: (...args: Parameters<typeof original.spawn>) => {
       if (args[0] !== '/mock/agy') return original.spawn(...args);
       const child = new EventEmitter();
-      return Object.assign(child, {
-        stdin: new Writable({
-          write(chunk, _encoding, callback) {
-            const frame = JSON.parse(String(chunk));
-            mocks.agyInput = frame.message.content;
-            callback();
-            queueMicrotask(() => child.emit('close'));
-          },
-        }),
-        stdout: new PassThrough(),
-        stderr: new PassThrough(),
+      const stdout = new PassThrough();
+      const stdin = new Writable({
+        write(chunk, _encoding, callback) {
+          const frame = JSON.parse(String(chunk));
+          let result = {};
+          if (frame.method === 'initialize') {
+            result = { protocolVersion: 1, agentCapabilities: {
+              _meta: { antigravity: { systemPrompt: { append: true } } },
+            } };
+          } else if (frame.method === 'session/new') {
+            mocks.agyPrompt = frame.params._meta.antigravity.systemPrompt.append;
+            result = { sessionId: 'agy-test', configOptions: [
+              { id: 'model', name: 'Model', type: 'select', currentValue: 'agy-model',
+                options: [{ value: 'agy-model', name: 'Agy' }] },
+            ] };
+          }
+          stdout.write(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) + '\n');
+          callback();
+        },
       });
+      stdin.once('finish', () => child.emit('close'));
+      return Object.assign(child, { stdin, stdout, stderr: new PassThrough() });
     },
   };
 });
@@ -410,6 +420,7 @@ describe('Cross-harness personalization & memory contract', () => {
     }
 
     if (kind === 'antigravity') {
+      let memoryMcpEnabled = false;
       const agent = new AntigravityAgent({
         auth: {
           getState: async () => ({ authenticated: true }),
@@ -428,6 +439,10 @@ describe('Cross-harness personalization & memory contract', () => {
         getStateDir: async () => tempRoot,
         getModels: () => [],
         getEnv: () => ({}),
+        async prepareAcp(_options, memory) {
+          memoryMcpEnabled = memory.enabled;
+          return { servers: [], dispose() {} };
+        },
       });
       const handle = await agent.startSession({
         model: 'agy-model',
@@ -435,12 +450,11 @@ describe('Cross-harness personalization & memory contract', () => {
         permissionMode: 'default',
         userPrompt: scenario.userPrompt,
         makerMemoryEnabled: scenario.makerMemoryEnabled,
+        makerMemoryScopeKey: workingDir,
         reviewMode: scenario.reviewMode,
       });
       handlesToClose.push(handle);
-      await handle.send({ type: 'user', content: 'Hello' });
-      expect(mocks.agyInput).toBe('Hello');
-      return { deliveredPromptText: mocks.agyInput };
+      return { deliveredPromptText: mocks.agyPrompt, memoryMcpEnabled };
     }
 
     // cursor

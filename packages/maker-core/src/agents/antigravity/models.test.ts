@@ -1,27 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { parseAntigravityModels, resolveAgyModel } from './models.js';
+import { expect, it } from 'vitest';
+import { parseAntigravityModels } from './models.js';
 
-// Unit: a new task's selected effort must reach the CLI as a discovered slug,
-// while a resumed task using a pre-grouping slug must keep its original effort.
-describe('Antigravity model selection', () => {
+// The ACP model selector uses a base ID for multi-effort models, and the
+// unchanged CLI ID for singletons such as GPT-OSS.
+it('publishes ACP model IDs with only their discovered effort levels', () => {
   const catalog = parseAntigravityModels([
     'Fetching available models...',
     'gemini-4-neon-high\tGemini 4 Neon (High)',
     'gemini-4-neon-low\tGemini 4 Neon (Low)',
+    'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)',
     'gemini-pro-orchestrator\tOrchestrator (Carbon)',
   ].join('\n'));
-
-  it('exposes only the discovered tiers for a model and resolves the exact CLI slug', () => {
-    expect(catalog.find(row => row.id === 'gemini-4-neon')).toMatchObject({
-      displayName: 'Gemini 4 Neon', efforts: ['low', 'high'], defaultEffort: 'high',
-    });
-    expect(resolveAgyModel(catalog, 'gemini-4-neon', 'low')).toBe('gemini-4-neon-low');
-    expect(resolveAgyModel(catalog, 'gemini-4-neon', 'medium')).toBe('gemini-4-neon-high');
-    expect(resolveAgyModel(catalog, 'gemini-pro-orchestrator', 'low')).toBe('gemini-pro-orchestrator');
-  });
-
-  it('keeps historical slugs routable with their original effort', () => {
-    expect(catalog.find(row => row.id === 'gemini-4-neon-low')).toMatchObject({ defaultEnabled: false, efforts: [] });
-    expect(resolveAgyModel(catalog, 'gemini-4-neon-low', 'high')).toBe('gemini-4-neon-low');
-  });
+  expect(catalog).toMatchObject([
+    { id: 'gemini-4-neon', displayName: 'Gemini 4 Neon', efforts: ['low', 'high'], defaultEffort: 'high' },
+    { id: 'gpt-oss-120b-medium', efforts: [], defaultEffort: null },
+    { id: 'gemini-pro-orchestrator', efforts: [], defaultEffort: null },
+  ]);
 });

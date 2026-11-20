@@ -1,15 +1,16 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizeAntigravityProxy, readAntigravityProxy, writeAntigravityProxy } from '../antigravity-proxy-settings-store';
+import { antigravityStateDir, removeAntigravityTaskState, retainAntigravityTaskState } from '../antigravity-state';
 
 const mock = vi.hoisted(() => ({ root: '', owner: 'a' }));
 vi.mock('../../appSessionState.js', () => ({
   ownerScopedUserDataPath: (...parts: string[]) => path.join(mock.root, mock.owner, ...parts),
 }));
 
-describe('Antigravity proxy preference', () => {
+describe('Antigravity owner-scoped state', () => {
   beforeEach(() => { mock.root = mkdtempSync(path.join(tmpdir(), 'agy-proxy-test-')); mock.owner = 'a'; });
   afterEach(() => rmSync(mock.root, { recursive: true, force: true }));
 
@@ -26,6 +27,22 @@ describe('Antigravity proxy preference', () => {
     expect(readAntigravityProxy()).toBe('socks5://proxy.example:1080');
     writeAntigravityProxy('');
     expect(readAntigravityProxy()).toBe('');
+  });
+
+  // Unit: removing a live task before its native subprocess exits can lose state or recreate the directory.
+  it('clears a deleted task only after its process exits and keeps the captured owner', async () => {
+    const original = antigravityStateDir('task', 'project');
+    mkdirSync(original, { recursive: true });
+    const release = retainAntigravityTaskState('task');
+    const removal = removeAntigravityTaskState('task');
+    expect(existsSync(original)).toBe(true);
+    mock.owner = 'b';
+    const other = antigravityStateDir('task', 'project');
+    mkdirSync(other, { recursive: true });
+    release();
+    await removal;
+    expect(existsSync(original)).toBe(false);
+    expect(existsSync(other)).toBe(true);
   });
 
   it('admits supported addresses but refuses credentials and non-proxy schemes', () => {

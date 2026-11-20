@@ -1304,6 +1304,64 @@ function LocalProviderNameInput({
   );
 }
 
+function AgyHeader({
+  provider, onChanged, children, dataOwnerId, ownerGeneration,
+}: {
+  provider: ProviderView;
+  onChanged: () => void;
+  children?: ReactNode;
+  dataOwnerId: string | null;
+  ownerGeneration: number | null;
+}) {
+  const { t } = useTranslation();
+  const { confirm } = useConfirmDialog();
+  const [pending, setPending] = useState(false);
+
+  async function changeAccount() {
+    if (ownerGeneration === null) return;
+    const auth = window.electronAPI.maker.auth;
+    if (pending) {
+      await auth.cancelLogin('antigravity');
+      return;
+    }
+    if (provider.connected && !await confirm({
+      title: t('settings.providers.button.disconnect'),
+      description: t('settings.providers.agyProxy.logoutShared'),
+      confirmText: t('settings.providers.button.disconnect'),
+      cancelText: t('settings.providers.button.cancel'),
+    })) return;
+    setPending(true);
+    try {
+      if (provider.connected) {
+        await auth.logout('antigravity', { dataOwnerId, ownerGeneration });
+      } else {
+        const result = await auth.triggerLogin('antigravity');
+        if (!result.authenticated && result.errorReason !== 'login_cancelled') {
+          toast.error(t('settings.providers.agyProxy.authFailed'));
+        }
+      }
+    } catch {
+      toast.error(t('settings.providers.agyProxy.authFailed'));
+    } finally {
+      setPending(false);
+      onChanged();
+    }
+  }
+
+  return <DetailHeader icon={providerIcon(provider, 18)} title={provider.name} subtitle="" provider={provider}
+    status={provider.connected ? { kind: 'connected' } : undefined}
+    primaryAction={{
+      label: t(pending && !provider.connected ? 'settings.providers.button.cancel'
+        : provider.connected ? 'settings.providers.button.disconnect' : 'subscriptionAccounts.login'),
+      onClick: () => void changeAccount(),
+      disabled: ownerGeneration === null || pending && provider.connected,
+    }}
+    detail={<AntigravityProxySettings key={`${dataOwnerId}:${ownerGeneration}`} ownerId={dataOwnerId}
+      generation={ownerGeneration} onChanged={onChanged} />}>
+    {children}
+  </DetailHeader>;
+}
+
 function CursorHeader({ provider, onChanged, children }: { provider: ProviderView; onChanged: () => void; children?: ReactNode }) {
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
@@ -3485,12 +3543,8 @@ export function ProvidersSection() {
   const renderDetailHeader = (p: ProviderView, children: ReactNode): ReactNode => {
     if (isOrganizationManagedProvider(p)) return <ManagedProviderHeader key={p.id} provider={p} children={children} />;
     if (p.id === 'cursor') return <CursorHeader provider={p} onChanged={refetch}>{children}</CursorHeader>;
-    if (p.id === 'antigravity') return (
-      <DetailHeader icon={providerIcon(p, 18)} title={p.name} subtitle=""
-        provider={p} detail={<AntigravityProxySettings key={`${dataOwnerId}:${ownerGeneration}`} ownerId={dataOwnerId} generation={ownerGeneration} onChanged={refetch} />}>
-        {children}
-      </DetailHeader>
-    );
+    if (p.id === 'antigravity') return <AgyHeader key={`${dataOwnerId}:${ownerGeneration}`} provider={p}
+      dataOwnerId={dataOwnerId} ownerGeneration={ownerGeneration} onChanged={refetch}>{children}</AgyHeader>;
     if (p.id === 'xd')
       return <XdGatewayHeader children={children} provider={p} onChanged={refetch} />;
     if (p.id === 'anthropic' || p.id === 'openai') {

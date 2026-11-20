@@ -1,7 +1,7 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { realpath } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
+  AgentStartupCleanupPendingError,
   AgentStartupStoppedError,
   BaseAgent,
   TurnPermissionPolicyUnsupportedError,
@@ -10,18 +10,17 @@ import {
   type SendOptions,
   type StartSessionOptions,
 } from '../base-agent.js';
-import type { Capabilities } from '../../types/capabilities.js';
-import type { Effort, PermissionMode, UserMessage } from '../../types/common.js';
-import type { AgentEvent, UsageSnapshot } from '../../types/events.js';
-import { createAsyncQueue } from '../shared/async-queue.js';
-import { AGY_EFFORTS, resolveAgyModel, type AgyModelDescriptor } from './models.js';
-import { AgyTurn, record } from './stream.js';
+import type { Capabilities, ModelDescriptor } from '../../types/capabilities.js';
+import type { PermissionMode } from '../../types/common.js';
+import { openAcpSession } from '../acp/session.js';
+import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
+import { startAgyAcpProcess } from './acp-process.js';
+import { AGY_EFFORTS } from './models.js';
+import { loadMemoryContext } from '../../memory/context.js';
+import { resolveMemoryScopeKey } from '../../memory/scope-resolver.js';
 
 const supported = { supported: true } as const;
 const unavailable = { supported: false, reason: 'not-implemented' } as const;
-const fullAccess = 'bypassPermissions';
-const pendingId = '<pending>';
-const notApproved = (mode: PermissionMode) => mode !== 'default' && mode !== fullAccess;
 
 export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
   switchModel: supported,
@@ -29,70 +28,68 @@ export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
   hasFastMode: false,
   effort: supported,
   effortLevels: AGY_EFFORTS.map(id => ({ id, displayName: id })),
-  reasoningDisplay: [],
+  reasoningDisplay: ['full'],
   permissionModes: [
     { id: 'default', displayName: 'Default' },
-    { id: fullAccess, displayName: 'Full access' },
+    { id: 'acceptEdits', displayName: 'Accept edits' },
+    { id: 'auto', displayName: 'Auto' },
+    { id: 'bypassPermissions', displayName: 'Full access' },
   ],
   setPermissionModeMidSession: supported,
   turnPermissionPolicy: {
     supported: unavailable,
-    unsupportedPermissionModes: ['default', 'ask', 'auto', 'acceptEdits', 'plan', fullAccess],
+    unsupportedPermissionModes: ['default', 'ask', 'auto', 'acceptEdits', 'plan', 'bypassPermissions'],
   },
-  planMode: unavailable,
-  multimodal: { text: supported, image: unavailable, file: unavailable },
+  planMode: supported,
+  multimodal: { text: supported, image: supported, file: supported },
   fork: unavailable,
   rewind: unavailable,
   abort: supported,
   sameTurnSteer: unavailable,
-  memory: { supported: unavailable },
+  memory: { supported },
   extraDirs: unavailable,
 };
 
+export function isAntigravityPermissionMode(mode: unknown): boolean {
+  return ANTIGRAVITY_CAPABILITIES.permissionModes.some(option => option.id === mode);
+}
+
 export interface AntigravityAgentDeps extends AgentDeps {
   getStateDir(options: StartSessionOptions): Promise<string>;
+  prepareAcp(options: StartSessionOptions, memory: { enabled: boolean; scopeKey?: string }):
+    Promise<{ servers: AcpMcpServer[]; dispose(): void }>;
+  refreshModels?(): void;
   getEnv(): NodeJS.ProcessEnv;
-  getModels(): AgyModelDescriptor[];
+  getModels(): ModelDescriptor[];
 }
 
-function proxyFingerprint(env: NodeJS.ProcessEnv): string {
-  return JSON.stringify(['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'NO_PROXY', 'no_proxy']
-    .map(key => env[key]));
-}
-
-type Process = {
-  proxyFingerprint: string;
-  requestedModel: string;
-  child: ChildProcessWithoutNullStreams;
-  exited: Promise<void>;
-  stopping?: Promise<void>;
-  hasSent: boolean;
-  initializedId?: string;
-  rejectedWhileIdle?: true;
-};
-
-async function waitForAgyTransition(wait: Promise<void>, signal?: AbortSignal): Promise<void> {
-  if (!signal) return wait;
-  signal.throwIfAborted();
-  let abort!: () => void;
-  const cancelled = new Promise<never>((_, reject) => {
-    abort = () => reject(signal.reason);
-    signal.addEventListener('abort', abort, { once: true });
-  });
+async function readAcpIdentity(file: string): Promise<string | undefined> {
   try {
-    await Promise.race([wait, cancelled]);
-  } finally {
-    signal.removeEventListener('abort', abort);
+    return await readFile(file, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return undefined;
   }
 }
 
-function messageText(content: UserMessage['content']): string {
-  if (typeof content === 'string') return content;
-  return content.map(block => {
-    if (block.type === 'text') return block.text;
-    if (block.type === 'mention' && block.kind !== 'agent') return block.path;
-    throw new Error('Antigravity currently accepts text messages only.');
-  }).join('\n');
+function classifyAgyWarning(text: string): { error: string; reason: string } | undefined {
+  const diagnostic = text.trim();
+  if (!/^⚠️?\s*(?:[A-Z_]+ \(code \d+\)|failed to construct executor|agent execution terminated)/i.test(diagnostic)) {
+    return undefined;
+  }
+  if (/location is not supported/i.test(diagnostic)) {
+    return { error: 'Agy is unavailable from this network location. Check the Agy proxy.', reason: 'agy-region-blocked' };
+  }
+  if (/unauthenticated|authentication|sign in/i.test(diagnostic)) {
+    return { error: 'Sign in to Agy again and retry.', reason: 'acp-auth-required' };
+  }
+  if (/quota|resource.exhausted|rate limit|code 429/i.test(diagnostic)) {
+    return { error: 'Agy has reached a quota or rate limit. Check your subscription limits and retry.', reason: 'agy-rate-limited' };
+  }
+  if (/model not specified|model.*(?:not found|unavailable|not supported)/i.test(diagnostic)) {
+    return { error: 'The selected Agy model is unavailable. Refresh the model list and try again.', reason: 'agy-model-unavailable' };
+  }
+  return { error: 'Agy could not complete the turn. Check the configured proxy and retry.', reason: 'acp-request-failed' };
 }
 
 export class AntigravityAgent extends BaseAgent {
@@ -104,281 +101,131 @@ export class AntigravityAgent extends BaseAgent {
     this.capabilities = this.buildCapabilities(ANTIGRAVITY_CAPABILITIES);
     Object.defineProperty(this.capabilities, 'availableModels', {
       enumerable: true,
-      get: () => agyDeps.getModels().map(({ nativeId: _nativeId, nativeIdByEffort: _nativeIdByEffort, ...model }) => model),
+      get: agyDeps.getModels,
     });
   }
 
   async startSession(opts: StartSessionOptions): Promise<AgentSessionHandle> {
-    const { getEnv, getModels } = this.agyDeps;
-    let mode = opts.permissionMode ?? 'default';
-    let model = opts.model;
-    let effort = opts.effort;
-    let cwd: string;
-    let stateDir: string;
+    let bridge: Awaited<ReturnType<AntigravityAgentDeps['prepareAcp']>> | undefined;
+    let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
+    let mode: PermissionMode = opts.permissionMode === 'plan' ? 'default' : opts.permissionMode ?? 'default';
+    let planMode = opts.planMode ?? opts.permissionMode === 'plan';
     try {
       if (opts.remoteHostId || opts.deviceHosted || opts.reviewMode || opts.vendorOptions?.orcaRole ||
           opts.botRuntimeProfile || opts.extraDirs?.length || opts.writableDirs?.length) {
-        throw new Error('Antigravity requires an ordinary local desktop task.');
+        throw new Error('Agy requires an ordinary local desktop task.');
       }
-      if (opts.providerId && opts.providerId !== 'antigravity') throw new Error('Antigravity requires its own model source.');
-      if (opts.resumeSessionId && !/^[\w-]+$/.test(opts.resumeSessionId)) throw new Error('Invalid Antigravity conversation.');
-      if (opts.planMode || notApproved(mode)) throw new Error('Antigravity supports Default and Full access.');
-      if (!/^[\w.:-]+$/.test(opts.model)) throw new Error('Invalid Antigravity model.');
-      cwd = await realpath(opts.workingDir);
-      stateDir = await this.agyDeps.getStateDir(opts);
+      if (opts.providerId && opts.providerId !== this.kind) throw new Error('Agy requires its own model source.');
+      if (!isAntigravityPermissionMode(mode)) throw new Error('Unsupported Agy permission mode.');
+      const cwd = await realpath(opts.workingDir);
+      const stateDir = await this.agyDeps.getStateDir(opts);
+      const marker = path.join(stateDir, 'cindy-acp-session-id');
+      // Only identities written in the ACP state directory are passed to session/resume.
+      const saved = opts.resumeSessionId ? await readAcpIdentity(marker) : undefined;
+      const resumeSessionId = saved === opts.resumeSessionId ? saved : undefined;
+      const manager = this.agyDeps.makerMemory;
+      const memoryEnabled = !!manager && (opts.makerMemoryEnabled ?? this.agyDeps.runtimeConfig.makerMemoryEnabled ?? false);
+      const scopeKey = memoryEnabled ? opts.makerMemoryScopeKey ?? await resolveMemoryScopeKey(cwd) : undefined;
+      const memory = scopeKey ? await loadMemoryContext({
+        manager, scopeKey, snapshot: opts.makerMemoryIndexSnapshot, projectDirectory: opts.makerMemoryProjectDir,
+      }) : undefined;
+      const systemPromptAppend = [
+        this.agyDeps.runtimeConfig.systemPrompt,
+        memory?.rules,
+        memory?.index,
+        opts.userPrompt ?? this.agyDeps.runtimeConfig.userPrompt,
+      ].map(part => part?.trim()).filter(Boolean).join('\n\n');
+
+      bridge = await this.agyDeps.prepareAcp(opts, { enabled: memoryEnabled && !memory?.projectDirectory, scopeKey });
+      const taskBridge = bridge;
+      endpoint = startAgyAcpProcess(this.deps.binaryPath, cwd, stateDir, this.agyDeps.getEnv());
+      void endpoint.whenStopped.then(() => taskBridge.dispose()).catch(() => {
+        this.agyDeps.logger.warn('Could not release the Agy MCP bridge');
+      });
+      const session = await openAcpSession({
+        transport: endpoint.transport,
+        cwd,
+        clientInfo: { name: 'cindy', version: '1.0.0' },
+        mcpServers: taskBridge.servers,
+        resumeSessionId,
+        logger: this.agyDeps.logger,
+        cancelGraceMs: 5_000,
+        classifyWarning: classifyAgyWarning,
+        sessionMetadata(init) {
+          if (!systemPromptAppend) return;
+          const agy = asRecord(init.agentMetadata.antigravity);
+          if (asRecord(agy.systemPrompt).append !== true) {
+            throw new Error('Update Agy to use Cindy instructions through ACP.');
+          }
+          return { antigravity: { systemPrompt: { append: systemPromptAppend } } };
+        },
+      });
+      if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
+      if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
+      const directory = this.agyDeps.getModels();
+      if (directory.length && !directory.every(model =>
+        session.capabilities.availableModels.some(offered => offered.id === model.id))) {
+        this.agyDeps.refreshModels?.();
+      }
+      await session.setPermissionMode(planMode ? 'plan' : mode);
+      await session.setModel(opts.model);
+      if (opts.effort && opts.effort !== session.getEffort()) await session.setEffort(opts.effort);
+      if (!resumeSessionId) await writeFile(marker, session.nativeId, { mode: 0o600 });
+
+      const validate = (options: SendOptions) => {
+        if (options.turnPermissionPolicy || options.toolsDisabled) {
+          throw new TurnPermissionPolicyUnsupportedError(this.kind, mode);
+        }
+      };
+      const setPlanMode = async (enabled: boolean) => {
+        if (enabled === planMode) return;
+        await session.setPermissionMode(enabled ? 'plan' : mode);
+        planMode = enabled;
+      };
+      return {
+        get id() { return session.id; },
+        agentKind: this.kind,
+        get model() { return session.model; },
+        send: async (message, options = {}) => {
+          validate(options);
+          if (options.planMode !== undefined && options.planMode !== planMode) {
+            await setPlanMode(options.planMode);
+          }
+          await session.send(message, options);
+        },
+        steer: async () => { throw new Error('Agy does not support same-turn steering.'); },
+        abort: () => session.abort(),
+        close: () => session.close(),
+        setModel: async (model, settings) => {
+          if (settings?.providerId && settings.providerId !== this.kind) throw new Error('Agy requires its own model source.');
+          await session.setModel(model);
+          if (settings?.effort && session.getEffort() !== settings.effort) await session.setEffort(settings.effort);
+        },
+        setEffort: effort => session.setEffort(effort),
+        setPermissionMode: async (permission: PermissionMode) => {
+          if (!isAntigravityPermissionMode(permission)) throw new Error('Unsupported Agy permission mode.');
+          if (!planMode) await session.setPermissionMode(permission);
+          mode = permission;
+        },
+        setPlanMode,
+        getPlanMode: () => planMode,
+        validateSendOptions: validate,
+        events: () => session.events(),
+        getUsageSnapshot: () => session.getUsageSnapshot(),
+        setInteractionResolver: resolver => session.setInteractionResolver(resolver),
+      };
     } catch (error) {
+      if (endpoint) {
+        await endpoint.transport.close().catch(() => {});
+        if (!endpoint.stopped()) {
+          throw new AgentStartupCleanupPendingError('Agy ACP is still stopping', {
+            cause: error, whenStopped: endpoint.whenStopped, retryCleanup: endpoint.transport.close,
+          });
+        }
+      } else {
+        bridge?.dispose();
+      }
       throw new AgentStartupStoppedError(error);
     }
-
-    const queue = createAsyncQueue<AgentEvent>();
-    const emit = (type: AgentEvent['type'], data: unknown) => { queue.push({ type, data, source: 'antigravity' }); };
-    const usage: UsageSnapshot = { tokenUsage: 0, contextTokens: 0, contextWindow: 0, costUsd: 0 };
-    let id = opts.resumeSessionId || pendingId;
-    let runtime: Process | undefined;
-    let turn: AgyTurn | undefined;
-    let turnCompletion: { promise: Promise<void>; resolve: () => void } | undefined;
-    let closed = false;
-    let configuration: Promise<void> | undefined;
-
-    const finish = (outcome: 'success' | 'stopped' | 'error', result?: Record<string, unknown>) => {
-      if (!turn) return;
-      turn.finish(outcome, result);
-      turn = undefined;
-      turnCompletion?.resolve();
-      turnCompletion = undefined;
-    };
-
-    const signal = (process: Process, name: NodeJS.Signals) => {
-      try {
-        if (process.child.pid) globalThis.process.kill(-process.child.pid, name);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-          this.agyDeps.logger.warn('Could not signal Antigravity process group', { signal: name });
-        }
-      }
-    };
-
-    const stop = async (graceful = false) => {
-      const process = runtime;
-      if (!process) return;
-      if (process.stopping) return process.stopping;
-      const kill = setTimeout(() => signal(process, 'SIGKILL'), 2_000);
-      process.stopping = process.exited.finally(() => clearTimeout(kill));
-      if (!graceful) signal(process, 'SIGINT');
-      process.child.stdin.end();
-      return process.stopping;
-    };
-
-    const applyConfiguration = async (update: () => void) => {
-      if (closed || (turn && !runtime?.stopping) || configuration)
-        throw new Error('Wait for Antigravity to finish before changing its configuration.');
-      configuration = (async () => {
-        await stop(true);
-        if (closed) throw new Error('Antigravity session is closed.');
-        update();
-      })();
-      try {
-        await configuration;
-      } finally {
-        configuration = undefined;
-      }
-    };
-    const setSelection = async (nextModel: string, nextEffort?: Effort) => {
-      resolveAgyModel(getModels(), nextModel, nextEffort);
-      if (model === nextModel && effort === nextEffort) return;
-      await applyConfiguration(() => {
-        model = nextModel;
-        effort = nextEffort;
-      });
-    };
-
-    const thisModelSupportsEffort = (level: Effort) =>
-      getModels().find(item => item.id === model)?.efforts.includes(level);
-
-    const publishConversation = (process: Process) => {
-      if (id !== pendingId || !process.initializedId) return;
-      id = process.initializedId;
-      emit('session_id', id);
-    };
-
-    const open = (env: NodeJS.ProcessEnv) => {
-      const requestedModel = resolveAgyModel(getModels(), model, effort);
-      const args = [
-        `--gemini_dir=${stateDir}`, '--model', requestedModel,
-        '--input-format', 'stream-json', '--output-format', 'stream-json',
-        '--disable-slash-commands', '--mode', 'default',
-        ...(mode === fullAccess ? ['--dangerously-skip-permissions'] : []),
-        ...(id === pendingId ? [] : ['--conversation', id]),
-        '-p', '',
-      ];
-      const child = spawn(this.deps.binaryPath, args, { cwd, env, detached: true });
-      const process: Process = {
-        child,
-        proxyFingerprint: proxyFingerprint(env),
-        requestedModel,
-        hasSent: false,
-        exited: new Promise(resolve => child.once('close', () => resolve())),
-      };
-      runtime = process;
-      const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-      child.stderr.resume(); // CLI diagnostics may contain auth or proxy information.
-      child.stdin.on('error', () => { /* The write callback or close event settles the turn. */ });
-      child.once('error', () => {
-        if (runtime !== process || process.stopping) return;
-        if (turn) finish('error', { message: 'Could not start agy.' });
-        else process.rejectedWhileIdle = true;
-      });
-      child.once('close', () => {
-        lines.close();
-        if (runtime !== process) return;
-        runtime = undefined;
-        finish(process.stopping ? 'stopped' : 'error', { message: 'agy exited before completing the turn.' });
-      });
-      const rejectStartup = (message: string) => {
-        const idle = !turn;
-        if (idle) process.rejectedWhileIdle = true;
-        else finish('error', { message });
-        void stop(idle).catch(() => this.agyDeps.logger.warn('Could not stop rejected Antigravity process'));
-      };
-      lines.on('line', line => {
-        if (runtime !== process) return;
-        let event: Record<string, unknown>;
-        try { event = record(JSON.parse(line)); } catch { return; }
-        if (event.event === 'init') {
-          const nativeId = event.conversation_id;
-          const expectedId = process.initializedId ?? (id === pendingId ? undefined : id);
-          if (typeof nativeId !== 'string' || !/^[\w-]+$/.test(nativeId) ||
-              (expectedId !== undefined && expectedId !== nativeId)) {
-            if (!process.stopping) rejectStartup('agy returned a different conversation. The saved conversation was kept.');
-            return;
-          }
-          const actualModel = record(event.init).model;
-          if (typeof actualModel === 'string' && actualModel !== requestedModel) {
-            if (!process.stopping) rejectStartup('agy started with a different model than selected.');
-            return;
-          }
-          // The CLI can allocate its own conversation while the composer is still
-          // a draft. Expose that ID only after a real send uses this process.
-          process.initializedId = nativeId;
-          if (turn) publishConversation(process);
-          return;
-        }
-        if (!turn) {
-          if (!process.stopping && !process.hasSent && event.event === 'result') rejectStartup('agy exited during startup.');
-          return;
-        }
-        if (event.event === 'step_update' && process.initializedId) {
-          const step = record(event.step_update);
-          if (step.conversation_id === process.initializedId) {
-            publishConversation(process);
-            turn.step(step, !!process.stopping);
-          }
-        } else if (event.event === 'result' && !process.stopping) {
-          const result = record(event.result);
-          const matchesConversation = !!process.initializedId && result.conversation_id === process.initializedId;
-          if (matchesConversation) publishConversation(process);
-          const succeeded = matchesConversation && result.status === 'SUCCESS';
-          if (matchesConversation && result.finished_reason === 'interrupted') {
-            void stop(true);
-          } else if (succeeded) {
-            finish('success', result);
-          } else {
-            finish('error', result.finished_reason === 'print_timeout'
-              ? { message: 'agy timed out before completing the turn.' }
-              : undefined);
-          }
-        }
-      });
-      return process;
-    };
-
-    const validateSendOptions = (options: SendOptions) => {
-      if (options.turnPermissionPolicy || options.toolsDisabled)
-        throw new TurnPermissionPolicyUnsupportedError(this.kind, mode);
-      if (options.planMode) throw new Error('Antigravity does not support Cindy Plan mode.');
-    };
-
-    return {
-      get id() { return id; },
-      agentKind: this.kind,
-      get model() { return model; },
-      validateSendOptions,
-      prewarm: () => {
-        if (closed || turn || runtime || configuration) return;
-        try {
-          open(getEnv());
-        } catch {
-          this.agyDeps.logger.debug('Antigravity native prewarm could not start');
-        }
-      },
-      async send(message, options = {}) {
-        validateSendOptions(options);
-        const text = messageText(message.content);
-        // The host queues ordinary turns. Its terminal event can arrive while
-        // this handle is still retiring the old transport or applying settings.
-        // Wait before writing anything so a follow-up is delivered only once.
-        for (;;) {
-          options.signal?.throwIfAborted();
-          if (closed) throw new Error('Antigravity session is closed.');
-          const pending = configuration ?? runtime?.stopping ?? turnCompletion?.promise;
-          if (pending) {
-            await waitForAgyTransition(pending, options.signal);
-            continue;
-          }
-          const env = getEnv();
-          if (runtime && (runtime.rejectedWhileIdle || runtime.proxyFingerprint !== proxyFingerprint(env) ||
-              (!runtime.hasSent && runtime.requestedModel !== resolveAgyModel(getModels(), model, effort)))) {
-            await applyConfiguration(() => {});
-            continue;
-          }
-          const process = runtime ?? open(env);
-          const currentTurn = new AgyTurn(emit, usage);
-          turn = currentTurn;
-          let resolve!: () => void;
-          const promise = new Promise<void>(done => { resolve = done; });
-          turnCompletion = { promise, resolve };
-          process.hasSent = true;
-          const frame = { event: 'user', message: { role: 'user', content: text } };
-          await new Promise<void>((resolve, reject) => {
-            process.child.stdin.write(JSON.stringify(frame) + '\n', error => {
-              if (!error) {
-                if (turn === currentTurn && !process.stopping) publishConversation(process);
-                resolve();
-                return;
-              }
-              if (turn === currentTurn) {
-                finish('error', { message: 'agy did not accept the message.' });
-                void stop();
-              }
-              reject(new Error('agy did not accept the message.'));
-            });
-          });
-          return;
-        }
-      },
-      async steer() { throw new Error('Antigravity does not support interrupting with a follow-up message.'); },
-      abort: () => stop(),
-      async close() {
-        closed = true;
-        await stop(!turn);
-        queue.end();
-      },
-      async setPermissionMode(next) {
-        if (notApproved(next)) throw new Error('Antigravity supports Default and Full access.');
-        if (next === mode) return;
-        await applyConfiguration(() => { mode = next; });
-      },
-      async setModel(next, settings) {
-        if (settings?.providerId && settings.providerId !== 'antigravity') throw new Error('Antigravity requires its own model source.');
-        await setSelection(next, settings?.effort ?? (next === model ? effort : undefined));
-      },
-      async setEffort(next) {
-        if (!thisModelSupportsEffort(next)) throw new Error('This Antigravity model does not offer that effort level.');
-        await setSelection(model, next);
-      },
-      events: () => queue,
-      getUsageSnapshot: () => ({ ...usage }),
-      setInteractionResolver() {},
-    };
   }
 }

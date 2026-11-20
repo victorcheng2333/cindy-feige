@@ -161,6 +161,7 @@ export function registerMakerAuthHandlers(
   /** Manual Cursor key validation runs outside the browser login operation. */
   onCursorKeyCancel?: () => void,
   readController: (event: unknown) => AuthLoginController | null = rendererSender,
+  localAgy?: { assertAccess(event: unknown): void; afterLogout(): Promise<void> },
 ): void {
   const mutationGeneration = new Map<AgentKind, number>();
   const loginRequestGeneration = new Map<AgentKind, number>();
@@ -460,6 +461,7 @@ export function registerMakerAuthHandlers(
     MAKER_INVOKE.AUTH_TRIGGER_LOGIN,
     async (event, agentKind: unknown, rawOptions?: unknown): Promise<AuthState> => {
       const kind = requireAgentKind(agentKind);
+      if (kind === 'antigravity') localAgy?.assertAccess(event);
       const { mode, ownerId } = requireLoginOptions(kind, rawOptions);
       const sender = readController(event);
       const current = activeLoginOperations.get(kind);
@@ -511,6 +513,7 @@ export function registerMakerAuthHandlers(
     rawOptions?: unknown,
   ): Promise<void> => {
     const kind = requireAgentKind(agentKind);
+    if (kind === 'antigravity') localAgy?.assertAccess(event);
     const { releaseOwner, ownerId } = requireCancelOptions(rawOptions);
     if (releaseOwner) {
       if (kind !== 'codex') {
@@ -545,7 +548,7 @@ export function registerMakerAuthHandlers(
     await cancelLoginOperation(kind, activeOperation);
   });
 
-  registry.handle(MAKER_INVOKE.AUTH_LOGOUT, async (_e, agentKind: unknown, ownerScope: unknown): Promise<void> => {
+  registry.handle(MAKER_INVOKE.AUTH_LOGOUT, async (event, agentKind: unknown, ownerScope: unknown): Promise<void> => {
     if (ownerScope !== undefined) {
       const scope = requireObject(ownerScope, 'ownerScope');
       const current = getActiveAppSession();
@@ -554,6 +557,7 @@ export function registerMakerAuthHandlers(
       }
     }
     const kind = requireAgentKind(agentKind);
+    if (kind === 'antigravity') localAgy?.assertAccess(event);
     const activeOperation = activeLoginOperations.get(kind);
     if (activeOperation) activeOperation.acceptingOwners = false;
     clearOwnersForKind(kind);
@@ -569,6 +573,7 @@ export function registerMakerAuthHandlers(
       }
       if (!isCurrent()) return;
       if (kind === 'codex') await onCodexAuthChange?.(false, false, isCurrent);
+      if (kind === 'antigravity') await localAgy?.afterLogout();
       if (!isCurrent()) return;
       broadcast(MAKER_PUSH.AUTH_STATE_CHANGED, { agentKind: kind, authenticated: false });
     })();

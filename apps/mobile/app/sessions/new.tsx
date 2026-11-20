@@ -651,7 +651,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // Context 面板(+ 号弹出的可拖动 sheet):open + 子视图(主视图 / 截图列表 / 目标草稿)。
   const [contextSheetOpen, setContextSheetOpen] = useState(false);
   const [contextSheetView, setContextSheetView] = useState<'main' | 'goal' | 'collab'>('main');
-  const canAttachToDraft = newSessionSupportsAttachments(draft.agentKind);
+  const canAttachToDraft = newSessionSupportsAttachments(draft.agentKind, capabilities?.supportsAttachments);
   const contextSheetMediaLibraryEnabled = canAttachToDraft && canBrowsePhotoLibraryDirectly(Platform.OS);
   // 新建即协同(对齐桌面 NewMakerDraftRoute 的协同草稿):确认后只武装草稿,发送首条消息 /
   // 建目标时在 createSession 之后开启(首轮 Lead 才有协同工具)。一次性:创建后复位。
@@ -1314,8 +1314,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   }, [deviceProviders.ready, deviceProviders.providers, deviceProviders.modelVisibilityOverrides, modelRows]);
   const draftContent = useMemo(
     // pending(乐观上传中)也算数:拍完照立刻点创建是常见路径,create() 里会等它们落定。
-    () => ({ attachmentCount: attachments.length + pendingUploads.length }),
-    [attachments.length, pendingUploads.length],
+    () => ({ attachmentCount: attachments.length + pendingUploads.length, supportsAttachments: canAttachToDraft }),
+    [attachments.length, canAttachToDraft, pendingUploads.length],
   );
   const runtimePending = isNewSessionRuntimePending({
     settled: !!selectedDeviceId && runtimeSettledDeviceId === selectedDeviceId,
@@ -1505,10 +1505,11 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const worktreeChecked = worktreeEnabled;
   const claimAntigravityDraft = useAntigravityDraftPrewarm({
     enabled: isShareTargetFocused && !!selectedDeviceId && deviceLinkStatus === 'online' && !(worktreeApplicable && worktreeEnabled) &&
-      !planModeDraftOn && capabilities?.supportsControlledAntigravityDraftPrewarm === true,
+      capabilities?.supportsControlledAntigravityDraftPrewarm === true,
     ownerGeneration: outboxOwner.generation,
     deviceId: selectedDeviceId,
     draft,
+    planMode: planModeDraftOn,
     maker,
   });
 
@@ -4151,7 +4152,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       setCreatePhase('preparing');
       // await 之后闭包里的 attachments 是旧值,经 ref 拿含刚落定图片的最新列表。
       const sendAttachments = attachmentsRef.current;
-      const validation = validateNewSessionDraft(effectiveDraft, { attachmentCount: sendAttachments.length });
+      const validation = validateNewSessionDraft(effectiveDraft, { attachmentCount: sendAttachments.length, supportsAttachments: canAttachToDraft });
       if (validation) {
         setError(validation);
         return;

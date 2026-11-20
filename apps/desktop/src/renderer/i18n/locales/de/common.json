@@ -3684,6 +3684,8 @@
     },
     "providers": {
       "agyProxy": {
+        "logoutShared": "Die Abmeldung meldet dich auch im Terminal von Agy ab.",
+        "authFailed": "Die Agy-Anmeldung konnte nicht geändert werden. Prüfe die Netzwerkverbindung und versuche es erneut.",
         "label": "Netzwerkproxy",
         "save": "Speichern",
         "hint": "Gilt für Agy auf diesem Mac. Leer lassen, um die Standard-Startumgebung zu verwenden. Laufende Antworten behalten ihren Proxy.",

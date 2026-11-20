@@ -3733,6 +3733,8 @@
     },
     "providers": {
       "agyProxy": {
+        "logoutShared": "Sair também encerra a sessão do Agy no terminal.",
+        "authFailed": "Não foi possível alterar a sessão do Agy. Verifique a conexão e tente novamente.",
         "label": "Proxy de rede",
         "save": "Salvar",
         "hint": "Aplica-se ao Agy neste Mac. Deixe em branco para usar o ambiente padrão de inicialização. Os turnos em andamento mantêm o proxy atual.",

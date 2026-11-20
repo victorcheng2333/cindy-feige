@@ -1,4 +1,5 @@
-import { antigravityModelDiscoveryFailure, discardAntigravityDraftState, readAntigravityConnection, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
+import { removeAntigravityTaskState } from '../maker-host/antigravity-state.js';
+import { antigravityModelDiscoveryFailure, readAntigravityConnection, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
 import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { readContextRecoverySessionWithPorts, classifyCodexHistoryWithPorts, commitContextRecoveryWithPorts, replayContextRecoveryWithPorts, contextRecoveryRebuilt, contextRecoveryAbortSignal } from './contextRecoveryAssembly.js';
@@ -16,7 +17,7 @@ import { RuntimePluginControlError } from '../cindy-brain/runtimeControl.js';
 import { readRuntimePluginSettings, writeRuntimePluginSettings } from '../maker-host/runtime-plugin-settings.js';
 import { parseRuntimePluginSettings } from '../../shared/pluginRuntime.js';
 import { resolveGhostControlPointPlugin, getGhostRuntimePluginControl, composeGhostRuntimeContext, ghostTaskSystemPrompt, isPluginModelRouteAvailableNow } from '../cindy-brain/index.js';
-import { assembleSystemPromptSections, TASK_SYSTEM_PROMPT } from '@cindy/maker-core';
+import { assembleSystemPromptSections, isAntigravityPermissionMode, TASK_SYSTEM_PROMPT } from '@cindy/maker-core';
 import { z as settingsSchema } from 'zod';
 import { registerPreferenceControlIpc } from '../app-settings/preferences.js';
 import { configureModelSettingsActions } from '../app-settings/models.js';
@@ -10515,7 +10516,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     controller: string;
     route: string;
     workingDir: string | null;
-    stateWorkdir?: string;
     dialogue: boolean;
     ready: boolean;
   }>();
@@ -10525,10 +10525,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         (opts.providerId && opts.providerId !== 'antigravity') ||
         opts.remoteHostId || opts.agentDeviceId || opts.orcaRole || opts.resumeSessionId ||
         opts.reviewMode || opts.botRuntimeProfile ||
-        opts.planMode || opts.fastMode || opts.extraDirs?.length || opts.writableDirs?.length ||
-        (opts.permissionMode !== 'default' && opts.permissionMode !== 'bypassPermissions')) return null;
+        opts.fastMode || opts.extraDirs?.length || opts.writableDirs?.length ||
+        !isAntigravityPermissionMode(opts.permissionMode)) return null;
     return JSON.stringify([opts.workspaceKind, opts.workspaceKind === 'project' ? normalizeWorkingDirForStorage(opts.workingDir) : null, opts.model,
-      opts.effort ?? null, opts.permissionMode]);
+      opts.effort ?? null, opts.permissionMode, !!opts.planMode]);
   };
   // Runs under the existing send lock. Only this controller's provisional
   // task can be discarded; leaving a sent task alone is mandatory.
@@ -10540,8 +10540,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       if (live) await live.closeIfIdle();
       if (maker.getSession(sessionId)) return;
       const discarded = await discardProvisionalSessionRow(sessionId);
-      if (discarded && entry.stateWorkdir && getCurrentDbClientSnapshot() === entry.owner) {
-        await discardAntigravityDraftState(sessionId, entry.stateWorkdir).catch(() => {
+      if (discarded && getCurrentDbClientSnapshot() === entry.owner) {
+        await removeAntigravityTaskState(sessionId).catch(() => {
           log.warn('Failed to remove unused Antigravity draft state');
         });
       }
@@ -19721,11 +19721,46 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         for (const [id, entry] of controlledAgyDrafts) {
           if (entry.owner !== owner) controlledAgyDrafts.delete(id);
         }
+        const rawOpts = createOpts as Record<string, unknown>;
+        if (rawOpts.workspaceKind === 'dialogue' && rawOpts.workingDir !== undefined) return { accepted: false };
+        const existingDraft = controlledAgyDrafts.get(sid);
+        if (existingDraft) {
+          return withSendToSessionLock(sid, async () => {
+            if (controlledAgyDrafts.get(sid) !== existingDraft || existingDraft.owner !== owner ||
+                getCurrentDbClientSnapshot() !== owner || existingDraft.controller !== controller ||
+                !existingDraft.ready || !isProvisionalSession(sid)) return { accepted: false };
+            const opts = readCreateSessionOpts(
+              { ...rawOpts, id: sid },
+              { allocateDialogueWorkspace: buildDialogueWorkspaceDir },
+            );
+            const route = agyDraftRoute(opts);
+            const live = maker.getSession(sid);
+            if (!route || !live || existingDraft.dialogue !== (opts.workspaceKind === 'dialogue') ||
+                (!existingDraft.dialogue && normalizeWorkingDirForStorage(opts.workingDir) !== existingDraft.workingDir)) {
+              return { accepted: false };
+            }
+            if (existingDraft.route !== route) {
+              try {
+                await live.setModel(opts.model, { providerId: 'antigravity', effort: opts.effort });
+                await live.setPermissionMode(opts.permissionMode ?? 'default');
+                await live.setPlanMode(!!opts.planMode);
+                if (getCurrentDbClientSnapshot() !== owner || maker.getSession(sid) !== live) return { accepted: false };
+                await persistSessionFields(sid, {
+                  model: opts.model, effort: opts.effort ?? null, permissionMode: opts.permissionMode ?? 'default',
+                  planModeEnabled: !!opts.planMode,
+                });
+                existingDraft.route = route;
+              } catch {
+                await discardControlledAgyDraft(sid);
+                return { accepted: false };
+              }
+            }
+            return { accepted: true, draftSessionId: sid };
+          });
+        }
         // Resolve the dialogue's proposed path without creating it. The
         // standard provisional session service allocates and owns cleanup.
         const draftId = createId();
-        const rawOpts = createOpts as Record<string, unknown>;
-        if (rawOpts.workspaceKind === 'dialogue' && rawOpts.workingDir !== undefined) return { accepted: false };
         const opts = readCreateSessionOpts(
           { ...rawOpts, id: draftId },
           { allocateDialogueWorkspace: buildDialogueWorkspaceDir },
@@ -19744,7 +19779,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           if (getCurrentDbClientSnapshot() !== owner || controlledAgyDrafts.size >= 2) return { accepted: false };
         }
         const entry = {
-          owner, controller, route, workingDir: null as string | null, stateWorkdir: undefined as string | undefined,
+          owner, controller, route, workingDir: null as string | null,
           dialogue: opts.workspaceKind === 'dialogue', ready: false,
         };
         controlledAgyDrafts.set(draftId, entry);
@@ -19758,15 +19793,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             id: draftId, agentKind: 'antigravity', workspaceKind: opts.workspaceKind,
             ...(opts.workspaceKind === 'project' ? { workingDir: opts.workingDir } : {}),
             model: opts.model, effort: opts.effort,
-            providerId: 'antigravity', permissionMode: opts.permissionMode, provisional: true,
+            providerId: 'antigravity', permissionMode: opts.permissionMode, planModeEnabled: opts.planMode, provisional: true,
           }, { senderId: 0, userDataDir: app.getPath('userData'), notifyPluginSessionCreated() {} });
           if (getCurrentDbClientSnapshot() !== owner || !draft.workingDir) return { accepted: false };
           entry.workingDir = normalizeWorkingDirForStorage(draft.workingDir);
-          entry.stateWorkdir = draft.workingDir;
           const outcome = await agentPrewarmer.request(draftId, {
             id: draftId, agentKind: 'antigravity', workspaceKind: opts.workspaceKind,
             workingDir: draft.workingDir, model: opts.model, effort: opts.effort,
-            providerId: 'antigravity', permissionMode: opts.permissionMode,
+            providerId: 'antigravity', permissionMode: opts.permissionMode, planMode: opts.planMode,
           });
           if (outcome === 'started' && getCurrentDbClientSnapshot() === owner) {
             entry.ready = true;
@@ -23686,8 +23720,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         .from(sessions).where(eq(sessions.id, sessionId)).limit(1);
       assertOwnerCurrent();
       if (!row) throwIpcError('NOT_FOUND', 'session not found');
-      if (row.agentKind === 'antigravity' && mode !== 'default' && mode !== 'bypassPermissions') {
-        throwIpcError('UNSUPPORTED_CAPABILITY', 'agy supports Default and Full access');
+      if (row.agentKind === 'antigravity' && !isAntigravityPermissionMode(mode)) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Unsupported Agy permission mode');
       }
       await beforeMutation?.();
       const sess = maker.getSession(sessionId);
@@ -23770,7 +23804,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           .from(sessions).where(eq(sessions.id, sessionId)).limit(1);
         assertOwnerCurrent();
         if (!row) throwIpcError('NOT_FOUND', 'session not found');
-        if (row.agentKind === 'antigravity' && enabled) throwIpcError('UNSUPPORTED_CAPABILITY', 'agy does not support Plan mode');
         const sess = maker.getSession(sessionId);
         try {
           if (sess) await sess.setPlanMode(enabled);

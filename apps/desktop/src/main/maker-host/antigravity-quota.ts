@@ -8,25 +8,38 @@ export function supportsAntigravityQuota(version: string): boolean {
   return major > 1 || (major === 1 && (minor > 5 || (minor === 5 && patch >= 12)));
 }
 
-/** Official agy print-mode usage report. Accept only recognized quota rows. */
+/** agy --output-format json --print /usage produces a zero-turn command receipt. */
 export function parseAntigravityQuota(stdout: string, fetchedAtMs: number): AntigravityQuotaSnapshot | null {
+  let result: {
+    status?: string;
+    num_turns?: number;
+    command?: { name?: string; data?: { groups?: Array<{
+      name?: string;
+      buckets?: Array<{ window?: string; remaining_fraction?: number; reset_time?: string }>;
+    }> } };
+  } | null;
+  try { result = JSON.parse(stdout); }
+  catch { return null; }
+  if (result?.status !== 'SUCCESS' || result.num_turns !== 0 || result.command?.name !== 'usage') return null;
+  const groups = result.command.data?.groups;
+  if (!Array.isArray(groups)) return null;
+
   const windows = new Map<string, AntigravityQuotaWindow>();
-  for (const line of stdout.split(/\r?\n/)) {
-    const [name, period, value, reset, ...extra] = line.split('\t');
-    const group = name?.trim();
-    if (!group || !/^[\p{L}\p{N}][\p{L}\p{N} ().,+&/-]{0,79}$/u.test(group) || extra.length) continue;
-    const label = period?.trim().toLowerCase();
-    const minutes = label === 'five hour limit remaining' ? 300 :
-      label === 'weekly limit remaining' ? 10080 : undefined;
-    const percent = value?.trim().match(/^(\d{1,3}(?:\.\d{1,4})?)%$/)?.[1];
-    if (!minutes || percent === undefined || Number(percent) > 100) continue;
-    const date = reset?.trim() ?? '';
-    const ms = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(date)
-      ? Date.parse(date) : NaN;
-    const resetsAtMs = Number.isFinite(ms) && ms > 0 ? ms : null;
-    // A duplicate row should never create a second allowance with the same scope.
-    windows.set(`${group}\t${minutes}`, { group, minutes, remaining: Number(percent), resetsAtMs });
-    if (windows.size >= 32) break;
+  for (const group of groups) {
+    const name = typeof group?.name === 'string' ? group.name.trim() : '';
+    if (!name || !Array.isArray(group.buckets)) continue;
+    for (const bucket of group.buckets) {
+      const minutes = bucket?.window === '5h' ? 300 : bucket?.window === 'weekly' ? 10080 : undefined;
+      const fraction = bucket?.remaining_fraction;
+      if (!minutes || typeof fraction !== 'number' || !Number.isFinite(fraction) || fraction < 0 || fraction > 1) continue;
+      const reset = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN;
+      windows.set(`${name}:${minutes}`, {
+        group: name,
+        minutes,
+        remaining: Math.round(fraction * 1_000_000) / 10_000,
+        resetsAtMs: Number.isFinite(reset) && reset > 0 ? reset : null,
+      });
+    }
   }
   return windows.size ? { windows: [...windows.values()], fetchedAtMs } : null;
 }

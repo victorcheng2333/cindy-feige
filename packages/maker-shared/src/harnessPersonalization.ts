@@ -67,9 +67,9 @@ export const HARNESS_PERSONALIZATION_SUPPORT: Readonly<
     serverCompaction: false,
   },
   antigravity: {
-    displayName: 'Antigravity',
-    userPrompt: false,
-    makerMemory: false,
+    displayName: 'Agy',
+    userPrompt: 'system-prompt',
+    makerMemory: true,
     nativeMemory: false,
     makerMemorySubSetting: false,
     subagentModel: false,

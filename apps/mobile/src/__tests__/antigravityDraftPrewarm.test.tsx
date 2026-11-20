@@ -76,3 +76,17 @@ it('prepares a folderless dialogue without inventing a project directory', async
   await act(async () => page.finish({ accepted: true, draftSessionId: readyId }));
   expect(page.claim(draft)).toBe(readyId);
 });
+
+
+it('retunes the ready draft on the same task when the effort changes', async () => {
+  const page = await mount();
+  await act(async () => page.finish({ accepted: true, draftSessionId: readyId }));
+  const low = { ...baseDraft, effort: 'low' };
+  await page.render(low);
+  await act(async () => vi.advanceTimersByTimeAsync(400));
+  expect(page.prewarmSession).toHaveBeenLastCalledWith(readyId, expect.objectContaining({
+    purpose: 'antigravity-draft', effort: 'low',
+  }));
+  expect(page.prewarmSession).toHaveBeenCalledTimes(2);
+  expect(page.claim(low)).toBe(readyId);
+});

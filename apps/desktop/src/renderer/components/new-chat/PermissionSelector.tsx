@@ -152,9 +152,11 @@ export function PermissionSelector({
   const TriggerIcon = PERMISSION_ICONS[effectiveMode] ?? Hand;
   const labelOf = (option: PermissionModeDescriptor | undefined, fallbackId: string) => {
     const id = option?.id ?? fallbackId;
-    return t(`newChat.permissionSelector.modes.${agentKind}.${id}.label`, {
-      defaultValue: option?.displayName ?? fallbackId,
-    });
+    const key = `newChat.permissionSelector.modes.${agentKind}.${id}.label`;
+    const labels = agentKind === 'antigravity'
+      ? [key, `newChat.permissionSelector.modes.claude-code.${id}.label`]
+      : key;
+    return t(labels, { defaultValue: option?.displayName ?? fallbackId });
   };
   const descriptionOf = (option: PermissionModeDescriptor | undefined, fallbackId: string) => {
     const id = option?.id ?? fallbackId;

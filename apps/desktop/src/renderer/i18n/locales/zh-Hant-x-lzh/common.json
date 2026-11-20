@@ -3643,6 +3643,8 @@
     },
     "providers": {
       "agyProxy": {
+        "logoutShared": "既退，終端之 Agy 亦退。",
+        "authFailed": "未能更改 Agy 登入。請察網路而再試。",
         "label": "網路代理",
         "save": "存",
         "hint": "惟用於此 Mac 之 Agy。空之則用啟動環境之常設。本輪未畢者仍用舊代理。",

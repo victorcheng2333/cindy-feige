@@ -206,6 +206,7 @@ export interface NewSessionCreatePreview {
 
 export interface NewSessionDraftContentState {
   attachmentCount?: number;
+  supportsAttachments?: boolean;
 }
 
 export function serializeNewSessionDeviceOptions(
@@ -280,8 +281,8 @@ export function withAgentDefaults(
   };
 }
 
-export function newSessionSupportsAttachments(agentKind: NewSessionAgentKind): boolean {
-  return agentKind !== 'antigravity';
+export function newSessionSupportsAttachments(agentKind: NewSessionAgentKind, advertised?: boolean): boolean {
+  return agentKind !== 'antigravity' || advertised === true;
 }
 
 export function validateNewSessionDraft(
@@ -292,7 +293,7 @@ export function validateNewSessionDraft(
     return i18n.t('session.new.enterProjectPath');
   }
   if (!draft.model.trim()) return i18n.t('session.new.enterModel');
-  if (!newSessionSupportsAttachments(draft.agentKind) && normalizeAttachmentCount(content.attachmentCount) > 0) {
+  if (!newSessionSupportsAttachments(draft.agentKind, content.supportsAttachments) && normalizeAttachmentCount(content.attachmentCount) > 0) {
     return i18n.t('session.new.agyTextOnly');
   }
   if (!hasFirstMessagePayload(draft, content)) return i18n.t('session.new.enterFirstMessageOrAttachment');

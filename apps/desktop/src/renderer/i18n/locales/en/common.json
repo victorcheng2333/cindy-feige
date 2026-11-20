@@ -3684,6 +3684,8 @@
     },
     "providers": {
       "agyProxy": {
+        "logoutShared": "Signing out also signs out of Agy in your terminal.",
+        "authFailed": "Could not change your Agy sign-in. Check the network and try again.",
         "label": "Network proxy",
         "save": "Save",
         "hint": "Applies to Agy on this Mac. Leave blank to use the standard launch environment. Running turns finish with their current proxy.",

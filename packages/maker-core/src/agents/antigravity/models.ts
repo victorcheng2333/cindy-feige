@@ -3,61 +3,39 @@ import type { Effort } from '../../types/common.js';
 
 export const AGY_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const satisfies readonly Effort[];
 
-export interface AgyModelDescriptor extends ModelDescriptor {
-  nativeId: string;
-  nativeIdByEffort: Partial<Record<Effort, string>>;
-}
-
-export function parseAntigravityModels(stdout: string): AgyModelDescriptor[] {
+export function parseAntigravityModels(stdout: string): ModelDescriptor[] {
   const models = new Map<string, string>();
-  const groups = new Map<string, { label: string; variants: Partial<Record<Effort, string>>; defaultEffort: Effort }>();
+  const groups = new Map<string, { label: string; variants: Map<Effort, string>; defaultEffort: Effort }>();
   for (const line of stdout.split(/\r?\n/)) {
     const [id, label, ...rest] = line.trim().split('\t');
     if (!id || !/^[\w.:-]+$/.test(id) || !label?.trim() || rest.length) continue;
-    models.set(id, label.trim());
-    const effort = AGY_EFFORTS.find(level => id.endsWith(`-${level}`) &&
-      label.trimEnd().toLowerCase().endsWith(` (${level})`));
+    const name = label.trim();
+    models.set(id, name);
+    const effort = AGY_EFFORTS.find(level => id.endsWith(`-${level}`) && name.toLowerCase().endsWith(` (${level})`));
     if (!effort) continue;
     const base = id.slice(0, -effort.length - 1);
     const group = groups.get(base) ?? {
-      label: label.trimEnd().slice(0, -effort.length - 3),
-      variants: {},
+      label: name.slice(0, -effort.length - 3),
+      variants: new Map<Effort, string>(),
       defaultEffort: effort,
     };
-    group.variants[effort] = id;
+    group.variants.set(effort, id);
     groups.set(base, group);
   }
 
-  const descriptors: AgyModelDescriptor[] = [];
-  for (const [base, group] of groups) {
-    const efforts = AGY_EFFORTS.filter(level => !!group.variants[level]);
-    const existingBase = models.get(base);
-    if (efforts.length < 2 || existingBase) continue;
+  const descriptors: ModelDescriptor[] = [];
+  for (const [id, group] of groups) {
+    // ACP leaves an effort suffix on model IDs with only one variant.
+    if (group.variants.size < 2 || models.has(id)) continue;
     descriptors.push({
-      id: base, displayName: group.label, contextWindow: 0,
-      nativeId: group.variants[group.defaultEffort]!,
-      nativeIdByEffort: group.variants, efforts, defaultEffort: group.defaultEffort,
+      id, displayName: group.label, contextWindow: 0,
+      efforts: AGY_EFFORTS.filter(level => group.variants.has(level)),
+      defaultEffort: group.defaultEffort,
     });
-    for (const level of efforts) {
-      const nativeId = group.variants[level]!;
-      descriptors.push({
-        id: nativeId, displayName: models.get(nativeId)!, contextWindow: 0,
-        nativeId, nativeIdByEffort: {}, efforts: [], defaultEffort: null,
-        defaultEnabled: false,
-      });
-      models.delete(nativeId);
-    }
+    for (const variant of group.variants.values()) models.delete(variant);
   }
   for (const [id, displayName] of models) {
-    descriptors.push({ id, displayName, contextWindow: 0, nativeId: id, nativeIdByEffort: {}, efforts: [], defaultEffort: null });
+    descriptors.push({ id, displayName, contextWindow: 0, efforts: [], defaultEffort: null });
   }
   return descriptors;
-}
-
-/** Use the exact slug returned by the user's CLI, and preserve older saved slugs. */
-export function resolveAgyModel(models: readonly AgyModelDescriptor[], model: string, effort?: Effort): string {
-  if (!/^[\w.:-]+$/.test(model)) throw new Error('Invalid Antigravity model.');
-  const selected = models.find(item => item.id === model);
-  if (!selected) return model;
-  return (effort ? selected.nativeIdByEffort[effort] : undefined) ?? selected.nativeId;
 }

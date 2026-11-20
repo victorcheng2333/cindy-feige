@@ -48,11 +48,18 @@ export function registerMakerAuthIpc(maker: Maker): void {
     assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
     if (isAppSessionBoundaryPending()) throwIpcError('PRECONDITION_FAILED', 'Wait for the account change to complete.');
   }
+  async function recycleAgyRuntimes() {
+    await Promise.all(maker.listActiveSessions()
+      .filter(session => session.agentKind === 'antigravity')
+      .map(session => session.closeAfterCurrentTurn().catch(() => {
+        log.warn('Could not retire the Agy runtime', { sessionId: session.id });
+      })));
+  }
   registry.handle(MAKER_INVOKE.AGY_PROXY_GET, event => {
     assertProxySettingsAccess(event);
     return readAntigravityProxy() ?? normalizeAntigravityProxy(process.env.CINDY_AGY_PROXY) ?? '';
   });
-  registry.handle(MAKER_INVOKE.AGY_PROXY_SET, (event, value: unknown, ownerId: unknown, generation: unknown) => {
+  registry.handle(MAKER_INVOKE.AGY_PROXY_SET, async (event, value: unknown, ownerId: unknown, generation: unknown) => {
     assertProxySettingsAccess(event);
     const owner = getActiveAppSession();
     if (owner.dataOwnerId !== ownerId || owner.generation !== generation) {
@@ -60,8 +67,11 @@ export function registerMakerAuthIpc(maker: Maker): void {
     }
     const address = normalizeAntigravityProxy(value);
     if (address === undefined) throwIpcError('INVALID_PARAMS', 'Enter a proxy URL without credentials.');
+    const previous = readAntigravityProxy() ?? normalizeAntigravityProxy(process.env.CINDY_AGY_PROXY) ?? '';
     writeAntigravityProxy(address);
+    if (previous === address) return address;
     refreshAntigravityProxyRouting();
+    await recycleAgyRuntimes();
     return address;
   });
   // This secret-writing endpoint is intentionally absent from Device Link allowlists.
@@ -99,6 +109,8 @@ export function registerMakerAuthIpc(maker: Maker): void {
       syncOpenAiMediaAfterCodexAuthChange();
     },
     cancelCursorApiKeyValidation,
+    undefined,
+    { assertAccess: assertProxySettingsAccess, afterLogout: recycleAgyRuntimes },
   );
 
   log.info('maker:auth:* IPC handlers registered');
