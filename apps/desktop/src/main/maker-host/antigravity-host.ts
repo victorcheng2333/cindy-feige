@@ -15,12 +15,17 @@ import { readUserPrompt } from './user-prompt-settings-store.js';
 import { parseBinaryVersionOutput } from '../agent-binaries/binary-version-probe.js';
 import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
 import { parseAntigravityQuota, supportsAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
+import { getRipgrepBinaryPath } from './runtime-configs.js';
 
 const exec = promisify(execFile);
 
 function configuredEnvironment() {
   const address = readAntigravityProxy();
-  return antigravityEnv(address === undefined ? process.env : { ...process.env, CINDY_AGY_PROXY: address });
+  return antigravityEnv(address === undefined ? process.env : { ...process.env, CINDY_AGY_PROXY: address }, {
+    // Agy's terminal sandbox cannot execute anything under Cindy's user data, where the
+    // other rg copies live; the app bundle's rg is executable there.
+    pathPrepends: [path.dirname(getRipgrepBinaryPath())],
+  });
 }
 
 export function refreshAntigravityProxyRouting(): void {

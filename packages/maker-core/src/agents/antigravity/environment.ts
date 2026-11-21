@@ -1,9 +1,16 @@
+import path from 'node:path';
+
 const proxyKeys = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'] as const;
 
-export function antigravityEnv(inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function antigravityEnv(
+  inherited: NodeJS.ProcessEnv = process.env,
+  options: { pathPrepends?: readonly string[] } = {},
+): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(inherited).filter(([key]) =>
     /^(HOME|USER|LOGNAME|PATH|SHELL|TMPDIR|LANG|LC_\w+|SSL_CERT_FILE|SSL_CERT_DIR)$/.test(key),
   ));
+  const prepends = (options.pathPrepends ?? []).filter(dir => path.isAbsolute(dir));
+  if (prepends.length) env.PATH = [...prepends, env.PATH].filter(Boolean).join(path.delimiter);
   const proxy = inherited.CINDY_AGY_PROXY?.trim();
   if (proxy) {
     let valid = false;

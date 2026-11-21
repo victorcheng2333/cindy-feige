@@ -29,6 +29,7 @@ vi.mock('../../appSessionState.js', () => ({
 }));
 vi.mock('../antigravity-proxy-settings-store.js', () => ({ readAntigravityProxy: () => undefined }));
 vi.mock('../active-catalog.js', () => ({ notifyLocalHarnessProviderChanged: vi.fn() }));
+vi.mock('../runtime-configs.js', () => ({ getRipgrepBinaryPath: () => path.resolve('fixture', 'bundle', 'ripgrep', 'rg') }));
 
 beforeEach(() => {
   fixture.exec.mockReset();
@@ -76,6 +77,16 @@ it('reports a missing Agy login and publishes models on a successful retry', asy
   await expect(discover()).resolves.toBe(true);
   expect(agy.antigravityModelDiscoveryFailure()).toBeNull();
   expect(agy.antigravityProvider()?.models.antigravity).toMatchObject([{ id: 'gemini-fixture' }]);
+});
+
+// Agy runs shell commands in its terminal sandbox, which cannot execute the rg copies under
+// Cindy's user data (`zsh: operation not permitted: rg`), so Agy must find the bundled one first.
+it('puts the bundled rg first on the PATH Agy receives', async () => {
+  vi.stubEnv('PATH', '/usr/bin');
+  fixture.probe.mockResolvedValueOnce(catalog);
+  await agy.readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true, force: true });
+  const env = fixture.probe.mock.calls[0]?.[2] as NodeJS.ProcessEnv;
+  expect(env.PATH).toBe([path.resolve('fixture', 'bundle', 'ripgrep'), '/usr/bin'].join(path.delimiter));
 });
 
 it('cancels a superseded sign-in and publishes the newer sign-in result', async () => {
