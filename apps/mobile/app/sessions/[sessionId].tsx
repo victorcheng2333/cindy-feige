@@ -435,6 +435,7 @@ import { permissionModeOrAsk } from '@cindy/maker-shared/permission-mode';
 import { projectDraftSessionTitle } from '@cindy/maker-shared/session-title';
 import {
   canSwitchSessionToCursor,
+  runsOnTaskComputerOnly,
   canSwitchSessionToAntigravity,
   effectiveAgentDeviceId,
   resolveAgentLocationPick,
@@ -9519,13 +9520,11 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!canUseRemoteSessionControls || !currentSession || controlBusy) return false;
     // 远程 Agent:这一行来自哪台电脑的目录(null = 被控电脑),能力就按那份目录核对
     // (同 id 模型两台电脑的档位 / Fast 可以不同)。
-    // Cursor always runs on the task computer. Ignore a borrowed catalog's device
-    // so a shared Claude task can hand off to local Cursor.
+    // Task-computer-only engines (Cursor, Agy) ignore a borrowed catalog's device, so a
+    // task whose Agent runs elsewhere hands off home (docs/dev-rules/agent-placement.md).
     let catalogDeviceId = source?.deviceId ?? null;
-    if (config.agent === 'cursor') {
-      if (sessionAgentKind !== 'cursor' && !canSwitchSessionToCursor(currentSession)) return false;
-      catalogDeviceId = null;
-    }
+    if (config.agent === 'cursor' && sessionAgentKind !== 'cursor' && !canSwitchSessionToCursor(currentSession)) return false;
+    if (runsOnTaskComputerOnly(config.agent)) catalogDeviceId = null;
     const catalogProviders = catalogDeviceId
       ? (remoteAgentCatalogs.find((item) => item.deviceId === catalogDeviceId)?.providers ?? [])
         : composerDeviceProviders.providers;
@@ -9534,7 +9533,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     const targetCapabilities = normalizeMobileAgentCapabilities(
       await loadComposerAgentCapabilities(config.agent, catalogDeviceId));
     if (!targetCapabilities || deviceIdRef.current !== deviceId) return false;
-    if (config.agent === 'antigravity' && (catalogDeviceId || !targetCapabilities.supportsControlledAntigravityCreation
+    if (config.agent === 'antigravity' && (!targetCapabilities.supportsControlledAntigravityCreation
       || (sessionAgentKind !== 'antigravity' && !canSwitchSessionToAntigravity(currentSession, targetCapabilities)))) return false;
     if (config.agent === 'cursor' && sessionAgentKind !== 'cursor'
       && targetCapabilities.supportsControlledCursorCreation !== true) return false;

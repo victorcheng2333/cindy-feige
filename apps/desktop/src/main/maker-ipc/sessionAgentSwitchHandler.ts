@@ -51,6 +51,7 @@ import {
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { shouldApplyExclusiveProviderRerouteLive } from '../maker-host/model-route-guard-catalog.js';
 import { dbToMakerAgentKind, makerToDbAgentKind, normalizeDbAgentKind } from '../../shared/agentKindConversion.js';
+import { runsOnTaskComputerOnly } from '@cindy/maker-shared/agent-placement';
 import { decideProviderGroupFailure, providerGroupFailureSignals } from '../provider-group/failurePolicy.js';
 
 function throwIfAgentSwitchAborted(signal: AbortSignal | undefined): void {
@@ -815,11 +816,14 @@ export async function performSessionAgentSwitch(
   ) {
     throwIpcError('INVALID_PARAMS', 'agentDeviceId must be a device id or null');
   }
-  if (targetAgentKind === 'antigravity') assertAntigravityTaskCreationAllowed({ agentDeviceId: rawAgentDeviceId });
+  // The destination for Agy is always the task computer (forced below), so a requested
+  // device only checks controller authority, the same as Cursor.
+  if (targetAgentKind === 'antigravity') assertAntigravityTaskCreationAllowed({});
   let requestedAgentDeviceId = rawAgentDeviceId as string | null | undefined;
-  // Cursor always runs on the task computer. A borrowed Claude/Codex/Pi source must
-  // not become Cursor's destination — same as starting an unvisited harness locally.
-  if (targetAgentKind === 'cursor') requestedAgentDeviceId = null;
+  // Task-computer-only engines (Cursor, Agy) run where the task lives. A borrowed
+  // Claude/Codex/Pi runtime device must not become their destination — the switch
+  // moves the Agent home (docs/dev-rules/agent-placement.md).
+  if (runsOnTaskComputerOnly(targetAgentKind)) requestedAgentDeviceId = null;
   // 必须在第一个 await 前快照：跨窗口 / 跨设备写入即使 set→clear 回到同值，修订号也会变化。
   const pendingRevisionAtStart = deps.pendingSwitches?.revision?.(sessionId);
   let normalizedProviderId =
@@ -847,7 +851,10 @@ export async function performSessionAgentSwitch(
     throwIpcError('NOT_FOUND', `Session ${sessionId} not found`);
   }
   if (row.agentKind === 'antigravity' || targetAgentKind === 'antigravity') {
-    assertAntigravityTaskCreationAllowed(row);
+    // A borrowed Claude/Codex/Pi source (agentDeviceId) hands off home to Agy, like Cursor;
+    // SSH and Orca tasks still cannot. An Agy runtime itself never lives elsewhere.
+    assertAntigravityTaskCreationAllowed(row.agentKind === 'antigravity'
+      ? row : { remoteHostId: row.remoteHostId, orcaRole: row.orcaRole });
     if (params.forceRelocation || params.providerGroupRelocation) {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks do not support relocation');
     }

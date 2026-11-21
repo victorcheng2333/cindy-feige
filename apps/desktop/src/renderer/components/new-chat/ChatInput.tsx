@@ -2311,8 +2311,10 @@ export function ChatInput({
       (kind) => {
         if (kind === 'antigravity') {
           if (!sessionId) return !catalogDeviceId && runtimeAvailableVendors.has('antigravity');
+          // Agy runs on the task computer: a borrowed source (agentDeviceId) hands off home,
+          // like Cursor. Only a task controlled on another computer cannot offer it here.
           return agentKind === kind || (sessionAgentSwitchSupported && hostSupportsAntigravitySessionSwitch &&
-            !catalogDeviceId && !agentDeviceId && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
+            !deviceLinkDeviceId && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
             taskComputerAgents.availableVendors.has('antigravity'));
         }
         if (kind === 'cursor') {
@@ -2324,7 +2326,7 @@ export function ChatInput({
     return kinds;
   }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId,
     taskComputerAgents.loaded, taskComputerAgents.availableVendors, catalogDeviceId, sessionAgentSwitchSupported,
-    hostSupportsAntigravitySessionSwitch, agentDeviceId, remoteHostId, sessionOrcaRole, sessionOrcaRemoteWorker]);
+    hostSupportsAntigravitySessionSwitch, deviceLinkDeviceId, remoteHostId, sessionOrcaRole, sessionOrcaRemoteWorker]);
   // 已有 device-link 任务在断链时仍有 pinned deviceId + renderer outbox 可接住发送，
   // 不能因为被控端 provider 目录暂时拉不到就禁用 composer。远程草稿没有既有 session
   // 可以排队，仍与本地任务一样保留来源门禁。

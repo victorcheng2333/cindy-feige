@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest';
 
 vi.mock('react-native', () => ({ Alert: { alert: vi.fn() } }));
 
-import { canSwitchSessionToCursor, resolveAgentLocationPick } from '@/session/sessionAgentSwitch';
+import { canSwitchSessionToAntigravity, canSwitchSessionToCursor, resolveAgentLocationPick, runsOnTaskComputerOnly } from '@/session/sessionAgentSwitch';
 
 const source = ts.createSourceFile('screen.tsx', readFileSync(resolve(process.cwd(), 'app/sessions/[sessionId].tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const callbacks = new Map<string, string>();
@@ -39,7 +39,7 @@ function harness(
     isProviderShareAgentDeviceId:(id:unknown)=>typeof id === 'string' && id.startsWith('share:'),
     agentLocationMovable:true,
     remoteAgentCatalogs:[{ deviceId:'device-studio-mac', name:'工作室 Mac', status:'ready', providers:studioProviders }],
-    canSwitchSessionToCursor, resolveAgentLocationPick,
+    canSwitchSessionToCursor, resolveAgentLocationPick, runsOnTaskComputerOnly,
     canUseRemoteSessionControls:true,
     currentSession:{effort:'low',fastMode:false,agentKind:'codex',model:'current-model',providerId:null,agentDeviceId:null,...session},controlBusy:false,
     composerDeviceProviders:{providers:[]}, resolveAgentCapability,
@@ -130,6 +130,19 @@ it('registers local Cursor with an explicit null destination when the source cat
   expect(h.getCapabilities).toHaveBeenCalledWith('cursor');
   expect(h.getRemoteCapabilities).not.toHaveBeenCalled();
   expect(h.setComposerModel).not.toHaveBeenCalled();
+});
+// Regression: a task whose Agent borrowed another computer's source could not choose Agy.
+// Agy, like Cursor, runs on the task computer, so the intent must move the Agent home.
+it('registers local Agy with an explicit null destination when the task borrows a remote source', async () => {
+  const getCapabilities = vi.fn(async () => ({
+    hasFastMode: false, supportsControlledAntigravityCreation: true, supportsAntigravitySessionSwitch: true,
+  }));
+  const h = harness(true, { agentDeviceId: studio.deviceId, remoteHostId: null, orcaRole: null, orcaRemoteLead: null, source: 'desktop' },
+    { canSwitchSessionToAntigravity, maker: { getCapabilities, setEffort: vi.fn(), setFastMode: vi.fn() } });
+  expect(await h.render()({ ...config, agent: 'antigravity', providerId: 'antigravity' }, studio)).toBe(true);
+  expect(h.state.intent).toMatchObject({ targetAgentKind: 'antigravity', agentDeviceId: null });
+  expect(getCapabilities).toHaveBeenCalledWith('antigravity');
+  expect(h.getRemoteCapabilities).not.toHaveBeenCalled();
 });
 it('registers a single intent for a combined Harness and computer switch', async () => {
   const h = harness();

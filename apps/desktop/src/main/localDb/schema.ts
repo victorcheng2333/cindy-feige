@@ -316,8 +316,10 @@ export const sessions = sqliteTable(
      */
     remoteHostId: text('remote_host_id'),
     /**
-     * Agent 在同账号另一台电脑上运行时，那台电脑的设备 id(任务、项目文件与命令仍在本机)。
-     * NULL = Agent 在本机(或 SSH 远端，见 remote_host_id)。与 remote_host_id 互斥。
+     * Agent 运行位置：Agent 在同账号另一台电脑（或分享来的供应商）上运行时，那台电脑的设备 id
+     * (任务、项目文件与命令仍在本机)。NULL = Agent 在本机(或 SSH 远端，见 remote_host_id)。
+     * 与 remote_host_id 互斥。它不是任务所在电脑，不能用来判断只能本机运行的引擎
+     * (Cursor、Agy)是否可用，见 docs/dev-rules/agent-placement.md。
      */
     agentDeviceId: text('agent_device_id'),
     /**

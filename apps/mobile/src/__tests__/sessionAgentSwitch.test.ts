@@ -26,7 +26,9 @@ describe('mobile session Agent switch contract', () => {
     expect(sessionSwitchAgentKinds(available, 'codex', false, canSwitchSessionToAntigravity(task, caps)))
       .toEqual(['codex', 'antigravity']);
     expect(canSwitchSessionToAntigravity(task, null)).toBe(false);
-    expect(canSwitchSessionToAntigravity({ ...task, agentDeviceId: 'borrowed' }, caps)).toBe(false);
+    // A borrowed Claude/Codex/Pi source only says where the current Agent runs; Agy runs locally.
+    expect(canSwitchSessionToAntigravity({ ...task, agentDeviceId: 'borrowed' }, caps)).toBe(true);
+    expect(canSwitchSessionToAntigravity({ ...task, remoteHostId: 'ssh' }, caps)).toBe(false);
     expect(sessionSwitchAgentKinds(available, 'codex')).toEqual(['codex']);
   });
   // Unit regression: old tasks used a fixed three-engine roster. Exercise the

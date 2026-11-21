@@ -107,6 +107,20 @@ describe('Antigravity model selection', () => {
     expect(deps.setPendingHandoff).toHaveBeenCalled();
   });
 
+  // Regression: a task whose Claude/Codex Agent borrowed another computer's source was
+  // refused, although Agy (like Cursor) simply runs on the task computer.
+  it.each([
+    { rowDevice: 'shared-mac', requestDevice: undefined },
+    { rowDevice: 'shared-mac', requestDevice: 'shared-mac' },
+  ])('hands a borrowed-source task home to agy (request $requestDevice)', async ({ rowDevice, requestDevice }) => {
+    const { deps } = makeDeps({ getSessionRow: async () => makeRow({ agentKind: 'cc', agentDeviceId: rowDevice }) });
+    await expect(performSessionAgentSwitch(deps, { ...selection, ...(requestDevice ? { agentDeviceId: requestDevice } : {}) }))
+      .resolves.toMatchObject({ switched: true });
+    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
+      agentKind: 'antigravity', providerId: 'antigravity', agentDeviceId: null, sdkSessionId: null,
+    }));
+  });
+
   it('blocks agy handoff before mutation while Plan mode is active', async () => {
     const { deps, calls } = makeDeps({
       getSessionRow: async () => makeRow({ planModeEnabled: true }),

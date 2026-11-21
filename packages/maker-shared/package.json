@@ -56,6 +56,7 @@
     "./history-gap": "./src/historyGap.ts",
     "./image-annotation": "./src/imageAnnotation.ts",
     "./interaction": "./src/interaction.ts",
+    "./agent-placement": "./src/agentPlacement.ts",
     "./internal-citation": "./src/internalCitation.ts",
     "./task-snooze-options": "./src/taskSnoozeOptions.ts",
     "./live-task-priority": "./src/liveTaskPriority.ts",

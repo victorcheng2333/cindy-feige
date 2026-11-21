@@ -2,26 +2,28 @@
  * 手机端跨 Agent 切换的纯契约适配：只接收 desktop main 的公开 pending intent，
  * 不在控制端持久化第二份真相。
  */
+import { canHandOffToTaskComputerOnlyEngine } from '@cindy/maker-shared/agent-placement';
+export { runsOnTaskComputerOnly } from '@cindy/maker-shared/agent-placement';
 import type { MobileAgentCapabilities } from './agentCapabilities';
 import type { RemoteSession, RemoteSessionAgentSwitchIntent } from './types';
 
 export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
 
 /** Match the host's ordinary-task handoff scope; execution still checks host authority.
- * A borrowed Claude/Codex/Pi source (`agentDeviceId`) can still hand off to local Cursor. */
+ * Task location only: a borrowed Agent runtime device (`agentDeviceId`) never blocks a
+ * task-computer-only engine (docs/dev-rules/agent-placement.md). */
 export function canSwitchSessionToCursor(
   session: Pick<RemoteSession, 'remoteHostId' | 'agentDeviceId' | 'orcaRole' | 'orcaRemoteLead' | 'source'>,
 ): boolean {
-  return !session.remoteHostId && !session.orcaRole && !session.orcaRemoteLead
-    && (!session.source || session.source === 'desktop');
+  return canHandOffToTaskComputerOnlyEngine(session);
 }
 
+/** Agy, like Cursor, is task-computer-only; it also needs a host that supports the handoff. */
 export function canSwitchSessionToAntigravity(
   session: Parameters<typeof canSwitchSessionToCursor>[0],
   capabilities: MobileAgentCapabilities | null,
 ): boolean {
-  return capabilities?.supportsAntigravitySessionSwitch === true &&
-    !session.agentDeviceId && canSwitchSessionToCursor(session);
+  return capabilities?.supportsAntigravitySessionSwitch === true && canHandOffToTaskComputerOnlyEngine(session);
 }
 
 /** 将不可信 device-link payload 收窄为公开 intent；非法值按“无意图”处理。 */
