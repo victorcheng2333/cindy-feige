@@ -2,12 +2,13 @@
  * MobileAgentMark —— Claude Code / Codex CLI 的 Agent 身份 mark。
  * 不用于 Anthropic / OpenAI provider 或模型品牌；后两者由 MobileProviderMark 负责。
  */
-import { Sparkles } from 'lucide-react-native';
 import Svg, { G, Path } from 'react-native-svg';
 
 import { iconSize } from '@/theme';
 
 import {
+  ANTIGRAVITY_AGENT_PATH,
+  ANTIGRAVITY_AGENT_VIEW_BOX,
   CLAUDE_AGENT_PATH,
   CODEX_AGENT_FLOWER_PATH,
   CODEX_AGENT_PROMPT_PATH,
@@ -27,7 +28,13 @@ export interface MobileAgentMarkProps {
 
 /** 单色 CLI mark；颜色由宿主的主题 / 状态 token 决定。 */
 export function MobileAgentMark({ agentKind, color, size = iconSize.sm }: MobileAgentMarkProps) {
-  if (agentKind === 'antigravity') return <Sparkles color={color} size={size} />;
+  if (agentKind === 'antigravity') {
+    return (
+      <Svg accessible={false} height={size} viewBox={ANTIGRAVITY_AGENT_VIEW_BOX} width={size}>
+        <Path d={ANTIGRAVITY_AGENT_PATH} fill={color} />
+      </Svg>
+    );
+  }
   const codexStrokeWidth = size <= iconSize.sm ? CODEX_SMALL_STROKE : CODEX_LARGE_STROKE;
   return (
     <Svg accessible={false} height={size} viewBox={agentKind === 'cursor' ? '0 0 466.73 532.09' : '0 0 24 24'} width={size}>
