@@ -2826,6 +2826,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     ? resolveSessionAgentKind(currentSession)
     : 'claude-code';
   const agentSwitchIntent = currentSession?.agentSwitchIntent ?? null;
+  const supportsSameTurnSteer = capabilities?.supportsSameTurnSteer ?? sessionAgentKind !== 'antigravity';
   const composerDisplayAgentKind = agentSwitchIntent?.targetAgentKind ?? sessionAgentKind;
   const composerSwitchesAgent = composerDisplayAgentKind !== sessionAgentKind;
   const sessionAgentSwitchSupported = !!currentSession
@@ -6778,7 +6779,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     }
     if (sendInFlightRef.current || sending) return;
     // 取发送前的状态:发送本身会让 isSessionStreaming 变真。
-    const steerWhileRunning = !options.messageEditResend
+    const steerWhileRunning = supportsSameTurnSteer && !options.messageEditResend
       && (remoteSessionRunning || currentTurnStreaming)
       && runningSendPreference === 'steer';
     sendInFlightRef.current = true;
@@ -8171,6 +8172,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   };
 
   const steerQueueItem = useCallback((item: QueuedRemoteMessage) => {
+    if (!supportsSameTurnSteer) return;
     void runQueueAction(async () => {
       // Projections omit trusted bodies. Prefer fresh source data, while allowing the
       // target to restore its main-owned snapshot when the source is unavailable.
@@ -8198,7 +8200,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       }
       return accepted;
     });
-  }, [deviceId, invoke, maker, runQueueAction, sessionId, showTransientNotice, t]);
+  }, [deviceId, invoke, maker, runQueueAction, sessionId, showTransientNotice, supportsSameTurnSteer, t]);
   // 发送收尾在 await 之后才插话,要用最新一帧的 queueBusy,不用发送开始那一帧的。
   const steerQueueItemLatestRef = useRef(steerQueueItem);
   useEffect(() => {
@@ -8210,7 +8212,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   useEffect(() => {
     const pending = autoSteerClientIdsRef.current;
     if (pending.size === 0) return;
-    if (!remoteSessionRunning && !currentTurnStreaming) {
+    if (!supportsSameTurnSteer || (!remoteSessionRunning && !currentTurnStreaming)) {
       pending.clear();
       return;
     }
@@ -8234,7 +8236,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       }
       return;
     }
-  }, [currentTurnStreaming, inputProjection, queueAvailabilityReason, queueBusy, remoteSessionRunning, steerQueueItem]);
+  }, [currentTurnStreaming, inputProjection, queueAvailabilityReason, queueBusy, remoteSessionRunning, steerQueueItem, supportsSameTurnSteer]);
 
   const moveQueueItem = useCallback((clientId: string, direction: 'up' | 'down') => {
     // 菜单打开期间队列可能变化：按最新位置重新判断方向和目标。
@@ -8666,7 +8668,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     reconnectComputer: waitingSend ? reconnectWaitingComputer : undefined,
     beginQueueEdit, moveQueueItem, queueBusy, queueSelectedClientId,
     removeQueueItem, removeOutboxItem, retryOutboxItem, sessionId,
-    setQueueSelectedClientId, steerQueueItem,
+    setQueueSelectedClientId, steerQueueItem: supportsSameTurnSteer ? steerQueueItem : undefined,
   });
 
   // ⚠️ 临时取证(定位「气泡凭空消失」,定位完成后删):会话页实例身份 + 挂载/卸载。

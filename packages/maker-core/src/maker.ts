@@ -1082,8 +1082,16 @@ export class Maker {
       if (existingRowBeforePersistence) {
         updatedSdkSessionId = handle.id !== '<pending>'
           && existingRowBeforePersistence.sdkSessionId !== handle.id;
-        meta = updatedSdkSessionId
-          ? await this.storage.update(id, { sdkSessionId: handle.id })
+        const confirmedMode = handle.initialPermissionMode;
+        const updatePermissionMode = confirmedMode !== undefined
+          && existingRowBeforePersistence.permissionMode !== confirmedMode
+          && (existingRowBeforePersistence.permissionMode == null
+            || existingRowBeforePersistence.permissionMode === opts.permissionMode);
+        meta = updatedSdkSessionId || updatePermissionMode
+          ? await this.storage.update(id, {
+            ...(updatedSdkSessionId ? { sdkSessionId: handle.id } : {}),
+            ...(updatePermissionMode ? { permissionMode: confirmedMode } : {}),
+          })
           : existingRowBeforePersistence;
       } else {
         meta = await this.storage.create({
@@ -1096,7 +1104,7 @@ export class Maker {
           workspaceKind: opts.workspaceKind,
           projectDir: opts.projectDir,
           effort: opts.effort,
-          permissionMode: opts.permissionMode,
+          permissionMode: handle.initialPermissionMode ?? opts.permissionMode,
           fastMode: opts.fastMode,
           ...(typeof opts.planMode === 'boolean' ? { planMode: opts.planMode } : {}),
           reviewMode: opts.reviewMode,
@@ -1253,6 +1261,9 @@ export class Maker {
         meta.remoteHostId,
         meta.agentDeviceId ?? startOpts.agentDeviceId,
         handle,
+      ),
+      projectNegotiatedCapabilities: (base) => capabilitiesForSession(
+        meta.agentKind, base, meta.remoteHostId, meta.agentDeviceId ?? startOpts.agentDeviceId, handle,
       ),
       logger: this.logger,
       permissionMode: startOpts.permissionMode,
@@ -1778,6 +1789,9 @@ export class Maker {
         logger: this.logger,
         permissionMode: opts.permissionMode,
         capabilities: deviceId ? applicationHandleCapabilities(handle) : capabilitiesForSession(kind, agent!.capabilities, undefined, undefined, handle),
+        projectNegotiatedCapabilities: (base) => deviceId
+          ? applicationHandleCapabilities(handle)
+          : capabilitiesForSession(kind, base, undefined, undefined, handle),
         toolLoopReviewer: this.toolLoopReviewer,
         // 整机拆除期间抑制空闲会话的进程死亡终态错误(#8831 退出期守卫)。
         isHostShuttingDown: () => this.shutdownStarted,

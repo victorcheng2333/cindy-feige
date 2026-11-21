@@ -48,7 +48,7 @@ import { ChatFilePathContext, type ChatFilePathContextValue } from '@/session/ch
 import { QuestionReferenceText } from '@/session/QuestionReferenceText';
 import { formatRemoteError } from '@/device-link/remoteStatus';
 import { useMobileMakerTransport } from '@/device-link/useMobileMakerTransport';
-import { asyncQuestionNeedsSupplement, formatAsyncQuestionReplyDisplay, formatAsyncQuestionSupplement, withdrawnQuestionDraftText } from '@cindy/maker-shared/interaction';
+import { asyncQuestionNeedsSupplement, formatAsyncQuestionReplyDisplay, formatAsyncQuestionSupplement, readAcpPermissionChoices, withdrawnQuestionDraftText } from '@cindy/maker-shared/interaction';
 import { useAskCardVoice } from '@/session/useAskCardVoice';
 import { PendingAnswerTrailingInsetContext } from '@/session/usePendingQuestionScroll';
 import { buildQueuedTextMessage } from '@/session/inputProjection';
@@ -684,6 +684,7 @@ function InteractionItem({
     return (
       <PermissionCard
         pinActions={pinPermissionActions}
+        allowRememberedAcpPermission={!isSharedTaskPeer(deviceId)}
         key={readRequestId(item)}
         busy={busy}
         item={item}
@@ -805,6 +806,7 @@ function InteractionItem({
 }
 
 function PermissionCard({
+  allowRememberedAcpPermission,
   onError,
   busy,
   item,
@@ -812,6 +814,7 @@ function PermissionCard({
   pinActions,
   touchLayout,
 }: {
+  allowRememberedAcpPermission: boolean;
   onError(message: string | null): void;
   busy: boolean;
   item: PendingInteraction;
@@ -831,6 +834,8 @@ function PermissionCard({
   const companionIdentity = useContext(CompanionIdentityContext);
   const hung = useContext(CompanionHungContext);
   const suggestions = sessionScopedPermissionSuggestions(item.request.suggestions);
+  const acpChoices = readAcpPermissionChoices(item.request.suggestions);
+  const rememberedAllow = allowRememberedAcpPermission ? acpChoices?.rememberedAllow : undefined;
   const requestId = readRequestId(item);
   const [armedDecision, setArmedDecision] = useState<'allow-once' | 'always-allow' | null>(null);
   const isPluginInstall = item.request.toolName === 'cindy.plugin.install';
@@ -862,17 +867,18 @@ function PermissionCard({
       variant="secondary"
     />
   );
-  const alwaysButton = !isPluginInstall && permissionState.canShowAlwaysAllow ? (
+  const alwaysButton = !isPluginInstall && !permissionState.isHighRisk &&
+    (rememberedAllow || permissionState.canShowAlwaysAllow) ? (
     <ResolveButton
       key="always"
-      accessibilityLabel={t('interaction.permission.alwaysAllowAccessibility')}
+      accessibilityLabel={rememberedAllow ? t('interaction.permission.rememberAcpApproval') : t('interaction.permission.alwaysAllowAccessibility')}
       armed={armedDecision === 'always-allow'}
       busy={busy}
       confirmLabel={t('interaction.permission.alwaysAllowConfirm')}
-      label={t('interaction.permission.alwaysAllow')}
+      label={rememberedAllow ? t('interaction.permission.rememberAcpApproval') : t('interaction.permission.alwaysAllow')}
       onPress={() => requestDecision(
         'always-allow',
-        buildPermissionDecision('allow', { permissionUpdates: suggestions }),
+        buildPermissionDecision('allow', { permissionUpdates: rememberedAllow ? [rememberedAllow.selection] : suggestions }),
       )}
       requestId={requestId}
       touchStyle={resolveButtonLayoutStyle(touchLayout, 'secondary', companion)}
@@ -880,7 +886,7 @@ function PermissionCard({
       variant="secondary"
     />
   ) : null;
-  const allowButton = (
+  const allowButton = (acpChoices?.allowOnce ?? true) ? (
     <ResolveButton
       key="allow"
       accessibilityLabel={t(isFirstInstall ? 'interaction.permission.install' : installSummary ? 'interaction.companion.details' : isMcpUrl ? 'interaction.permission.mcpComplete' : 'interaction.permission.allowOnceAccessibility')}
@@ -894,7 +900,7 @@ function PermissionCard({
       testID="interaction.permission.allowOnceButton"
       variant="primary"
     />
-  );
+  ) : null;
   const details = (
     <>
       {companion ? <>
@@ -928,6 +934,9 @@ function PermissionCard({
         disabled={busy} onPress={() => setShowInstallDetails(open => !open)} style={styles.companionDetailsButton}>
         <Text style={styles.companionDetailsText}>{t('interaction.companion.details')}</Text>
       </InteractionTouchButton>}
+      {acpChoices?.allowOnce === false && !alwaysButton &&
+        <Text style={styles.body}>{t('sharedTask.waitingHost')}</Text>}
+      {alwaysButton && rememberedAllow?.label ? <Text style={styles.body}>{rememberedAllow.label}</Text> : null}
     </>
   );
   return (

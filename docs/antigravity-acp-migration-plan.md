@@ -6,7 +6,7 @@
 ## 结论
 
 1. **Agy 会话统一使用 ACP。** 删除会话的 `stream-json` 驱动，沿用 `antigravity`
-   引擎和供应商身份。模型目录继续用 `agy models`，订阅额度使用 `agy /usage` 的 JSON。
+   引擎和供应商身份。模型目录与能力来自 ACP 握手，订阅额度使用 `agy /usage` 的 JSON。
 2. **旧 CLI 测试对话从新 ACP 上下文开始。** 在原任务界面继续发消息时，第一次发送发布新会话
    ID。ACP 创建的会话可以正常恢复。旧的 Cindy 消息仍可查看。
 3. **运行使用官方 agy。** `agy --settings '{"useG1Credits":false}' acp --process-per-session
@@ -40,7 +40,7 @@ Desktop / iPhone 界面（模型选择、权限档、审批卡、预热触发）
         │
 antigravity-host.ts（Desktop）
   ├─ 代理环境：Agy 代理设置 → antigravityEnv()
-  ├─ 模型目录：agy models（保留，不起会话）
+  ├─ 模型目录：ACP 握手（探测会话不发送消息，读取后关闭）
   ├─ 额度：agy /usage（保留，独立于 ACP）
   ├─ 任务目录：owner 作用域 antigravity/acp/<hash(taskId)>/<hash(workingDir)>
   └─ Cindy MCP 桥：getPiExtraSpawnConfig
@@ -93,11 +93,11 @@ agy acp --process-per-session（front）→ worker → 工具子进程
 
 ### 3.3 模型与档位
 
-- 目录使用一次 `agy models` 调用，带多个 effort 的模型归并到 ACP 基座 ID。
-- 发送时把 Cindy 的「基座模型 + effort」拆成 `model` + `thought_level` 两次设置。档位不在该模型可选范围内时
-  报错，不静默降级。
+- 目录由 `session/new` 的配置选项和 `models.availableModels` 合成。空目录时用 `agy models` 区分
+  未登录和网络错误。成功快照按账号缓存。
+- 先使用 ACP 提供的精确型号，再把带档位的 ID 归到实际提供的基础型号。启动和换模型只应用该模型提供的档位，
+  无档位模型沿用 Agy 的原生配置。
 - 以 `set_config_option` 返回的 `currentValue` 为准更新句柄的 `model`，防止 agy 自行回落到别的模型。
-- `session/new` 的 `models.availableModels` 只用于一致性检查：与 `agy models` 不一致时记日志并刷新目录。
 
 ### 3.4 权限
 
@@ -107,16 +107,19 @@ agy acp --process-per-session（front）→ worker → 工具子进程
 | 接受编辑 | `mode=accept-edits`。 |
 | 自动 | `mode=auto`。 |
 | 计划 | `mode=plan`，使用计划模式开关。 |
-| 完全访问 | `mode=default`，对收到的请求选择 `allow_once`。 |
+| 完全访问 | `mode=default`，自动选择 `allow_once`。如果只有记住授权的选项，由用户按 Agy 提供的范围确认。 |
 
 - 完全访问**不用** `--dangerously-skip-permissions`：那是进程级参数，切档又要重启。
-- 停止或关闭时立即取消挂起的审批。等待本轮结束后再切权限档。
+- 新建 Agy 任务默认使用 Auto，账号未提供 Auto 时使用默认权限。权限档可在回复中切换，切换后取消旧档挂起的审批。
+- Agy 自行进入或退出计划模式时，Cindy 同步开关和任务状态，退出后恢复用户选择的常规权限档。
+- Agy 只提供记住授权时，在任务卡按原生选项确认。共享访客可使用允许一次；记住授权由任务主人操作。
 - Agy 依据原生规则决定哪些操作发审批请求，Cindy 在收到请求时使用当前权限档处理。
 
 ### 3.5 停止与进程回收
 
 1. 用户点停止：回掉挂起审批 → `session/cancel` → 等 `session/prompt` 以 `cancelled` 返回，宽限 5s。
    成功则进程保留，下一轮直接复用。
+   若还在读取附件，直接取消本地准备并发布取消终态。
 2. 超时未返回：句柄标记不可复用，对整组 `SIGTERM`，2s 后 `SIGKILL`。下一轮重启并 `session/resume`。
 3. 关闭任务：`session/close` → 关闭 stdin → 同上两段式整组回收。
 4. 已完成的工具回执和 usage 在结束前收齐再发终止事件（保留 CLI 版的做法）。

@@ -25,20 +25,22 @@ export function parseAntigravityQuota(stdout: string, fetchedAtMs: number): Anti
   if (!Array.isArray(groups)) return null;
 
   const windows = new Map<string, AntigravityQuotaWindow>();
-  for (const group of groups) {
+  groupsLoop: for (const group of groups) {
     const name = typeof group?.name === 'string' ? group.name.trim() : '';
-    if (!name || !Array.isArray(group.buckets)) continue;
+    if (!/^[\p{L}\p{N}][\p{L}\p{N} ().,+&/-]{0,79}$/u.test(name) || !Array.isArray(group.buckets)) continue;
     for (const bucket of group.buckets) {
       const minutes = bucket?.window === '5h' ? 300 : bucket?.window === 'weekly' ? 10080 : undefined;
       const fraction = bucket?.remaining_fraction;
       if (!minutes || typeof fraction !== 'number' || !Number.isFinite(fraction) || fraction < 0 || fraction > 1) continue;
-      const reset = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN;
+      const date = typeof bucket.reset_time === 'string' ? bucket.reset_time.trim() : '';
+      const reset = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(date) ? Date.parse(date) : NaN;
       windows.set(`${name}:${minutes}`, {
         group: name,
         minutes,
         remaining: Math.round(fraction * 1_000_000) / 10_000,
         resetsAtMs: Number.isFinite(reset) && reset > 0 ? reset : null,
       });
+      if (windows.size >= 32) break groupsLoop;
     }
   }
   return windows.size ? { windows: [...windows.values()], fetchedAtMs } : null;

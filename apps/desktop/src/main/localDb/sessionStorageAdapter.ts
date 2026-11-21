@@ -135,6 +135,7 @@ export class OwnerSessionStorage implements SessionStorage {
     const updateFields: Record<string, unknown> = { updatedAt: Date.now() };
     if (patch.title !== undefined) updateFields.title = patch.title;
     if (patch.model !== undefined) updateFields.model = patch.model;
+    if (patch.permissionMode !== undefined) updateFields.permissionMode = patch.permissionMode;
     if (patch.sdkSessionId !== undefined) updateFields.sdkSessionId = patch.sdkSessionId;
     // DB 的 status 列 ('active'|'archived'|'deleted') 是产品归档语义, 走 IPC local-db:sessions:update,
     // 不在这里写 —— maker-core 接口已经移除了 status 字段。

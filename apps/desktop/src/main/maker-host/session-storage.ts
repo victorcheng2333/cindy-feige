@@ -15,6 +15,8 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import { pruneSessionContextWindowBudget } from './session-context-budget-store.js';
 
 import { getDbClient } from '../localDb/client/current.js';
+import { captureDataOwnerBroadcastScope } from '../device-link/broadcast-tap.js';
+import { broadcastSessionPatched } from '../localDb/ipc/sessions.js';
 import { captureNativeHistoryBackupCleanup } from '../remote-agent/controller/nativeHistoryBackup.js';
 import { OwnerSessionStorage } from '../localDb/sessionStorageAdapter.js';
 import { sessions } from '../localDb/schema.js';
@@ -32,8 +34,10 @@ export class DesktopSessionStorage extends OwnerSessionStorage {
 
   override async update(id: string, patch: Parameters<OwnerSessionStorage['update']>[1]) {
     const cleanup = patch.sdkSessionId !== undefined ? captureNativeHistoryBackupCleanup(id) : undefined;
+    const scope = patch.permissionMode !== undefined ? captureDataOwnerBroadcastScope() : undefined;
     const result = await super.update(id, patch);
     cleanup?.();
+    if (scope) broadcastSessionPatched(id, { permissionMode: result.permissionMode }, scope);
     return result;
   }
 

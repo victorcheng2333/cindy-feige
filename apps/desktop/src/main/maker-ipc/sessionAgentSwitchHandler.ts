@@ -33,7 +33,7 @@
  * 目标是另一台电脑时，登记与落地前都按那台的目录校验，不留一个发送时必然失败的意图。
  */
 
-import type { AgentKind } from '@cindy/maker-core';
+import { isAntigravityPermissionMode, type AgentKind } from '@cindy/maker-core';
 import { getDeviceLinkInvokeContext, isDeviceLinkInvoke, runOutsideDeviceLinkInvokeContext } from '../device-link/invoke-context.js';
 import { parseOrcaRemoteLead } from '../../shared/orcaRemoteWorker.js';
 import { isProviderShareAgentDeviceId } from '../../shared/providerShare.js';
@@ -1347,8 +1347,8 @@ export async function performSessionAgentSwitch(
         ...(targetAgentKind === 'antigravity' ? { fastMode: false } :
           ((typeof params.fastMode === 'boolean' || params.fastMode === 'ultrafast') ? { fastMode: params.fastMode } : {})),
         ...(needsCursorAutoPermission ? { permissionMode: 'auto' as const } : {}),
-        ...(targetAgentKind === 'antigravity' && latestPermissionMode !== 'bypassPermissions'
-          ? { permissionMode: 'default' as const } : {}),
+        ...(targetAgentKind === 'antigravity' && !isAntigravityPermissionMode(latestPermissionMode)
+          ? { permissionMode: 'auto' as const } : {}),
         // 同机换连接／组选回的当前位置在另一台电脑时也带上位置：提交按它判断窗口该查哪台的目录，不能拿本机目录。
         ...(agentDeviceChanges || ((orcaGroupReturnRebuild || providerConnectionChanges) && targetAgentDeviceId)
           ? { agentDeviceId: targetAgentDeviceId }

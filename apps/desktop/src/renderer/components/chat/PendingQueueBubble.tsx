@@ -28,7 +28,7 @@ export interface PendingQueueBubbleProps {
   localSend?: boolean;
   simplifiedBotConversation?: boolean;
   onEdit(entry: QueuedMessage): void;
-  onSteer(clientId: string): Promise<boolean>;
+  onSteer?(clientId: string): Promise<boolean>;
   onRemove(clientId: string): void;
   onMove(clientId: string, targetIndex: number): void;
 }
@@ -120,7 +120,7 @@ export function PendingQueueBubble({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {!availability.actions.steer.disabled && (
+            {onSteer && !availability.actions.steer.disabled && (
               <DropdownMenuItem
                 className="gap-2"
                 onSelect={() => {

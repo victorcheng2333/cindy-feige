@@ -111,11 +111,11 @@ function harness(previous: DurableOutboxRecord | null = null) {
     t: (key: string) => key, setError: vi.fn(), setDraft: vi.fn<Dispatch<SetStateAction<NewSessionDraft>>>(),
     resolveWorktreeCreateErrorKey: () => 'session.new.worktreeDetectFailed',
   };
-  const run = async () => {
+  const run = async (overrides: Partial<Parameters<typeof prepareNewSessionCreation>[0]> = {}) => {
     const releases: Array<() => void> = [];
     try {
       return await prepareNewSessionCreation({
-        ...bindings, onHoldDurableCreation: release => releases.push(release),
+        ...bindings, ...overrides, onHoldDurableCreation: release => releases.push(release),
         onHoldPrecreatedRegistration: release => releases.push(release),
       }, { ...newSessionCreationPreparationServices, ...bindings });
     } finally {
@@ -124,6 +124,19 @@ function harness(previous: DurableOutboxRecord | null = null) {
   };
   return { bindings, run };
 }
+
+it('persists Default for a new Agy task targeting an older host without Auto', async () => {
+  const h = harness();
+  const draft = { ...h.bindings.effectiveDraft, agentKind: 'antigravity' as const, permissionMode: 'auto' };
+  const prepared = await h.run({
+    effectiveDraft: draft,
+    creatingWorktree: false,
+    sendAttachments: [],
+    runtimeOptions: { permissionOptions: [{ id: 'default', label: 'Default' }, { id: 'bypassPermissions', label: 'Full' }] },
+  });
+  expect(prepared?.effectiveDraft.permissionMode).toBe('default');
+  expect(getCurrentMobileOutboxRecords()[0]?.creation?.draft.permissionMode).toBe('default');
+});
 
 it.each(['reservation-fails', 'create-rejected', 'reply-lost', 'leaves-during-create'] as const)(
   'keeps the latest restored draft reachable when resubmission stops before handoff: %s', async scenario => {

@@ -25,13 +25,14 @@ class AgyProcess extends EventEmitter {
   readonly stderr = new PassThrough();
   readonly requests: Request[] = [];
   private selection = { model: 'gemini-4-neon', thought_level: 'high', mode: 'default' };
-  private readonly options = {
-    model: ['gemini-4-neon', 'gemini-3.8-flash'],
-    thought_level: ['high', 'low'],
-    mode: ['default', 'accept-edits', 'auto', 'plan'],
-  };
-
-  constructor(readonly id: string, readonly reply = 'Ready', readonly pauseLogin = false) {
+  constructor(
+    readonly id: string, readonly reply = 'Ready', readonly pauseLogin = false,
+    readonly options = {
+      model: ['gemini-4-neon', 'gemini-3.8-flash'],
+      thought_level: ['high', 'low', 'ultra'],
+      mode: ['default', 'accept-edits', 'auto', 'plan'],
+    },
+  ) {
     super();
     this.stdin.on('data', (chunk: Buffer) => this.handleRequest(JSON.parse(chunk.toString()) as Request));
     this.stdin.once('finish', () => this.emit('close'));
@@ -43,11 +44,19 @@ class AgyProcess extends EventEmitter {
   }
 
   private configuration() {
-    return Object.entries(this.options).map(([id, values]) => ({
+    return Object.entries(this.options).filter(([, values]) => values.length > 0).map(([id, values]) => ({
       id, name: id, type: 'select',
-      currentValue: this.selection[id as keyof typeof this.selection],
+      currentValue: values.includes(this.selection[id as keyof typeof this.selection])
+        ? this.selection[id as keyof typeof this.selection] : values[0],
       options: values.map(value => ({ value, name: value })),
     }));
+  }
+
+  changeMode(mode: string) {
+    this.selection.mode = mode;
+    this.write({ method: 'session/update', params: { sessionId: this.id, update: {
+      sessionUpdate: 'current_mode_update', currentModeId: mode,
+    } } });
   }
 
   private handleRequest(request: Request) {
@@ -97,10 +106,9 @@ async function withAgy(run: (start: (overrides?: Partial<StartSessionOptions>) =
       getAuthEnv: async () => ({}),
     },
     runtimeConfig: { systemPrompt: 'Fixture product instructions' },
-    getStateDir: async () => dir,
-    prepareAcp: async () => ({ servers: [], dispose() {} }),
+    prepareAcp: async () => ({ stateDir: dir, servers: [], dispose() {} }),
     getEnv: () => ({}),
-    getModels: () => [],
+    getDiscoveredCapabilities: () => undefined,
   });
   const handles: AgentSessionHandle[] = [];
   try {
@@ -133,9 +141,17 @@ describe('Agy ACP-only sessions', () => {
   it('prepares ACP before send, drops a CLI identity and resumes the new ACP identity', async () => {
     await withAgy(async start => {
       const fresh = new AgyProcess('acp-saved');
-      const handle = await start({ resumeSessionId: 'old-cli-id' });
+      const handle = await start({ resumeSessionId: 'old-cli-id', model: 'gemini-3.8-flash-ultra' });
       expect(handle.id).toBe('<pending>');
+      expect(handle.model).toBe('gemini-3.8-flash');
+      expect(fresh.requests).toContainEqual(expect.objectContaining({
+        method: 'session/set_config_option', params: expect.objectContaining({ configId: 'thought_level', value: 'ultra' }),
+      }));
       expect(fresh.requests.some(request => request.method === 'session/prompt')).toBe(false);
+      expect(fresh.requests).toContainEqual(expect.objectContaining({
+        method: 'session/set_config_option',
+        params: expect.objectContaining({ configId: 'mode', value: 'auto' }),
+      }));
       expect(fresh.requests).toContainEqual(expect.objectContaining({
         method: 'session/new',
         params: expect.objectContaining({ _meta: { antigravity: { systemPrompt: { append: 'Fixture product instructions' } } } }),
@@ -151,6 +167,25 @@ describe('Agy ACP-only sessions', () => {
       expect(next.requests).toContainEqual(expect.objectContaining({
         method: 'session/resume', params: expect.objectContaining({ sessionId: 'acp-saved' }),
       }));
+    });
+  });
+
+  it('starts a fixed model with a saved effort and Auto on an agent that only offers Default', async () => {
+    await withAgy(async start => {
+      const child = new AgyProcess('fixed-model', 'Ready', false, {
+        model: ['gpt-oss-120b-medium'], thought_level: [], mode: ['default'],
+      });
+      const handle = await start({ model: 'gpt-oss-120b-medium', effort: 'medium', permissionMode: 'auto' });
+      expect(handle.model).toBe('gpt-oss-120b-medium');
+      expect(handle.initialPermissionMode).toBe('default');
+      expect(handle.negotiatedCapabilities).toMatchObject({
+        effort: { supported: false },
+        planMode: { supported: false },
+        multimodal: { image: { supported: false } },
+      });
+      expect(handle.negotiatedCapabilities?.permissionModes.map(mode => mode.id)).toEqual(['default', 'bypassPermissions']);
+      expect(child.requests.some(request => request.method === 'session/set_config_option')).toBe(false);
+      expect((await sendTurn(handle)).at(-1)).toMatchObject({ type: 'done' });
     });
   });
 
@@ -182,13 +217,22 @@ describe('Agy ACP-only sessions', () => {
       await handle.setModel?.('gemini-3.8-flash', { effort: 'low' });
       await handle.setPlanMode?.(true);
       expect(handle.getPlanMode?.()).toBe(true);
+      child.changeMode('default');
+      expect(handle.getPlanMode?.()).toBe(false);
+      await vi.waitFor(() => expect(child.requests.filter(request => request.method === 'session/set_config_option').at(-1)?.params)
+        .toMatchObject({ configId: 'mode', value: 'accept-edits' }));
+      await handle.setPlanMode?.(true);
       await handle.setPermissionMode?.('bypassPermissions');
       await handle.setPlanMode?.(false);
 
       expect(handle.model).toBe('gemini-3.8-flash');
       expect(spawnMock).toHaveBeenCalledTimes(1);
       expect(child.requests.filter(request => request.method === 'session/set_config_option').map(request => request.params.value))
-        .toEqual(['accept-edits', 'gemini-3.8-flash', 'low', 'plan', 'default']);
+        .toEqual(['accept-edits', 'gemini-3.8-flash', 'low', 'plan', 'accept-edits', 'plan', 'default']);
+      const events = await sendTurn(handle);
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'plan_mode_changed', data: { enabled: false },
+      }));
     });
   });
 });

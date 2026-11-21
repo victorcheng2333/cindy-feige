@@ -16,6 +16,7 @@
     "kind": "Permission",
     "deny": "Deny",
     "denyAccessibility": "Deny permission request",
+    "rememberAcpApproval": "Remember approval",
     "alwaysAllow": "Always allow this session",
     "alwaysAllowAccessibility": "Always allow permission requests this session",
     "alwaysAllowConfirm": "Confirm allow this session",

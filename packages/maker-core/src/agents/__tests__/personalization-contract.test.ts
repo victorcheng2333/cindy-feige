@@ -436,12 +436,11 @@ describe('Cross-harness personalization & memory contract', () => {
         binaryPath: '/mock/agy',
         logger: noopLogger,
         makerMemory,
-        getStateDir: async () => tempRoot,
-        getModels: () => [],
+        getDiscoveredCapabilities: () => undefined,
         getEnv: () => ({}),
         async prepareAcp(_options, memory) {
           memoryMcpEnabled = memory.enabled;
-          return { servers: [], dispose() {} };
+          return { stateDir: tempRoot, servers: [], dispose() {} };
         },
       });
       const handle = await agent.startSession({

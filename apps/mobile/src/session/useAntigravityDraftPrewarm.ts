@@ -6,7 +6,7 @@ import { createNewSessionId } from './newSessionCreation';
 function agyDraftKey(draft: NewSessionDraft, planMode?: boolean): string | null {
   if (draft.agentKind !== 'antigravity' ||
       (draft.workspaceKind === 'project' && !draft.workingDir.trim()) || !draft.model.trim() || draft.agentDeviceId ||
-      draft.extraDirs?.length || !['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(draft.permissionMode)) {
+      draft.extraDirs?.length) {
     return null;
   }
   return JSON.stringify({ ...buildRemoteCreateSessionOptions(draft), ...(planMode ? { planMode } : {}) });

@@ -1505,7 +1505,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const worktreeChecked = worktreeEnabled;
   const claimAntigravityDraft = useAntigravityDraftPrewarm({
     enabled: isShareTargetFocused && !!selectedDeviceId && deviceLinkStatus === 'online' && !(worktreeApplicable && worktreeEnabled) &&
-      capabilities?.supportsControlledAntigravityDraftPrewarm === true,
+      capabilities?.supportsControlledAntigravityDraftPrewarm === true &&
+      capabilities.permissionModes.some(mode => mode.id === draft.permissionMode) &&
+      (!planModeDraftOn || capabilities.planModeSupported),
     ownerGeneration: outboxOwner.generation,
     deviceId: selectedDeviceId,
     draft,

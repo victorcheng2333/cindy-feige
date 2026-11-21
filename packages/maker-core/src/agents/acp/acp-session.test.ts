@@ -142,6 +142,7 @@ type FakeAgent = ReturnType<typeof createFakeAgent>;
 
 async function open(agent: FakeAgent, extra: Partial<OpenAcpSessionOptions> = {}): Promise<{ session: AcpSession; events: AgentEvent[]; ended: Promise<void> }> {
   const session = await openAcpSession({
+    agentKind: 'antigravity',
     transport: agent.transport,
     cwd: '/work/project',
     clientInfo: { name: 'cindy', version: 'test' },
@@ -178,8 +179,11 @@ describe('ACP line decoder (host stdout chunks)', () => {
   });
 
   it('rejects a runaway line instead of buffering without bound', () => {
-    const decoder = new AcpLineDecoder(() => {}, 8);
-    expect(() => decoder.push('0123456789')).toThrow(AcpLineTooLongError);
+    const lines: string[] = [];
+    const decoder = new AcpLineDecoder(line => lines.push(line), 8);
+    decoder.push('0123');
+    expect(() => decoder.push('456789\n')).toThrow(AcpLineTooLongError);
+    expect(lines).toEqual([]);
   });
 });
 
@@ -209,7 +213,7 @@ describe('openAcpSession handshake', () => {
       authMethods: [{ id: 'login', name: 'Sign in' }],
       handlers: { 'session/new': () => { throw Object.assign(new Error('auth'), { code: -32000 }); } },
     });
-    const failure = await openAcpSession({ transport: agent.transport, cwd: '/w', clientInfo: { name: 'c', version: '1' } })
+    const failure = await openAcpSession({ agentKind: 'antigravity', transport: agent.transport, cwd: '/w', clientInfo: { name: 'c', version: '1' } })
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(AcpAuthRequiredError);
     expect((failure as AcpAuthRequiredError).authMethods).toEqual([{ id: 'login', name: 'Sign in' }]);
@@ -429,6 +433,29 @@ describe('AcpSession permissions', () => {
     });
     expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } });
   });
+
+  it('uses an explicit remembered choice when only that approval is offered, even in Full access', async () => {
+    const agent = createFakeAgent();
+    const { session } = await open(agent, { permissionMode: 'bypassPermissions' });
+    const resolvePermission = vi.fn(async (request: InteractionRequest): Promise<InteractionDecision> => {
+      expect(request).toMatchObject({
+        kind: 'permission',
+        suggestions: [{ type: 'acp_permission_choices', allowOnce: false, rememberedAllow: { optionId: 'always' } }],
+      });
+      return {
+        kind: 'permission', behavior: 'allow',
+        permissionUpdates: [{ type: 'acp_permission_selection', optionId: 'always' }],
+      };
+    });
+    session.setInteractionResolver(resolvePermission);
+    const answer = await agent.requestPermission({
+      toolCall: { toolCallId: 'remembered', title: 'Write' },
+      options: PERMISSION_OPTIONS.filter(option => option.kind !== 'allow_once'),
+    });
+    expect(resolvePermission).toHaveBeenCalledOnce();
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'always' } });
+    await session.close();
+  });
 });
 
 describe('AcpSession stop and failure', () => {
@@ -454,13 +481,20 @@ describe('AcpSession stop and failure', () => {
   it('stop also discards a message whose attachment was still being read', async () => {
     const agent = createFakeAgent({ agentCapabilities: { promptCapabilities: { image: true } } });
     const image = deferred<Uint8Array>();
-    const { session } = await open(agent, { readFile: () => image.promise });
+    const readFile = vi.fn(() => image.promise);
+    const { session, events } = await open(agent, { readFile });
     const sending = session.send({ type: 'user', content: [{ type: 'image', path: SHOT }] });
+    await vi.waitFor(() => expect(readFile).toHaveBeenCalledOnce());
     await session.abort();
-    image.resolve(new Uint8Array([1]));
     await sending;
-    await Promise.resolve();
-    expect(agent.methods()).toEqual(['initialize', 'session/new']);
+    await vi.waitFor(() => expect(events.at(-1)).toMatchObject({ type: 'done', data: { status: 'cancelled' } }));
+    await session.send({ type: 'user', content: 'Next prompt' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    image.resolve(new Uint8Array([1]));
+    expect(agent.sent.filter(frame => frame.method === 'session/prompt')).toEqual([
+      expect.objectContaining({ params: expect.objectContaining({ prompt: [{ type: 'text', text: 'Next prompt' }] }) }),
+    ]);
+    await session.close();
   });
 
   it('retires the endpoint when the agent ignores a cancel past the grace period', async () => {
@@ -568,9 +602,9 @@ describe('AcpSession model and effort', () => {
       },
     });
     const { session } = await open(agent);
-    expect(session.negotiatedCapabilities.effort.supported).toBe(false);
+    expect(session.capabilities.effort.supported).toBe(false);
     agent.update({ sessionUpdate: 'config_option_update', configOptions });
-    expect(session.negotiatedCapabilities.effort.supported).toBe(true);
+    expect(session.capabilities.effort.supported).toBe(true);
     await session.setEffort('low');
     expect(agent.sent.at(-1)).toMatchObject({ method: 'session/set_config_option', params: { configId: 'reasoning_effort', value: 'low' } });
     await session.close();
@@ -618,6 +652,40 @@ describe('AcpSession agent modes', () => {
     // Cindy's Full access policy runs on top of the native default mode.
     await session.setPermissionMode('bypassPermissions');
     expect(modeChanges(agent)).toEqual(['accept-edits', 'plan', 'default']);
+  });
+
+  // Regression: live Agy accepts a mode RPC during a permission request.
+  // The composer must apply it without approving the earlier request or stopping the turn.
+  it('switches to Auto during a reply and cancels the pending approval', async () => {
+    const agent = createFakeAgent({
+      configOptions,
+      handlers: {
+        'session/set_config_option': params => ({
+          configOptions: configOptions.map(option => ({ ...option, currentValue: params.value })),
+        }),
+      },
+    });
+    const { session, ended } = await open(agent);
+    let notifyApproval!: () => void;
+    const approvalOpened = new Promise<void>(resolve => { notifyApproval = resolve; });
+    session.setInteractionResolver(() => {
+      notifyApproval();
+      return new Promise<InteractionDecision>(() => {});
+    });
+    try {
+      await session.send({ type: 'user', content: 'go' });
+      const approval = agent.requestPermission({
+        toolCall: { toolCallId: 'pending', title: 'Test tool' }, options: PERMISSION_OPTIONS,
+      });
+      await approvalOpened;
+      await session.setPermissionMode('auto');
+      expect(modeChanges(agent)).toEqual(['auto']);
+      expect(await approval).toEqual({ outcome: { outcome: 'cancelled' } });
+      expect(session.isTurnRunning()).toBe(true);
+    } finally {
+      await session.close();
+      await ended;
+    }
   });
 
   it('applies the stored mode when the task starts and still asks you about permission requests', async () => {

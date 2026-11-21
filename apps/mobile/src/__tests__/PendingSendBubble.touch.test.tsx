@@ -107,15 +107,24 @@ function show(
   selectedClientId: string | null = null,
   viewerDeviceId: string | null = null,
   busy = false,
+  canSteer = true,
 ) {
   handlers.clear();
   const actions: PendingSendBubbleActions = { selectedClientId, onSelect: select, onRemove: remove,
-    onBeginEdit: edit, onSteer: steer, onMove: move, onRetryOutbox: retryOutbox, onRemoveOutbox: removeOutbox, busy };
+    onBeginEdit: edit, onSteer: canSteer ? steer : undefined, onMove: move,
+    onRetryOutbox: retryOutbox, onRemoveOutbox: removeOutbox, busy };
   act(() => root.render(<PendingSendBubble item={{ ...item, ...overrides }} actions={actions} viewerDeviceId={viewerDeviceId}
     onOpenImage={openImage}
     renderImage={() => null} renderFile={() => null}
     renderText={() => <MessageBodyText testID="link" onPress={openLink}>link</MessageBodyText>} />));
 }
+// Agy may have queued messages even though its host offers no same-turn action.
+it('keeps queue editing available when the task does not offer steering', () => {
+  show({}, null, null, false, false);
+  const menu = handlers.get('pendingSend.queueMenu.a')!;
+  expect((menu.actions as Array<{ id: string }>).map(action => action.id)).toEqual(['edit', 'remove']);
+});
+
 function touch(type: 'Start' | 'Move' | 'End' | 'Cancel', x = 0, y = 0, count = type === 'End' ? 0 : 1) {
   const handler = handlers.get('pendingSend.body.a')?.[`onTouch${type}`] as ((e: GestureResponderEvent) => void) | undefined;
   act(() => handler?.({ nativeEvent: { pageX: x, pageY: y, touches: Array(count).fill({}) } } as unknown as GestureResponderEvent));

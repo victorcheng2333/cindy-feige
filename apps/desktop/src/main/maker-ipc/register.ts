@@ -276,7 +276,7 @@ import {
 } from '@cindy/model-providers';
 import { createId } from '@paralleldrive/cuid2';
 import { normalizeOrcaWorkerLabel } from '@cindy/maker-shared/orca-team';
-import { ASYNC_QUESTION_ANSWERED_CLIENT_ID_PREFIX } from '@cindy/maker-shared/interaction';
+import { ASYNC_QUESTION_ANSWERED_CLIENT_ID_PREFIX, isAcpPermissionDecisionAvailable } from '@cindy/maker-shared/interaction';
 import { permissionModeOrAsk } from '@cindy/maker-shared/permission-mode';
 import {
   isProductTurnCompletionTailEvent,
@@ -4006,6 +4006,7 @@ function bindSharedPermission(requestId: string, entry: PendingInteractionEntry,
   shared.decide = (decision) => {
     if (decision.kind !== 'permission' || shared.decision || entry.deferredDecision
       || pendingInteractionResolvers.get(requestId) !== entry) return false;
+    if (entry.request.kind === 'permission' && !isAcpPermissionDecisionAvailable(entry.request.suggestions, decision)) return false;
     if (agentInputCoordinatorHolder?.isExecutionPaused(entry.sessionId)) {
       entry.deferredDecision = decision;
       return true;
@@ -4034,6 +4035,7 @@ function cancelPendingInteraction(requestId: string, decision: InteractionDecisi
 function resolvePendingInteraction(requestId: string, decision: InteractionDecision, fromShared = false): boolean {
   const resolver = pendingInteractionResolvers.get(requestId);
   if (!resolver || (!fromShared && agentInputCoordinatorHolder?.isExecutionPaused(resolver.sessionId))) return false;
+  if (resolver.request.kind === 'permission' && !isAcpPermissionDecisionAvailable(resolver.request.suggestions, decision)) return false;
   if (decision.kind === 'ask_user_question' && decision.inProgress === true) {
     if (resolver.request.kind !== 'ask_user_question' || resolver.request.isBlocking !== false) return false;
     resolver.questionTimerSnoozed = true;
@@ -20476,6 +20478,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           : attachTrustedDesktopSendContext(message, sendOpts, expectedText),
       );
     },
+    supportsSameTurnSteer: (sessionId) =>
+      getStableSessionForTurnBoundary(sessionId)?.capabilities.sameTurnSteer.supported,
     abortSession: async (sessionId) => {
       resetAutomaticRecoveryForExplicitStop(sessionId);
       markWorkerManualInterruptIfKnown(sessionId, 'input_stop');
@@ -22888,6 +22892,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
       }
       const pendingQuestion = pendingInteractionResolvers.get(requestId);
+      if (pendingQuestion?.request.kind === 'permission'
+        && !isAcpPermissionDecisionAvailable(pendingQuestion.request.suggestions, decision)) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', 'Open the task and choose one of the displayed permission options.');
+      }
       if (pendingQuestion?.request.kind === 'ask_user_question' && pendingQuestion.request.delivery === 'async') {
         if (agentInputCoordinatorHolder?.isExecutionPaused(pendingQuestion.sessionId)) return { accepted: false };
         const questionSession = maker.getSession(pendingQuestion.sessionId);
@@ -23805,6 +23813,12 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         assertOwnerCurrent();
         if (!row) throwIpcError('NOT_FOUND', 'session not found');
         const sess = maker.getSession(sessionId);
+        if (!sess && enabled && row.agentKind === 'antigravity') {
+          const capabilities = maker.getCapabilities('antigravity');
+          if (capabilities.availableModels.length && !capabilities.planMode?.supported) {
+            throwIpcError('UNSUPPORTED_CAPABILITY', 'Agy does not offer Plan mode.');
+          }
+        }
         try {
           if (sess) await sess.setPlanMode(enabled);
           assertOwnerCurrent();

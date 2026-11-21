@@ -36,6 +36,32 @@ import { PermissionPrompt } from '../PermissionPrompt';
 
 afterEach(cleanup);
 
+it('requests the named ACP authorization when the agent only offers remembered approval', () => {
+  const onRespond = vi.fn();
+  render(<PermissionPrompt permission={permission([{
+    type: 'acp_permission_choices', allowOnce: false,
+    rememberedAllow: { name: 'Always allow this file', optionId: 'file-scope' },
+  }])} onRespond={onRespond} />);
+  expect(screen.queryByRole('button', { name: /allowOnce/ })).toBeNull();
+  fireEvent.keyDown(window, { key: 'Enter' });
+  expect(onRespond).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: /rememberAcpApproval/ }));
+  expect(onRespond).toHaveBeenCalledWith({
+    behavior: 'allow',
+    updatedPermissions: [{ type: 'acp_permission_selection', optionId: 'file-scope' }],
+    decisionClassification: 'user_permanent',
+  });
+});
+
+it('shows the host-confirmation hint instead of a remembered grant for shared guests', () => {
+  render(<PermissionPrompt allowRememberedAcpPermission={false} permission={permission([{
+    type: 'acp_permission_choices', allowOnce: false,
+    rememberedAllow: { name: 'Always allow this file', optionId: 'file-scope' },
+  }])} onRespond={vi.fn()} />);
+  expect(screen.queryByRole('button', { name: /rememberAcpApproval|allowOnce/ })).toBeNull();
+  expect(screen.getByText('sharedTask.waitingHost')).toBeTruthy();
+});
+
 const bashRule = {
   type: 'addRules',
   rules: [{ toolName: 'Bash', ruleContent: 'curl:*' }],

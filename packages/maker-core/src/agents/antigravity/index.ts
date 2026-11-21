@@ -1,4 +1,4 @@
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   AgentStartupCleanupPendingError,
@@ -10,38 +10,35 @@ import {
   type SendOptions,
   type StartSessionOptions,
 } from '../base-agent.js';
-import type { Capabilities, ModelDescriptor } from '../../types/capabilities.js';
-import type { PermissionMode } from '../../types/common.js';
-import { openAcpSession } from '../acp/session.js';
+import type { Capabilities } from '../../types/capabilities.js';
+import type { Effort, PermissionMode } from '../../types/common.js';
+import { openAcpSession, type AcpSession } from '../acp/session.js';
 import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
 import { startAgyAcpProcess } from './acp-process.js';
-import { AGY_EFFORTS } from './models.js';
+import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
 import { loadMemoryContext } from '../../memory/context.js';
 import { resolveMemoryScopeKey } from '../../memory/scope-resolver.js';
 
 const supported = { supported: true } as const;
 const unavailable = { supported: false, reason: 'not-implemented' } as const;
+const defaultMode = { id: 'default', displayName: 'Default' } as const;
+const fullAccess = { id: 'bypassPermissions', displayName: 'Full access' } as const;
 
 export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
   switchModel: supported,
   availableModels: [],
   hasFastMode: false,
-  effort: supported,
-  effortLevels: AGY_EFFORTS.map(id => ({ id, displayName: id })),
+  effort: unavailable,
+  effortLevels: [],
   reasoningDisplay: ['full'],
-  permissionModes: [
-    { id: 'default', displayName: 'Default' },
-    { id: 'acceptEdits', displayName: 'Accept edits' },
-    { id: 'auto', displayName: 'Auto' },
-    { id: 'bypassPermissions', displayName: 'Full access' },
-  ],
+  permissionModes: [defaultMode, fullAccess],
   setPermissionModeMidSession: supported,
   turnPermissionPolicy: {
     supported: unavailable,
     unsupportedPermissionModes: ['default', 'ask', 'auto', 'acceptEdits', 'plan', 'bypassPermissions'],
   },
-  planMode: supported,
-  multimodal: { text: supported, image: supported, file: supported },
+  planMode: unavailable,
+  multimodal: { text: supported, image: unavailable, file: supported },
   fork: unavailable,
   rewind: unavailable,
   abort: supported,
@@ -51,16 +48,48 @@ export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
 };
 
 export function isAntigravityPermissionMode(mode: unknown): boolean {
-  return ANTIGRAVITY_CAPABILITIES.permissionModes.some(option => option.id === mode);
+  return mode === 'default' || mode === 'acceptEdits' || mode === 'auto' || mode === 'bypassPermissions';
 }
 
 export interface AntigravityAgentDeps extends AgentDeps {
-  getStateDir(options: StartSessionOptions): Promise<string>;
   prepareAcp(options: StartSessionOptions, memory: { enabled: boolean; scopeKey?: string }):
-    Promise<{ servers: AcpMcpServer[]; dispose(): void }>;
-  refreshModels?(): void;
+    Promise<{ stateDir: string; servers: AcpMcpServer[]; dispose(): void }>;
   getEnv(): NodeJS.ProcessEnv;
-  getModels(): ModelDescriptor[];
+  getDiscoveredCapabilities(): Capabilities | undefined;
+}
+
+function antigravityCapabilities(session: AcpSession): Capabilities {
+  const { capabilities } = session;
+  const nativeModes = capabilities.permissionModes.filter(mode => isAntigravityPermissionMode(mode.id));
+  return {
+    ...ANTIGRAVITY_CAPABILITIES,
+    ...capabilities,
+    permissionModes: nativeModes.some(mode => mode.id === 'default') ? nativeModes : [defaultMode, ...nativeModes],
+    availableModels: describeAntigravityCatalog(capabilities.availableModels, session.modelVariantIds),
+    memory: ANTIGRAVITY_CAPABILITIES.memory,
+  };
+}
+
+/** The same ACP handshake used by a task, with no prompt or registered tools. */
+export async function probeAntigravityCatalog(binary: string, root: string, env: NodeJS.ProcessEnv): Promise<Capabilities> {
+  const directory = await mkdtemp(path.join(root, 'catalog-'));
+  let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
+  try {
+    endpoint = startAgyAcpProcess(binary, directory, directory, env);
+    const session = await openAcpSession({
+      agentKind: 'antigravity', transport: endpoint.transport, cwd: directory,
+      clientInfo: { name: 'cindy', version: '1.0.0' }, requestTimeoutMs: 15_000,
+    });
+    try {
+      return antigravityCapabilities(session);
+    } finally {
+      await session.close();
+    }
+  } finally {
+    const cleanup = () => rm(directory, { recursive: true, force: true }).catch(() => {});
+    if (!endpoint || endpoint.stopped()) await cleanup();
+    else void endpoint.whenStopped.then(cleanup);
+  }
 }
 
 async function readAcpIdentity(file: string): Promise<string | undefined> {
@@ -94,22 +123,19 @@ function classifyAgyWarning(text: string): { error: string; reason: string } | u
 
 export class AntigravityAgent extends BaseAgent {
   readonly kind = 'antigravity' as const;
-  readonly capabilities: Capabilities;
 
   constructor(private readonly agyDeps: AntigravityAgentDeps) {
     super(agyDeps);
-    this.capabilities = this.buildCapabilities(ANTIGRAVITY_CAPABILITIES);
-    Object.defineProperty(this.capabilities, 'availableModels', {
-      enumerable: true,
-      get: agyDeps.getModels,
-    });
+  }
+
+  get capabilities(): Capabilities {
+    return this.buildCapabilities(this.agyDeps.getDiscoveredCapabilities() ?? ANTIGRAVITY_CAPABILITIES);
   }
 
   async startSession(opts: StartSessionOptions): Promise<AgentSessionHandle> {
     let bridge: Awaited<ReturnType<AntigravityAgentDeps['prepareAcp']>> | undefined;
     let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
-    let mode: PermissionMode = opts.permissionMode === 'plan' ? 'default' : opts.permissionMode ?? 'default';
-    let planMode = opts.planMode ?? opts.permissionMode === 'plan';
+    let mode: PermissionMode = opts.permissionMode === 'plan' ? 'default' : opts.permissionMode ?? 'auto';
     try {
       if (opts.remoteHostId || opts.deviceHosted || opts.reviewMode || opts.vendorOptions?.orcaRole ||
           opts.botRuntimeProfile || opts.extraDirs?.length || opts.writableDirs?.length) {
@@ -118,11 +144,6 @@ export class AntigravityAgent extends BaseAgent {
       if (opts.providerId && opts.providerId !== this.kind) throw new Error('Agy requires its own model source.');
       if (!isAntigravityPermissionMode(mode)) throw new Error('Unsupported Agy permission mode.');
       const cwd = await realpath(opts.workingDir);
-      const stateDir = await this.agyDeps.getStateDir(opts);
-      const marker = path.join(stateDir, 'cindy-acp-session-id');
-      // Only identities written in the ACP state directory are passed to session/resume.
-      const saved = opts.resumeSessionId ? await readAcpIdentity(marker) : undefined;
-      const resumeSessionId = saved === opts.resumeSessionId ? saved : undefined;
       const manager = this.agyDeps.makerMemory;
       const memoryEnabled = !!manager && (opts.makerMemoryEnabled ?? this.agyDeps.runtimeConfig.makerMemoryEnabled ?? false);
       const scopeKey = memoryEnabled ? opts.makerMemoryScopeKey ?? await resolveMemoryScopeKey(cwd) : undefined;
@@ -138,11 +159,17 @@ export class AntigravityAgent extends BaseAgent {
 
       bridge = await this.agyDeps.prepareAcp(opts, { enabled: memoryEnabled && !memory?.projectDirectory, scopeKey });
       const taskBridge = bridge;
+      const { stateDir } = taskBridge;
+      const marker = path.join(stateDir, 'cindy-acp-session-id');
+      // Only identities written by ACP can enter session/resume.
+      const saved = opts.resumeSessionId ? await readAcpIdentity(marker) : undefined;
+      const resumeSessionId = saved === opts.resumeSessionId ? saved : undefined;
       endpoint = startAgyAcpProcess(this.deps.binaryPath, cwd, stateDir, this.agyDeps.getEnv());
       void endpoint.whenStopped.then(() => taskBridge.dispose()).catch(() => {
         this.agyDeps.logger.warn('Could not release the Agy MCP bridge');
       });
       const session = await openAcpSession({
+        agentKind: this.kind,
         transport: endpoint.transport,
         cwd,
         clientInfo: { name: 'cindy', version: '1.0.0' },
@@ -162,15 +189,28 @@ export class AntigravityAgent extends BaseAgent {
       });
       if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
       if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
-      const directory = this.agyDeps.getModels();
-      if (directory.length && !directory.every(model =>
-        session.capabilities.availableModels.some(offered => offered.id === model.id))) {
-        this.agyDeps.refreshModels?.();
+      if (!antigravityCapabilities(session).permissionModes.some(option => option.id === mode)) {
+        mode = 'default';
       }
-      await session.setPermissionMode(planMode ? 'plan' : mode);
-      await session.setModel(opts.model);
-      if (opts.effort && opts.effort !== session.getEffort()) await session.setEffort(opts.effort);
+      const initialPermissionMode = mode;
+      const setModel = async (model: string, effort?: Effort) => {
+        const selection = resolveAntigravityModel(model, session.capabilities.availableModels);
+        await session.setModel(selection.model);
+        const requestedEffort = effort ?? selection.effort;
+        if (requestedEffort && session.capabilities.effortLevels?.some(level => level.id === requestedEffort)) {
+          await session.setEffort(requestedEffort);
+        }
+      };
+      session.setPermissionModeAfterPlan(mode);
+      const wantsPlan = opts.planMode ?? opts.permissionMode === 'plan';
+      if (wantsPlan && !session.capabilities.planMode?.supported) {
+        throw new Error('Agy did not offer Plan mode for this task. Turn off Plan to send in the regular mode.');
+      }
+      await session.setPermissionMode(wantsPlan ? 'plan' : mode);
+      await setModel(opts.model, opts.effort);
       if (!resumeSessionId) await writeFile(marker, session.nativeId, { mode: 0o600 });
+      let liveCapabilities = this.buildCapabilities(antigravityCapabilities(session));
+      session.onCapabilitiesChange(() => { liveCapabilities = this.buildCapabilities(antigravityCapabilities(session)); });
 
       const validate = (options: SendOptions) => {
         if (options.turnPermissionPolicy || options.toolsDisabled) {
@@ -178,17 +218,19 @@ export class AntigravityAgent extends BaseAgent {
         }
       };
       const setPlanMode = async (enabled: boolean) => {
-        if (enabled === planMode) return;
+        if (enabled === session.planMode) return;
+        if (session.isTurnRunning()) throw new Error('Wait for the current turn to finish before changing Plan mode.');
         await session.setPermissionMode(enabled ? 'plan' : mode);
-        planMode = enabled;
       };
       return {
         get id() { return session.id; },
         agentKind: this.kind,
         get model() { return session.model; },
+        get negotiatedCapabilities() { return liveCapabilities; },
+        initialPermissionMode,
         send: async (message, options = {}) => {
           validate(options);
-          if (options.planMode !== undefined && options.planMode !== planMode) {
+          if (options.planMode !== undefined && options.planMode !== session.planMode) {
             await setPlanMode(options.planMode);
           }
           await session.send(message, options);
@@ -198,17 +240,20 @@ export class AntigravityAgent extends BaseAgent {
         close: () => session.close(),
         setModel: async (model, settings) => {
           if (settings?.providerId && settings.providerId !== this.kind) throw new Error('Agy requires its own model source.');
-          await session.setModel(model);
-          if (settings?.effort && session.getEffort() !== settings.effort) await session.setEffort(settings.effort);
+          await setModel(model, settings?.effort);
         },
         setEffort: effort => session.setEffort(effort),
         setPermissionMode: async (permission: PermissionMode) => {
           if (!isAntigravityPermissionMode(permission)) throw new Error('Unsupported Agy permission mode.');
-          if (!planMode) await session.setPermissionMode(permission);
+          if (!liveCapabilities.permissionModes.some(option => option.id === permission)) {
+            throw new Error('The ACP agent does not offer the selected permission mode.');
+          }
+          if (!session.planMode) await session.setPermissionMode(permission);
           mode = permission;
+          session.setPermissionModeAfterPlan(mode);
         },
         setPlanMode,
-        getPlanMode: () => planMode,
+        getPlanMode: () => session.planMode,
         validateSendOptions: validate,
         events: () => session.events(),
         getUsageSnapshot: () => session.getUsageSnapshot(),

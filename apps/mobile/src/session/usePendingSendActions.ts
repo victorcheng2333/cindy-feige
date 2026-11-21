@@ -94,7 +94,7 @@ export function usePendingSendActions({
   retryOutboxItem: PendingSendBubbleActions['onRetryOutbox'];
   sessionId: string;
   setQueueSelectedClientId: PendingSendBubbleActions['onSelect'];
-  steerQueueItem(item: QueuedRemoteMessage): void;
+  steerQueueItem?(item: QueuedRemoteMessage): void;
 }) {
   return useMemo<PendingSendBubbleActions>(
     () => ({
@@ -111,13 +111,13 @@ export function usePendingSendActions({
           .find((entry) => entry.clientId === clientId);
         if (target) beginQueueEdit(target);
       },
-      onSteer: (clientId: string) => {
+      onSteer: steerQueueItem ? (clientId: string) => {
         const target = remoteSessionStore.getInputProjection(sessionId).pendingQueue
           .find((entry) => entry.clientId === clientId);
         if (!target) return;
         setQueueSelectedClientId(null);
         steerQueueItem(target);
-      },
+      } : undefined,
       onMove: moveQueueItem,
       onRetryOutbox: retryOutboxItem,
       onRemoveOutbox: removeOutboxItem,

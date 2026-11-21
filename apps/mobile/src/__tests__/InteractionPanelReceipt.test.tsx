@@ -1083,7 +1083,8 @@ it('preserves session-only persistent permission and the high-risk confirmation 
   expect(resolveInteraction).toHaveBeenLastCalledWith('p-safe', expect.objectContaining({ permissionUpdates: [sessionRule] }));
   await act(async () => remoteSessionStore.setPendingInteractions('s1', [{ request: {
     kind: 'permission', requestId: 'p-risk', toolName: 'Bash', input: { command: 'git reset --hard HEAD && rm -rf node_modules' },
-    suggestions: [{ destination: 'session', rules: [{ toolName: 'Bash' }] }],
+    suggestions: [{ destination: 'session', rules: [{ toolName: 'Bash' }] },
+      { type: 'acp_permission_choices', allowOnce: true, rememberedAllow: { name: 'Always allow', optionId: 'always' } }],
   } }]));
   expect(host.querySelector('[data-testid="interaction.permission.alwaysAllowButton"]')).toBeNull();
   await click('interaction.permission.allowOnceButton');

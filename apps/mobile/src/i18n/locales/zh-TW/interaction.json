@@ -16,6 +16,7 @@
     "kind": "權限確認",
     "deny": "拒絕",
     "denyAccessibility": "拒絕權限請求",
+    "rememberAcpApproval": "記住這次授權",
     "alwaysAllow": "本任務總是允許",
     "alwaysAllowAccessibility": "本任務總是允許權限請求",
     "alwaysAllowConfirm": "確認本任務允許",

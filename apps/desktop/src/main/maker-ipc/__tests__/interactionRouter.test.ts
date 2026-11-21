@@ -47,6 +47,29 @@ function makeSession() {
 }
 
 describe('session interaction router', () => {
+  // The channel only has a generic Allow button. It must not settle a request
+  // whose approval would remember a grant; the task shows the native choice.
+  it('routes a remembered-only ACP approval to the task card', async () => {
+    const host = makeSession();
+    const decision = { kind: 'permission', behavior: 'allow',
+      permissionUpdates: [{ type: 'acp_permission_selection', optionId: 'remember' }] } as const;
+    const desktop = vi.fn<InteractionHandler>(async () => ({ ...decision, permissionUpdates: [...decision.permissionUpdates] }));
+    const channel = vi.fn<InteractionHandler>();
+    installDesktopInteractionHandler(host.session, desktop);
+    const lease = beginInteractionRoute(host.session, {
+      route: { sessionId: host.session.id, turnId: 'im-turn', origin: { kind: 'hook', source: 'telegram' },
+        interactionSurface: 'channel-card' }, handle: channel,
+    });
+    const request: InteractionRequest = {
+      kind: 'permission', requestId: 'remember-only', toolName: 'Read', input: {},
+      suggestions: [{ type: 'acp_permission_choices', allowOnce: false,
+        rememberedAllow: { name: 'Always allow this file', optionId: 'remember' } }],
+    };
+    await expect(host.dispatch(request)).resolves.toEqual(decision);
+    expect(desktop).toHaveBeenCalledWith(request);
+    expect(channel).not.toHaveBeenCalled();
+    lease.release();
+  });
   // Regression: IM turn cleanup consumed async questions before a person could answer.
   // Unit: real router + presentation callback; channel completion must not settle the App card.
   it.each(['delivered', 'failed'] as const)('keeps an async question answerable after Telegram ends (%s notice)', async (delivery) => {

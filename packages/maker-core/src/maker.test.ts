@@ -706,6 +706,25 @@ describe('Maker local Pi package generation fence', () => {
 });
 
 describe('Maker initial plan persistence', () => {
+  // A pre-created Agy task can request Auto from a host whose native session
+  // offers only Default. The resumed row should expose the effective mode.
+  it('stores the negotiated permission mode on an existing Agy task', async () => {
+    const storage = createStorage();
+    const opts = { id: 'existing-agy', agentKind: 'antigravity', workDir: '/repo',
+      model: 'gemini-4-neon', title: 'Agy task', permissionMode: 'auto' } as const;
+    await storage.create(opts);
+    const handle: AgentSessionHandle = {
+      ...createHandle({ id: '<pending>', agentKind: 'antigravity' }),
+      initialPermissionMode: 'default',
+    };
+    const maker = new Maker({ agents: { antigravity: createAgent(async () => handle, 'antigravity') },
+      storage, logger: createLogger() });
+    try {
+      const session = await maker.createSession({ ...opts, workingDir: opts.workDir });
+      expect(session.permissionModeState.mode).toBe('default');
+      expect((await storage.get(opts.id))?.permissionMode).toBe('default');
+    } finally { await maker.shutdown(); }
+  });
   // A second, best-effort provider write could leave a valid task with a default
   // route after a crash. Creation must hand storage the same identity as startup.
   it.each(['xd', null, undefined])('stores initial provider %s with the new task', async (providerId) => {

@@ -16,7 +16,7 @@ const SDK_MISSING: CapabilityStatus = { supported: false, reason: 'sdk-missing',
 const SUPPORTED: CapabilityStatus = { supported: true };
 
 /** Cindy efforts an ACP option value can map to, compared case-insensitively by value id. */
-const MAPPABLE_EFFORTS: readonly Effort[] = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const MAPPABLE_EFFORTS: readonly Effort[] = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
 /**
  * Permission policy Cindy applies to `session/request_permission`. The agent
@@ -145,6 +145,7 @@ export function describeAcpModels(options: readonly AcpConfigOption[]): ModelDes
 
 export function buildAcpCapabilities(init: AcpInitializeResult, options: readonly AcpConfigOption[]): Capabilities {
   const modelOption = findModelOption(options);
+  const permissionModes = acpPermissionModes(options);
   const effortLevels: EffortDescriptor[] = mapEffortValues(findEffortOption(options))
     .map((mapped) => ({ id: mapped.effort, displayName: mapped.name }));
   const { promptCapabilities } = init.agentCapabilities;
@@ -155,9 +156,9 @@ export function buildAcpCapabilities(init: AcpInitializeResult, options: readonl
     effort: effortLevels.length > 0 ? SUPPORTED : SDK_MISSING,
     effortLevels,
     reasoningDisplay: ['full'],
-    permissionModes: acpPermissionModes(options),
+    permissionModes,
     setPermissionModeMidSession: SUPPORTED,
-    planMode: SDK_MISSING,
+    planMode: permissionModes.some(mode => mode.id === 'plan') ? SUPPORTED : SDK_MISSING,
     multimodal: {
       text: SUPPORTED,
       // Without image support the attachment is still passed as a resource link.

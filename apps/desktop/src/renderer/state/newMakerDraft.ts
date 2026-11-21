@@ -225,7 +225,7 @@ export interface NewMakerDraft {
  * 在目录里都是默认隐藏的模型 —— 种子默认模型压根不在用户看到的清单里。
  */
 function defaultVendorPrefs(vendor: MakerVendor): VendorPrefs {
-  if (vendor === 'antigravity') return { model: '', effort: 'medium', permissionMode: 'default', permissionModeCustomized: false, planMode: false, providerId: 'antigravity' };
+  if (vendor === 'antigravity') return { model: '', effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false, planMode: false, providerId: 'antigravity' };
   if (vendor === 'cursor') return { model: getDefaultModelForVendor('cursor').id, effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false, planMode: false, providerId: 'cursor' };
   if (vendor === 'pi') {
     return {
@@ -408,7 +408,10 @@ function sanitize(raw: unknown): NewMakerDraft {
     r.newChatDefaultPermissionMode === 'auto' || r.newChatDefaultPermissionMode === 'bypassPermissions'
       ? r.newChatDefaultPermissionMode : null;
   const sanitizeVendorPrefs = (p: Partial<VendorPrefs> | undefined, v: MakerVendor): VendorPrefs => {
-    const fallback = { ...defaultVendorPrefs(v), permissionMode: v === 'antigravity' ? 'default' : newChatDefaultPermissionMode ?? 'auto' };
+    const defaults = defaultVendorPrefs(v);
+    const fallback = v !== 'antigravity' && newChatDefaultPermissionMode
+      ? { ...defaults, permissionMode: newChatDefaultPermissionMode }
+      : defaults;
     const permissionModeCustomized = p?.permissionModeCustomized === true ||
       (p?.permissionModeCustomized === undefined && typeof p?.permissionMode === 'string' &&
         p.permissionMode !== 'auto' && (v === 'cursor' || p.permissionMode !== 'plan'));

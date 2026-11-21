@@ -239,7 +239,10 @@ test('session storage readback stays with the owner that accepted the write', as
   }
   let reads = 0;
   const storage = new OwnerSessionStorage({ db: () => ({ drizzle: reads++ === 0 ? old.db : next.db }) });
-  assert.equal((await storage.update('same-task', { title: 'old updated' })).title, 'old updated');
+  const updated = await storage.update('same-task', { title: 'old updated', permissionMode: 'default' });
+  assert.equal(updated.title, 'old updated');
+  assert.equal(updated.permissionMode, 'default');
+  assert.equal(old.sqlite.prepare('SELECT permission_mode FROM sessions').get().permission_mode, 'default');
   assert.equal(next.sqlite.prepare('SELECT title FROM sessions').get().title, 'new');
 });
 

@@ -16,6 +16,7 @@
     "kind": "权限确认",
     "deny": "拒绝",
     "denyAccessibility": "拒绝权限请求",
+    "rememberAcpApproval": "记住这次授权",
     "alwaysAllow": "本任务总是允许",
     "alwaysAllowAccessibility": "本任务总是允许权限请求",
     "alwaysAllowConfirm": "确认本任务允许",

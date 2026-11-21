@@ -14772,6 +14772,7 @@
       "mcpCancel": "Cancelar",
       "alwaysAllowScoped": "Sempre permitir {{scope}} nesta sessão",
       "alwaysAllowScopedHint": "Aplica-se à sessão inteira e apenas ao que está listado aqui.",
+      "rememberAcpApproval": "Memorizar autorização",
       "alwaysAllowSessionHint": "Aplica-se à sessão inteira, não apenas a esta solicitação.",
       "autoReviewUnavailable": "A análise automática não pôde ser concluída. Confirme se deseja permitir esta ação.",
       "autoReviewReason": "A análise automática precisa da sua decisão: {{reason}}",

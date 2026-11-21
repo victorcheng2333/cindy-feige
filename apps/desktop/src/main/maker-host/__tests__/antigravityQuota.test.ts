@@ -32,4 +32,12 @@ it('preserves independent five-hour and weekly model-group readings', () => {
   ] });
   expect(parseAntigravityQuota(JSON.stringify({ ...report, num_turns: 1 }), 12)).toBeNull();
   expect(parseAntigravityQuota('authentication required', 12)).toBeNull();
+  const buckets = [{ window: '5h', remaining_fraction: 0.5, reset_time: '2027' }];
+  const oversized = { ...report, command: { name: 'usage', data: { groups: [
+    { name: 'invalid\tgroup', buckets },
+    ...Array.from({ length: 40 }, (_, index) => ({ name: `Model group ${index}`, buckets })),
+  ] } } };
+  const bounded = parseAntigravityQuota(JSON.stringify(oversized), 12);
+  expect(bounded?.windows).toHaveLength(32);
+  expect(bounded?.windows[0]).toEqual({ group: 'Model group 0', minutes: 300, remaining: 50, resetsAtMs: null });
 });

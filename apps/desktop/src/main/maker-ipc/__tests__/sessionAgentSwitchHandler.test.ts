@@ -98,11 +98,11 @@ describe('Antigravity model selection', () => {
     expect(calls).toEqual([]);
   });
 
-  it('hands a local task to agy, retaining history and using supported permissions', async () => {
-    const { deps } = makeDeps();
+  it('hands a local task to agy, retaining history and using Auto for a legacy Ask permission', async () => {
+    const { deps } = makeDeps({ getSessionRow: async () => makeRow({ permissionMode: 'ask' }) });
     await expect(performSessionAgentSwitch(deps, selection)).resolves.toMatchObject({ switched: true });
     expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
-      agentKind: 'antigravity', providerId: 'antigravity', sdkSessionId: null, permissionMode: 'default', fastMode: false,
+      agentKind: 'antigravity', providerId: 'antigravity', sdkSessionId: null, permissionMode: 'auto', fastMode: false,
     }));
     expect(deps.setPendingHandoff).toHaveBeenCalled();
   });

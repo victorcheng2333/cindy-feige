@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { AntigravityAgent, antigravityEnv, parseAntigravityModels, runAntigravityAccountCommand, type AgentDeps, type McpProvider, type AuthAdapter, type ModelDescriptor } from '@cindy/maker-core';
+import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type McpProvider, type AuthAdapter, type Capabilities } from '@cindy/maker-core';
 import type { Provider, ProviderModelDiscoveryFailure } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
@@ -51,7 +51,7 @@ function binaryPath(): string | undefined {
 let executable: string | undefined;
 let snapshot: {
   scope: string;
-  models: ModelDescriptor[];
+  capabilities?: Capabilities;
   expiresAt: number;
   failure: ProviderModelDiscoveryFailure | null;
 } | undefined;
@@ -141,7 +141,11 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
 }
 
 function currentModels() {
-  return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.models : [];
+  return currentCapabilities()?.availableModels ?? [];
+}
+
+function currentCapabilities(): Capabilities | undefined {
+  return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.capabilities : undefined;
 }
 
 export function antigravityModelDiscoveryFailure(): ProviderModelDiscoveryFailure | null {
@@ -150,11 +154,11 @@ export function antigravityModelDiscoveryFailure(): ProviderModelDiscoveryFailur
 
 function discoveryFailureKind(error: unknown): ProviderModelDiscoveryFailure['kind'] {
   if (!error || typeof error !== 'object') return 'upstream';
-  const failure = error as { stdout?: string; stderr?: string; code?: string | number; killed?: boolean; signal?: string };
+  const failure = error as { message?: string; name?: string; stdout?: string; stderr?: string; code?: string | number; killed?: boolean; signal?: string };
   // Match CLI diagnostics here and publish only the category. The original output
   // can contain private account or proxy information.
-  const output = `${failure.stderr ?? ''}\n${failure.stdout ?? ''}`;
-  if (/please sign in to view available models|authentication expired/i.test(output)) return 'unauthorized';
+  const output = `${failure.stderr ?? ''}\n${failure.stdout ?? ''}\n${failure.message ?? ''}`;
+  if (failure.name === 'AcpAuthRequiredError' || /please sign in to view available models|authentication expired/i.test(output)) return 'unauthorized';
   if (/user location is not supported/i.test(output)) return 'regionBlocked';
   if ((failure.killed && failure.signal === 'SIGTERM') || /deadline exceeded|timed out/i.test(output)) return 'timeout';
   if (/proxyconnect|no such host|connection refused|network is unreachable|eligibility check failed:.*EOF/i.test(output) ||
@@ -166,7 +170,7 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   const bin = executable;
   if (!bin) return false;
   const scope = ownerScopedUserDataPath('antigravity');
-  if (!options.force && snapshot?.scope === scope && Date.now() < snapshot.expiresAt) return snapshot.models.length > 0;
+  if (!options.force && snapshot?.scope === scope && Date.now() < snapshot.expiresAt) return currentModels().length > 0;
   if (!options.allowSideEffects) return currentModels().length > 0;
   if (discovery?.scope === scope) {
     if (options.force) discovery.retainOnFailure = true;
@@ -174,16 +178,22 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   }
   const token = Symbol();
   const promise = (async () => {
-    let models: ModelDescriptor[] = [];
+    let capabilities: Capabilities | undefined;
     let failureKind: ProviderModelDiscoveryFailure['kind'] | null = null;
     try {
       const probe = path.join(scope, 'discovery');
       await mkdir(probe, { recursive: true, mode: 0o700 });
-      const { stdout } = await exec(bin, [`--gemini_dir=${probe}`, 'models'], {
-        cwd: probe, env: configuredEnvironment(), timeout: 20_000, maxBuffer: 512 * 1024,
-      });
-      models = parseAntigravityModels(stdout);
-      if (!models.length) failureKind = 'empty';
+      const env = configuredEnvironment();
+      capabilities = await probeAntigravityCatalog(bin, probe, env);
+      if (!capabilities.availableModels.length) {
+        // An empty ACP catalog has no reason attached. Only then ask the CLI for
+        // the sign-in or network diagnostic; the model list and controls use ACP.
+        if (discovery?.token !== token || scope !== ownerScopedUserDataPath('antigravity')) return false;
+        await exec(bin, [`--gemini_dir=${probe}`, 'models'], {
+          cwd: probe, env, timeout: 10_000, maxBuffer: 512 * 1024,
+        });
+        failureKind = 'empty';
+      }
     } catch (error) {
       failureKind = discoveryFailureKind(error);
     }
@@ -192,11 +202,11 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     const failure = failureKind ? { kind: failureKind, at: new Date(now).toISOString() } : null;
     // Last known models remain useful after a failed manual refresh, except when
     // the CLI explicitly reports that it cannot use the saved sign-in.
-    const retainedModels = failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope
-      ? snapshot.models : models;
-    snapshot = { scope, models: retainedModels, failure, expiresAt: now + (failure ? 30_000 : 30 * 60_000) };
+    const retainedCapabilities = failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope
+      ? snapshot.capabilities : failure ? undefined : capabilities;
+    snapshot = { scope, capabilities: retainedCapabilities, failure, expiresAt: now + (failure ? 30_000 : 30 * 60_000) };
     notifyLocalHarnessProviderChanged();
-    return models.length > 0;
+    return !failure && !!capabilities?.availableModels.length;
   })();
   discovery = { scope, token, retainOnFailure: options.force === true, promise };
   void promise.finally(() => { if (discovery?.promise === promise) discovery = undefined; });
@@ -242,11 +252,14 @@ const auth: AuthAdapter = {
     };
   },
   async triggerLogin() {
+    activeLogin?.abort();
     const controller = new AbortController();
     activeLogin = controller;
     try {
       await changeAgyAccount('authenticate', controller.signal);
-      return await auth.getState();
+      const state = await auth.getState();
+      controller.signal.throwIfAborted();
+      return state;
     } catch {
       return { authenticated: false, errorReason: controller.signal.aborted ? 'login_cancelled' : 'Agy sign-in failed.' };
     } finally {
@@ -278,49 +291,47 @@ export function buildAntigravityAgent(
       get userPrompt() { return readUserPrompt(); },
     },
     getEnv: configuredEnvironment,
-    getModels: currentModels,
-    refreshModels: () => {
-      void readAntigravityConnection({ allowSideEffects: true, force: true }).catch(() => {});
-    },
+    getDiscoveredCapabilities: currentCapabilities,
     async prepareAcp(opts, memory) {
-      const owner = getActiveAppSession().generation;
-      const bridge = await getPiExtraSpawnConfig(providers, logger, {
-        agentKind: 'antigravity',
-        sessionId: opts.sessionId,
-        sessionInstanceId: opts.sessionInstanceId,
-        workingDir: opts.workingDir,
-        vendorOptions: opts.vendorOptions,
-        memoryEnabled: memory.enabled,
-        memoryScopeKey: memory.scopeKey,
-        allowedServerNames: memory.enabled ? ['cindy_helper', 'cindy', 'cindy_memory'] : ['cindy_helper', 'cindy'],
-        mcpCallerKind: 'unknown',
-        mcpCallerAttested: false,
-      });
-      if (owner !== getActiveAppSession().generation) {
-        bridge?.disposeSessionCtx?.();
-        throw new Error('The Antigravity task owner changed during ACP setup.');
-      }
-      const release = opts.sessionId ? retainAntigravityTaskState(opts.sessionId) : undefined;
-      const transport = bridge?.mcpBridge;
-      return {
-        dispose() {
-          try { bridge?.disposeSessionCtx?.(); }
-          finally { release?.(); }
-        },
-        servers: (transport?.servers ?? []).filter(server => !server.remote).map(server => ({
-          type: 'http' as const, name: server.name, url: server.url,
-          headers: [{ name: 'Authorization', value: `Bearer ${transport!.token}` }],
-        })),
-      };
-    },
-    async getStateDir(opts) {
       if (!opts.sessionId) throw new Error('Antigravity requires a saved task.');
-      const dir = antigravityStateDir(opts.sessionId, opts.workingDir);
-      await mkdir(dir, { mode: 0o700, recursive: true });
-      if (dir !== antigravityStateDir(opts.sessionId, opts.workingDir)) {
-        throw new Error('The Agy task owner changed during startup.');
+      const owner = getActiveAppSession().generation;
+      const stateDir = antigravityStateDir(opts.sessionId, opts.workingDir);
+      const release = retainAntigravityTaskState(opts.sessionId);
+      try {
+        await mkdir(stateDir, { mode: 0o700, recursive: true });
+        if (owner !== getActiveAppSession().generation) throw new Error('The Agy task owner changed during startup.');
+        const bridge = await getPiExtraSpawnConfig(providers, logger, {
+          agentKind: 'antigravity',
+          sessionId: opts.sessionId,
+          sessionInstanceId: opts.sessionInstanceId,
+          workingDir: opts.workingDir,
+          vendorOptions: opts.vendorOptions,
+          memoryEnabled: memory.enabled,
+          memoryScopeKey: memory.scopeKey,
+          allowedServerNames: memory.enabled ? ['cindy_helper', 'cindy', 'cindy_memory'] : ['cindy_helper', 'cindy'],
+          mcpCallerKind: 'unknown',
+          mcpCallerAttested: false,
+        });
+        if (owner !== getActiveAppSession().generation) {
+          bridge?.disposeSessionCtx?.();
+          throw new Error('The Antigravity task owner changed during ACP setup.');
+        }
+        const transport = bridge?.mcpBridge;
+        return {
+          stateDir,
+          dispose() {
+            try { bridge?.disposeSessionCtx?.(); }
+            finally { release(); }
+          },
+          servers: transport ? transport.servers.filter(server => !server.remote).map(server => ({
+            type: 'http' as const, name: server.name, url: server.url,
+            headers: [{ name: 'Authorization', value: `Bearer ${transport.token}` }],
+          })) : [],
+        };
+      } catch (error) {
+        release();
+        throw error;
       }
-      return dir;
     },
   });
 }

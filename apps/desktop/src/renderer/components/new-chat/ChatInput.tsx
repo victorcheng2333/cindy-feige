@@ -3090,7 +3090,7 @@ export function ChatInput({
         const enterIntent = resolveComposerEnterIntent(event, getComposerSendShortcutPreference(), {
           turnRunning: showStopButtonRef.current,
           platform: window.electronAPI?.platform,
-          followUpBehavior: getComposerFollowUpBehavior(),
+          followUpBehavior: canSteerRunningTurnRef.current ? getComposerFollowUpBehavior() : 'queue',
           alternateOnModifier: canSteerRunningTurnRef.current,
         });
         if (enterIntent === 'native') return false;
@@ -3821,7 +3821,7 @@ export function ChatInput({
       const enterIntent = resolveComposerEnterIntent(event, getComposerSendShortcutPreference(), {
         turnRunning: showStopButtonRef.current,
         platform,
-        followUpBehavior: getComposerFollowUpBehavior(),
+        followUpBehavior: canSteerRunningTurnRef.current ? getComposerFollowUpBehavior() : 'queue',
         alternateOnModifier: canSteerRunningTurnRef.current,
       });
       const isModifiedEnter = hasComposerModifier(event, platform);

@@ -259,10 +259,9 @@ export const DEFAULT_NEW_SESSION_DRAFT: NewSessionDraft = {
   firstMessage: '',
 };
 
-/** 新建交互式会话的权限种子默认；三个 agent 都保留 Auto-review。 */
-export function defaultPermissionModeForNewSessionAgent(agentKind: NewSessionAgentKind): string {
-  if (agentKind === 'antigravity') return 'default';
-  return 'auto';
+/** 新建交互式会话沿用草稿的 Auto 默认，已记住的权限档优先。 */
+export function defaultPermissionModeForNewSessionAgent(_agentKind: NewSessionAgentKind): string {
+  return DEFAULT_NEW_SESSION_DRAFT.permissionMode;
 }
 
 export function withAgentDefaults(

@@ -140,6 +140,7 @@ describe('newMakerDraft store', () => {
     expect(d.lastByVendor.codex.permissionMode).toBe('auto');
     expect(d.lastByVendor.codex.effort).toBe('high');
     expect(d.lastByVendor.pi.permissionMode).toBe('auto');
+    expect(d.lastByVendor.antigravity.permissionMode).toBe('auto');
     // 种子模型不再写死在 store 里（原先是 'gpt-5.4'，与 modelDefinitions 写死的 'gpt-5.5'
     // 漂移，且两者在目录里都是默认隐藏的模型）。现在统一从 getDefaultModelForVendor 取，
     // capabilities 未加载时它给冷启动占位 id —— 这里只锁「非空且与那个入口同源」。
@@ -1243,6 +1244,21 @@ describe('newMakerDraft store', () => {
     const d = getDraft();
     expect(d.vendor).toBe('cc');
     expect(d.workingDir).toBeNull();
+  });
+
+  // A previously saved system default should follow the new seed on restart.
+  it.each([
+    { permissionModeCustomized: false, expected: 'auto' },
+    { permissionModeCustomized: true, expected: 'default' },
+  ])('restores the Agy draft permission with customization $permissionModeCustomized', async ({ permissionModeCustomized, expected }) => {
+    memStorage.setItem(
+      'xdt:newMakerDraft:v1',
+      JSON.stringify({ vendor: 'antigravity', lastByVendor: {
+        antigravity: { permissionMode: 'default', permissionModeCustomized },
+      } }),
+    );
+    const { getDraft } = await reloadModule();
+    expect(getDraft().lastByVendor.antigravity.permissionMode).toBe(expected);
   });
 
   it("历史草稿 permissionMode='plan' → 迁移为 planMode=true + vendor 默认权限档", async () => {

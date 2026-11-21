@@ -356,6 +356,42 @@ describe('piEnvironment per-session identity', () => {
     await after.text();
   });
 
+  // Real loopback MCP path: a provider receives the task context through its
+  // factory, which is separate from the bridge's raw async-local context.
+  it('gives Agy tools their task identity and memory scope without attesting the caller', async () => {
+    const provider: McpProvider = {
+      name: 'custom_probe',
+      toClaudeSdkConfig(ctx) {
+        const server = new McpServer({ name: 'custom_probe', version: '1' });
+        server.tool('task_context', 'Return the current task scope.', {}, async () => {
+          const task = ctx.getSessionContext?.();
+          return { content: [{ type: 'text', text: JSON.stringify(task && {
+            agent: task.agentKind, id: task.sessionId, scope: task.memoryScopeKey, attested: task.mcpCallerAttested,
+          }) ?? 'no-context' }] };
+        });
+        return { type: 'sdk', instance: server };
+      },
+    };
+    const config = await getPiExtraSpawnConfig([provider], noopLogger(), {
+      agentKind: 'antigravity', sessionId: 'agy-task', workingDir: '/repo',
+      memoryScopeKey: 'agy-scope', mcpCallerKind: 'unknown', mcpCallerAttested: false,
+    });
+    const bridge = config!.mcpBridge!;
+    const client = new Client({ name: 'agy-task', version: '1' });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(bridge.servers[0]!.url), {
+        requestInit: { headers: { Authorization: `Bearer ${bridge.token}` } },
+      }));
+      const reply = await client.callTool({ name: 'task_context', arguments: {} });
+      expect(reply.content).toEqual([{
+        type: 'text', text: JSON.stringify({ agent: 'antigravity', id: 'agy-task', scope: 'agy-scope', attested: false }),
+      }]);
+    } finally {
+      await client.close();
+      config?.disposeSessionCtx?.();
+    }
+  });
+
   /**
    * Cindy Bot 会话的 Maker Memory scope key(`bot:<botId>`)必须随注册的 ctx
    * 走到工具侧:cindy_memory 的 withStore 优先用 ctx.memoryScopeKey 定位 store,

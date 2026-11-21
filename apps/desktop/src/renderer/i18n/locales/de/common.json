@@ -14656,6 +14656,7 @@
       "mcpCancel": "Abbrechen",
       "alwaysAllowScoped": "{{scope}} in dieser Sitzung immer erlauben",
       "alwaysAllowScopedHint": "Gilt für die gesamte Sitzung und nur für die hier aufgeführten Elemente.",
+      "rememberAcpApproval": "Erlaubnis merken",
       "alwaysAllowSessionHint": "Gilt für die gesamte Sitzung, nicht nur für diese Anfrage.",
       "autoReviewUnavailable": "Die automatische Prüfung konnte nicht abgeschlossen werden. Bestätige, ob du diese Aktion erlauben möchtest.",
       "autoReviewReason": "Die automatische Prüfung braucht deine Entscheidung: {{reason}}",

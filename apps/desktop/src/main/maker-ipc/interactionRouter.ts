@@ -13,6 +13,7 @@ import type {
   InteractionResolver,
   TurnPermissionOrigin,
 } from '@cindy/maker-core';
+import { readAcpPermissionChoices } from '@cindy/maker-shared/interaction';
 import { createSharedPermission, type SharedPermission } from './sharedPermission';
 import {
   isUnattendedTurn,
@@ -90,7 +91,7 @@ type ActiveRoute = RouteRegistration & {
 
 interface PendingRequest {
   shared?: SharedPermission;
-  desktopQuestion?: boolean;
+  desktopPresentation?: boolean;
   routeToken: symbol | null;
   request: InteractionRequest;
   cancel(decision: InteractionDecision): void;
@@ -201,7 +202,7 @@ class SessionInteractionRouter {
         for (const [requestId, pending] of this.pending) {
           if (pending.routeToken !== active.token) continue;
           const decision = safeDecision(pending.request, reason);
-          if (pending.desktopQuestion) {
+          if (pending.desktopPresentation) {
             callSafely(() => this.desktopCancel?.(requestId, decision));
             pending.cancel(decision);
             continue;
@@ -256,7 +257,11 @@ class SessionInteractionRouter {
         description: [active.route.sourceDescription, request.description].filter(Boolean).join('\n\n'),
       };
     }
-    const handler = questionPresentation ? this.desktopHandler :
+    // Legacy channel cards have no button for an agent-defined persistent grant.
+    // Route remembered-only approvals to the task, which shows the exact option.
+    const appOnlyPermission = request.kind === 'permission' &&
+      readAcpPermissionChoices(request.suggestions)?.allowOnce === false;
+    const handler = questionPresentation || appOnlyPermission ? this.desktopHandler :
       active?.route.interactionSurface === 'desktop'
         ? this.desktopHandler
         : active?.handle ?? this.desktopHandler;
@@ -272,7 +277,7 @@ class SessionInteractionRouter {
 
     // Desktop-only confirmations retain their existing boundary. Every IM
     // channel using this router automatically shares ordinary tool permissions.
-    const shared = request.kind === 'permission' && active?.route.interactionSurface === 'channel-card'
+    const shared = request.kind === 'permission' && !appOnlyPermission && active?.route.interactionSurface === 'channel-card'
       ? createSharedPermission() : undefined;
 
     let cancel!: (decision: InteractionDecision) => void;
@@ -286,7 +291,7 @@ class SessionInteractionRouter {
     });
     this.pending.set(request.requestId, {
       shared,
-      desktopQuestion: !!questionPresentation,
+      desktopPresentation: !!questionPresentation || appOnlyPermission,
       routeToken: active?.token ?? null,
       request,
       cancel,
@@ -300,7 +305,7 @@ class SessionInteractionRouter {
     const abort = () => {
       const decision = safeDecision(request, 'session_aborted');
       cancel(decision);
-      if (!questionPresentation && (active?.route.interactionSurface === 'channel-card' || active?.route.interactionSurface === 'headless')) {
+      if (!questionPresentation && !appOnlyPermission && (active?.route.interactionSurface === 'channel-card' || active?.route.interactionSurface === 'headless')) {
         callSafely(() => active.onCancel?.(request.requestId, decision));
       } else {
         callSafely(() => this.desktopCancel?.(request.requestId, decision));
@@ -315,7 +320,7 @@ class SessionInteractionRouter {
       timeoutMs && timeoutMs > 0
         ? setTimeout(() => {
             const decision = safeDecision(request, 'interaction_timeout');
-            if (questionPresentation) {
+            if (questionPresentation || appOnlyPermission) {
               callSafely(() => this.desktopCancel?.(request.requestId, decision));
               cancel(decision);
               return;

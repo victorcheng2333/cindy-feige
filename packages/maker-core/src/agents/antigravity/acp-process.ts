@@ -96,6 +96,7 @@ export async function runAntigravityAccountCommand(options: {
   action: 'authenticate' | 'logout';
   signal?: AbortSignal;
 }): Promise<void> {
+  options.signal?.throwIfAborted();
   const endpoint = startAgyAcpProcess(options.binary, options.directory, options.directory, options.env);
   const connection = new AcpConnection(endpoint.transport, {
     onNotification() {},

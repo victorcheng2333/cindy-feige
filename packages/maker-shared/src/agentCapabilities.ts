@@ -27,6 +27,7 @@ export interface MobileAgentCapabilities {
   /** 计划模式一级开关能力(maker-core Capabilities.planMode.supported,#494 起替代 permissionMode='plan')。 */
   planModeSupported: boolean;
   supportsAttachments?: boolean;
+  supportsSameTurnSteer?: boolean;
   /** desktop host 是否支持同一会话 Claude Code / Codex pending-intent 切换；旧 host 缺省 false。 */
   supportsSessionAgentSwitch?: boolean;
   /** Same-account controller may create Cursor tasks on the controlled host. */
@@ -190,6 +191,9 @@ export function normalizeMobileAgentCapabilities(value: unknown): MobileAgentCap
     ...(isRecord(value.multimodal) ? {
       supportsAttachments: (isRecord(value.multimodal.image) && value.multimodal.image.supported === true) ||
         (isRecord(value.multimodal.file) && value.multimodal.file.supported === true),
+    } : {}),
+    ...(isRecord(value.sameTurnSteer) && typeof value.sameTurnSteer.supported === 'boolean' ? {
+      supportsSameTurnSteer: value.sameTurnSteer.supported,
     } : {}),
     supportsSessionAgentSwitch: value.supportsSessionAgentSwitch === true,
     supportsControlledCursorCreation: value.supportsControlledCursorCreation === true,

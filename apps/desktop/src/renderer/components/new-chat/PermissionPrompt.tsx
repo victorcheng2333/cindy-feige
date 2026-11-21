@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { describePermissionAction, permissionTitle } from '@cindy/maker-shared/interaction';
+import { describePermissionAction, permissionTitle, readAcpPermissionChoices } from '@cindy/maker-shared/interaction';
 
 import { BotAvatar } from '@/features/bots/BotAvatar';
 import type { BotChatIdentity } from '@/features/bots/BotSessionContentHeader';
@@ -35,6 +35,7 @@ import { GHOST_INSTALL_CONSENT_TOOL_NAME } from '../../../shared/ghostInstallCon
 interface PermissionPromptProps {
   permission: PendingPermission;
   companion?: BotChatIdentity | null;
+  allowRememberedAcpPermission?: boolean;
   onRespond: (result: CCAgentPermissionResult) => void;
 }
 
@@ -78,7 +79,9 @@ const allowActionClass = cn(actionClass, '[--button-face-border:var(--chat-input
 // Component
 // ---------------------------------------------------------------------------
 
-export function PermissionPrompt({ permission, onRespond, companion }: PermissionPromptProps) {
+export function PermissionPrompt({
+  permission, onRespond, companion, allowRememberedAcpPermission = true,
+}: PermissionPromptProps) {
   const { t } = useTranslation();
   const cardRef = useRef<HTMLDivElement>(null);
   const { toolName, input, description, suggestions, autoReviewUnavailable,
@@ -110,7 +113,10 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
     ? consentBody.join('\n')
     : formatToolInput(toolName, input);
   const sessionSuggestions = useMemo(() => filterSessionScopedSuggestions(suggestions), [suggestions]);
-  const canAlwaysAllowForSession = !isPluginInstallConsent && sessionSuggestions.length > 0;
+  const acpChoices = useMemo(() => readAcpPermissionChoices(suggestions), [suggestions]);
+  const rememberedAllow = allowRememberedAcpPermission ? acpChoices?.rememberedAllow : undefined;
+  const canAllowOnce = acpChoices?.allowOnce ?? true;
+  const canRemember = !isPluginInstallConsent && (!!rememberedAllow || sessionSuggestions.length > 0);
   // 这个按钮加的是 agent 给的一条具体规则(Bash 多为 `curl:*` 这类前缀模式),
   // 范围远小于「总是允许」的字面。把范围写到按钮上,别让用户猜。
   // 描述不全时返回 null(见该函数顶注:点击会转发**全部** suggestions,文案漏项就是说谎),
@@ -124,26 +130,26 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
   // ── Action handlers ──
 
   const handleAllowOnce = useCallback(() => {
-    if (submitting) return;
+    if (submitting || !canAllowOnce) return;
     if (showInstallSummary && !isFirstInstall) {
       setReviewedRequest(permission.requestId);
       return;
     }
     onRespond({ behavior: 'allow' });
-  }, [onRespond, permission.requestId, showInstallSummary, isFirstInstall, submitting]);
+  }, [canAllowOnce, onRespond, permission.requestId, showInstallSummary, isFirstInstall, submitting]);
 
   const handleAlwaysAllow = useCallback(() => {
     if (submitting) return;
-    if (!canAlwaysAllowForSession) {
+    if (!canRemember) {
       handleAllowOnce();
       return;
     }
     onRespond({
       behavior: 'allow',
-      updatedPermissions: sessionSuggestions,
+      updatedPermissions: rememberedAllow ? [rememberedAllow.selection] : sessionSuggestions,
       decisionClassification: 'user_permanent',
     });
-  }, [canAlwaysAllowForSession, handleAllowOnce, onRespond, sessionSuggestions, submitting]);
+  }, [canRemember, handleAllowOnce, onRespond, rememberedAllow, sessionSuggestions, submitting]);
 
   const handleDeny = useCallback(() => {
     if (submitting) return;
@@ -278,7 +284,10 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
           </kbd>
         </Button>
 
-        {canAlwaysAllowForSession && (
+        {acpChoices?.allowOnce === false && !canRemember && !allowRememberedAcpPermission && (
+          <p className="text-12 text-[var(--text-secondary)]">{t('sharedTask.waitingHost')}</p>
+        )}
+        {canRemember && (
           // 有具体规则就把范围写进按钮(`本对话都允许 Bash(curl:*)`),没有则退回原文案。
           // tooltip 补两件按钮里放不下的事:完整规则(长命令会被 truncate)、以及
           // 「作用于整个对话」——用户容易把「本对话」读成「这一次来回」。
@@ -286,9 +295,9 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
           // 换成只讲时效的说法:一条都没列出还说「只限这里列出的范围」就是虚假安心。
           <Tip
             text={
-              allowScope
+              rememberedAllow ? rememberedAllow.label || t('newChat.permissionPrompt.rememberAcpApproval') : (allowScope
                 ? `${allowScope}\n${t('newChat.permissionPrompt.alwaysAllowScopedHint')}`
-                : t('newChat.permissionPrompt.alwaysAllowSessionHint')
+                : t('newChat.permissionPrompt.alwaysAllowSessionHint'))
             }
             side="top"
             contentClassName="max-w-[320px] whitespace-pre-line break-all text-left"
@@ -302,9 +311,9 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
               className={cn(secondaryActionClass, 'min-w-0 max-w-[min(100%,460px)]')}
             >
               <span className="min-w-0 truncate">
-                {allowScope
+                {rememberedAllow ? t('newChat.permissionPrompt.rememberAcpApproval') : (allowScope
                   ? t('newChat.permissionPrompt.alwaysAllowScoped', { scope: allowScope })
-                  : t('agentIsland.native.alwaysAllowForSession')}
+                  : t('agentIsland.native.alwaysAllowForSession'))}
               </span>
               <kbd className="shrink-0 rounded-[4px] border border-[var(--chat-input-border)] bg-[var(--perm-code-bg)] px-1.5 py-[1px] text-11 font-normal text-[var(--status-bar-meta)]">
                 Ctrl
@@ -317,7 +326,7 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
         )}
 
         {/* Allow once (primary) */}
-        <Button
+        {canAllowOnce && <Button
           pressFeedback={false}
           variant="secondary"
           palette="permission"
@@ -330,7 +339,7 @@ export function PermissionPrompt({ permission, onRespond, companion }: Permissio
           <kbd className="rounded-[4px] border border-[var(--perm-allow-kbd-border)] bg-[var(--perm-allow-kbd-bg)] px-1.5 py-[1px] text-11 font-normal text-[var(--perm-allow-btn-text)] opacity-70">
             Enter
           </kbd>
-        </Button>
+        </Button>}
       </div>
     </div>
   );

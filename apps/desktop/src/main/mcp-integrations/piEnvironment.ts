@@ -531,7 +531,8 @@ async function doStart(
         active?.agentKind !== 'pi' &&
         active?.agentKind !== 'cursor' &&
         active?.agentKind !== 'codex' &&
-        active?.agentKind !== 'claude-code'
+        active?.agentKind !== 'claude-code' &&
+        active?.agentKind !== 'antigravity'
       ) {
         return undefined;
       }

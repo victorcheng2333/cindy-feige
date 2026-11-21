@@ -363,6 +363,7 @@ export interface AgentInputCoordinatorDeps {
     message: AgentInputMakerMessage,
     sendOpts: AgentInputSendOpts,
   ) => Promise<void>;
+  supportsSameTurnSteer?: (sessionId: string) => boolean | undefined;
   abortSession: (sessionId: string) => Promise<void>;
   isTurnRunning: (sessionId: string) => boolean;
   /** Live Session only — must not OR the desktop tracker. undefined = probe unavailable. */
@@ -2735,42 +2736,41 @@ export class AgentInputCoordinator {
     // the token from the moment it entered the steer transaction.
     const steerClearBoundaryMs = state.clearBoundaryMs;
     let itemAlreadyOwnedByHost = false;
-    let steersStoredQueueItem = false;
-    if (opts?.removeFromQueue) {
-      const storedItem = state.pendingQueue.find((queued) => queued.clientId === item.clientId);
-      if (sharedTask) assertSharedTaskQueueMutation(sharedTask, sessionId, 'input.edit', storedItem);
-      if (storedItem) {
-        steersStoredQueueItem = true;
-        // Renderer projections intentionally omit trusted reference bodies. The main-owned
-        // queue row is authoritative for identity/text. A restored device-link row can retain
-        // only the fail-closed marker, though; in that case the validated inbound snapshot is
-        // safe to reattach when it still describes the same queued references/text.
-        const incomingContexts = item.trustedSessionReferenceContexts;
-        const storedRefs = storedItem.sessionRefs ?? [];
-        const incomingRefs = item.sessionRefs ?? [];
-        const sameRefs =
-          storedRefs.length === incomingRefs.length &&
-          storedRefs.every((ref, index) => {
-            const incoming = incomingRefs[index];
-            return (
-              incoming !== undefined &&
-              ref.sessionId === incoming.sessionId &&
-              ref.messageClientId === incoming.messageClientId &&
-              ref.deviceId === incoming.deviceId
-            );
-          });
-        const canRestoreSnapshot =
-          storedItem.sessionReferencesRequireTrustedSnapshot === true &&
-          incomingContexts !== undefined &&
-          incomingContexts.length > 0 &&
-          sameRefs &&
-          storedItem.text === item.text;
-        item = canRestoreSnapshot
-          ? { ...storedItem, trustedSessionReferenceContexts: incomingContexts }
-          : storedItem;
-        itemAlreadyOwnedByHost =
-          typeof item.hostAcceptedAtMs === 'number' && Number.isFinite(item.hostAcceptedAtMs);
-      }
+    const storedItem = opts?.removeFromQueue
+      ? state.pendingQueue.find((queued) => queued.clientId === item.clientId)
+      : undefined;
+    const steersStoredQueueItem = storedItem !== undefined;
+    if (opts?.removeFromQueue && sharedTask) assertSharedTaskQueueMutation(sharedTask, sessionId, 'input.edit', storedItem);
+    if (storedItem) {
+      // Renderer projections intentionally omit trusted reference bodies. The main-owned
+      // queue row is authoritative for identity/text. A restored device-link row can retain
+      // only the fail-closed marker, though; in that case the validated inbound snapshot is
+      // safe to reattach when it still describes the same queued references/text.
+      const incomingContexts = item.trustedSessionReferenceContexts;
+      const storedRefs = storedItem.sessionRefs ?? [];
+      const incomingRefs = item.sessionRefs ?? [];
+      const sameRefs =
+        storedRefs.length === incomingRefs.length &&
+        storedRefs.every((ref, index) => {
+          const incoming = incomingRefs[index];
+          return (
+            incoming !== undefined &&
+            ref.sessionId === incoming.sessionId &&
+            ref.messageClientId === incoming.messageClientId &&
+            ref.deviceId === incoming.deviceId
+          );
+        });
+      const canRestoreSnapshot =
+        storedItem.sessionReferencesRequireTrustedSnapshot === true &&
+        incomingContexts !== undefined &&
+        incomingContexts.length > 0 &&
+        sameRefs &&
+        storedItem.text === item.text;
+      item = canRestoreSnapshot
+        ? { ...storedItem, trustedSessionReferenceContexts: incomingContexts }
+        : storedItem;
+      itemAlreadyOwnedByHost =
+        typeof item.hostAcceptedAtMs === 'number' && Number.isFinite(item.hostAcceptedAtMs);
     }
     // Coordination must wait for its own turn and the normal dispatch-time
     // relationship check. Read the host-owned row first: UI projections omit
@@ -2809,6 +2809,40 @@ export class AgentInputCoordinator {
         interactionLockIds: [...state.queueInteractionLocks],
       });
       return false;
+    }
+
+    // Older clients may still request native steering even when the live
+    // harness advertises queue-only delivery. Keep an already accepted row
+    // in place and admit fresh input through the normal queue path.
+    if (this.deps.supportsSameTurnSteer?.(sessionId) === false) {
+      if (opts?.fallbackToTurn === false) return false;
+      const generation = state.generation;
+      const beforeMutation = combineInputGuards(
+        opts?.beforeMutation,
+        hasTaskActionAuthorization() ? assertTaskActionCurrent : undefined,
+      );
+      if (beforeMutation) {
+        await beforeMutation();
+        const current = this.getState(sessionId);
+        if (current.generation !== generation || !matchesExpectedTurn() ||
+            current.queueAbortPending || current.queueInteractionLocks.length > 0 ||
+            current.steeringQueueClientIds.length > 0) return false;
+      }
+      if (storedItem) {
+        const index = state.pendingQueue.indexOf(storedItem);
+        if (index < 0) return false;
+        if (storedItem !== item) {
+          // Keep a validated reference snapshot recovered from the controller.
+          state.pendingQueue[index] = item;
+          this.emit(sessionId);
+        }
+        if (!opts?.controlInput && state.queuePaused) this.resume(sessionId);
+        else this.scheduleDrain(sessionId, 'steer-unsupported-follow-up');
+        if (opts?.touchUserSend) this.touchUserSend(sessionId);
+      } else {
+        this.enqueue(sessionId, item, { resumeRestorePausedQueue: opts?.touchUserSend === true });
+      }
+      return true;
     }
 
     if (!isSchedulerOriginItem(item)) {

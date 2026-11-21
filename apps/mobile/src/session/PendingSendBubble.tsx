@@ -99,7 +99,7 @@ export interface PendingSendBubbleActions {
   onSelect(clientId: string | null): void;
   onRemove(clientId: string): void;
   onBeginEdit(clientId: string): void;
-  onSteer(clientId: string): void;
+  onSteer?(clientId: string): void;
   onMove(clientId: string, direction: 'up' | 'down'): void;
   waitingComputerName?: string;
   onReconnectComputer?(): void;
@@ -692,7 +692,8 @@ function QueuedSendMenu({ item, actions, accessibilityLabel }: {
     { id: 'remove', title: t('message.queue.cancelSend'), image: 'trash', icon: Trash2, destructive: true },
   ].filter((choice) => {
     const availability = item.actions?.[choice.id as keyof NonNullable<MobilePendingSendItem['actions']>];
-    return !actions.busy && availability && !availability.disabled;
+    return !actions.busy && availability && !availability.disabled
+      && (choice.id !== 'steer' || Boolean(actions.onSteer));
   });
   const disabled = choices.length === 0;
   const trigger = (
@@ -716,7 +717,7 @@ function QueuedSendMenu({ item, actions, accessibilityLabel }: {
     <Menu actions={choices} testID={`pendingSend.queueMenu.${item.clientId}`}
       onAction={(id) => {
         if (item.phase !== 'queued' || !choices.some((choice) => choice.id === id && !choice.disabled)) return;
-        if (id === 'steer') actions.onSteer(item.clientId);
+        if (id === 'steer') actions.onSteer?.(item.clientId);
         else if (id === 'edit') actions.onBeginEdit(item.clientId);
         else if (id === 'remove') actions.onRemove(item.clientId);
         else if (id === 'moveUp') actions.onMove(item.clientId, 'up');

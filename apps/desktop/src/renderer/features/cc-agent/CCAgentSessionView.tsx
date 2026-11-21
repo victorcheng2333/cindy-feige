@@ -17,6 +17,7 @@ import { MessageReadAloudContext } from '@/components/chat/MessageReadAloudConte
 import { formatSessionDuration } from '@/lib/sessionDurationFormat';
 import { shouldShowOpenPathError } from '../../../shared/openPathResult';
 import { shouldShowFailedScheduleNotice } from '@cindy/maker-shared/schedule-model';
+import { readAcpPermissionChoices } from '@cindy/maker-shared/interaction';
 import { canContinueFailedTurn } from '@cindy/maker-shared/synthetic-trigger';
 /**
  * CCAgentSessionView
@@ -2158,7 +2159,9 @@ function CCAgentSessionContent({
       if (!sessionId || !ownsHardwareTaskActions) return false;
       if (action.commandId === 'approval.approve' || action.commandId === 'composer.submit') {
         if (pendingPermission) {
-          respondToPermission({ behavior: 'allow' });
+          if (readAcpPermissionChoices(pendingPermission.suggestions)?.allowOnce !== false) {
+            respondToPermission({ behavior: 'allow' });
+          }
           return true;
         }
         if (pendingPlanReview) {
@@ -2228,6 +2231,8 @@ function CCAgentSessionContent({
   // 能力取**真实 agent**(displayAgentKind 在 pending switch 期间可能乐观指向目标 agent,
   // 用它判定会与 realAgentKind 分流不一致);remoteDeviceId 让远程 pi 取被控端能力。
   const { capabilities: realSessionCaps } = useAgentCapabilities(realAgentKind, remoteDeviceId);
+  const canSteer = realSessionCaps?.sameTurnSteer?.supported ?? realAgentKind !== 'antigravity';
+  const queueSteer = canSteer ? steerQueuedMessage : undefined;
   const compactChannel = useMemo(
     () => resolveManualCompactChannel(realAgentKind, realSessionCaps),
     [realAgentKind, realSessionCaps],
@@ -5586,7 +5591,7 @@ function CCAgentSessionContent({
       steeringClientIds={steeringQueueClientIds} editLocks={queueEditLocks} interactionLocks={queueInteractionLocks}
       readOnly={readOnly || queueAbortPending}
       simplifiedBotConversation={Boolean(botChatIdentity)} localSend={isLocalUserSend(entry.clientId)} onEdit={beginQueueComposerEdit}
-      onSteer={steerQueuedMessage} onRemove={removeFromQueue} onMove={moveQueueItem} /> : null;
+      onSteer={queueSteer} onRemove={removeFromQueue} onMove={moveQueueItem} /> : null;
   };
   const showErrorTailBanner = !readOnly && !!errorTailMsg && !errorTailBannerHidden
     && !syntheticContinuationPending && !error && !credentialSwitchWait
@@ -6295,6 +6300,7 @@ function CCAgentSessionContent({
                   <PermissionPrompt
                     permission={pendingPermission}
                     companion={botChatIdentity}
+                    allowRememberedAcpPermission={!isSharedTaskPeer(remoteDeviceId ?? '')}
                     onRespond={respondToPermission}
                   />
                 ) : pendingAskUser ? (
@@ -6497,7 +6503,7 @@ function CCAgentSessionContent({
                   queueEditingClientId={activeQueueComposerEdit?.clientId ?? null}
                   onQueueEditSubmit={submitQueueComposerEdit}
                   onQueueEditCancel={cancelQueueComposerEdit}
-                  onQueueSteer={steerQueuedMessage}
+                  onQueueSteer={queueSteer}
                   steeringQueueClientIds={steeringQueueClientIds}
                   messages={sideChatMessages}
                   placeholder={

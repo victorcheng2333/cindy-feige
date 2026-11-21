@@ -2557,6 +2557,10 @@ export interface AgentSessionHandle {
   readonly requestSessionId?: string;
   readonly agentKind: AgentKind;
   readonly model: string;
+  /** A negotiated capability snapshot, when the engine has per-session configuration. */
+  readonly negotiatedCapabilities?: Capabilities;
+  /** The engine-confirmed startup mode when stronger requested modes could not be applied. */
+  readonly initialPermissionMode?: PermissionMode;
   /** Pi-only, per-session runtime command catalog. Undefined for other agents. */
   getRuntimeCapabilities?(): PiRuntimeCapabilityManifest | undefined;
   /** An explicit Skill send may retry exhausted discovery on the existing process. */

@@ -1274,4 +1274,10 @@ it('offers both delivery modes for one message from the Send button tip, and cha
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.sendButton.queue' }), { ctrlKey: true }); });
   await waitFor(() => expect(onSend).toHaveBeenCalledTimes(3));
   expect(modeOf()).toBe('queue');
+
+  // The saved steer preference must also fall back for the editor's Enter key.
+  await draft('Queue from the keyboard');
+  await act(async () => { fireEvent.keyDown(h.editor!.view.dom, { key: 'Enter' }); });
+  await waitFor(() => expect(onSend).toHaveBeenCalledTimes(4));
+  expect(modeOf()).toBe('queue');
 });

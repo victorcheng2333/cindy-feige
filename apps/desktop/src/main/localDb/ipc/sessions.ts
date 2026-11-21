@@ -475,7 +475,7 @@ async function deleteDependentSideChats(
       });
       scheduleWorktreeRecycleForStatusChange(child.sessionId, 'deleted', { ownerScope, mediaDb: dbClient.drizzle });
       notifyGhostSessionStatusChange(child.sessionId, 'deleted', child.workingDir);
-      cleanupSessionTerminalArtifacts(child.sessionId, 'deleted');
+      cleanupSessionTerminalArtifacts(child.sessionId, 'deleted', { workingDir: child.workingDir });
       compactTerminalSessionToolResults(dbClient, child.sessionId, 'deleted');
     }
     return;
@@ -2203,7 +2203,7 @@ export async function updateSessionInDb(
         }
       }
     }
-    cleanupSessionTerminalArtifacts(sid, p.status);
+    cleanupSessionTerminalArtifacts(sid, p.status, isOwnerScopeCurrent(ownerScope) ? { workingDir: updated.workingDir } : undefined);
     compactTerminalSessionToolResults(dbClient, sid, p.status);
     if (p.status === 'deleted' && updated.source !== 'side-chat') await deleteDependentSideChats(sid, dbClient, ownerScope, deletedSideChats);
     return updated;
@@ -2359,7 +2359,7 @@ export async function patchSessionMetaInDb(
       });
     });
   }
-  cleanupSessionTerminalArtifacts(sessionId, patch.status);
+  cleanupSessionTerminalArtifacts(sessionId, patch.status, isOwnerScopeCurrent(ownerScope) ? { workingDir: updated.workingDir } : undefined);
   if (!options.preserveFiles) scheduleWorktreeRecycleForStatusChange(sessionId, patch.status, { ownerScope, mediaDb: db });
   notifyGhostSessionStatusChange(sessionId, patch.status, updated.workingDir);
   // 远程 / MCP 改动绕过 renderer 乐观更新,故主动广播 sessions:patched:
@@ -2929,12 +2929,16 @@ function removeImAttachmentsIfStillDeleted(sessionId: string): Promise<void> {
   });
 }
 
-function cleanupSessionTerminalArtifacts(sessionId: string, status: unknown): void {
+function cleanupSessionTerminalArtifacts(sessionId: string, status: unknown, agyCleanup?: { workingDir?: string | null }): void {
   if (status !== 'deleted' && status !== 'archived') return;
   if (status === 'deleted') {
-    void removeAntigravityTaskState(sessionId).catch(() => {
-      log.warn('Agy task state cleanup failed', { sessionId });
-    });
+    if (agyCleanup) {
+      // A task can retain Agy state after switching harnesses. The hashed task
+      // identity and captured owner scope are the authority for reclamation.
+      void removeAntigravityTaskState(sessionId, agyCleanup.workingDir).catch(() => {
+        log.warn('Agy task state cleanup failed', { sessionId });
+      });
+    }
     try { removeSessionModelInterface(sessionId); } catch (error) {
       log.warn('session interface snapshot cleanup failed', { sessionId, error: String(error) });
     }

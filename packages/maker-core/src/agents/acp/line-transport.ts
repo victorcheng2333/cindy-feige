@@ -48,7 +48,8 @@ export class AcpLineTooLongError extends Error {
  * trailing line without a newline on flush.
  */
 export class AcpLineDecoder {
-  private buffer = '';
+  private readonly parts: string[] = [];
+  private bufferedChars = 0;
   private readonly decoder = new TextDecoder('utf-8');
 
   constructor(
@@ -58,28 +59,36 @@ export class AcpLineDecoder {
 
   /** Throws `AcpLineTooLongError` when a single line grows past the limit. */
   push(chunk: string | Uint8Array): void {
-    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.decode(chunk, { stream: true });
-    let newline = this.buffer.indexOf('\n');
-    while (newline !== -1) {
-      const line = this.buffer.slice(0, newline);
-      this.buffer = this.buffer.slice(newline + 1);
-      this.emit(line);
-      newline = this.buffer.indexOf('\n');
+    const text = typeof chunk === 'string' ? chunk : this.decoder.decode(chunk, { stream: true });
+    let start = 0;
+    for (let newline = text.indexOf('\n'); newline !== -1; newline = text.indexOf('\n', start)) {
+      this.append(text.slice(start, newline));
+      this.emit();
+      start = newline + 1;
     }
-    if (this.buffer.length > this.maxLineChars) {
-      this.buffer = '';
-      throw new AcpLineTooLongError(this.maxLineChars);
-    }
+    this.append(text.slice(start));
   }
 
   flush(): void {
-    this.buffer += this.decoder.decode();
-    const rest = this.buffer;
-    this.buffer = '';
-    this.emit(rest);
+    this.push(this.decoder.decode());
+    this.emit();
   }
 
-  private emit(raw: string): void {
+  private append(part: string): void {
+    if (!part.length) return;
+    this.bufferedChars += part.length;
+    if (this.bufferedChars > this.maxLineChars) {
+      this.parts.length = 0;
+      this.bufferedChars = 0;
+      throw new AcpLineTooLongError(this.maxLineChars);
+    }
+    this.parts.push(part);
+  }
+
+  private emit(): void {
+    const raw = this.parts.join('');
+    this.parts.length = 0;
+    this.bufferedChars = 0;
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     if (line.trim().length > 0) this.onLine(line);
   }

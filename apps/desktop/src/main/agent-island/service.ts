@@ -12,6 +12,7 @@ import {
 } from '@cindy/maker-core';
 import type { SchedulerEvent } from '@cindy/maker-scheduler';
 import { BRAND_NAME } from '@cindy/maker-shared/branding';
+import { readAcpPermissionChoices } from '@cindy/maker-shared/interaction';
 import {
   projectSessionActivity,
   type SessionActivitySnapshot,
@@ -600,6 +601,10 @@ export class AgentIslandService {
       return;
     }
 
+    if (action.action !== 'deny' && readAcpPermissionChoices(entry.request.suggestions)?.allowOnce === false) {
+      this.openTaskOverviewSession(entry.sessionId);
+      return;
+    }
     const sessionUpdates = filterSessionScopedPermissionSuggestions(entry.request.suggestions);
     const decision: AgentIslandPermissionDecision = action.action === 'deny'
       ? {

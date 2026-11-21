@@ -1543,8 +1543,9 @@ describe('new session model', () => {
 
   it('clears Codex Fast before producing an agy draft for the controlled host', () => {
     const draft = withAgentDefaults({ ...DRAFT_WITH_MODEL, agentKind: 'codex', fastMode: 'ultrafast' }, 'antigravity');
-    expect(buildRemoteCreateSessionOptions({ ...draft, model: 'gemini-4-neon' }))
-      .not.toHaveProperty('fastMode', 'ultrafast');
+    const options = buildRemoteCreateSessionOptions({ ...draft, model: 'gemini-4-neon' });
+    expect(options).not.toHaveProperty('fastMode', 'ultrafast');
+    expect(options.permissionMode).toBe('auto');
     expect(draft.fastMode).toBe(false);
   });
 

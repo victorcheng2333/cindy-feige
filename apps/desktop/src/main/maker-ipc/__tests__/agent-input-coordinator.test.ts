@@ -2068,6 +2068,7 @@ function createHarness(opts?: {
   isScheduledQuotaInput?: (item: AgentInputQueuedMessage) => boolean;
   canRestoreOrcaReport?: AgentInputCoordinatorDeps['canRestoreOrcaReport'];
   awaitQueuePersistence?: AgentInputCoordinatorDeps['awaitQueuePersistence'];
+  supportsSameTurnSteer?: AgentInputCoordinatorDeps['supportsSameTurnSteer'];
   getRecoveryContextSnapshot?: (sessionId: string, userClientId: string) => Promise<RecoveryContextSnapshot>;
   providerGroupSwitchCandidate?: AgentInputCoordinatorDeps['providerGroupSwitchCandidate'];
 }) {
@@ -2220,6 +2221,7 @@ function createHarness(opts?: {
     rewindPersistedUserMessageAfterClear,
     sendToAgent,
     steerToAgent,
+    supportsSameTurnSteer: opts?.supportsSameTurnSteer,
     abortSession,
     onUiRetry,
     onUserAction,
@@ -9497,6 +9499,57 @@ describe('AgentInputCoordinator steer transaction', () => {
     expect(mocks.touchUserSendInDb).toHaveBeenCalledWith(sid, undefined);
   });
 
+  // Legacy clients can request steer for a running Agy session. The same input
+  // belongs to the normal queue, including any position already reserved there.
+  it('keeps unsupported steers in the ordinary queue without a turn error', async () => {
+    const h = createHarness({ supportsSameTurnSteer: () => false });
+    const sid = 'agy-steer-unsupported';
+    const first = makeItem('q-1', 'running');
+    const queued = makeItem('q-2', 'older follow-up');
+    const newer = makeItem('q-3', 'newer follow-up');
+    h.coordinator.enqueue(sid, first);
+    await flush();
+    h.coordinator.enqueue(sid, queued);
+    h.coordinator.enqueue(sid, newer);
+    h.steerToAgent.mockRejectedValue(new Error('[UNSUPPORTED_CAPABILITY] Agent antigravity does not support same-turn steer'));
+    expect(await h.coordinator.steer(sid, newer, { removeFromQueue: true, touchUserSend: true })).toBe(true);
+    expect(await h.coordinator.steer(sid, makeItem('q-4', 'direct follow-up'))).toBe(true);
+    expect(h.steerToAgent).not.toHaveBeenCalled();
+    expect(latestProjection(h.projections).error).toBeNull();
+    expect(latestProjection(h.projections).pendingQueue.map(item => item.clientId)).toEqual(['q-2', 'q-3', 'q-4']);
+    for (let i = 0; i < 3; i++) {
+      h.setRunning(false);
+      h.coordinator.onTurnEvent(sid, 'done');
+      await flush();
+    }
+    expect(h.sendToAgent.mock.calls.map(([, message]) => message)).toEqual(
+      ['running', 'older follow-up', 'newer follow-up', 'direct follow-up']
+        .map(content => ({ type: 'user', content })),
+    );
+  });
+
+  it('resumes a stopped Agy queue when a legacy client asks to send its queued input', async () => {
+    const h = createHarness({ supportsSameTurnSteer: () => false });
+    const sid = 'agy-paused-queue';
+    h.coordinator.enqueue(sid, makeItem('active', 'first'));
+    await flush();
+    const item = makeItem('queued', 'next');
+    h.coordinator.enqueue(sid, item);
+    h.coordinator.stop(sid, { keepQueue: true, pauseQueue: true });
+    h.setRunning(false);
+    h.coordinator.onTurnEvent(sid, 'done');
+    await flush();
+    expect(h.sendToAgent).toHaveBeenCalledTimes(1);
+    expect(h.coordinator.getProjection(sid).queuePaused).toBe(true);
+
+    expect(await h.coordinator.steer(sid, item, { removeFromQueue: true, touchUserSend: true })).toBe(true);
+    await flush();
+    expect(h.sendToAgent.mock.calls.map(([, message]) => message)).toEqual([
+      { type: 'user', content: 'first' }, { type: 'user', content: 'next' },
+    ]);
+    expect(h.steerToAgent).not.toHaveBeenCalled();
+  });
+
   // Cursor SDK revert_to_followup means not accepted, even while its run is
   // still working. Existing no-active-turn tests only covered idle fallback.
   // Unit: preserve the input in the real queue, then deliver exactly once after done.
@@ -15196,10 +15249,12 @@ describe('Orca report durable recovery', () => {
 
   it('rejects a controller-supplied automatic report marker', async () => {
     const source = readFileSync(resolve(__dirname, '..', 'register.ts'), 'utf8');
+    const agentKindStart = source.indexOf('function requireAgentKind(');
+    const agentKindEnd = source.indexOf('type IpcUserMessage', agentKindStart);
     const start = source.indexOf('  const requireQueuedMessage = (');
     const end = source.indexOf('  ipcMain.handle(DL_SESSION_REFERENCE_CAPABILITY_CHANNEL', start);
     const parse = new Function('throwIpcError', 'requireSessionRefs', 'isDeviceLinkInvoke', transpileModule(
-      `${source.slice(start, end)}\nreturn requireQueuedMessage;`,
+      `${source.slice(agentKindStart, agentKindEnd)}${source.slice(start, end)}\nreturn requireQueuedMessage;`,
       { compilerOptions: { target: ScriptTarget.ES2022 } },
     ).outputText)((code: string) => { throw new Error(code); }, () => [], () => false);
     const h = createHarness({ canRestoreOrcaReport: async () => true });

@@ -16,6 +16,7 @@
     "kind": "권한",
     "deny": "거부",
     "denyAccessibility": "권한 요청 거부",
+    "rememberAcpApproval": "이 승인 기억",
     "alwaysAllow": "이 세션에서 항상 허용",
     "alwaysAllowAccessibility": "이 세션에서 권한 요청 항상 허용",
     "alwaysAllowConfirm": "이 세션 허용 확인",

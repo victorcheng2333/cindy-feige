@@ -14656,6 +14656,7 @@
       "mcpCancel": "Cancel",
       "alwaysAllowScoped": "Always Allow {{scope}} in This Session",
       "alwaysAllowScopedHint": "Applies to the whole session, and only to what is listed here.",
+      "rememberAcpApproval": "Remember approval",
       "alwaysAllowSessionHint": "Applies to the whole session, not just this one request.",
       "autoReviewUnavailable": "Automatic review could not finish. Confirm whether to allow this action.",
       "autoReviewReason": "Auto review needs your decision: {{reason}}",

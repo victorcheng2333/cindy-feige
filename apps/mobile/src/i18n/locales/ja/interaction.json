@@ -16,6 +16,7 @@
     "kind": "権限",
     "deny": "拒否",
     "denyAccessibility": "権限リクエストを拒否",
+    "rememberAcpApproval": "この許可を記憶",
     "alwaysAllow": "このセッションで常に許可",
     "alwaysAllowAccessibility": "このセッションで権限リクエストを常に許可",
     "alwaysAllowConfirm": "このセッションで許可を確認",

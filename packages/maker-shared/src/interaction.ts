@@ -1222,6 +1222,35 @@ export function sessionScopedPermissionSuggestions(suggestions: unknown): unknow
   );
 }
 
+export function readAcpPermissionChoices(suggestions: unknown): {
+  allowOnce: boolean;
+  rememberedAllow?: { label: string; selection: { type: 'acp_permission_selection'; optionId: string } };
+} | null {
+  if (!Array.isArray(suggestions)) return null;
+  const choices = suggestions.find(value => isRecord(value) && value.type === 'acp_permission_choices');
+  if (!isRecord(choices) || typeof choices.allowOnce !== 'boolean') return null;
+  const remembered = choices.rememberedAllow;
+  return {
+    allowOnce: choices.allowOnce,
+    ...(isRecord(remembered) && typeof remembered.name === 'string' && typeof remembered.optionId === 'string'
+      ? { rememberedAllow: {
+        label: remembered.name.trim(),
+        selection: { type: 'acp_permission_selection', optionId: remembered.optionId },
+      } } : {}),
+  };
+}
+
+/** ACP persistent grants require the exact native choice shown to the user. */
+export function isAcpPermissionDecisionAvailable(suggestions: unknown, decision: unknown): boolean {
+  const choices = readAcpPermissionChoices(suggestions);
+  if (!choices || !isRecord(decision) || decision.kind !== 'permission' || decision.behavior !== 'allow') return true;
+  const updates = Array.isArray(decision.permissionUpdates) ? decision.permissionUpdates : [];
+  const selection = updates.find(update => isRecord(update) && update.type === 'acp_permission_selection');
+  return isRecord(selection)
+    ? updates.length === 1 && selection.optionId === choices.rememberedAllow?.selection.optionId && !!choices.rememberedAllow
+    : choices.allowOnce;
+}
+
 export function buildPermissionDecision(
   behavior: 'allow' | 'deny',
   opts: {

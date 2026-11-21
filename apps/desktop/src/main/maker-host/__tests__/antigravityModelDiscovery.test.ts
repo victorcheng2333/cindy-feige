@@ -1,10 +1,15 @@
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { AgentDeps } from '@cindy/maker-core';
+import { ANTIGRAVITY_CAPABILITIES, type AgentDeps } from '@cindy/maker-core';
 import * as agy from '../antigravity-host.js';
 
-const fixture = vi.hoisted(() => ({ exec: vi.fn(), owner: 'a' }));
+const fixture = vi.hoisted(() => ({ exec: vi.fn(), probe: vi.fn(), accountCommand: vi.fn(), owner: 'a' }));
+vi.mock('@cindy/maker-core', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@cindy/maker-core')>(),
+  probeAntigravityCatalog: fixture.probe,
+  runAntigravityAccountCommand: fixture.accountCommand,
+}));
 vi.mock('node:child_process', async (importOriginal) => ({
   ...await importOriginal<typeof import('node:child_process')>(),
   execFile: Object.assign(vi.fn(), { [promisify.custom]: fixture.exec }),
@@ -20,12 +25,15 @@ vi.mock('node:fs/promises', async (importOriginal) => ({
 }));
 vi.mock('../../appSessionState.js', () => ({
   ownerScopedUserDataPath: (...parts: string[]) => path.resolve('fixture', fixture.owner, ...parts),
+  getActiveAppSession: () => ({ generation: fixture.owner }),
 }));
 vi.mock('../antigravity-proxy-settings-store.js', () => ({ readAntigravityProxy: () => undefined }));
 vi.mock('../active-catalog.js', () => ({ notifyLocalHarnessProviderChanged: vi.fn() }));
 
 beforeEach(() => {
   fixture.exec.mockReset();
+  fixture.probe.mockReset();
+  fixture.accountCommand.mockReset();
   fixture.owner = 'a';
   vi.stubGlobal('process', Object.create(process, { platform: { value: 'darwin' } }));
   vi.stubEnv('CINDY_AGY_BIN', path.resolve('fixture', 'agy'));
@@ -37,14 +45,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Unit regression at the host discovery entry. Parser coverage only exercises successful
-// stdout. Agy 1.5.13 reports a missing login on stderr with an empty stdout and exit 1.
-// Verify the catalog loses unusable rows, publishes a safe reason and recovers after retry.
+const catalog = {
+  ...ANTIGRAVITY_CAPABILITIES,
+  availableModels: [{ id: 'gemini-fixture', displayName: 'Gemini fixture', contextWindow: 0, efforts: [], defaultEffort: null }],
+};
+
+// Unit regression at the host discovery entry. Agy 1.5.13 can return an empty
+// ACP catalog for a missing login. The CLI diagnostic explains that failure.
 it('reports a missing Agy login and publishes models on a successful retry', async () => {
   const discover = () => agy.readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true, force: true });
-  fixture.exec.mockResolvedValueOnce({ stdout: 'gemini-fixture\tGemini fixture\n' });
+  fixture.probe.mockResolvedValueOnce(catalog);
   await expect(discover()).resolves.toBe(true);
+  expect(fixture.exec).not.toHaveBeenCalled();
 
+  fixture.probe.mockResolvedValueOnce(ANTIGRAVITY_CAPABILITIES);
   fixture.exec.mockRejectedValueOnce(Object.assign(new Error('fixture-only command details'), {
     code: 1,
     stderr: 'Fetching available models...\nError: Please sign in to view available models. Launch the CLI without arguments to sign in.\n',
@@ -58,8 +72,24 @@ it('reports a missing Agy login and publishes models on a successful retry', asy
   expect(agy.antigravityModelDiscoveryFailure()).toBeNull();
   fixture.owner = 'a';
 
-  fixture.exec.mockResolvedValueOnce({ stdout: 'gemini-fixture\tGemini fixture\n' });
+  fixture.probe.mockResolvedValueOnce(catalog);
   await expect(discover()).resolves.toBe(true);
   expect(agy.antigravityModelDiscoveryFailure()).toBeNull();
   expect(agy.antigravityProvider()?.models.antigravity).toMatchObject([{ id: 'gemini-fixture' }]);
+});
+
+it('cancels a superseded sign-in and publishes the newer sign-in result', async () => {
+  fixture.probe.mockResolvedValue(catalog);
+  fixture.accountCommand
+    .mockImplementationOnce(({ signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }))
+    .mockResolvedValueOnce(undefined);
+  const agent = agy.buildAntigravityAgent({} as AgentDeps['logger'])!;
+  const superseded = agent.triggerLogin();
+  await vi.waitFor(() => expect(fixture.accountCommand).toHaveBeenCalledOnce());
+  const latest = agent.triggerLogin();
+  await expect(superseded).resolves.toEqual({ authenticated: false, errorReason: 'login_cancelled' });
+  await expect(latest).resolves.toEqual({ authenticated: true });
+  expect(fixture.accountCommand.mock.calls[0]?.[0].signal.aborted).toBe(true);
 });

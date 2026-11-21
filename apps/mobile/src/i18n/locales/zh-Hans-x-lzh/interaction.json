@@ -16,6 +16,7 @@
     "kind": "权柄确认",
     "deny": "拒",
     "denyAccessibility": "拒此权柄之请",
+    "rememberAcpApproval": "记此许可",
     "alwaysAllow": "本差事常许",
     "alwaysAllowAccessibility": "本差事常许权柄之请",
     "alwaysAllowConfirm": "确许本差事",

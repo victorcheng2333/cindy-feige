@@ -16,6 +16,7 @@
     "kind": "Berechtigung",
     "deny": "Ablehnen",
     "denyAccessibility": "Berechtigungsanfrage ablehnen",
+    "rememberAcpApproval": "Erlaubnis merken",
     "alwaysAllow": "Für diese Sitzung immer erlauben",
     "alwaysAllowAccessibility": "Berechtigungsanfragen in dieser Sitzung immer erlauben",
     "alwaysAllowConfirm": "Erlaubnis für diese Sitzung bestätigen",

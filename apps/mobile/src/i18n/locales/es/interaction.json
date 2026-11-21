@@ -16,6 +16,7 @@
     "kind": "Permiso",
     "deny": "Denegar",
     "denyAccessibility": "Denegar solicitud de permiso",
+    "rememberAcpApproval": "Recordar autorización",
     "alwaysAllow": "Permitir siempre en esta sesión",
     "alwaysAllowAccessibility": "Permitir siempre solicitudes de permiso en esta sesión",
     "alwaysAllowConfirm": "Confirmar permiso para esta sesión",

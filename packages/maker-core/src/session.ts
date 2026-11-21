@@ -226,6 +226,7 @@ export interface SessionOptions {
   workDir: string;
   handle: AgentSessionHandle;
   capabilities: Capabilities;
+  projectNegotiatedCapabilities?: (capabilities: Capabilities) => Capabilities;
   logger: Logger;
   /** Runtime permission mode used to create/resume the underlying handle. */
   permissionMode?: PermissionMode;
@@ -481,7 +482,20 @@ export class Session {
   readonly instanceId: string;
   readonly agentKind: AgentKind;
   readonly workDir: string;
-  readonly capabilities: Capabilities;
+  private readonly agentCapabilities: Capabilities;
+  private readonly projectNegotiatedCapabilities: SessionOptions['projectNegotiatedCapabilities'];
+  private negotiatedCapabilitiesCache?: { source: Capabilities; value: Capabilities };
+  get capabilities(): Capabilities {
+    const negotiated = this.handle.negotiatedCapabilities;
+    if (!negotiated) return this.agentCapabilities;
+    if (this.negotiatedCapabilitiesCache?.source !== negotiated) {
+      this.negotiatedCapabilitiesCache = {
+        source: negotiated,
+        value: this.projectNegotiatedCapabilities?.(negotiated) ?? negotiated,
+      };
+    }
+    return this.negotiatedCapabilitiesCache.value;
+  }
   /** 见 SessionOptions.remoteHostId。 */
   readonly remoteHostId: string | null;
   /** 见 SessionOptions.agentDeviceId。 */
@@ -663,12 +677,13 @@ export class Session {
     this.agentKind = opts.agentKind;
     this.workDir = opts.workDir;
     this.handle = opts.handle;
-    this.capabilities = opts.capabilities;
+    this.agentCapabilities = opts.capabilities;
+    this.projectNegotiatedCapabilities = opts.projectNegotiatedCapabilities;
     this.remoteHostId = opts.remoteHostId ?? null;
     this.agentDeviceId = opts.agentDeviceId ?? null;
     this.logger = opts.logger.child(`s:${this.id}`);
     this.permissionModeStateValue = {
-      mode: opts.permissionMode ?? null,
+      mode: this.handle.initialPermissionMode ?? opts.permissionMode ?? null,
       generation: 0,
     };
     this.turnStallMs =
