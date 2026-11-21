@@ -34,7 +34,7 @@ import {
   resolveMemoryScopeKey,
   snapshotManagedSkillGrants,
 } from '@cindy/maker-core';
-import { isProviderSharePeer, parseProviderSharePeer, providerShareHostPeer } from '@cindy/device-link';
+import { isProviderSharePeer, parseProviderSharePeer, providerShareHostPeer, type RemoteAgentKind } from '@cindy/device-link';
 import { createLogger } from '../../logger.js';
 import { activeOwnerScopeKey, isAppSessionBoundaryPending } from '../../appSessionState.js';
 import { findReceivedShare, findReceivedShareForExecution, parseProviderShareAgentDeviceId, providerShareAccessEpoch,
@@ -259,9 +259,12 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
   const startAttempt = async (input: StartInput, skipDirect: boolean,
     attempt: ReturnType<typeof registerPendingRemoteStart>, recoverLostHistoryGrant = true,
     reissuedHistory = false): Promise<AgentSessionHandle> => {
-    if (input.agentKind === 'cursor' || input.agentKind === 'antigravity') throw new Error('Cursor supports local desktop tasks only');
+    if (input.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
     const agentKind: RemoteAgentKind = input.agentKind;
     const initialShareId = parseProviderShareAgentDeviceId(input.deviceId);
+    if (agentKind === 'antigravity' && (deps.isSharedProviderDevice?.(input.deviceId) === true || !!initialShareId)) {
+      throw new Error('[REMOTE_AGENT_UNSUPPORTED] Antigravity remote execution is available for your own computers only.');
+    }
     const ownerScope = activeOwnerScopeKey();
     const initialOwner = initialShareId ? findReceivedShareForExecution(initialShareId) : null;
     const initialOwnerPeer = initialShareId && initialOwner?.hostDeviceId
@@ -728,7 +731,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       rgPath: deps.rgPath(),
       // Both same-account remotes and shared providers execute tools here. Auto
       // approvals must reach this gate instead of ending at the remote harness.
-      ...(input.agentKind === 'claude-code' && deps.claudeApproval ? { claudeApproval: deps.claudeApproval } : {}),
+      ...((input.agentKind === 'claude-code' || input.agentKind === 'antigravity') && deps.claudeApproval ? { claudeApproval: deps.claudeApproval } : {}),
       codexPath: () => deps.codexPath?.(),
       ...(target !== input.deviceId
         || (!handoffPlacement && (opts[LOCAL_AGENT_CLIENT]?.groupAssigned || (sessionId && deps.isGroupAssigned?.(sessionId))))
@@ -780,7 +783,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       capture: ({ kind, opts: startOpts }): ExecutorCaptureHooks | undefined => {
         if (startOpts[LOCAL_AGENT_CLIENT]) return undefined;
         // Codex 自己报告每轮改动；Claude Code 与 Pi 的写入由执行器在写之前抓取。
-        if (kind === 'codex' || !startOpts.sessionId) return undefined;
+        if (kind === 'codex' || kind === 'antigravity' || !startOpts.sessionId) return undefined;
         const sessionId = startOpts.sessionId;
         const provider = kind;
         return {

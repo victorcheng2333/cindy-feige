@@ -508,8 +508,9 @@ async function prepareAndStartRemoteAgentSession(
   let effort = opts.effort;
   let fastMode = opts.fastMode;
   let thinkingEnabled = opts.thinkingEnabled;
-  const toolApproval = kind === 'claude-code' && deps.claudeApproval ? new ClaudeToolApproval({
+  const toolApproval = (kind === 'claude-code' || kind === 'antigravity') && deps.claudeApproval ? new ClaudeToolApproval({
     ...deps.claudeApproval,
+    agentKind: kind,
     sessionId: opts.sessionId, workspace,
     cwd: () => executor.executionCwd,
     scope: () => ({ permissionMode, extraDirs, writableDirs, model, providerId }),
@@ -521,7 +522,7 @@ async function prepareAndStartRemoteAgentSession(
     ask: (request, signal) => controller?.decide(request, signal) ?? Promise.resolve({ kind: 'permission', behavior: 'deny', reason: 'interaction_unavailable' }),
     grant: action => executor.grantReviewedAction(action), newId: deps.newId,
     cancelPendingConfirmations: () => executor.cancelPendingConfirmations(),
-    notice: message => controller?.onEvent({ type: 'error', source: 'claude-code', data: { message, isTerminal: false } }),
+    notice: message => controller?.onEvent({ type: 'error', source: kind, data: { message, isTerminal: false } }),
   }) : undefined;
   const router = createReverseHttpRouter({ executor, mcpTarget: name => mcp.servers.get(name), hostToolsOnly, attachments,
     ...(toolApproval ? { approve: toolApproval.run.bind(toolApproval) } : {}) });

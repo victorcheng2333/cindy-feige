@@ -273,11 +273,13 @@ function RemoteProviderAccessRow({
         </span>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-3">
-        <ProviderShareEntryButton
-          groupSize={group ? providerGroupDeviceCount(group.members) : null}
-          pendingCount={pendingShareRequests}
-          onOpen={onManageShare}
-        />
+        {provider.id !== 'antigravity' && (
+          <ProviderShareEntryButton
+            groupSize={group ? providerGroupDeviceCount(group.members) : null}
+            pendingCount={pendingShareRequests}
+            onOpen={onManageShare}
+          />
+        )}
         <Switch data-setting-id={providersSettings.sharing.id}
           checked={enabled}
           disabled={busy || !remoteControlEnabled || poolName !== undefined}
@@ -3945,7 +3947,7 @@ export function ProvidersSection() {
                   {/* 允许被远程调用 + 「远程与分享」入口(含供应商组)：供应商已连接且能跑 Agent 时出现。
                       本机未允许远程控制时整行仍显示，但开关不可用(provider-sharing.md §3)；入口始终可用，
                       只给本机用时也可以建组(provider-groups.md §10)。 */}
-                  {effectiveSelected.id !== 'cursor' && effectiveSelected.id !== 'antigravity' && remoteControlEnabled !== null &&
+                  {effectiveSelected.id !== 'cursor' && remoteControlEnabled !== null &&
                     ((!effectiveSelected.suspended &&
                     effectiveSelected.connected &&
                     effectiveSelected.agents.length > 0 &&

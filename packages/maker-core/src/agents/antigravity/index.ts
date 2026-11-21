@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import {
   AgentStartupCleanupPendingError,
   AgentStartupStoppedError,
@@ -25,13 +27,24 @@ import {
   type AutoReviewUserIntent,
 } from '../shared/auto-review-decision.js';
 import type { ReviewableAction } from '../shared/auto-review.js';
+import { deviceHostedGhostRoster } from '../shared/device-hosted.js';
 import { normalizeAcpToolForAutoReview } from '../acp/auto-review-policy.js';
 import { openAcpSession, type AcpSession } from '../acp/session.js';
 import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
 import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
 import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
+import {
+  ANTIGRAVITY_REMOTE_AGENT_NAME,
+  ANTIGRAVITY_REMOTE_WORKSPACE_MIN_VERSION,
+  buildAntigravityHostedMcpServers,
+  createAntigravityRemoteWorkspaceGuard,
+  isAntigravityRemoteWorkspaceVersionSupported,
+  prepareAntigravityRemoteWorkspaceDir,
+} from './remote-workspace.js';
 import { loadMemoryContext } from '../../memory/context.js';
 import { resolveMemoryScopeKey } from '../../memory/scope-resolver.js';
+
+const execFileAsync = promisify(execFile);
 
 const supported = { supported: true } as const;
 const unavailable = { supported: false, reason: 'not-implemented' } as const;
@@ -71,6 +84,7 @@ export interface AntigravityAgentDeps extends AgentDeps {
     Promise<{ stateDir: string; servers: AcpMcpServer[]; dispose(): void }>;
   getEnv(): NodeJS.ProcessEnv;
   getDiscoveredCapabilities(): Capabilities | undefined;
+  getCliVersion?(): Promise<string | null>;
 }
 
 function antigravityCapabilities(session: AcpSession): Capabilities {
@@ -163,29 +177,78 @@ export class AntigravityAgent extends BaseAgent {
     return built;
   }
 
+  private async readCliVersion(): Promise<string | null> {
+    if (this.agyDeps.getCliVersion) return this.agyDeps.getCliVersion();
+    try {
+      const { stdout, stderr } = await execFileAsync(this.deps.binaryPath, ['--version'], {
+        env: { ...this.agyDeps.getEnv(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
+        timeout: 5_000,
+        maxBuffer: 4096,
+      });
+      const text = `${stdout}\n${stderr}`.trim();
+      const match = /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/.exec(text);
+      return match ? match[1]! : null;
+    } catch {
+      return null;
+    }
+  }
+
   async startSession(opts: StartSessionOptions): Promise<AgentSessionHandle> {
     let bridge: Awaited<ReturnType<AntigravityAgentDeps['prepareAcp']>> | undefined;
+    let remoteWorkspace: Awaited<ReturnType<typeof prepareAntigravityRemoteWorkspaceDir>> | undefined;
     let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
     let mode: PermissionMode = opts.permissionMode === 'plan' ? 'default' : opts.permissionMode ?? 'auto';
     try {
-      if (opts.remoteHostId || opts.deviceHosted || opts.reviewMode || opts.vendorOptions?.orcaRole ||
-          opts.botRuntimeProfile) {
-        throw new Error('Agy requires an ordinary local desktop task.');
+      const hosted = opts.deviceHosted;
+      if (opts.remoteHostId || opts.reviewMode || opts.vendorOptions?.orcaRole || opts.botRuntimeProfile) {
+        throw new Error('Agy requires an ordinary desktop task.');
+      }
+      if (hosted?.guest) {
+        throw new Error('Agy remote execution is available for your own computers only.');
       }
       if (opts.providerId && opts.providerId !== this.kind) throw new Error('Agy requires its own model source.');
       if (!isAntigravityPermissionMode(mode)) throw new Error('Unsupported Agy permission mode.');
+      if (hosted) {
+        const version = await this.readCliVersion();
+        if (!isAntigravityRemoteWorkspaceVersionSupported(version)) {
+          throw new Error(
+            `Antigravity ${version ?? '(unknown version)'} cannot run a task whose files are on another computer; `
+            + `update agy to ${ANTIGRAVITY_REMOTE_WORKSPACE_MIN_VERSION.join('.')} or later.`,
+          );
+        }
+      }
       const cwd = await realpath(opts.workingDir);
       const manager = this.agyDeps.makerMemory;
-      const memoryEnabled = !!manager && (opts.makerMemoryEnabled ?? this.agyDeps.runtimeConfig.makerMemoryEnabled ?? false);
-      const scopeKey = memoryEnabled ? opts.makerMemoryScopeKey ?? await resolveMemoryScopeKey(cwd) : undefined;
-      const memory = scopeKey ? await loadMemoryContext({
-        manager, scopeKey, snapshot: opts.makerMemoryIndexSnapshot, projectDirectory: opts.makerMemoryProjectDir,
-      }) : undefined;
+      const memoryEnabled = hosted
+        ? opts.makerMemoryEnabled === true
+        : !!manager && (opts.makerMemoryEnabled ?? this.agyDeps.runtimeConfig.makerMemoryEnabled ?? false);
+      const scopeKey = memoryEnabled && !hosted
+        ? opts.makerMemoryScopeKey ?? await resolveMemoryScopeKey(cwd)
+        : opts.makerMemoryScopeKey;
+      const memory = hosted
+        ? (memoryEnabled && manager && scopeKey
+          ? await loadMemoryContext({
+              manager,
+              scopeKey,
+              snapshot: opts.makerMemoryIndexSnapshot ?? '',
+              projectDirectory: opts.makerMemoryProjectDir,
+            })
+          : undefined)
+        : (scopeKey && manager
+          ? await loadMemoryContext({
+              manager,
+              scopeKey,
+              snapshot: opts.makerMemoryIndexSnapshot,
+              projectDirectory: opts.makerMemoryProjectDir,
+            })
+          : undefined);
+      const hostedRoster = hosted ? deviceHostedGhostRoster(hosted, opts.ghostRosterSnapshot, () => '') : '';
       const systemPromptAppend = [
         this.agyDeps.runtimeConfig.systemPrompt,
         memory?.rules,
         memory?.index,
-        opts.userPrompt ?? this.agyDeps.runtimeConfig.userPrompt,
+        hostedRoster,
+        opts.userPrompt ?? (hosted ? undefined : this.agyDeps.runtimeConfig.userPrompt),
       ].map(part => part?.trim()).filter(Boolean).join('\n\n');
 
       // Writable folders join Agy's own workspace; read-only folders stay outside it and are
@@ -249,7 +312,7 @@ export class AntigravityAgent extends BaseAgent {
         }
       }
 
-      bridge = await this.agyDeps.prepareAcp(opts, { enabled: memoryEnabled && !memory?.projectDirectory, scopeKey });
+      bridge = await this.agyDeps.prepareAcp(opts, { enabled: !hosted && memoryEnabled && !memory?.projectDirectory, scopeKey });
       const taskBridge = bridge;
       const { stateDir } = taskBridge;
       const marker = path.join(stateDir, 'cindy-acp-session-id');
@@ -257,23 +320,41 @@ export class AntigravityAgent extends BaseAgent {
       const saved = opts.resumeSessionId ? await readAcpIdentity(marker) : undefined;
       const resumeSessionId = saved === opts.resumeSessionId ? saved : undefined;
       await seedAgyStateDir(stateDir);
-      endpoint = startAgyAcpProcess(this.deps.binaryPath, cwd, stateDir, this.agyDeps.getEnv());
-      void endpoint.whenStopped.then(() => taskBridge.dispose()).catch(() => {
+      const hostedMcp = hosted ? buildAntigravityHostedMcpServers(hosted) : undefined;
+      if (hosted && hostedMcp) {
+        remoteWorkspace = await prepareAntigravityRemoteWorkspaceDir(stateDir, hosted, hostedMcp.serverNames, cwd);
+      }
+      const launchCwd = remoteWorkspace ? remoteWorkspace.dir : cwd;
+      const remoteGuard = hostedMcp ? createAntigravityRemoteWorkspaceGuard(hostedMcp.serverNames) : undefined;
+      endpoint = startAgyAcpProcess(
+        this.deps.binaryPath,
+        launchCwd,
+        stateDir,
+        this.agyDeps.getEnv(),
+        hosted ? { agent: ANTIGRAVITY_REMOTE_AGENT_NAME } : undefined,
+      );
+      const cleanupWorkspace = remoteWorkspace;
+      void endpoint.whenStopped.then(async () => {
+        await cleanupWorkspace?.cleanup();
+        taskBridge.dispose();
+      }).catch(() => {
         this.agyDeps.logger.warn('Could not release the Agy MCP bridge');
       });
       const session = await openAcpSession({
         agentKind: this.kind,
         transport: endpoint.transport,
-        cwd,
+        cwd: launchCwd,
         clientInfo: { name: 'cindy', version: '1.0.0' },
-        mcpServers: taskBridge.servers,
+        mcpServers: hostedMcp ? hostedMcp.servers : taskBridge.servers,
         resumeSessionId,
         logger: this.agyDeps.logger,
         cancelGraceMs: 5_000,
         classifyWarning: classifyAgyWarning,
-        additionalDirectories: writableDirs,
+        additionalDirectories: hosted ? undefined : writableDirs,
         steerByPrompt: true,
-        reviewPermission: toolCall => reviewAutoAction(normalizeAcpToolForAutoReview(toolCall)),
+        ...(hosted
+          ? { interceptToolCall: remoteGuard!.inspect }
+          : { reviewPermission: toolCall => reviewAutoAction(normalizeAcpToolForAutoReview(toolCall)) }),
         sessionMetadata(init) {
           if (!systemPromptAppend) return;
           const agy = asRecord(init.agentMetadata.antigravity);
@@ -382,6 +463,7 @@ export class AntigravityAgent extends BaseAgent {
           });
         }
       } else {
+        await remoteWorkspace?.cleanup();
         bridge?.dispose();
       }
       throw new AgentStartupStoppedError(error);

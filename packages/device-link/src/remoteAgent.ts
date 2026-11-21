@@ -17,7 +17,7 @@
 export const REMOTE_AGENT_CHANNEL = 'maker:remote-agent:v1';
 export const REMOTE_AGENT_VERSION = 1;
 
-export const REMOTE_AGENT_KINDS = ['claude-code', 'codex', 'pi'] as const;
+export const REMOTE_AGENT_KINDS = ['claude-code', 'codex', 'pi', 'antigravity'] as const;
 export type RemoteAgentKind = (typeof REMOTE_AGENT_KINDS)[number];
 
 /** 每段上传的原始字节(gzip 之后)。base64 后约 683KB，远低于单条逻辑消息 4MB 上限。 */

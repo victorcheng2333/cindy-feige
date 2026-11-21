@@ -17,6 +17,7 @@ type PermissionRequest = Extract<InteractionRequest, { kind: 'permission' }>;
 export class ToolPermissionDenied extends Error { readonly name = 'ToolPermissionDenied'; }
 
 export interface ClaudeToolApprovalDeps {
+  agentKind?: 'claude-code' | 'antigravity';
   sessionId?: string;
   workspace: ExecutorWorkspace;
   cwd(): string;
@@ -139,7 +140,7 @@ export class ClaudeToolApproval {
       catch { policy = 'prompt-each-time'; }
     }
     const request: AutoReviewRequest = {
-      sessionId: this.deps.sessionId, agentKind: 'claude-code', model: scope.model, providerId: scope.providerId,
+      sessionId: this.deps.sessionId, agentKind: this.deps.agentKind ?? 'claude-code', model: scope.model, providerId: scope.providerId,
       userIntent: this.intent ?? '', authorizationContext: this.authority,
       precedingBlockedActions: this.actions.precedingBlockedActions,
       action: force ? toolAutoReviewAction(toolName, input, undefined, action) : action,

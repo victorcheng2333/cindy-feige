@@ -14,7 +14,7 @@
  * subscription and process control). A borrowed Agent runtime device never blocks them:
  * switching moves the Agent home and the destination `agentDeviceId` becomes null.
  */
-export const TASK_COMPUTER_ONLY_AGENT_KINDS = ['cursor', 'antigravity'] as const;
+export const TASK_COMPUTER_ONLY_AGENT_KINDS = ['cursor'] as const;
 
 export type TaskComputerOnlyAgentKind = (typeof TASK_COMPUTER_ONLY_AGENT_KINDS)[number];
 

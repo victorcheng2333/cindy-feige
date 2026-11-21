@@ -127,6 +127,17 @@ export interface OpenAcpSessionOptions {
    * request ends the turn, so its result (with usage) closes the Cindy turn.
    */
   steerByPrompt?: boolean;
+  /**
+   * Optional per-tool-call filter/rewriter (used by device-hosted remote-workspace mode to
+   * unwrap MCP tool calls and fail closed if the agent ever attempts a local file/shell tool).
+   */
+  interceptToolCall?: (
+    toolCall: AcpToolCallFields,
+    source: 'update' | 'permission',
+  ) =>
+    | { action: 'pass' }
+    | { action: 'rewrite'; toolCall: AcpToolCallFields; autoApproveOnce?: boolean }
+    | { action: 'block'; reason: string };
 }
 
 export type AcpResumeOutcome = 'new' | 'resumed' | 'loaded';
@@ -368,7 +379,9 @@ export class AcpSession {
   private readonly cancelGraceMs: number;
   private readonly onEnded: (() => void) | undefined;
   private readonly reviewPermission: OpenAcpSessionOptions['reviewPermission'];
+  private readonly interceptToolCall: OpenAcpSessionOptions['interceptToolCall'];
   private readonly steerByPrompt: boolean;
+  private violationTerminated = false;
   private readonly queue = createAsyncQueue<AgentEvent>();
   private readonly translator: AcpUpdateTranslator;
   private readonly pendingPrompts: AcpContentBlock[][] = [];
@@ -411,6 +424,7 @@ export class AcpSession {
     this.cancelGraceMs = init.options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS;
     this.onEnded = init.options.onEnded;
     this.reviewPermission = init.options.reviewPermission;
+    this.interceptToolCall = init.options.interceptToolCall;
     this.steerByPrompt = init.options.steerByPrompt === true;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
     this.translator = new AcpUpdateTranslator({
@@ -667,6 +681,24 @@ export class AcpSession {
         if (title) this.title = title;
         return;
       }
+      case 'tool_call':
+      case 'tool_call_update': {
+        if (this.violationTerminated) return;
+        const fields = normalizeToolCallFields(update);
+        if (fields && this.interceptToolCall) {
+          const verdict = this.interceptToolCall(fields, 'update');
+          if (verdict.action === 'block') {
+            this.terminateForToolViolation(verdict.reason);
+            return;
+          }
+          if (verdict.action === 'rewrite') {
+            this.emit(this.translator.noteToolCall(verdict.toolCall));
+            return;
+          }
+        }
+        this.emit(this.translator.handleUpdate(update));
+        return;
+      }
       default:
         if (STATE_UPDATES.has(update.sessionUpdate)) return;
         this.emit(this.translator.handleUpdate(update));
@@ -790,17 +822,33 @@ export class AcpSession {
   }
 
   private async decidePermission(params: AcpRecord, signal: AbortSignal): Promise<AcpPermissionOutcome> {
-    if (signal.aborted || this.closing || this.turn?.cancelTimer) return { outcome: 'cancelled' };
+    if (signal.aborted || this.closing || this.violationTerminated || this.turn?.cancelTimer) return { outcome: 'cancelled' };
     const options = normalizePermissionOptions(params.options);
-    const toolCall = normalizeToolCallFields(params.toolCall) ?? { toolCallId: `acp-permission-${this.permissionSeq + 1}` };
-    this.emit(this.translator.noteToolCall(toolCall));
-    // Only the agent can define the lifetime and scope of a persistent grant.
-    // When it offers no one-time approval, Allow (and Full access) answers with
-    // that grant; the cards say so via `acp_permission_choices.allowOnce: false`.
+    let toolCall = normalizeToolCallFields(params.toolCall) ?? { toolCallId: `acp-permission-${this.permissionSeq + 1}` };
     const allowOnce = firstOfKind(options, ['allow_once']);
     const rememberedAllow = firstOfKind(options, ['allow_always']);
     const plainAllow = allowOnce ?? rememberedAllow;
     const reject = firstOfKind(options, ['reject_once']);
+    if (this.interceptToolCall) {
+      const verdict = this.interceptToolCall(toolCall, 'permission');
+      if (verdict.action === 'block') {
+        // Defer endpoint teardown to the next macrotask so AcpConnection finishes
+        // writing the JSON-RPC rejection response before closing stdin / killing the group.
+        setTimeout(() => this.terminateForToolViolation(verdict.reason), 0);
+        return reject ? selected(reject) : { outcome: 'cancelled' };
+      }
+      if (verdict.action === 'rewrite') {
+        toolCall = verdict.toolCall;
+        if (verdict.autoApproveOnce && allowOnce) {
+          this.emit(this.translator.noteToolCall(toolCall));
+          return selected(allowOnce);
+        }
+      }
+    }
+    this.emit(this.translator.noteToolCall(toolCall));
+    // Only the agent can define the lifetime and scope of a persistent grant.
+    // When it offers no one-time approval, Allow (and Full access) answers with
+    // that grant; the cards say so via `acp_permission_choices.allowOnce: false`.
     if (this.permissionMode === 'bypassPermissions' && plainAllow) return selected(plainAllow);
     // Stop cancels an in-flight review like an open card: register it with the same controllers.
     const reviewController = new AbortController();
@@ -1010,6 +1058,23 @@ export class AcpSession {
     if (this.closing) return this.closing;
     this.closing = Promise.resolve().then(action).finally(() => { this.closing = null; });
     return this.closing;
+  }
+
+  private terminateForToolViolation(reason: string): void {
+    if (this.violationTerminated) return;
+    this.violationTerminated = true;
+    this.pendingPrompts.length = 0;
+    this.cancelPermissions();
+    const turn = this.turn;
+    if (turn) {
+      this.finishTurn(turn.token, { error: reason, reason: 'acp-remote-tool-blocked' });
+    } else if (!this.ended) {
+      this.emit([{ type: 'error', data: { message: reason, isTerminal: true, reason: 'acp-remote-tool-blocked' } }]);
+    }
+    if (!this.connection.closed) {
+      try { this.connection.notify('session/cancel', { sessionId: this.nativeId }); } catch { /* closing immediately */ }
+    }
+    this.retireEndpoint();
   }
 
   private retireEndpoint(): void {

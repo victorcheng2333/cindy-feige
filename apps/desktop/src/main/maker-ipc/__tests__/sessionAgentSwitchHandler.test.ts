@@ -107,18 +107,26 @@ describe('Antigravity model selection', () => {
     expect(deps.setPendingHandoff).toHaveBeenCalled();
   });
 
-  // Regression: a task whose Claude/Codex Agent borrowed another computer's source was
-  // refused, although Agy (like Cursor) simply runs on the task computer.
-  it.each([
-    { rowDevice: 'shared-mac', requestDevice: undefined },
-    { rowDevice: 'shared-mac', requestDevice: 'shared-mac' },
-  ])('hands a borrowed-source task home to agy (request $requestDevice)', async ({ rowDevice, requestDevice }) => {
-    const { deps } = makeDeps({ getSessionRow: async () => makeRow({ agentKind: 'cc', agentDeviceId: rowDevice }) });
-    await expect(performSessionAgentSwitch(deps, { ...selection, ...(requestDevice ? { agentDeviceId: requestDevice } : {}) }))
-      .resolves.toMatchObject({ switched: true });
-    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
+  // Regression: Agy now supports same-account remote computers while keeping provider shares
+  // out. A shared-provider task without an explicit destination moves home to local Agy; an
+  // explicit same-account computer is preserved, and an explicit shared provider is rejected.
+  it('supports same-account remote Agy destinations while moving shared-provider tasks home', async () => {
+    const shared = makeDeps({ getSessionRow: async () => makeRow({ agentKind: 'cc', agentDeviceId: 'share:provider-1' }) });
+    await expect(performSessionAgentSwitch(shared.deps, selection)).resolves.toMatchObject({ switched: true });
+    expect(shared.deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
       agentKind: 'antigravity', providerId: 'antigravity', agentDeviceId: null, sdkSessionId: null,
     }));
+
+    const remote = makeDeps({ getSessionRow: async () => makeRow({ agentKind: 'cc', agentDeviceId: null }) });
+    await expect(performSessionAgentSwitch(remote.deps, { ...selection, agentDeviceId: 'other-mac' }))
+      .resolves.toMatchObject({ switched: true });
+    expect(remote.deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
+      agentKind: 'antigravity', providerId: 'antigravity', agentDeviceId: 'other-mac', sdkSessionId: null,
+    }));
+
+    const rejected = makeDeps({ getSessionRow: async () => makeRow({ agentKind: 'cc', agentDeviceId: null }) });
+    await expect(performSessionAgentSwitch(rejected.deps, { ...selection, agentDeviceId: 'share:provider-1' }))
+      .rejects.toThrow('UNSUPPORTED_CAPABILITY');
   });
 
   it('blocks agy handoff before mutation while Plan mode is active', async () => {

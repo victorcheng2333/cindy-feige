@@ -1395,7 +1395,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   );
   const combinedCatalogs = compactProviderList && !useUnifiedPanel && !!remoteAgent;
   // Cursor uses the task computer's own account; other computers cannot supply its models.
-  const remoteBrowse = useMemo(() => browseVendor === 'cursor' || browseVendor === 'antigravity' ? null : combinedCatalogs
+  const remoteBrowse = useMemo(() => browseVendor === 'cursor' ? null : combinedCatalogs
     ? (catalogSection ? { deviceId: catalogSection.deviceId, providerId: null } : null)
     : browseSource, [browseVendor, combinedCatalogs, catalogSection?.deviceId, browseSource]);
   // 落点在面板之外变了(那台电脑被解除配对而回到本机等):跟到新落点,不停在旧目录上。
@@ -1752,7 +1752,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // ── 远程 Agent 的左侧栏数据 ──────────────────────────────────────────────────
   // 栏位要同时列出本机与各台电脑的供应商,而列表此刻只装着其中一份目录:本机格与远程格
   // 各自按**自己的**目录与可见性派生,不借用正在浏览的那一份。
-  const remoteAgentDevices = browseVendor === 'cursor' || browseVendor === 'antigravity' ? undefined : remoteAgent?.devices;
+  const remoteAgentDevices = browseVendor === 'cursor' ? undefined : remoteAgent?.devices;
   const routedFavoriteSources = useMemo(() => remoteAgent?.catalogHostDeviceId
     ? new Map((remoteAgentDevices ?? []).flatMap(device => device.favoriteSource
       ? [[device.deviceId, device.favoriteSource] as const] : []))

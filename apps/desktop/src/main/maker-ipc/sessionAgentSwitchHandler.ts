@@ -816,13 +816,12 @@ export async function performSessionAgentSwitch(
   ) {
     throwIpcError('INVALID_PARAMS', 'agentDeviceId must be a device id or null');
   }
-  // The destination for Agy is always the task computer (forced below), so a requested
-  // device only checks controller authority, the same as Cursor.
-  if (targetAgentKind === 'antigravity') assertAntigravityTaskCreationAllowed({});
+  if (targetAgentKind === 'antigravity') {
+    assertAntigravityTaskCreationAllowed({ agentDeviceId: rawAgentDeviceId });
+  }
   let requestedAgentDeviceId = rawAgentDeviceId as string | null | undefined;
-  // Task-computer-only engines (Cursor, Agy) run where the task lives. A borrowed
-  // Claude/Codex/Pi runtime device must not become their destination — the switch
-  // moves the Agent home (docs/dev-rules/agent-placement.md).
+  // Task-computer-only engines (Cursor) run where the task lives. A borrowed
+  // runtime device must not become their destination — the switch moves the Agent home.
   if (runsOnTaskComputerOnly(targetAgentKind)) requestedAgentDeviceId = null;
   // 必须在第一个 await 前快照：跨窗口 / 跨设备写入即使 set→clear 回到同值，修订号也会变化。
   const pendingRevisionAtStart = deps.pendingSwitches?.revision?.(sessionId);
@@ -851,12 +850,25 @@ export async function performSessionAgentSwitch(
     throwIpcError('NOT_FOUND', `Session ${sessionId} not found`);
   }
   if (row.agentKind === 'antigravity' || targetAgentKind === 'antigravity') {
-    // A borrowed Claude/Codex/Pi source (agentDeviceId) hands off home to Agy, like Cursor;
-    // SSH and Orca tasks still cannot. An Agy runtime itself never lives elsewhere.
-    assertAntigravityTaskCreationAllowed(row.agentKind === 'antigravity'
-      ? row : { remoteHostId: row.remoteHostId, orcaRole: row.orcaRole });
-    if (params.forceRelocation || params.providerGroupRelocation) {
-      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks do not support relocation');
+    if (
+      targetAgentKind === 'antigravity'
+      && requestedAgentDeviceId === undefined
+      && typeof row.agentDeviceId === 'string'
+      && isProviderShareAgentDeviceId(row.agentDeviceId)
+    ) {
+      // Provider shares do not support Agy; switching a shared-provider task to Agy without
+      // an explicit same-account destination moves the Agent home to the task computer.
+      requestedAgentDeviceId = null;
+    }
+    assertAntigravityTaskCreationAllowed({
+      remoteHostId: row.remoteHostId,
+      orcaRole: row.orcaRole,
+      agentDeviceId: targetAgentKind === 'antigravity'
+        ? (requestedAgentDeviceId !== undefined ? requestedAgentDeviceId : row.agentDeviceId)
+        : undefined,
+    });
+    if (params.providerGroupRelocation) {
+      throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks do not support provider groups');
     }
     const changesHarness = row.agentKind !== targetAgentKind;
     if (changesHarness && (row.orcaRemoteLead || (row.source && row.source !== 'desktop'))) {

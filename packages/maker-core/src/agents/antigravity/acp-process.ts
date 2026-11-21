@@ -31,11 +31,18 @@ export async function seedAgyStateDir(stateDir: string): Promise<void> {
     .catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
 }
 
-export function startAgyAcpProcess(binary: string, cwd: string, stateDir: string, env: NodeJS.ProcessEnv) {
+export function startAgyAcpProcess(
+  binary: string,
+  cwd: string,
+  stateDir: string,
+  env: NodeJS.ProcessEnv,
+  options?: { agent?: string },
+) {
   const child = spawn(binary, [
     '--settings', JSON.stringify({ useG1Credits: false }),
     'acp', '--process-per-session', '--disable-telemetry', `--gemini_dir=${stateDir}`,
     `--log-file=${path.join(stateDir, 'acp.log')}`,
+    ...(options?.agent ? ['--agent', options.agent] : []),
   ], { cwd, env: { ...env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' }, detached: true });
   // Native diagnostics can include account and proxy data.
   child.stderr.resume();

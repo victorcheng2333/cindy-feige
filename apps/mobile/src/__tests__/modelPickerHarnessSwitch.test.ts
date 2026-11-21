@@ -131,18 +131,29 @@ it('registers local Cursor with an explicit null destination when the source cat
   expect(h.getRemoteCapabilities).not.toHaveBeenCalled();
   expect(h.setComposerModel).not.toHaveBeenCalled();
 });
-// Regression: a task whose Agent borrowed another computer's source could not choose Agy.
-// Agy, like Cursor, runs on the task computer, so the intent must move the Agent home.
-it('registers local Agy with an explicit null destination when the task borrows a remote source', async () => {
+// Regression: a task whose Agent borrowed another computer's source can switch to Agy
+// on a same-account computer or back to the task computer.
+it('preserves the chosen same-account computer when switching a task to Agy', async () => {
   const getCapabilities = vi.fn(async () => ({
     hasFastMode: false, supportsControlledAntigravityCreation: true, supportsAntigravitySessionSwitch: true,
   }));
+  const getRemoteCapabilities = vi.fn(async () => ({
+    hasFastMode: false, supportsControlledAntigravityCreation: true, supportsAntigravitySessionSwitch: true,
+  }));
   const h = harness(true, { agentDeviceId: studio.deviceId, remoteHostId: null, orcaRole: null, orcaRemoteLead: null, source: 'desktop' },
-    { canSwitchSessionToAntigravity, maker: { getCapabilities, setEffort: vi.fn(), setFastMode: vi.fn() } });
-  expect(await h.render()({ ...config, agent: 'antigravity', providerId: 'antigravity' }, studio)).toBe(true);
+    {
+      canSwitchSessionToAntigravity,
+      maker: { getCapabilities, setEffort: vi.fn(), setFastMode: vi.fn() },
+      executionMakerForDevice: vi.fn(() => ({ getCapabilities: getRemoteCapabilities })),
+    });
+  expect(await h.render()({ ...config, agent: 'antigravity', providerId: 'antigravity' }, { deviceId: null })).toBe(true);
   expect(h.state.intent).toMatchObject({ targetAgentKind: 'antigravity', agentDeviceId: null });
   expect(getCapabilities).toHaveBeenCalledWith('antigravity');
-  expect(h.getRemoteCapabilities).not.toHaveBeenCalled();
+  expect(getRemoteCapabilities).not.toHaveBeenCalled();
+
+  expect(await h.render()({ ...config, agent: 'antigravity', providerId: 'antigravity' }, studio)).toBe(true);
+  expect(h.state.intent).toMatchObject({ targetAgentKind: 'antigravity' });
+  expect(getRemoteCapabilities).toHaveBeenCalledWith('antigravity');
 });
 it('registers a single intent for a combined Harness and computer switch', async () => {
   const h = harness();

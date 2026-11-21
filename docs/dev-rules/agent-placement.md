@@ -22,7 +22,7 @@
 
 ## 只能在任务所在电脑运行的引擎
 
-Cursor、Agy 依赖任务所在电脑上的 CLI、订阅和进程组，只能在任务所在电脑运行。名单和判断
+Cursor 依赖任务所在电脑上的 CLI、订阅和进程组，只能在任务所在电脑运行（Agy 已支持在同账号自己的其他电脑上经受限 `--agent` 与隧道 `cindy_exec` 远程运行，但不开放给供应商分享的受邀者或供应商组）。名单和判断
 只有一个正本：`packages/maker-shared/src/agentPlacement.ts`
 （`TASK_COMPUTER_ONLY_AGENT_KINDS`、`runsOnTaskComputerOnly`、`canHandOffToTaskComputerOnlyEngine`）。
 

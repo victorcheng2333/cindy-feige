@@ -30,9 +30,9 @@ it('keeps SSH and other-computer execution outside this capability', () => {
   }
 });
 
-// Unit: a phone can create agy tasks on its verified Mac, while guests cannot
-// borrow that Mac's CLI credentials or choose a different execution computer.
-it('allows controlled agy only on the same-account task computer', () => {
+// Unit: a phone can create agy tasks on its verified Mac and same-account remote computers,
+// while guests, SSH, Orca and shared providers remain blocked.
+it('allows controlled agy on same-account computers while blocking guests and provider shares', () => {
   expect(() => assertAntigravityTaskCreationAllowed({})).not.toThrow();
   for (const context of [{ sameAccountController: false }, { sameAccountController: true, sharedTask: {} }]) {
     state.context = context;
@@ -40,5 +40,8 @@ it('allows controlled agy only on the same-account task computer', () => {
   }
   state.context = { sameAccountController: true };
   expect(() => assertAntigravityTaskCreationAllowed({})).not.toThrow();
-  expect(() => assertAntigravityTaskCreationAllowed({ agentDeviceId: 'another-mac' })).toThrow('UNSUPPORTED_CAPABILITY');
+  expect(() => assertAntigravityTaskCreationAllowed({ agentDeviceId: 'another-mac' })).not.toThrow();
+  for (const body of [{ remoteHostId: 'ssh-host' }, { agentDeviceId: 'share:provider' }, { orcaRole: 'lead' }]) {
+    expect(() => assertAntigravityTaskCreationAllowed(body)).toThrow('UNSUPPORTED_CAPABILITY');
+  }
 });

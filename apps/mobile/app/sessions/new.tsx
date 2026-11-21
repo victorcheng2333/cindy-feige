@@ -2386,7 +2386,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     source?: { deviceId: string | null },
   ): Promise<boolean> => {
     const agent = config.agent;
-    if ((agent === 'cursor' || agent === 'antigravity') && source?.deviceId) return false;
+    if (agent === 'cursor' && source?.deviceId) return false;
+    if (agent === 'antigravity' && source?.deviceId && isProviderShareAgentDeviceId(source.deviceId)) return false;
     if (creating || !selectedDeviceId) return false;
     const remoteDeviceId = source?.deviceId ?? null;
     const deviceAtStart = selectedDeviceId;

@@ -313,6 +313,7 @@ export function buildAntigravityAgent(
     },
     getEnv: configuredEnvironment,
     getDiscoveredCapabilities: currentCapabilities,
+    getCliVersion: () => readAntigravityCliVersion(executable),
     async prepareAcp(opts, memory) {
       if (!opts.sessionId) throw new Error('Antigravity requires a saved task.');
       const owner = getActiveAppSession().generation;
@@ -321,6 +322,11 @@ export function buildAntigravityAgent(
       try {
         await mkdir(stateDir, { mode: 0o700, recursive: true });
         if (owner !== getActiveAppSession().generation) throw new Error('The Agy task owner changed during startup.');
+        if (opts.deviceHosted) {
+          // Device-hosted tasks reach the task computer's MCP servers (`cindy_exec`, etc.)
+          // through the task's loopback tunnel; never expose this computer's local MCP bridge.
+          return { stateDir, dispose: release, servers: [] };
+        }
         const bridge = await getPiExtraSpawnConfig(providers, logger, {
           agentKind: 'antigravity',
           sessionId: opts.sessionId,
