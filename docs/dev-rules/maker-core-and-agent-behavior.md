@@ -1053,6 +1053,18 @@ Cursor 不走 system 段：`cursor-host.ts` 把共用正文与 `cursor-system-pr
 Cursor 补充因此只说明 Cindy 自动起标题、跳过要求调用 Cursor App `rename_chat` 的规则
 （2026-11-15 实测该类规则让首轮多绕约 10 秒去找不存在的工具）。
 
+Agy 补充 `antigravity-system-prompt.md` 由 `antigravity-host.ts` 作为 `localSystemPrompt` 交给
+maker-core，只追加到文件在本机的任务；同账号远程任务的 `cindy-remote` agent 没有自带的终端和
+文件工具，不追加。它说明 agy 终端沙箱的限制，并要求需要这些能力的命令首次就设 `BypassSandbox`。
+依据是 2026-11-21 对 agy 1.5.13 ACP auto 模式的实测：沙箱内断网（本机代理与 DNS 都不可用），
+不能读 `~/.ssh`、`~/.config/gh`、`~/Library/Application Support` 与任务外的项目目录，不能写
+npm／pnpm 缓存；命令先在沙箱失败再申请绕过时，agy 自带的安全模型复核加审批每次多约 20 秒。
+`--settings` 的 `enableTerminalSandbox`、项目设置的 `sandboxMode` 与 `internetPolicy` 在 auto
+模式下都放不开沙箱；改用 agy 默认模式、每条命令交 Cindy Auto 审核时，同一任务的 126 条命令只有
+9 条命中本地快速放行，其余要模型审核或每次确认，所以 Cindy Auto 档仍映射到 agy auto 模式。
+沙箱内的 `rg` 由 PATH 前置的安装包自带 ripgrep 提供（`antigravity-host.ts` 的
+`configuredEnvironment`）。回归见 Agy `index.test.ts` 与 `remote-workspace.test.ts`。
+
 这些内容均追加到引擎原生提示词，不替换原生规则。回归入口为 `runtimeConfigs.test.ts`、
 `piRosterAssembly.test.ts` 与 Headless 的 `prompt-parity.test.ts`。
 

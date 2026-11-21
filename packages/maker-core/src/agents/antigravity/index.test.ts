@@ -109,6 +109,7 @@ async function withAgy(run: (start: (overrides?: Partial<StartSessionOptions>) =
     runtimeConfig: { systemPrompt: 'Fixture product instructions' },
     prepareAcp: async () => ({ stateDir: dir, servers: [], dispose() {} }),
     getEnv: () => ({}),
+    localSystemPrompt: 'Fixture local shell notes',
     getDiscoveredCapabilities: () => undefined,
   });
   const handles: AgentSessionHandle[] = [];
@@ -155,7 +156,9 @@ describe('Agy ACP-only sessions', () => {
       }));
       expect(fresh.requests).toContainEqual(expect.objectContaining({
         method: 'session/new',
-        params: expect.objectContaining({ _meta: { antigravity: { systemPrompt: { append: 'Fixture product instructions' } } } }),
+        params: expect.objectContaining({
+          _meta: { antigravity: { systemPrompt: { append: 'Fixture product instructions\n\nFixture local shell notes' } } },
+        }),
       }));
       expect(spawnMock.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(['acp', '--process-per-session']));
       const events = await sendTurn(handle);

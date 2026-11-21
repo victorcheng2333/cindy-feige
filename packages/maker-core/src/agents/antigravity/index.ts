@@ -83,6 +83,8 @@ export interface AntigravityAgentDeps extends AgentDeps {
   prepareAcp(options: StartSessionOptions, memory: { enabled: boolean; scopeKey?: string }):
     Promise<{ stateDir: string; servers: AcpMcpServer[]; dispose(): void }>;
   getEnv(): NodeJS.ProcessEnv;
+  /** Instructions for Agy's own shell and file tools, which device-hosted tasks do not have. */
+  localSystemPrompt?: string;
   getDiscoveredCapabilities(): Capabilities | undefined;
   getCliVersion?(): Promise<string | null>;
 }
@@ -245,6 +247,7 @@ export class AntigravityAgent extends BaseAgent {
       const hostedRoster = hosted ? deviceHostedGhostRoster(hosted, opts.ghostRosterSnapshot, () => '') : '';
       const systemPromptAppend = [
         this.agyDeps.runtimeConfig.systemPrompt,
+        hosted ? undefined : this.agyDeps.localSystemPrompt,
         memory?.rules,
         memory?.index,
         hostedRoster,

@@ -256,6 +256,7 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
       runtimeConfig: { systemPrompt: 'Cindy instructions' },
       prepareAcp,
       getEnv: () => ({}),
+      localSystemPrompt: 'Local shell notes',
       getDiscoveredCapabilities: () => undefined,
       getCliVersion: async () => cliVersion,
     });
@@ -334,6 +335,10 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
 
       const sessionNew = proc.incoming.find(m => m.method === 'session/new');
       expect(sessionNew?.params).not.toHaveProperty('additionalDirectories');
+      // The remote agent has no shell of its own, so local sandbox instructions would contradict its tools.
+      const appended = JSON.stringify(sessionNew?.params?._meta);
+      expect(appended).toContain('Cindy instructions');
+      expect(appended).not.toContain('Local shell notes');
       const sentServers = (sessionNew?.params?.mcpServers as Array<{ name: string }>) ?? [];
       expect(sentServers.map(s => s.name)).toEqual(['cindy_exec', 'cindy_memory', 'cindy']);
 

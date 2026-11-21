@@ -11,6 +11,7 @@ import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
 import { antigravityStateDir, retainAntigravityTaskState } from './antigravity-state.js';
 import { getPiExtraSpawnConfig } from '../mcp-integrations/piEnvironment.desktop.js';
 import hostSystemPrompt from './host-system-prompt.md?raw';
+import antigravitySystemPrompt from './antigravity-system-prompt.md?raw';
 import { readUserPrompt } from './user-prompt-settings-store.js';
 import { parseBinaryVersionOutput } from '../agent-binaries/binary-version-probe.js';
 import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
@@ -312,6 +313,7 @@ export function buildAntigravityAgent(
       get userPrompt() { return readUserPrompt(); },
     },
     getEnv: configuredEnvironment,
+    localSystemPrompt: antigravitySystemPrompt,
     getDiscoveredCapabilities: currentCapabilities,
     getCliVersion: () => readAntigravityCliVersion(executable),
     async prepareAcp(opts, memory) {
