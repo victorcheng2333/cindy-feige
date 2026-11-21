@@ -2828,6 +2828,10 @@ export class AgentInputCoordinator {
             current.queueAbortPending || current.queueInteractionLocks.length > 0 ||
             current.steeringQueueClientIds.length > 0) return false;
       }
+      // Same user-send bookkeeping as the steer path below: user input outranks a
+      // prepared auto-resume, and only a user action releases a stopped report queue.
+      if (!isSchedulerOriginItem(item)) this.cancelPreparedAutoResume(sessionId, state);
+      if (opts?.touchUserSend) state.orcaReportsStopped = false;
       if (storedItem) {
         const index = state.pendingQueue.indexOf(storedItem);
         if (index < 0) return false;

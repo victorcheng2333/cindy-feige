@@ -6,9 +6,14 @@ import { createLogger } from '../logger.js';
 
 const log = createLogger('agy-task-state');
 
-function taskRoot(sessionId: string): string {
+/** The owner's Agy data root. Capture it while that owner is current; later paths derive from it. */
+export function antigravityOwnerRoot(): string {
+  return ownerScopedUserDataPath('antigravity');
+}
+
+function taskRoot(sessionId: string, ownerRoot = antigravityOwnerRoot()): string {
   const key = createHash('sha256').update(sessionId).digest('hex');
-  return ownerScopedUserDataPath('antigravity', 'acp', key);
+  return path.join(ownerRoot, 'acp', key);
 }
 
 export function antigravityStateDir(sessionId: string, workingDir: string): string {
@@ -50,12 +55,18 @@ export function retainAntigravityTaskState(sessionId: string): () => void {
   };
 }
 
-export async function removeAntigravityTaskState(sessionId: string, legacyWorkingDir?: string | null): Promise<void> {
-  const root = taskRoot(sessionId);
+/**
+ * `ownerRoot` comes from `antigravityOwnerRoot()` captured when the delete began, so
+ * an account switch during the delete still reclaims the deleting owner's folders.
+ */
+export async function removeAntigravityTaskState(
+  sessionId: string, legacyWorkingDir?: string | null, ownerRoot = antigravityOwnerRoot(),
+): Promise<void> {
+  const root = taskRoot(sessionId, ownerRoot);
   const task: TaskState = tasks.get(root) ?? { users: 0, removeRequested: false };
   if (legacyWorkingDir) {
     const key = createHash('sha256').update(JSON.stringify([sessionId, legacyWorkingDir])).digest('hex');
-    task.legacyRoot = ownerScopedUserDataPath('antigravity', 'sessions', key);
+    task.legacyRoot = path.join(ownerRoot, 'sessions', key);
   }
   task.removeRequested = true;
   tasks.set(root, task);

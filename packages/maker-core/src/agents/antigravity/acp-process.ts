@@ -1,8 +1,22 @@
 import { spawn } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { AcpConnection, methodNotFound } from '../acp/connection.js';
 import { ACP_PROTOCOL_VERSION, asRecord, normalizeInitializeResult } from '../acp/protocol.js';
 import { AcpLineDecoder, type AcpLineTransport, type AcpTransportClosed } from '../acp/line-transport.js';
+
+/**
+ * A fresh `--gemini_dir` lacks the default CLI project that agy reads on every tool
+ * call (it otherwise logs `missing project file` each time). Seed the same record agy
+ * writes in its own data directory; never overwrite one agy already keeps.
+ */
+export async function seedAgyStateDir(stateDir: string): Promise<void> {
+  const projects = path.join(stateDir, 'config', 'projects');
+  await mkdir(projects, { recursive: true, mode: 0o700 });
+  const record = { id: 'default-cli-project', name: 'CLI Project', projectResources: {}, updatedAt: new Date().toISOString() };
+  await writeFile(path.join(projects, 'default-cli-project.json'), JSON.stringify(record), { flag: 'wx', mode: 0o600 })
+    .catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+}
 
 export function startAgyAcpProcess(binary: string, cwd: string, stateDir: string, env: NodeJS.ProcessEnv) {
   const child = spawn(binary, [

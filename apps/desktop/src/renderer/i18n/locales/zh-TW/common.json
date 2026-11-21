@@ -14603,6 +14603,7 @@
       "alwaysAllowScoped": "本任務都允許 {{scope}}",
       "alwaysAllowScopedHint": "作用於整個任務，且只限這裡列出的範圍。",
       "rememberAcpApproval": "記住這次授權",
+      "acpAllowPersistsHint": "允許後，Agent 會記住這次授權。",
       "alwaysAllowSessionHint": "作用於整個任務，不只是這一次請求。",
       "autoReviewUnavailable": "自動審核未完成，請確認要不要允許這次操作。",
       "autoReviewReason": "自動審核需要你決定：{{reason}}",

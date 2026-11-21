@@ -1240,7 +1240,21 @@ export function readAcpPermissionChoices(suggestions: unknown): {
   };
 }
 
-/** ACP persistent grants require the exact native choice shown to the user. */
+/**
+ * True when the agent offers no one-time approval, so a plain Allow is answered
+ * with the agent's own persistent grant. Surfaces use this to say so on the card.
+ */
+export function acpAllowPersists(suggestions: unknown): boolean {
+  const choices = readAcpPermissionChoices(suggestions);
+  return !!choices && !choices.allowOnce && !!choices.rememberedAllow;
+}
+
+/**
+ * An explicit persistent selection must name the exact native choice shown to
+ * the user. A plain Allow is valid whenever the agent offers any allow choice:
+ * the host answers it once, or with the agent's persistent grant when that is
+ * the only allow choice (older clients and channel cards only send plain Allow).
+ */
 export function isAcpPermissionDecisionAvailable(suggestions: unknown, decision: unknown): boolean {
   const choices = readAcpPermissionChoices(suggestions);
   if (!choices || !isRecord(decision) || decision.kind !== 'permission' || decision.behavior !== 'allow') return true;
@@ -1248,7 +1262,7 @@ export function isAcpPermissionDecisionAvailable(suggestions: unknown, decision:
   const selection = updates.find(update => isRecord(update) && update.type === 'acp_permission_selection');
   return isRecord(selection)
     ? updates.length === 1 && selection.optionId === choices.rememberedAllow?.selection.optionId && !!choices.rememberedAllow
-    : choices.allowOnce;
+    : choices.allowOnce || !!choices.rememberedAllow;
 }
 
 export function buildPermissionDecision(

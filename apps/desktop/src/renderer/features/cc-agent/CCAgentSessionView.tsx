@@ -17,7 +17,7 @@ import { MessageReadAloudContext } from '@/components/chat/MessageReadAloudConte
 import { formatSessionDuration } from '@/lib/sessionDurationFormat';
 import { shouldShowOpenPathError } from '../../../shared/openPathResult';
 import { shouldShowFailedScheduleNotice } from '@cindy/maker-shared/schedule-model';
-import { readAcpPermissionChoices } from '@cindy/maker-shared/interaction';
+import { isAcpPermissionDecisionAvailable } from '@cindy/maker-shared/interaction';
 import { canContinueFailedTurn } from '@cindy/maker-shared/synthetic-trigger';
 /**
  * CCAgentSessionView
@@ -2159,7 +2159,8 @@ function CCAgentSessionContent({
       if (!sessionId || !ownsHardwareTaskActions) return false;
       if (action.commandId === 'approval.approve' || action.commandId === 'composer.submit') {
         if (pendingPermission) {
-          if (readAcpPermissionChoices(pendingPermission.suggestions)?.allowOnce !== false) {
+          // The host answers Allow with the agent's persistent grant when that is its only allow choice.
+          if (isAcpPermissionDecisionAvailable(pendingPermission.suggestions, { kind: 'permission', behavior: 'allow' })) {
             respondToPermission({ behavior: 'allow' });
           }
           return true;

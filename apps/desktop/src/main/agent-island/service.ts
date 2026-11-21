@@ -12,7 +12,7 @@ import {
 } from '@cindy/maker-core';
 import type { SchedulerEvent } from '@cindy/maker-scheduler';
 import { BRAND_NAME } from '@cindy/maker-shared/branding';
-import { readAcpPermissionChoices } from '@cindy/maker-shared/interaction';
+import { isAcpPermissionDecisionAvailable } from '@cindy/maker-shared/interaction';
 import {
   projectSessionActivity,
   type SessionActivitySnapshot,
@@ -601,7 +601,10 @@ export class AgentIslandService {
       return;
     }
 
-    if (action.action !== 'deny' && readAcpPermissionChoices(entry.request.suggestions)?.allowOnce === false) {
+    // Allow maps to the agent's persistent grant when that is its only allow
+    // choice; only a request without any allow choice needs the task view.
+    if (action.action !== 'deny' &&
+        !isAcpPermissionDecisionAvailable(entry.request.suggestions, { kind: 'permission', behavior: 'allow' })) {
       this.openTaskOverviewSession(entry.sessionId);
       return;
     }

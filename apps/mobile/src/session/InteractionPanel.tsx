@@ -867,8 +867,12 @@ function PermissionCard({
       variant="secondary"
     />
   );
-  const alwaysButton = !isPluginInstall && !permissionState.isHighRisk &&
-    (rememberedAllow || permissionState.canShowAlwaysAllow) ? (
+  // With no one-time choice the agent's remembered approval is the only way to
+  // allow, so high-risk requests still offer it (behind the two-tap confirm).
+  const rememberedOnly = !!rememberedAllow && acpChoices?.allowOnce === false;
+  const alwaysButton = !isPluginInstall && (rememberedAllow
+    ? !permissionState.isHighRisk || rememberedOnly
+    : permissionState.canShowAlwaysAllow) ? (
     <ResolveButton
       key="always"
       accessibilityLabel={rememberedAllow ? t('interaction.permission.rememberAcpApproval') : t('interaction.permission.alwaysAllowAccessibility')}
@@ -881,9 +885,9 @@ function PermissionCard({
         buildPermissionDecision('allow', { permissionUpdates: rememberedAllow ? [rememberedAllow.selection] : suggestions }),
       )}
       requestId={requestId}
-      touchStyle={resolveButtonLayoutStyle(touchLayout, 'secondary', companion)}
+      touchStyle={resolveButtonLayoutStyle(touchLayout, rememberedOnly ? 'primary' : 'secondary', companion)}
       testID="interaction.permission.alwaysAllowButton"
-      variant="secondary"
+      variant={rememberedOnly ? 'primary' : 'secondary'}
     />
   ) : null;
   const allowButton = (acpChoices?.allowOnce ?? true) ? (
@@ -934,7 +938,7 @@ function PermissionCard({
         disabled={busy} onPress={() => setShowInstallDetails(open => !open)} style={styles.companionDetailsButton}>
         <Text style={styles.companionDetailsText}>{t('interaction.companion.details')}</Text>
       </InteractionTouchButton>}
-      {acpChoices?.allowOnce === false && !alwaysButton &&
+      {acpChoices?.allowOnce === false && !alwaysButton && !allowRememberedAcpPermission &&
         <Text style={styles.body}>{t('sharedTask.waitingHost')}</Text>}
       {alwaysButton && rememberedAllow?.label ? <Text style={styles.body}>{rememberedAllow.label}</Text> : null}
     </>

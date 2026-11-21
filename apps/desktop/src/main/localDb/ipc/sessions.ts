@@ -9,7 +9,7 @@ import { captureSessionCreationCancellation } from '../sessionRuntimeCleanup.js'
 import { pagePermissionSessionChanged } from '../../mcp-apps/pagePermissions.js';
 import { scheduleNativeHistoryBackupCleanup } from '../../remote-agent/controller/nativeHistoryBackup.js';
 import { removeSessionModelInterface } from '../../maker-host/session-model-interface.js';
-import { removeAntigravityTaskState } from '../../maker-host/antigravity-state.js';
+import { antigravityOwnerRoot, removeAntigravityTaskState } from '../../maker-host/antigravity-state.js';
 import { isEndedWriteSuppressed } from '../sessionActiveTurn.js';
 import { ensureOpenedProjectGit, openSession } from '../sessionOpening.js';
 import {
@@ -475,7 +475,8 @@ async function deleteDependentSideChats(
       });
       scheduleWorktreeRecycleForStatusChange(child.sessionId, 'deleted', { ownerScope, mediaDb: dbClient.drizzle });
       notifyGhostSessionStatusChange(child.sessionId, 'deleted', child.workingDir);
-      cleanupSessionTerminalArtifacts(child.sessionId, 'deleted', { workingDir: child.workingDir });
+      // The owner was confirmed current just above, so its Agy folder is the right one.
+      cleanupSessionTerminalArtifacts(child.sessionId, 'deleted', { workingDir: child.workingDir, ownerRoot: antigravityOwnerRoot() });
       compactTerminalSessionToolResults(dbClient, child.sessionId, 'deleted');
     }
     return;
@@ -1764,6 +1765,8 @@ export async function updateSessionInDb(
     throwIpcError('INVALID_PARAMS', 'cannot change workingDir when discarding worktree changes');
   }
   const ownerScope = captureOwnerScope();
+  // Resolve the deleting owner's Agy folder now; the owner may change before cleanup runs.
+  const agyOwnerRoot = p.status === 'deleted' ? antigravityOwnerRoot() : undefined;
   if (p.extraDirs !== undefined || p.writableDirs !== undefined) {
     throwIpcError(
       'UNSUPPORTED_CAPABILITY',
@@ -2203,7 +2206,7 @@ export async function updateSessionInDb(
         }
       }
     }
-    cleanupSessionTerminalArtifacts(sid, p.status, isOwnerScopeCurrent(ownerScope) ? { workingDir: updated.workingDir } : undefined);
+    cleanupSessionTerminalArtifacts(sid, p.status, agyOwnerRoot ? { workingDir: updated.workingDir, ownerRoot: agyOwnerRoot } : undefined);
     compactTerminalSessionToolResults(dbClient, sid, p.status);
     if (p.status === 'deleted' && updated.source !== 'side-chat') await deleteDependentSideChats(sid, dbClient, ownerScope, deletedSideChats);
     return updated;
@@ -2246,6 +2249,8 @@ export async function patchSessionMetaInDb(
 ): Promise<ReturnType<typeof sessionToCamel>> {
   const ownerScope = captureOwnerScope();
   const { discardWorktreeChanges: discardRequested, ...patch } = rawPatch;
+  // Resolve the deleting owner's Agy folder now; the owner may change before cleanup runs.
+  const agyOwnerRoot = patch.status === 'deleted' ? antigravityOwnerRoot() : undefined;
   const discardWorktreeChanges = validateDiscardWorktreeChanges(discardRequested, patch.status);
   validateSnoozeTime(patch.snoozedUntil);
   for (const k of Object.keys(rawPatch)) {
@@ -2359,7 +2364,7 @@ export async function patchSessionMetaInDb(
       });
     });
   }
-  cleanupSessionTerminalArtifacts(sessionId, patch.status, isOwnerScopeCurrent(ownerScope) ? { workingDir: updated.workingDir } : undefined);
+  cleanupSessionTerminalArtifacts(sessionId, patch.status, agyOwnerRoot ? { workingDir: updated.workingDir, ownerRoot: agyOwnerRoot } : undefined);
   if (!options.preserveFiles) scheduleWorktreeRecycleForStatusChange(sessionId, patch.status, { ownerScope, mediaDb: db });
   notifyGhostSessionStatusChange(sessionId, patch.status, updated.workingDir);
   // 远程 / MCP 改动绕过 renderer 乐观更新,故主动广播 sessions:patched:
@@ -2929,13 +2934,15 @@ function removeImAttachmentsIfStillDeleted(sessionId: string): Promise<void> {
   });
 }
 
-function cleanupSessionTerminalArtifacts(sessionId: string, status: unknown, agyCleanup?: { workingDir?: string | null }): void {
+function cleanupSessionTerminalArtifacts(
+  sessionId: string, status: unknown, agyCleanup?: { workingDir?: string | null; ownerRoot: string },
+): void {
   if (status !== 'deleted' && status !== 'archived') return;
   if (status === 'deleted') {
     if (agyCleanup) {
       // A task can retain Agy state after switching harnesses. The hashed task
       // identity and captured owner scope are the authority for reclamation.
-      void removeAntigravityTaskState(sessionId, agyCleanup.workingDir).catch(() => {
+      void removeAntigravityTaskState(sessionId, agyCleanup.workingDir, agyCleanup.ownerRoot).catch(() => {
         log.warn('Agy task state cleanup failed', { sessionId });
       });
     }

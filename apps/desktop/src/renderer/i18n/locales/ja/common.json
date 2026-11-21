@@ -14603,6 +14603,7 @@
       "alwaysAllowScoped": "このセッションでは {{scope}} を常に許可",
       "alwaysAllowScopedHint": "このセッション全体に適用され、ここに挙げた範囲にのみ及びます。",
       "rememberAcpApproval": "この許可を記憶",
+      "acpAllowPersistsHint": "許可すると、エージェントがこの許可を記憶します。",
       "alwaysAllowSessionHint": "この 1 回のリクエストだけでなく、このセッション全体に適用されます。",
       "autoReviewUnavailable": "自動レビューを完了できませんでした。この操作を許可するか確認してください。",
       "autoReviewReason": "自動レビューがあなたの判断を求めています：{{reason}}",

@@ -190,6 +190,21 @@ describe('sharedTask dispatch scope', () => {
     expect(() => assertSharedTaskInvoke(capture(), { channel: 'maker:resolve-interaction', args })).toThrow('PERMISSION_DENIED');
     expect(() => assertSharedTaskInteractionResolveCurrent(capture(), args)).toThrow('PERMISSION_DENIED');
   });
+  // The host answers a plain Allow on a remembered-only ACP request with the agent's
+  // persistent grant. Only the owner may create that; a guest Deny still works.
+  it('rejects a guest Allow when the agent only offers a remembered approval', () => {
+    const request: SharedTaskInteractionCapture = { sessionId: 'task', kind: 'permission', toolName: 'Write', suggestions: [
+      { type: 'acp_permission_choices', allowOnce: false, rememberedAllow: { name: 'Always', optionId: 'always' } },
+    ] };
+    setSharedTaskInteractionReader(() => request);
+    const allow = ['permission-1', { kind: 'permission', behavior: 'allow' }];
+    expect(() => assertSharedTaskInvoke(capture(), { channel: 'maker:resolve-interaction', args: allow })).toThrow('PERMISSION_DENIED');
+    expect(() => assertSharedTaskInteractionResolveCurrent(capture(), allow)).toThrow('PERMISSION_DENIED');
+    const deny = ['permission-1', { kind: 'permission', behavior: 'deny' }];
+    expect(() => assertSharedTaskInteractionResolveCurrent(capture(), deny)).not.toThrow();
+    request.suggestions = [{ type: 'acp_permission_choices', allowOnce: true }];
+    expect(() => assertSharedTaskInteractionResolveCurrent(capture(), allow)).not.toThrow();
+  });
   it('accepts the host-provided Codex session approval, but rejects an unsolicited one', () => {
     const update = { type: 'codexSessionApproval', destination: 'session' };
     const request: SharedTaskInteractionCapture = { sessionId: 'task', kind: 'permission', toolName: 'Shell', suggestions: [update] };

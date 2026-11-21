@@ -3,6 +3,7 @@ import type { SharedTaskHost } from './sharedTaskHost.js';
 import * as subscriptions from './subscriptions.js';
 import { normalizeWorkingDirForStorage } from '../../shared/workingDir.js';
 import { OWNER_ONLY_HOST_CONFIRMATION_TOOL_NAMES } from '../agent-app-update/constants.js';
+import { acpAllowPersists } from '@cindy/maker-shared/interaction';
 
 export type SharedTaskPeerCapture = NonNullable<ReturnType<SharedTaskHost['capturePeer']>>;
 export interface SharedTaskInteractionCapture {
@@ -186,6 +187,10 @@ function assertSharedTaskInteractionResolve(
   } else if (!record(decision.answers)) {
     deny();
   }
+  // An allow-always-only ACP request turns Allow into the agent's persistent
+  // grant. Only the task owner may create one; guests wait for the host.
+  if (phase === 'invoke' && interaction?.kind === 'permission' && decision.behavior === 'allow' &&
+      acpAllowPersists(interaction.suggestions)) deny();
   if (phase === 'invoke' && interaction) assertSharedTaskPermissionUpdates(decision, interaction);
   if (!capture.authorize('approval.resolve')) deny();
 }

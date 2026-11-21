@@ -40,4 +40,9 @@ it('preserves independent five-hour and weekly model-group readings', () => {
   const bounded = parseAntigravityQuota(JSON.stringify(oversized), 12);
   expect(bounded?.windows).toHaveLength(32);
   expect(bounded?.windows[0]).toEqual({ group: 'Model group 0', minutes: 300, remaining: 50, resetsAtMs: null });
+  // Real group labels may use underscores, colons or apostrophes; only control characters are dropped.
+  const punctuated = parseAntigravityQuota(JSON.stringify({ ...report, command: { name: 'usage', data: { groups: [
+    { name: 'gemini_3_pro', buckets }, { name: 'Pro: Thinking', buckets }, { name: "Today's", buckets },
+  ] } } }), 12);
+  expect(punctuated?.windows.map(window => window.group)).toEqual(['gemini_3_pro', 'Pro: Thinking', "Today's"]);
 });

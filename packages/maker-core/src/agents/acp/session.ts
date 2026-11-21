@@ -695,10 +695,13 @@ export class AcpSession {
     const toolCall = normalizeToolCallFields(params.toolCall) ?? { toolCallId: `acp-permission-${this.permissionSeq + 1}` };
     this.emit(this.translator.noteToolCall(toolCall));
     // Only the agent can define the lifetime and scope of a persistent grant.
+    // When it offers no one-time approval, Allow (and Full access) answers with
+    // that grant; the cards say so via `acp_permission_choices.allowOnce: false`.
     const allowOnce = firstOfKind(options, ['allow_once']);
     const rememberedAllow = firstOfKind(options, ['allow_always']);
+    const plainAllow = allowOnce ?? rememberedAllow;
     const reject = firstOfKind(options, ['reject_once']);
-    if (this.permissionMode === 'bypassPermissions' && allowOnce) return selected(allowOnce);
+    if (this.permissionMode === 'bypassPermissions' && plainAllow) return selected(plainAllow);
     const resolver = this.resolver;
     if (!resolver) return selected(reject);
 
@@ -738,7 +741,7 @@ export class AcpSession {
         const option = options.find(option => option.kind === 'allow_always' && option.optionId === choice.optionId);
         return selected(option ?? reject);
       }
-      return selected(allowOnce ?? reject);
+      return selected(plainAllow ?? reject);
     } catch (error) {
       if (controller.signal.aborted) return { outcome: 'cancelled' };
       this.logger?.warn('acp: permission resolver failed; rejecting', { error: String(error) });
@@ -773,6 +776,11 @@ export class AcpSession {
   private updateConfigValue(configId: string, value: string, reportPlanChange = false): void {
     const options = this.configOptions.map(option => option.id === configId ? { ...option, currentValue: value } : option);
     this.setConfigOptions(options, reportPlanChange);
+  }
+
+  /** Tells the host that a requested Plan mode is not in effect for this session. */
+  reportPlanModeOff(): void {
+    this.emit([{ type: 'plan_mode_changed', data: { enabled: false } }]);
   }
 
   private replaceConfigOptions(raw: unknown[], reportPlanChange = false): void {

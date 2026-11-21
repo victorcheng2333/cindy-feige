@@ -26,8 +26,10 @@ export function parseAntigravityQuota(stdout: string, fetchedAtMs: number): Anti
 
   const windows = new Map<string, AntigravityQuotaWindow>();
   groupsLoop: for (const group of groups) {
+    // Keep any readable label (e.g. `gemini_3_pro`, `Pro: Thinking`); drop control and
+    // invisible format characters, and bound the length shown in the UI and the cats.
     const name = typeof group?.name === 'string' ? group.name.trim() : '';
-    if (!/^[\p{L}\p{N}][\p{L}\p{N} ().,+&/-]{0,79}$/u.test(name) || !Array.isArray(group.buckets)) continue;
+    if (!/^[^\p{C}]{1,80}$/u.test(name) || !/[\p{L}\p{N}]/u.test(name) || !Array.isArray(group.buckets)) continue;
     for (const bucket of group.buckets) {
       const minutes = bucket?.window === '5h' ? 300 : bucket?.window === 'weekly' ? 10080 : undefined;
       const fraction = bucket?.remaining_fraction;

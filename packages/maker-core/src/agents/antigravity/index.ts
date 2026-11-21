@@ -14,7 +14,7 @@ import type { Capabilities } from '../../types/capabilities.js';
 import type { Effort, PermissionMode } from '../../types/common.js';
 import { openAcpSession, type AcpSession } from '../acp/session.js';
 import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
-import { startAgyAcpProcess } from './acp-process.js';
+import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
 import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
 import { loadMemoryContext } from '../../memory/context.js';
 import { resolveMemoryScopeKey } from '../../memory/scope-resolver.js';
@@ -75,6 +75,7 @@ export async function probeAntigravityCatalog(binary: string, root: string, env:
   const directory = await mkdtemp(path.join(root, 'catalog-'));
   let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
   try {
+    await seedAgyStateDir(directory);
     endpoint = startAgyAcpProcess(binary, directory, directory, env);
     const session = await openAcpSession({
       agentKind: 'antigravity', transport: endpoint.transport, cwd: directory,
@@ -128,8 +129,17 @@ export class AntigravityAgent extends BaseAgent {
     super(agyDeps);
   }
 
+  private builtCapabilities?: { source: Capabilities; additions: unknown; built: Capabilities };
+
+  /** Rebuilt only when discovery publishes a new snapshot, so repeated reads share one object. */
   get capabilities(): Capabilities {
-    return this.buildCapabilities(this.agyDeps.getDiscoveredCapabilities() ?? ANTIGRAVITY_CAPABILITIES);
+    const source = this.agyDeps.getDiscoveredCapabilities() ?? ANTIGRAVITY_CAPABILITIES;
+    const additions = this.deps.capabilityAdditions;
+    const cached = this.builtCapabilities;
+    if (cached?.source === source && cached.additions === additions) return cached.built;
+    const built = this.buildCapabilities(source);
+    this.builtCapabilities = { source, additions, built };
+    return built;
   }
 
   async startSession(opts: StartSessionOptions): Promise<AgentSessionHandle> {
@@ -164,6 +174,7 @@ export class AntigravityAgent extends BaseAgent {
       // Only identities written by ACP can enter session/resume.
       const saved = opts.resumeSessionId ? await readAcpIdentity(marker) : undefined;
       const resumeSessionId = saved === opts.resumeSessionId ? saved : undefined;
+      await seedAgyStateDir(stateDir);
       endpoint = startAgyAcpProcess(this.deps.binaryPath, cwd, stateDir, this.agyDeps.getEnv());
       void endpoint.whenStopped.then(() => taskBridge.dispose()).catch(() => {
         this.agyDeps.logger.warn('Could not release the Agy MCP bridge');
@@ -202,10 +213,10 @@ export class AntigravityAgent extends BaseAgent {
         }
       };
       session.setPermissionModeAfterPlan(mode);
-      const wantsPlan = opts.planMode ?? opts.permissionMode === 'plan';
-      if (wantsPlan && !session.capabilities.planMode?.supported) {
-        throw new Error('Agy did not offer Plan mode for this task. Turn off Plan to send in the regular mode.');
-      }
+      // The host may have read Plan from an earlier catalog. Start this task in its
+      // regular mode instead of failing, and let the host turn the saved Plan off.
+      const wantsPlan = (opts.planMode ?? opts.permissionMode === 'plan') && !!session.capabilities.planMode?.supported;
+      if ((opts.planMode ?? opts.permissionMode === 'plan') && !wantsPlan) session.reportPlanModeOff();
       await session.setPermissionMode(wantsPlan ? 'plan' : mode);
       await setModel(opts.model, opts.effort);
       if (!resumeSessionId) await writeFile(marker, session.nativeId, { mode: 0o600 });

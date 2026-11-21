@@ -189,6 +189,22 @@ describe('Agy ACP-only sessions', () => {
     });
   });
 
+  it('starts in the regular mode and turns the saved Plan off when this task offers no Plan', async () => {
+    // The host may have enabled Plan from an earlier catalog; the task must still start.
+    await withAgy(async start => {
+      const child = new AgyProcess('no-plan', 'Ready', false, {
+        model: ['gemini-4-neon'], thought_level: ['high'], mode: ['default'],
+      });
+      const handle = await start({ planMode: true });
+      expect(handle.getPlanMode?.()).toBe(false);
+      expect(child.requests.some(request => request.method === 'session/set_config_option'
+        && (request.params as { value?: unknown }).value === 'plan')).toBe(false);
+      const events = await sendTurn(handle);
+      expect(events).toContainEqual(expect.objectContaining({ type: 'plan_mode_changed', data: { enabled: false } }));
+      expect(events.at(-1)).toMatchObject({ type: 'done' });
+    });
+  });
+
   it('writes one turn receipt without counting cached input or thinking twice', async () => {
     await withAgy(async start => {
       new AgyProcess('acp-usage');

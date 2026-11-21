@@ -423,36 +423,36 @@ describe('AcpSession permissions', () => {
     expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } });
   });
 
-  it('does not convert allow once into persistent permission when the agent only offers the latter', async () => {
+  it('answers a plain Allow with the remembered grant when the agent offers no one-time approval', async () => {
+    // Channel cards, Agent Island and older clients can only send a plain Allow.
     const agent = createFakeAgent();
     const { session } = await open(agent, { permissionMode: 'ask' });
-    session.setInteractionResolver(async () => ({ kind: 'permission', behavior: 'allow' }));
+    const seen: InteractionRequest[] = [];
+    session.setInteractionResolver(async (request) => {
+      seen.push(request);
+      return { kind: 'permission', behavior: 'allow' };
+    });
     const answer = await agent.requestPermission({
-      toolCall: { toolCallId: 'once-only', title: 'Write' },
+      toolCall: { toolCallId: 'remembered-only', title: 'Write' },
       options: PERMISSION_OPTIONS.filter((option) => option.kind !== 'allow_once'),
     });
-    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } });
+    expect(seen[0]).toMatchObject({
+      suggestions: [{ type: 'acp_permission_choices', allowOnce: false, rememberedAllow: { optionId: 'always' } }],
+    });
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'always' } });
+    await session.close();
   });
 
-  it('uses an explicit remembered choice when only that approval is offered, even in Full access', async () => {
+  it('Full access approves a remembered-only request without asking', async () => {
     const agent = createFakeAgent();
     const { session } = await open(agent, { permissionMode: 'bypassPermissions' });
-    const resolvePermission = vi.fn(async (request: InteractionRequest): Promise<InteractionDecision> => {
-      expect(request).toMatchObject({
-        kind: 'permission',
-        suggestions: [{ type: 'acp_permission_choices', allowOnce: false, rememberedAllow: { optionId: 'always' } }],
-      });
-      return {
-        kind: 'permission', behavior: 'allow',
-        permissionUpdates: [{ type: 'acp_permission_selection', optionId: 'always' }],
-      };
-    });
+    const resolvePermission = vi.fn(async (): Promise<InteractionDecision> => ({ kind: 'permission', behavior: 'deny' }));
     session.setInteractionResolver(resolvePermission);
     const answer = await agent.requestPermission({
       toolCall: { toolCallId: 'remembered', title: 'Write' },
       options: PERMISSION_OPTIONS.filter(option => option.kind !== 'allow_once'),
     });
-    expect(resolvePermission).toHaveBeenCalledOnce();
+    expect(resolvePermission).not.toHaveBeenCalled();
     expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'always' } });
     await session.close();
   });

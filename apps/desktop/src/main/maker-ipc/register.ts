@@ -7421,6 +7421,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       supportsAntigravitySessionSwitch: true,
       supportsControlledAntigravityDraftPrewarm: agentKind === 'antigravity' && isSameAccountTaskController(),
       supportsControlledAntigravityCreation: agentKind === 'antigravity' && isSameAccountTaskController(),
+      // Agy startSession falls back to Default and persists it; old hosts reject unoffered modes.
+      supportsAntigravityPermissionFallback: agentKind === 'antigravity',
       supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
       // Mobile 据此对已知受压缩窗降级为 fail closed。
@@ -23814,7 +23816,10 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         if (!row) throwIpcError('NOT_FOUND', 'session not found');
         const sess = maker.getSession(sessionId);
         if (!sess && enabled && row.agentKind === 'antigravity') {
-          const capabilities = maker.getCapabilities('antigravity');
+          // Agy is unregistered when its CLI is missing; report that as unsupported, not internal.
+          let capabilities: ReturnType<typeof maker.getCapabilities> | undefined;
+          try { capabilities = maker.getCapabilities('antigravity'); } catch { capabilities = undefined; }
+          if (!capabilities) throwIpcError('UNSUPPORTED_CAPABILITY', 'Agy is not available on this computer.');
           if (capabilities.availableModels.length && !capabilities.planMode?.supported) {
             throwIpcError('UNSUPPORTED_CAPABILITY', 'Agy does not offer Plan mode.');
           }

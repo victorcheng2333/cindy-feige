@@ -14603,6 +14603,7 @@
       "alwaysAllowScoped": "此差事恆許 {{scope}}",
       "alwaysAllowScopedHint": "及於整個差事，且僅限此處所列之範圍。",
       "rememberAcpApproval": "記此許可",
+      "acpAllowPersistsHint": "許之，則 Agent 記此許可。",
       "alwaysAllowSessionHint": "及於整個差事，不止此一請求。",
       "autoReviewUnavailable": "自動審批未竟，請確認是否許此舉。",
       "autoReviewReason": "自動審批須君定奪：{{reason}}",

@@ -73,6 +73,8 @@ export interface NewSessionCreationPreparationInput {
     intent: WorktreeCreateIntentSnapshot,
   ) => boolean;
   runtimeOptions: Pick<MobileSessionRuntimeOptions, "permissionOptions">;
+  /** The target host falls back to Default itself when Agy lacks the requested mode. */
+  hostFallsBackAgyPermission?: boolean;
   prePlanPermissionModeRef: RefObject<string | null>;
   planModeCapability: boolean;
   planModeDraftOn: boolean;
@@ -164,11 +166,12 @@ export async function prepareNewSessionCreation(
   if (recovering && recovering.deviceId !== selectedDeviceId) {
     throw new Error(t("session.outbox.recoveryTarget"));
   }
-  if (effectiveDraft.agentKind === 'antigravity' &&
+  if (effectiveDraft.agentKind === 'antigravity' && !input.hostFallsBackAgyPermission &&
       (effectiveDraft.permissionMode === 'auto' || effectiveDraft.permissionMode === 'acceptEdits') &&
       runtimeOptions.permissionOptions.some(option => option.id === 'default') &&
       !runtimeOptions.permissionOptions.some(option => option.id === effectiveDraft.permissionMode)) {
-    // Send a mode the execution computer accepts, including during a staged mobile/desktop rollout.
+    // Older hosts reject modes Agy did not offer. Newer hosts fall back themselves, so the
+    // user's Auto choice survives a catalog that was not yet (or could not be) read.
     effectiveDraft = { ...effectiveDraft, permissionMode: 'default' };
   }
   if (

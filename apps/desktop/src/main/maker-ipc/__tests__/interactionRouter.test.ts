@@ -12,6 +12,7 @@ import {
   type InteractionHandler,
 } from '../interactionRouter';
 import { beginUnattendedTurn } from '../../mcp-integrations/unattendedTurn';
+import { t } from '../../i18n.desktop.js';
 import { takeUnattendedPlanReviewDeclines } from '../../mcp-integrations/unattendedTurn';
 
 function permission(requestId: string): InteractionRequest {
@@ -47,14 +48,13 @@ function makeSession() {
 }
 
 describe('session interaction router', () => {
-  // The channel only has a generic Allow button. It must not settle a request
-  // whose approval would remember a grant; the task shows the native choice.
-  it('routes a remembered-only ACP approval to the task card', async () => {
+  // A remembered-only ACP approval stays on the IM card: its plain Allow is answered
+  // with the agent's grant by the host, so the card must say the approval is remembered.
+  it('shows a remembered-only ACP approval on the channel card with a persistence note', async () => {
     const host = makeSession();
-    const decision = { kind: 'permission', behavior: 'allow',
-      permissionUpdates: [{ type: 'acp_permission_selection', optionId: 'remember' }] } as const;
-    const desktop = vi.fn<InteractionHandler>(async () => ({ ...decision, permissionUpdates: [...decision.permissionUpdates] }));
-    const channel = vi.fn<InteractionHandler>();
+    const allow = { kind: 'permission', behavior: 'allow' } as const;
+    const desktop = vi.fn<InteractionHandler>();
+    const channel = vi.fn<InteractionHandler>(async () => allow);
     installDesktopInteractionHandler(host.session, desktop);
     const lease = beginInteractionRoute(host.session, {
       route: { sessionId: host.session.id, turnId: 'im-turn', origin: { kind: 'hook', source: 'telegram' },
@@ -65,9 +65,10 @@ describe('session interaction router', () => {
       suggestions: [{ type: 'acp_permission_choices', allowOnce: false,
         rememberedAllow: { name: 'Always allow this file', optionId: 'remember' } }],
     };
-    await expect(host.dispatch(request)).resolves.toEqual(decision);
-    expect(desktop).toHaveBeenCalledWith(request);
-    expect(channel).not.toHaveBeenCalled();
+    await expect(host.dispatch(request)).resolves.toEqual(allow);
+    expect(channel).toHaveBeenCalledOnce();
+    expect((channel.mock.calls[0]![0] as { description?: string }).description).toBe(t('newChat.permissionPrompt.acpAllowPersistsHint'));
+    expect(t('newChat.permissionPrompt.acpAllowPersistsHint')).not.toBe('newChat.permissionPrompt.acpAllowPersistsHint');
     lease.release();
   });
   // Regression: IM turn cleanup consumed async questions before a person could answer.

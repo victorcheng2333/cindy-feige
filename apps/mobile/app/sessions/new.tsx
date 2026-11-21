@@ -4239,6 +4239,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         ensureDeviceAlive,
         isWorktreeCreateIntentCurrent,
         runtimeOptions,
+        hostFallsBackAgyPermission: capabilities?.supportsAntigravityPermissionFallback === true,
         prePlanPermissionModeRef,
         planModeCapability,
         planModeDraftOn,

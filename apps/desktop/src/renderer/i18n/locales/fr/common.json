@@ -14773,6 +14773,7 @@
       "alwaysAllowScoped": "Toujours autoriser {{scope}} dans cette session",
       "alwaysAllowScopedHint": "S'applique à toute la session, et uniquement à ce qui est listé ici.",
       "rememberAcpApproval": "Mémoriser l’autorisation",
+      "acpAllowPersistsHint": "Si vous autorisez, l’Agent mémorisera cette autorisation.",
       "alwaysAllowSessionHint": "S'applique à toute la session, pas seulement à cette demande.",
       "autoReviewUnavailable": "La revue automatique n'a pas pu aboutir. Confirmez si vous autorisez cette action.",
       "autoReviewReason": "La revue automatique nécessite votre décision : {{reason}}",

@@ -35,6 +35,8 @@ export interface MobileAgentCapabilities {
   supportsControlledAntigravityCreation?: boolean;
   supportsAntigravitySessionSwitch?: boolean;
   supportsControlledAntigravityDraftPrewarm?: boolean;
+  /** Host falls back to Default itself when Agy does not offer the requested mode; old hosts omit it and reject. */
+  supportsAntigravityPermissionFallback?: boolean;
   /** host 是否支持创建 Orca Worker 时显式选择 Worker 权限；旧 host 缺省 false(不得开启协同)。 */
   supportsOrcaWorkerPermissionMode?: boolean;
   /** host 是否支持创建后修改 Orca Worker 的角色名/标识(update_worker)；旧 host 缺省 false。 */
@@ -200,6 +202,7 @@ export function normalizeMobileAgentCapabilities(value: unknown): MobileAgentCap
     supportsControlledAntigravityCreation: value.supportsControlledAntigravityCreation === true,
     supportsAntigravitySessionSwitch: value.supportsAntigravitySessionSwitch === true,
     supportsControlledAntigravityDraftPrewarm: value.supportsControlledAntigravityDraftPrewarm === true,
+    supportsAntigravityPermissionFallback: value.supportsAntigravityPermissionFallback === true,
     supportsModelWindowSwitchGuard: value.supportsModelWindowSwitchGuard === true,
     supportsRemoteModelWindowRebuild: value.supportsRemoteModelWindowRebuild === true,
     supportsOrcaWorkerPermissionMode: value.supportsOrcaWorkerPermissionMode === true,

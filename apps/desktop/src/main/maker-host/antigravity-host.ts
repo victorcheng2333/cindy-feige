@@ -26,6 +26,7 @@ function configuredEnvironment() {
 export function refreshAntigravityProxyRouting(): void {
   snapshot = undefined;
   discovery = undefined;
+  discoveryFailures = undefined;
   quota = undefined;
   quotaRead = undefined;
   void readAntigravityConnection({ allowSideEffects: true }).catch(() => undefined);
@@ -56,6 +57,12 @@ let snapshot: {
   failure: ProviderModelDiscoveryFailure | null;
 } | undefined;
 let discovery: { scope: string; token: symbol; retainOnFailure: boolean; promise: Promise<boolean> } | undefined;
+// Each probe starts an Agy process and a native session. Proxy, sign-in and CLI
+// changes clear the cache, so a good catalog can live for hours and failures back off.
+const DISCOVERY_SUCCESS_TTL_MS = 6 * 60 * 60_000;
+const DISCOVERY_FAILURE_TTL_MS = 30_000;
+const DISCOVERY_FAILURE_MAX_TTL_MS = 10 * 60_000;
+let discoveryFailures: { scope: string; count: number } | undefined;
 let quota: { scope: string; expiresAt: number; connected: boolean; snapshot: AntigravityQuotaSnapshot | null } | undefined;
 let quotaRead: { scope: string; token: symbol; promise: Promise<AntigravityQuotaSnapshot | null> } | undefined;
 
@@ -204,7 +211,12 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     // the CLI explicitly reports that it cannot use the saved sign-in.
     const retainedCapabilities = failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope
       ? snapshot.capabilities : failure ? undefined : capabilities;
-    snapshot = { scope, capabilities: retainedCapabilities, failure, expiresAt: now + (failure ? 30_000 : 30 * 60_000) };
+    const failures = failure ? (discoveryFailures?.scope === scope ? discoveryFailures.count : 0) + 1 : 0;
+    discoveryFailures = failures ? { scope, count: failures } : undefined;
+    const ttl = failure
+      ? Math.min(DISCOVERY_FAILURE_TTL_MS * 2 ** (failures - 1), DISCOVERY_FAILURE_MAX_TTL_MS)
+      : DISCOVERY_SUCCESS_TTL_MS;
+    snapshot = { scope, capabilities: retainedCapabilities, failure, expiresAt: now + ttl };
     notifyLocalHarnessProviderChanged();
     return !failure && !!capabilities?.availableModels.length;
   })();
