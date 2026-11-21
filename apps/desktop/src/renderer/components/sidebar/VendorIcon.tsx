@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+import { AntigravityMark } from '@/components/icons/AntigravityMark';
 import { CursorMark } from '@/components/icons/CursorMark';
 /**
  * VendorIcon — sidebar session 行的 Agent 身份 + running 状态指示器
@@ -86,7 +86,7 @@ export function VendorIcon({
 
   return (
     <span className={wrapperClassName} title={title}>
-      {vendor === 'antigravity' ? <Sparkles size={size} /> : vendor === 'cursor' ? <CursorMark size={size} /> : vendor === 'codex' ? (
+      {vendor === 'antigravity' ? <AntigravityMark size={size} /> : vendor === 'cursor' ? <CursorMark size={size} /> : vendor === 'codex' ? (
         <CodexMark size={size} />
       ) : vendor === 'pi' ? (
         <span
