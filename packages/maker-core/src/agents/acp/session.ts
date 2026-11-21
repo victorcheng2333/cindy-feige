@@ -47,6 +47,7 @@ import {
   type AcpMcpServer,
   type AcpPermissionOption,
   type AcpPermissionOutcome,
+  type AcpPromptUsage,
   type AcpRecord,
   type AcpToolCallFields,
 } from './protocol.js';
@@ -120,6 +121,12 @@ export interface OpenAcpSessionOptions {
    * the reviewer's reason. Not consulted in other modes or in Plan.
    */
   reviewPermission?: (toolCall: AcpToolCallFields, signal: AbortSignal) => Promise<AutoReviewDecision>;
+  /**
+   * The agent steers a running turn when it receives another `session/prompt` (agy 1.5.x).
+   * The earlier request then returns `end_turn` without usage at once; only the newest
+   * request ends the turn, so its result (with usage) closes the Cindy turn.
+   */
+  steerByPrompt?: boolean;
 }
 
 export type AcpResumeOutcome = 'new' | 'resumed' | 'loaded';
@@ -282,6 +289,20 @@ interface ActiveTurn {
   token: number;
   settled: boolean;
   cancelTimer: ReturnType<typeof setTimeout> | null;
+  /** Newest `session/prompt` serving this turn; only its result ends the turn. */
+  lease: number;
+  /** Usage reported by every request of this turn (superseded ones report none). */
+  usage?: AcpPromptUsage;
+}
+
+function addUsage(total: AcpPromptUsage | undefined, next: AcpPromptUsage): AcpPromptUsage {
+  if (!total) return next;
+  return {
+    inputTokens: total.inputTokens + next.inputTokens,
+    outputTokens: total.outputTokens + next.outputTokens,
+    cacheReadTokens: total.cacheReadTokens + next.cacheReadTokens,
+    cacheWriteTokens: total.cacheWriteTokens + next.cacheWriteTokens,
+  };
 }
 
 interface AcpSessionInit {
@@ -345,6 +366,7 @@ export class AcpSession {
   private readonly cancelGraceMs: number;
   private readonly onEnded: (() => void) | undefined;
   private readonly reviewPermission: OpenAcpSessionOptions['reviewPermission'];
+  private readonly steerByPrompt: boolean;
   private readonly queue = createAsyncQueue<AgentEvent>();
   private readonly translator: AcpUpdateTranslator;
   private readonly pendingPrompts: AcpContentBlock[][] = [];
@@ -387,6 +409,7 @@ export class AcpSession {
     this.cancelGraceMs = init.options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS;
     this.onEnded = init.options.onEnded;
     this.reviewPermission = init.options.reviewPermission;
+    this.steerByPrompt = init.options.steerByPrompt === true;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
     this.translator = new AcpUpdateTranslator({
       blockIdPrefix: `acp-${init.sessionId}`, classifyWarning: init.options.classifyWarning,
@@ -476,9 +499,27 @@ export class AcpSession {
     return accepted;
   }
 
-  /** Same-turn steering is not part of ACP v1; the input becomes the next turn. */
-  async steer(message: UserMessage): Promise<void> {
-    await this.send(message);
+  /**
+   * Same-turn steering is not part of ACP v1. Agents that steer through another
+   * `session/prompt` (`steerByPrompt`) receive it at once; otherwise the input becomes the
+   * next turn. Throws when no turn is running so the host can queue the input instead.
+   */
+  async steer(message: UserMessage, options: SendOptions = {}): Promise<void> {
+    if (!this.steerByPrompt) { await this.send(message, options); return; }
+    const turn = this.turn;
+    if (!turn || turn.settled || turn.cancelTimer || this.ended || this.closing) {
+      throw new Error('No active turn to steer');
+    }
+    const stopped = this.preparation.controller.signal;
+    const signal = options.signal ? AbortSignal.any([stopped, options.signal]) : stopped;
+    const prompt = await untilAborted(this.toPrompt(message, signal), signal);
+    if (prompt === ABORTED) throw new Error('Steer was cancelled');
+    if (prompt.length === 0) throw new Error('Cannot send an empty message');
+    // The turn may have ended while attachments were read; let the host queue it.
+    if (this.turn !== turn || turn.settled || turn.cancelTimer || this.ended || this.closing) {
+      throw new Error('No active turn to steer');
+    }
+    this.requestPrompt(turn, prompt);
   }
 
   async abort(): Promise<void> {
@@ -640,7 +681,7 @@ export class AcpSession {
     if (!prompt) return;
     // Output produced between turns (autonomous agent work) is closed off as background.
     this.emit(this.translator.flushPending());
-    const turn: ActiveTurn = { token: ++this.turnSeq, settled: false, cancelTimer: null };
+    const turn: ActiveTurn = { token: ++this.turnSeq, settled: false, cancelTimer: null, lease: 0 };
     this.turn = turn;
     if (!this.identityPublished) {
       this.identityPublished = true;
@@ -648,10 +689,23 @@ export class AcpSession {
     }
     this.usage = { ...this.usage, tokenUsage: 0, outputTokens: 0 };
     this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+    this.requestPrompt(turn, prompt);
+  }
+
+  /** Sends a prompt for `turn`; a later one (a steer) takes over ending the turn. */
+  private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
+    const lease = ++turn.lease;
     this.connection.request('session/prompt', { sessionId: this.nativeId, prompt }, { timeoutMs: null }).then(
-      (result) => this.finishTurn(turn.token, { stopReason: normalizeStopReason(result), usage: readAcpPromptUsage(result.usage) }),
-      (error: unknown) => this.finishTurn(turn.token, this.errorOutcome(error)),
+      (result) => this.settleLease(turn, lease, { stopReason: normalizeStopReason(result), usage: readAcpPromptUsage(result.usage) }),
+      (error: unknown) => this.settleLease(turn, lease, this.errorOutcome(error)),
     );
+  }
+
+  private settleLease(turn: ActiveTurn, lease: number, outcome: AcpTurnOutcome): void {
+    if (outcome.usage) turn.usage = addUsage(turn.usage, outcome.usage);
+    // A newer prompt took the turn over; the agent answers the older one immediately.
+    if (lease !== turn.lease) return;
+    this.finishTurn(turn.token, turn.usage ? { ...outcome, usage: turn.usage } : outcome);
   }
 
   private finishTurn(token: number, outcome: AcpTurnOutcome): void {

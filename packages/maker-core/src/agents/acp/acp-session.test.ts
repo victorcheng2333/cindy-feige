@@ -803,3 +803,76 @@ describe('AcpSession Cindy Auto-review and Stop', () => {
     await session.close();
   });
 });
+
+// Measured against agy 1.5.13 (2026-11): a second session/prompt during a turn steers
+// it. The earlier request returns end_turn without usage at once; the newest request ends
+// the turn with usage, or `cancelled` with usage after session/cancel.
+describe('AcpSession steering by prompt', () => {
+  const USAGE = { inputTokens: 100, outputTokens: 20, cachedReadTokens: 50, cachedWriteTokens: 0 };
+
+  it('sends the steer at once and ends the turn only when the newest prompt returns', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, { steerByPrompt: true });
+    await session.send({ type: 'user', content: 'write an essay' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    await session.steer({ type: 'user', content: 'make it shorter' });
+    expect(agent.prompts).toHaveLength(2);
+    expect(agent.prompts[1]!.params.prompt).toEqual([{ type: 'text', text: 'make it shorter' }]);
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(events.some(event => event.type === 'done')).toBe(false);
+    expect(session.isTurnRunning()).toBe(true);
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn', usage: USAGE });
+    await vi.waitFor(() => expect(events.filter(event => event.type === 'done')).toHaveLength(1));
+    expect(events.at(-1)?.data).toMatchObject({ usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 50 } });
+    await session.close();
+  });
+
+  it('keeps usage when the steer arrived after the agent had already finished', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, { steerByPrompt: true });
+    await session.send({ type: 'user', content: 'one' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    await session.steer({ type: 'user', content: 'two' });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn', usage: USAGE });
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn', usage: USAGE });
+    await vi.waitFor(() => expect(events.filter(event => event.type === 'done')).toHaveLength(1));
+    expect(events.at(-1)?.data).toMatchObject({ usage: { inputTokens: 200, outputTokens: 40, cacheReadTokens: 100 } });
+    await session.close();
+  });
+
+  it('ends a steered turn as cancelled when Stop lands', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, { steerByPrompt: true });
+    await session.send({ type: 'user', content: 'one' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    await session.steer({ type: 'user', content: 'two' });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await session.abort();
+    expect(agent.methods()).toContain('session/cancel');
+    agent.prompts[1]!.settle.resolve({ stopReason: 'cancelled', usage: USAGE });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(events.at(-1)?.data).toMatchObject({ status: 'cancelled' });
+    await session.close();
+  });
+
+  it('hands the input back to the host when no turn is running', async () => {
+    const agent = createFakeAgent();
+    const { session } = await open(agent, { steerByPrompt: true });
+    await expect(session.steer({ type: 'user', content: 'late' })).rejects.toThrow('No active turn to steer');
+    expect(agent.prompts).toHaveLength(0);
+    await session.close();
+  });
+
+  it('queues the steer as the next turn for agents that cannot steer', async () => {
+    const agent = createFakeAgent();
+    const { session } = await open(agent);
+    await session.send({ type: 'user', content: 'one' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    await session.steer({ type: 'user', content: 'two' });
+    expect(agent.prompts).toHaveLength(1);
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    await session.close();
+  });
+});

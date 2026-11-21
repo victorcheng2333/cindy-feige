@@ -922,6 +922,16 @@ Cindy 在返回拒绝前，通过已有 `turn/steer` 向对应 thread 和 expect
 `acp-session.test.ts`（Cindy Auto-review、additional directories）、`acp/auto-review-policy.test.ts`
 与 Agy `index.test.ts`。
 
+### ACP 引擎（Agy）的插话
+
+2026-11 实测 agy 1.5.13：回合进行中再发一个 `session/prompt` 就是插话，agy 在下一步边界把
+新输入并入当前回合。先前的请求立即返回 `end_turn` 且不带用量；最新的请求在回合真正结束时
+返回并带用量，Stop 后它返回 `cancelled`。`AcpSession` 用 `steerByPrompt` 开启这一语义：
+每个回合只认最新请求的结果收尾，用量把各请求上报的相加。没有进行中的回合时 `steer` 抛错，
+交回宿主排队。Agy 在 ACP 会话建立后（含模型发现）报告 `sameTurnSteer` 支持，手机与桌面
+据此显示插话；发现完成前沿用静态能力，按不支持处理。回归见 `acp-session.test.ts`
+（AcpSession steering by prompt）。
+
 ### Auto 模式的同范围自动跟进
 
 用户授权完成一项工作时，可以通过定时任务在原目标与操作范围内继续跟进；延后执行、

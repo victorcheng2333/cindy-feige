@@ -84,6 +84,8 @@ function antigravityCapabilities(session: AcpSession): Capabilities {
     memory: ANTIGRAVITY_CAPABILITIES.memory,
     // Read-only folders only widen Cindy review; writable ones need Agy's additionalDirectories.
     extraDirs: supported,
+    // `agy acp` steers a running turn with another prompt (measured on agy 1.5.13).
+    sameTurnSteer: supported,
     writableDirs: session.initializeResult.agentCapabilities.sessionCapabilities.additionalDirectories
       ? supported : unavailable,
   };
@@ -270,6 +272,7 @@ export class AntigravityAgent extends BaseAgent {
         cancelGraceMs: 5_000,
         classifyWarning: classifyAgyWarning,
         additionalDirectories: writableDirs,
+        steerByPrompt: true,
         reviewPermission: toolCall => reviewAutoAction(normalizeAcpToolForAutoReview(toolCall)),
         sessionMetadata(init) {
           if (!systemPromptAppend) return;
@@ -331,7 +334,15 @@ export class AntigravityAgent extends BaseAgent {
           acceptUserInput(message.content, options);
           await session.send(message, options);
         },
-        steer: async () => { throw new Error('Agy does not support same-turn steering.'); },
+        // agy steers a running turn when it receives another prompt (see AcpSession.steerByPrompt).
+        steer: async (message, options = {}) => {
+          validate(options);
+          // Hand the input back to the host queue before recording it as user intent.
+          if (!session.isTurnRunning()) throw new Error('No active turn to steer');
+          acceptUserInput(message.content, options);
+          await session.steer(message, options);
+        },
+        isTurnRunning: () => session.isTurnRunning(),
         abort: () => session.abort(),
         close: () => session.close(),
         setModel: async (model, settings) => {

@@ -214,7 +214,7 @@ describe('Agy ACP-only sessions', () => {
       const handle = await start({ extraDirs: ['/refs/docs'], writableDirs: ['/work/sibling'] });
       const created = child.requests.find(request => request.method === 'session/new');
       expect((created?.params as { additionalDirectories?: string[] }).additionalDirectories).toEqual(['/work/sibling']);
-      expect(handle.negotiatedCapabilities).toMatchObject({ extraDirs: { supported: true }, writableDirs: { supported: true } });
+      expect(handle.negotiatedCapabilities).toMatchObject({ extraDirs: { supported: true }, writableDirs: { supported: true }, sameTurnSteer: { supported: true } });
     });
   });
 
