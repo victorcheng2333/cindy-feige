@@ -856,6 +856,60 @@ describe('AcpSession steering by prompt', () => {
     await session.close();
   });
 
+  it('keeps the turn and runs a refused steer next when the agent rejects it', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, { steerByPrompt: true });
+    await session.send({ type: 'user', content: 'one' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    await session.steer({ type: 'user', content: 'two' });
+    agent.prompts[1]!.settle.reject(Object.assign(new Error('session is busy'), { code: -32603 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(events.some(event => event.type === 'done')).toBe(false);
+    expect(session.isTurnRunning()).toBe(true);
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(3));
+    expect(agent.prompts[2]!.params.prompt).toEqual([{ type: 'text', text: 'two' }]);
+    expect(events.filter(event => event.type === 'done')).toHaveLength(1);
+    expect(events.find(event => event.type === 'done')?.data).not.toHaveProperty('error');
+    await session.close();
+  });
+
+  it('runs a steer as the next turn when the turn ends while its attachment is read', async () => {
+    const agent = createFakeAgent({ agentCapabilities: { promptCapabilities: { image: true } } });
+    const image = deferred<Uint8Array>();
+    const { session, events } = await open(agent, { steerByPrompt: true, readFile: () => image.promise });
+    await session.send({ type: 'user', content: 'one' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    const steered = session.steer({ type: 'user', content: [{ type: 'image', path: SHOT }, { type: 'text', text: 'two' }] });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.filter(event => event.type === 'done')).toHaveLength(1));
+    image.resolve(new Uint8Array([1, 2, 3]));
+    await steered;
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    expect(agent.prompts[1]!.params.prompt).toEqual([
+      { type: 'image', data: 'AQID', mimeType: 'image/png' },
+      { type: 'text', text: 'two' },
+    ]);
+    expect(session.isTurnRunning()).toBe(true);
+    await session.close();
+  });
+
+  it('lets a steer follow a first message whose attachment is still being read', async () => {
+    const agent = createFakeAgent({ agentCapabilities: { promptCapabilities: { image: true } } });
+    const image = deferred<Uint8Array>();
+    const { session } = await open(agent, { steerByPrompt: true, readFile: () => image.promise });
+    const first = session.send({ type: 'user', content: [{ type: 'image', path: SHOT }, { type: 'text', text: 'one' }] });
+    expect(session.isTurnRunning()).toBe(true);
+    const steered = session.steer({ type: 'user', content: 'two' });
+    image.resolve(new Uint8Array([1, 2, 3]));
+    await Promise.all([first, steered]);
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    expect(agent.prompts[1]!.params.prompt).toEqual([{ type: 'text', text: 'two' }]);
+    await session.close();
+  });
+
   it('hands the input back to the host when no turn is running', async () => {
     const agent = createFakeAgent();
     const { session } = await open(agent, { steerByPrompt: true });

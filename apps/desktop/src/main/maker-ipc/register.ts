@@ -11709,9 +11709,20 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     // ACP additionalDirectories, so the installed agy must advertise that capability.
     assertAntigravityHandoffDirectories: async (sessionId) => {
       if (!(await readSessionWritableDirsFromDb(sessionId)).length) return;
-      let writable = false;
-      try { writable = !!maker.getCapabilities('antigravity').writableDirs?.supported; } catch { writable = false; }
-      if (!writable) throwIpcError('UNSUPPORTED_CAPABILITY', 'Update agy to use writable folders, or remove them from the task first');
+      const writableSupported = () => {
+        try { return !!maker.getCapabilities('antigravity').writableDirs?.supported; } catch { return false; }
+      };
+      let writable = writableSupported();
+      if (!writable) {
+        // Soon after launch the installed agy has not been probed yet; the switch starts agy anyway.
+        await readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true }).catch(() => false);
+        writable = writableSupported();
+      }
+      if (!writable) {
+        throwIpcError('UNSUPPORTED_CAPABILITY', antigravityModelDiscoveryFailure()
+          ? 'Could not reach agy to check writable folder support. Check Agy sign-in and the proxy, then try again'
+          : 'Update agy to use writable folders, or remove them from the task first');
+      }
     },
     getSessionRow: readAgentSwitchSessionRow,
     getLiveSession: (sessionId) => maker.getSession(sessionId),

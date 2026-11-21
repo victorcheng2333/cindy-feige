@@ -5,11 +5,6 @@ import { AcpConnection, methodNotFound } from '../acp/connection.js';
 import { ACP_PROTOCOL_VERSION, asRecord, normalizeInitializeResult } from '../acp/protocol.js';
 import { AcpLineDecoder, type AcpLineTransport, type AcpTransportClosed } from '../acp/line-transport.js';
 
-/**
- * A fresh `--gemini_dir` lacks the default CLI project that agy reads on every tool
- * call (it otherwise logs `missing project file` each time). Seed the same record agy
- * writes in its own data directory; never overwrite one agy already keeps.
- */
 /** Each start adds an `acp.log.<pid>` worker log; keep the newest few so restarts do not pile up. */
 const KEPT_AGY_LOGS = 3;
 async function pruneAgyLogs(stateDir: string): Promise<void> {
@@ -21,6 +16,11 @@ async function pruneAgyLogs(stateDir: string): Promise<void> {
   await Promise.all(logs.slice(KEPT_AGY_LOGS).map(log => rm(path.join(stateDir, log.name), { force: true }).catch(() => {})));
 }
 
+/**
+ * A fresh `--gemini_dir` lacks the default CLI project that agy reads on every tool
+ * call (it otherwise logs `missing project file` each time). Seed the same record agy
+ * writes in its own data directory; never overwrite one agy already keeps.
+ */
 export async function seedAgyStateDir(stateDir: string): Promise<void> {
   // Called before the task's agy starts, so no pruned log is still being written.
   await pruneAgyLogs(stateDir);

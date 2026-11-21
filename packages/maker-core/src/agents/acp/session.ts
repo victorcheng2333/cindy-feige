@@ -291,6 +291,8 @@ interface ActiveTurn {
   cancelTimer: ReturnType<typeof setTimeout> | null;
   /** Newest `session/prompt` serving this turn; only its result ends the turn. */
   lease: number;
+  /** Prompts sent for this turn whose `session/prompt` has not returned yet. */
+  outstanding: Map<number, AcpContentBlock[]>;
   /** Usage reported by every request of this turn (superseded ones report none). */
   usage?: AcpPromptUsage;
 }
@@ -506,18 +508,23 @@ export class AcpSession {
    */
   async steer(message: UserMessage, options: SendOptions = {}): Promise<void> {
     if (!this.steerByPrompt) { await this.send(message, options); return; }
+    if (this.ended || this.closing) throw new Error('ACP session is closed');
     const turn = this.turn;
-    if (!turn || turn.settled || turn.cancelTimer || this.ended || this.closing) {
-      throw new Error('No active turn to steer');
-    }
+    // The first prompt is still being prepared (attachments): the steer follows it in order.
+    if (!turn && this.preparation.pending > 0) { await this.send(message, options); return; }
+    if (!turn || turn.settled || turn.cancelTimer) throw new Error('No active turn to steer');
     const stopped = this.preparation.controller.signal;
     const signal = options.signal ? AbortSignal.any([stopped, options.signal]) : stopped;
     const prompt = await untilAborted(this.toPrompt(message, signal), signal);
-    if (prompt === ABORTED) throw new Error('Steer was cancelled');
+    if (prompt === ABORTED || turn.cancelTimer) throw new Error('Steer was cancelled');
     if (prompt.length === 0) throw new Error('Cannot send an empty message');
-    // The turn may have ended while attachments were read; let the host queue it.
-    if (this.turn !== turn || turn.settled || turn.cancelTimer || this.ended || this.closing) {
-      throw new Error('No active turn to steer');
+    if (this.ended || this.closing) throw new Error('ACP session is closed');
+    if (this.turn !== turn || turn.settled) {
+      // The turn ended on its own while attachments were read: the input runs next. The host
+      // already recorded it as delivered, so handing it back would record it twice.
+      this.pendingPrompts.push(prompt);
+      this.pump();
+      return;
     }
     this.requestPrompt(turn, prompt);
   }
@@ -681,7 +688,7 @@ export class AcpSession {
     if (!prompt) return;
     // Output produced between turns (autonomous agent work) is closed off as background.
     this.emit(this.translator.flushPending());
-    const turn: ActiveTurn = { token: ++this.turnSeq, settled: false, cancelTimer: null, lease: 0 };
+    const turn: ActiveTurn = { token: ++this.turnSeq, settled: false, cancelTimer: null, lease: 0, outstanding: new Map() };
     this.turn = turn;
     if (!this.identityPublished) {
       this.identityPublished = true;
@@ -695,16 +702,27 @@ export class AcpSession {
   /** Sends a prompt for `turn`; a later one (a steer) takes over ending the turn. */
   private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
     const lease = ++turn.lease;
+    turn.outstanding.set(lease, prompt);
     this.connection.request('session/prompt', { sessionId: this.nativeId, prompt }, { timeoutMs: null }).then(
       (result) => this.settleLease(turn, lease, { stopReason: normalizeStopReason(result), usage: readAcpPromptUsage(result.usage) }),
-      (error: unknown) => this.settleLease(turn, lease, this.errorOutcome(error)),
+      (error: unknown) => this.settleLease(turn, lease, this.errorOutcome(error), error instanceof AcpRpcError),
     );
   }
 
-  private settleLease(turn: ActiveTurn, lease: number, outcome: AcpTurnOutcome): void {
+  private settleLease(turn: ActiveTurn, lease: number, outcome: AcpTurnOutcome, refused = false): void {
+    const prompt = turn.outstanding.get(lease);
+    turn.outstanding.delete(lease);
     if (outcome.usage) turn.usage = addUsage(turn.usage, outcome.usage);
     // A newer prompt took the turn over; the agent answers the older one immediately.
     if (lease !== turn.lease) return;
+    if (refused && turn.outstanding.size > 0 && !turn.settled) {
+      // The agent refused the steer while an earlier prompt still runs. That prompt ends the
+      // turn; the steered input runs next unless the user stopped the turn.
+      turn.lease = Math.max(...turn.outstanding.keys());
+      this.logger?.warn('acp: agent refused a steer; delivering it as the next turn', { error: 'error' in outcome ? outcome.error : '' });
+      if (prompt && !turn.cancelTimer) this.pendingPrompts.unshift(prompt);
+      return;
+    }
     this.finishTurn(turn.token, turn.usage ? { ...outcome, usage: turn.usage } : outcome);
   }
 

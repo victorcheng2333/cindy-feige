@@ -928,7 +928,8 @@ Cindy 在返回拒绝前，通过已有 `turn/steer` 向对应 thread 和 expect
 新输入并入当前回合。先前的请求立即返回 `end_turn` 且不带用量；最新的请求在回合真正结束时
 返回并带用量，Stop 后它返回 `cancelled`。`AcpSession` 用 `steerByPrompt` 开启这一语义：
 每个回合只认最新请求的结果收尾，用量把各请求上报的相加。没有进行中的回合时 `steer` 抛错，
-交回宿主排队。Agy 在 ACP 会话建立后（含模型发现）报告 `sameTurnSteer` 支持，手机与桌面
+交回宿主排队；首条消息还在准备附件时，插话排在它后面；回合在插话读附件期间自然结束，或
+agy 以 RPC 错误拒收插话时，这条输入作为下一回合发出，不丢也不重复记录。Agy 在 ACP 会话建立后（含模型发现）报告 `sameTurnSteer` 支持，手机与桌面
 据此显示插话；发现完成前沿用静态能力，按不支持处理。回归见 `acp-session.test.ts`
 （AcpSession steering by prompt）。
 
