@@ -36,7 +36,7 @@ export interface AcpAgentCapabilities {
   loadSession: boolean;
   promptCapabilities: { image: boolean; audio: boolean; embeddedContext: boolean };
   mcpCapabilities: { http: boolean; sse: boolean };
-  sessionCapabilities: { resume: boolean; close: boolean; list: boolean };
+  sessionCapabilities: { resume: boolean; close: boolean; list: boolean; additionalDirectories: boolean };
 }
 
 export interface AcpAuthMethod { id: string; name: string; type?: string }
@@ -142,6 +142,7 @@ export function normalizeInitializeResult(raw: unknown): AcpInitializeResult {
         resume: capabilityPresent(session.resume),
         close: capabilityPresent(session.close),
         list: capabilityPresent(session.list),
+        additionalDirectories: capabilityPresent(session.additionalDirectories),
       },
     },
     agentMetadata: asRecord(caps._meta),

@@ -125,9 +125,9 @@ struct MBDaily: Decodable, Equatable {
   private let rawMoney: [Double]
   let paid: Double
   private let rawTokens: [Double]
-  // Older main processes and preview fixtures send three harnesses.
-  var money: [Double] { rawMoney + Array(repeating: 0, count: max(0, 4 - rawMoney.count)) }
-  var tokens: [Double] { rawTokens + Array(repeating: 0, count: max(0, 4 - rawTokens.count)) }
+  // Older main processes and preview fixtures send three or four harnesses.
+  var money: [Double] { rawMoney + Array(repeating: 0, count: max(0, 5 - rawMoney.count)) }
+  var tokens: [Double] { rawTokens + Array(repeating: 0, count: max(0, 5 - rawTokens.count)) }
   enum CodingKeys: String, CodingKey { case rawMoney = "money", paid, rawTokens = "tokens" }
 }
 
@@ -320,7 +320,7 @@ enum Palette {
     case "claude3": return claude3
     case "codex": return codex
     case "pi": return pi
-    case "cursor": return ink
+    case "cursor", "antigravity": return ink
     default: return ink
     }
   }
@@ -337,7 +337,7 @@ enum Palette {
     switch harness {
     case "claude-code": return claude
     case "pi": return pi
-    case "cursor": return ink
+    case "cursor", "antigravity": return ink
     default: return codex
     }
   }
@@ -2899,8 +2899,8 @@ struct UsagePoint: Identifiable {
   let value: Double
 }
 
-/// Harness stacking order, bottom to top: Codex, Claude Code, Pi.
-let harnessOrder: [(index: Int, key: String)] = [(1, "codex"), (0, "claude-code"), (2, "pi"), (3, "cursor")]
+/// Harness stacking order, bottom to top: Codex, Claude Code, Pi, Cursor, Agy.
+let harnessOrder: [(index: Int, key: String)] = [(1, "codex"), (0, "claude-code"), (2, "pi"), (3, "cursor"), (4, "antigravity")]
 
 struct UsageChart: View {
   let days: [String]
@@ -2962,6 +2962,7 @@ struct UsageChart: View {
       "claude-code": gradient(Palette.claude),
       "pi": gradient(Palette.pi),
       "cursor": gradient(Palette.ink),
+      "antigravity": gradient(Palette.ink),
     ])
     .chartLegend(.hidden)
     .chartYAxis(.hidden)

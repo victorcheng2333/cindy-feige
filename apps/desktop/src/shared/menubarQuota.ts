@@ -135,7 +135,7 @@ export interface MenubarDetail {
 export interface MenubarTask {
   sessionId: string;
   title: string;
-  harness: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  harness: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   logoSvg: string;
   /** Estimated value today, in the ledger currency. */
   value: number;
@@ -151,7 +151,7 @@ export interface MenubarTask {
 
 export interface MenubarModelUsage {
   name: string;
-  harness: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  harness: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   money: number;
   tokens: number;
 }
@@ -173,7 +173,7 @@ export interface MenubarActivity {
 export interface MenubarUsageScopeData {
   /** One entry per day, oldest first, aligned with `MenubarUsage.days`. */
   daily: {
-    /** Subscription-equivalent value by harness: claude-code, codex, pi, then cursor (absent in older snapshots). */
+    /** Subscription-equivalent value by harness: claude-code, codex, pi, cursor, antigravity (trailing entries absent in older snapshots). */
     money: [number, number, number, ...number[]];
     /** Actually paid (API) part of `money`, summed across harnesses. */
     paid: number;

@@ -76,8 +76,9 @@ export function buildUsageWidgetSnapshot(
   const scope = view.settings.scope;
   const data = view.usage.scopes[scope] ?? view.usage.scopes.all;
   const count = Math.min(view.usage.days.length, data?.daily.length ?? 0, WIDGET_DAYS);
+  const isWidgetExcludedHarness = (harness: string) => harness === 'cursor' || harness === 'antigravity';
   // Same days as the view; the series is collected alongside it, so it only lines up when its length matches.
-  const seriesDaily = series && !series.models.some(model => model.harness === 'cursor') && series.daily.length === view.usage.days.length && count > 0
+  const seriesDaily = series && !series.models.some(model => isWidgetExcludedHarness(model.harness)) && series.daily.length === view.usage.days.length && count > 0
     ? series.daily.slice(-count) : undefined;
   const seriesTokens = seriesDaily ? series!.tokens.slice(-count) : undefined;
   const strings: Record<string, string> = {};
@@ -107,7 +108,7 @@ export function buildUsageWidgetSnapshot(
         // Widget v1 has three fixed harness slots; never relabel Cursor as Claude.
         return { money: [day.money[0], day.money[1], day.money[2]], paid: day.paid, tokens: [day.tokens[0], day.tokens[1], day.tokens[2]], ...(models && modelTokens ? { models, modelTokens } : {}) };
       }) : [],
-      ...(seriesDaily ? { models: series!.models.flatMap(model => model.harness === 'cursor' ? [] : [{ ...model, harness: model.harness }]) } : {}),
+      ...(seriesDaily ? { models: series!.models.flatMap(model => model.harness === 'cursor' || model.harness === 'antigravity' ? [] : [{ ...model, harness: model.harness }]) } : {}),
     },
     strings,
   };

@@ -8,8 +8,10 @@ export type IdleClaudeSession = Pick<Session, 'id' | 'agentKind' | 'remoteHostId
   & Partial<Pick<Session, 'hasLiveBackgroundWork'>>;
 /** Codex mirrors the Pi and Claude 30-minute default; no separate setting. */
 export const DEFAULT_CODEX_IDLE_RELEASE_MINUTES = 30;
+/** Agy ACP processes use the same 30-minute idle reclamation default as Codex and Pi. */
+export const DEFAULT_ANTIGRAVITY_IDLE_RELEASE_MINUTES = 30;
 /** Engines whose ordinary local tasks share this reclamation policy. */
-export type IdleReleaseAgentKind = 'claude-code' | 'codex';
+export type IdleReleaseAgentKind = 'claude-code' | 'codex' | 'antigravity';
 export interface ClaudeIdleReleaseDeps {
   /** Defaults to Claude; Codex reuses the same gates plus its async background probe. */
   agentKind?: IdleReleaseAgentKind;
@@ -27,7 +29,7 @@ export interface ClaudeIdleReleaseDeps {
 }
 
 /** Scope query runs through the DB worker; source and ownership are host facts. */
-const ordinaryTaskSql = (dbAgentKind: 'cc' | 'codex') => `SELECT id FROM sessions s
+const ordinaryTaskSql = (dbAgentKind: 'cc' | 'codex' | 'antigravity') => `SELECT id FROM sessions s
 WHERE s.id = ? AND s.status = 'active' AND s.source = 'desktop'
 AND s.hidden_at IS NULL AND s.agent_device_id IS NULL
 AND s.sdk_session_id = ? AND s.sdk_session_id != '<pending>'
@@ -39,6 +41,8 @@ AND NOT EXISTS (SELECT 1 FROM session_goals g WHERE g.session_id = s.id AND g.st
 export const ORDINARY_CLAUDE_TASK_SQL = ordinaryTaskSql('cc');
 /** Same ordinary-task scope for Codex: bots, Orca, Goals, remote and hidden tasks keep their own lifecycle. */
 export const ORDINARY_CODEX_TASK_SQL = ordinaryTaskSql('codex');
+/** Same ordinary-task scope for Agy ACP sessions: close idle runtimes and resume lazily on next send. */
+export const ORDINARY_ANTIGRAVITY_TASK_SQL = ordinaryTaskSql('antigravity');
 
 /** Whether a task is in the ordinary scope, by the given SQL against the database the caller reads now. */
 export function createOrdinaryIdleReleaseTaskCheck(
@@ -64,7 +68,7 @@ export function createIdleReleaseRuntimeClose(
 /** Single-flight scans reuse the send lock and Session's atomic close-if-idle boundary. */
 export function createClaudeIdleReleaseWatcher(deps: ClaudeIdleReleaseDeps) {
   const agentKind = deps.agentKind ?? 'claude-code';
-  const label = agentKind === 'codex' ? 'Codex' : 'Claude';
+  const label = agentKind === 'antigravity' ? 'Agy' : agentKind === 'codex' ? 'Codex' : 'Claude';
   const tracked = new Map<IdleClaudeSession, { since: number; generation: number; closeFailed: boolean; unsubscribe: () => void }>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let epoch = 0;

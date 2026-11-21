@@ -2432,7 +2432,7 @@ export function getMaker(): Maker {
     });
     const piAgent = buildPiAgentForDesktop();
     if (piAgent) makerAgents.pi = withSubscriptionAccounts(piAgent);
-    const antigravity = buildAntigravityAgent(desktopMakerLogger, piMcpProviders, makerMemoryManager);
+    const antigravity = buildAntigravityAgent(desktopMakerLogger, piMcpProviders, makerMemoryManager, reviewAutoPermissionAction);
     if (antigravity) makerAgents.antigravity = antigravity;
     const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger, makerMemoryManager);
     if (cursorAgent) {

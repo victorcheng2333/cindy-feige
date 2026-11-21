@@ -730,7 +730,8 @@ it('includes auxiliary tokens in widget totals without attributing them to a har
   const cursor = { ...helper, day: '2026-11-18', agentKind: 'cursor', model: 'composer', tokens: 42 } as const;
   const payload = { modelDaily: [helper, { ...helper, day: cursor.day }, cursor] } as UsageHistoryPayload;
   const scope = usageScope(payload, [helper.day, cursor.day], []);
-  expect(scope.daily.map(day => day.tokens)).toEqual([[0, 0, 0, 0, 1100], [0, 0, 0, 42, 1100]]);
+  // Auxiliary tokens follow every harness slot (Claude Code, Codex, Pi, Cursor, Agy).
+  expect(scope.daily.map(day => day.tokens)).toEqual([[0, 0, 0, 0, 0, 1100], [0, 0, 0, 42, 0, 1100]]);
   expect(scope.daily[1].tokens.reduce((a, b) => a + b, 0)).toBe(1142);
   expect(scope.models['30']).toEqual([{ name: 'composer', harness: 'cursor', money: 0, tokens: 42 }]);
   expect(scope.modelSeries?.models).toEqual([{ name: 'helper', harness: 'auxiliary' }, { name: 'composer', harness: 'cursor' }]);

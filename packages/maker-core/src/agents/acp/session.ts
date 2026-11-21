@@ -8,7 +8,7 @@
  * Maker / Desktop is a separate step; this module has no host dependencies.
  */
 
-import { readFile as fsReadFile } from 'node:fs/promises';
+import { readFile as fsReadFile, stat as fsStat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Logger } from '../../interfaces/logger.js';
@@ -48,11 +48,15 @@ import {
   type AcpPermissionOption,
   type AcpPermissionOutcome,
   type AcpRecord,
+  type AcpToolCallFields,
 } from './protocol.js';
+import { annotatePermissionRequestForAutoReview, type AutoReviewDecision } from '../shared/auto-review-decision.js';
 import { acpToolDisplayName, AcpUpdateTranslator, type AcpTurnOutcome } from './translator.js';
 
 const DEFAULT_CANCEL_GRACE_MS = 15_000;
 const SESSION_CLOSE_TIMEOUT_MS = 2_000;
+/** Keep base64-encoded inline images safely below ACP's 32 MiB line cap; larger files fall back to resource_link. */
+const MAX_INLINE_IMAGE_BYTES = 16 * 1024 * 1024;
 
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
@@ -105,6 +109,17 @@ export interface OpenAcpSessionOptions {
   briefing?: string;
   /** Called once when the session's event stream ends (closed, or the endpoint exited). */
   onEnded?: () => void;
+  /**
+   * Extra roots the agent treats as part of its workspace (ACP `additionalDirectories`).
+   * Opening fails when the agent does not advertise the capability.
+   */
+  additionalDirectories?: readonly string[];
+  /**
+   * Cindy Auto-review for a permission request while the Cindy mode is Auto. `allow`
+   * answers once (never a persistent grant), `block` rejects, `ask` shows the card with
+   * the reviewer's reason. Not consulted in other modes or in Plan.
+   */
+  reviewPermission?: (toolCall: AcpToolCallFields, signal: AbortSignal) => Promise<AutoReviewDecision>;
 }
 
 export type AcpResumeOutcome = 'new' | 'resumed' | 'loaded';
@@ -202,7 +217,15 @@ export async function openAcpSession(opts: OpenAcpSessionOptions): Promise<AcpSe
 
     const { accepted, dropped } = filterMcpServers(opts.mcpServers ?? [], init.agentCapabilities.mcpCapabilities);
     const metadata = opts.sessionMetadata?.(init);
-    const parameters = { cwd: opts.cwd, mcpServers: accepted, ...(metadata ? { _meta: metadata } : {}) };
+    const directories = [...new Set(opts.additionalDirectories ?? [])].filter(dir => dir && dir !== opts.cwd);
+    if (directories.length && !init.agentCapabilities.sessionCapabilities.additionalDirectories) {
+      throw new Error('This agent cannot open additional directories. Update it or remove the extra folders from the task.');
+    }
+    const parameters = {
+      cwd: opts.cwd, mcpServers: accepted,
+      ...(directories.length ? { additionalDirectories: directories } : {}),
+      ...(metadata ? { _meta: metadata } : {}),
+    };
     let sessionId: string;
     let outcome: AcpResumeOutcome;
     let result: AcpRecord;
@@ -321,6 +344,7 @@ export class AcpSession {
   private readonly readImage: NonNullable<OpenAcpSessionOptions['readFile']>;
   private readonly cancelGraceMs: number;
   private readonly onEnded: (() => void) | undefined;
+  private readonly reviewPermission: OpenAcpSessionOptions['reviewPermission'];
   private readonly queue = createAsyncQueue<AgentEvent>();
   private readonly translator: AcpUpdateTranslator;
   private readonly pendingPrompts: AcpContentBlock[][] = [];
@@ -332,6 +356,8 @@ export class AcpSession {
   private configOptions: AcpConfigOption[];
   private capabilitiesSnapshot: Capabilities;
   private permissionMode: 'ask' | 'bypassPermissions' = 'ask';
+  /** The Cindy product mode behind `permissionMode`; Auto routes requests through Cindy review. */
+  private cindyPermissionMode: PermissionMode = 'default';
   private permissionModeAfterPlan: PermissionMode | undefined;
   private permissionModeChain = Promise.resolve();
   private explicitPermissionChanges = 0;
@@ -360,6 +386,7 @@ export class AcpSession {
     this.readImage = init.options.readFile ?? ((path, signal) => fsReadFile(path, { signal }));
     this.cancelGraceMs = init.options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS;
     this.onEnded = init.options.onEnded;
+    this.reviewPermission = init.options.reviewPermission;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
     this.translator = new AcpUpdateTranslator({
       blockIdPrefix: `acp-${init.sessionId}`, classifyWarning: init.options.classifyWarning,
@@ -683,6 +710,7 @@ export class AcpSession {
   private applyPermissionMode(mode: PermissionMode): void {
     // Modes Cindy cannot enforce for ACP fall back to asking, never to auto-approval.
     this.permissionMode = mode === 'bypassPermissions' ? 'bypassPermissions' : 'ask';
+    this.cindyPermissionMode = mode;
     if (!ACP_SUPPORTED_PERMISSION_MODES.has(mode)
       && !mapModeValues(findModeOption(this.configOptions)).some((entry) => entry.mode === mode)) {
       this.logger?.debug('acp: permission mode mapped to ask', { mode });
@@ -702,6 +730,22 @@ export class AcpSession {
     const plainAllow = allowOnce ?? rememberedAllow;
     const reject = firstOfKind(options, ['reject_once']);
     if (this.permissionMode === 'bypassPermissions' && plainAllow) return selected(plainAllow);
+    // Stop cancels an in-flight review like an open card: register it with the same controllers.
+    const reviewController = new AbortController();
+    const forwardReviewAbort = (): void => reviewController.abort();
+    signal.addEventListener('abort', forwardReviewAbort, { once: true });
+    this.permissionControllers.add(reviewController);
+    let review: Awaited<ReturnType<AcpSession['reviewInAutoMode']>>;
+    try {
+      review = await this.reviewInAutoMode(toolCall, reviewController.signal);
+    } finally {
+      signal.removeEventListener('abort', forwardReviewAbort);
+      this.permissionControllers.delete(reviewController);
+    }
+    if (review === ABORTED || reviewController.signal.aborted || signal.aborted || this.closing) return { outcome: 'cancelled' };
+    // Auto approval answers once; a persistent grant still needs the user.
+    if (review?.verdict === 'allow' && allowOnce) return selected(allowOnce);
+    if (review?.verdict === 'block') return selected(reject);
     const resolver = this.resolver;
     if (!resolver) return selected(reject);
 
@@ -710,7 +754,7 @@ export class AcpSession {
     signal.addEventListener('abort', forwardAbort, { once: true });
     this.permissionControllers.add(controller);
     const input = toolCall.rawInput;
-    const request: InteractionRequest = {
+    const card: Extract<InteractionRequest, { kind: 'permission' }> = {
       kind: 'permission',
       requestId: `acp-permission-${++this.permissionSeq}`,
       toolUseId: toolCall.toolCallId,
@@ -731,6 +775,8 @@ export class AcpSession {
         acpOptions: options.map((option) => ({ name: option.name, kind: option.kind })),
       },
     };
+    // Tell the user why Auto still asks (reviewer reason, or that the reviewer was unavailable).
+    const request: InteractionRequest = review?.verdict === 'ask' ? annotatePermissionRequestForAutoReview(card, review) : card;
     try {
       // Stop must answer the agent at once, even while a confirmation card is still open.
       const decision = await untilAborted(resolver(request, controller.signal), controller.signal);
@@ -749,6 +795,20 @@ export class AcpSession {
     } finally {
       signal.removeEventListener('abort', forwardAbort);
       this.permissionControllers.delete(controller);
+    }
+  }
+
+  /** Cindy Auto-review applies only in Auto outside Plan; a reviewer failure falls back to asking. */
+  private async reviewInAutoMode(
+    toolCall: AcpToolCallFields, signal: AbortSignal,
+  ): Promise<AutoReviewDecision | null | typeof ABORTED> {
+    const review = this.reviewPermission;
+    if (!review || this.cindyPermissionMode !== 'auto' || this.planMode) return null;
+    try {
+      return await untilAborted(review(toolCall, signal), signal);
+    } catch (error) {
+      this.logger?.warn('acp: auto-review failed; asking the user', { error: String(error) });
+      return { verdict: 'ask', unavailable: true };
     }
   }
 
@@ -839,9 +899,15 @@ export class AcpSession {
       case 'image': {
         const mimeType = block.mimeType ?? IMAGE_MIME_BY_EXTENSION[extname(block.path).toLowerCase()];
         if (this.initializeResult.agentCapabilities.promptCapabilities.image && mimeType) {
-          const bytes = await this.readImage(block.path, signal);
-          signal.throwIfAborted();
-          return { type: 'image', data: Buffer.from(bytes).toString('base64'), mimeType };
+          // Oversized images go as a file link instead of a base64 line near the 32 MiB cap.
+          const size = await fsStat(block.path).then(info => info.size, () => undefined);
+          if (size === undefined || size <= MAX_INLINE_IMAGE_BYTES) {
+            const bytes = await this.readImage(block.path, signal);
+            signal.throwIfAborted();
+            if (bytes.byteLength <= MAX_INLINE_IMAGE_BYTES) {
+              return { type: 'image', data: Buffer.from(bytes).toString('base64'), mimeType };
+            }
+          }
         }
         return { type: 'resource_link', uri: pathToFileURL(block.path).href, name: basename(block.path), ...(mimeType ? { mimeType } : {}) };
       }

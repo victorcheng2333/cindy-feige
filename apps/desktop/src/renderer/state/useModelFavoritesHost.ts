@@ -25,7 +25,8 @@ export function useModelFavoritesHost(): void {
         // protocol. Keep them on disk without breaking older readers' entire list.
         api.reply({
           requestId: request.requestId,
-          items: items.filter((item) => (request.includeCursor === true || item.agent !== 'cursor') && item.providerId.length <= MODEL_FAVORITE_TEXT_MAX_LENGTH),
+          // Agy favorites stay on this computer, like recents: older readers do not know the engine.
+          items: items.filter((item) => isRemoteModelFavorite(item) && (request.includeCursor === true || item.agent !== 'cursor') && item.providerId.length <= MODEL_FAVORITE_TEXT_MAX_LENGTH),
           ...(recents ? { recents } : {}),
         });
       } catch {

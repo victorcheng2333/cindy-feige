@@ -118,7 +118,7 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
     try {
       await mkdir(dir, { recursive: true, mode: 0o700 });
       if (!isCurrent()) return null;
-      const env = { ...configuredEnvironment(), NO_COLOR: '1', LC_ALL: 'en_US.UTF-8' };
+      const env = { ...configuredEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true', NO_COLOR: '1', LC_ALL: 'en_US.UTF-8' };
       const { stdout: version } = await exec(bin, ['--version'], { cwd: dir, env, timeout: 2_000, maxBuffer: 4096 });
       supported = supportsAntigravityQuota(version);
       if (supported && isCurrent()) {
@@ -190,7 +190,8 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     try {
       const probe = path.join(scope, 'discovery');
       await mkdir(probe, { recursive: true, mode: 0o700 });
-      const env = configuredEnvironment();
+      // Discovery must not trigger a background CLI self-update mid-probe.
+      const env = { ...configuredEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
       capabilities = await probeAntigravityCatalog(bin, probe, env);
       if (!capabilities.availableModels.length) {
         // An empty ACP catalog has no reason attached. Only then ask the CLI for
@@ -289,6 +290,8 @@ const auth: AuthAdapter = {
 
 export function buildAntigravityAgent(
   logger: AgentDeps['logger'], providers: McpProvider[] = [], makerMemory?: AgentDeps['makerMemory'],
+  /** Cindy Auto-review for permission requests Agy escalates while the task is in Auto. */
+  reviewAutoPermissionAction?: AgentDeps['reviewAutoPermissionAction'],
 ) {
   executable = binaryPath();
   if (!executable) return null;
@@ -297,6 +300,7 @@ export function buildAntigravityAgent(
     auth,
     logger,
     makerMemory,
+    reviewAutoPermissionAction,
     runtimeConfig: {
       systemPrompt: hostSystemPrompt,
       get makerMemoryEnabled() { return makerMemory?.isEnabled() ?? false; },

@@ -1044,7 +1044,9 @@ export async function forkSessionAtMessage(
       remoteHostId: source.remoteHostId ?? null,
     };
     const forkRemote = async () => {
-      if (agentKind === 'cursor' || agentKind === 'antigravity') throw new Error('Cursor does not support fork');
+      if (agentKind === 'cursor' || agentKind === 'antigravity') {
+        throw new Error(agentKind === 'antigravity' ? 'Agy does not support fork' : 'Cursor does not support fork');
+      }
       const ownerRoute = forkSource.agentDeviceId!;
       const location = await authorizeSharedTaskHistory(ownerRoute, sourceSessionId, agentKind, forkSource.model);
       let childGeneration: string | undefined;

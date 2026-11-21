@@ -24,8 +24,13 @@ interface TaskState {
   users: number;
   removeRequested: boolean;
   removing?: Promise<void>;
+  /** Settles when a deferred removal finishes, so callers do not report a delete too early. */
+  removed?: { promise: Promise<void>; resolve: () => void };
   legacyRoot?: string;
 }
+
+/** A delete waits this long for the task's agy to exit; removal still completes later. */
+const REMOVAL_WAIT_MS = 30_000;
 
 const tasks = new Map<string, TaskState>();
 
@@ -33,7 +38,7 @@ function removeWhenIdle(root: string, task: TaskState): Promise<void> | undefine
   if (task.users > 0 || !task.removeRequested) return;
   return task.removing ??= rm(root, { recursive: true, force: true })
     .then(() => task.legacyRoot ? rm(task.legacyRoot, { recursive: true, force: true }) : undefined)
-    .finally(() => { tasks.delete(root); });
+    .finally(() => { tasks.delete(root); task.removed?.resolve(); });
 }
 
 export function retainAntigravityTaskState(sessionId: string): () => void {
@@ -70,6 +75,18 @@ export async function removeAntigravityTaskState(
   }
   task.removeRequested = true;
   tasks.set(root, task);
-  // Active processes release their own lease after they actually exit.
-  await removeWhenIdle(root, task);
+  const now = removeWhenIdle(root, task);
+  if (now) { await now; return; }
+  // Active processes release their own lease after they actually exit; wait for that
+  // removal, bounded so a stuck process cannot hold the caller.
+  if (!task.removed) {
+    let resolve!: () => void;
+    const promise = new Promise<void>(done => { resolve = done; });
+    task.removed = { promise, resolve };
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    task.removed.promise,
+    new Promise<void>(done => { timer = setTimeout(done, REMOVAL_WAIT_MS); timer.unref?.(); }),
+  ]).finally(() => { if (timer) clearTimeout(timer); });
 }

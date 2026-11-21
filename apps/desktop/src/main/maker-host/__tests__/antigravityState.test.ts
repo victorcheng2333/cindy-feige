@@ -24,15 +24,19 @@ it('defers deletion until all current runtimes release the task state', async ()
   try {
     await mkdir(active, { recursive: true });
     await mkdir(legacy, { recursive: true });
-    await removeAntigravityTaskState(sessionId, '/work');
+    // The delete settles only once the deferred removal has run.
+    let settled = false;
+    const removal = removeAntigravityTaskState(sessionId, '/work').then(() => { settled = true; });
     expect(() => retainAntigravityTaskState(sessionId)).toThrow('being removed');
     releaseFirst();
     await expect(access(active)).resolves.toBeUndefined();
     fixture.owner = 'two';
     const sameIdOtherOwner = antigravityStateDir(sessionId, '/work');
     await mkdir(sameIdOtherOwner, { recursive: true });
+    expect(settled).toBe(false);
     releaseSecond();
-    await vi.waitFor(async () => { await expect(access(active)).rejects.toMatchObject({ code: 'ENOENT' }); });
+    await removal;
+    await expect(access(active)).rejects.toMatchObject({ code: 'ENOENT' });
     await vi.waitFor(async () => { await expect(access(legacy)).rejects.toMatchObject({ code: 'ENOENT' }); });
     await expect(access(sameIdOtherOwner)).resolves.toBeUndefined();
   } finally {

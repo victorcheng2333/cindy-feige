@@ -7024,7 +7024,7 @@ export function ChatInput({
         deviceProviders: remoteProviders.providers,
         localProviders: providers,
         capabilities:
-          currentModelAgentKind === 'cursor' ? cursorCaps.capabilities : currentModelAgentKind === 'codex'
+          currentModelAgentKind === 'antigravity' ? antigravityCaps.capabilities : currentModelAgentKind === 'cursor' ? cursorCaps.capabilities : currentModelAgentKind === 'codex'
             ? codexCaps.capabilities
             : currentModelAgentKind === 'pi'
               ? piCaps.capabilities
@@ -7043,6 +7043,7 @@ export function ChatInput({
       codexCaps.capabilities,
       piCaps.capabilities,
       cursorCaps.capabilities,
+      antigravityCaps.capabilities,
     ],
   );
 
@@ -7615,7 +7616,7 @@ export function ChatInput({
           deviceProviders: remoteProviders.providers,
           localProviders: providers,
           capabilities:
-            targetAgentKind === 'cursor' ? cursorCaps.capabilities : targetAgentKind === 'codex'
+            targetAgentKind === 'antigravity' ? antigravityCaps.capabilities : targetAgentKind === 'cursor' ? cursorCaps.capabilities : targetAgentKind === 'codex'
               ? codexCaps.capabilities
               : targetAgentKind === 'pi'
                 ? piCaps.capabilities
@@ -7788,7 +7789,7 @@ export function ChatInput({
             toast.success(
               t('newChat.chatInput.agentSwitch.deferred', {
                 agent:
-                  targetAgentKind === 'cursor' ? 'Cursor' : targetAgentKind === 'codex'
+                  targetAgentKind === 'antigravity' ? 'Agy' : targetAgentKind === 'cursor' ? 'Cursor' : targetAgentKind === 'codex'
                     ? 'Codex'
                     : targetAgentKind === 'pi'
                       ? 'Pi'
@@ -7900,6 +7901,7 @@ export function ChatInput({
       codexCaps.capabilities,
       piCaps.capabilities,
       cursorCaps.capabilities,
+      antigravityCaps.capabilities,
       syncSessionDraftModelPrefs,
     ],
   );

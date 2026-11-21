@@ -1,3 +1,4 @@
+import { readAntigravityQuota } from '../maker-host/antigravity-host.js';
 import { readCursorQuota } from '../maker-host/cursor-auth.js';
 /**
  * Quota and usage overview: what every subscription has left, the Cindy balance and recent
@@ -519,6 +520,7 @@ export class QuotaOverviewService {
       nowMs,
       listProviders: () => getDesktopProviderService().listProviders({ allowSideEffects: false }),
       readCursor: () => readCursorQuota(force),
+      readAntigravity: () => readAntigravityQuota(),
       readSubscriptionPool: (providerId) => force ? refreshSubscriptionPool(providerId, true) : readSubscriptionPool(providerId),
       readKimi: (providerId) => readKimiCodingAccountUsage({ providerId, forceRefresh: force }),
       readOpenCodeGo: (providerId) => readOpenCodeGoAccountUsage({ providerId, forceRefresh: force }),

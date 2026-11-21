@@ -120,9 +120,11 @@ describe('home content filters (desktop 筛选 parity)', () => {
   // Remote-view regression: Cursor was included in the Claude Code filter. Unit,
   // two rows are the minimum input that distinguishes the two engine categories.
   it('keeps Cursor tasks separate from Claude Code when filtering', () => {
-    const input = home({ chats: [item('claude'), item('cursor', { agentKind: 'cursor' })] });
+    const input = home({ chats: [item('claude'), item('cursor', { agentKind: 'cursor' }), item('agy', { agentKind: 'antigravity' })] });
     expect(applyHomeContentFilters(input, { ...NO_FILTERS, vendor: 'cc' }, NOW).chats.map(row => row.session.id)).toEqual(['claude']);
     expect(applyHomeContentFilters(input, { ...NO_FILTERS, vendor: 'cursor' }, NOW).chats.map(row => row.session.id)).toEqual(['cursor']);
+    // Agy tasks used to fall into Claude Code.
+    expect(applyHomeContentFilters(input, { ...NO_FILTERS, vendor: 'antigravity' }, NOW).chats.map(row => row.session.id)).toEqual(['agy']);
   });
 
   it('narrows by harness outside the pinned section and drops emptied projects', () => {

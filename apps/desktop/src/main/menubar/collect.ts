@@ -1,3 +1,4 @@
+import type { AntigravityQuotaSnapshot } from '../../shared/antigravityQuota.js';
 import type { CursorQuotaSnapshot } from './cursorUsage.js';
 import type { ProviderAccountUsageResult } from '../../shared/providerAccountUsage.js';
 import { formatClaudeSubscriptionPlanLabel, formatCodexPlanLabel } from '@cindy/maker-shared/subscription-usage';
@@ -53,7 +54,7 @@ const WEEK_MINUTES = 10_080;
 const FIVE_HOUR_MINUTES = 300;
 /** Tasks beyond this are summarized as "N more"; the list stays cheap to build. */
 const MAX_TASK_ROWS = 30;
-const HARNESSES: readonly MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor'];
+const HARNESSES: readonly MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'];
 
 export interface MenubarBalanceReading {
   available: number;
@@ -81,6 +82,7 @@ export interface MenubarCollectDeps {
   nowMs: number;
   listProviders(): Promise<ProviderView[]>;
   readCursor?(): Promise<CursorQuotaSnapshot | null>;
+  readAntigravity?(): Promise<AntigravityQuotaSnapshot | null>;
   /** Null means the provider still uses the original single-account reader. */
   readSubscriptionPool?(providerId: string): Promise<SubscriptionPoolView | null>;
   readKimi?(providerId: string): Promise<ProviderAccountUsageResult>;
@@ -133,6 +135,7 @@ export async function collectMenubarInputs(deps: MenubarCollectDeps): Promise<Me
   const subscriptionReads = providers.map(async (provider): Promise<MenubarSourceInput | MenubarSourceInput[] | null> => {
     if (!provider.connected || provider.suspended || provider.removed) return null;
     if (provider.id === 'cursor') return cursorSource(provider, await safe('cursor', async () => await deps.readCursor?.() ?? null, null), deps.nowMs);
+    if (provider.id === 'antigravity') return antigravitySource(provider, await safe('antigravity', async () => await deps.readAntigravity?.() ?? null, null), deps.nowMs);
     // Migrated routes remain addressable for old tasks, but are now displayed by the pool.
     if (provider.subscriptionPoolAlias && deps.readSubscriptionPool) return null;
     if ((isSubscriptionProvider(provider.id) || provider.subscriptionPool || provider.subscriptionAccountPool) && deps.readSubscriptionPool) {
@@ -682,8 +685,10 @@ export function usageScope(
     const harness = harnessOf(row.agentKind);
     const slot = HARNESSES.indexOf(harness);
     const money = finite(row.money?.amount);
-    daily.money[slot] = (daily.money[slot] ?? 0) + money;
-    daily.tokens[slot] = (daily.tokens[slot] ?? 0) + finite(row.tokens);
+    while (daily.money.length <= slot) daily.money.push(0);
+    while (daily.tokens.length <= slot) daily.tokens.push(0);
+    daily.money[slot] += money;
+    daily.tokens[slot] += finite(row.tokens);
     daily.paid += finite(row.apiMoney?.amount);
     const age = days.length - 1 - index;
     for (const window of windows) {
@@ -871,5 +876,22 @@ export function cursorSource(provider: ProviderView, snapshot: CursorQuotaSnapsh
     // Independent pools do not constrain one another. No invented monthly duration or pace.
     windows: current?.pools.map(pool => ({ kind: 'scoped', label: pool.id, usedPercent: pool.usedPercent, resetsAtMs: current.resetsAtMs, windowMinutes: 0 })) ?? [],
     credits: null, creditsUnlimited: false, prepaidUsd: null, updatedAtMs: current?.fetchedAtMs ?? null,
+  };
+}
+
+export function antigravitySource(provider: ProviderView, snapshot: AntigravityQuotaSnapshot | null, nowMs: number): MenubarSubscriptionInput {
+  return {
+    kind: 'subscription', id: provider.id, providerId: provider.id, family: 'antigravity',
+    logoSvg: MENUBAR_HARNESS_LOGOS.antigravity, brand: 'Agy', account: null, plan: null,
+    windows: snapshot?.windows
+      .filter(window => window.resetsAtMs === null || window.resetsAtMs > nowMs)
+      .map(window => ({
+        kind: window.minutes >= WEEK_MINUTES ? 'week' : 'session',
+        label: window.group,
+        usedPercent: clampPercent(100 - window.remaining),
+        resetsAtMs: window.resetsAtMs,
+        windowMinutes: window.minutes,
+      })) ?? [],
+    credits: null, creditsUnlimited: false, prepaidUsd: null, updatedAtMs: snapshot?.fetchedAtMs ?? null,
   };
 }

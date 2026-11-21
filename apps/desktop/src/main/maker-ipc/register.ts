@@ -857,7 +857,7 @@ import {
 } from './orcaIdleReleaseWatcher.js';
 import { createOrcaWorkerResumeScheduler } from './orcaWorkerResumeScheduler.js';
 import { readClaudeIdleMinutes } from '../maker-host/claude-idle-release-settings.js';
-import { createClaudeIdleReleaseWatcher, createIdleReleaseRuntimeClose, createOrdinaryIdleReleaseTaskCheck, ORDINARY_CLAUDE_TASK_SQL, ORDINARY_CODEX_TASK_SQL, DEFAULT_CODEX_IDLE_RELEASE_MINUTES } from './claudeIdleReleaseWatcher.js';
+import { createClaudeIdleReleaseWatcher, createIdleReleaseRuntimeClose, createOrdinaryIdleReleaseTaskCheck, ORDINARY_CLAUDE_TASK_SQL, ORDINARY_CODEX_TASK_SQL, ORDINARY_ANTIGRAVITY_TASK_SQL, DEFAULT_CODEX_IDLE_RELEASE_MINUTES, DEFAULT_ANTIGRAVITY_IDLE_RELEASE_MINUTES } from './claudeIdleReleaseWatcher.js';
 import { configureTaskArchiveRuntime } from '../task-management/service.js';
 import { hasIdleReleaseQueuedWork, hasPendingIdleReleaseInput as hasPendingIdleReleaseInputFor, hasScheduledIdleReleaseAutoResume } from './idleReleaseInputGates.js';
 import {
@@ -3386,6 +3386,7 @@ let idleReleaseWatcher: OrcaIdleReleaseWatcher | null = null;
 let piIdleReleaseWatcher: PiIdleReleaseWatcher | null = null;
 let claudeIdleReleaseWatcher: ReturnType<typeof createClaudeIdleReleaseWatcher> | null = null;
 let codexIdleReleaseWatcher: ReturnType<typeof createClaudeIdleReleaseWatcher> | null = null;
+let antigravityIdleReleaseWatcher: ReturnType<typeof createClaudeIdleReleaseWatcher> | null = null;
 
 /**
  * 取 Orca collab service, ready 前返 null。registerMakerIpc 执行完成后 holder
@@ -3426,6 +3427,8 @@ export function stopOrcaIdleWatcher(): void {
   claudeIdleReleaseWatcher = null;
   codexIdleReleaseWatcher?.stop();
   codexIdleReleaseWatcher = null;
+  antigravityIdleReleaseWatcher?.stop();
+  antigravityIdleReleaseWatcher = null;
   configureTaskArchiveRuntime(null);
   idleReleaseWatcher?.stop();
   idleReleaseWatcher = null;
@@ -11702,11 +11705,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor does not support read-only reference directories');
       }
     },
+    // Read-only folders only widen Cindy review for Agy. Writable folders become Agy's
+    // ACP additionalDirectories, so the installed agy must advertise that capability.
     assertAntigravityHandoffDirectories: async (sessionId) => {
-      const grants = directoryGrantsForRuntime(await readSessionExtraDirsFromDb(sessionId));
-      if (grants.extraDirs?.length || (await readSessionWritableDirsFromDb(sessionId)).length) {
-        throwIpcError('UNSUPPORTED_CAPABILITY', 'agy requires a task without extra directory grants');
-      }
+      if (!(await readSessionWritableDirsFromDb(sessionId)).length) return;
+      let writable = false;
+      try { writable = !!maker.getCapabilities('antigravity').writableDirs?.supported; } catch { writable = false; }
+      if (!writable) throwIpcError('UNSUPPORTED_CAPABILITY', 'Update agy to use writable folders, or remove them from the task first');
     },
     getSessionRow: readAgentSwitchSessionRow,
     getLiveSession: (sessionId) => maker.getSession(sessionId),
@@ -17313,6 +17318,30 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     warn: (message) => log.warn(message),
   });
   codexIdleReleaseWatcher.start();
+
+  // Ordinary local Agy tasks: same scope and gates. Each holds an `agy acp` front and
+  // worker; closing ends the ACP session and the next send resumes it from the task's
+  // state directory. Commands Agy left running keep the runtime busy
+  // (Session.hasLiveBackgroundWork checks the agy process group).
+  antigravityIdleReleaseWatcher?.stop();
+  antigravityIdleReleaseWatcher = createClaudeIdleReleaseWatcher({
+    agentKind: 'antigravity',
+    listSessions: () => maker.listActiveSessions(),
+    getSession: (id) => maker.getSession(id),
+    readMinutes: () => DEFAULT_ANTIGRAVITY_IDLE_RELEASE_MINUTES,
+    isOrdinaryTask: createOrdinaryIdleReleaseTaskCheck(getDbClient, ORDINARY_ANTIGRAVITY_TASK_SQL),
+    hasPendingInput: hasPendingIdleReleaseInput,
+    isHostBusy: (id) => isSessionTurnPendingCompletion(id)
+      || hasPendingAgentInteractionForSession(id)
+      || hasIdleReleaseQueuedWork(inputCoordinator, id)
+      || pendingCredentialSwitchHolder?.has(id) === true,
+    withLock: withSendToSessionLock,
+    close: createIdleReleaseRuntimeClose(maker, withRehydrateCloseSuppressed),
+    now: () => performance.now(),
+    released: (sessionId, idleMs) => log.info('antigravityIdleWatcher: released idle runtime', { sessionId, idleMs }),
+    warn: (message) => log.warn(message),
+  });
+  antigravityIdleReleaseWatcher.start();
 
   let applySessionRuntimeSelection: ApplySessionRuntimeSelection = async () => {
     throw new Error('session runtime selection is not ready');

@@ -39,8 +39,8 @@ import {
   type MenubarView,
 } from '../../shared/menubarQuota.js';
 
-export type MenubarHarness = 'claude-code' | 'codex' | 'pi' | 'cursor';
-export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi' | 'opencode-go' | 'cursor' | 'shared';
+export type MenubarHarness = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi' | 'opencode-go' | 'cursor' | 'antigravity' | 'shared';
 
 export interface MenubarWindowInput {
   kind: 'session' | 'week' | 'scoped' | 'period';
@@ -228,7 +228,7 @@ const MIN_PACE_ELAPSED = 0.03;
 const ROOMY_CELL_LIMIT = 4;
 /** Settings' soft daily limit for a period quota: period total / 30 × 4.5 (a display hint, not a cap). */
 const DAILY_SOFT_LIMIT_FACTOR = 4.5;
-const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3, 'opencode-go': 4, cursor: 5, shared: 6 };
+const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3, 'opencode-go': 4, cursor: 5, antigravity: 6, shared: 7 };
 const FAMILY_COLORS: Record<MenubarFamily, MenubarColor[]> = {
   claude: ['claude', 'claude2', 'claude3'],
   codex: ['codex'],
@@ -236,9 +236,10 @@ const FAMILY_COLORS: Record<MenubarFamily, MenubarColor[]> = {
   kimi: ['fill'],
   'opencode-go': ['fill'],
   cursor: ['fill', 'ink2'],
+  antigravity: ['fill', 'ink2'],
   shared: ['fill'],
 };
-const HARNESS_ORDER: MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor'];
+const HARNESS_ORDER: MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'];
 
 interface WindowState {
   window: MenubarWindowInput;
@@ -487,11 +488,13 @@ class Builder {
     return this.t('time.daysAgo', { count: days, n: days });
   }
 
-  private windowLabel(window: MenubarWindowInput): string {
+  private windowLabel(window: MenubarWindowInput, source?: MenubarSubscriptionInput): string {
     if (window.kind === 'period') return this.t(window.label === 'limit_month_code' ? 'window.kimiMonthCode' : 'window.kimiMonthTotal');
-    if (window.kind === 'session') return this.t('window.session', { hours: Math.round(window.windowMinutes / 60) });
     if (window.kind === 'scoped') return this.t('window.scoped', { model: window.label ?? '' });
-    return this.t('window.week');
+    const base = window.kind === 'session'
+      ? this.t('window.session', { hours: Math.round(window.windowMinutes / 60) })
+      : this.t('window.week');
+    return source?.family === 'antigravity' && window.label ? `${window.label} · ${base}` : base;
   }
 
   // ── Identity ──────────────────────────────────────────────────────────────
@@ -1003,7 +1006,7 @@ class Builder {
     const limits = state.windows.filter((window) => window.window.kind !== 'scoped');
     const refreshList = limits
       .filter((window) => window.window.resetsAtMs !== null)
-      .map((window) => this.t('say.windowRefresh', { window: this.windowLabel(window.window), at: this.at(window.window.resetsAtMs!) }))
+      .map((window) => this.t('say.windowRefresh', { window: this.windowLabel(window.window, source), at: this.at(window.window.resetsAtMs!) }))
       .join(this.t('headline.joiner'));
     const resetAt = limit.window.resetsAtMs !== null ? this.at(limit.window.resetsAtMs) : null;
     const credits = source.credits ?? 0;
@@ -1011,7 +1014,7 @@ class Builder {
     let sayPrimary: string;
     let saySecondary: string | null = null;
     if (remaining <= 0) {
-      sayPrimary = this.t('say.usedUp', { window: this.windowLabel(limit.window) });
+      sayPrimary = this.t('say.usedUp', { window: this.windowLabel(limit.window, source) });
       if (source.creditsUnlimited || credits > 0) {
         saySecondary = resetAt
           ? this.t('say.usedUpWithCredits', { at: resetAt, credits: creditsLabel })
@@ -1041,7 +1044,7 @@ class Builder {
     for (const window of limits) {
       if (window.window.resetsAtMs === null) continue;
       facts.push({
-        label: window.remaining <= 0 ? this.t('fact.resetsFull') : this.t('fact.windowResets', { window: this.windowLabel(window.window) }),
+        label: window.remaining <= 0 ? this.t('fact.resetsFull') : this.t('fact.windowResets', { window: this.windowLabel(window.window, source) }),
         value: this.at(window.window.resetsAtMs),
         sub: this.t('fact.timeLeft', { duration: this.duration(window.leftMs) }),
       });
@@ -1098,10 +1101,10 @@ class Builder {
       bigUnit: '%',
       bigColor: null,
       bigCompact: multi,
-      bigCaption: this.t('detail.windowLeft', { window: this.windowLabel(limit.window) }),
+      bigCaption: this.t('detail.windowLeft', { window: this.windowLabel(limit.window, source) }),
       legend: multi
         ? state.windows.map((window, index) => ({
-            label: `${this.windowLabel(window.window)} ${Math.round(window.remaining)}%`,
+            label: `${this.windowLabel(window.window, source)} ${Math.round(window.remaining)}%`,
             color: colors[index % colors.length]!,
           }))
         : [],
@@ -1155,6 +1158,7 @@ class Builder {
   }
 
   private harnessName(harness: MenubarHarness): string {
+    if (harness === 'antigravity') return 'Agy';
     return harness === 'cursor' ? 'Cursor' : this.t(`harness.${harness}`);
   }
 
@@ -1291,6 +1295,8 @@ class Builder {
       if (source.kind !== 'subscription') continue;
       // Cursor may still have another pool or additional paid usage; never infer account exhaustion.
       if (source.family === 'cursor') return false;
+      // Agy tracks independent model-group windows; one depleted group does not exhaust others.
+      if (source.family === 'antigravity' && this.state(source).windows.some(w => w.remaining > QUOTA_CRIT_REMAINING_PERCENT)) return false;
       const remaining = this.usableRemaining(source);
       if (remaining === null) continue;
       known += 1;

@@ -68,7 +68,8 @@ class AgyProcess extends EventEmitter {
     switch (request.method) {
       case 'initialize':
         result = { protocolVersion: 1, agentCapabilities: {
-          sessionCapabilities: { resume: {}, close: {} }, auth: { logout: {} },
+          // Mirrors agy 1.5.13, which advertises additionalDirectories.
+          sessionCapabilities: { resume: {}, close: {}, additionalDirectories: {} }, auth: { logout: {} },
           _meta: { antigravity: { systemPrompt: { append: true } } },
         }, authMethods: [{ id: 'oauth-personal', name: 'Sign in with Google' }] };
         break;
@@ -202,6 +203,18 @@ describe('Agy ACP-only sessions', () => {
       const events = await sendTurn(handle);
       expect(events).toContainEqual(expect.objectContaining({ type: 'plan_mode_changed', data: { enabled: false } }));
       expect(events.at(-1)).toMatchObject({ type: 'done' });
+    });
+  });
+
+  // Regression (2026-11-21): Agy refused any task with extra folders, so work in a sibling
+  // worktree counted as outside the workspace and Auto kept asking.
+  it('opens writable folders in Agy and keeps read-only folders out of its workspace', async () => {
+    await withAgy(async start => {
+      const child = new AgyProcess('with-folders');
+      const handle = await start({ extraDirs: ['/refs/docs'], writableDirs: ['/work/sibling'] });
+      const created = child.requests.find(request => request.method === 'session/new');
+      expect((created?.params as { additionalDirectories?: string[] }).additionalDirectories).toEqual(['/work/sibling']);
+      expect(handle.negotiatedCapabilities).toMatchObject({ extraDirs: { supported: true }, writableDirs: { supported: true } });
     });
   });
 

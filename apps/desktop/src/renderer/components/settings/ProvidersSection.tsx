@@ -3992,7 +3992,7 @@ export function ProvidersSection() {
                               : undefined
                           }
                           emptyMessage={
-                            effectiveSelected.source === 'user' &&
+                            (effectiveSelected.source === 'user' || effectiveSelected.id === 'antigravity') &&
                             effectiveSelected.modelDiscoveryFailure
                               ? t(
                                   `settings.providers.detail.discoveryFailed.${effectiveSelected.modelDiscoveryFailure.kind}`,

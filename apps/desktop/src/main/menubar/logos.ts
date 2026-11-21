@@ -65,6 +65,7 @@ export function providerLogo(providerId: string, name: string, routing?: Provide
 export function familyLogo(family: MenubarFamily): string {
   if (family === 'shared') return MENUBAR_CINDY_LOGO;
   if (family === 'cursor') return MENUBAR_HARNESS_LOGOS.cursor;
+  if (family === 'antigravity') return MENUBAR_HARNESS_LOGOS.antigravity;
   if (family === 'claude') return logoForKind('anthropic', 'Claude');
   if (family === 'kimi') return providerLogo('kimi-coding', 'Kimi Code');
   if (family === 'codex') return logoForKind('openai', 'Codex');
@@ -74,6 +75,12 @@ export function familyLogo(family: MenubarFamily): string {
 
 /** Agent identity marks for task rows and the usage chart legend. */
 export const MENUBAR_HARNESS_LOGOS: Record<MenubarHarness, string> = {
+  antigravity: svg(
+    '<g fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>' +
+      '<path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>' +
+      '</g>',
+  ),
   cursor: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 466.73 532.09"><path fill="#000" d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z"/></svg>',
   'claude-code': filled(CLAUDE_CODE_MARK_PATH, true),
   codex: svg(

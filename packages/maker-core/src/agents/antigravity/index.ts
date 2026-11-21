@@ -12,6 +12,20 @@ import {
 } from '../base-agent.js';
 import type { Capabilities } from '../../types/capabilities.js';
 import type { Effort, PermissionMode } from '../../types/common.js';
+import type { AgentEvent } from '../../types/events.js';
+import {
+  appendAutoReviewUserIntent,
+  createAutoReviewActionContext,
+  createAutoReviewAgentTextTracker,
+  isAutoReviewNewUserInput,
+  normalizeAutoReviewUserIntent,
+  resolveAutoReviewDecision,
+  withAutoReviewContext,
+  type AutoReviewDecision,
+  type AutoReviewUserIntent,
+} from '../shared/auto-review-decision.js';
+import type { ReviewableAction } from '../shared/auto-review.js';
+import { normalizeAcpToolForAutoReview } from '../acp/auto-review-policy.js';
 import { openAcpSession, type AcpSession } from '../acp/session.js';
 import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
 import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
@@ -45,6 +59,7 @@ export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
   sameTurnSteer: unavailable,
   memory: { supported },
   extraDirs: unavailable,
+  writableDirs: unavailable,
 };
 
 export function isAntigravityPermissionMode(mode: unknown): boolean {
@@ -67,6 +82,10 @@ function antigravityCapabilities(session: AcpSession): Capabilities {
     permissionModes: nativeModes.some(mode => mode.id === 'default') ? nativeModes : [defaultMode, ...nativeModes],
     availableModels: describeAntigravityCatalog(capabilities.availableModels, session.modelVariantIds),
     memory: ANTIGRAVITY_CAPABILITIES.memory,
+    // Read-only folders only widen Cindy review; writable ones need Agy's additionalDirectories.
+    extraDirs: supported,
+    writableDirs: session.initializeResult.agentCapabilities.sessionCapabilities.additionalDirectories
+      ? supported : unavailable,
   };
 }
 
@@ -148,7 +167,7 @@ export class AntigravityAgent extends BaseAgent {
     let mode: PermissionMode = opts.permissionMode === 'plan' ? 'default' : opts.permissionMode ?? 'auto';
     try {
       if (opts.remoteHostId || opts.deviceHosted || opts.reviewMode || opts.vendorOptions?.orcaRole ||
-          opts.botRuntimeProfile || opts.extraDirs?.length || opts.writableDirs?.length) {
+          opts.botRuntimeProfile) {
         throw new Error('Agy requires an ordinary local desktop task.');
       }
       if (opts.providerId && opts.providerId !== this.kind) throw new Error('Agy requires its own model source.');
@@ -166,6 +185,67 @@ export class AntigravityAgent extends BaseAgent {
         memory?.index,
         opts.userPrompt ?? this.agyDeps.runtimeConfig.userPrompt,
       ].map(part => part?.trim()).filter(Boolean).join('\n\n');
+
+      // Writable folders join Agy's own workspace; read-only folders stay outside it and are
+      // only trusted by Cindy Auto-review, so adding a reference folder never grants writes.
+      let extraDirs = [...(opts.extraDirs ?? [])];
+      let writableDirs = [...(opts.writableDirs ?? [])];
+      let sessionRef: AcpSession | undefined;
+      let currentIntent: AutoReviewUserIntent = '';
+      let intentInitialized = false;
+      const actionContext = createAutoReviewActionContext();
+      const agentText = createAutoReviewAgentTextTracker();
+      const decisionCache = new Map<string, Promise<AutoReviewDecision>>();
+      const reviewDelegate = this.deps.reviewAutoPermissionAction;
+      const reviewAutoAction = (action: ReviewableAction): Promise<AutoReviewDecision> => {
+        const agentContext = agentText.snapshot();
+        const request = {
+          ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+          agentKind: this.kind,
+          providerId: this.kind,
+          model: sessionRef?.model ?? opts.model,
+          userIntent: currentIntent,
+          precedingBlockedActions: actionContext.precedingBlockedActions,
+          ...(agentContext ? { agentContext } : {}),
+          action,
+          workspaceRoots: [cwd, ...extraDirs, ...writableDirs],
+          writableRoots: [cwd, ...writableDirs],
+          platform: process.platform,
+        };
+        let cacheKey: string | undefined;
+        return withAutoReviewContext(request, reviewDelegate, (prepared) => {
+          if (request.userIntent !== currentIntent) {
+            return Promise.resolve({ verdict: 'block', reason: 'User instructions changed; retry against the current request.' });
+          }
+          cacheKey = JSON.stringify(prepared);
+          let pending = decisionCache.get(cacheKey);
+          if (!pending) {
+            pending = resolveAutoReviewDecision(prepared, reviewDelegate);
+            decisionCache.set(cacheKey, pending);
+          }
+          return pending;
+        }, (decision) => {
+          if (request.userIntent !== currentIntent) {
+            return { verdict: 'block', reason: 'User instructions changed; retry against the latest authorization.' };
+          }
+          actionContext.record(action, decision);
+          return decision;
+        });
+      };
+      const acceptUserInput = (content: Parameters<typeof appendAutoReviewUserIntent>[1], options: SendOptions) => {
+        const next = appendAutoReviewUserIntent(intentInitialized ? currentIntent : undefined, content, options);
+        actionContext.advance(typeof next !== 'string');
+        if (isAutoReviewNewUserInput(options)) agentText.beginUserInput();
+        currentIntent = normalizeAutoReviewUserIntent(next);
+        intentInitialized = true;
+        decisionCache.clear();
+      };
+      async function* observeAgentText(source: AsyncIterable<AgentEvent>): AsyncGenerator<AgentEvent> {
+        for await (const event of source) {
+          agentText.observe(event);
+          yield event;
+        }
+      }
 
       bridge = await this.agyDeps.prepareAcp(opts, { enabled: memoryEnabled && !memory?.projectDirectory, scopeKey });
       const taskBridge = bridge;
@@ -189,6 +269,8 @@ export class AntigravityAgent extends BaseAgent {
         logger: this.agyDeps.logger,
         cancelGraceMs: 5_000,
         classifyWarning: classifyAgyWarning,
+        additionalDirectories: writableDirs,
+        reviewPermission: toolCall => reviewAutoAction(normalizeAcpToolForAutoReview(toolCall)),
         sessionMetadata(init) {
           if (!systemPromptAppend) return;
           const agy = asRecord(init.agentMetadata.antigravity);
@@ -198,6 +280,8 @@ export class AntigravityAgent extends BaseAgent {
           return { antigravity: { systemPrompt: { append: systemPromptAppend } } };
         },
       });
+      sessionRef = session;
+      const liveEndpoint = endpoint;
       if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
       if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
       if (!antigravityCapabilities(session).permissionModes.some(option => option.id === mode)) {
@@ -244,6 +328,7 @@ export class AntigravityAgent extends BaseAgent {
           if (options.planMode !== undefined && options.planMode !== session.planMode) {
             await setPlanMode(options.planMode);
           }
+          acceptUserInput(message.content, options);
           await session.send(message, options);
         },
         steer: async () => { throw new Error('Agy does not support same-turn steering.'); },
@@ -266,7 +351,14 @@ export class AntigravityAgent extends BaseAgent {
         setPlanMode,
         getPlanMode: () => session.planMode,
         validateSendOptions: validate,
-        events: () => session.events(),
+        events: () => observeAgentText(session.events()),
+        reviewAutoPermissionAction: reviewAutoAction,
+        hasLiveBackgroundWork: () => liveEndpoint.hasForeignProcesses(),
+        // Review scope follows at once. Agy itself learns new writable folders when the task
+        // next starts (they are passed as additionalDirectories); until then Auto-review
+        // approves writes there and Default asks, as for any folder outside the workspace.
+        setExtraDirs: async (dirs) => { extraDirs = [...dirs]; decisionCache.clear(); },
+        setWritableDirs: async (dirs) => { writableDirs = [...dirs]; decisionCache.clear(); },
         getUsageSnapshot: () => session.getUsageSnapshot(),
         setInteractionResolver: resolver => session.setInteractionResolver(resolver),
       };

@@ -711,3 +711,95 @@ describe('AcpSession agent modes', () => {
     expect(seen).toHaveLength(1);
   });
 });
+
+// Regression (2026-11-21): in Auto every request Agy escalated (reads outside the task
+// folder) went straight to the user. Escalations now go through Cindy Auto-review first.
+describe('AcpSession Cindy Auto-review', () => {
+  const READ_OUTSIDE = {
+    toolCall: { toolCallId: 'r1', title: 'Read', kind: 'read', locations: [{ path: '/other/repo/a.ts' }], rawInput: { Path: '/other/repo/a.ts' } },
+    options: PERMISSION_OPTIONS,
+  };
+  async function escalate(
+    review: OpenAcpSessionOptions['reviewPermission'], mode: OpenAcpSessionOptions['permissionMode'] = 'auto',
+    options = PERMISSION_OPTIONS,
+  ) {
+    const agent = createFakeAgent();
+    const { session } = await open(agent, { permissionMode: mode, reviewPermission: review });
+    const seen: InteractionRequest[] = [];
+    session.setInteractionResolver(async (request) => { seen.push(request); return { kind: 'permission', behavior: 'allow' }; });
+    await session.send({ type: 'user', content: 'go' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    const answer = await agent.requestPermission({ ...READ_OUTSIDE, options });
+    await session.close();
+    return { answer, seen };
+  }
+
+  it('answers once without asking when the review allows', async () => {
+    const review = vi.fn(async () => ({ verdict: 'allow' as const }));
+    const { answer, seen } = await escalate(review);
+    expect(review).toHaveBeenCalledWith(expect.objectContaining({ kind: 'read', rawInput: { Path: '/other/repo/a.ts' } }), expect.anything());
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'yes' } });
+    expect(seen).toHaveLength(0);
+  });
+
+  it('rejects when the review blocks', async () => {
+    const { answer, seen } = await escalate(async () => ({ verdict: 'block', reason: 'Outside the request' }));
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'no' } });
+    expect(seen).toHaveLength(0);
+  });
+
+  it('asks with the reviewer reason when the review cannot decide', async () => {
+    const { answer, seen } = await escalate(async () => ({ verdict: 'ask', reason: 'Reads another repository' }));
+    expect((seen[0] as { metadata?: Record<string, unknown> } | undefined)?.metadata).toMatchObject({ autoReviewReason: 'Reads another repository' });
+    expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'yes' } });
+  });
+
+  it('never creates a persistent grant on its own', async () => {
+    const { seen } = await escalate(async () => ({ verdict: 'allow' }), 'auto', PERMISSION_OPTIONS.filter(o => o.kind !== 'allow_once'));
+    expect(seen).toHaveLength(1);
+  });
+
+  it('leaves other modes to the user', async () => {
+    const review = vi.fn(async () => ({ verdict: 'allow' as const }));
+    const { seen } = await escalate(review, 'default');
+    expect(review).not.toHaveBeenCalled();
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe('AcpSession additional directories', () => {
+  it('opens writable folders as ACP additionalDirectories when advertised', async () => {
+    const agent = createFakeAgent({ agentCapabilities: { sessionCapabilities: { additionalDirectories: {} } } });
+    const { session } = await open(agent, { additionalDirectories: ['/work/other', '/work/project'] });
+    const created = agent.sent.find(message => message.method === 'session/new');
+    expect((created?.params as AcpRecord).additionalDirectories).toEqual(['/work/other']);
+    await session.close();
+  });
+
+  it('refuses extra folders the agent cannot open', async () => {
+    const agent = createFakeAgent();
+    await expect(open(agent, { additionalDirectories: ['/work/other'] })).rejects.toThrow('additional directories');
+  });
+});
+
+describe('AcpSession Cindy Auto-review and Stop', () => {
+  it('answers cancelled when Stop lands while the review is still running', async () => {
+    const agent = createFakeAgent();
+    let reviewSignal: AbortSignal | undefined;
+    const { session } = await open(agent, {
+      permissionMode: 'auto',
+      reviewPermission: (_toolCall, signal) => {
+        reviewSignal = signal;
+        return new Promise(() => {}); // never settles on its own
+      },
+    });
+    await session.send({ type: 'user', content: 'go' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    const answer = agent.requestPermission({ toolCall: { toolCallId: 's1', kind: 'read', rawInput: { Path: '/x' } }, options: PERMISSION_OPTIONS });
+    await vi.waitFor(() => expect(reviewSignal).toBeDefined());
+    void session.abort();
+    await expect(answer).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(reviewSignal?.aborted).toBe(true);
+    await session.close();
+  });
+});

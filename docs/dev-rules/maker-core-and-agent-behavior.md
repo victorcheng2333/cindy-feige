@@ -903,6 +903,25 @@ Cindy 在返回拒绝前，通过已有 `turn/steer` 向对应 thread 和 expect
 的 long-command denial 用例；后者用未修改的 Codex 和本地模拟模型核对后续请求中的真实反馈，
 不代表真实审核模型的判定质量。
 
+### ACP 引擎（Agy）的 Auto 审核
+
+2026-11-21，用户反馈 Agy 在 Auto 档下读写兄弟 worktree 时一直弹确认。Agy 的 Auto 档把原生
+`mode` 设为 `auto`，日常操作由 agy 自己放行；agy 仍升级上来的 `session/request_permission`
+先交 Cindy Auto 审核（`AcpSession.reviewPermission` → `acp/auto-review-policy.ts` 归一化 →
+共用 `withAutoReviewContext`／`resolveAutoReviewDecision`），不再直接问人：
+
+- `allow`：只选 `allow_once`；agy 只给 `allow_always` 时仍交给用户，审核不替用户创建持久授权。
+- `block`：选 `reject_once`。`ask` 或审核失败：弹确认卡，并带审核原因或「自动审批不可用」说明。
+- 只在 Cindy 档位为 Auto 且不在计划模式时审核；Default、接受编辑、完全访问保持原语义。
+- 用户意图按每次发送追加（`appendAutoReviewUserIntent`），审核根目录为任务目录 + 额外目录，
+  可写根为任务目录 + 可写目录。宿主侧工具审批（`reviewAutoPermissionAction`）复用同一审核器。
+
+任务目录：Cindy 的可写目录作为 ACP `additionalDirectories` 交给 agy（agy 1.5.13 声明支持），
+只读参考目录不交给 agy，只扩大 Cindy 审核的可读范围，避免加一个参考目录就让 agy 获得写权限。
+运行中改目录立即更新审核范围；agy 在任务下次启动时才拿到新的可写目录。回归见
+`acp-session.test.ts`（Cindy Auto-review、additional directories）、`acp/auto-review-policy.test.ts`
+与 Agy `index.test.ts`。
+
 ### Auto 模式的同范围自动跟进
 
 用户授权完成一项工作时，可以通过定时任务在原目标与操作范围内继续跟进；延后执行、

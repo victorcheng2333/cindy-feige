@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { execFile, spawn } from 'node:child_process';
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { AcpConnection, methodNotFound } from '../acp/connection.js';
 import { ACP_PROTOCOL_VERSION, asRecord, normalizeInitializeResult } from '../acp/protocol.js';
@@ -10,7 +10,20 @@ import { AcpLineDecoder, type AcpLineTransport, type AcpTransportClosed } from '
  * call (it otherwise logs `missing project file` each time). Seed the same record agy
  * writes in its own data directory; never overwrite one agy already keeps.
  */
+/** Each start adds an `acp.log.<pid>` worker log; keep the newest few so restarts do not pile up. */
+const KEPT_AGY_LOGS = 3;
+async function pruneAgyLogs(stateDir: string): Promise<void> {
+  const names = await readdir(stateDir).catch(() => [] as string[]);
+  const logs = await Promise.all(names.filter(name => /^acp\.log\.\d+$/.test(name)).map(async name => ({
+    name, mtime: await stat(path.join(stateDir, name)).then(info => info.mtimeMs, () => 0),
+  })));
+  logs.sort((a, b) => b.mtime - a.mtime);
+  await Promise.all(logs.slice(KEPT_AGY_LOGS).map(log => rm(path.join(stateDir, log.name), { force: true }).catch(() => {})));
+}
+
 export async function seedAgyStateDir(stateDir: string): Promise<void> {
+  // Called before the task's agy starts, so no pruned log is still being written.
+  await pruneAgyLogs(stateDir);
   const projects = path.join(stateDir, 'config', 'projects');
   await mkdir(projects, { recursive: true, mode: 0o700 });
   const record = { id: 'default-cli-project', name: 'CLI Project', projectResources: {}, updatedAt: new Date().toISOString() };
@@ -23,7 +36,7 @@ export function startAgyAcpProcess(binary: string, cwd: string, stateDir: string
     '--settings', JSON.stringify({ useG1Credits: false }),
     'acp', '--process-per-session', '--disable-telemetry', `--gemini_dir=${stateDir}`,
     `--log-file=${path.join(stateDir, 'acp.log')}`,
-  ], { cwd, env, detached: true });
+  ], { cwd, env: { ...env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' }, detached: true });
   // Native diagnostics can include account and proxy data.
   child.stderr.resume();
   let closed: AcpTransportClosed | undefined;
@@ -99,7 +112,25 @@ export function startAgyAcpProcess(binary: string, cwd: string, stateDir: string
     },
     close,
   };
-  return { transport, whenStopped, stopped: () => stopped };
+  /**
+   * Whether the endpoint's process group still runs anything besides agy itself (front and
+   * worker share the binary). Commands Agy left running in the background live here, and a
+   * close would kill them with the group, so idle reclamation must treat them as busy.
+   * A failed listing counts as busy.
+   */
+  const hasForeignProcesses = (): Promise<boolean> => new Promise(resolve => {
+    const groupId = child.pid;
+    if (!groupId || stopped) { resolve(false); return; }
+    execFile('ps', ['-axo', 'pgid=,comm='], { maxBuffer: 4 * 1024 * 1024, timeout: 5_000 }, (error, stdout) => {
+      if (error) { resolve(true); return; }
+      const agy = path.basename(binary);
+      resolve(stdout.split('\n').some(line => {
+        const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+        return !!match && Number(match[1]) === groupId && path.basename(match[2]!.trim()) !== agy;
+      }));
+    });
+  });
+  return { transport, whenStopped, stopped: () => stopped, hasForeignProcesses };
 }
 
 
