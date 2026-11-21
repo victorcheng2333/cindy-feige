@@ -2013,7 +2013,7 @@ export function registerProviderHandlers(
     return { ok: true };
   });
 
-  const parseModelSettingsTarget = (value: unknown, forPrice: boolean): ModelPriceOverrideTarget => {
+  const parsePriceTarget = (value: unknown): ModelPriceOverrideTarget => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throwIpcError('INVALID_PARAMS', 'price override target must be an object');
     }
@@ -2023,7 +2023,7 @@ export function registerProviderHandlers(
       target.providerId.length === 0 ||
       target.providerId.length > MAX_DISABLE_ID_LENGTH ||
       (target.agent !== 'cursor' &&
-        !(forPrice && target.agent === 'antigravity' && target.providerId === 'antigravity') &&
+        !(target.agent === 'antigravity' && target.providerId === 'antigravity') &&
         !VALID_AGENTS.includes(String(target.agent))) ||
       typeof target.modelId !== 'string' ||
       target.modelId.length === 0 ||
@@ -2037,7 +2037,6 @@ export function registerProviderHandlers(
       modelId: target.modelId,
     };
   };
-  const parsePriceTarget = (value: unknown) => parseModelSettingsTarget(value, true);
   const parseDesiredPrice = (value: unknown): ModelPriceOverrideDesiredQuote => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throwIpcError('INVALID_PARAMS', 'price override quote must be an object');
@@ -2178,13 +2177,13 @@ export function registerProviderHandlers(
   // 复用价格 override 的 target 解析与写入串行队列:两者都是 (provider, agent, model)
   // 粒度的设置类写入,同一把队列避免两种 override 交错落盘。
   const parseContextTargets = (input: unknown): ModelPriceOverrideTarget[] => {
-    const target = parseModelSettingsTarget(input, false);
+    const target = parsePriceTarget(input);
     const related = (input as { relatedTargets?: unknown }).relatedTargets;
     if (related === undefined) return [target];
     if (!Array.isArray(related) || related.length > 2) {
       throwIpcError('INVALID_PARAMS', 'invalid related context targets');
     }
-    const targets = [target, ...related.map(value => parseModelSettingsTarget(value, false))];
+    const targets = [target, ...related.map(parsePriceTarget)];
     if (targets.some((t) => t.providerId !== target.providerId) ||
         new Set(targets.map((t) => t.agent)).size !== targets.length) {
       throwIpcError('INVALID_PARAMS', 'context targets must name distinct harnesses of one provider');

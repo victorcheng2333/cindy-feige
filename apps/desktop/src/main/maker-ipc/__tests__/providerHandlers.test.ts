@@ -5099,6 +5099,27 @@ describe('model context limit IPC', () => {
     expect(write).toHaveBeenLastCalledWith([{ ...primary, modelId: 'missing' }], null);
   });
 
+  // Unit: the model flyout reads both settings for every engine; Agy reads failed as an
+  // invalid target. Minimal failing input: any get for { antigravity, antigravity, model }.
+  it('reads and writes Agy context and image settings only for its own provider', async () => {
+    const harness = new IpcHarness();
+    const agy = { providerId: 'antigravity', agent: 'antigravity' as const, modelId: 'claude-opus-5-5' };
+    const writeModelContextLimit = vi.fn();
+    registerProviderHandlers(harness, makeDeps({
+      currentOwnerSession: () => ({ dataOwnerId: 'owner-a', generation: 1 }),
+      listProviders: async () => [catalogView('antigravity', { antigravity: [agy.modelId] })],
+      readModelContextLimit: () => ({ limit: null, isCustomized: false }),
+      writeModelContextLimit,
+      readModelImageInputOverride: () => null,
+    }));
+    await expect(harness.invoke(MAKER_INVOKE.MODEL_CONTEXT_LIMIT_GET, agy)).resolves.toMatchObject({ limit: null });
+    await expect(harness.invoke(MAKER_INVOKE.MODEL_IMAGE_INPUT_GET, agy)).resolves.toEqual({ value: null, mixed: false });
+    await harness.invoke(MAKER_INVOKE.MODEL_CONTEXT_LIMIT_SET, agy, 500_000, stamp);
+    expect(writeModelContextLimit).toHaveBeenCalledExactlyOnceWith([agy], 500_000);
+    await expect(harness.invoke(MAKER_INVOKE.MODEL_CONTEXT_LIMIT_GET, { ...agy, providerId: 'openai' }))
+      .rejects.toThrow('invalid price override target');
+  });
+
   it('saves model compaction for all aliases with owner and range validation', async () => {
     const harness = new IpcHarness();
     const writeModelCompaction = vi.fn(async () => {});
