@@ -10,7 +10,7 @@ import type { AgentKind, ModelRegistry } from '@cindy/model-providers';
 
 import { modelPricingKey } from '../../shared/modelPriceQuote.js';
 import { accountReferencePriceQuote as providerReferencePriceQuote } from './accountReferencePrice.js';
-import { cursorOfficialReferenceQuote } from './cursorApiValue.js';
+import { nativeSubscriptionReferenceQuote } from './nativeSubscriptionApiValue.js';
 import type {
   ModelPriceOverrideDesiredQuote,
   ModelPriceOverrideTarget,
@@ -54,7 +54,7 @@ interface ModelPriceOverridePrefs {
 const DEFAULTS: ModelPriceOverridePrefs = { version: STORE_VERSION, entries: {} };
 
 function isAgent(value: unknown): value is AgentKind {
-  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor';
+  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity';
 }
 
 function isCurrency(value: unknown): value is MoneyCurrency {
@@ -459,14 +459,24 @@ function readEntries(): Record<string, StoredModelPriceOverride> {
   return store.read().entries;
 }
 
+function priceOverrideReference(
+  target: ModelPriceOverrideTarget,
+  registry: ModelRegistry | null | undefined,
+  at?: string | Date,
+): ModelPriceQuote | undefined {
+  const { providerId, agent, modelId } = target;
+  return providerReferencePriceQuote(providerId, modelId, registry, { agent, at }) ??
+    (providerId === 'cursor' || (providerId === 'antigravity' && agent === 'antigravity')
+      ? nativeSubscriptionReferenceQuote(registry ?? undefined, providerId, modelId, at)
+      : undefined);
+}
+
 export function readModelPriceOverrideView(
   target: ModelPriceOverrideTarget,
   registry: ModelRegistry | null | undefined,
   ledgerCurrency: MoneyCurrency = currentLedgerCurrency(),
 ): ModelPriceOverrideView {
-  const remoteReference = providerReferencePriceQuote(target.providerId, target.modelId, registry, {
-    agent: target.agent,
-  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry ?? undefined, target.modelId) : undefined);
+  const remoteReference = priceOverrideReference(target, registry);
   const reference =
     remoteReference && currencyCanProjectToLedger(remoteReference.currency, ledgerCurrency)
       ? remoteReference
@@ -496,9 +506,7 @@ export function setModelPriceOverride(
   if (target.providerId === 'xd') {
     throw new Error('Cindy AI Gateway pricing cannot be overridden');
   }
-  const reference = providerReferencePriceQuote(target.providerId, target.modelId, registry, {
-    agent: target.agent,
-  }) ?? (target.providerId === 'cursor' ? cursorOfficialReferenceQuote(registry ?? undefined, target.modelId) : undefined);
+  const reference = priceOverrideReference(target, registry);
   const baseReference = comparable(reference);
   const values = sparseValues(desired, baseReference);
   const entries = { ...readEntries() };
@@ -606,10 +614,7 @@ export function applyModelPriceOverrides(
   );
   for (const record of Object.values(options.entries ?? readEntries())) {
     if (record.providerId === 'xd') continue;
-    const reference = providerReferencePriceQuote(record.providerId, record.modelId, registry, {
-      agent: record.agent,
-      at: options.at,
-    });
+    const reference = priceOverrideReference(record, registry, options.at);
     const quote = mergedQuote(record, reference, record.values, record.baseReference);
     if (!quote || !currencyCanProjectToLedger(quote.currency, ledgerCurrency)) continue;
     (next[record.providerId] ??= {})[modelPricingKey(record.modelId, record.agent)] = quote;

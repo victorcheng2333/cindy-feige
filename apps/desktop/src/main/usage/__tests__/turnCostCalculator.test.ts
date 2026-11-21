@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUNDLED_CATALOG } from '@cindy/model-providers';
-import { cursorApiValue, cursorOfficialReferenceQuote } from '../cursorApiValue.js';
+import { nativeSubscriptionApiValue, nativeSubscriptionReferenceQuote } from '../nativeSubscriptionApiValue.js';
 import { modelPricingKey, providerReferencePriceQuote, subscriptionDirectPriceQuote } from '../../../shared/modelPriceQuote';
 
 import type { ModelUsageDeltaEntry } from '../modelUsageDelta';
@@ -41,32 +41,32 @@ describe('Cursor API equivalent without a native bill', () => {
     [tokens, 0.044426],
     [{ inputTokens: 21738, outputTokens: 36, cacheReadTokens: 21504, cacheCreateTokens: 0 }, 0.054444],
   ])('prices observed cache buckets independently', (usage, amount) => {
-    expect(cursorApiValue(BUNDLED_CATALOG.modelRegistry, 'grok-4.6', usage, 'USD', '2026-11-04'))
+    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, 'USD', '2026-11-04'))
       .toMatchObject({ amount: expect.closeTo(amount, 8), currency: 'USD', kind: 'value-estimate' });
   });
   it('does not treat aggregate run tokens as one long-context request or invent a cache-write price', () => {
     for (const usage of [{ ...tokens, inputTokens: 210000 }, { ...tokens, cacheCreateTokens: 1 }]) {
-      expect(cursorApiValue(BUNDLED_CATALOG.modelRegistry, 'grok-4.6', usage, 'USD', '2026-11-04')).toBeNull();
+      expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, 'USD', '2026-11-04')).toBeNull();
     }
   });
   it('rejects unknown and ambiguous base identities', () => {
-    expect(cursorApiValue(BUNDLED_CATALOG.modelRegistry, 'unlisted-cursor-model', tokens, 'USD')).toBeNull();
+    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'unlisted-cursor-model', tokens, 'USD')).toBeNull();
     const registry = BUNDLED_CATALOG.modelRegistry!;
     const base = registry.baseModels!.find(m => m.id === 'xai/grok-4.6')!;
-    expect(cursorApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'grok-4.6', tokens, 'USD')).toBeNull();
+    expect(nativeSubscriptionApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'cursor', 'grok-4.6', tokens, 'USD')).toBeNull();
   });
   it('quotes unique official manufacturer prices for Cursor catalog ids', () => {
     const at = '2026-11-13';
-    expect(cursorOfficialReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'gemini-4-hydrogen', at))
+    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'cursor', 'gemini-4-hydrogen', at))
       .toMatchObject({ providerId: 'cursor', modelId: 'gemini-4-hydrogen', currency: 'USD',
         source: 'provider-reference', approximate: true, inputPerMtok: 1.5, outputPerMtok: 7.5, cacheReadPerMtok: 0.075 });
-    expect(cursorOfficialReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'grok-4.6', at))
+    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', at))
       .toMatchObject({ providerId: 'cursor', modelId: 'grok-4.6', currency: 'USD',
         inputPerMtok: 2, outputPerMtok: 6, cacheReadPerMtok: 0.5 });
-    expect(cursorOfficialReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'composer-2.5', at)).toBeUndefined();
+    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'cursor', 'composer-2.5', at)).toBeUndefined();
     const registry = BUNDLED_CATALOG.modelRegistry!;
     const base = registry.baseModels!.find(m => m.id === 'google/gemini-4-hydrogen')!;
-    expect(cursorOfficialReferenceQuote({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/gemini-4-hydrogen' }] }, 'gemini-4-hydrogen', at)).toBeUndefined();
+    expect(nativeSubscriptionReferenceQuote({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/gemini-4-hydrogen' }] }, 'cursor', 'gemini-4-hydrogen', at)).toBeUndefined();
   });
 });
 const XD_GATEWAY_CN: TurnPricingContext = {

@@ -241,8 +241,9 @@ export function antigravityProvider(): Provider | undefined {
     agents: ['antigravity'],
     auth: { method: 'oauth' },
     routing: { antigravity: { upstream: 'https://antigravity.google', authStrategy: 'none' } },
-    models: { antigravity: currentModels().map(({ id, displayName, contextWindow, efforts, defaultEffort, defaultEnabled }) => ({
+    models: { antigravity: currentModels().map(({ id, displayName, contextWindow, efforts, defaultEffort, defaultEnabled, effortsUnknown }) => ({
       id, name: displayName, contextWindow, efforts: [...(efforts ?? [])], defaultEffort,
+      ...(effortsUnknown ? { effortsUnknown } : {}),
       ...(defaultEnabled === undefined ? {} : { defaultEnabled }),
     })) },
   };

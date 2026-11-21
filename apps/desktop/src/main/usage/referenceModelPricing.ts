@@ -19,7 +19,7 @@ import {
 import type { ModelPriceQuote, ModelPricingCatalog } from '../../shared/regionalMoney.js';
 import { getByokPricing } from '../model-access/byokPricing.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
-import { cursorOfficialReferenceQuote } from './cursorApiValue.js';
+import { nativeSubscriptionReferenceQuote } from './nativeSubscriptionApiValue.js';
 import { accountHasReferencePriceDeclaration, accountReferencePriceQuote as providerReferencePriceQuote } from './accountReferencePrice.js';
 import {
   applyModelPriceOverrides,
@@ -91,10 +91,12 @@ export function getReferenceModelPricing(
       }
     }
   }
-  const cursor = catalog.providers.find(provider => provider.id === 'cursor');
-  for (const model of cursor?.models.cursor ?? []) {
-    const quote = cursorOfficialReferenceQuote(registry, model.id, at);
-    if (quote) (pricing.cursor ??= {})[modelPricingKey(model.id, 'cursor')] = quote;
+  for (const providerId of ['cursor', 'antigravity'] as const) {
+    const provider = (options.providers ?? catalog.providers).find(entry => entry.id === providerId);
+    for (const model of provider?.models[providerId] ?? []) {
+      const quote = nativeSubscriptionReferenceQuote(registry, providerId, model.id, at);
+      if (quote) (pricing[providerId] ??= {})[modelPricingKey(model.id, providerId)] = quote;
+    }
   }
   return {
     ...applyModelPriceOverrides(pricing, registry, undefined, { at, entries: options.overrides }),

@@ -38,7 +38,9 @@ export function describeAntigravityCatalog(
     return {
       ...model,
       efforts: variants ? AGY_EFFORTS.filter(level => variants.includes(level)) : [],
-      defaultEffort: variants?.[0] ?? null,
+      // Variant order is presentation order. The selected model still uses the
+      // active ACP value above; other models use Cindy's balanced default if offered.
+      defaultEffort: variants?.includes('medium') ? 'medium' : variants?.[0] ?? null,
     };
   });
 }

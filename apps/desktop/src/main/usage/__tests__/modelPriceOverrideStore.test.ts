@@ -538,8 +538,11 @@ describe('model price override sparse persistence', () => {
     ).toEqual({ version: 1, entries: {} });
   });
 
-  it('reloads a persisted Pi override instead of discarding it after restart', () => {
-    const target = { providerId: 'custom-pi', agent: 'pi' as const, modelId: 'grok-4' };
+  // Unit: persistence filtering previously silently dropped Agy settings on reload.
+  it.each([
+    { providerId: 'custom-pi', agent: 'pi' as const, modelId: 'grok-4' },
+    { providerId: 'antigravity', agent: 'antigravity' as const, modelId: 'claude-opus-5-5' },
+  ])('reloads a persisted $agent override after restart', (target) => {
     const key = __testing.overrideKey(target);
     expect(
       __testing.normalize({

@@ -1,12 +1,13 @@
 import { captureTurnUsageContext, turnBillingSource, type TurnUsageContext } from './turnUsageContext.js';
 import type { AgentEvent, Session } from '@cindy/maker-core';
 import { buildTurnUsageDetails } from '../../shared/turnUsageDetails.js';
-import { cursorApiValue } from '../usage/cursorApiValue.js';
+import { nativeSubscriptionApiValue } from '../usage/nativeSubscriptionApiValue.js';
+import { estimateAntigravitySubscriptionValue } from '../usage/antigravitySubscriptionValue.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
 import { currentLedgerCurrency } from '../usage/ledgerCurrency.js';
 import { recordSessionTurnTokens } from '../sessionSpendBroadcaster.js';
 import { recordSchedulerTurnCost, recordTurnUsageOnMessage } from '../turnCostBroadcaster.js';
-import { cursorSubscriptionUsageModelKey } from '../usage/usageHistory.js';
+import { nativeSubscriptionUsageModelKey } from '../usage/usageHistory.js';
 import type { RegionalMoney } from '../../shared/regionalMoney.js';
 import { rebroadcastTodaySpend, recordModelTurnUsage } from '../usageBroadcaster.js';
 import { captureDataOwnerBroadcastScope, isDataOwnerBroadcastScopeCurrent } from '../device-link/broadcast-tap.js';
@@ -43,7 +44,7 @@ export function cursorUsageToTokens(raw: unknown, inputIncludesCache = true): {
 }
 
 /**
- * Manufacturer API-equivalent value is never Cindy spend or a Cursor invoice.
+ * Manufacturer API-equivalent value belongs only to subscription estimates.
  * Persist token facts per model and per task; apply a value-estimate only when
  * the model's standard API tariff is unambiguous across buckets.
  */
@@ -68,9 +69,9 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   const totalTokens = tokens.inputTokens + tokens.outputTokens + tokens.cacheReadTokens + tokens.cacheCreateTokens;
   if (totalTokens <= 0) return;
 
-  const pricing = source === 'cursor'
-    ? { registry: getActiveCatalog()?.modelRegistry, currency: currentLedgerCurrency(), at: new Date().toISOString() }
-    : null;
+  const registry = getActiveCatalog()?.modelRegistry;
+  const currency = currentLedgerCurrency();
+  const at = new Date().toISOString();
   let model = session.model ?? 'unknown';
   await recordSessionTurnTokens(session.id, totalTokens);
   try {
@@ -80,9 +81,13 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   }
   if (!isDataOwnerBroadcastScopeCurrent(owner)) return;
 
-  const money = pricing ? cursorApiValue(pricing.registry, model, tokens, pricing.currency, pricing.at) : undefined;
+  const money = source === 'antigravity'
+    ? estimateAntigravitySubscriptionValue(registry, model, tokens, currency, at)
+    : nativeSubscriptionApiValue(registry, source, model, tokens, currency, at);
   const details = buildTurnUsageDetails({
     ...turnBillingSource(turnContext, 'subscription'),
+    ...(source === 'antigravity' && turnContext.providerId !== source
+      ? { providerId: source, providerName: 'Agy' } : {}),
     ...tokens,
     model,
     ...(money ? { perModelCost: [{ model, money }] } : {}),
@@ -90,7 +95,9 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   await recordModelTurnUsage({
     sessionId: session.id,
     agentKind: source,
-    model: source === 'cursor' ? cursorSubscriptionUsageModelKey(model) : model,
+    // Preserve separate counters for Agy turns whose tariff was unavailable.
+    // History can estimate those tokens when a dated quote becomes available.
+    model: source === 'cursor' || money?.amount ? nativeSubscriptionUsageModelKey(model) : model,
     money: money ?? deps.unpricedSubscriptionValueMarker(),
     inputTokensDelta: tokens.inputTokens,
     outputTokensDelta: tokens.outputTokens,
@@ -98,7 +105,7 @@ export async function recordSessionNativeSubscriptionTurnUsage(
     cacheCreateTokensDelta: tokens.cacheCreateTokens,
   });
   if (!isDataOwnerBroadcastScopeCurrent(owner)) return;
-  if (money) {
+  if (money?.amount) {
     await recordSchedulerTurnCost({
       sessionId: session.id,
       clientId,

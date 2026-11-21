@@ -3878,11 +3878,15 @@ describe('model price override handlers', () => {
     modelId: 'meta/llama-4',
   };
 
-  it('reads and writes a catalog member through the trusted visual settings path', async () => {
+  // Agy was rejected as an invalid target before its native model was checked.
+  it.each([
+    target,
+    { providerId: 'antigravity', agent: 'antigravity' as const, modelId: 'claude-opus-5-5' },
+  ])('reads and writes $providerId prices through the trusted visual settings path', async (target) => {
     const harness = new IpcHarness();
     const deps = makeDeps({
       listProviders: async () => [
-        catalogView('openrouter', { codex: ['meta/llama-4'] }),
+        catalogView(target.providerId, { [target.agent]: [target.modelId] }),
       ],
     });
     registerProviderHandlers(harness, deps);

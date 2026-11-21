@@ -67,6 +67,7 @@ import {
   mergeDismissedIntoErrorContent,
 } from '../../../shared/interruptedTurn.js';
 import { resolveStaleCodexSubscriptionValueEstimate } from '../../../shared/codexSubscriptionValue.js';
+import { createAntigravityValueEstimator, estimateHistoricalAntigravityMessage } from '../../usage/antigravitySubscriptionValue.js';
 import { buildTurnUsageDetails, normalizeTurnUsageDetails } from '../../../shared/turnUsageDetails.js';
 import { readSessionCostDetails } from '../../usage/sessionCostDetails.js';
 import {
@@ -722,6 +723,7 @@ export function registerMessageIpc(
       .select({
         clientId: messages.clientId,
         agentMeta: messages.agentMeta,
+        createdAt: messages.createdAt,
       })
       .from(messages)
       .where(
@@ -1676,9 +1678,10 @@ export async function updateAgentMeta(
 }
 
 export function extractEstimatedSessionValueEntries(
-  rows: Array<{ clientId: string; agentMeta: string | null }>,
+  rows: Array<{ clientId: string; agentMeta: string | null; createdAt?: number }>,
 ): EstimatedSessionValueEntry[] {
   const entries: EstimatedSessionValueEntry[] = [];
+  const estimateAntigravity = createAntigravityValueEstimator();
   for (const row of rows) {
     if (!row.clientId || !row.agentMeta) continue;
     let meta: AgentMeta | null = null;
@@ -1691,7 +1694,9 @@ export function extractEstimatedSessionValueEntries(
       continue;
     }
     if (meta?.turnCostIsEstimate !== true) {
-      const estimate = addCompatibleRegionalMoney((normalizeTurnUsageDetails(meta?.turnUsageDetails)?.perModelCost ?? [])
+      const usage = estimateHistoricalAntigravityMessage(meta, row.createdAt, estimateAntigravity) ??
+        normalizeTurnUsageDetails(meta?.turnUsageDetails);
+      const estimate = addCompatibleRegionalMoney((usage?.perModelCost ?? [])
         .filter(item => item.money.kind === 'value-estimate').map(item => item.money));
       if (estimate?.amount) entries.push({ clientId: row.clientId, money: estimate,
         ...(estimate.currency === 'USD' ? { costUsd: estimate.amount } : {}) });

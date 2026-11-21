@@ -67,6 +67,25 @@ import {
 } from '../referenceModelPricing.js';
 
 describe('independent subscription account reference prices', () => {
+  // Unit: settings consume this snapshot. The standard API quote must be
+  // present under Agy's own engine even when the registry has no Agy route.
+  it('publishes the Agy Opus reference tariff under the Agy model key', () => {
+    const modelId = 'claude-opus-5-5';
+    const pricing = getReferenceModelPricing({
+      at: '2026-11-21',
+      providers: [{
+        id: 'antigravity', name: 'Agy', source: 'builtin', agents: ['antigravity'],
+        auth: { method: 'oauth' }, routing: {},
+        models: { antigravity: [{ id: modelId, name: 'Claude Opus 5.5', contextWindow: 0,
+          efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' }] },
+      }],
+    });
+    expect(getModelPriceQuote(pricing, 'antigravity', modelId, 'antigravity')).toMatchObject({
+      providerId: 'antigravity', currency: 'USD', source: 'subscription-reference',
+      inputPerMtok: 4, outputPerMtok: 20, cacheReadPerMtok: 0.2, cacheCreatePerMtok: 5,
+    });
+  });
+
   // Regression: API connections with a newly catalogued model had tokens but no value.
   // Existing tests cover subscription identities/imported costs, not an API preset without cost.
   // Unit: real reference projection must resolve the exact model, retaining account attribution.

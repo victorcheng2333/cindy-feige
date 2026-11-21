@@ -190,7 +190,7 @@ function subscriptionQuote(
 
 function modelRow(
   day: string,
-  agentKind: 'claude-code' | 'codex' | 'pi',
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity',
   model: string,
   money: RegionalMoney,
   tokens: {
@@ -353,6 +353,27 @@ describe('getSubscriptionValuePriceFor', () => {
 });
 
 describe('readUsageHistoryWith', () => {
+  // Unit: upgrade an Agy day that has both token-only and priced rows. One model
+  // should carry both estimates, while the actual-spend totals stay at zero.
+  it('combines legacy and newly priced Agy rows without re-estimating stored money', async () => {
+    const day = '2026-11-21';
+    const model = 'claude-opus-5-5';
+    const result = await readUsageHistoryWith(makeDeps({
+      todayKey: () => day,
+      getModelUsageSince: async () => [
+        modelRow(day, 'antigravity', model, actual(0), { inputTokens: 1_000_000 }),
+        modelRow(day, 'antigravity', `${model}#billing=subscription`, {
+          ...actual(regionalUsdAmount(2)), kind: 'value-estimate', approximate: true,
+        }, { inputTokens: 1_000_000 }),
+      ],
+    }));
+    expect(result.totals.today.amount).toBe(0);
+    expect(result.models).toMatchObject([{
+      agentKind: 'antigravity', model, inputTokens: 2_000_000,
+      estimatedMoney: { amount: expect.closeTo(regionalUsdAmount(6)), kind: 'value-estimate' },
+    }]);
+  });
+
   // 单测：纯 CNY 的订阅估值、海外 USD 的原有金额与展示不能因迁移修复改变。
   // 现有用例只校验聚合值，没有经过菜单栏和 iPhone 小组件投影；最小输入是 API 3 + 订阅估值 2 USD。
   it.each(['CNY', 'USD'] as const)('keeps %s account and subscription presentation unchanged', async (currency) => {

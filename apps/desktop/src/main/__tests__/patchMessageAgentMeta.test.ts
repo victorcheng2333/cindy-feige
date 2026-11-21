@@ -35,6 +35,10 @@ vi.mock('../session-import/legacy', () => ({
 vi.mock('../embedders/chat-history-embedder', () => ({
   onMessageCreated: vi.fn(async () => undefined),
 }));
+vi.mock('../usage/modelPriceOverrideStore.js', async (load) => ({
+  ...await load<typeof import('../usage/modelPriceOverrideStore.js')>(),
+  readModelPriceOverridesSnapshot: () => ({}),
+}));
 
 // fake drizzle:select 链按 selectQueue 顺序吐行;update 链捕获 set 的 payload。
 type SelectChain = Record<string, unknown> & {
@@ -171,6 +175,27 @@ describe('patchMessageAgentMeta', () => {
 });
 
 describe('extractEstimatedSessionValueEntries', () => {
+  // Unit: older Agy messages have a subscription route and tokens but no price.
+  // A later Cursor/Claude turn must not change the billing identity of those messages.
+  it('reopens historical Agy estimates from the saved route and date', () => {
+    const details = {
+      providerId: 'antigravity', billingSource: 'subscription', model: 'claude-opus-5-5',
+      inputTokens: 2_131, outputTokens: 6, cacheReadTokens: 7_591,
+    };
+    const row = (clientId: string, createdAt: string, providerId: string) => ({
+      clientId, createdAt: Date.parse(createdAt),
+      agentMeta: JSON.stringify({ turnUsageDetails: { ...details, providerId } }),
+    });
+    expect(extractEstimatedSessionValueEntries([
+      row('agy-reply', '2026-11-21T10:00:00Z', 'antigravity'),
+      row('before-reference', '2026-08-01T10:00:00Z', 'antigravity'),
+      row('unrelated-reply', '2026-11-21T10:00:00Z', 'cursor'),
+    ])).toMatchObject([{
+      clientId: 'agy-reply',
+      money: { amount: expect.closeTo(0.0101622, 9), currency: 'USD', kind: 'value-estimate' },
+    }]);
+  });
+
   it('只汇总订阅模式估算价值,忽略真实 API cost / 非法 meta', () => {
     const legacyEstimatedEntry = (clientId: string, costUsd: number) => ({
       clientId,

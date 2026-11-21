@@ -48,6 +48,7 @@ import {
   type ModelPriceOverridesSnapshot,
 } from './referenceModelPricing';
 import { computePriceQuoteTurnMoney } from './turnCostCalculator';
+import { createAntigravityValueEstimator } from './antigravitySubscriptionValue.js';
 import {
   getPeerUsageSync,
   type PeerUsageSnapshot,
@@ -527,8 +528,8 @@ export function piSubscriptionUsageModelKey(model: string): string {
   return `${displayModelName(model)}#billing=subscription`;
 }
 
-/** Cursor 订阅轮按 Cursor 账号计费，与其它 agent 共用 billing 后缀并保留独立 agentKind。 */
-export function cursorSubscriptionUsageModelKey(model: string): string {
+/** Native subscriptions keep their own agentKind and share the subscription billing suffix. */
+export function nativeSubscriptionUsageModelKey(model: string): string {
   return `${displayModelName(model)}#billing=subscription`;
 }
 
@@ -828,6 +829,8 @@ export async function readUsageHistoryWith(
 
   const byKey = new Map<string, UsageHistoryModel>();
   const subscriptionEstimatesByKey = new Map<string, RegionalMoney[]>();
+  const subscriptionEstimatesByRow = new Map<DailyModelUsageRow, RegionalMoney>();
+  const estimateAntigravity = createAntigravityValueEstimator(priceOverrides);
   let todayTokens = 0;
   let last30DaysTokens = 0;
   for (const row of modelRows) {
@@ -840,7 +843,8 @@ export async function readUsageHistoryWith(
     // claude 订阅行同样带 #billing= 后缀, 展示名统一剥后缀; key 保留原始 model
     // (api / subscription 两个计费维度分行聚合)。
     const model = displayModelName(row.model);
-    const key = `${agentKind}\u0000${row.model}`;
+    const modelKey = agentKind === 'antigravity' ? nativeSubscriptionUsageModelKey(row.model) : row.model;
+    const key = `${agentKind}\u0000${modelKey}`;
     let agg = byKey.get(key);
     if (!agg) {
       agg = {
@@ -865,18 +869,23 @@ export async function readUsageHistoryWith(
     agg.outputTokens += row.outputTokens;
     agg.cacheReadTokens += row.cacheReadTokens;
     agg.cacheCreateTokens += row.cacheCreateTokens;
-    if (isSubscriptionUsageModel(row.model)) {
-      const estimate =
-        row.money.kind === 'value-estimate' && row.money.amount > 0
-          ? row.money
-          : row.money.kind !== 'value-estimate' && row.money.amount === 0
-            ? computePriceQuoteTurnMoney(
-                row,
-                getSubscriptionValuePriceFor(agentKind, model, pricing, row.day, priceOverrides),
-                ledgerCurrency,
-              )
-            : null;
-      if (estimate?.amount) {
+    const taggedSubscription = isSubscriptionUsageModel(row.model);
+    const estimate = taggedSubscription && row.money.kind === 'value-estimate'
+      ? row.money
+      : agentKind === 'antigravity' && !taggedSubscription && row.money.amount === 0
+        // Legacy Agy rows were written before the subscription key and estimate
+        // existed. Keep them separate from the new, already priced rows on read.
+        ? estimateAntigravity(model, row, row.day)
+        : taggedSubscription
+          ? computePriceQuoteTurnMoney(
+              row,
+              getSubscriptionValuePriceFor(agentKind, model, pricing, row.day, priceOverrides),
+              ledgerCurrency,
+            )
+          : null;
+    if (estimate?.amount) {
+      subscriptionEstimatesByRow.set(row, estimate);
+      if (row.money.kind !== 'actual-cost' || row.money.amount === 0) {
         const estimates = subscriptionEstimatesByKey.get(key) ?? [];
         estimates.push(estimate);
         subscriptionEstimatesByKey.set(key, estimates);
@@ -899,17 +908,7 @@ export async function readUsageHistoryWith(
     const agentKind = usageAgentKind(row.agentKind);
     const model = displayModelName(row.model);
     const apiMoney = row.money.kind === 'actual-cost' ? row.money : zeroActual();
-    const subscriptionEstimateMoney = isSubscriptionUsageModel(row.model)
-      ? row.money.kind === 'value-estimate' && row.money.amount > 0
-        ? row.money
-        : row.money.kind !== 'value-estimate'
-          ? (computePriceQuoteTurnMoney(
-              row,
-              getSubscriptionValuePriceFor(agentKind, model, pricing, row.day, priceOverrides),
-              ledgerCurrency,
-            ) ?? zeroEstimate())
-          : zeroEstimate()
-      : zeroEstimate();
+    const subscriptionEstimateMoney = subscriptionEstimatesByRow.get(row) ?? zeroEstimate();
     const money = apiMoney.amount > 0 ? apiMoney : subscriptionEstimateMoney;
     return {
       day: row.day,
