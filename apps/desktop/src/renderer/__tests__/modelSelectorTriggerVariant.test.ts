@@ -3441,4 +3441,89 @@ describe('ModelSelector trigger variants', () => {
       providersRef.providers = providersRef.DEFAULT_PROVIDERS;
     }
   });
+
+  it('renders the double-bolt SpeedIcon in the model list row for ultrafast mode', () => {
+    const originalModels = visibleModelsRef.models;
+    const originalCapabilities = agentCapabilitiesRef.capabilities;
+    const solModel = {
+      id: 'gpt-6.2-sol',
+      displayName: 'GPT-6.2-Sol',
+      contextWindow: 872000,
+      efforts: ['low', 'medium', 'high'] as const,
+      defaultEffort: 'high' as const,
+      supportsFastMode: true,
+      supportsUltrafastMode: true,
+      icon: 'openai',
+    };
+    visibleModelsRef.models = [solModel];
+    agentCapabilitiesRef.capabilities = {
+      availableModels: [solModel],
+      effortLevels: [
+        { id: 'low', displayName: 'Low' },
+        { id: 'medium', displayName: 'Medium' },
+        { id: 'high', displayName: 'High' },
+      ],
+      hasFastMode: true,
+    };
+    providersRef.providers = [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        connected: true,
+        agents: ['codex'],
+        routing: { codex: {} },
+        models: {
+          codex: [{ ...solModel, name: solModel.displayName }],
+        },
+      },
+    ];
+
+    try {
+      const { rerender } = render(
+        React.createElement(ModelSelectorContent, {
+          remoteAgent: undefined,
+          modelId: 'gpt-6.2-sol',
+          effort: 'high',
+          fastMode: 'ultrafast',
+          onModelChange: vi.fn(),
+          onEffortChange: vi.fn(),
+          onFastModeChange: vi.fn(),
+          vendorKey: 'codex',
+          currentProviderId: 'openai',
+          onProviderChange: vi.fn(),
+        }),
+      );
+
+      const ultraRow = screen.getByRole('option', { name: /GPT-6\.2-Sol/ });
+      const ultraIcon = within(ultraRow).getByRole('img', {
+        name: 'newChat.modelSelector.speed.ultrafast',
+      });
+      expect(ultraIcon.tagName.toLowerCase()).toBe('svg');
+      expect(ultraIcon.querySelectorAll('path')).toHaveLength(2);
+
+      rerender(
+        React.createElement(ModelSelectorContent, {
+          remoteAgent: undefined,
+          modelId: 'gpt-6.2-sol',
+          effort: 'high',
+          fastMode: true,
+          onModelChange: vi.fn(),
+          onEffortChange: vi.fn(),
+          onFastModeChange: vi.fn(),
+          vendorKey: 'codex',
+          currentProviderId: 'openai',
+          onProviderChange: vi.fn(),
+        }),
+      );
+
+      const fastRow = screen.getByRole('option', { name: /GPT-6\.2-Sol/ });
+      const fastIcon = within(fastRow).getByRole('img', { name: '快速' });
+      expect(fastIcon.tagName.toLowerCase()).toBe('svg');
+      expect(fastIcon.querySelectorAll('path')).toHaveLength(1);
+    } finally {
+      visibleModelsRef.models = originalModels;
+      agentCapabilitiesRef.capabilities = originalCapabilities;
+      providersRef.providers = providersRef.DEFAULT_PROVIDERS;
+    }
+  });
 });

@@ -48,7 +48,6 @@ import {
   RefreshCw,
   Search,
   Unplug,
-  Zap,
   Lock,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -3478,10 +3477,15 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
                       </span>
                     )}
                     {rowFastOn && (
-                      <Zap
+                      <SpeedIcon
+                        mode={rowFastOn}
                         size={13}
                         className="shrink-0 text-[var(--text-tertiary)]"
-                        aria-label={t('newChat.modelSelector.meta.fastBadge')}
+                        aria-label={t(
+                          rowFastOn === 'ultrafast'
+                            ? 'newChat.modelSelector.speed.ultrafast'
+                            : 'newChat.modelSelector.meta.fastBadge',
+                        )}
                       />
                     )}
                   </span>
