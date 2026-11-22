@@ -102,8 +102,8 @@ async function start() {
     else if (!demo) return service!.command(command);
     return state();
   });
-  const image = nativeImage.createFromPath(join(__dirname, 'trayTemplate.png'));
-  image.setTemplateImage(true);
+  const image = nativeImage.createFromPath(join(__dirname, 'tray.png'));
+  image.setTemplateImage(false);
   tray = new Tray(image); tray.setToolTip('猫猫 · 远程订阅额度');
   // Clicking the menu bar can blur the window before this handler runs.
   // Visibility, rather than focus at click time, determines the toggle.

@@ -36,7 +36,7 @@ use tauri::{
 use url::Url;
 use uuid::Uuid;
 
-static TRAY_ICON_PNG: &[u8] = include_bytes!("../icons/trayTemplate@2x.png");
+static TRAY_ICON_PNG: &[u8] = include_bytes!("../icons/tray@2x.png");
 static APP_ICON_PNG: &[u8] = include_bytes!("../icons/icon.png");
 
 struct UiRuntimeState {
@@ -458,7 +458,7 @@ fn main() {
             let ui_for_tray = ui_state.clone();
             let tray = TrayIconBuilder::with_id("quota-cat-tray")
                 .icon(tray_image)
-                .icon_as_template(true)
+                .icon_as_template(false)
                 .tooltip("猫猫 · 远程订阅额度")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)

@@ -33,7 +33,7 @@ await Promise.all([
   cp(join(root, 'src/index-tauri.html'), join(distUi, 'index.html')),
   cp(join(root, 'src/style.css'), join(distUi, 'style.css')),
   cp(join(root, 'assets/icon.svg'), join(distUi, 'icon.svg')),
-  sharp(join(root, 'assets/tray.svg')).resize(36, 36).png().toFile(join(iconsDir, 'trayTemplate@2x.png')),
+  sharp(join(root, 'assets/tray.svg')).resize(36, 36).png().toFile(join(iconsDir, 'tray@2x.png')),
   sharp(join(root, 'assets/icon.svg')).resize(512, 512).png().toFile(join(iconsDir, 'icon.png')),
 ]);
 

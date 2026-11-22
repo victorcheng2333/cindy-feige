@@ -13,8 +13,8 @@ await Promise.all([
   ...['index.html', 'style.css'].map(file => cp(join(root, 'src', file), join(out, file))),
   cp(join(root, 'assets/icon.svg'), join(out, 'icon.svg')),
 ]);
-await sharp(join(root, 'assets/tray.svg')).resize(18, 18).png().toFile(join(out, 'trayTemplate.png'));
-await sharp(join(root, 'assets/tray.svg')).resize(36, 36).png().toFile(join(out, 'trayTemplate@2x.png'));
+await sharp(join(root, 'assets/tray.svg')).resize(18, 18).png().toFile(join(out, 'tray.png'));
+await sharp(join(root, 'assets/tray.svg')).resize(36, 36).png().toFile(join(out, 'tray@2x.png'));
 await sharp(join(root, 'assets/icon.svg')).resize(1024, 1024).png().toFile(join(out, 'icon.png'));
 const source = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 await writeFile(join(out, 'package.json'), JSON.stringify({ name: source.name, productName: '猫猫', version: source.version,
