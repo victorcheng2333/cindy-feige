@@ -930,8 +930,11 @@ Cindy 在返回拒绝前，通过已有 `turn/steer` 向对应 thread 和 expect
 每个回合只认最新请求的结果收尾，用量把各请求上报的相加。没有进行中的回合时 `steer` 抛错，
 交回宿主排队；首条消息还在准备附件时，插话排在它后面；回合在插话读附件期间自然结束，或
 agy 以 RPC 错误拒收插话时，这条输入作为下一回合发出，不丢也不重复记录。Agy 在 ACP 会话建立后（含模型发现）报告 `sameTurnSteer` 支持，手机与桌面
-据此显示插话；发现完成前沿用静态能力，按不支持处理。回归见 `acp-session.test.ts`
-（AcpSession steering by prompt）。
+据此显示插话；发现完成前沿用静态能力，按不支持处理。Agy 在另一台电脑运行时，插话由那台的
+Agy 执行（远程执行要求 agy ≥ 1.5.13），本机 Session 不再拿本机未完成或失败的发现结果把插话
+留在队列（2026-11-22 用户反馈「暂时无法插话，消息仍保留在队列中」，见 `maker.ts`
+`capabilitiesForSession`）。回归见 `acp-session.test.ts`（AcpSession steering by prompt）与
+`maker.agentDevice.test.ts`。
 
 ### Auto 模式的同范围自动跟进
 

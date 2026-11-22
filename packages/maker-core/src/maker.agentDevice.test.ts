@@ -143,6 +143,34 @@ describe('Maker: agent on another computer', () => {
     await maker.shutdown();
   });
 
+  // 2026-11-22 回归：本机 agy 未登录 / 发现失败时只有静态能力(不支持插话)，借另一台电脑的
+  // Agy 跑任务时插话一直被留在队列(「暂时无法插话，消息仍保留在队列中」)。插话要交给那台执行。
+  it('lets a running Agy task on another computer be steered when this computer has not discovered Agy', async () => {
+    const agent = {
+      ...localAgent(),
+      kind: 'antigravity',
+      capabilities: {
+        ...localAgent().capabilities,
+        sameTurnSteer: { supported: false, reason: 'not-implemented' },
+      },
+    } as unknown as BaseAgent;
+    const remote = {
+      ...handle('remote-agy'),
+      agentKind: 'antigravity',
+      isTurnRunning: () => true,
+      steer: vi.fn(async () => {}),
+    } as unknown as AgentSessionHandle & { steer: ReturnType<typeof vi.fn> };
+    const maker = new Maker({
+      agents: { antigravity: agent }, storage: storage(), logger, startDeviceAgentSession: async () => remote,
+    });
+    const session = await maker.createSession({
+      id: 'task-agy', agentKind: 'antigravity', workingDir: '/repo', model: 'm', agentDeviceId: 'dev-b',
+    });
+    await session.steer('also check the tests');
+    expect(remote.steer).toHaveBeenCalledTimes(1);
+    await maker.shutdown();
+  });
+
   it('keeps the agent capabilities untouched for local tasks', async () => {
     const agent = localAgent();
     const maker = new Maker({ agents: { pi: agent }, storage: storage(), logger });

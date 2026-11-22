@@ -251,11 +251,17 @@ function capabilitiesForSession(
   handle?: AgentSessionHandle,
 ): Capabilities {
   if (agentDeviceId) {
+    // Agy 只在 ACP 握手后才报告插话；本机 agy 未登录或模型发现失败时，base 是静态默认(不支持)。
+    // 插话由运行 Agent 的那台电脑执行(远程执行要求 agy ≥ 1.5.13，其 ACP 会话都支持插话)，
+    // 不能拿本机的发现结果把插话留在队列里。那台拒收时宿主照常转为下一回合。
+    const hosted: Capabilities = agentKind === 'antigravity' && !base.sameTurnSteer.supported
+      ? { ...base, sameTurnSteer: { supported: true } }
+      : base;
     // Agent 在另一台电脑上：对话在那台截断(handle 转发 commitRewindFiles)，文件由本机按保存点
     // 回退。那台的 Cindy 不支持转发时不提供。
-    if (base.rewind.supported && typeof handle?.commitRewindFiles === 'function') return base;
+    if (hosted.rewind.supported && typeof handle?.commitRewindFiles === 'function') return hosted;
     return {
-      ...base,
+      ...hosted,
       rewind: {
         supported: false,
         reason: 'platform-limited',
