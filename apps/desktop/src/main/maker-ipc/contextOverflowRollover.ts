@@ -6,6 +6,7 @@
  */
 
 import {
+  AGY_INVALID_THINKING_SIGNATURE_REASON,
   CODEX_HISTORY_OVERSIZED_REASON,
   CONTEXT_OVERFLOW_REASON,
   REMOTE_COMPACT_ENCRYPTED_CONTENT_REASON,
@@ -88,6 +89,11 @@ export function isContextOverflowErrorData(data: unknown): boolean {
 export function isOversizedHistoryErrorData(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false;
   return (data as { reason?: unknown }).reason === CODEX_HISTORY_OVERSIZED_REASON;
+}
+
+export function isAgyInvalidThinkingSignatureErrorData(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  return (data as { reason?: unknown }).reason === AGY_INVALID_THINKING_SIGNATURE_REASON;
 }
 
 /** A new companion input may retire an explicitly rejected compact operation.
@@ -379,11 +385,12 @@ function isExternalDispatchOwner(agentMeta: Record<string, unknown> | null | und
 }
 
 function normalizeOverflowDbAgentKind(value: string): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
-  if (value === 'cursor' || value === 'codex' || value === 'pi') return value;
+  if (value === 'cursor' || value === 'codex' || value === 'pi' || value === 'antigravity') return value;
   return 'cc';
 }
 
 export function engineLabelForOverflow(agentKind: string): string {
+  if (agentKind === 'antigravity') return 'Agy';
   if (agentKind === 'cursor') return 'Cursor';
   if (agentKind === 'codex') return 'Codex';
   if (agentKind === 'pi') return 'Pi';
@@ -420,6 +427,7 @@ export function findLatestRebuildableError(
       if (allowPiPromptTimeout && isPiPromptRpcTimeoutError(data)) return data;
       if (allowPiPromptTimeout && isPiRequestBodyRecoveryExhausted(data)) return data;
       if (isOversizedHistoryErrorData(data)) return data;
+      if (isAgyInvalidThinkingSignatureErrorData(data)) return data;
       if (allowCompanionCompactFailure && isCompanionCompactFailure(data)) return data;
       return null;
     }
@@ -1185,12 +1193,14 @@ export function createContextOverflowRollover(deps: ContextOverflowRolloverDeps)
       sessionRow.agentKind !== 'cursor' &&
       shouldRebuildForContextPressure(usedTokens, window);
     const compactFailed = liveUsage?.needsRollover === true;
+    const agyBrokenHistory = sessionRow.agentKind === 'antigravity' && isAgyInvalidThinkingSignatureErrorData(lastError);
     const piByteRecoveryFailed = sessionRow.agentKind === 'pi' && isPiRequestBodyRecoveryExhausted(lastError);
     const tokenViolated =
       isContextOverflowErrorData(lastError) ||
       isPiPromptRpcTimeoutError(lastError) ||
       pressure ||
       compactFailed ||
+      agyBrokenHistory ||
       (botChat && isCompanionCompactFailure(lastError));
     const oversized = isOversizedHistoryErrorData(lastError);
     const historyHealth = oversized && sessionRow.agentKind === 'codex' && sessionRow.sdkSessionId
@@ -1217,9 +1227,11 @@ export function createContextOverflowRollover(deps: ContextOverflowRolloverDeps)
       lastUserIndex = -1;
     }
     if (!lastUser && (!accountHandoff || (!sessionRow.sdkSessionId && usedTokens === 0 && source.length === 0))) return false;
-    const rebuildReason: ContextRebuildReason = accountHandoff ? 'native-session-recovery' : isPiPromptRpcTimeoutError(lastError)
-      ? 'pi-prompt-timeout'
-      : 'context-overflow';
+    const rebuildReason: ContextRebuildReason = accountHandoff || agyBrokenHistory
+      ? 'native-session-recovery'
+      : isPiPromptRpcTimeoutError(lastError)
+        ? 'pi-prompt-timeout'
+        : 'context-overflow';
     // 待发出/失败的 user 还会由本次 send 或 Retry 再 wire 一次，交接里不能带。
     // 已完成的最后一轮（后面有非 error）要留在交接里。
     // lastUser 若不在 handoff 窗口里（index < 0），窗口全是其后的 tool/assistant，算已完成。

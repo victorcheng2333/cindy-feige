@@ -90,6 +90,8 @@ export interface AcpPermissionOption {
   optionId: string;
   name: string;
   kind: AcpPermissionOptionKind | string;
+  /** Optional security warning carried in `_meta['agy.security.warning']` (e.g. shell/web allow_always). */
+  securityWarning?: string;
 }
 
 export type AcpPermissionOutcome =
@@ -236,6 +238,26 @@ export function normalizeToolCallFields(raw: unknown): AcpToolCallFields | null 
   return fields;
 }
 
+const SECURITY_WARNING_META_KEY = 'agy.security.warning';
+const MAX_WARNING_CHARS = 512;
+const MAX_QUESTION_LABEL_CHARS = 512;
+const MAX_QUESTION_TEXT_CHARS = 8_000;
+
+function sanitizeShortText(value: unknown, limit: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  // eslint-disable-next-line no-control-regex
+  const clean = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean) return undefined;
+  return clean.length > limit ? `${clean.slice(0, limit - 3)}...` : clean;
+}
+
+function readPermissionSecurityWarning(option: AcpRecord): string | undefined {
+  const meta = asRecord(option._meta);
+  const warning = asRecord(meta[SECURITY_WARNING_META_KEY]);
+  return sanitizeShortText(warning.message, MAX_WARNING_CHARS)
+    ?? sanitizeShortText(warning.title, MAX_WARNING_CHARS);
+}
+
 export function normalizePermissionOptions(raw: unknown): AcpPermissionOption[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry) => {
@@ -243,8 +265,73 @@ export function normalizePermissionOptions(raw: unknown): AcpPermissionOption[] 
     const optionId = asNonEmptyString(option.optionId);
     const name = asNonEmptyString(option.name);
     const kind = asNonEmptyString(option.kind);
-    return optionId && name && kind ? [{ optionId, name, kind }] : [];
+    if (!optionId || !name || !kind) return [];
+    const securityWarning = readPermissionSecurityWarning(option);
+    return [{ optionId, name, kind, ...(securityWarning ? { securityWarning } : {}) }];
   });
+}
+
+/** Native fixed-choice questions share `session/request_permission` with `interaction_` ids. */
+export function isAcpUserInputInteraction(toolCall: Pick<AcpToolCallFields, 'toolCallId'>): boolean {
+  return toolCall.toolCallId.startsWith('interaction_');
+}
+
+export interface AcpUserInputQuestionSpec {
+  id: string;
+  question: string;
+  header: string;
+  options: Array<{ optionId: string; label: string }>;
+}
+
+/** Extracts a single fixed-choice question from an `interaction_` permission request. */
+export function extractAcpUserInputQuestion(
+  toolCall: AcpToolCallFields,
+  options: readonly AcpPermissionOption[],
+): AcpUserInputQuestionSpec | undefined {
+  if (!isAcpUserInputInteraction(toolCall) || options.length === 0) return undefined;
+  const seenIds = new Set<string>();
+  const baseLabels: Array<{ optionId: string; baseLabel: string }> = [];
+  const labelCounts = new Map<string, number>();
+  for (const option of options) {
+    const optionId = option.optionId;
+    const trimmedId = optionId.trim();
+    if (!trimmedId || seenIds.has(optionId)) return undefined;
+    seenIds.add(optionId);
+    const baseLabel = sanitizeShortText(option.name, MAX_QUESTION_LABEL_CHARS) ?? trimmedId;
+    labelCounts.set(baseLabel, (labelCounts.get(baseLabel) ?? 0) + 1);
+    baseLabels.push({ optionId, baseLabel });
+  }
+  const normalizedOptions = baseLabels.map(({ optionId, baseLabel }) => ({
+    optionId,
+    label: (labelCounts.get(baseLabel) ?? 0) > 1
+      ? `${baseLabel} (${optionId.trim()})`
+      : baseLabel,
+  }));
+  const rawTitle = toolCall.title?.trim() || 'Choose an option.';
+  const question = rawTitle.length > MAX_QUESTION_TEXT_CHARS
+    ? `${rawTitle.slice(0, MAX_QUESTION_TEXT_CHARS - 3)}...`
+    : rawTitle;
+  return {
+    id: toolCall.toolCallId,
+    question,
+    header: 'Question',
+    options: normalizedOptions,
+  };
+}
+
+/** Resolves a user answer back to the exact native ACP `optionId`, or undefined if unmatched. */
+export function resolveAcpUserInputOptionId(
+  spec: AcpUserInputQuestionSpec,
+  answers: Record<string, string>,
+): string | undefined {
+  const raw = answers[spec.id] ?? answers[spec.question] ?? Object.values(answers).find(v => typeof v === 'string' && v.trim().length > 0);
+  if (typeof raw !== 'string') return undefined;
+  const value = raw.trim();
+  if (!value) return undefined;
+  const byLabel = spec.options.filter(option => option.label === value);
+  if (byLabel.length === 1) return byLabel[0]!.optionId;
+  const byId = spec.options.find(option => option.optionId === raw || option.optionId === value || option.optionId.trim() === value);
+  return byId?.optionId;
 }
 
 const STOP_REASONS: ReadonlySet<string> = new Set(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']);

@@ -1,15 +1,21 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createConsoleLogger } from '../../interfaces/logger.js';
 import type { AgentEvent } from '../../types/events.js';
 import type { StartSessionOptions, AgentSessionHandle } from '../base-agent.js';
 import { AntigravityAgent } from './index.js';
 import { runAntigravityAccountCommand } from './acp-process.js';
+import {
+  AGY_INVALID_THINKING_SIGNATURE_REASON,
+  readAntigravityBackgroundState,
+  watchAntigravityPromptOutcome,
+} from './native-state.js';
 
 vi.mock('node:child_process', async (load) => ({
   ...await load<typeof import('node:child_process')>(),
@@ -292,4 +298,154 @@ it('closes the native ACP process when Google sign-in is cancelled', async () =>
   controller.abort();
   await expect(login).rejects.toThrow();
   expect(child.stdin.writableEnded).toBe(true);
+});
+
+// Unit: read-only SQLite trajectory inspection & native inbox/subagent detection against
+// temporary `--gemini_dir` fixtures (matches live Agy `antigravity-cli/` layout).
+describe('Antigravity native state inspection', () => {
+  it('classifies SQLite error steps (quota reset delay, invalid thinking signature, 404 before/after model)', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-native-'));
+    try {
+      const convDir = path.join(dir, 'antigravity-cli', 'conversations');
+      await mkdir(convDir, { recursive: true });
+      const dbPath = path.join(convDir, 'sess-sqlite.db');
+      const db = new Database(dbPath);
+      db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)');
+      const openReadonly = (file: string) => new Database(file, { readonly: true, fileMustExist: true });
+
+      const baseNow = 1_700_000_000_000;
+      const checkQuota = await watchAntigravityPromptOutcome({
+        stateDir: dir, sessionId: 'sess-sqlite', openSqlite: openReadonly, nowMs: () => baseNow,
+      });
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(
+        1, 17, Buffer.from('Error 429, Message: Quota exceeded [reason:QUOTA_EXHAUSTED quotaResetDelay:2m30s], Status: RESOURCE_EXHAUSTED'),
+      );
+      expect(await checkQuota('end_turn')).toMatchObject({
+        reason: 'agy-rate-limited',
+        sdkError: 'rate_limit',
+        usageResetAt: baseNow + 150_000,
+      });
+
+      const checkBroken = await watchAntigravityPromptOutcome({
+        stateDir: dir, sessionId: 'sess-sqlite', openSqlite: openReadonly, nowMs: () => baseNow,
+      });
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(
+        2, 17, Buffer.from('INVALID_ARGUMENT (code 400): messages.4.content.0.thinking.signature: Field required'),
+      );
+      expect(await checkBroken('end_turn')).toMatchObject({
+        reason: AGY_INVALID_THINKING_SIGNATURE_REASON,
+        brokenSession: true,
+      });
+
+      const check404AfterModel = await watchAntigravityPromptOutcome({
+        stateDir: dir, sessionId: 'sess-sqlite', openSqlite: openReadonly, nowMs: () => baseNow,
+      });
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(3, 15, Buffer.from('ok'));
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(
+        4, 17, Buffer.from('Error 404, Message: edge not found, Status: NOT_FOUND'),
+      );
+      expect(await check404AfterModel('end_turn')).toMatchObject({ reason: 'acp-request-failed' });
+
+      // On stopReason='refusal', a concrete SQLite error (e.g. broken signature) must not be
+      // overwritten as quota exhaustion, and protobuf/JSON/EOL delimiters on reset fields must parse.
+      const checkBrokenRefusal = await watchAntigravityPromptOutcome({
+        stateDir: dir, sessionId: 'sess-sqlite', openSqlite: openReadonly, nowMs: () => baseNow,
+      });
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(
+        5, 17, Buffer.from('INVALID_ARGUMENT (code 400): messages.1.content.0: Invalid `signature` in `thinking` block'),
+      );
+      expect(await checkBrokenRefusal('refusal')).toMatchObject({
+        reason: AGY_INVALID_THINKING_SIGNATURE_REASON,
+        brokenSession: true,
+      });
+
+      const checkProtobufQuota = await watchAntigravityPromptOutcome({
+        stateDir: dir, sessionId: 'sess-sqlite', openSqlite: openReadonly, nowMs: () => baseNow,
+      });
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(
+        6, 17, Buffer.from('reason:QUOTA_EXHAUSTED quotaResetTimeStamp:2026-11-23T01:00:00Z\u0008retryDelay:45s'),
+      );
+      expect(await checkProtobufQuota('refusal')).toMatchObject({
+        reason: 'agy-rate-limited',
+        sdkError: 'rate_limit',
+        usageResetAt: Date.parse('2026-11-23T01:00:00Z'),
+      });
+
+      const checkTextRefusal = await watchAntigravityPromptOutcome({
+        stateDir: dir, sessionId: 'sess-sqlite', openSqlite: openReadonly, nowMs: () => baseNow,
+      });
+      expect(await checkTextRefusal('refusal', { hasResponseText: true })).toBeUndefined();
+      expect(await checkTextRefusal('refusal', { hasResponseText: false })).toMatchObject({
+        reason: 'agy-rate-limited',
+        sdkError: 'rate_limit',
+      });
+      db.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('detects unread high-priority inbox wakes, trailing SYSTEM_MESSAGE, and active vs reported subagents', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-bg-'));
+    try {
+      const sysGen = path.join(dir, 'antigravity-cli', 'brain', 'sess-bg', '.system_generated');
+      const messagesDir = path.join(sysGen, 'messages');
+      const logsDir = path.join(sysGen, 'logs');
+      const subagentsDir = path.join(sysGen, 'subagents');
+      await mkdir(messagesDir, { recursive: true });
+      await mkdir(logsDir, { recursive: true });
+      await mkdir(subagentsDir, { recursive: true });
+
+      await writeFile(path.join(subagentsDir, 'child-1.json'), JSON.stringify({ conversationId: 'child-1', state: 'RUNNING' }));
+      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, activeSubagents: true });
+
+      // Child reports back with high-priority message -> activeSubagents becomes false, pendingReply becomes true.
+      await writeFile(path.join(messagesDir, 'msg-1.json'), JSON.stringify({ id: 'msg-1', sender: 'child-1', priority: 'MESSAGE_PRIORITY_HIGH' }));
+      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: true, activeSubagents: false });
+
+      // Parent reads the message and transcript ends with SYSTEM_MESSAGE -> still pendingReply until planner responds.
+      await writeFile(path.join(messagesDir, 'read.json'), JSON.stringify({ 'msg-1': true }));
+      await writeFile(path.join(logsDir, 'transcript.jsonl'), `${JSON.stringify({ step_index: 5, type: 'SYSTEM_MESSAGE', content: '[Message] priority=MESSAGE_PRIORITY_HIGH' })}\n`);
+      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: true, activeSubagents: false });
+
+      // Once planner responds, both are clear.
+      await writeFile(path.join(logsDir, 'transcript.jsonl'), `${JSON.stringify({ step_index: 6, type: 'PLANNER_RESPONSE', content: 'Done' })}\n`);
+      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, activeSubagents: false });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('retires cindy-acp-session-id marker and sets needsRollover when INVALID_THINKING_SIGNATURE hits', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-broken-'));
+    try {
+      const agent = new AntigravityAgent({
+        binaryPath: '/test/agy',
+        logger: createConsoleLogger('agy-test'),
+        auth: {
+          getState: async () => ({ authenticated: true }),
+          triggerLogin: async () => ({ authenticated: true }),
+          logout: async () => {},
+          getAuthEnv: async () => ({}),
+        },
+        runtimeConfig: { systemPrompt: 'Fixture product instructions' },
+        prepareAcp: async () => ({ stateDir: dir, servers: [], dispose() {} }),
+        getEnv: () => ({}),
+        getDiscoveredCapabilities: () => undefined,
+      });
+      new AgyProcess('acp-broken', '⚠ INVALID_ARGUMENT (code 400): messages.2.content.0: Invalid `signature` in `thinking` block');
+      const handle = await agent.startSession({ workingDir: dir, model: 'gemini-4-neon' });
+      const marker = path.join(dir, 'cindy-acp-session-id');
+      expect((await stat(marker)).isFile()).toBe(true);
+      const events = await sendTurn(handle);
+      expect(events.at(-1)).toMatchObject({ type: 'error', data: { reason: AGY_INVALID_THINKING_SIGNATURE_REASON, isTerminal: true } });
+      expect(handle.getUsageSnapshot().needsRollover).toBe(true);
+      await vi.waitFor(async () => {
+        await expect(stat(marker)).rejects.toThrow();
+      });
+      await handle.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

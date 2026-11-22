@@ -40,9 +40,15 @@ it('requests the named ACP authorization when the agent only offers remembered a
   const onRespond = vi.fn();
   render(<PermissionPrompt permission={permission([{
     type: 'acp_permission_choices', allowOnce: false,
-    rememberedAllow: { name: 'Always allow this file', optionId: 'file-scope' },
+    rememberedAllow: {
+      name: 'Always allow this file',
+      optionId: 'file-scope',
+      warning: 'Permits future writes to this path without asking.',
+    },
   }])} onRespond={onRespond} />);
   expect(screen.queryByRole('button', { name: /allowOnce/ })).toBeNull();
+  expect(screen.getByTestId('acp-remembered-warning').textContent).toBe('Permits future writes to this path without asking.');
+  expect(screen.getByTestId('tip-text').textContent).toContain('Permits future writes to this path without asking.');
   fireEvent.keyDown(window, { key: 'Enter' });
   expect(onRespond).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: /rememberAcpApproval/ }));

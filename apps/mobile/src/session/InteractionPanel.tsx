@@ -941,6 +941,9 @@ function PermissionCard({
       {acpChoices?.allowOnce === false && !alwaysButton && !allowRememberedAcpPermission &&
         <Text style={styles.body}>{t('sharedTask.waitingHost')}</Text>}
       {alwaysButton && rememberedAllow?.label ? <Text style={styles.body}>{rememberedAllow.label}</Text> : null}
+      {alwaysButton && rememberedAllow?.warning ? (
+        <Text style={styles.body} testID="interaction.permission.acpRememberedWarning">{rememberedAllow.warning}</Text>
+      ) : null}
     </>
   );
   return (

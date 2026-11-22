@@ -205,6 +205,11 @@ export type { PiCacheCompatibility } from './pi/cache-compatibility.js';
 
 export { antigravityEnv } from './antigravity/environment.js';
 export { runAntigravityAccountCommand } from './antigravity/acp-process.js';
+export {
+  AGY_INVALID_THINKING_SIGNATURE_REASON,
+  type OpenReadonlySqlite,
+  type ReadonlySqliteDatabase,
+} from './antigravity/native-state.js';
 export { AntigravityAgent, ANTIGRAVITY_CAPABILITIES, isAntigravityPermissionMode, probeAntigravityCatalog } from './antigravity/index.js';
 export { CursorAgent, CURSOR_CAPABILITIES } from './cursor/index.js';
 export type { CursorAgentDeps, CursorMcpServerContext } from './cursor/index.js';

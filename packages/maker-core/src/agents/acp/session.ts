@@ -34,12 +34,15 @@ import {
   ACP_PROTOCOL_VERSION,
   asNonEmptyString,
   asRecord,
+  extractAcpUserInputQuestion,
+  isAcpUserInputInteraction,
   normalizeConfigOptions,
   normalizeInitializeResult,
   normalizePermissionOptions,
   normalizeStopReason,
   readAcpPromptUsage,
   normalizeToolCallFields,
+  resolveAcpUserInputOptionId,
   type AcpAuthMethod,
   type AcpConfigOption,
   type AcpContentBlock,
@@ -49,16 +52,19 @@ import {
   type AcpPermissionOutcome,
   type AcpPromptUsage,
   type AcpRecord,
+  type AcpStopReason,
   type AcpToolCallFields,
+  type AcpUserInputQuestionSpec,
 } from './protocol.js';
 import { annotatePermissionRequestForAutoReview, type AutoReviewDecision } from '../shared/auto-review-decision.js';
-import { acpToolDisplayName, AcpUpdateTranslator, type AcpTurnOutcome } from './translator.js';
+import { acpToolDisplayName, AcpUpdateTranslator, type AcpTurnOutcome, type AcpWarningClassification } from './translator.js';
 
 const DEFAULT_CANCEL_GRACE_MS = 15_000;
 const SESSION_CLOSE_TIMEOUT_MS = 2_000;
 const DEFAULT_BG_AFTER_TOOL_SETTLED_MS = 20_000;
 const DEFAULT_BG_AFTER_THINKING_MS = 30_000;
 const DEFAULT_BG_AFTER_TEXT_MS = 3_000;
+const DEFAULT_BG_POLL_MS = 2_000;
 /** Keep base64-encoded inline images safely below ACP's 32 MiB line cap; larger files fall back to resource_link. */
 const MAX_INLINE_IMAGE_BYTES = 16 * 1024 * 1024;
 
@@ -103,7 +109,9 @@ export interface OpenAcpSessionOptions {
   cancelGraceMs?: number;
   /** Evaluated against the agent's advertised ACP extensions before opening the task. */
   sessionMetadata?: (init: AcpInitializeResult) => AcpRecord | undefined;
-  classifyWarning?: (text: string) => { error: string; reason: string } | undefined;
+  classifyWarning?: (text: string) => AcpWarningClassification | undefined;
+  /** Optional classifier for a bare `refusal` stopReason (no assistant reply text). */
+  classifyRefusal?: () => AcpWarningClassification | undefined;
   readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array>;
   /**
    * Host text sent ahead of the first message of a newly created agent session (for example
@@ -141,7 +149,39 @@ export interface OpenAcpSessionOptions {
     afterToolSettledMs?: number;
     afterThinkingMs?: number;
     afterTextMs?: number;
+    pollMs?: number;
   };
+  /**
+   * Maximum time an in-flight `session/prompt` may go without progress while neither tools
+   * nor user interaction cards are pending. Prevents hung turns when the agent stalls.
+   */
+  promptInactivityTimeoutMs?: number;
+  /**
+   * Maximum time a foreground turn stays open waiting for background tools/subagents after
+   * `session/prompt` resolved (paused while user interaction cards are open).
+   */
+  backgroundCommandHoldMaxMs?: number;
+  /**
+   * True when an autonomous post-settle wakeup reply closes with a `usage_update` frame
+   * (Agy 1.5.x), allowing immediate completion check instead of waiting for long idle timers.
+   */
+  replyEndsWithUsageUpdate?: boolean;
+  /**
+   * Optional per-prompt native trajectory watcher. Called right before `session/prompt` is sent
+   * and evaluated after it resolves to detect fake `end_turn` failures and reset timestamps.
+   */
+  watchPromptOutcome?: (
+    sessionId: string,
+  ) => Promise<(stopReason: AcpStopReason, context?: { hasResponseText?: boolean }) => Promise<AcpTurnOutcome | undefined>>;
+  /**
+   * Optional read-only probe of native inbox/transcript/subagent state to make background
+   * completion deterministic instead of relying solely on idle timers.
+   */
+  checkBackgroundActivity?: (
+    sessionId: string,
+  ) => Promise<{ pendingReply: boolean; activeSubagents: boolean | null }>;
+  /** Called when a turn fails with `brokenSession: true` so the adapter can retire native resume state. */
+  onSessionBroken?: (sessionId: string) => void | Promise<void>;
   /**
    * Optional per-tool-call filter/rewriter (used by device-hosted remote-workspace mode to
    * unwrap MCP tool calls and fail closed if the agent ever attempts a local file/shell tool).
@@ -315,12 +355,30 @@ interface ActiveTurn {
   token: number;
   settled: boolean;
   cancelTimer: ReturnType<typeof setTimeout> | null;
+  /** Watchdog for an in-flight `session/prompt` that stops emitting progress. */
+  inactivityTimer: ReturnType<typeof setTimeout> | null;
   /** Idle-settle timer used once all background tools finish with no active `session/prompt`. */
   backgroundSettleTimer: ReturnType<typeof setTimeout> | null;
+  /** Hard ceiling on holding a turn open for background commands/subagents after `end_turn`. */
+  backgroundHoldTimer: ReturnType<typeof setTimeout> | null;
+  /** Periodic probe timer while waiting on detached subagents or unread wake messages. */
+  backgroundPollTimer: ReturnType<typeof setTimeout> | null;
   /** True while keeping the turn alive past `end_turn` for background tools or an autonomous wakeup. */
   continuingInBackground: boolean;
   /** True while waiting for an async launcher (e.g. subagent/workflow) to wake the parent up. */
   awaitingAsyncWakeup: boolean;
+  /** True only when `awaitingAsyncWakeup` is waiting solely on detached subagent(s) (no timers/workflows). */
+  awaitingSubagentWakeup: boolean;
+  /** True once the current subagent wait has observed `activeSubagents === true` on disk. */
+  observedActiveSubagents: boolean;
+  /** True once a settle trigger fired (settle timer, closing usage_update, or nativePending-only entry) so the turn settles as soon as native activity clears. */
+  settleWhenClear: boolean;
+  /** Re-run `verifyBackgroundContinuation` immediately after an in-flight probe finishes. */
+  recheckBackgroundAfterFlight: boolean;
+  /** True while an autonomous post-settle reply has emitted assistant text and awaits its closing `usage_update`. */
+  replyOpen: boolean;
+  /** Guards against overlapping `checkBackgroundActivity` calls. */
+  backgroundCheckInFlight: boolean;
   /** Deferred prompt outcome held until background work settles. */
   deferredOutcome: AcpTurnOutcome | null;
   /** Whether the post-wakeup phase has emitted assistant text since the last tool/thought started. */
@@ -329,6 +387,8 @@ interface ActiveTurn {
   lease: number;
   /** Prompts sent for this turn whose `session/prompt` has not returned yet. */
   outstanding: Map<number, AcpContentBlock[]>;
+  /** Optional native outcome watchers keyed by prompt lease. */
+  outcomeWatchers: Map<number, Promise<(stopReason: AcpStopReason, context?: { hasResponseText?: boolean }) => Promise<AcpTurnOutcome | undefined>>>;
   /** Usage reported by every request of this turn (superseded ones report none). */
   usage?: AcpPromptUsage;
 }
@@ -410,6 +470,13 @@ export class AcpSession {
   private readonly bgAfterToolSettledMs: number;
   private readonly bgAfterThinkingMs: number;
   private readonly bgAfterTextMs: number;
+  private readonly bgPollMs: number;
+  private readonly promptInactivityTimeoutMs: number | undefined;
+  private readonly backgroundCommandHoldMaxMs: number | undefined;
+  private readonly replyEndsWithUsageUpdate: boolean;
+  private readonly watchPromptOutcome: OpenAcpSessionOptions['watchPromptOutcome'];
+  private readonly checkBackgroundActivity: OpenAcpSessionOptions['checkBackgroundActivity'];
+  private readonly onSessionBroken: OpenAcpSessionOptions['onSessionBroken'];
   private violationTerminated = false;
   private readonly queue = createAsyncQueue<AgentEvent>();
   private readonly translator: AcpUpdateTranslator;
@@ -418,6 +485,7 @@ export class AcpSession {
   private pendingBriefing: string | null;
   private preparation = { controller: new AbortController(), pending: 0, tail: Promise.resolve() };
   private readonly permissionControllers = new Set<AbortController>();
+  private readonly questionControllers = new Set<AbortController>();
   private readonly capabilityListeners = new Set<(capabilities: Capabilities) => void>();
   private configOptions: AcpConfigOption[];
   private capabilitiesSnapshot: Capabilities;
@@ -459,9 +527,18 @@ export class AcpSession {
     this.bgAfterToolSettledMs = init.options.backgroundContinuationDelaysMs?.afterToolSettledMs ?? DEFAULT_BG_AFTER_TOOL_SETTLED_MS;
     this.bgAfterThinkingMs = init.options.backgroundContinuationDelaysMs?.afterThinkingMs ?? DEFAULT_BG_AFTER_THINKING_MS;
     this.bgAfterTextMs = init.options.backgroundContinuationDelaysMs?.afterTextMs ?? DEFAULT_BG_AFTER_TEXT_MS;
+    this.bgPollMs = init.options.backgroundContinuationDelaysMs?.pollMs ?? DEFAULT_BG_POLL_MS;
+    this.promptInactivityTimeoutMs = init.options.promptInactivityTimeoutMs;
+    this.backgroundCommandHoldMaxMs = init.options.backgroundCommandHoldMaxMs;
+    this.replyEndsWithUsageUpdate = init.options.replyEndsWithUsageUpdate === true;
+    this.watchPromptOutcome = init.options.watchPromptOutcome;
+    this.checkBackgroundActivity = init.options.checkBackgroundActivity;
+    this.onSessionBroken = init.options.onSessionBroken;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
     this.translator = new AcpUpdateTranslator({
-      blockIdPrefix: `acp-${init.sessionId}`, classifyWarning: init.options.classifyWarning,
+      blockIdPrefix: `acp-${init.sessionId}`,
+      classifyWarning: init.options.classifyWarning,
+      classifyRefusal: init.options.classifyRefusal,
     });
     if (init.options.permissionMode) this.applyPermissionMode(init.options.permissionMode);
     this.connection.onClose((info) => this.handleConnectionClosed(info));
@@ -591,16 +668,17 @@ export class AcpSession {
     if (turn.settled || turn.cancelTimer) return;
     if (turn.continuingInBackground && turn.outstanding.size === 0) {
       // No `session/prompt` RPC is in flight to resolve after `session/cancel`;
-      // cancel permissions, notify the agent, and close the turn immediately
+      // cancel interactions, notify the agent, and close the turn immediately
       // without retiring a healthy endpoint.
-      this.clearBackgroundSettleTimer(turn);
-      this.cancelPermissions();
+      this.clearTurnTimers(turn);
+      this.cancelAllInteractions();
       if (!this.connection.closed) {
         try { this.connection.notify('session/cancel', { sessionId: this.nativeId }); } catch { /* closing */ }
       }
       this.finishTurn(turn.token, { stopReason: 'cancelled' });
       return;
     }
+    this.clearPromptInactivityTimer(turn);
     turn.cancelTimer = setTimeout(() => {
       this.logger?.warn('acp: agent did not settle a cancelled prompt in time', { graceMs: this.cancelGraceMs });
       // Mark the handle as closing before emitting done so no queued or later prompt
@@ -608,8 +686,8 @@ export class AcpSession {
       this.retireEndpoint();
       this.finishTurn(turn.token, { stopReason: 'cancelled' });
     }, this.cancelGraceMs);
-    // ACP also expects cancelled responses to permission requests that arrive during the grace period.
-    this.cancelPermissions();
+    // ACP also expects cancelled responses to permission/question requests that arrive during the grace period.
+    this.cancelAllInteractions();
     this.connection.notify('session/cancel', { sessionId: this.nativeId });
   }
 
@@ -739,11 +817,13 @@ export class AcpSession {
           }
           if (verdict.action === 'rewrite') {
             this.emit(this.translator.noteToolCall(verdict.toolCall));
+            this.refreshPromptInactivityTimer(this.turn);
             this.afterBackgroundContentUpdate(update);
             return;
           }
         }
         this.emit(this.translator.handleUpdate(update));
+        this.refreshPromptInactivityTimer(this.turn);
         this.afterBackgroundContentUpdate(update);
         return;
       }
@@ -751,6 +831,7 @@ export class AcpSession {
         if (STATE_UPDATES.has(update.sessionUpdate)) return;
         if (this.shouldOpenAutonomousTurnForContent(update)) this.beginAutonomousTurn();
         this.emit(this.translator.handleUpdate(update));
+        this.refreshPromptInactivityTimer(this.turn);
         this.afterBackgroundContentUpdate(update);
     }
   }
@@ -787,13 +868,23 @@ export class AcpSession {
       token: ++this.turnSeq,
       settled: false,
       cancelTimer: null,
+      inactivityTimer: null,
       backgroundSettleTimer: null,
+      backgroundHoldTimer: null,
+      backgroundPollTimer: null,
       continuingInBackground: false,
       awaitingAsyncWakeup: false,
+      awaitingSubagentWakeup: false,
+      observedActiveSubagents: false,
+      settleWhenClear: false,
+      recheckBackgroundAfterFlight: false,
+      replyOpen: false,
+      backgroundCheckInFlight: false,
       deferredOutcome: null,
       sawTextSinceBackgroundWait: false,
       lease: 0,
       outstanding: new Map(),
+      outcomeWatchers: new Map(),
     };
     this.turn = turn;
     if (!this.identityPublished) {
@@ -807,22 +898,51 @@ export class AcpSession {
 
   /** Sends a prompt for `turn`; a later one (a steer) takes over ending the turn. */
   private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
-    this.clearBackgroundSettleTimer(turn);
+    this.clearBackgroundTimers(turn);
     turn.continuingInBackground = false;
     turn.awaitingAsyncWakeup = false;
+    turn.awaitingSubagentWakeup = false;
+    turn.observedActiveSubagents = false;
+    turn.settleWhenClear = false;
+    turn.recheckBackgroundAfterFlight = false;
+    turn.replyOpen = false;
     turn.deferredOutcome = null;
     turn.sawTextSinceBackgroundWait = false;
     const lease = ++turn.lease;
     turn.outstanding.set(lease, prompt);
-    this.connection.request('session/prompt', { sessionId: this.nativeId, prompt }, { timeoutMs: null }).then(
-      (result) => this.settleLease(turn, lease, { stopReason: normalizeStopReason(result), usage: readAcpPromptUsage(result.usage) }),
-      (error: unknown) => this.settleLease(turn, lease, this.errorOutcome(error), error instanceof AcpRpcError),
-    );
+    const dispatch = (): void => {
+      if (turn.settled || this.turn !== turn || this.ended || this.closing || turn.cancelTimer) {
+        turn.outstanding.delete(lease);
+        turn.outcomeWatchers.delete(lease);
+        if (turn.cancelTimer && !turn.settled && this.turn === turn && turn.outstanding.size === 0) {
+          this.finishTurn(turn.token, { stopReason: 'cancelled' });
+        }
+        return;
+      }
+      this.refreshPromptInactivityTimer(turn);
+      this.connection.request('session/prompt', { sessionId: this.nativeId, prompt }, { timeoutMs: null }).then(
+        (result) => {
+          void this.settleLease(turn, lease, { stopReason: normalizeStopReason(result), usage: readAcpPromptUsage(result.usage) });
+        },
+        (error: unknown) => {
+          void this.settleLease(turn, lease, this.errorOutcome(error), error instanceof AcpRpcError);
+        },
+      );
+    };
+    if (this.watchPromptOutcome) {
+      const watcherPromise = this.watchPromptOutcome(this.nativeId).catch(() => undefined);
+      turn.outcomeWatchers.set(lease, watcherPromise.then(fn => fn ?? (async () => undefined)));
+      void watcherPromise.then(() => dispatch());
+      return;
+    }
+    dispatch();
   }
 
-  private settleLease(turn: ActiveTurn, lease: number, outcome: AcpTurnOutcome, refused = false): void {
+  private async settleLease(turn: ActiveTurn, lease: number, outcome: AcpTurnOutcome, refused = false): Promise<void> {
     const prompt = turn.outstanding.get(lease);
+    const watcherPromise = turn.outcomeWatchers.get(lease);
     turn.outstanding.delete(lease);
+    turn.outcomeWatchers.delete(lease);
     if (outcome.usage) turn.usage = addUsage(turn.usage, outcome.usage);
     // A newer prompt took the turn over; the agent answers the older one immediately.
     if (lease !== turn.lease) return;
@@ -832,53 +952,111 @@ export class AcpSession {
       turn.lease = Math.max(...turn.outstanding.keys());
       this.logger?.warn('acp: agent refused a steer; delivering it as the next turn', { error: 'error' in outcome ? outcome.error : '' });
       if (prompt && !turn.cancelTimer) this.pendingPrompts.unshift(prompt);
+      this.refreshPromptInactivityTimer(turn);
       return;
     }
-    const hasPendingTools = this.translator.hasPendingNonDaemonTools();
-    const hasAsyncLaunch = this.translator.hasAwaitingAsyncLaunch();
+    this.clearPromptInactivityTimer(turn);
+
+    let effectiveOutcome = outcome;
+    if (
+      watcherPromise
+      && !turn.settled
+      && !turn.cancelTimer
+      && !refused
+      && 'stopReason' in effectiveOutcome
+      && (effectiveOutcome.stopReason === 'end_turn' || effectiveOutcome.stopReason === 'refusal')
+    ) {
+      try {
+        const checker = await watcherPromise;
+        const inspected = await checker(effectiveOutcome.stopReason, {
+          hasResponseText: this.translator.hasResponseText(),
+        });
+        if (turn.settled || this.turn !== turn || lease !== turn.lease) return;
+        if (inspected && 'error' in inspected) {
+          effectiveOutcome = {
+            ...inspected,
+            ...(effectiveOutcome.usage ? { usage: effectiveOutcome.usage } : {}),
+          };
+        }
+      } catch { /* Best-effort native trajectory check never breaks normal completion. */ }
+    }
+
     if (
       this.continueWhileToolsPending
       && turn.outstanding.size === 0
       && !turn.settled
       && !turn.cancelTimer
       && !refused
-      && 'stopReason' in outcome
-      && outcome.stopReason === 'end_turn'
+      && 'stopReason' in effectiveOutcome
+      && effectiveOutcome.stopReason === 'end_turn'
       && this.pendingPrompts.length === 0
-      && (hasPendingTools || hasAsyncLaunch)
     ) {
-      // Agy resolves `session/prompt` when the model yields to wait for a
-      // background command or subagent. Keep the foreground turn open until
-      // those tools/subagents finish and the agent finishes its wakeup step.
-      turn.continuingInBackground = true;
-      turn.awaitingAsyncWakeup = hasAsyncLaunch;
-      turn.deferredOutcome = outcome;
-      turn.sawTextSinceBackgroundWait = false;
-      this.translator.clearAwaitingAsyncLaunch();
-      this.emit(this.translator.flushPending());
-      this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
-      return;
+      const hasPendingTools = this.translator.hasPendingNonDaemonTools();
+      const hasAsyncLaunch = this.translator.hasAwaitingAsyncLaunch();
+      const hasSubagentOnlyLaunch = this.translator.hasAwaitingSubagentOnlyLaunch();
+      let nativePending = false;
+      let nativeActiveSubagents = false;
+      if (!hasPendingTools && !hasAsyncLaunch && this.checkBackgroundActivity) {
+        const state = await this.probeBackgroundActivity();
+        if (turn.settled || this.turn !== turn || lease !== turn.lease || turn.outstanding.size > 0) return;
+        nativePending = state.pendingReply;
+        nativeActiveSubagents = state.activeSubagents === true;
+      }
+      if (hasPendingTools || hasAsyncLaunch || nativePending || nativeActiveSubagents) {
+        // Agy resolves `session/prompt` when the model yields to wait for a
+        // background command or subagent. Keep the foreground turn open until
+        // those tools/subagents finish and the agent finishes its wakeup step.
+        turn.continuingInBackground = true;
+        turn.awaitingAsyncWakeup = hasAsyncLaunch || nativeActiveSubagents;
+        turn.awaitingSubagentWakeup = hasSubagentOnlyLaunch || (!hasAsyncLaunch && nativeActiveSubagents);
+        turn.observedActiveSubagents = nativeActiveSubagents;
+        turn.settleWhenClear = !hasPendingTools && !turn.awaitingAsyncWakeup && nativePending;
+        turn.recheckBackgroundAfterFlight = false;
+        turn.replyOpen = false;
+        turn.deferredOutcome = effectiveOutcome;
+        turn.sawTextSinceBackgroundWait = false;
+        this.translator.clearAwaitingAsyncLaunch();
+        this.emit(this.translator.flushPending());
+        this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+        this.startBackgroundHoldTimer(turn);
+        if (turn.awaitingAsyncWakeup || nativePending) {
+          this.scheduleBackgroundPoll(turn);
+        }
+        return;
+      }
     }
-    this.finishTurn(turn.token, turn.usage ? { ...outcome, usage: turn.usage } : outcome);
+    this.finishTurn(turn.token, turn.usage ? { ...effectiveOutcome, usage: turn.usage } : effectiveOutcome);
   }
 
   private finishTurn(token: number, outcome: AcpTurnOutcome): void {
     const turn = this.turn;
     if (!turn || turn.token !== token || turn.settled) return;
+    let finalOutcome = outcome;
+    if ('stopReason' in finalOutcome) {
+      const heldFailure = this.translator.consumeHeldWarningFailure(finalOutcome.stopReason);
+      if (heldFailure) {
+        finalOutcome = { ...heldFailure, ...(finalOutcome.usage ? { usage: finalOutcome.usage } : {}) };
+      }
+    }
     turn.settled = true;
-    if (turn.cancelTimer) clearTimeout(turn.cancelTimer);
-    this.clearBackgroundSettleTimer(turn);
-    this.cancelPermissions();
+    this.clearTurnTimers(turn);
+    this.cancelAllInteractions();
     this.turn = null;
-    if (outcome.usage) {
-      const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = outcome.usage;
+    if ('error' in finalOutcome && finalOutcome.brokenSession) {
+      this.usage = { ...this.usage, needsRollover: true };
+      try {
+        void Promise.resolve(this.onSessionBroken?.(this.nativeId)).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    if (finalOutcome.usage) {
+      const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = finalOutcome.usage;
       this.usage = {
         ...this.usage,
         tokenUsage: inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens,
         outputTokens,
       };
     }
-    this.publishTurnEnd(outcome);
+    this.publishTurnEnd(finalOutcome);
     this.pump();
   }
 
@@ -887,10 +1065,192 @@ export class AcpSession {
     return turn.usage ? { ...base, usage: turn.usage } : base;
   }
 
+  private hasOpenUserInteraction(): boolean {
+    return this.permissionControllers.size > 0 || this.questionControllers.size > 0;
+  }
+
+  private clearPromptInactivityTimer(turn: ActiveTurn): void {
+    if (!turn.inactivityTimer) return;
+    clearTimeout(turn.inactivityTimer);
+    turn.inactivityTimer = null;
+  }
+
+  private refreshPromptInactivityTimer(turn: ActiveTurn | null): void {
+    if (!turn) return;
+    this.clearPromptInactivityTimer(turn);
+    const timeoutMs = this.promptInactivityTimeoutMs;
+    if (
+      !timeoutMs
+      || timeoutMs <= 0
+      || turn.settled
+      || turn.cancelTimer
+      || turn.outstanding.size === 0
+      || this.hasOpenUserInteraction()
+      || this.translator.hasPendingNonDaemonTools()
+    ) {
+      return;
+    }
+    turn.inactivityTimer = setTimeout(() => {
+      turn.inactivityTimer = null;
+      if (
+        turn.settled
+        || this.turn !== turn
+        || turn.cancelTimer
+        || turn.outstanding.size === 0
+        || this.hasOpenUserInteraction()
+        || this.translator.hasPendingNonDaemonTools()
+      ) return;
+      this.logger?.warn('acp: prompt timed out without progress', { timeoutMs });
+      if (!this.connection.closed) {
+        try { this.connection.notify('session/cancel', { sessionId: this.nativeId }); } catch { /* closing */ }
+      }
+      this.retireEndpoint();
+      this.finishTurn(turn.token, {
+        error: 'The agent stopped responding during this turn. Retry to continue.',
+        reason: 'acp-prompt-timeout',
+      });
+    }, timeoutMs);
+    (turn.inactivityTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
   private clearBackgroundSettleTimer(turn: ActiveTurn): void {
     if (!turn.backgroundSettleTimer) return;
     clearTimeout(turn.backgroundSettleTimer);
     turn.backgroundSettleTimer = null;
+  }
+
+  private clearBackgroundHoldTimer(turn: ActiveTurn): void {
+    if (!turn.backgroundHoldTimer) return;
+    clearTimeout(turn.backgroundHoldTimer);
+    turn.backgroundHoldTimer = null;
+  }
+
+  private clearBackgroundPollTimer(turn: ActiveTurn): void {
+    if (!turn.backgroundPollTimer) return;
+    clearTimeout(turn.backgroundPollTimer);
+    turn.backgroundPollTimer = null;
+  }
+
+  private clearBackgroundTimers(turn: ActiveTurn): void {
+    this.clearBackgroundSettleTimer(turn);
+    this.clearBackgroundHoldTimer(turn);
+    this.clearBackgroundPollTimer(turn);
+  }
+
+  private clearTurnTimers(turn: ActiveTurn): void {
+    if (turn.cancelTimer) {
+      clearTimeout(turn.cancelTimer);
+      turn.cancelTimer = null;
+    }
+    this.clearPromptInactivityTimer(turn);
+    this.clearBackgroundTimers(turn);
+  }
+
+  private startBackgroundHoldTimer(turn: ActiveTurn): void {
+    const maxMs = this.backgroundCommandHoldMaxMs;
+    if (!maxMs || maxMs <= 0 || turn.backgroundHoldTimer || turn.settled || !turn.continuingInBackground) return;
+    if (this.hasOpenUserInteraction()) return;
+    turn.backgroundHoldTimer = setTimeout(() => {
+      turn.backgroundHoldTimer = null;
+      if (turn.settled || this.turn !== turn || !turn.continuingInBackground || turn.outstanding.size > 0) return;
+      if (this.hasOpenUserInteraction()) return;
+      this.logger?.warn('acp: background continuation hold reached maximum duration; settling turn', { maxMs });
+      this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
+    }, maxMs);
+    (turn.backgroundHoldTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private async probeBackgroundActivity(): Promise<{ pendingReply: boolean; activeSubagents: boolean | null }> {
+    if (!this.checkBackgroundActivity) {
+      return { pendingReply: false, activeSubagents: null };
+    }
+    try {
+      return await this.checkBackgroundActivity(this.nativeId);
+    } catch {
+      return { pendingReply: false, activeSubagents: null };
+    }
+  }
+
+  private scheduleBackgroundPoll(turn: ActiveTurn): void {
+    if (!this.checkBackgroundActivity || turn.settled || this.turn !== turn || !turn.continuingInBackground) return;
+    if (turn.backgroundPollTimer || turn.outstanding.size > 0 || this.hasOpenUserInteraction()) return;
+    turn.backgroundPollTimer = setTimeout(() => {
+      turn.backgroundPollTimer = null;
+      void this.verifyBackgroundContinuation(turn);
+    }, this.bgPollMs);
+    (turn.backgroundPollTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private async verifyBackgroundContinuation(turn: ActiveTurn): Promise<void> {
+    if (
+      turn.settled
+      || this.turn !== turn
+      || !turn.continuingInBackground
+      || turn.outstanding.size > 0
+      || turn.cancelTimer
+      || this.hasOpenUserInteraction()
+      || this.translator.hasPendingNonDaemonTools()
+      || this.translator.hasAwaitingAsyncLaunch()
+    ) {
+      return;
+    }
+    if (turn.backgroundCheckInFlight) {
+      turn.recheckBackgroundAfterFlight = true;
+      return;
+    }
+    if (!this.checkBackgroundActivity) {
+      if (turn.settleWhenClear && !turn.awaitingAsyncWakeup) {
+        this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
+      }
+      return;
+    }
+    turn.backgroundCheckInFlight = true;
+    turn.recheckBackgroundAfterFlight = false;
+    try {
+      const state = await this.probeBackgroundActivity();
+      if (
+        turn.settled
+        || this.turn !== turn
+        || !turn.continuingInBackground
+        || turn.outstanding.size > 0
+        || turn.cancelTimer
+        || this.hasOpenUserInteraction()
+        || this.translator.hasPendingNonDaemonTools()
+        || this.translator.hasAwaitingAsyncLaunch()
+      ) {
+        return;
+      }
+      if (state.activeSubagents === true) {
+        turn.observedActiveSubagents = true;
+      }
+      if (state.pendingReply || state.activeSubagents === true) {
+        this.scheduleBackgroundPoll(turn);
+        return;
+      }
+      if (turn.awaitingAsyncWakeup) {
+        // Only settle a subagent-only wait on `activeSubagents === false` once an active
+        // child was actually observed in this wait so historical finished subagents from
+        // earlier turns cannot prematurely kill a fresh `schedule`, `run_workflow`, or
+        // not-yet-flushed `invoke_subagent`.
+        if (state.activeSubagents === false && turn.awaitingSubagentWakeup && turn.observedActiveSubagents) {
+          turn.awaitingAsyncWakeup = false;
+          turn.awaitingSubagentWakeup = false;
+          this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
+        } else {
+          this.scheduleBackgroundPoll(turn);
+        }
+        return;
+      }
+      if (turn.settleWhenClear) {
+        this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
+      }
+    } finally {
+      turn.backgroundCheckInFlight = false;
+      if (turn.recheckBackgroundAfterFlight && !turn.settled && this.turn === turn) {
+        turn.recheckBackgroundAfterFlight = false;
+        void this.verifyBackgroundContinuation(turn);
+      }
+    }
   }
 
   private shouldOpenAutonomousTurnForTool(fields: AcpToolCallFields): boolean {
@@ -917,13 +1277,23 @@ export class AcpSession {
       token: ++this.turnSeq,
       settled: false,
       cancelTimer: null,
+      inactivityTimer: null,
       backgroundSettleTimer: null,
+      backgroundHoldTimer: null,
+      backgroundPollTimer: null,
       continuingInBackground: true,
       awaitingAsyncWakeup: false,
+      awaitingSubagentWakeup: false,
+      observedActiveSubagents: false,
+      settleWhenClear: false,
+      recheckBackgroundAfterFlight: false,
+      replyOpen: false,
+      backgroundCheckInFlight: false,
       deferredOutcome: { stopReason: 'end_turn' },
       sawTextSinceBackgroundWait: false,
       lease: 0,
       outstanding: new Map(),
+      outcomeWatchers: new Map(),
     };
     this.turn = turn;
     if (!this.identityPublished) {
@@ -932,21 +1302,29 @@ export class AcpSession {
     }
     this.usage = { ...this.usage, tokenUsage: 0, outputTokens: 0 };
     this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true, providerInitiatedTurn: true } }]);
+    this.startBackgroundHoldTimer(turn);
   }
 
   private afterBackgroundContentUpdate(update?: AcpRecord): void {
     const turn = this.turn;
     if (!turn || !turn.continuingInBackground || turn.settled || turn.cancelTimer || turn.outstanding.size > 0) return;
     this.clearBackgroundSettleTimer(turn);
-    if (this.permissionControllers.size > 0) return;
+    this.clearBackgroundPollTimer(turn);
+    turn.settleWhenClear = false;
+    if (this.hasOpenUserInteraction()) return;
     const kind = update?.sessionUpdate;
     if (this.translator.hasAwaitingAsyncLaunch()) {
       turn.awaitingAsyncWakeup = true;
+      turn.awaitingSubagentWakeup = this.translator.hasAwaitingSubagentOnlyLaunch();
+      turn.observedActiveSubagents = false;
+      turn.replyOpen = false;
       turn.sawTextSinceBackgroundWait = false;
       this.translator.clearAwaitingAsyncLaunch();
+      this.scheduleBackgroundPoll(turn);
       return;
     }
     if (this.translator.hasPendingNonDaemonTools()) {
+      turn.replyOpen = false;
       turn.sawTextSinceBackgroundWait = false;
       return;
     }
@@ -956,16 +1334,25 @@ export class AcpSession {
         && typeof asRecord(update?.content).text === 'string'
         && (asRecord(update?.content).text as string).length > 0;
       const wokeByTool = kind === 'tool_call';
-      if (!wokeByTextOrThought && !wokeByTool) return;
+      if (!wokeByTextOrThought && !wokeByTool) {
+        this.scheduleBackgroundPoll(turn);
+        return;
+      }
       turn.awaitingAsyncWakeup = false;
+      turn.awaitingSubagentWakeup = false;
+      turn.observedActiveSubagents = false;
     }
     if (kind === 'agent_message_chunk') {
       const block = asRecord(update?.content);
       if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
         turn.sawTextSinceBackgroundWait = true;
+        turn.replyOpen = true;
       }
     } else if (kind === 'agent_thought_chunk') {
       turn.sawTextSinceBackgroundWait = false;
+      turn.replyOpen = false;
+    } else if (kind === 'tool_call' || kind === 'tool_call_update') {
+      turn.replyOpen = false;
     }
     const delayMs = this.translator.hasOpenThinking()
       ? this.bgAfterThinkingMs
@@ -974,17 +1361,8 @@ export class AcpSession {
         : this.bgAfterToolSettledMs;
     turn.backgroundSettleTimer = setTimeout(() => {
       turn.backgroundSettleTimer = null;
-      if (
-        turn.settled
-        || this.turn !== turn
-        || !turn.continuingInBackground
-        || turn.awaitingAsyncWakeup
-        || turn.outstanding.size > 0
-        || this.permissionControllers.size > 0
-        || this.translator.hasPendingNonDaemonTools()
-        || this.translator.hasAwaitingAsyncLaunch()
-      ) return;
-      this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
+      turn.settleWhenClear = true;
+      void this.verifyBackgroundContinuation(turn);
     }, delayMs);
     (turn.backgroundSettleTimer as unknown as { unref?: () => void }).unref?.();
   }
@@ -1020,7 +1398,30 @@ export class AcpSession {
       contextWindow: size,
       ...(cost.currency === 'USD' && typeof cost.amount === 'number' ? { costUsd: cost.amount } : {}),
     };
-    if (this.turn) this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+    const turn = this.turn;
+    if (turn) {
+      this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+      this.refreshPromptInactivityTimer(turn);
+      if (
+        this.replyEndsWithUsageUpdate
+        && turn.continuingInBackground
+        && turn.outstanding.size === 0
+        && turn.replyOpen
+        && turn.sawTextSinceBackgroundWait
+        && !this.translator.hasOpenThinking()
+        && !turn.settled
+        && !turn.cancelTimer
+        && !this.hasOpenUserInteraction()
+        && !this.translator.hasPendingNonDaemonTools()
+        && !this.translator.hasAwaitingAsyncLaunch()
+      ) {
+        turn.replyOpen = false;
+        turn.settleWhenClear = true;
+        this.clearBackgroundSettleTimer(turn);
+        this.clearBackgroundPollTimer(turn);
+        void this.verifyBackgroundContinuation(turn);
+      }
+    }
   }
 
   private applyPermissionMode(mode: PermissionMode): void {
@@ -1033,10 +1434,73 @@ export class AcpSession {
     }
   }
 
+  private async decideUserInputQuestion(
+    spec: AcpUserInputQuestionSpec,
+    signal: AbortSignal,
+  ): Promise<AcpPermissionOutcome> {
+    const resolver = this.resolver;
+    if (!resolver) return { outcome: 'cancelled' };
+    if (this.turn?.continuingInBackground) {
+      this.clearBackgroundSettleTimer(this.turn);
+      this.clearBackgroundHoldTimer(this.turn);
+      this.clearBackgroundPollTimer(this.turn);
+    }
+    const controller = new AbortController();
+    const forwardAbort = (): void => controller.abort();
+    signal.addEventListener('abort', forwardAbort, { once: true });
+    this.questionControllers.add(controller);
+    this.refreshPromptInactivityTimer(this.turn);
+    const request: Extract<InteractionRequest, { kind: 'ask_user_question' }> = {
+      kind: 'ask_user_question',
+      requestId: `acp-question-${++this.permissionSeq}`,
+      toolUseId: spec.id,
+      isBlocking: true,
+      questions: [{
+        id: spec.id,
+        question: spec.question,
+        header: spec.header,
+        multiSelect: false,
+        options: spec.options.map(option => ({ label: option.label })),
+        answerConstraints: {
+          required: true,
+          choices: spec.options.map(option => option.label),
+        },
+      }],
+    };
+    try {
+      const decision = await untilAborted(resolver(request, controller.signal), controller.signal);
+      if (decision === ABORTED || controller.signal.aborted) return { outcome: 'cancelled' };
+      if (decision.kind !== 'ask_user_question' || decision.dismissed) return { outcome: 'cancelled' };
+      const optionId = resolveAcpUserInputOptionId(spec, decision.answers);
+      return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+    } catch (error) {
+      if (controller.signal.aborted) return { outcome: 'cancelled' };
+      this.logger?.warn('acp: question resolver failed; cancelling', { error: String(error) });
+      return { outcome: 'cancelled' };
+    } finally {
+      signal.removeEventListener('abort', forwardAbort);
+      this.questionControllers.delete(controller);
+      this.refreshPromptInactivityTimer(this.turn);
+      if (this.turn?.continuingInBackground && !this.hasOpenUserInteraction()) {
+        this.startBackgroundHoldTimer(this.turn);
+        if (this.turn.awaitingAsyncWakeup || this.turn.settleWhenClear) {
+          this.scheduleBackgroundPoll(this.turn);
+        }
+      }
+    }
+  }
+
   private async decidePermission(params: AcpRecord, signal: AbortSignal): Promise<AcpPermissionOutcome> {
     if (signal.aborted || this.closing || this.violationTerminated || this.turn?.cancelTimer) return { outcome: 'cancelled' };
     const options = normalizePermissionOptions(params.options);
     let toolCall = normalizeToolCallFields(params.toolCall) ?? { toolCallId: `acp-permission-${this.permissionSeq + 1}` };
+    // Native fixed-choice questions (`interaction_*`) must always be answered by the user,
+    // even in Full access or Auto modes, and never fall through to auto-approval if malformed.
+    if (isAcpUserInputInteraction(toolCall)) {
+      const questionSpec = extractAcpUserInputQuestion(toolCall, options);
+      if (!questionSpec) return { outcome: 'cancelled' };
+      return this.decideUserInputQuestion(questionSpec, signal);
+    }
     const allowOnce = firstOfKind(options, ['allow_once']);
     const rememberedAllow = firstOfKind(options, ['allow_always']);
     const plainAllow = allowOnce ?? rememberedAllow;
@@ -1060,7 +1524,10 @@ export class AcpSession {
       }
     }
     if (this.shouldOpenAutonomousTurnForTool(toolCall)) this.beginAutonomousTurn();
-    if (this.turn?.continuingInBackground) this.clearBackgroundSettleTimer(this.turn);
+    if (this.turn?.continuingInBackground) {
+      this.clearBackgroundSettleTimer(this.turn);
+      this.clearBackgroundPollTimer(this.turn);
+    }
     this.emit(this.translator.noteToolCall(toolCall));
     // Only the agent can define the lifetime and scope of a persistent grant.
     // When it offers no one-time approval, Allow (and Full access) answers with
@@ -1071,6 +1538,7 @@ export class AcpSession {
     const forwardReviewAbort = (): void => reviewController.abort();
     signal.addEventListener('abort', forwardReviewAbort, { once: true });
     this.permissionControllers.add(reviewController);
+    this.refreshPromptInactivityTimer(this.turn);
     let review: Awaited<ReturnType<AcpSession['reviewInAutoMode']>>;
     try {
       review = await this.reviewInAutoMode(toolCall, reviewController.signal);
@@ -1078,17 +1546,33 @@ export class AcpSession {
       signal.removeEventListener('abort', forwardReviewAbort);
       this.permissionControllers.delete(reviewController);
     }
-    if (review === ABORTED || reviewController.signal.aborted || signal.aborted || this.closing) return { outcome: 'cancelled' };
+    if (review === ABORTED || reviewController.signal.aborted || signal.aborted || this.closing) {
+      this.refreshPromptInactivityTimer(this.turn);
+      return { outcome: 'cancelled' };
+    }
     // Auto approval answers once; a persistent grant still needs the user.
-    if (review?.verdict === 'allow' && allowOnce) return selected(allowOnce);
-    if (review?.verdict === 'block') return selected(reject);
+    if (review?.verdict === 'allow' && allowOnce) {
+      this.refreshPromptInactivityTimer(this.turn);
+      return selected(allowOnce);
+    }
+    if (review?.verdict === 'block') {
+      this.refreshPromptInactivityTimer(this.turn);
+      return selected(reject);
+    }
     const resolver = this.resolver;
-    if (!resolver) return selected(reject);
+    if (!resolver) {
+      this.refreshPromptInactivityTimer(this.turn);
+      return selected(reject);
+    }
 
     const controller = new AbortController();
     const forwardAbort = (): void => controller.abort();
     signal.addEventListener('abort', forwardAbort, { once: true });
     this.permissionControllers.add(controller);
+    this.refreshPromptInactivityTimer(this.turn);
+    if (this.turn?.continuingInBackground) {
+      this.clearBackgroundHoldTimer(this.turn);
+    }
     const input = toolCall.rawInput;
     const card: Extract<InteractionRequest, { kind: 'permission' }> = {
       kind: 'permission',
@@ -1103,12 +1587,22 @@ export class AcpSession {
       suggestions: [{
         type: 'acp_permission_choices',
         allowOnce: !!allowOnce,
-        ...(rememberedAllow ? { rememberedAllow: { name: rememberedAllow.name, optionId: rememberedAllow.optionId } } : {}),
+        ...(rememberedAllow ? {
+          rememberedAllow: {
+            name: rememberedAllow.name,
+            optionId: rememberedAllow.optionId,
+            ...(rememberedAllow.securityWarning ? { warning: rememberedAllow.securityWarning } : {}),
+          },
+        } : {}),
       }],
       metadata: {
         ...(toolCall.kind ? { acpToolKind: toolCall.kind } : {}),
         ...(toolCall.locations?.length ? { acpLocations: toolCall.locations } : {}),
-        acpOptions: options.map((option) => ({ name: option.name, kind: option.kind })),
+        acpOptions: options.map((option) => ({
+          name: option.name,
+          kind: option.kind,
+          ...(option.securityWarning ? { warning: option.securityWarning } : {}),
+        })),
       },
     };
     // Tell the user why Auto still asks (reviewer reason, or that the reviewer was unavailable).
@@ -1131,6 +1625,13 @@ export class AcpSession {
     } finally {
       signal.removeEventListener('abort', forwardAbort);
       this.permissionControllers.delete(controller);
+      this.refreshPromptInactivityTimer(this.turn);
+      if (this.turn?.continuingInBackground && !this.hasOpenUserInteraction()) {
+        this.startBackgroundHoldTimer(this.turn);
+        if (this.turn.awaitingAsyncWakeup || this.turn.settleWhenClear) {
+          this.scheduleBackgroundPoll(this.turn);
+        }
+      }
     }
   }
 
@@ -1151,6 +1652,12 @@ export class AcpSession {
   private cancelPermissions(): void {
     for (const controller of this.permissionControllers) controller.abort();
     this.permissionControllers.clear();
+  }
+
+  private cancelAllInteractions(): void {
+    this.cancelPermissions();
+    for (const controller of this.questionControllers) controller.abort();
+    this.questionControllers.clear();
   }
 
   private async setConfigValue(configId: string, value: string): Promise<void> {
@@ -1280,7 +1787,7 @@ export class AcpSession {
     if (this.violationTerminated) return;
     this.violationTerminated = true;
     this.pendingPrompts.length = 0;
-    this.cancelPermissions();
+    this.cancelAllInteractions();
     const turn = this.turn;
     if (turn) {
       this.finishTurn(turn.token, { error: reason, reason: 'acp-remote-tool-blocked' });

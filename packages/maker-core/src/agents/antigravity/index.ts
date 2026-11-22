@@ -34,6 +34,12 @@ import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
 import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
 import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
 import {
+  classifyAntigravityErrorText,
+  readAntigravityBackgroundState,
+  watchAntigravityPromptOutcome,
+  type OpenReadonlySqlite,
+} from './native-state.js';
+import {
   ANTIGRAVITY_REMOTE_AGENT_NAME,
   ANTIGRAVITY_REMOTE_WORKSPACE_MIN_VERSION,
   buildAntigravityHostedMcpServers,
@@ -87,6 +93,8 @@ export interface AntigravityAgentDeps extends AgentDeps {
   localSystemPrompt?: string;
   getDiscoveredCapabilities(): Capabilities | undefined;
   getCliVersion?(): Promise<string | null>;
+  /** Optional host-injected read-only SQLite opener for native trajectory inspection. */
+  openReadonlySqlite?: OpenReadonlySqlite;
 }
 
 function antigravityCapabilities(session: AcpSession): Capabilities {
@@ -139,25 +147,12 @@ async function readAcpIdentity(file: string): Promise<string | undefined> {
   }
 }
 
-function classifyAgyWarning(text: string): { error: string; reason: string } | undefined {
-  const diagnostic = text.trim();
-  if (!/^⚠️?\s*(?:[A-Z_]+ \(code \d+\)|failed to construct executor|agent execution terminated)/i.test(diagnostic)) {
-    return undefined;
-  }
-  if (/location is not supported/i.test(diagnostic)) {
-    return { error: 'Agy is unavailable from this network location. Check the Agy proxy.', reason: 'agy-region-blocked' };
-  }
-  if (/unauthenticated|authentication|sign in/i.test(diagnostic)) {
-    return { error: 'Sign in to Agy again and retry.', reason: 'acp-auth-required' };
-  }
-  if (/quota|resource.exhausted|rate limit|code 429/i.test(diagnostic)) {
-    return { error: 'Agy has reached a quota or rate limit. Check your subscription limits and retry.', reason: 'agy-rate-limited' };
-  }
-  if (/model not specified|model.*(?:not found|unavailable|not supported)/i.test(diagnostic)) {
-    return { error: 'The selected Agy model is unavailable. Refresh the model list and try again.', reason: 'agy-model-unavailable' };
-  }
-  return { error: 'Agy could not complete the turn. Check the configured proxy and retry.', reason: 'acp-request-failed' };
+function classifyAgyWarning(text: string) {
+  return classifyAntigravityErrorText(text, { requireWarningPrefix: true });
 }
+
+const AGY_PROMPT_INACTIVITY_TIMEOUT_MS = 15 * 60_000;
+const AGY_BACKGROUND_HOLD_MAX_MS = 30 * 60_000;
 
 export class AntigravityAgent extends BaseAgent {
   readonly kind = 'antigravity' as const;
@@ -353,9 +348,27 @@ export class AntigravityAgent extends BaseAgent {
         logger: this.agyDeps.logger,
         cancelGraceMs: 5_000,
         classifyWarning: classifyAgyWarning,
+        classifyRefusal: () => ({
+          error: 'You have reached your Antigravity quota for this period.',
+          reason: 'agy-rate-limited',
+          sdkError: 'rate_limit',
+        }),
         additionalDirectories: hosted ? undefined : writableDirs,
         steerByPrompt: true,
         continueWhileToolsPending: true,
+        promptInactivityTimeoutMs: AGY_PROMPT_INACTIVITY_TIMEOUT_MS,
+        backgroundCommandHoldMaxMs: AGY_BACKGROUND_HOLD_MAX_MS,
+        replyEndsWithUsageUpdate: true,
+        watchPromptOutcome: (sessionId) => watchAntigravityPromptOutcome({
+          stateDir,
+          sessionId,
+          openSqlite: this.agyDeps.openReadonlySqlite,
+        }),
+        checkBackgroundActivity: (sessionId) => readAntigravityBackgroundState(stateDir, sessionId),
+        onSessionBroken: async () => {
+          // Retire the broken native session marker so even a cold restart will not resume it.
+          await rm(marker, { force: true }).catch(() => {});
+        },
         ...(hosted
           ? { interceptToolCall: remoteGuard!.inspect }
           : { reviewPermission: toolCall => reviewAutoAction(normalizeAcpToolForAutoReview(toolCall)) }),

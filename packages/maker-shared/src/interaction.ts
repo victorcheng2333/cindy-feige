@@ -1224,17 +1224,21 @@ export function sessionScopedPermissionSuggestions(suggestions: unknown): unknow
 
 export function readAcpPermissionChoices(suggestions: unknown): {
   allowOnce: boolean;
-  rememberedAllow?: { label: string; selection: { type: 'acp_permission_selection'; optionId: string } };
+  rememberedAllow?: { label: string; warning?: string; selection: { type: 'acp_permission_selection'; optionId: string } };
 } | null {
   if (!Array.isArray(suggestions)) return null;
   const choices = suggestions.find(value => isRecord(value) && value.type === 'acp_permission_choices');
   if (!isRecord(choices) || typeof choices.allowOnce !== 'boolean') return null;
   const remembered = choices.rememberedAllow;
+  const warning = isRecord(remembered) && typeof remembered.warning === 'string' && remembered.warning.trim()
+    ? remembered.warning.trim()
+    : undefined;
   return {
     allowOnce: choices.allowOnce,
     ...(isRecord(remembered) && typeof remembered.name === 'string' && typeof remembered.optionId === 'string'
       ? { rememberedAllow: {
         label: remembered.name.trim(),
+        ...(warning ? { warning } : {}),
         selection: { type: 'acp_permission_selection', optionId: remembered.optionId },
       } } : {}),
   };

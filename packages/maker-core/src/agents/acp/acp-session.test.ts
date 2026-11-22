@@ -488,6 +488,76 @@ describe('AcpSession permissions', () => {
     expect(answer).toEqual({ outcome: { outcome: 'selected', optionId: 'always' } });
     await session.close();
   });
+
+  // Gap: native fixed-choice questions (`interaction_*`) share `session/request_permission`;
+  // Full access must never auto-answer them, and permission mode changes must not cancel them.
+  it('routes interaction_* requests to ask_user_question even in Full access and preserves security warnings on permissions', async () => {
+    const agent = createFakeAgent();
+    const { session } = await open(agent, { permissionMode: 'bypassPermissions' });
+    const seen: InteractionRequest[] = [];
+    session.setInteractionResolver(async (request) => {
+      seen.push(request);
+      if (request.kind === 'ask_user_question') {
+        return { kind: 'ask_user_question', answers: { [request.questions[0]!.id!]: 'Use PostgreSQL' } };
+      }
+      return { kind: 'permission', behavior: 'allow' };
+    });
+    const questionAnswer = await agent.requestPermission({
+      toolCall: { toolCallId: 'interaction_db_choice', title: 'Pick a database' },
+      options: [
+        { optionId: 'opt-sqlite', name: 'Use SQLite', kind: 'allow_once' },
+        { optionId: 'opt-pg', name: 'Use PostgreSQL', kind: 'allow_once' },
+      ],
+    });
+    expect(questionAnswer).toEqual({ outcome: { outcome: 'selected', optionId: 'opt-pg' } });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      kind: 'ask_user_question',
+      toolUseId: 'interaction_db_choice',
+      isBlocking: true,
+      questions: [{
+        id: 'interaction_db_choice',
+        question: 'Pick a database',
+        multiSelect: false,
+        answerConstraints: { required: true, choices: ['Use SQLite', 'Use PostgreSQL'] },
+      }],
+    });
+    await session.close();
+
+    const askAgent = createFakeAgent();
+    const { session: askSession } = await open(askAgent, { permissionMode: 'ask' });
+    const permSeen: InteractionRequest[] = [];
+    askSession.setInteractionResolver(async (request) => {
+      permSeen.push(request);
+      return { kind: 'permission', behavior: 'allow' };
+    });
+    await askAgent.requestPermission({
+      toolCall: { toolCallId: 'cmd-1', title: 'Run shell' },
+      options: [
+        { optionId: 'yes', name: 'Allow once', kind: 'allow_once' },
+        {
+          optionId: 'always',
+          name: 'Allow always',
+          kind: 'allow_always',
+          _meta: { 'agy.security.warning': { message: 'Allows shell commands without asking again.' } },
+        },
+        { optionId: 'no', name: 'Reject', kind: 'reject_once' },
+      ],
+    });
+    expect(permSeen[0]).toMatchObject({
+      kind: 'permission',
+      suggestions: [{
+        type: 'acp_permission_choices',
+        allowOnce: true,
+        rememberedAllow: {
+          name: 'Allow always',
+          optionId: 'always',
+          warning: 'Allows shell commands without asking again.',
+        },
+      }],
+    });
+    await askSession.close();
+  });
 });
 
 describe('AcpSession stop and failure', () => {
@@ -1183,6 +1253,277 @@ describe('AcpSession background tool continuation', () => {
 
     await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
     expect(session.isTurnRunning()).toBe(false);
+    await session.close();
+  });
+
+  // Gap: mid-turn warning after tool calls, stopReason='refusal', prompt inactivity timeout,
+  // background hold ceiling, and deterministic usage_update / checkBackgroundActivity settlement.
+  it('promotes mid-turn warnings and bare refusal stopReasons to terminal errors and latches rollover on broken sessions', async () => {
+    const agent = createFakeAgent();
+    const onSessionBroken = vi.fn();
+    const { session, events } = await open(agent, {
+      classifyWarning: (text) => text.includes('Invalid `signature`')
+        ? { error: 'Broken history', reason: 'agy-invalid-thinking-signature', brokenSession: true }
+        : undefined,
+      classifyRefusal: () => ({ error: 'Quota exhausted', reason: 'agy-rate-limited', sdkError: 'rate_limit' }),
+      onSessionBroken,
+    });
+    await session.send({ type: 'user', content: 'continue' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.update({ sessionUpdate: 'tool_call', toolCallId: 't-mid', title: 'Read file', status: 'completed' });
+    agent.update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '⚠ INVALID_ARGUMENT (code 400): messages.2.content.0: Invalid `signature` in `thinking` block' },
+    });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('error'));
+    expect(events.at(-1)?.data).toMatchObject({ reason: 'agy-invalid-thinking-signature', isTerminal: true });
+    expect(session.getUsageSnapshot().needsRollover).toBe(true);
+    expect(onSessionBroken).toHaveBeenCalledOnce();
+
+    // A bare `refusal` stopReason (no assistant text) surfaces via classifyRefusal as a terminal quota error.
+    await session.send({ type: 'user', content: 'retry' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    agent.prompts[1]!.settle.resolve({ stopReason: 'refusal' });
+    await vi.waitFor(() => expect(events.filter(e => e.type === 'error')).toHaveLength(2));
+    expect(events.at(-1)?.data).toMatchObject({ reason: 'agy-rate-limited', sdkError: 'rate_limit', isTerminal: true });
+
+    // A content refusal that streamed real assistant text must stay a completed reply, not a quota error.
+    await session.send({ type: 'user', content: 'unsafe' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(3));
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'I cannot help with that.' } });
+    agent.prompts[2]!.settle.resolve({ stopReason: 'refusal' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'I cannot help with that.' });
+    await session.close();
+  });
+
+  it('enforces promptInactivityTimeoutMs (paused during tools/questions) and backgroundCommandHoldMaxMs', async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        promptInactivityTimeoutMs: 500,
+      });
+      await session.send({ type: 'user', content: 'stall' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+      // Running tool pauses the inactivity timer.
+      agent.update({ sessionUpdate: 'tool_call', toolCallId: 'slow-t', title: 'Run slow', kind: 'execute', status: 'in_progress' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(events.some(e => e.type === 'error')).toBe(false);
+      // Once the tool completes and the model goes silent past 500ms, the prompt times out.
+      agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 'slow-t', status: 'completed' });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(events.at(-1)).toMatchObject({ type: 'error', data: { reason: 'acp-prompt-timeout', isTerminal: true } });
+      expect(agent.methods()).toContain('session/cancel');
+      await session.close();
+
+      // Background hold ceiling settles a turn if the agent loses a completion event.
+      const bgAgent = createFakeAgent();
+      const { session: bgSession, events: bgEvents } = await open(bgAgent, {
+        continueWhileToolsPending: true,
+        backgroundCommandHoldMaxMs: 1_000,
+        backgroundContinuationDelaysMs: fastDelays,
+      });
+      await bgSession.send({ type: 'user', content: 'lost bg' });
+      await vi.waitFor(() => expect(bgAgent.prompts).toHaveLength(1));
+      bgAgent.update({ sessionUpdate: 'tool_call', toolCallId: 'lost-cmd', title: 'build', kind: 'execute', status: 'in_progress' });
+      bgAgent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(bgSession.isTurnRunning()).toBe(true);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(bgEvents.at(-1)?.type).toBe('done');
+      expect(bgSession.isTurnRunning()).toBe(false);
+      await bgSession.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('settles autonomous wakeup on usage_update when native background state is clear and holds when pendingReply is true', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: { pendingReply: boolean; activeSubagents: boolean | null } = { pendingReply: true, activeSubagents: null };
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundContinuationDelaysMs: { afterToolSettledMs: 20_000, afterThinkingMs: 30_000, afterTextMs: 10_000, pollMs: 100 },
+        checkBackgroundActivity: async () => state,
+      });
+      await session.send({ type: 'user', content: 'spawn' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(50);
+      // Native inbox still has an unread high-priority wake, so turn stays running.
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      // Wakeup reply streams and closes with usage_update once inbox is clear.
+      state = { pendingReply: false, activeSubagents: false };
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Subagent reported back.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 1000, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+      expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Subagent reported back.' });
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Regression: P1 review fixes for background poll settling, overlapping probes, Full Access hold
+  // ceiling, intermediate usage_update, historical subagent records, abort-vs-watcher race, and
+  // interaction_ label precedence / malformed cancellation.
+  it('settles once delayed pendingReply clears and does not prematurely end multi-step wakeups on tool/thinking usage_update', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: { pendingReply: boolean; activeSubagents: boolean | null } = { pendingReply: true, activeSubagents: false };
+      let resolveInFlight: ((value: { pendingReply: boolean; activeSubagents: boolean | null }) => void) | undefined;
+      let probeCount = 0;
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundCommandHoldMaxMs: 30_000,
+        backgroundContinuationDelaysMs: { afterToolSettledMs: 20_000, afterThinkingMs: 30_000, afterTextMs: 10_000, pollMs: 100 },
+        checkBackgroundActivity: () => {
+          probeCount += 1;
+          if (probeCount === 2) {
+            return new Promise((resolve) => { resolveInFlight = resolve; });
+          }
+          return Promise.resolve(state);
+        },
+      });
+      await session.send({ type: 'user', content: 'bg' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+      // Probe 1 sees pendingReply: true -> enters background wait with settleWhenClear = true.
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(100);
+      // Probe 2 is now in flight; an intermediate tool + usage_update must NOT end the turn.
+      agent.update({ sessionUpdate: 'tool_call', toolCallId: 'step-tool', title: 'Read', status: 'completed' });
+      agent.update({ sessionUpdate: 'usage_update', used: 500, size: 100_000 });
+      // Thinking + usage_update must NOT end the turn either.
+      agent.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Planning...' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 600, size: 100_000 });
+      const finishInFlight = resolveInFlight as ((value: { pendingReply: boolean; activeSubagents: boolean | null }) => void) | undefined;
+      finishInFlight?.({ pendingReply: false, activeSubagents: false });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      // Final text + usage_update arrives while pendingReply is still flushing, then clears next poll.
+      state = { pendingReply: true, activeSubagents: false };
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'All done.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 900, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(session.isTurnRunning()).toBe(true);
+
+      state = { pendingReply: false, activeSubagents: false };
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+      expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'All done.' });
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps backgroundCommandHoldMaxMs active after Full Access permission approval and ignores stale subagents for schedule waits', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: { pendingReply: boolean; activeSubagents: boolean | null } = { pendingReply: false, activeSubagents: false };
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        permissionMode: 'bypassPermissions',
+        continueWhileToolsPending: true,
+        backgroundCommandHoldMaxMs: 1_000,
+        backgroundContinuationDelaysMs: { afterToolSettledMs: 5_000, afterThinkingMs: 5_000, afterTextMs: 5_000, pollMs: 100 },
+        checkBackgroundActivity: async () => state,
+      });
+      await session.send({ type: 'user', content: 'schedule with stale subagent' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+      // Schedule launch while historical subagents directory reports activeSubagents: false.
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'sched-1',
+        title: 'Run schedule',
+        status: 'completed',
+        rawInput: { DurationSeconds: 60, Prompt: 'check' },
+      });
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(350);
+      // Historical `activeSubagents: false` must NOT kill the schedule wait.
+      expect(session.isTurnRunning()).toBe(true);
+
+      // A Full Access permission approval during background wait must NOT disable the 1s hold ceiling.
+      const permPromise = agent.requestPermission({
+        toolCall: { toolCallId: 'bg-perm', title: 'Run cmd', kind: 'execute', status: 'pending' },
+        options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+      });
+      await expect(permPromise).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
+      await vi.advanceTimersByTimeAsync(700);
+      await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+      expect(session.isTurnRunning()).toBe(false);
+
+      // On a subagent launch, settle only after activeSubagents transitions true -> false.
+      await session.send({ type: 'user', content: 'subagent lifecycle' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+      agent.update({ sessionUpdate: 'tool_call', toolCallId: 'sub-life', title: 'Run invoke_subagent', status: 'completed' });
+      agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(250);
+      expect(session.isTurnRunning()).toBe(true); // stale false before child file created
+      state = { pendingReply: false, activeSubagents: true };
+      await vi.advanceTimersByTimeAsync(100);
+      expect(session.isTurnRunning()).toBe(true); // observed active child
+      state = { pendingReply: false, activeSubagents: false };
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(2));
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not dispatch session/prompt if abort() fires while watchPromptOutcome is pending, and guards interaction_ matching/malformed requests', async () => {
+    let releaseWatcher!: () => void;
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      permissionMode: 'bypassPermissions',
+      watchPromptOutcome: () => new Promise((resolve) => {
+        releaseWatcher = () => resolve(async () => undefined);
+      }),
+    });
+    const sendPromise = session.send({ type: 'user', content: 'cancel before dispatch' });
+    await vi.waitFor(() => expect(releaseWatcher).toBeDefined());
+    await session.abort();
+    releaseWatcher();
+    await sendPromise;
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(agent.prompts).toHaveLength(0);
+    expect(events.at(-1)?.data).toMatchObject({ status: 'cancelled' });
+
+    // Malformed interaction_ (empty options) must cancel rather than fall through to bypassPermissions.
+    const malformed = await agent.requestPermission({
+      toolCall: { toolCallId: 'interaction_empty', title: 'Empty?' },
+      options: [],
+    });
+    expect(malformed).toEqual({ outcome: { outcome: 'cancelled' } });
+
+    // Label match takes precedence over optionId collision, and raw wire optionId is preserved.
+    session.setInteractionResolver(async (request) => {
+      if (request.kind !== 'ask_user_question') throw new Error('unexpected');
+      const key = request.questions[0]!.id ?? request.questions[0]!.question;
+      return { kind: 'ask_user_question', answers: { [key]: 'opt_b' } };
+    });
+    const colliding = await agent.requestPermission({
+      toolCall: { toolCallId: 'interaction_collide', title: 'Pick one' },
+      options: [
+        { optionId: ' opt_a ', name: 'opt_b', kind: 'allow_once' },
+        { optionId: 'opt_b', name: 'Second', kind: 'allow_once' },
+      ],
+    });
+    expect(colliding).toEqual({ outcome: { outcome: 'selected', optionId: ' opt_a ' } });
     await session.close();
   });
 });

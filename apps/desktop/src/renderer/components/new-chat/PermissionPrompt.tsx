@@ -261,6 +261,11 @@ export function PermissionPrompt({
           {t(submitting ? 'newChat.permissionPrompt.submitting' : linkOpenFailed ? 'newChat.pluginSetup.form.openLinkFailed' : 'newChat.permissionPrompt.submissionFailed')}
         </p>
       )}
+      {canRemember && rememberedAllow?.warning && (
+        <p role="note" data-testid="acp-remembered-warning" className="mt-3 whitespace-pre-wrap break-words text-12 leading-snug text-[var(--status-bar-meta)]">
+          {rememberedAllow.warning}
+        </p>
+      )}
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2 [&_button:disabled]:cursor-wait [&_button:disabled]:opacity-50">
         {isFirstInstall && (
           <button type="button" className="mr-auto min-h-9 text-13 text-[var(--status-bar-meta)] underline"
@@ -295,9 +300,11 @@ export function PermissionPrompt({
           // 换成只讲时效的说法:一条都没列出还说「只限这里列出的范围」就是虚假安心。
           <Tip
             text={
-              rememberedAllow ? rememberedAllow.label || t('newChat.permissionPrompt.rememberAcpApproval') : (allowScope
-                ? `${allowScope}\n${t('newChat.permissionPrompt.alwaysAllowScopedHint')}`
-                : t('newChat.permissionPrompt.alwaysAllowSessionHint'))
+              rememberedAllow
+                ? [rememberedAllow.label || t('newChat.permissionPrompt.rememberAcpApproval'), rememberedAllow.warning].filter(Boolean).join('\n')
+                : (allowScope
+                  ? `${allowScope}\n${t('newChat.permissionPrompt.alwaysAllowScopedHint')}`
+                  : t('newChat.permissionPrompt.alwaysAllowSessionHint'))
             }
             side="top"
             contentClassName="max-w-[320px] whitespace-pre-line break-all text-left"

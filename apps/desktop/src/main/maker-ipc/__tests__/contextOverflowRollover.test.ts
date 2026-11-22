@@ -2515,6 +2515,37 @@ describe('createContextOverflowRollover', () => {
       expect.objectContaining({ sourceUserClientId: 'u1' }), expect.any(AbortSignal));
     expect(deps.replayUserMessage).not.toHaveBeenCalled();
   });
+
+  // Gap: Agy INVALID_THINKING_SIGNATURE permanently breaks the native conversation; next send
+  // must rebuild into a fresh Agy session with handoff context even after an app restart.
+  it('rebuilds an Antigravity session after agy-invalid-thinking-signature with Agy provenance', async () => {
+    const deps = makeDeps([
+      msg('user', 'Implement feature X', 'u1'),
+      msg('assistant', 'Checked files', 'a1'),
+      msg('user', 'Continue', 'u2'),
+      msg('error', { reason: 'agy-invalid-thinking-signature', message: 'broken signature' }, 'e1'),
+    ]);
+    deps.getSessionRow.mockResolvedValue({
+      ...(await deps.getSessionRow()),
+      agentKind: 'antigravity',
+      sdkSessionId: 'broken-agy-session',
+      model: 'claude-sonnet-4-6',
+      providerId: 'antigravity',
+    });
+    const rollover = createContextOverflowRollover(deps);
+    await expect(rollover.prepareUnhealthySession('s1')).resolves.toBe(true);
+    expect(deps.closeSession).toHaveBeenCalledWith('s1');
+    expect(deps.commitRebuild).toHaveBeenCalledWith(
+      's1',
+      expect.stringContaining('Implement feature X'),
+      expect.objectContaining({
+        reason: 'native-session-recovery',
+        sourceAgentKind: 'antigravity',
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(deps.setPendingHandoff).toHaveBeenCalled();
+  });
 });
 
 describe('persistedUserContentToWireMessage', () => {

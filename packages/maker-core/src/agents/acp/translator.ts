@@ -44,16 +44,32 @@ interface ThinkingBlock {
   text: string;
 }
 
+export interface AcpWarningClassification {
+  error: string;
+  reason: string;
+  sdkError?: string;
+  usageResetAt?: number;
+  brokenSession?: boolean;
+}
+
 export interface AcpUpdateTranslatorOptions {
   /** Unique per session; keeps thinking block ids distinct. */
   blockIdPrefix: string;
   now?: () => number;
-  classifyWarning?: (text: string) => { error: string; reason: string } | undefined;
+  classifyWarning?: (text: string) => AcpWarningClassification | undefined;
+  /** Optional classifier for a bare `refusal` stopReason (no assistant reply text). */
+  classifyRefusal?: () => AcpWarningClassification | undefined;
 }
 
 export type AcpTurnOutcome = (
   | { stopReason: AcpStopReason }
-  | { error: string; reason?: string }
+  | {
+      error: string;
+      reason?: string;
+      sdkError?: string;
+      usageResetAt?: number;
+      brokenSession?: boolean;
+    }
 ) & { usage?: AcpPromptUsage };
 
 function clip(text: string): string {
@@ -129,18 +145,21 @@ function normalizeAcpToolBaseName(tool: Pick<AcpToolCallFields, 'name' | 'title'
   return raw.replace(/^Run\s+/i, '').trim().toLowerCase();
 }
 
-function isAsyncBackgroundLauncher(tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>): boolean {
+function classifyAsyncBackgroundLauncher(
+  tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>,
+): 'subagent' | 'other' | null {
   const base = normalizeAcpToolBaseName(tool);
-  if (base === 'invoke_subagent' || base === 'run_workflow') return true;
+  if (base === 'invoke_subagent') return 'subagent';
+  if (base === 'run_workflow') return 'other';
   const input = tool.rawInput && typeof tool.rawInput === 'object' && !Array.isArray(tool.rawInput)
     ? tool.rawInput as Record<string, unknown>
     : null;
-  if (base === 'swarm') return input?.action === 'add';
+  if (base === 'swarm') return input?.action === 'add' ? 'subagent' : null;
   if (base === 'schedule') {
-    if (isDaemonToolInput(tool.rawInput)) return false;
-    return typeof input?.DurationSeconds === 'number' && input.DurationSeconds > 0;
+    if (isDaemonToolInput(tool.rawInput)) return null;
+    return typeof input?.DurationSeconds === 'number' && input.DurationSeconds > 0 ? 'other' : null;
   }
-  return false;
+  return null;
 }
 
 function isAsyncBackgroundCanceller(tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>): boolean {
@@ -161,7 +180,8 @@ export class AcpUpdateTranslator {
   private thinking: ThinkingBlock | null = null;
   private thinkingSeq = 0;
   private readonly tools = new Map<string, ToolState>();
-  private awaitingAsyncLaunch = false;
+  private awaitingSubagentLaunch = false;
+  private awaitingOtherAsyncLaunch = false;
   private planId: string | undefined;
   private planSeq = 0;
   private readonly now: () => number;
@@ -180,7 +200,7 @@ export class AcpUpdateTranslator {
         const messageId = asNonEmptyString(update.messageId);
         if (messageId && this.segmentMessageId && messageId !== this.segmentMessageId) this.flushText(events);
         if (messageId) this.segmentMessageId = messageId;
-        if (!this.segmentText && !this.lastText && !this.tools.size && this.options.classifyWarning) {
+        if (!this.segmentText && this.options.classifyWarning) {
           this.holdingWarning = block.text.trimStart().startsWith('⚠');
         }
         this.segmentText += block.text;
@@ -253,13 +273,19 @@ export class AcpUpdateTranslator {
     return false;
   }
 
-  /** True when a fire-and-forget async launcher (e.g. `invoke_subagent`) succeeded since last cleared. */
+  /** True when a fire-and-forget async launcher (e.g. `invoke_subagent`, `schedule`, `run_workflow`) succeeded since last cleared. */
   hasAwaitingAsyncLaunch(): boolean {
-    return this.awaitingAsyncLaunch;
+    return this.awaitingSubagentLaunch || this.awaitingOtherAsyncLaunch;
+  }
+
+  /** True when the pending async launch(es) consist solely of subagents (no timers/workflows). */
+  hasAwaitingSubagentOnlyLaunch(): boolean {
+    return this.awaitingSubagentLaunch && !this.awaitingOtherAsyncLaunch;
   }
 
   clearAwaitingAsyncLaunch(): void {
-    this.awaitingAsyncLaunch = false;
+    this.awaitingSubagentLaunch = false;
+    this.awaitingOtherAsyncLaunch = false;
   }
 
   hasOpenThinking(): boolean {
@@ -270,16 +296,43 @@ export class AcpUpdateTranslator {
     return this.segmentText.length > 0;
   }
 
+  /** True when the current turn has produced non-warning assistant text. */
+  hasResponseText(): boolean {
+    return this.lastText.trim().length > 0 || (this.segmentText.trim().length > 0 && !this.holdingWarning);
+  }
+
+  /**
+   * Evaluates and consumes a held `⚠` warning segment when a prompt settles with `end_turn`
+   * or `refusal`. Returns the classified failure if matched, leaving normal text intact otherwise.
+   */
+  consumeHeldWarningFailure(stopReason: AcpStopReason): AcpWarningClassification | undefined {
+    if (!this.holdingWarning || (stopReason !== 'end_turn' && stopReason !== 'refusal')) {
+      return undefined;
+    }
+    const failure = this.options.classifyWarning?.(this.segmentText);
+    if (!failure) return undefined;
+    this.segmentText = '';
+    this.segmentMessageId = undefined;
+    this.holdingWarning = false;
+    return failure;
+  }
+
   /** Ends the current turn: closes segments, settles open tool calls, emits `done` or a terminal `error`. */
   finish(outcome: AcpTurnOutcome): AgentEvent[] {
-    if (this.holdingWarning && 'stopReason' in outcome && outcome.stopReason === 'end_turn') {
-      const failure = this.options.classifyWarning?.(this.segmentText);
-      if (failure) {
-        this.segmentText = '';
-        this.segmentMessageId = undefined;
-        this.holdingWarning = false;
-        outcome = { ...failure, usage: outcome.usage };
-      }
+    if ('stopReason' in outcome) {
+      const failure = this.consumeHeldWarningFailure(outcome.stopReason);
+      if (failure) outcome = { ...failure, usage: outcome.usage };
+    }
+    if ('stopReason' in outcome && outcome.stopReason === 'refusal' && !this.hasResponseText()) {
+      const refusalFailure = this.options.classifyRefusal?.();
+      if (refusalFailure) outcome = { ...refusalFailure, usage: outcome.usage };
+    }
+    // If an external outcome watcher promoted a warning-shaped message to a terminal error,
+    // drop the raw held warning banner instead of echoing it as a normal assistant reply.
+    if (this.holdingWarning && 'error' in outcome) {
+      this.segmentText = '';
+      this.segmentMessageId = undefined;
+      this.holdingWarning = false;
     }
     const events = this.flushPending();
     const interrupted = 'error' in outcome || outcome.stopReason === 'cancelled';
@@ -290,7 +343,8 @@ export class AcpUpdateTranslator {
       this.settleTool(tool, events, interrupted ? 'interrupted' : 'done');
     }
     this.tools.clear();
-    this.awaitingAsyncLaunch = false;
+    this.awaitingSubagentLaunch = false;
+    this.awaitingOtherAsyncLaunch = false;
     this.planId = undefined;
     const result = this.lastText;
     this.lastText = '';
@@ -301,6 +355,10 @@ export class AcpUpdateTranslator {
           message: outcome.error,
           isTerminal: true,
           ...(outcome.reason ? { reason: outcome.reason } : {}),
+          ...(outcome.sdkError ? { sdkError: outcome.sdkError } : {}),
+          ...(typeof outcome.usageResetAt === 'number' && Number.isFinite(outcome.usageResetAt)
+            ? { usageResetAt: outcome.usageResetAt }
+            : {}),
           ...(outcome.usage ? { usage: outcome.usage } : {}),
         },
       });
@@ -352,8 +410,10 @@ export class AcpUpdateTranslator {
     }
     if (!tool.settled && (tool.status === 'completed' || tool.status === 'failed')) {
       if (tool.status === 'completed') {
-        if (isAsyncBackgroundLauncher(tool)) this.awaitingAsyncLaunch = true;
-        else if (isAsyncBackgroundCanceller(tool)) this.awaitingAsyncLaunch = false;
+        const launchKind = classifyAsyncBackgroundLauncher(tool);
+        if (launchKind === 'subagent') this.awaitingSubagentLaunch = true;
+        else if (launchKind === 'other') this.awaitingOtherAsyncLaunch = true;
+        else if (isAsyncBackgroundCanceller(tool)) this.awaitingSubagentLaunch = false;
       }
       this.settleTool(tool, events, tool.status === 'failed' ? 'failed' : 'done');
     }

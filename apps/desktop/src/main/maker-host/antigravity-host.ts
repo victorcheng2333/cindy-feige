@@ -4,9 +4,11 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type McpProvider, type AuthAdapter, type Capabilities } from '@cindy/maker-core';
+import Database from 'better-sqlite3';
+import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type McpProvider, type AuthAdapter, type Capabilities, type OpenReadonlySqlite } from '@cindy/maker-core';
 import type { Provider, ProviderModelDiscoveryFailure } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
+import { resolveBetterSqliteNativeBinding } from '../localDb/betterSqliteFactory.js';
 import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
 import { antigravityStateDir, retainAntigravityTaskState } from './antigravity-state.js';
 import { getPiExtraSpawnConfig } from '../mcp-integrations/piEnvironment.desktop.js';
@@ -295,6 +297,16 @@ const auth: AuthAdapter = {
   async getAuthEnv() { return {}; },
 };
 
+const openReadonlyAgySqlite: OpenReadonlySqlite = (filePath) => {
+  const nativeBinding = resolveBetterSqliteNativeBinding();
+  return new Database(filePath, {
+    readonly: true,
+    fileMustExist: true,
+    timeout: 100,
+    ...(nativeBinding ? { nativeBinding } : {}),
+  });
+};
+
 export function buildAntigravityAgent(
   logger: AgentDeps['logger'], providers: McpProvider[] = [], makerMemory?: AgentDeps['makerMemory'],
   /** Cindy Auto-review for permission requests Agy escalates while the task is in Auto. */
@@ -308,6 +320,7 @@ export function buildAntigravityAgent(
     logger,
     makerMemory,
     reviewAutoPermissionAction,
+    openReadonlySqlite: openReadonlyAgySqlite,
     runtimeConfig: {
       systemPrompt: hostSystemPrompt,
       get makerMemoryEnabled() { return makerMemory?.isEnabled() ?? false; },
