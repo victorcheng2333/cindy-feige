@@ -143,9 +143,24 @@ describe('Maker: agent on another computer', () => {
     await maker.shutdown();
   });
 
-  // 2026-11-22 回归：本机 agy 未登录 / 发现失败时只有静态能力(不支持插话)，借另一台电脑的
-  // Agy 跑任务时插话一直被留在队列(「暂时无法插话，消息仍保留在队列中」)。插话要交给那台执行。
-  it('lets a running Agy task on another computer be steered when this computer has not discovered Agy', async () => {
+  // 测试价值
+  // - 生产入口与可观察结果：Maker.createSession 后 Session.steer 是否把插话交给运行 Agent 的句柄。
+  // - 依据：2026-11-22 用户反馈，借另一台电脑的 Agy 跑任务时插话一直提示「暂时无法插话，
+  //   消息仍保留在队列中」：本机 agy 未登录 / 发现失败时 Session 只有静态能力(不支持插话)。
+  // - 覆盖缺口：上面的用例只覆盖 rewind；本机静态能力按设备区分插话没有覆盖。
+  // - 最小失败输入：agentKind antigravity + agentDeviceId + 静态 sameTurnSteer 不支持；本机同样
+  //   输入必须仍拒绝(ACP 握手前不能声称支持)。
+  // - tier：unit(内存 fake 句柄)；实测约 1 秒。
+  it.each([
+    { where: 'on another computer', agentDeviceId: 'dev-b', steers: true },
+    { where: 'on this computer', agentDeviceId: undefined, steers: false },
+  ])('steers a running Agy task $where only if it can when this computer has not discovered Agy', async ({ agentDeviceId, steers }) => {
+    const running = {
+      ...handle('agy'),
+      agentKind: 'antigravity',
+      isTurnRunning: () => true,
+      steer: vi.fn(async () => {}),
+    } as unknown as AgentSessionHandle & { steer: ReturnType<typeof vi.fn> };
     const agent = {
       ...localAgent(),
       kind: 'antigravity',
@@ -153,21 +168,17 @@ describe('Maker: agent on another computer', () => {
         ...localAgent().capabilities,
         sameTurnSteer: { supported: false, reason: 'not-implemented' },
       },
+      startSession: vi.fn(async () => running),
     } as unknown as BaseAgent;
-    const remote = {
-      ...handle('remote-agy'),
-      agentKind: 'antigravity',
-      isTurnRunning: () => true,
-      steer: vi.fn(async () => {}),
-    } as unknown as AgentSessionHandle & { steer: ReturnType<typeof vi.fn> };
     const maker = new Maker({
-      agents: { antigravity: agent }, storage: storage(), logger, startDeviceAgentSession: async () => remote,
+      agents: { antigravity: agent }, storage: storage(), logger, startDeviceAgentSession: async () => running,
     });
     const session = await maker.createSession({
-      id: 'task-agy', agentKind: 'antigravity', workingDir: '/repo', model: 'm', agentDeviceId: 'dev-b',
+      id: 'task-agy', agentKind: 'antigravity', workingDir: '/repo', model: 'm', agentDeviceId,
     });
-    await session.steer('also check the tests');
-    expect(remote.steer).toHaveBeenCalledTimes(1);
+    if (steers) await session.steer('also check the tests');
+    else await expect(session.steer('also check the tests')).rejects.toBeInstanceOf(NotSupportedError);
+    expect(running.steer).toHaveBeenCalledTimes(steers ? 1 : 0);
     await maker.shutdown();
   });
 
