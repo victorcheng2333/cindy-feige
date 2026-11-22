@@ -869,7 +869,7 @@ export function AgentActionRow({
         ? 'chat.agentActionRow.verb.ranCommand'
         : isFileChange
           ? fileChangeVerbKey(descriptor)
-          : verbLabelKeyForRow(verbForTool(toolName)),
+          : verbLabelKeyForRow(verbForTool(toolName, inp)),
   );
   // 意识行动词固定"召唤意识"(与其它工具的 Ran/Read 语系并列)。
   const rowVerbLabel = ghostInfo ? t('chat.ghostCall.verb') : verbLabel;

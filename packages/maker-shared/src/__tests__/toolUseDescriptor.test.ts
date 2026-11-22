@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseMessageToolUse } from '../messageNormalize.js';
 import {
+  acpKindToToolVerb,
   createdPathsFromDescriptor,
   describeToolUse,
   humanizeToolToken,
@@ -582,5 +583,116 @@ describe('中间件不算成品(素材候选)', () => {
   it('不产出文件的调用没有素材候选(读类工具不该反杀任何东西)', () => {
     const d = describeToolUse('mcp__cindy_docs__read_sheet', { path: 'data.xlsx' });
     expect(sourcePathCandidatesFromDescriptor(d)).toEqual([]);
+  });
+});
+
+// Tier: unit. Production entry: `describeToolUse` + `acpKindToToolVerb`.
+// Gap: ACP/Antigravity tools carry dynamic human titles rather than fixed built-in tool names;
+// without `acpKind` fallback every call collapses into generic "used".
+// Minimal failing input: dynamic title + `{ acpKind: 'execute' | 'read' | 'edit' | 'search' | 'fetch', ... }`.
+describe('describeToolUse — ACP acpKind mapping', () => {
+  it('maps ACP execute/read/edit/search/fetch tools to structured descriptors', () => {
+    expect(
+      describeToolUse('Git status check', {
+        acpKind: 'execute',
+        CommandLine: 'git status --short',
+        toolSummary: 'Git status check',
+        Cwd: '/repo',
+      }),
+    ).toEqual({
+      kind: 'command',
+      toolName: 'Git status check',
+      description: 'Git status check',
+      command: 'git status --short',
+      cwd: '/repo',
+    });
+
+    expect(
+      describeToolUse('Run command', {
+        acpKind: 'execute',
+        CommandLine: 'git status',
+      }),
+    ).toMatchObject({
+      kind: 'command',
+      command: 'git status',
+      intent: { action: 'gitStatus' },
+    });
+
+    expect(
+      describeToolUse('Read translator.ts', {
+        acpKind: 'read',
+        Path: '/repo/packages/maker-core/src/agents/acp/translator.ts',
+      }),
+    ).toEqual({
+      kind: 'file',
+      toolName: 'Read translator.ts',
+      action: 'read',
+      filePath: '/repo/packages/maker-core/src/agents/acp/translator.ts',
+      fileName: 'translator.ts',
+    });
+
+    expect(
+      describeToolUse('Edit translator.ts', {
+        acpKind: 'edit',
+        Path: '/repo/packages/maker-core/src/agents/acp/translator.ts',
+      }),
+    ).toEqual({
+      kind: 'file',
+      toolName: 'Edit translator.ts',
+      action: 'edit',
+      filePath: '/repo/packages/maker-core/src/agents/acp/translator.ts',
+      fileName: 'translator.ts',
+    });
+
+    expect(
+      describeToolUse('Search ACP files', {
+        acpKind: 'search',
+        query: 'acpKind',
+        SearchPath: 'packages/',
+      }),
+    ).toEqual({
+      kind: 'search',
+      toolName: 'Search ACP files',
+      mode: 'grep',
+      pattern: 'acpKind',
+      path: 'packages/',
+    });
+
+    expect(
+      describeToolUse('Search web', {
+        acpKind: 'fetch',
+        query: 'Gemini 4 Neon',
+      }),
+    ).toEqual({
+      kind: 'web',
+      toolName: 'Search web',
+      mode: 'search',
+      target: 'Gemini 4 Neon',
+    });
+
+    expect(
+      describeToolUse('Fetch docs', {
+        acpKind: 'fetch',
+        url: 'https://example.com/docs',
+      }),
+    ).toEqual({
+      kind: 'web',
+      toolName: 'Fetch docs',
+      mode: 'fetch',
+      target: 'https://example.com/docs',
+    });
+  });
+
+  it('maps ACP kinds to summary verbs and ignores unknown kinds', () => {
+    expect(acpKindToToolVerb({ acpKind: 'read' })).toBe('read');
+    expect(acpKindToToolVerb({ acpKind: 'edit' })).toBe('edited');
+    expect(acpKindToToolVerb({ acpKind: 'delete' })).toBe('edited');
+    expect(acpKindToToolVerb({ acpKind: 'move' })).toBe('edited');
+    expect(acpKindToToolVerb({ acpKind: 'search' })).toBe('searched');
+    expect(acpKindToToolVerb({ acpKind: 'execute' })).toBe('ran');
+    expect(acpKindToToolVerb({ acpKind: 'fetch' })).toBe('fetched');
+    expect(acpKindToToolVerb({ acpKind: 'other' })).toBeUndefined();
+    expect(acpKindToToolVerb({ acpKind: 'think' })).toBeUndefined();
+    expect(acpKindToToolVerb(null)).toBeUndefined();
   });
 });

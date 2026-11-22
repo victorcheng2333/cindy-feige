@@ -9,6 +9,7 @@ import {
   type MessageRenderWorkGroupItem,
 } from './messageRender';
 import {
+  acpKindToToolVerb,
   describeToolUse,
   truncateToolText,
   type ToolUseDescriptor,
@@ -168,6 +169,13 @@ const TOOL_SUMMARY_VERB_BY_LABEL: Record<string, ToolSummaryVerb> = {
   WebFetch: 'fetched',
   WebSearch: 'fetched',
   web_search: 'fetched',
+  bash: 'ran',
+  read: 'read',
+  ls: 'read',
+  edit: 'edited',
+  write: 'created',
+  grep: 'searched',
+  find: 'searched',
 };
 
 const TOOL_SUMMARY_VERB_ORDER: ToolSummaryVerb[] = [
@@ -758,12 +766,20 @@ function capitalizeFirst(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function toolRowInput(tool: MessagePresentationToolLike): unknown {
+  const source = tool.source;
+  const content = readRecordValue(source.content);
+  return source.toolInput !== undefined ? source.toolInput : content?.input;
+}
+
 function aggregateToolSummaryVerbs<TMessage extends MessagePresentationToolLike>(
   tools: readonly TMessage[],
 ): ToolSummaryVerbEntry[] {
   const counter = new Map<ToolSummaryVerb, number>();
   for (const tool of tools) {
-    const verb = TOOL_SUMMARY_VERB_BY_LABEL[tool.label] ?? 'used';
+    const verb = TOOL_SUMMARY_VERB_BY_LABEL[tool.label]
+      ?? acpKindToToolVerb(toolRowInput(tool))
+      ?? 'used';
     counter.set(verb, (counter.get(verb) ?? 0) + 1);
   }
   return TOOL_SUMMARY_VERB_ORDER

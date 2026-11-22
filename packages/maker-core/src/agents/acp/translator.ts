@@ -285,9 +285,12 @@ export class AcpUpdateTranslator {
   }
 
   private emitToolUse(tool: ToolState, events: AgentEvent[], inputPatch = false): void {
-    const input = tool.rawInput !== null && typeof tool.rawInput === 'object'
+    const rawInput = tool.rawInput !== null && typeof tool.rawInput === 'object'
       ? tool.rawInput
       : tool.rawInput === undefined ? {} : { value: tool.rawInput };
+    const input = tool.kind && !Array.isArray(rawInput) && !('acpKind' in rawInput)
+      ? { ...(rawInput as Record<string, unknown>), acpKind: tool.kind }
+      : rawInput;
     events.push({
       type: 'tool_use',
       data: {

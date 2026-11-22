@@ -704,4 +704,42 @@ describe('messagePresentation', () => {
     expect(summarizeToolRowPresentation(readTool, { wording: enWording }).label).toBe('Read app.ts');
     expect(summarizeToolRowPresentation(readTool, { wording: enWording }).label).not.toContain('读取');
   });
+
+  // Tier: unit. Production entry: `summarizeToolGroupPresentation`.
+  // Gap: ACP/Antigravity tools use dynamic human titles in `label`; group summary must classify via `input.acpKind`.
+  // Minimal failing input: a tool_group of ACP read/execute/search calls with dynamic labels.
+  it('groups ACP tools by input.acpKind in tool_group summary', () => {
+    const group: MessageRenderToolGroupItem<TestMessage> = {
+      type: 'tool_group',
+      key: 'acp-tools',
+      tools: [
+        message('acp-1', {
+          label: 'Read translator.ts',
+          source: {
+            clientId: 'acp-1',
+            content: { toolName: 'Read translator.ts', input: { acpKind: 'read', Path: '/repo/translator.ts' } },
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+        }),
+        message('acp-2', {
+          label: 'Git status check',
+          source: {
+            clientId: 'acp-2',
+            content: { toolName: 'Git status check', input: { acpKind: 'execute', CommandLine: 'git status' } },
+            createdAt: '2026-01-01T00:00:01.000Z',
+          },
+        }),
+        message('acp-3', {
+          label: 'Search ACP files',
+          source: {
+            clientId: 'acp-3',
+            content: { toolName: 'Search ACP files', input: { acpKind: 'search', query: 'acpKind' } },
+            createdAt: '2026-01-01T00:00:02.000Z',
+          },
+        }),
+      ],
+    };
+
+    expect(summarizeToolGroupPresentation(group).title).toBe('运行 1 条命令、读取 1 个文件 和 执行搜索');
+  });
 });

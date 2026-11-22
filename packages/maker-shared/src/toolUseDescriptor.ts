@@ -244,6 +244,36 @@ const DETAIL_KEYS = ['description', 'url', 'query', 'path', 'file_path', 'title'
 
 const DETAIL_MAX_CHARS = 80;
 
+export type AcpToolSummaryVerb =
+  | 'edited'
+  | 'created'
+  | 'ran'
+  | 'read'
+  | 'updated'
+  | 'searched'
+  | 'fetched'
+  | 'used';
+
+const ACP_KIND_TO_VERB: Record<string, AcpToolSummaryVerb> = {
+  read: 'read',
+  edit: 'edited',
+  delete: 'edited',
+  move: 'edited',
+  search: 'searched',
+  execute: 'ran',
+  fetch: 'fetched',
+};
+
+/**
+ * 将 ACP `tool_call.kind`（透传在 `input.acpKind`）映射为工具聚合摘要动词。
+ * 非 ACP 工具或未知 kind 返回 undefined，由调用方回退默认 `'used'`。
+ */
+export function acpKindToToolVerb(input: unknown): AcpToolSummaryVerb | undefined {
+  const inp = readRecord(input);
+  const kind = readNonEmptyString(inp?.acpKind);
+  return kind ? ACP_KIND_TO_VERB[kind] : undefined;
+}
+
 /**
  * 解析一次工具调用为结构化描述符。
  *
@@ -382,18 +412,83 @@ export function describeToolUse(toolName: string, input: unknown): ToolUseDescri
       };
     }
     default:
-      return genericDescriptor(toolName, inp);
+      return describeAcpToolUse(toolName, inp);
   }
 }
 
 // ── 内部辅助 ────────────────────────────────────────────────────────────────
+
+function describeAcpToolUse(
+  toolName: string,
+  inp: Record<string, unknown> | null,
+): ToolUseDescriptor {
+  const acpKind = readNonEmptyString(inp?.acpKind);
+  switch (acpKind) {
+    case 'execute': {
+      const command = readNonEmptyString(inp?.command)
+        ?? readNonEmptyString(inp?.CommandLine)
+        ?? readNonEmptyString(inp?.cmd)
+        ?? '';
+      const description = readNonEmptyString(inp?.description)
+        ?? readNonEmptyString(inp?.toolSummary);
+      const intent = description ? undefined : commandIntentFromCommand(command);
+      const cwd = readNonEmptyString(inp?.cwd) ?? readNonEmptyString(inp?.Cwd);
+      return {
+        kind: 'command',
+        toolName,
+        ...(description ? { description } : {}),
+        command,
+        ...(cwd ? { cwd } : {}),
+        ...(intent ? { intent } : {}),
+      };
+    }
+    case 'read':
+      return fileDescriptor(toolName, 'read', inp);
+    case 'edit':
+      return fileDescriptor(toolName, 'edit', inp);
+    case 'search': {
+      const pattern = readNonEmptyString(inp?.pattern)
+        ?? readNonEmptyString(inp?.Pattern)
+        ?? readNonEmptyString(inp?.query)
+        ?? readNonEmptyString(inp?.Query);
+      if (!pattern) return genericDescriptor(toolName, inp);
+      const path = readNonEmptyString(inp?.path)
+        ?? readNonEmptyString(inp?.Path)
+        ?? readNonEmptyString(inp?.SearchPath)
+        ?? readNonEmptyString(inp?.SearchDirectory);
+      const glob = readNonEmptyString(inp?.glob);
+      return {
+        kind: 'search',
+        toolName,
+        mode: 'grep',
+        pattern,
+        ...(path ? { path } : {}),
+        ...(glob ? { glob } : {}),
+      };
+    }
+    case 'fetch': {
+      const url = readNonEmptyString(inp?.url) ?? readNonEmptyString(inp?.Url);
+      if (url) return { kind: 'web', toolName, mode: 'fetch', target: url };
+      const query = readNonEmptyString(inp?.query) ?? readNonEmptyString(inp?.Query);
+      if (query) return { kind: 'web', toolName, mode: 'search', target: query };
+      return genericDescriptor(toolName, inp);
+    }
+    default:
+      return genericDescriptor(toolName, inp);
+  }
+}
 
 function fileDescriptor(
   toolName: string,
   action: 'read' | 'edit' | 'create',
   inp: Record<string, unknown> | null,
 ): ToolUseDescriptor {
-  const filePath = readNonEmptyString(inp?.file_path) ?? readNonEmptyString(inp?.path);
+  const filePath = readNonEmptyString(inp?.file_path)
+    ?? readNonEmptyString(inp?.path)
+    ?? readNonEmptyString(inp?.Path)
+    ?? readNonEmptyString(inp?.AbsolutePath)
+    ?? readNonEmptyString(inp?.TargetFile)
+    ?? readNonEmptyString(inp?.filePath);
   if (!filePath) return genericDescriptor(toolName, inp);
   return {
     kind: 'file',

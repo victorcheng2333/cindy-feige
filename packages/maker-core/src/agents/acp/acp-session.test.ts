@@ -296,8 +296,8 @@ describe('AcpSession turns', () => {
     expect(events.find((event) => event.type === 'thinking' && (event.data as AcpRecord).stage === 'final')?.data)
       .toMatchObject({ text: 'Look at main.ts' });
     expect(events.filter((event) => event.type === 'tool_use').map((event) => event.data)).toMatchObject([
-      { toolUseId: 't1', toolName: 'Edit main.ts', input: {} },
-      { toolUseId: 't1', toolName: 'Edit main.ts', input: { path: 'main.ts' }, acpInputPatch: true },
+      { toolUseId: 't1', toolName: 'Edit main.ts', input: { acpKind: 'edit' }, acpKind: 'edit' },
+      { toolUseId: 't1', toolName: 'Edit main.ts', input: { path: 'main.ts', acpKind: 'edit' }, acpKind: 'edit', acpInputPatch: true },
     ]);
     expect((events.find((event) => event.type === 'tool_result_full')?.data as AcpRecord).fullText).toContain('-a\n+b');
     expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Done.', stopReason: 'end_turn' });

@@ -27,7 +27,7 @@
  */
 
 import type { TFunction } from 'i18next';
-import type { CommandIntentAction } from '@cindy/maker-shared';
+import { acpKindToToolVerb, type CommandIntentAction } from '@cindy/maker-shared';
 
 import { INTENT_ROW_VERB_KEY } from '../../../shared/agentActionVerbKeys';
 
@@ -126,8 +126,8 @@ export function verbLabelKeyForIntent(action: CommandIntentAction): string {
 }
 
 /** Pure helper — exposed for unit testing the per-row label too. */
-export function verbForTool(toolName: string): Verb {
-  return TOOL_TO_VERB[toolName] ?? 'used';
+export function verbForTool(toolName: string, toolInput?: unknown): Verb {
+  return TOOL_TO_VERB[toolName] ?? acpKindToToolVerb(toolInput) ?? 'used';
 }
 
 /**
@@ -142,7 +142,7 @@ export function verbLabelKeyForRow(verb: Verb): string {
 export function aggregateVerbs(toolCalls: ChatMessage[]): AgentActionSummary {
   const counter = new Map<Verb, number>();
   for (const msg of toolCalls) {
-    const v = verbForTool(msg.toolName ?? '');
+    const v = verbForTool(msg.toolName ?? '', msg.toolInput);
     counter.set(v, (counter.get(v) ?? 0) + 1);
   }
 

@@ -201,4 +201,25 @@ describe('formatSummary', () => {
     const s = aggregateVerbs([tc('Edit', 0), tc('Bash', 1)]);
     expect(formatSummary(s, enT)).toBe('Edited a file and ran a command');
   });
+
+  // Tier: unit. Production entry: `verbForTool` + `aggregateVerbs` + `formatSummary`.
+  // Gap: ACP/Antigravity tools carry dynamic titles in `toolName`; desktop group header must classify via `toolInput.acpKind`.
+  // Minimal failing input: ChatMessages with dynamic titles and `toolInput: { acpKind }`.
+  it('classifies ACP tools by toolInput.acpKind in verbForTool and aggregateVerbs', () => {
+    expect(verbForTool('Read translator.ts', { acpKind: 'read' })).toBe('read');
+    expect(verbForTool('Git status check', { acpKind: 'execute' })).toBe('ran');
+    expect(verbForTool('Search files', { acpKind: 'search' })).toBe('searched');
+    expect(verbForTool('Edit file', { acpKind: 'edit' })).toBe('edited');
+    expect(verbForTool('Web search', { acpKind: 'fetch' })).toBe('fetched');
+
+    const acpCalls: ChatMessage[] = [
+      { ...tc('Edit translator.ts', 0), toolInput: { acpKind: 'edit', Path: '/repo/translator.ts' } },
+      { ...tc('Run tests', 1), toolInput: { acpKind: 'execute', CommandLine: 'pnpm test' } },
+      { ...tc('Read protocol.ts', 2), toolInput: { acpKind: 'read', Path: '/repo/protocol.ts' } },
+      { ...tc('Search repo', 3), toolInput: { acpKind: 'search', query: 'acpKind' } },
+    ];
+    expect(formatSummary(aggregateVerbs(acpCalls), enT)).toBe(
+      'Edited a file, ran a command, read a file and searched',
+    );
+  });
 });
