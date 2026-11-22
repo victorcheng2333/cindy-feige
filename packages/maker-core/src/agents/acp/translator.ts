@@ -267,6 +267,9 @@ export class AcpUpdateTranslator {
       this.emitToolUse(tool, events);
     } else {
       // Later updates replace only the fields they carry.
+      const prevTitle = tool.title;
+      const prevKind = tool.kind;
+      const prevLocation = tool.locations?.[0]?.path;
       if (fields.title !== undefined) tool.title = fields.title;
       if (fields.name !== undefined) tool.name = fields.name;
       if (fields.kind !== undefined) tool.kind = fields.kind;
@@ -274,8 +277,14 @@ export class AcpUpdateTranslator {
       if (fields.content !== undefined) tool.content = fields.content;
       if (fields.locations !== undefined) tool.locations = fields.locations;
       if (fields.rawOutput !== undefined) tool.rawOutput = fields.rawOutput;
-      if (!tool.settled && fields.rawInput !== undefined && !isDeepStrictEqual(fields.rawInput, tool.rawInput)) {
-        tool.rawInput = fields.rawInput;
+      const rawInputChanged =
+        fields.rawInput !== undefined && !isDeepStrictEqual(fields.rawInput, tool.rawInput);
+      const metadataChanged =
+        tool.title !== prevTitle
+        || tool.kind !== prevKind
+        || tool.locations?.[0]?.path !== prevLocation;
+      if (rawInputChanged) tool.rawInput = fields.rawInput;
+      if (!tool.settled && (rawInputChanged || metadataChanged)) {
         this.emitToolUse(tool, events, true);
       }
     }
@@ -288,9 +297,20 @@ export class AcpUpdateTranslator {
     const rawInput = tool.rawInput !== null && typeof tool.rawInput === 'object'
       ? tool.rawInput
       : tool.rawInput === undefined ? {} : { value: tool.rawInput };
-    const input = tool.kind && !Array.isArray(rawInput) && !('acpKind' in rawInput)
-      ? { ...(rawInput as Record<string, unknown>), acpKind: tool.kind }
-      : rawInput;
+    const locationPath = tool.locations?.[0]?.path;
+    let input = rawInput;
+    if (!Array.isArray(rawInput)) {
+      const record = rawInput as Record<string, unknown>;
+      const needsKind = Boolean(tool.kind && !('acpKind' in record));
+      const needsPath = Boolean(locationPath && !('acpPath' in record));
+      if (needsKind || needsPath) {
+        input = {
+          ...record,
+          ...(needsKind ? { acpKind: tool.kind } : {}),
+          ...(needsPath ? { acpPath: locationPath } : {}),
+        };
+      }
+    }
     events.push({
       type: 'tool_use',
       data: {

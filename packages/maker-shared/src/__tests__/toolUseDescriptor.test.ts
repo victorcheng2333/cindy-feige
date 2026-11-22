@@ -686,6 +686,8 @@ describe('describeToolUse — ACP acpKind mapping', () => {
   it('maps ACP kinds to summary verbs and ignores unknown kinds', () => {
     expect(acpKindToToolVerb({ acpKind: 'read' })).toBe('read');
     expect(acpKindToToolVerb({ acpKind: 'edit' })).toBe('edited');
+    expect(acpKindToToolVerb({ acpKind: 'edit', Content: 'new file', Path: '/repo/new.ts' })).toBe('created');
+    expect(acpKindToToolVerb({ acpKind: 'edit', Content: 'overwrite', Path: '/repo/old.ts', Overwrite: true })).toBe('edited');
     expect(acpKindToToolVerb({ acpKind: 'delete' })).toBe('edited');
     expect(acpKindToToolVerb({ acpKind: 'move' })).toBe('edited');
     expect(acpKindToToolVerb({ acpKind: 'search' })).toBe('searched');
@@ -694,5 +696,50 @@ describe('describeToolUse — ACP acpKind mapping', () => {
     expect(acpKindToToolVerb({ acpKind: 'other' })).toBeUndefined();
     expect(acpKindToToolVerb({ acpKind: 'think' })).toBeUndefined();
     expect(acpKindToToolVerb(null)).toBeUndefined();
+  });
+
+  // Tier: unit. Production entry: `describeToolUse`.
+  // Gap: Agy emits write_file, delete/move, single-underscore MCP tools, invoke_subagent, and locations-only acpPath.
+  // Minimal failing input: each ACP payload variant without standard Claude/Codex tool names.
+  it('describes Agy create, acpPath location fallback, single-underscore MCP, and invoke_subagent', () => {
+    expect(
+      describeToolUse('write_file', { acpKind: 'edit', Path: '/repo/new.ts', Content: 'hello' }),
+    ).toEqual({
+      kind: 'file',
+      toolName: 'write_file',
+      action: 'create',
+      filePath: '/repo/new.ts',
+      fileName: 'new.ts',
+    });
+
+    expect(
+      describeToolUse('Read file', { acpKind: 'read', acpPath: '/repo/from-location.ts' }),
+    ).toEqual({
+      kind: 'file',
+      toolName: 'Read file',
+      action: 'read',
+      filePath: '/repo/from-location.ts',
+      fileName: 'from-location.ts',
+    });
+
+    expect(
+      describeToolUse('mcp_cindy_helper_list_machines', { toolSummary: 'List machines' }),
+    ).toEqual({
+      kind: 'mcp',
+      toolName: 'mcp_cindy_helper_list_machines',
+      server: 'cindy_helper',
+      tool: 'list_machines',
+      serverLabel: 'cindy_helper',
+      toolLabel: 'list machines',
+    });
+
+    expect(
+      describeToolUse('invoke_subagent', { TypeName: 'research', Role: 'Codebase Researcher', Prompt: 'Inspect ACP' }),
+    ).toEqual({
+      kind: 'task',
+      toolName: 'invoke_subagent',
+      description: 'Codebase Researcher',
+      subagentType: 'research',
+    });
   });
 });

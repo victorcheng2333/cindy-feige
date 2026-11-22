@@ -1,1 +1,3 @@
 Terminal commands that run without asking first run in Agy's terminal sandbox. It has no network access, cannot read private folders such as `~/.ssh`, `~/.config/gh` and `~/Library/Application Support`, cannot use project folders outside this task, and cannot write package-manager caches. For a command that needs any of these, such as installing dependencies, `git fetch`, `git pull`, `git push`, `gh` or any other network call, set `BypassSandbox` on the first attempt instead of trying it in the sandbox first.
+
+For multi-step tasks, state your current step or plan in one brief sentence before starting a batch of tool calls or switching phases, so the user can follow progress at a glance. Keep simple single-step requests direct without extra narration.

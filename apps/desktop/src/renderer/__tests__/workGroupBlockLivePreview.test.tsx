@@ -130,7 +130,9 @@ const group = (
 });
 
 function clickGroup(label: string) {
-  const button = screen.getByText(label).closest('button');
+  const button = screen
+    .getByText((content) => content === label || content.startsWith(`${label} · `))
+    .closest('button');
   if (!button) throw new Error(`Missing work-group button: ${label}`);
   fireEvent.click(button);
 }
@@ -492,7 +494,10 @@ describe('WorkGroupBlock — running latest-five preview', () => {
       }),
     );
     // 完成态恢复正常折叠交互:默认收起,点开显示完整明细。
-    const doneButton = screen.getByText('chat.workGroup.worked:12s').closest('button');
+    const doneButton = screen
+      .getByText((content) => content.startsWith('chat.workGroup.worked:12s'))
+      .closest('button');
+    expect(doneButton?.textContent).toContain('Chat.agentActions.part.ran:1');
     expect(doneButton?.hasAttribute('disabled')).toBe(false);
     expect(doneButton?.querySelector('svg.lucide-chevron-right')).toBeTruthy();
     expect(screen.queryByTestId('direct-tool')).toBeNull();
@@ -676,7 +681,7 @@ describe('WorkGroupBlock — running latest-five preview', () => {
     expect(screen.queryByTestId('assistant-progress')).toBeNull();
     clickGroup('chat.workGroup.worked:20s');
     expect(screen.getByTestId('assistant-progress').textContent).toBe('I checked the current state.');
-    expect(screen.getByText('chat.workGroup.worked:12s')).toBeTruthy();
+    expect(screen.getByText((content) => content.startsWith('chat.workGroup.worked:12s'))).toBeTruthy();
     expect(screen.queryByTestId('direct-tool')).toBeNull();
     expect(screen.queryByText('checking the current state')).toBeNull();
 
@@ -824,5 +829,67 @@ describe('WorkGroupBlock — Host-projected running lines', () => {
       blockId: 'work:remote-old', isStreaming: true, childItems: [placeholder], deferred: remote,
     }));
     expect(remote.setVisible).toHaveBeenLastCalledWith(false, true);
+  });
+
+  // Tier: unit. Production entry: `WorkGroupBlock`.
+  // Gap: multi-phase Agy runs need thought-anchored phase groups in both live preview and expanded completed view.
+  // Minimal failing input: two thinking+tool phases in one WorkGroupBlock.
+  it('renders thought-anchored phase groups for multi-phase runs in live and expanded views', () => {
+    const childItems: WorkGroupChild[] = [
+      thinking(mkThinking('th-1', 'Inspect ACP translator first.\nCheck rawInput fields.')),
+      tools('seg-1', [
+        {
+          clientId: 'r1',
+          role: 'tool_use',
+          content: '',
+          toolUseId: 'tu-r1',
+          toolName: 'Read translator.ts',
+          toolInput: { acpKind: 'read', Path: '/repo/translator.ts' },
+        },
+      ], new Map([['r1', 'ok']]), new Set(['r1'])),
+      thinking(mkThinking('th-2', 'Run tests after patching.')),
+      tools('seg-2', [
+        {
+          clientId: 'c1',
+          role: 'tool_use',
+          content: '',
+          toolUseId: 'tu-c1',
+          toolName: 'Run tests',
+          toolInput: { acpKind: 'execute', CommandLine: 'pnpm test' },
+        },
+      ]),
+    ];
+
+    const { rerender } = render(
+      createElement(WorkGroupBlock, {
+        pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+        blockId: 'work:agy-phases',
+        isStreaming: true,
+        childItems,
+      }),
+    );
+
+    expect(document.querySelector('[data-live-work-phases="true"]')).toBeTruthy();
+    expect(screen.getByText('Inspect ACP translator first.')).toBeTruthy();
+    expect(screen.getByText('Run tests after patching.')).toBeTruthy();
+
+    rerender(
+      createElement(WorkGroupBlock, {
+        pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+        blockId: 'work:agy-phases',
+        isStreaming: false,
+        durationMs: 18_000,
+        childItems,
+      }),
+    );
+
+    const header = screen.getByText((content) => content.startsWith('chat.workGroup.worked:18s'));
+    expect(header.textContent).toContain('Chat.agentActions.part.ran:1');
+    expect(header.textContent).toContain('chat.agentActions.part.read:1');
+
+    clickGroup('chat.workGroup.worked:18s');
+    expect(document.querySelectorAll('[data-work-phase-group=""]')).toHaveLength(2);
+    expect(screen.getByText('Inspect ACP translator first.')).toBeTruthy();
+    expect(screen.getByText('Run tests after patching.')).toBeTruthy();
   });
 });

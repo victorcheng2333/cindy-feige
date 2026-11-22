@@ -1,18 +1,27 @@
 /** Mobile adapter for the shared desktop/mobile work activity projection. */
 import {
+  extractThinkingPhaseTitle,
+  groupWorkActivityPhases,
   projectRecentWorkActivities,
   projectWorkActivities,
+  shouldGroupWorkActivityPhases,
   type ProjectableWorkChild,
   type ProjectedThinkingActivity,
   type ProjectedToolActivity,
   type ProjectedWorkActivity,
   type WorkActivityMessageLike,
+  type WorkActivityPhase,
   type WorkActivityProjection,
 } from '@cindy/maker-shared/work-activity-projection';
 
 import type { NormalizedRemoteMessage } from '@/session/messageNormalize';
 import type { MobileWorkChildItem } from '@/session/messageRenderModel';
 
+export {
+  extractThinkingPhaseTitle,
+  groupWorkActivityPhases,
+  shouldGroupWorkActivityPhases,
+};
 export interface MobileWorkActivityMessage extends WorkActivityMessageLike {
   normalized: NormalizedRemoteMessage;
 }
@@ -20,6 +29,7 @@ export interface MobileWorkActivityMessage extends WorkActivityMessageLike {
 export type MobileProjectedToolActivity = ProjectedToolActivity<MobileWorkActivityMessage>;
 export type MobileProjectedThinkingActivity = ProjectedThinkingActivity;
 export type MobileProjectedWorkActivity = ProjectedWorkActivity<MobileWorkActivityMessage>;
+export type MobileWorkActivityPhase = WorkActivityPhase<MobileWorkActivityMessage>;
 export type MobileWorkActivityProjection = WorkActivityProjection<MobileWorkActivityMessage>;
 
 /** Compare the data consumed by WorkToolActivityRow, not projection wrappers. */

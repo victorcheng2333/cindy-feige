@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectWorkActivities } from '@/lib/agent-actions/workActivityProjection';
+import {
+  extractThinkingPhaseTitle,
+  groupWorkActivityPhases,
+  projectWorkActivities,
+  shouldGroupWorkActivityPhases,
+} from '@/lib/agent-actions/workActivityProjection';
 import type { ChatMessage } from '@/lib/makerChatStore';
 
 function tool(id: string, toolName: string, toolInput: Record<string, unknown>): ChatMessage {
@@ -183,5 +188,44 @@ describe('projectWorkActivities', () => {
 
     expect(projection.explorationCounts.read).toBe(1);
     expect(projection.isPureExploration).toBe(false);
+  });
+
+  // Tier: unit. Production entry: `extractThinkingPhaseTitle` + `groupWorkActivityPhases` + `shouldGroupWorkActivityPhases`.
+  // Gap: multi-phase Agy/ACP runs alternate thinking blocks and tool batches; grouping must anchor each phase to its thought title.
+  // Minimal failing input: two thinking blocks each followed by tool calls.
+  it('groups multi-phase thinking and tool runs into titled phases', () => {
+    expect(extractThinkingPhaseTitle('**Inspect translator.ts first.** Then check tests.\nSecond line'))
+      .toBe('Inspect translator.ts first.');
+
+    const projection = projectWorkActivities([
+      {
+        kind: 'thinking',
+        key: 'th-1',
+        message: { clientId: 'th-1', role: 'thinking', content: 'Inspect translator.ts first.\nCheck details' },
+      },
+      segment('seg-1', [tool('r1', 'Read translator.ts', { acpKind: 'read', Path: '/repo/translator.ts' })]),
+      {
+        kind: 'thinking',
+        key: 'th-2',
+        message: { clientId: 'th-2', role: 'thinking', content: 'Run unit tests to verify.' },
+      },
+      segment('seg-2', [tool('c1', 'Run tests', { acpKind: 'execute', CommandLine: 'pnpm test' })]),
+    ], true);
+
+    const phases = groupWorkActivityPhases(projection.activities);
+    expect(shouldGroupWorkActivityPhases(phases)).toBe(true);
+    expect(phases).toHaveLength(2);
+    expect(phases[0]).toMatchObject({
+      key: 'phase:th-1',
+      title: 'Inspect translator.ts first.',
+      status: 'running',
+    });
+    expect(phases[0]?.tools.map((item) => item.key)).toEqual(['r1']);
+    expect(phases[1]).toMatchObject({
+      key: 'phase:th-2',
+      title: 'Run unit tests to verify.',
+      status: 'running',
+    });
+    expect(phases[1]?.tools.map((item) => item.key)).toEqual(['c1']);
   });
 });

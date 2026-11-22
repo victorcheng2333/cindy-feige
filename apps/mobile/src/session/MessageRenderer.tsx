@@ -344,12 +344,14 @@ import {
 } from '@cindy/maker-shared/agent-task';
 import {
   buildMessageActionBarPresentation,
+  formatToolListSummary,
   formatToolRowText,
   summarizeMessageBubblePresentation,
   summarizeTodoCardPresentation,
   summarizeToolGroupPresentation,
   summarizeToolRowPresentation,
   summarizeWorkGroupPresentation,
+  summarizeWorkGroupToolActions,
   todoStatusPresentation,
   type MessageActionBarItemId,
   type ToolRowPresentation,
@@ -384,9 +386,12 @@ import {
 } from '@/session/autoResumePresentation';
 import type { ContinuationInFlightProjectionCapability } from '@/session/types';
 import {
+  groupWorkActivityPhases,
   projectMobileWorkActivities,
   projectRecentMobileWorkActivities,
+  shouldGroupWorkActivityPhases,
   type MobileProjectedToolActivity,
+  type MobileWorkActivityPhase,
   sameMobileWorkToolActivity,
 } from '@/session/workActivityProjection';
 import { logUnhandledRenderItem } from '@/session/assertNever';
@@ -5180,6 +5185,80 @@ function TeammateProcessActivities({ id, items, actions, streaming, last }: {
   </TeammateWorkSegment>;
 }
 
+function MobileWorkPhaseGroup({
+  blockKey,
+  phase,
+  defaultExpanded,
+  toolActions,
+  contentLayout,
+  layout,
+}: {
+  blockKey: string;
+  phase: MobileWorkActivityPhase;
+  defaultExpanded: boolean;
+  toolActions: {
+    onLoadToolInput?: MessageActions['onLoadToolInput'];
+    onRetryImageDelivery?: MessageActions['onRetryImageDelivery'];
+    onOpenPayload: MessageActions['onOpenPayload'];
+    isSessionStreaming?: boolean;
+  };
+  contentLayout: MessageContentLayout;
+  layout: MessageHierarchyLayout;
+}) {
+  const { colors } = useTheme();
+  const { i18n } = useTranslation();
+  const styles = useThemedStyles(makeStyles);
+  const [expanded, toggleExpanded] = useFoldableExpandedState(`${blockKey}:${phase.key}`, defaultExpanded);
+  const toolSummary = useMemo(
+    () => formatToolListSummary(phase.tools.map((entry) => entry.message.normalized), mobilePresentationLocalizer),
+    [i18n.language, phase.tools],
+  );
+  const title = phase.title
+    ? (toolSummary ? `${phase.title} · ${toolSummary}` : phase.title)
+    : toolSummary;
+
+  if (phase.tools.length === 0 && phase.thinking) {
+    return (
+      <WorkLineRow
+        line={{ kind: 'thinking', key: phase.thinking.key, text: phase.thinking.content }}
+        onPress={toggleExpanded}
+      />
+    );
+  }
+
+  return (
+    <FoldablePanel
+      chevronPosition="trailing"
+      chevronSize={13}
+      controlledExpanded={expanded}
+      onControlledToggle={toggleExpanded}
+      title={title}
+      leadingIcon={phase.status === 'running'
+        ? <CompactActivityIndicator color={colors.textTertiary} size={13} />
+        : <Sparkles color={colors.textTertiary} size={13} strokeWidth={iconStroke.regular} />
+      }
+      layout={layout}
+      testID="message.workPhaseToggle"
+      variant="plain"
+    >
+      {expanded ? (
+        <Rail layout={layout}>
+          <View style={styles.workActivityStack}>
+            {phase.tools.map((activity) => (
+              <WorkToolActivityRow
+                key={activity.key}
+                actions={toolActions}
+                activity={activity}
+                contentLayout={contentLayout}
+              />
+            ))}
+          </View>
+        </Rail>
+      ) : null}
+    </FoldablePanel>
+  );
+}
+
 function WorkGroupCard({
   item,
   actions,
@@ -5220,11 +5299,22 @@ function WorkGroupCard({
     ? { ...actions, companionAvatar: undefined } : actions, [actions]);
   const activityProjection = useMemo(
     () =>
-      expanded
+      expanded || !isStreaming
       ? projectMobileWorkActivities(item.children, isStreaming)
       : null,
     [expanded, isStreaming, item.children],
   );
+  const hasNonActivityChild = useMemo(
+    () => item.children.some((child) => child.type !== 'tool_group' && child.type !== 'thinking'),
+    [item.children],
+  );
+  const phases = useMemo(
+    () => (expanded && !hasNonActivityChild && activityProjection
+      ? groupWorkActivityPhases(activityProjection.activities)
+      : null),
+    [expanded, hasNonActivityChild, activityProjection],
+  );
+  const usePhaseGroups = Boolean(phases && shouldGroupWorkActivityPhases(phases));
   // Tool detail rows do not consume message action/queue/share busy state.
   // Keep their callbacks and streaming flag stable across those unrelated updates.
   const toolActions = useMemo(() => ({
@@ -5236,8 +5326,10 @@ function WorkGroupCard({
   const startedAtIso = isStreaming && item.startedAtMs !== undefined
     ? new Date(item.startedAtMs).toISOString()
     : undefined;
-  const explorationSummary = activityProjection?.isPureExploration
-    ? [
+  const actionSummary = useMemo(() => {
+    if (isStreaming) return '';
+    if (activityProjection?.isPureExploration) {
+      return [
         activityProjection.explorationCounts.read > 0
           ? t('message.renderer.filesRead', { n: activityProjection.explorationCounts.read })
           : null,
@@ -5247,11 +5339,13 @@ function WorkGroupCard({
         activityProjection.explorationCounts.list > 0
           ? t('message.renderer.listCount', { n: activityProjection.explorationCounts.list })
           : null,
-      ].filter((value): value is string => value !== null).join(' · ')
-    : '';
+      ].filter((value): value is string => value !== null).join(' · ');
+    }
+    return summarizeWorkGroupToolActions(item.children, mobilePresentationLocalizer);
+  }, [isStreaming, activityProjection, item.children, t, i18n.language]);
   const title = [
     actions.companion && isStreaming && actions.companionWorkingLabel ? actions.companionWorkingLabel : presentation.title,
-    explorationSummary,
+    actionSummary,
   ].filter(Boolean).join(' · ');
   const onToggle = item.deferred?.setVisible ? toggleExpanded : (item.deferred?.toggle ?? toggleExpanded);
   const pluginWork = actions.companionPluginWork?.get(item.key);
@@ -5322,30 +5416,48 @@ function WorkGroupCard({
                 <Text style={styles.payloadOpenButtonText}>{t('message.renderer.retryPreview')}</Text>
               </MessageListActionButton>
             )}
-            {!holdLines && item.children.map((child) => {
-              if (child.type === 'thinking') {
-                return (
-                      <ExpandedWorkThinkingRow key={child.key} item={child} />
-                    );
-              }
-              if (child.type === 'tool_group') {
-                return (
-                  <View key={child.key} style={styles.workActivityStack}>
-                    {(activityProjection?.toolActivitiesByChildKey.get(child.key) ?? []).map((activity) => (
-                      <WorkToolActivityRow
-                        key={activity.key}
-                        actions={toolActions}
-                        activity={activity}
-                        contentLayout={contentLayout!}
-                      />
-                    ))}
-                  </View>
-                );
-              }
-              return (
-                    <RenderItemView key={child.key} item={child} actions={childActions} />
-                  );
-            })}
+            {!holdLines && (
+              usePhaseGroups && phases
+                ? phases.map((phase, index) => (
+                    <MobileWorkPhaseGroup
+                      key={phase.key}
+                      blockKey={item.key}
+                      phase={phase}
+                      defaultExpanded={
+                        phases.length <= 3
+                        || phase.status === 'running'
+                        || index === phases.length - 1
+                      }
+                      toolActions={toolActions}
+                      contentLayout={contentLayout!}
+                      layout={layout}
+                    />
+                  ))
+                : item.children.map((child) => {
+                    if (child.type === 'thinking') {
+                      return (
+                            <ExpandedWorkThinkingRow key={child.key} item={child} />
+                          );
+                    }
+                    if (child.type === 'tool_group') {
+                      return (
+                        <View key={child.key} style={styles.workActivityStack}>
+                          {(activityProjection?.toolActivitiesByChildKey.get(child.key) ?? []).map((activity) => (
+                            <WorkToolActivityRow
+                              key={activity.key}
+                              actions={toolActions}
+                              activity={activity}
+                              contentLayout={contentLayout!}
+                            />
+                          ))}
+                        </View>
+                      );
+                    }
+                    return (
+                          <RenderItemView key={child.key} item={child} actions={childActions} />
+                        );
+                  })
+            )}
           </View>
         </Rail>
       ) : null}

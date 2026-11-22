@@ -304,6 +304,38 @@ describe('AcpSession turns', () => {
     expect(events.every((event) => event.turnScope === undefined)).toBe(true);
   });
 
+  // Tier: unit. Production entry: `AcpUpdateTranslator` via `openAcpSession`.
+  // Gap: ACP agents may send late title/kind/locations in `tool_call_update` without changing `rawInput`.
+  // Minimal failing input: initial `tool_call` with bare title/no kind, followed by `tool_call_update` with title/kind/locations.
+  it('emits an input patch when tool_call_update enriches title, kind, or locations', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent);
+    await session.send({ type: 'user', content: 'check file' });
+    agent.update({ sessionUpdate: 'tool_call', toolCallId: 't2', title: 'tool', status: 'pending' });
+    agent.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't2',
+      title: 'Read translator.ts',
+      kind: 'read',
+      locations: [{ path: '/repo/translator.ts' }],
+      status: 'in_progress',
+    });
+    agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 't2', status: 'completed' });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+
+    expect(events.filter((event) => event.type === 'tool_use').map((event) => event.data)).toMatchObject([
+      { toolUseId: 't2', toolName: 'tool', input: {} },
+      {
+        toolUseId: 't2',
+        toolName: 'Read translator.ts',
+        input: { acpKind: 'read', acpPath: '/repo/translator.ts' },
+        acpKind: 'read',
+        acpInputPatch: true,
+      },
+    ]);
+  });
+
   // A native checklist snapshot must reach the existing plan card with one stable ID.
   it('publishes updates to the same plan card during a prompt', async () => {
     const agent = createFakeAgent();

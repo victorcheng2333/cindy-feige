@@ -423,3 +423,91 @@ export function teammateWorkSummaryText(
     : t(`${prefix}${active ? 'thinking' : summary.thinking ? 'thought' : 'worked'}`);
   return text;
 }
+
+const PHASE_TITLE_MAX_CHARS = 88;
+
+/**
+ * Extract a concise single-line phase heading from a thinking block.
+ * Strips common markdown prefixes and takes the first meaningful sentence/line.
+ */
+export function extractThinkingPhaseTitle(rawContent: string): string {
+  const lines = rawContent
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s+)+/, '').replace(/[*_`]+/g, '').trim())
+    .filter(Boolean);
+  const firstLine = lines[0] ?? rawContent.replace(/\s+/g, ' ').trim();
+  if (!firstLine) return '';
+  const sentenceMatch = /^(.{8,}?[。！？.!?])(?:\s|$)/.exec(firstLine);
+  const candidate = sentenceMatch ? sentenceMatch[1]! : firstLine;
+  if (candidate.length <= PHASE_TITLE_MAX_CHARS) return candidate;
+  return `${candidate.slice(0, PHASE_TITLE_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+export interface WorkActivityPhase<
+  TMessage extends WorkActivityMessageLike = WorkActivityMessageLike,
+> {
+  key: string;
+  /** Single-line heading derived from the phase's thinking block, if present. */
+  title?: string;
+  thinking?: ProjectedThinkingActivity;
+  tools: ProjectedToolActivity<TMessage>[];
+  status: 'running' | 'done';
+}
+
+/**
+ * Group chronological work activities into thought-anchored phases:
+ * each thinking block starts a new phase and collects the tool calls that
+ * immediately follow it until the next thinking block.
+ */
+export function groupWorkActivityPhases<TMessage extends WorkActivityMessageLike>(
+  activities: readonly ProjectedWorkActivity<TMessage>[],
+): WorkActivityPhase<TMessage>[] {
+  const phases: WorkActivityPhase<TMessage>[] = [];
+  let current: WorkActivityPhase<TMessage> | null = null;
+
+  for (const activity of activities) {
+    if (activity.kind === 'thinking') {
+      const title = extractThinkingPhaseTitle(activity.rawContent);
+      current = {
+        key: `phase:${activity.key}`,
+        ...(title ? { title } : {}),
+        thinking: activity,
+        tools: [],
+        status: 'done',
+      };
+      phases.push(current);
+      continue;
+    }
+
+    if (!current) {
+      current = {
+        key: `phase:${activity.key}`,
+        tools: [],
+        status: 'done',
+      };
+      phases.push(current);
+    }
+    current.tools.push(activity);
+    if (activity.status === 'running') current.status = 'running';
+  }
+
+  return phases;
+}
+
+/**
+ * Only render phase groups when the activity stream has genuine multi-phase
+ * structure (at least 2 thought-anchored phases that each ran tools), so
+ * small or single-phase turns stay flat without unnecessary nesting.
+ */
+export function shouldGroupWorkActivityPhases<TMessage extends WorkActivityMessageLike>(
+  phases: readonly WorkActivityPhase<TMessage>[],
+): boolean {
+  let thoughtToolPhases = 0;
+  for (const phase of phases) {
+    if (phase.thinking && phase.tools.length > 0) {
+      thoughtToolPhases += 1;
+      if (thoughtToolPhases >= 2) return true;
+    }
+  }
+  return false;
+}

@@ -645,6 +645,37 @@ export function todoStatusPresentation(status: MessageRenderTodoItem['status']):
   };
 }
 
+export function summarizeWorkGroupToolActions<
+  TMessage extends MessagePresentationToolLike,
+>(
+  children: readonly MessageRenderWorkChildItem<TMessage>[],
+  localizer?: PresentationLocalizer,
+): string {
+  const tools: TMessage[] = [];
+  const collect = (items: readonly MessageRenderWorkChildItem<TMessage>[]) => {
+    for (const child of items) {
+      if (child.type === 'tool_group') {
+        tools.push(...child.tools);
+      } else if (child.type === 'work_group') {
+        collect(child.children);
+      }
+    }
+  };
+  collect(children);
+  if (tools.length === 0) return '';
+  return formatToolGroupSummary(tools, localizer);
+}
+
+export function formatToolListSummary<
+  TMessage extends MessagePresentationToolLike,
+>(
+  tools: readonly TMessage[],
+  localizer?: PresentationLocalizer,
+): string {
+  if (tools.length === 0) return '';
+  return formatToolGroupSummary(tools, localizer);
+}
+
 export function summarizeWorkGroupPresentation<
   TMessage extends MessagePresentationToolLike,
 >(

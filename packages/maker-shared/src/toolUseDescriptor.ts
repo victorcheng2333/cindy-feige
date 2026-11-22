@@ -271,7 +271,32 @@ const ACP_KIND_TO_VERB: Record<string, AcpToolSummaryVerb> = {
 export function acpKindToToolVerb(input: unknown): AcpToolSummaryVerb | undefined {
   const inp = readRecord(input);
   const kind = readNonEmptyString(inp?.acpKind);
-  return kind ? ACP_KIND_TO_VERB[kind] : undefined;
+  if (!kind) return undefined;
+  if (kind === 'edit' && isAcpCreateFileInput(inp)) return 'created';
+  return ACP_KIND_TO_VERB[kind];
+}
+
+function isAcpCreateFileInput(inp: Record<string, unknown> | null): boolean {
+  if (!inp) return false;
+  return typeof inp.Content === 'string'
+    && inp.Target === undefined
+    && inp.old_string === undefined
+    && inp.oldText === undefined
+    && inp.Overwrite !== true;
+}
+
+const KNOWN_SINGLE_UNDERSCORE_MCP_SERVERS = ['cindy_helper', 'cindy_memory', 'cindy'] as const;
+
+function parseAcpMcpToolName(toolName: string): { server: string; tool: string } | null {
+  if (!toolName.startsWith('mcp_')) return null;
+  const rest = toolName.slice('mcp_'.length);
+  for (const server of KNOWN_SINGLE_UNDERSCORE_MCP_SERVERS) {
+    const prefix = `${server}_`;
+    if (rest.startsWith(prefix) && rest.length > prefix.length) {
+      return { server, tool: rest.slice(prefix.length) };
+    }
+  }
+  return null;
 }
 
 /**
@@ -422,6 +447,30 @@ function describeAcpToolUse(
   toolName: string,
   inp: Record<string, unknown> | null,
 ): ToolUseDescriptor {
+  if (toolName === 'invoke_subagent' || (readNonEmptyString(inp?.TypeName) && readNonEmptyString(inp?.Prompt))) {
+    const description = readNonEmptyString(inp?.Role)
+      ?? readNonEmptyString(inp?.description)
+      ?? readNonEmptyString(inp?.Prompt);
+    const subagentType = readNonEmptyString(inp?.TypeName);
+    return {
+      kind: 'task',
+      toolName,
+      ...(description ? { description: truncateToolText(description, DETAIL_MAX_CHARS) } : {}),
+      ...(subagentType ? { subagentType } : {}),
+    };
+  }
+  const singleUnderscoreMcp = parseAcpMcpToolName(toolName);
+  if (singleUnderscoreMcp) {
+    return {
+      kind: 'mcp',
+      toolName,
+      server: singleUnderscoreMcp.server,
+      tool: singleUnderscoreMcp.tool,
+      serverLabel: singleUnderscoreMcp.server,
+      toolLabel: humanizeToolToken(singleUnderscoreMcp.tool),
+      ...withDetail(inp),
+    };
+  }
   const acpKind = readNonEmptyString(inp?.acpKind);
   switch (acpKind) {
     case 'execute': {
@@ -445,6 +494,9 @@ function describeAcpToolUse(
     case 'read':
       return fileDescriptor(toolName, 'read', inp);
     case 'edit':
+      return fileDescriptor(toolName, isAcpCreateFileInput(inp) ? 'create' : 'edit', inp);
+    case 'delete':
+    case 'move':
       return fileDescriptor(toolName, 'edit', inp);
     case 'search': {
       const pattern = readNonEmptyString(inp?.pattern)
@@ -488,7 +540,8 @@ function fileDescriptor(
     ?? readNonEmptyString(inp?.Path)
     ?? readNonEmptyString(inp?.AbsolutePath)
     ?? readNonEmptyString(inp?.TargetFile)
-    ?? readNonEmptyString(inp?.filePath);
+    ?? readNonEmptyString(inp?.filePath)
+    ?? readNonEmptyString(inp?.acpPath);
   if (!filePath) return genericDescriptor(toolName, inp);
   return {
     kind: 'file',

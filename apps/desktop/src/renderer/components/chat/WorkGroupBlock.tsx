@@ -33,7 +33,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ChevronRight, Layers, Sparkles, Terminal } from 'lucide-react';
+import { Check, ChevronRight, Layers, Sparkles, Terminal } from 'lucide-react';
 import { TOOL_ROW_VERB_I18N_KEY, INTENT_ROW_VERB_KEY, UPDATED_VERB_I18N_KEY, FILE_CHANGE_FILES_I18N_KEY } from '../../../shared/agentActionVerbKeys';
 import { useStableTranslation as useTranslation } from '@/hooks/useStableTranslation';
 
@@ -43,6 +43,7 @@ import { useExpandedBlockMemory } from '@/hooks/useExpandedBlockMemory';
 import { Collapse } from '@/components/ui/collapse';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
+import { aggregateVerbs, formatSummary } from '@/lib/agent-actions/verbAggregator';
 
 import {
   ACTIVITY_ROW_CHEVRON_SLOT_CLASS,
@@ -54,11 +55,14 @@ import { AgentActionRow } from './AgentActionRow';
 import { ThinkingCard, formatDuration } from './ThinkingCard';
 import { ThinkingText } from './ThinkingText';
 import {
+  groupWorkActivityPhases,
   projectRecentWorkActivities,
   projectWorkActivities,
+  shouldGroupWorkActivityPhases,
   type ProjectedThinkingActivity,
   type ProjectedToolActivity,
   type ProjectedWorkActivity,
+  type WorkActivityPhase,
 } from '@/lib/agent-actions/workActivityProjection';
 
 /** work_group 子项的窄类型 — 与 MessageStream 的 RenderItem 解耦,由调用方映射。 */
@@ -466,6 +470,162 @@ export function TeammateWorkSegment({ blockId, childItems, active = false, onIns
   </div>;
 }
 
+function collectWorkGroupToolCalls(childItems: readonly WorkGroupChild[]): ChatMessage[] {
+  const tools: ChatMessage[] = [];
+  for (const child of childItems) {
+    if (child.kind === 'tools') {
+      tools.push(...child.toolCalls);
+    } else if (child.kind === 'group') {
+      tools.push(...collectWorkGroupToolCalls(child.childItems));
+    }
+  }
+  return tools;
+}
+
+/** L2: A thought-anchored phase group inside WorkGroupBlock. */
+function WorkPhaseGroupRow({
+  blockId,
+  phase,
+  defaultExpanded,
+  pluginUi,
+}: {
+  blockId: string;
+  phase: WorkActivityPhase;
+  defaultExpanded: boolean;
+  pluginUi: WorkGroupBlockProps['pluginUi'];
+}) {
+  const { t } = useTranslation();
+  const { expanded: rememberedExpanded, setExpanded } = useExpandedBlockMemory(`${blockId}:${phase.key}`);
+  const { expanded: manualToggled, setExpanded: setManualToggled } = useExpandedBlockMemory(`${blockId}:${phase.key}:manual`);
+  const expanded = manualToggled ? rememberedExpanded : defaultExpanded;
+  const toolSummary = useMemo(() => {
+    if (phase.tools.length === 0) return '';
+    return formatSummary(aggregateVerbs(phase.tools.map((item) => item.message)), t);
+  }, [phase.tools, t]);
+  const hasDetail = phase.tools.length > 0
+    || Boolean(phase.thinking && phase.thinking.rawContent !== (phase.title ?? ''));
+  const titleText = phase.title || toolSummary;
+
+  if (!hasDetail && phase.thinking) {
+    return <ThinkingActivityRow activity={phase.thinking} />;
+  }
+
+  return (
+    <div data-work-phase-group="" className="min-w-0">
+      <button
+        type="button"
+        data-scroll-disclosure-header=""
+        aria-expanded={expanded}
+        onClick={() => {
+          setExpanded(!expanded);
+          setManualToggled(true);
+        }}
+        className={cn(
+          'group flex w-full min-w-0 cursor-pointer select-none items-center gap-1.5 px-2 py-[3px] text-left outline-none',
+          'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
+          ACTIVITY_ROW_RADIUS_CLASS,
+          ACTIVITY_ROW_COLOR_TRANSITION_CLASS,
+          ACTIVITY_ROW_HOVER_SURFACE_CLASS,
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className="inline-flex h-[18px] w-4 shrink-0 items-center justify-center text-[var(--msg-tool-card-chevron)]"
+        >
+          {phase.status === 'running' ? <Spinner size={13} /> : <Sparkles size={13} />}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-14 text-[var(--text-secondary)]" title={titleText}>
+          {titleText}
+        </span>
+        {toolSummary && phase.title && (
+          <span className="shrink-0 text-12 text-[var(--msg-tool-card-chevron)]">
+            {toolSummary}
+          </span>
+        )}
+        <span aria-hidden="true" className={ACTIVITY_ROW_CHEVRON_SLOT_CLASS}>
+          <ChevronRight
+            size={13}
+            className={cn(CHAT_CHEVRON_TRANSITION_CLASS, expanded && 'rotate-90')}
+          />
+        </span>
+      </button>
+      <Collapse open={expanded}>
+        <div className="mt-1 ml-3 flex min-w-0 flex-col gap-0.5 border-l-2 border-[var(--agent-actions-rail)] py-[2px] pl-3">
+          {phase.thinking && phase.thinking.rawContent !== (phase.title ?? '') && (
+            <ThinkingActivityRow activity={phase.thinking} />
+          )}
+          {phase.tools.map((activity) => (
+            <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
+          ))}
+        </div>
+      </Collapse>
+    </div>
+  );
+}
+
+/** Compact live phase outline shown while streaming a multi-phase run. */
+function LiveWorkPhasePreview({
+  phases,
+  pluginUi,
+  onOpenFull,
+}: {
+  phases: readonly WorkActivityPhase[];
+  pluginUi: WorkGroupBlockProps['pluginUi'];
+  onOpenFull?: () => void;
+}) {
+  const { t } = useTranslation();
+  const completed = phases.slice(0, -1).slice(-3);
+  const active = phases[phases.length - 1];
+  const activeTools = active.tools.slice(-3);
+
+  return (
+    <div data-live-work-phases="true" className="flex min-w-0 flex-col gap-0.5">
+      {completed.map((phase) => {
+        const summary = phase.tools.length > 0
+          ? formatSummary(aggregateVerbs(phase.tools.map((item) => item.message)), t)
+          : '';
+        const label = phase.title || summary;
+        return (
+          <button
+            key={phase.key}
+            type="button"
+            onClick={onOpenFull}
+            disabled={!onOpenFull}
+            className={cn(
+              'flex w-full min-w-0 items-center gap-1.5 px-2 py-[3px] text-left outline-none',
+              ACTIVITY_ROW_RADIUS_CLASS,
+              onOpenFull && [
+                'cursor-pointer select-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
+                ACTIVITY_ROW_COLOR_TRANSITION_CLASS,
+                ACTIVITY_ROW_HOVER_SURFACE_CLASS,
+              ],
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className="inline-flex h-[18px] w-4 shrink-0 items-center justify-center text-[var(--msg-tool-card-chevron)]"
+            >
+              <Check size={13} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-14 text-[var(--text-secondary)]" title={label}>
+              {label}
+            </span>
+            {summary && phase.title && (
+              <span className="shrink-0 text-12 text-[var(--msg-tool-card-chevron)]">
+                {summary}
+              </span>
+            )}
+          </button>
+        );
+      })}
+      {active.thinking && <ThinkingActivityRow activity={active.thinking} />}
+      {activeTools.map((activity) => (
+        <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
+      ))}
+    </div>
+  );
+}
+
 function ActivityWorkGroupBlock({
   pluginUi,
   compact = false,
@@ -547,14 +707,59 @@ function ActivityWorkGroupBlock({
     !compact && isStreaming && (!effectiveExpanded || holdLines)
     && (workLines ? workLines.length > 0 : liveActivities.length > 0);
   // 完成态只计算一次完整摘要；运行态保持折叠时走上面的反向 latest-five
-  // 热路径，用户主动展开后才投影全部历史。
+  // 热路径，用户主动展开后或需要判断是否多阶段分组时投影全部历史。
+  const hasMultipleThinkings = useMemo(() => {
+    let count = 0;
+    for (const child of childItems) {
+      if (child.kind === 'thinking' && !child.message.thinkingRedacted && child.message.content.trim()) {
+        count += 1;
+        if (count >= 2) return true;
+      }
+    }
+    return false;
+  }, [childItems]);
   const activityProjection = useMemo(
     () =>
-      effectiveExpanded || (!compact && !isStreaming)
+      effectiveExpanded || (!compact && !isStreaming) || (!compact && isStreaming && !lineMode && hasMultipleThinkings)
         ? projectWorkActivities(childItems, isStreaming)
         : null,
-    [childItems, effectiveExpanded, isStreaming, compact],
+    [childItems, effectiveExpanded, isStreaming, compact, lineMode, hasMultipleThinkings],
   );
+  const phases = useMemo(
+    () =>
+      !hasBeyondPreviewChild && activityProjection
+        ? groupWorkActivityPhases(activityProjection.activities)
+        : null,
+    [hasBeyondPreviewChild, activityProjection],
+  );
+  const usePhaseGroups = Boolean(phases && shouldGroupWorkActivityPhases(phases));
+  const actionSummary = useMemo(() => {
+    if (compact || isStreaming) return '';
+    if (activityProjection?.isPureExploration) {
+      return [
+        activityProjection.explorationCounts.read > 0
+          ? t('chat.workGroup.exploration.read', {
+              count: activityProjection.explorationCounts.read,
+            })
+          : null,
+        activityProjection.explorationCounts.search > 0
+          ? t('chat.workGroup.exploration.search', {
+              count: activityProjection.explorationCounts.search,
+            })
+          : null,
+        activityProjection.explorationCounts.list > 0
+          ? t('chat.workGroup.exploration.list', {
+              count: activityProjection.explorationCounts.list,
+            })
+          : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' · ');
+    }
+    const allTools = collectWorkGroupToolCalls(childItems);
+    if (allTools.length === 0) return '';
+    return formatSummary(aggregateVerbs(allTools), t);
+  }, [compact, isStreaming, activityProjection, childItems, t]);
 
   // 外层完成态组展开成文字 + 内层动作组;内层动作组与运行态组复用本组件,
   // 展开后直接渲染 thinking /工具行,不再多套一层子卡摘要。
@@ -577,30 +782,8 @@ function ActivityWorkGroupBlock({
       : durationMs !== undefined
         ? t('chat.workGroup.worked', { duration: formatDuration(durationMs, t) })
         : t('chat.workGroup.workDetails');
-  const explorationSummary =
-    !compact && activityProjection?.isPureExploration
-      ? [
-          activityProjection.explorationCounts.read > 0
-            ? t('chat.workGroup.exploration.read', {
-                count: activityProjection.explorationCounts.read,
-              })
-            : null,
-          activityProjection.explorationCounts.search > 0
-            ? t('chat.workGroup.exploration.search', {
-                count: activityProjection.explorationCounts.search,
-              })
-            : null,
-          activityProjection.explorationCounts.list > 0
-            ? t('chat.workGroup.exploration.list', {
-                count: activityProjection.explorationCounts.list,
-              })
-            : null,
-        ]
-          .filter((part): part is string => part !== null)
-          .join(' · ')
-      : '';
-  const summaryText = explorationSummary
-    ? `${baseSummaryText} · ${explorationSummary}`
+  const summaryText = actionSummary
+    ? `${baseSummaryText} · ${actionSummary}`
     : baseSummaryText;
 
   return (
@@ -665,13 +848,21 @@ function ActivityWorkGroupBlock({
                     <ThinkingLineRow key={line.key} line={line} onActivate={onToggle} />
                   ),
                 )
-              : liveActivities.map((activity) =>
-                  activity.kind === 'tool' ? (
-                    <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
-                  ) : (
-                    <ThinkingActivityRow key={activity.key} activity={activity} />
-                  ),
-                )}
+              : usePhaseGroups && phases
+                ? (
+                    <LiveWorkPhasePreview
+                      phases={phases}
+                      pluginUi={pluginUi}
+                      onOpenFull={canToggle ? onToggle : undefined}
+                    />
+                  )
+                : liveActivities.map((activity) =>
+                    activity.kind === 'tool' ? (
+                      <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
+                    ) : (
+                      <ThinkingActivityRow key={activity.key} activity={activity} />
+                    ),
+                  )}
           </div>
         )}
 
@@ -683,21 +874,36 @@ function ActivityWorkGroupBlock({
               'flex flex-col gap-2',
             )}
           >
-            {effectiveExpanded && !holdLines &&
-              childItems.map((child) => (
-                <Fragment key={child.key}>
-                  <ExpandedWorkGroupChild
-                    pluginUi={pluginUi}
-                    child={child}
-                    compact={compact}
-                    toolActivities={
-                      child.kind === 'tools'
-                        ? activityProjection?.toolActivitiesByChildKey.get(child.key)
-                        : undefined
-                    }
-                  />
-                </Fragment>
-              ))}
+            {effectiveExpanded && !holdLines && (
+              usePhaseGroups && phases
+                ? phases.map((phase, index) => (
+                    <WorkPhaseGroupRow
+                      key={phase.key}
+                      blockId={blockId}
+                      phase={phase}
+                      defaultExpanded={
+                        phases.length <= 3
+                        || phase.status === 'running'
+                        || index === phases.length - 1
+                      }
+                      pluginUi={pluginUi}
+                    />
+                  ))
+                : childItems.map((child) => (
+                    <Fragment key={child.key}>
+                      <ExpandedWorkGroupChild
+                        pluginUi={pluginUi}
+                        child={child}
+                        compact={compact}
+                        toolActivities={
+                          child.kind === 'tools'
+                            ? activityProjection?.toolActivitiesByChildKey.get(child.key)
+                            : undefined
+                        }
+                      />
+                    </Fragment>
+                  ))
+            )}
             {deferred?.loading && <Spinner size={14} />}
             {deferred?.failed && (
               <Button variant="secondary" disabled={deferred.loading} onClick={deferred.retry}>

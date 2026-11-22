@@ -10,6 +10,7 @@ import {
   summarizeToolGroupPresentation,
   summarizeToolRowPresentation,
   summarizeWorkGroupPresentation,
+  summarizeWorkGroupToolActions,
   todoStatusPresentation,
   type ToolRowWording,
 } from '../messagePresentation';
@@ -741,5 +742,36 @@ describe('messagePresentation', () => {
     };
 
     expect(summarizeToolGroupPresentation(group).title).toBe('运行 1 条命令、读取 1 个文件 和 执行搜索');
+  });
+
+  // Tier: unit. Production entry: `summarizeWorkGroupToolActions`.
+  // Gap: completed WorkGroup headers need mixed-action summaries across nested work_groups.
+  // Minimal failing input: a nested work_group containing edit + read + execute tools.
+  it('summarizes mixed tool actions recursively across nested work groups', () => {
+    const innerGroup: MessageRenderToolGroupItem<TestMessage> = {
+      type: 'tool_group',
+      key: 'inner-tools',
+      tools: [
+        message('e1', {
+          label: 'Edit translator.ts',
+          source: {
+            clientId: 'e1',
+            content: { toolName: 'Edit translator.ts', input: { acpKind: 'edit', Path: '/repo/translator.ts' } },
+          },
+        }),
+        message('r1', {
+          label: 'Read protocol.ts',
+          source: {
+            clientId: 'r1',
+            content: { toolName: 'Read protocol.ts', input: { acpKind: 'read', Path: '/repo/protocol.ts' } },
+          },
+        }),
+      ],
+    };
+    expect(
+      summarizeWorkGroupToolActions([
+        { type: 'work_group', key: 'nested', children: [innerGroup] },
+      ]),
+    ).toBe('编辑 1 个文件 和 读取 1 个文件');
   });
 });

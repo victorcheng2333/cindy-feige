@@ -6,6 +6,7 @@ import {
 import {
   buildMessageActionBarPresentation,
   countMessageRenderItemDiffs,
+  formatToolListSummary,
   formatToolRowText,
   isToolErrorLike,
   summarizeMessageBubblePresentation,
@@ -13,6 +14,7 @@ import {
   summarizeToolGroupPresentation,
   summarizeToolRowPresentation,
   summarizeWorkGroupPresentation,
+  summarizeWorkGroupToolActions,
   todoStatusPresentation,
   type MessageActionBarItemId,
   type MessageActionBarPresentation,
@@ -34,6 +36,7 @@ import {
 
 export {
   buildMessageActionBarPresentation,
+  formatToolListSummary,
   formatToolRowText,
   isToolErrorLike,
   summarizeMessageBubblePresentation,
@@ -41,6 +44,7 @@ export {
   summarizeToolGroupPresentation,
   summarizeToolRowPresentation,
   summarizeWorkGroupPresentation,
+  summarizeWorkGroupToolActions,
   todoStatusPresentation,
   type MessageActionBarItemId,
   type MessageActionBarPresentation,
