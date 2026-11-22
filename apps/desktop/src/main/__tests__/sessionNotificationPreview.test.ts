@@ -64,3 +64,12 @@ it('does not preview a final reply removed by rewind', async () => {
   sqlite.exec("UPDATE messages SET rewind_at = 201 WHERE client_id = 'removed'");
   expect((await readSessionNotificationPreview('main')).reply).toBeUndefined();
 });
+
+it('skips a whitespace-only sealed assistant row to pick the substantive final reply', async () => {
+  add('real-final', 'assistant', '已更新通知摘要逻辑', 150, { turnCompleted: true });
+  add('empty-tail', 'assistant', '   ', 151, { turnCompleted: true });
+  expect((await readSessionNotificationPreview('main')).reply).toEqual({
+    clientId: 'real-final',
+    text: '已更新通知摘要逻辑',
+  });
+});

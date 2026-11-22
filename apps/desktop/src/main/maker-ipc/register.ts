@@ -1128,6 +1128,7 @@ import {
   shouldNotifyAgentIslandForSession as shouldNotifyAgentIslandForSessionByPolicy,
 } from '../agent-island/notificationPolicy.js';
 import { getAgentIslandService } from '../agent-island/service.js';
+import { clearSessionAttention } from '../appBadgeService.js';
 import { createOrcaLifecycleService, ORCA_WORKER_READY_MESSAGE } from './orcaLifecycleService.js';
 import { buildUiAssignmentInitialTask } from './orcaUiAssignment.js';
 import {
@@ -20746,6 +20747,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     },
     // persistedContent can be a JSON envelope (attachments, pasted ranges): read the text the owner typed.
     onOwnerMessage: (sessionId, item) => {
+      // Owner sent a new message (local, remote desktop, mobile, or notification quick reply):
+      // clear prior completed/awaiting unread indicators and propagate the read-clear to all peers.
+      clearSessionAttention(sessionId, 'passive');
       dismissInputHandoffForOwnerMessage(sessionId, extractPlainText(item.persistedContent || item.text));
       // This prefix only preserves question UI. It conveys no permission or identity.
       if (!item.clientId.startsWith('question-reply:')) maker.getSession(sessionId)?.dismissAsyncQuestionsForUserInput();

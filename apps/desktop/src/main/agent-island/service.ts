@@ -1705,7 +1705,8 @@ export class AgentIslandService {
     // 收尾包兜底必须在 publish() **之前**。ensure 只在 relay 没有该会话条目时补发;
     // 已有 entry(live 或刚发出的未读终态)不动,由 publish() 把账本投影出去。
     this.sessionActivityRelay.ensureSessionTerminalClear(sessionId);
-    if (ack === 'cleared') { retireReadMobileNotifications(sessionId); this.publish(); }
+    retireReadMobileNotifications(sessionId);
+    if (ack === 'cleared') this.publish();
     log.debug(`session read ack: session=${sessionId} source=${source} state=${ack}`);
   }
 
@@ -2099,6 +2100,15 @@ export class AgentIslandService {
     return [...(this.state.sessions.get(sessionId)?.pendingInteractionIds ?? [])];
   }
 
+  /** Latest mirrored completion summary for a remote device session, if available. */
+  getRemoteSessionSummary(deviceId: string, sessionId: string): string | undefined {
+    const input = this.lastDeviceSessionInputs.find(
+      (item) => item.deviceId === deviceId && item.sessionId === sessionId && item.phase === 'completed',
+    );
+    const detail = input?.detail?.trim();
+    return detail || undefined;
+  }
+
   /** Display demand counts execution, including muted and group-chat tasks. */
   getLocalRunningTaskCount(): number {
     let count = 0;
@@ -2307,6 +2317,17 @@ export class AgentIslandService {
     const taskUrl = priorityId && !prioritySession?.groupChat
       ? buildSessionDeepLink(priorityId, { deviceId: priorityDeviceId })
       : undefined;
+    const prioritySnapshot = chatDisplayState.sessions.find((session) => session.sessionId === pillSnapshot.priorityId);
+    const completedSummary = pillSnapshot.priorityStatus === 'completed'
+      ? (prioritySession?.sourceDeviceId
+        ? (() => {
+          const text = prioritySession.activityLines.at(-1)?.text;
+          return text && text !== this.state.strings.done ? text : undefined;
+        })()
+        : prioritySnapshot
+          ? (completedReplySummary(prioritySnapshot) || (prioritySession?.companionChat ? prioritySnapshot.detail : '') || undefined)
+          : undefined)
+      : undefined;
     this.deps.liveActivity?.sync(agentIslandLiveActivityStateFromPill(
       pillSnapshot,
       this.mascotSkin,
@@ -2331,8 +2352,9 @@ export class AgentIslandService {
         alsoRunningCount: (count) => tCount('agentIsland.native.liveActivityAlsoRunning', count),
         waitingCount: (count) => tCount('agentIsland.native.liveActivityWaiting', count),
       },
-      chatDisplayState.sessions.find((session) => session.sessionId === pillSnapshot.priorityId)?.companion,
+      prioritySnapshot?.companion,
       taskUrl,
+      completedSummary,
     ));
     if (!this.enabled) {
       // Agent Notch is off: its event sounds still accompany the Live Activity's alerts.

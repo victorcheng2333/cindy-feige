@@ -329,6 +329,24 @@ describe('Agent Island device sessions', () => {
     expect(result.events).toEqual([]);
     expect(state.sessions.get('remote-1')?.phase).toBe('running');
   });
+
+  it('carries the remote completion summary on emitted done events', () => {
+    const state = createAgentIslandState();
+    syncAgentIslandDeviceSessions(state, [remote('running')], 1_000);
+    const result = syncAgentIslandDeviceSessions(
+      state,
+      [remote('completed', { detail: '已清理多端未读角标并补充测试', summaryFormat: 'plain-text' })],
+      2_000,
+    );
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        sessionId: 'remote-1',
+        deviceId: 'device-a',
+        kind: 'done',
+        detail: '已清理多端未读角标并补充测试',
+      }),
+    ]);
+  });
 });
 
 describe('parseAgentIslandRemoteSessions', () => {

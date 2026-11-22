@@ -47,6 +47,7 @@ import {
   clearSessionAttention,
   getSessionAttentionKind,
   hasSessionAttention,
+  subscribeSessionAttentionCleared,
   useSessionAttentionSnapshot,
 } from '@/lib/sessionAttentionStore';
 import {
@@ -537,10 +538,19 @@ export function useSessionRunningStatus(
 
   // Unmount cleanup:清掉所有还没 fire 的 done debounce 定时器,避免 hook 卸载后
   // 定时器仍触发 addSessionAttention / onSessionDone(referring stale refs 后果小,
-  // 但 leak 不干净)。
+  // 但 leak 不干净)。同时监听主进程/远程已读清除，防抖窗口内被其它端标已读时直接取消，
+  // 避免 500ms 后又把绿点重新点亮。
   useEffect(() => {
     const timers = pendingDoneTimersRef.current;
+    const unsubscribeCleared = subscribeSessionAttentionCleared?.((sessionId) => {
+      const pendingTimer = timers.get(sessionId);
+      if (pendingTimer !== undefined) {
+        clearTimeout(pendingTimer);
+        timers.delete(sessionId);
+      }
+    });
     return () => {
+      unsubscribeCleared?.();
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
     };

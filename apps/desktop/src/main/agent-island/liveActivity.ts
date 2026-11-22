@@ -88,8 +88,9 @@ export function agentIslandLiveActivityStateFromPill(
   strings: AgentIslandLiveActivityStrings,
   companion?: AgentIslandCompanionSnapshot,
   taskUrl?: string,
+  completedSummary?: string,
 ): AgentIslandLiveActivityState | null {
-  const state = liveActivityStatusFromPill(pill, mascot, strings);
+  const state = liveActivityStatusFromPill(pill, mascot, strings, completedSummary);
   if (state && taskUrl) state.taskUrl = taskUrl;
   if (!state || state.status === 'running' || !companion) return state;
   const imageJpeg = companion.imageJpeg && companion.imageJpeg.length <= MAX_COMPANION_JPEG_LENGTH
@@ -110,11 +111,15 @@ function liveActivityStatusFromPill(
   pill: AgentIslandPillSnapshot,
   mascot: string,
   strings: AgentIslandLiveActivityStrings,
+  completedSummary?: string,
 ): AgentIslandLiveActivityState | null {
   const running = pill.runningSessionCount;
   const waiting = pill.pendingInteractionCount;
   if (running === 0 && pill.attentionCount === 0) return null;
-  const completedLabel = pill.priorityStatus === 'error' ? strings.error : strings.completed;
+  const trimmedSummary = completedSummary?.trim() || '';
+  const completedLabel = pill.priorityStatus === 'error'
+    ? strings.error
+    : (trimmedSummary || strings.completed);
   const base = {
     runningCount: running,
     attentionCount: waiting,
@@ -136,7 +141,7 @@ function liveActivityStatusFromPill(
   }
   if (pill.priorityStatus === 'completed' || pill.priorityStatus === 'error') {
     // Unread results include failures; say so rather than "completed".
-    const detail = pill.priorityStatus === 'error' ? strings.error : strings.completed;
+    const detail = pill.priorityStatus === 'error' ? strings.error : (trimmedSummary || strings.completed);
     return { ...base, status: 'completed', detail, summary: running > 0 ? strings.alsoRunningCount(running) : '' };
   }
   return null;

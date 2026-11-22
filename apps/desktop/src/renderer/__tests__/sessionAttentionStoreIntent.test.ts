@@ -484,4 +484,27 @@ describe('clearSystemSessionAttention 的远程路由', () => {
     );
     setRemoteReceiptDisplayReady('rs1', false);
   });
+
+  it('clears a remote session local green dot when the host broadcasts a read-clear, without echoing back', () => {
+    seedRemote();
+    ipcMarkMock.mockClear();
+    ipcClearMock.mockClear();
+    deviceLinkInvokeMock.mockClear();
+
+    // 远程任务的本地 attention 不应污染本机 Dock 角标
+    addSessionAttention('rs1', 'done');
+    expect(hasSessionAttention('rs1')).toBe(true);
+    expect(ipcMarkMock).not.toHaveBeenCalled();
+
+    // 另一台无关设备的同名会话清点不能误清 dev1 的 rs1
+    applyRemoteSessionActivity('other-dev', { sessionId: 'rs1', phase: 'completed', attention: false });
+    expect(hasSessionAttention('rs1')).toBe(true);
+
+    // 归属主机 dev1 推回 attention=false（例如手机或另一台桌面标记已读）：
+    // 清除本机绿点，并通知本机 main 收敛，但不向对端回发 deviceLink.invoke（防回环）
+    applyRemoteSessionActivity('dev1', { sessionId: 'rs1', phase: 'completed', attention: false });
+    expect(hasSessionAttention('rs1')).toBe(false);
+    expect(ipcClearMock).toHaveBeenCalledWith('rs1', 'passive');
+    expect(deviceLinkInvokeMock).not.toHaveBeenCalled();
+  });
 });

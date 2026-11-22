@@ -18,6 +18,7 @@ export function selectNotificationReply(rows: NotificationMessage[], startedAt: 
     if (meta.botCollaboration || meta.botDirectMessage || meta.cindyMakeCompletion || meta.reviewRun) continue;
     if (meta.turnCompleted !== true) continue;
     if (meta.assistantPhase === 'commentary') return undefined;
+    if (!row.text.trim()) continue;
     return { clientId: row.clientId, text: row.text };
   }
   return undefined;

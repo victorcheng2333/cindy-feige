@@ -46,6 +46,7 @@ export function isRemoteSessionActivityActive(
 }
 
 const listeners = new Set<(deviceId?: string, sessionId?: string) => void>();
+const readClearedListeners = new Set<(deviceId: string, sessionId: string) => void>();
 /** deviceId → sessionId → 活动条目；本地任务没有 deviceId，不读取远程缓存。 */
 const activityByDevice = new Map<string, Map<string, RemoteSessionActivity>>();
 /** 整表变更版本号(聚合消费方作依赖用;activityMap 本体是可变引用,不能当快照)。 */
@@ -84,6 +85,16 @@ export function subscribeRemoteSessionActivity(
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+  };
+}
+
+/** 订阅对端推送的「终态已读清除」收尾包（attention=false），即使本机镜像里此前没有条目也会触发。 */
+export function subscribeRemoteSessionReadCleared(
+  listener: (deviceId: string, sessionId: string) => void,
+): () => void {
+  readClearedListeners.add(listener);
+  return () => {
+    readClearedListeners.delete(listener);
   };
 }
 
@@ -184,6 +195,7 @@ export function applyRemoteSessionActivity(deviceId: string, payload: unknown): 
   const keep = p.phase === 'running' || p.phase === 'needs-interaction' || attention;
   if (!keep) {
     removeRemoteSessionActivityEntry(sessionId, deviceId);
+    for (const l of readClearedListeners) l(deviceId, sessionId);
     return;
   }
   const next: RemoteSessionActivity = {

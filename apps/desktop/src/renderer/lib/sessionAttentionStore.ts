@@ -8,6 +8,7 @@ import {
   acknowledgeSharedTaskCompletion,
   getRemoteSessionActivity,
   subscribeRemoteSessionActivity,
+  subscribeRemoteSessionReadCleared,
 } from '@/features/device-link/remoteSessionActivityStore';
 
 /**
@@ -29,6 +30,7 @@ export type AttentionKind = 'done' | 'awaiting' | 'error';
 export type AttentionClearIntent = 'explicit' | 'passive';
 
 const listeners = new Set<() => void>();
+const clearedListeners = new Set<(sessionId: string) => void>();
 /** sessionId → 当前 attention 语义(只存最新一次)。 */
 const attentionMap = new Map<string, AttentionKind>();
 // 两份不可变快照:id-only Set 给"有没有未读"的布尔消费者(零改动),kind Map 给卡片读色。
@@ -176,6 +178,22 @@ function rebasePendingReceiptsOnNewAttention(
 
 if (typeof window !== 'undefined') {
   subscribeRemoteSessionActivity(rebasePendingReceiptsOnNewAttention);
+  // 任一远程端（另一台电脑 / 手机）对某会话标记已读后，执行主机通过 sessions topic
+  // 推回 attention=false 收尾包：同步清掉本机可能残留的本地 attentionMap 绿点，
+  // 且不回发 device-link.invoke 防回环。按 deviceId 归属校验避免不同设备同 sessionId 误清。
+  subscribeRemoteSessionReadCleared((deviceId, sessionId) => {
+    if (getSessionDeviceId(sessionId) !== deviceId) return;
+    const pending = pendingRemoteReceipts.get(sessionId);
+    if (pending?.receiptClass === 'passive') {
+      pendingRemoteReceipts.delete(sessionId);
+    }
+    const hadLocalEntry = attentionMap.has(sessionId) && attentionMap.get(sessionId) !== 'error';
+    applyMainSessionAttentionCleared(sessionId, 'passive');
+    if (hadLocalEntry) {
+      const clear = window.electronAPI?.notificationClearSessionAttention;
+      if (clear) void clear(sessionId, 'passive').catch(() => undefined);
+    }
+  });
 }
 
 function syncGenOf(sessionId: string): RemoteReceiptSyncGen {
@@ -363,6 +381,14 @@ export function subscribeSessionAttention(listener: () => void): () => void {
   };
 }
 
+/** 订阅来自主进程或远程主机的已读清除信号（即使本地 attentionMap 尚未写入也触发，用于取消防抖挂起的完成绿点）。 */
+export function subscribeSessionAttentionCleared(listener: (sessionId: string) => void): () => void {
+  clearedListeners.add(listener);
+  return () => {
+    clearedListeners.delete(listener);
+  };
+}
+
 export function getSessionAttentionSnapshot(): ReadonlySet<string> {
   return idSnapshot;
 }
@@ -442,7 +468,10 @@ export function addSessionAttention(sessionId: string, kind: AttentionKind = 'do
   if (attentionMap.get(sessionId) === kind) return;
   attentionMap.set(sessionId, kind);
   emit();
-  markSystemAttention(sessionId);
+  // 远程任务的系统角标归属执行主机，不写入本机 Dock 角标。
+  if (getSessionDeviceId(sessionId) === undefined) {
+    markSystemAttention(sessionId);
+  }
 }
 
 /**
@@ -476,8 +505,9 @@ export function clearSessionAttention(
  */
 export function applyMainSessionAttentionCleared(sessionId: string, intent: AttentionClearIntent): void {
   if (intent === 'passive' && attentionMap.get(sessionId) === 'error') return;
-  if (!attentionMap.delete(sessionId)) return;
-  emit();
+  const removed = attentionMap.delete(sessionId);
+  if (removed) emit();
+  for (const l of clearedListeners) l(sessionId);
 }
 
 function parseAttentionClearedPayload(

@@ -5255,6 +5255,7 @@ const registerIpcHandlers = () => {
       const question = permission ? undefined : buildQuestionAlert(request);
       return permission || question ? { ...(permission ? { permission } : {}), ...(question ? { question } : {}) } : undefined;
     },
+    remoteSessionSummary: (deviceId, sessionId) => getAgentIslandService()?.getRemoteSessionSummary(deviceId, sessionId),
     getWindow: () => getWindow() ?? null,
     feishuIm,
   });

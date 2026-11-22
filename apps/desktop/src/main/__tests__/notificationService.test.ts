@@ -2053,4 +2053,68 @@ describe('teammate reply previews', () => {
     await invokeHandler({ sessionId: 'bot-main', title: 'Mochi', kind: 'done' });
     expect(notificationCtor).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cindy · Mochi', body: 'New reply' }));
   });
+
+  it('shows ordinary task reply summary on desktop and Feishu instead of generic completed copy', async () => {
+    const { initNotificationService } = await freshService();
+    const feishuIm = makeFeishuIm('ou_owner');
+    initNotificationService(baseDeps(feishuIm));
+    readSessionNotificationPreview.mockResolvedValue({
+      eventId: 'turn:100:200',
+      reply: { clientId: 'final-1', text: '## **已修复登录跳转**\n补上了单测。' },
+    });
+
+    await invokeHandler({
+      sessionId: 's-summary',
+      title: 'Fix login',
+      kind: 'done',
+      channels: { desktop: true, feishu: true, mobile: false },
+    });
+
+    expect(notificationCtor).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Cindy · Fix login',
+      body: '已修复登录跳转 补上了单测。',
+    }));
+    expect(feishuIm.sendMarkdownText).toHaveBeenCalledWith(
+      'ou_owner',
+      'Cindy · 任务「Fix login」已完成 ✓\n已修复登录跳转 补上了单测。',
+    );
+  });
+
+  it('shows remote device completion summary on desktop toast and forwarded mobile push', async () => {
+    const { initNotificationService, showDeviceSessionDesktopEvent } = await freshService();
+    const feishuIm = makeFeishuIm('ou_owner');
+    initNotificationService({
+      ...baseDeps(feishuIm),
+      remoteSessionSummary: (deviceId, sessionId) => (
+        deviceId === 'mac-studio' && sessionId === 'rs-1' ? '已构建并上传新包' : undefined
+      ),
+    });
+
+    showDeviceSessionDesktopEvent(() => null, {
+      sessionId: 'rs-1',
+      deviceId: 'mac-studio',
+      title: 'Build release',
+      deviceName: 'Studio',
+      kind: 'done',
+      detail: '**已构建并上传新包**',
+    });
+    expect(notificationCtor).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Cindy · Build release · Studio',
+      body: '已构建并上传新包',
+    }));
+
+    await invokeHandler({
+      sessionId: 'rs-1',
+      remoteDeviceId: 'mac-studio',
+      markAttention: false,
+      title: 'Build release',
+      kind: 'done',
+      channels: { desktop: false, feishu: false, mobile: true },
+    });
+    expect(sendMobileSessionNotify).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'rs-1',
+      remoteDeviceId: 'mac-studio',
+      detail: '已构建并上传新包',
+    }));
+  });
 });

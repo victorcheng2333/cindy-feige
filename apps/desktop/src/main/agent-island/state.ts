@@ -1078,6 +1078,7 @@ export function acknowledgeAgentIslandSessionRead(
   }
 
   const wasUnread = session.unread;
+  const hadRemoteUnread = Boolean(unread);
   const hadDeferredReveal = session.deferredReveal;
   const hadReveal = session.revealUntil !== null;
   const hadCompletionDwell = session.completedUntil !== null;
@@ -1098,7 +1099,7 @@ export function acknowledgeAgentIslandSessionRead(
     return 'cleared';
   }
 
-  return wasUnread || hadDeferredReveal || hadReveal || hadCompletionDwell || hadErrorDwell
+  return wasUnread || hadRemoteUnread || hadDeferredReveal || hadReveal || hadCompletionDwell || hadErrorDwell
     ? 'cleared'
     : 'noop';
 }
@@ -1179,6 +1180,7 @@ export interface AgentIslandDeviceSessionEvent {
   title: string | null;
   deviceName: string | null;
   kind: AgentIslandDeviceSessionEventKind;
+  detail?: string;
 }
 
 export interface AgentIslandDeviceSessionSyncResult {
@@ -1241,12 +1243,16 @@ export function syncAgentIslandDeviceSessions(
     }
     if (transition.changed) result.changed = true;
     if (transition.event) {
+      const detail = transition.event === 'done'
+        ? normalizeRemoteActivityText(input.detail, input.summaryFormat) || undefined
+        : undefined;
       result.events.push({
         sessionId: input.sessionId,
         deviceId: input.deviceId,
         title: input.title,
         deviceName: input.deviceName,
         kind: transition.event,
+        ...(detail ? { detail } : {}),
       });
     }
   }

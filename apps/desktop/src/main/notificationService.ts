@@ -522,18 +522,22 @@ export function showDesktopSessionEvent(
 
 /**
  * 其它设备(device-link)任务的桌面通知,只在本机灵动岛关闭时由岛服务转交过来。
- * 正文没有本机记录可读,沿用各 kind 的通用文案;未读归属那台设备,不记本机角标。
+ * 对方同步来的完成摘要可用时直接作正文，缺失再沿用各 kind 的通用文案;未读归属那台设备,不记本机角标。
  */
 export function showDeviceSessionDesktopEvent(
   getWindow: () => BrowserWindow | null,
-  event: { sessionId: string; deviceId: string; title: string | null; deviceName: string | null; kind: SessionEventKind },
+  event: { sessionId: string; deviceId: string; title: string | null; deviceName: string | null; kind: SessionEventKind; detail?: string },
 ): void {
   if (!desktopNotificationsEnabled) return;
+  const body = event.kind === 'done' && event.detail
+    ? notificationPreview(event.detail, 240, getNotificationImageLabel()) || undefined
+    : undefined;
   showDesktopSessionEvent(getWindow, {
     sessionId: event.sessionId,
     deviceId: event.deviceId,
     title: [event.title ?? getSessionNotificationUntitled(), event.deviceName].filter(Boolean).join(' · '),
     kind: event.kind,
+    ...(body ? { body } : {}),
     markAttention: false,
   });
 }
@@ -552,6 +556,8 @@ export interface NotificationServiceDeps {
    * something else is waiting too.
    */
   pendingInteractionAlert?: (sessionId: string) => { permission?: PermissionAlert; question?: QuestionAlert } | undefined;
+  /** Trusted main-side completion summary mirrored from a remote device, if available. */
+  remoteSessionSummary?: (deviceId: string, sessionId: string) => string | undefined;
   getWindow: () => BrowserWindow | null;
   /**
    * 飞书 IM 实例,用于飞书通道发消息。来源与 scheduler-host/notifier.ts 相同
@@ -640,7 +646,9 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
         // Only routes the phone to the teammate chat; titles and fallbacks stay per kind.
         let teammateBotId: string | undefined;
         let postDrainPreviewReady = false;
-        let detail: string | undefined;
+        let detail: string | undefined = remoteDeviceId && kind === 'done'
+          ? deps.remoteSessionSummary?.(remoteDeviceId, sessionId)
+          : undefined;
         let avatarJpeg: string | undefined;
         if (!remoteDeviceId && (kind === 'done' || wantDesktop || channels?.mobile === true)) {
           let finished = false;
@@ -742,6 +750,9 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
           return;
         }
         const fallbackBody = teammate && kind === 'done' ? getTeammateNotificationFallback() : undefined;
+        const donePreviewBody = kind === 'done'
+          ? notificationPreview(detail ?? '', 240, getNotificationImageLabel()) || fallbackBody
+          : undefined;
         const mobileTeammateBotId = preview?.teammateBotId ?? teammateBotId;
         // 账本只含已经决定过的投递。还在读 preview 的另一扇窗按到达配对，
         // 不按读完顺序：先读完的弹，后读完的并成别名。配不到上一轮已经配完的窗口。
@@ -763,7 +774,7 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
               sessionId, title: notificationTitle, kind, teammate, markAttention, avatarJpeg,
               ...(remoteDeviceId ? { deviceId: remoteDeviceId } : {}),
               messageClientId: preview?.reply?.clientId,
-              body: teammate ? notificationPreview(detail ?? '', 240, getNotificationImageLabel()) || fallbackBody : undefined,
+              body: donePreviewBody,
             });
             if (kind === 'done' && accepted) {
               notifiedReplies.set(desktopKey, eventId ? { eventId } : { fallbackSentAt: Date.now() });
@@ -838,8 +849,10 @@ export function initNotificationService(deps: NotificationServiceDeps): void {
             pendingFeishuReplies.add(pendingKey);
             if (!eventId) pendingFeishuFallbacks.set(feishuKey, Date.now());
             try {
-              const body = teammate ? notificationPreview(detail ?? '', 240, getNotificationImageLabel()) || fallbackBody : undefined;
-              const accepted = await sendFeishuMessage(feishuIm, notificationTitle, kind, body);
+              const accepted = await sendFeishuMessage(feishuIm, notificationTitle, kind, {
+                teammate,
+                body: donePreviewBody,
+              });
               if (accepted) {
                 notifiedReplies.set(feishuKey, eventId ? { eventId } : { fallbackSentAt: Date.now() });
               }
@@ -968,7 +981,7 @@ async function sendFeishuMessage(
   feishuIm: FeishuIM,
   safeTitle: string,
   kind: SessionEventKind,
-  teammateBody?: string,
+  options?: { teammate?: boolean; body?: string },
 ): Promise<boolean> {
   const ownerOpenId = feishuIm.getOwnerOpenId();
   if (!ownerOpenId) {
@@ -976,12 +989,13 @@ async function sendFeishuMessage(
     return false;
   }
   try {
-    if (teammateBody) {
-      await feishuIm.sendText(ownerOpenId, `${safeTitle}\n${teammateBody}`);
+    if (options?.teammate && options.body) {
+      await feishuIm.sendText(ownerOpenId, `${safeTitle}\n${options.body}`);
     } else {
+      const header = getSessionExternalNotificationText(safeTitle, kind);
       await feishuIm.sendMarkdownText(
         ownerOpenId,
-        getSessionExternalNotificationText(safeTitle, kind),
+        options?.body ? `${header}\n${options.body}` : header,
       );
     }
     return true;

@@ -33,6 +33,7 @@ const storeMock = vi.hoisted(() => ({
   recoverySessions: new Set<string>(),
   heldByAgentIsland: new Set<string>(),
   pausedQueueSessions: new Set<string>(),
+  attentionClearedListeners: new Set<(sessionId: string) => void>(),
 }));
 
 vi.mock('@/state/agentIslandActivity', () => ({
@@ -66,6 +67,12 @@ vi.mock('@/lib/sessionAttentionStore', () => ({
   clearSessionAttention: vi.fn(),
   getSessionAttentionKind: vi.fn(() => undefined),
   hasSessionAttention: vi.fn(() => false),
+  subscribeSessionAttentionCleared: (listener: (sessionId: string) => void) => {
+    storeMock.attentionClearedListeners.add(listener);
+    return () => {
+      storeMock.attentionClearedListeners.delete(listener);
+    };
+  },
   useSessionAttentionSnapshot: () => new Set<string>(),
 }));
 
@@ -105,6 +112,7 @@ describe('useSessionRunningStatus silenced completion handling', () => {
     storeMock.recoverySessions.clear();
     storeMock.heldByAgentIsland.clear();
     storeMock.pausedQueueSessions.clear();
+    storeMock.attentionClearedListeners.clear();
     resetSilencedSessionDoneStoreForTests();
     resetSessionStartingStoreForTests();
     setDataOwnerGeneration(null);
@@ -1079,5 +1087,19 @@ describe('useSessionRunningStatus stale error dot', () => {
     await emitSnapshot(new Map([['s', status(false)]]));
     expect(clearSessionAttention).not.toHaveBeenCalledWith('s', { intent: 'explicit' });
     expect(refreshPendingAlerts).toHaveBeenCalled();
+  });
+
+  it('cancels a pending done debounce timer when another device marks the session read', async () => {
+    vi.useFakeTimers();
+    const onSessionDone = vi.fn();
+    renderHook(() => useSessionRunningStatus(undefined, { onSessionDone }));
+    await emitSnapshot(new Map([['s-read', status(true)]]));
+    await emitSnapshot(new Map([['s-read', status(false)]]));
+    await act(async () => {
+      for (const listener of storeMock.attentionClearedListeners) listener('s-read');
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(addSessionAttention).not.toHaveBeenCalled();
+    expect(onSessionDone).not.toHaveBeenCalled();
   });
 });

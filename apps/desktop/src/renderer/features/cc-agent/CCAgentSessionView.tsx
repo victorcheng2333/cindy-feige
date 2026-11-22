@@ -2994,6 +2994,20 @@ function CCAgentSessionContent({
     void makerChatStore.reconcileRemoteMessages(sessionId).catch(() => undefined);
     return () => setRemoteReceiptDisplayReady(sessionId, false);
   }, [historyLoaded, remoteDeviceId, sessionId, viewVisible]);
+  // 远程会话已打开并可见时，若 sessions topic 的 attention=true 晚于重 topic 的 turn-end
+  // 对账到达，CCAgentSidebarUpper 入队的 passive 回执会要求新一轮 sync 代。这里补一次对账，
+  // 防止回执无限挂起导致小绿点在多端残留（与手机端 useSessionActivityInvalidation 对齐）。
+  const remoteAttentionVisibleSig = remoteSessionActivity?.attention === true
+    ? `${remoteSessionActivity.phase}|1|${remoteSessionActivity.interactionKind ?? ''}|${remoteSessionActivity.compactDetail}`
+    : 'none';
+  const prevRemoteAttentionVisibleSigRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevSig = prevRemoteAttentionVisibleSigRef.current;
+    prevRemoteAttentionVisibleSigRef.current = remoteAttentionVisibleSig;
+    if (!sessionId || !remoteDeviceId || !historyLoaded || !viewVisible) return;
+    if (remoteAttentionVisibleSig === 'none' || prevSig === null || remoteAttentionVisibleSig === prevSig) return;
+    void makerChatStore.reconcileRemoteMessages(sessionId).catch(() => undefined);
+  }, [historyLoaded, remoteAttentionVisibleSig, remoteDeviceId, sessionId, viewVisible]);
   // worktree 创建过程中禁用 ChatInput,防止用户在 worktree 还没就绪时继续派发消息。
   // 之前是扫 chat messages 找 SystemCard('worktree') status==='creating',现在直接
   // 读 worktreeCreationStore(已经在上面订阅 worktreeCreation 时拿到)。

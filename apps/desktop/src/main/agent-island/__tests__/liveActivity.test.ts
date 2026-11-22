@@ -315,4 +315,20 @@ describe('AgentIslandLiveActivity', () => {
     expect(live.isSupported()).toBe(false);
     expect(load).not.toHaveBeenCalled();
   });
+
+  it('uses the completed reply summary in Live Activity detail when available', () => {
+    const pill = {
+      ...createEmptyAgentIslandPillSnapshot(),
+      priorityId: 'finished',
+      priorityStatus: 'completed' as const,
+      priorityCompactTitle: 'Fix notifications',
+      sessionCount: 1,
+      unreadCompletedCount: 1,
+      attentionCount: 1,
+    };
+    expect(agentIslandLiveActivityStateFromPill(pill, 'cindy', strings, undefined, undefined, '已修复多端已读同步'))
+      .toMatchObject({ status: 'completed', detail: '已修复多端已读同步', completedLabel: '已修复多端已读同步' });
+    expect(agentIslandLiveActivityStateFromPill(pill, 'cindy', strings, undefined, undefined, '   '))
+      .toMatchObject({ status: 'completed', detail: 'Completed', completedLabel: 'Completed' });
+  });
 });

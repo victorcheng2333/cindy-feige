@@ -16,6 +16,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 
 import { getSessionDeviceId } from '@/features/device-link/remoteProjectsStore';
 import { dropStaleRemoteTerminalActivity } from '@/features/device-link/remoteSessionActivityStore';
+import { clearSessionAttention } from '@/lib/sessionAttentionStore';
 
 /** 发送失败 / 状态一直不到时的兜底;正常路径应在 agent 开跑时就被吸收。 */
 export const SESSION_STARTING_TTL_MS = 120_000;
@@ -73,9 +74,10 @@ export function markSessionStarting(sessionId: string, clientId?: string): void 
   if (!sessionId) return;
   const already = startingIds.has(sessionId);
   if (!already) {
-    // 先丢掉上一轮远程终态,再置 starting。否则 absorb 会把旧 completed/error
-    // 当成新权威立刻清掉。重复 mark 只刷新 TTL,不能再删本轮新到达的终态。
+    // 先丢掉上一轮远程终态与完成未读绿点,再置 starting。否则 absorb 会把旧 completed/error
+    // 当成新权威立刻清掉,且旧绿点会在发送后残留。重复 mark 只刷新 TTL,不能再删本轮新到达的终态。
     dropStaleRemoteTerminalActivity(sessionId, getSessionDeviceId(sessionId));
+    clearSessionAttention(sessionId);
     startingIds.add(sessionId);
   }
   const newInput = !!clientId && startingInputs.get(sessionId)?.clientId !== clientId;

@@ -8,6 +8,12 @@ import {
   clearRemoteSessionActivity,
   getRemoteSessionActivity,
 } from '@/features/device-link/remoteSessionActivityStore';
+import {
+  addSessionAttention,
+  clearSessionAttentionMany,
+  getSessionAttentionKind,
+  hasSessionAttention,
+} from '@/lib/sessionAttentionStore';
 vi.mock('@/features/device-link/remoteProjectsStore', () => ({
   getSessionDeviceId: (id: string) => (id === 's1' ? 'dev-1' : undefined),
 }));
@@ -33,6 +39,7 @@ describe('sessionStartingStore', () => {
   afterEach(() => {
     resetSessionStartingStoreForTests();
     clearRemoteSessionActivity();
+    clearSessionAttentionMany(['s1', 'done-task', 'error-task'], { intent: 'explicit' });
     vi.useRealTimers();
   });
 
@@ -110,6 +117,17 @@ describe('sessionStartingStore', () => {
     expect(getRemoteSessionActivity('s1', 'dev-1')).toMatchObject({ phase: 'completed' });
     absorbSessionStarting(['s1']);
     expect([...getStartingSessionIds()]).toEqual([]);
+  });
+
+  it('clears a stale done green dot immediately on send while preserving an error dot', () => {
+    addSessionAttention('done-task', 'done');
+    addSessionAttention('error-task', 'error');
+
+    markSessionStarting('done-task');
+    markSessionStarting('error-task');
+
+    expect(hasSessionAttention('done-task')).toBe(false);
+    expect(getSessionAttentionKind('error-task')).toBe('error');
   });
 
   it('expires a starting mark that never becomes running', () => {
