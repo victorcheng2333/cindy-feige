@@ -182,6 +182,8 @@ vi.mock('../../maker-host/claude-session-background-activity.js', async (importO
   ).hasWorkingBackgroundCommand,
   noteClaudeSessionBackgroundCommandWork: effects.fn('noteClaudeSessionBackgroundCommandWork'),
   noteClaudeSessionTurnState: effects.fn('noteClaudeSessionTurnState'),
+  recordSessionBackgroundEventActivity: effects.fn('recordSessionBackgroundEventActivity'),
+  registerClaudeBackgroundActivityCleanup: effects.fn('registerClaudeBackgroundActivityCleanup'),
 }));
 vi.mock('../../subagentObservationRewindFence.js', () => ({
   noteSubagentObservationTurnStarted: effects.fn('noteSubagentObservationTurnStarted'),
@@ -3453,6 +3455,32 @@ describe('native memory receipt event wiring', () => {
       else expect(publish).not.toHaveBeenCalled();
     } finally {
       botLearningTracker.markProjectTeammate(h.session.id);
+      await h.session.close();
+    }
+  });
+});
+
+// Tier: unit | Production entry: handleSessionEvent -> prepareSessionEvent
+// Gap: Background wake events (turnScope:'background' thinking/tool_use/tool_result/text) from
+// Antigravity/ACP must notify claude-session-background-activity, while foreground events and
+// whitespace-only background text must not trigger background activity.
+// Minimal failing input: Antigravity emits turnScope:'background' tool_use/text after a turn ends.
+describe('background event activity wiring', () => {
+  it('records background activity for active background progress events only', async () => {
+    const h = harness();
+    const recordSpy = effects.fn('recordSessionBackgroundEventActivity');
+    recordSpy.mockClear();
+    try {
+      h.emit({ type: 'tool_use', source: 'antigravity', data: { toolUseId: 'fg-1', toolName: 'run_command' } });
+      h.emit({ type: 'text', source: 'antigravity', turnScope: 'background', data: { text: '   ' } });
+      expect(recordSpy).not.toHaveBeenCalled();
+
+      h.emit({ type: 'thinking', source: 'antigravity', turnScope: 'background', data: { text: 'checking tests' } });
+      h.emit({ type: 'tool_use', source: 'antigravity', turnScope: 'background', data: { toolUseId: 'bg-1', toolName: 'run_command' } });
+      h.emit({ type: 'text', source: 'antigravity', turnScope: 'background', data: { text: '测试已完成' } });
+      expect(recordSpy).toHaveBeenCalledTimes(3);
+      expect(recordSpy).toHaveBeenCalledWith(h.session.id);
+    } finally {
       await h.session.close();
     }
   });

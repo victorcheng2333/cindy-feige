@@ -37,7 +37,10 @@ import { clearPromptPredictionSessionStopped } from './promptPredictionStopLedge
 import { MAKER_PUSH } from './channels.js';
 import { finalizeTurnChangeSet } from '../turn-change-set/store.js';
 import { type OrcaTeamService } from './orcaTeamService.js';
-import { noteClaudeSessionTurnState } from '../maker-host/claude-session-background-activity.js';
+import {
+  noteClaudeSessionTurnState,
+  recordSessionBackgroundEventActivity,
+} from '../maker-host/claude-session-background-activity.js';
 import { consumeClaudeOpusPlanMismatch } from '../maker-host/claude-gateway-error-observer.js';
 import {
   isTerminalTurnErrorEvent,
@@ -597,6 +600,20 @@ export function prepareSessionEvent(
   // tool_result 家族:main 解析出的权威内容,盖进 payload 让 renderer 即时显示
   // (Option C:内容重排状态机只在 main 一份,与落库同源同值)。
 
+  // 后台唤醒的流式产出（如 Antigravity 后台任务结束后的自主续写）：点亮桌面端后台活动态，
+  // 避免用户在 turn 提前收尾后误以为对话已停止或卡死。
+  if (event.turnScope === 'background') {
+    const isActiveBackgroundProgress =
+      event.type === 'thinking' ||
+      event.type === 'tool_use' ||
+      event.type === 'tool_result' ||
+      (event.type === 'text' &&
+        typeof (event.data as { text?: unknown } | null)?.text === 'string' &&
+        ((event.data as { text: string }).text).trim().length > 0);
+    if (isActiveBackgroundProgress) {
+      recordSessionBackgroundEventActivity(session.id);
+    }
+  }
   // 中断自愈的额度判据是「是否在推进」:模型产出了实质内容(文本 / 工具调用)就把
   // 连续失败计数归零；人工介入周期的硬总上限不归零，保证始终有限。
   // 刻意只认这两类事件:thinking / status / 空消息都不算产出;guard 侧是 O(1)、

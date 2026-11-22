@@ -398,6 +398,8 @@ const INPUT_PROJECTION_REMOTE_EVIDENCE_LIMIT = 256;
 const sessionLiveActivity = new Map<string, RemoteSessionLiveActivity>();
 const sessionRunning = new Map<string, boolean>();
 const sessionRunStatus = new Map<string, RemoteSessionRunStatus>();
+const REMOTE_BACKGROUND_ACTIVITY_WINDOW_MS = 30_000;
+const sessionBackgroundActivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // Pushes can precede the first task list. Keep their provenance until list
 // reconciliation can decide whether they belong to the selected task row.
 const sessionRuntimeSources = new Map<string, string>();
@@ -1219,6 +1221,7 @@ function removeSessionRuntimeState(sessionId: string): void {
   inputProjectionRemoteQueuedEvidence.delete(sessionId);
   bumpInputProjectionAuthorityEpoch(sessionId);
   deleteSessionLiveActivity(sessionId);
+  clearRemoteBackgroundActivityTimer(sessionId);
   if (sessionRunning.delete(sessionId)) bumpHomeStatusVersion();
   sessionRunStatus.delete(sessionId);
   sessionMakerActivityEpochs.delete(sessionId);
@@ -3333,6 +3336,7 @@ function sweepDevicesOffline(deviceIds: readonly string[]): boolean {
     // invalidation, or actual device removal will retire them.
     changed = freezeUnboundPendingHostAnchorsForOffline(sessionId, indexedDeviceId) || changed;
     changed = writeMakerTurnRunning(sessionId, false) || changed;
+    clearRemoteBackgroundActivityTimer(sessionId);
     // Soft offline keeps history. Keep its known terminal identity too: reconnect
     // restores the error projection without replaying the terminal maker event.
     // The next running transition or session/device removal still retires it.
@@ -4502,6 +4506,7 @@ export const remoteSessionStore = {
     boundaryAgentMeta?: Record<string, unknown> | null,
   ): void {
     if (!sessionId) return;
+    clearRemoteBackgroundActivityTimer(sessionId);
     recordInputProjectionRemoteEvidence(sessionId, []);
     // A maker turn boundary supersedes any projection query that started
     // before it. This is the terminal fence for late owner snapshots.
@@ -4590,6 +4595,7 @@ export const remoteSessionStore = {
       if (!running) {
         changed = flushAndFinalizeRemoteStreamingMessages(sessionId) || changed;
         changed = writeMakerTurnRunning(sessionId, false) || changed;
+        clearRemoteBackgroundActivityTimer(sessionId);
       }
       const current = readSessionRunStatus(sessionId);
       const hasNewerMakerActivity = (sessionMakerActivityEpochs.get(sessionId) ?? 0)
@@ -4630,6 +4636,7 @@ export const remoteSessionStore = {
         // discard a newer live push that arrived while this read was in flight.
         changed = flushAndFinalizeRemoteStreamingMessages(sessionId) || changed;
         changed = writeMakerTurnRunning(sessionId, false) || changed;
+        clearRemoteBackgroundActivityTimer(sessionId);
         changed = deleteSessionLiveActivity(sessionId) || changed;
         const current = readSessionRunStatus(sessionId);
         changed = writeSessionRunStatus(sessionId, {
@@ -5071,6 +5078,7 @@ export const remoteSessionStore = {
     if (!sessionId || !isRemoteSessionLiveActivityPhase(phase)
       || !acceptSessionStateSource(sessionId, deviceId, sessionRuntimeSources)) return;
     markSessionMakerActivity(sessionId);
+    clearRemoteBackgroundActivityTimer(sessionId);
     const compactDetail = typeof payload.compactDetail === 'string' ? payload.compactDetail : '';
     let changed = false;
     if (phase === 'running' || phase === 'needs-interaction') {
@@ -5142,19 +5150,24 @@ export const remoteSessionStore = {
     const reconnectCleared = type !== null && type !== 'error' && type !== 'done'
       ? clearSessionReconnectAttempt(sessionId)
       : false;
+    const backgroundActivityChanged =
+      isRemoteBackgroundActivityEvent(event, type)
+      && acceptSessionStateSource(sessionId, deviceId, sessionRuntimeSources)
+        ? noteRemoteBackgroundActivity(sessionId)
+        : false;
     const fullMessageWriteAllowed = fromList || messageWriteAllowed(sessionId);
     if (type === 'text') {
       if (!fullMessageWriteAllowed) {
-        if (reconnectCleared) emit();
+        if (reconnectCleared || backgroundActivityChanged) emit();
         return;
       }
       if (isRemoteTextDeltaEvent(event)) {
-        if (enqueueRemoteTextDelta(sessionId, event, persistId, deviceId) || reconnectCleared) emit();
+        if (enqueueRemoteTextDelta(sessionId, event, persistId, deviceId) || reconnectCleared || backgroundActivityChanged) emit();
         return;
       }
       let changed = flushPendingTextDelta(sessionId);
       changed = applyRemoteTextEvent(sessionId, event, persistId, deviceId) || changed;
-      changed = reconnectCleared || changed;
+      changed = reconnectCleared || backgroundActivityChanged || changed;
       if (changed) emit();
       return;
     }
@@ -5266,7 +5279,7 @@ export const remoteSessionStore = {
     }
     if (type === 'tool_use') {
       if (!fullMessageWriteAllowed) {
-        if (reconnectCleared) emit();
+        if (reconnectCleared || backgroundActivityChanged) emit();
         return;
       }
       // Finalize before applying update_plan so its row update and the streaming
@@ -5277,10 +5290,10 @@ export const remoteSessionStore = {
       );
       const livePlan = applyLivePlanToolUseMessage(sessionId, event, persistId);
       if (livePlan.handled) {
-        if (textFlushed || streamingChanged || livePlan.changed || reconnectCleared) emit();
+        if (textFlushed || streamingChanged || livePlan.changed || reconnectCleared || backgroundActivityChanged) emit();
         return;
       }
-      if (textFlushed || streamingChanged || reconnectCleared) emit();
+      if (textFlushed || streamingChanged || reconnectCleared || backgroundActivityChanged) emit();
       return;
     }
     if (type === 'agent_task_update') {
@@ -5367,6 +5380,7 @@ export const remoteSessionStore = {
         if (changed || textFlushed || reconnectCleared) emit();
         return;
       }
+      clearRemoteBackgroundActivityTimer(sessionId);
       const isRunning = typeof data?.isRunning === 'boolean' ? data.isRunning : current.isRunning;
       if (!isRunning && isTurnContinuationBoundaryEvent(event)) {
         // A claimed status(false) closes only the provider SDK segment. Keep the
@@ -5467,7 +5481,7 @@ export const remoteSessionStore = {
       ) emit();
       return;
     }
-    if (textFlushed || reconnectCleared) emit();
+    if (textFlushed || reconnectCleared || backgroundActivityChanged) emit();
   },
 
   /**
@@ -5605,6 +5619,7 @@ export const remoteSessionStore = {
       bumpHomeStatusVersion();
     }
     sessionRunStatus.clear();
+    clearAllRemoteBackgroundActivityTimers();
     sessionRuntimeSources.clear();
     sessionInteractionSources.clear();
     sessionMakerActivityEpochs.clear();
@@ -6031,6 +6046,66 @@ function conversationSearchDeviceModelsEqual(
 
 function readSessionRunStatus(sessionId: string): RemoteSessionRunStatus {
   return sessionRunStatus.get(sessionId) ?? EMPTY_SESSION_RUN_STATUS;
+}
+
+function clearRemoteBackgroundActivityTimer(sessionId: string): void {
+  const timer = sessionBackgroundActivityTimers.get(sessionId);
+  if (!timer) return;
+  clearTimeout(timer);
+  sessionBackgroundActivityTimers.delete(sessionId);
+}
+
+function clearAllRemoteBackgroundActivityTimers(): void {
+  for (const timer of sessionBackgroundActivityTimers.values()) clearTimeout(timer);
+  sessionBackgroundActivityTimers.clear();
+}
+
+function isRemoteBackgroundActivityEvent(
+  event: Record<string, unknown>,
+  type: string | null,
+): boolean {
+  if (readString(event, 'turnScope') !== 'background') return false;
+  if (type === 'thinking' || type === 'tool_use' || type === 'tool_result') return true;
+  if (type === 'text') {
+    const data = isRecord(event.data) ? event.data : null;
+    return typeof data?.text === 'string' && data.text.trim().length > 0;
+  }
+  return false;
+}
+
+/**
+ * Antigravity / ACP 在 turn 结束后被后台命令唤醒时，事件全部带 `turnScope: 'background'`。
+ * 手机端收到这类活跃进度事件时以 sideTaskRunning 点亮「处理中」耗时条并在 30s 静默后自动熄灭，
+ * 避免用户看到会话仍持续冒出新消息却显示已空闲。
+ */
+function noteRemoteBackgroundActivity(sessionId: string): boolean {
+  if (sessionMakerTurnRunning.get(sessionId) === true) return false;
+  clearRemoteBackgroundActivityTimer(sessionId);
+  const timer = setTimeout(() => {
+    sessionBackgroundActivityTimers.delete(sessionId);
+    if (sessionMakerTurnRunning.get(sessionId) === true) return;
+    const current = readSessionRunStatus(sessionId);
+    if (!current.isRunning || !current.sideTaskRunning) return;
+    const changed = writeSessionRunStatus(sessionId, {
+      ...current,
+      isRunning: false,
+      sideTaskRunning: false,
+      startedAt: null,
+    });
+    if (changed) emit();
+  }, REMOTE_BACKGROUND_ACTIVITY_WINDOW_MS);
+  sessionBackgroundActivityTimers.set(sessionId, timer);
+  const current = readSessionRunStatus(sessionId);
+  if (current.isRunning) return false;
+  return writeSessionRunStatus(
+    sessionId,
+    clearLiveGenerationOnWideRunStart(current, {
+      ...current,
+      isRunning: true,
+      sideTaskRunning: true,
+      startedAt: current.startedAt ?? Date.now(),
+    }),
+  );
 }
 
 function clearSessionReconnectAttempt(sessionId: string): boolean {

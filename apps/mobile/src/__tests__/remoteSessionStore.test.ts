@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAKER_EVENT_BATCH_CHANNEL, SESSION_SYNC_CHANNEL } from '@cindy/device-link';
 import { clampLiveRowCreatedAt } from '@/session/messagePaging';
 import { MOBILE_TOOL_INPUT_PROJECTION_THRESHOLD_BYTES } from '@/session/messageToolPayloadProjection';
@@ -7655,5 +7655,81 @@ describe('jank metrics store size', () => {
       setJankMetricsEnabled(false);
       for (const off of unsubscribe) off();
     }
+  });
+});
+
+// Tier: unit | Production entry: remoteSessionStore.applyMakerEvent
+// Gap: Post-turn background wake events (turnScope:'background' thinking/tool_use/tool_result/text) from
+// Antigravity/ACP left mobile sessionRunStatus idle after done, making active work look finished.
+// Minimal failing input: done settles s1 idle, then a turnScope:'background' tool_use/text arrives.
+describe('background wake activity visibility', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-23T05:00:00.000Z'));
+    remoteSessionStore.clear();
+  });
+
+  afterEach(() => {
+    remoteSessionStore.clear();
+    vi.useRealTimers();
+  });
+
+  it('lights up sideTaskRunning on background progress events after done and auto-clears after 30s idle', () => {
+    remoteSessionStore.setDeviceSessions('dev-1', 'Host', [session('s-agy-bg')]);
+    remoteSessionStore.enterSessionMessageDetail('s-agy-bg');
+    remoteSessionStore.applyMakerEvent('s-agy-bg', { type: 'status', data: { isRunning: true } }, undefined, 'dev-1');
+    remoteSessionStore.applyMakerEvent('s-agy-bg', { type: 'done', data: {} }, undefined, 'dev-1');
+    expect(remoteSessionStore.getSessionRunStatus('s-agy-bg').isRunning).toBe(false);
+
+    remoteSessionStore.applyMakerEvent(
+      's-agy-bg',
+      { type: 'tool_use', turnScope: 'background', data: { name: 'run_command' } },
+      undefined,
+      'dev-1',
+    );
+    const active = remoteSessionStore.getSessionRunStatus('s-agy-bg');
+    expect(active.isRunning).toBe(true);
+    expect(active.sideTaskRunning).toBe(true);
+    expect(active.startedAt).not.toBeNull();
+
+    // Another background text event inside the window extends the 30s timer.
+    vi.advanceTimersByTime(20_000);
+    remoteSessionStore.applyMakerEvent(
+      's-agy-bg',
+      { type: 'text', turnScope: 'background', data: { text: '继续收尾检查' } },
+      'p-bg-1',
+      'dev-1',
+    );
+    vi.advanceTimersByTime(20_000);
+    expect(remoteSessionStore.getSessionRunStatus('s-agy-bg').isRunning).toBe(true);
+
+    // 30s of silence auto-clears the background running indicator.
+    vi.advanceTimersByTime(10_000);
+    const cleared = remoteSessionStore.getSessionRunStatus('s-agy-bg');
+    expect(cleared.isRunning).toBe(false);
+    expect(cleared.sideTaskRunning).toBe(false);
+    expect(cleared.startedAt).toBeNull();
+  });
+
+  it('cancels the background timer when a foreground turn takes over', () => {
+    remoteSessionStore.setDeviceSessions('dev-1', 'Host', [session('s-agy-bg-2')]);
+    remoteSessionStore.applyMakerEvent(
+      's-agy-bg-2',
+      { type: 'thinking', turnScope: 'background', data: { text: 'Inspecting output' } },
+      undefined,
+      'dev-1',
+    );
+    expect(remoteSessionStore.getSessionRunStatus('s-agy-bg-2').sideTaskRunning).toBe(true);
+
+    // Foreground turn starts before 30s elapses; timer must not later clear foreground running state.
+    remoteSessionStore.applyMakerEvent(
+      's-agy-bg-2',
+      { type: 'status', data: { isRunning: true } },
+      undefined,
+      'dev-1',
+    );
+    expect(remoteSessionStore.getSessionRunStatus('s-agy-bg-2').sideTaskRunning).toBe(false);
+    vi.advanceTimersByTime(35_000);
+    expect(remoteSessionStore.getSessionRunStatus('s-agy-bg-2').isRunning).toBe(true);
   });
 });

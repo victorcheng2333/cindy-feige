@@ -66,6 +66,27 @@ const stickySdkToSession = new Map<string, string>();
 let broadcaster: ((payload: { sessionId: string; active: boolean }) => void) | null = null;
 let commandWorkBroadcaster: ((payload: { sessionId: string; active: boolean }) => void) | null =
   null;
+const cleanupHooks = new Set<(sessionId?: string) => void>();
+
+/** 注册后台活动清账钩子（用于同步清理外部后台命令轮询定时器，避免模块循环依赖）。 */
+export function registerClaudeBackgroundActivityCleanup(
+  fn: (sessionId?: string) => void,
+): () => void {
+  cleanupHooks.add(fn);
+  return () => {
+    cleanupHooks.delete(fn);
+  };
+}
+
+function runCleanupHooks(sessionId?: string): void {
+  for (const hook of cleanupHooks) {
+    try {
+      hook(sessionId);
+    } catch {
+      // Cleanup must never interrupt turn/session lifecycle.
+    }
+  }
+}
 
 /** host(register 阶段)注入广播函数;null = 卸载(测试收尾用)。 */
 export function setClaudeBackgroundActivityBroadcaster(
@@ -180,12 +201,28 @@ export function recordClaudeApiActivity(sdkSessionId: string, resolvedSessionId:
 }
 
 /**
+ * 记录一条明确带有 `turnScope: 'background'` 的后台事件活动（例如 Antigravity / ACP
+ * 在 turn 结束后被后台任务唤醒并流式输出 thinking / tool / text）。与 proxy 流量不同，
+ * 这类事件本身已由会话层确认属于后台阶段，不需要等待 TURN_END_GRACE_MS 即可点亮，
+ * 并继续沿用 30s 静默窗自动熄灭。
+ */
+export function recordSessionBackgroundEventActivity(sessionId: string): void {
+  const st = ensureState(sessionId);
+  if (st.turnRunning) return;
+  const now = Date.now();
+  if (st.lastTurnEndAt === 0) st.lastTurnEndAt = Math.max(1, now - TURN_END_GRACE_MS - 1);
+  st.lastActivityAt = Math.max(now, st.lastTurnEndAt + TURN_END_GRACE_MS + 1);
+  evaluate(sessionId, st);
+}
+
+/**
  * host 的 turn 运行态边沿(register 的 status/isRunning 事件处接线)。
  * 只在真实边沿更新 lastTurnEndAt —— 重复的 not-running 状态若反复推后
  * lastTurnEndAt,后台活动会被永久掩盖。
  */
 export function noteClaudeSessionTurnState(sessionId: string, running: boolean): void {
   const st = ensureState(sessionId);
+  if (running) runCleanupHooks(sessionId);
   if (st.turnRunning === running) return;
   st.turnRunning = running;
   if (running) {
@@ -277,6 +314,7 @@ export function listClaudeBackgroundCommandWorkSessions(): string[] {
 
 /** 会话进程被关闭 / 会话被删除时清账(广播熄灭)。 */
 export function clearClaudeSessionBackgroundActivity(sessionId: string): void {
+  runCleanupHooks(sessionId);
   const st = states.get(sessionId);
   if (!st) return;
   setActive(sessionId, st, false);
@@ -306,6 +344,7 @@ export function listActiveClaudeBackgroundActivitySessions(): string[] {
 
 /** 测试收尾:清空全部状态与定时器。 */
 export function resetClaudeBackgroundActivityForTests(): void {
+  runCleanupHooks(undefined);
   for (const [sessionId, st] of states) {
     if (st.offTimer) clearTimeout(st.offTimer);
     if (st.commandWorkOffTimer) clearTimeout(st.commandWorkOffTimer);

@@ -17,10 +17,15 @@ import {
   noteClaudeSessionBackgroundCommandWork,
   noteClaudeSessionTurnState,
   recordClaudeApiActivity,
+  recordSessionBackgroundEventActivity,
   resetClaudeBackgroundActivityForTests,
   setClaudeBackgroundActivityBroadcaster,
   setClaudeBackgroundCommandWorkBroadcaster,
 } from '../claude-session-background-activity.js';
+import {
+  clearBackgroundCommandWorkWatch,
+  syncBackgroundCommandWork,
+} from '../claude-background-command-work-sync.js';
 
 vi.mock('../../logger.js', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -278,5 +283,70 @@ describe('claude-session-background-activity', () => {
     const sink = observer({ ...ctx, url: '/v1/messages' });
     expect(sink).not.toBeNull();
     expect(getClaudeSessionBackgroundActivity(sid)).toBe(true);
+  });
+
+  // Tier: unit | Production entry: recordSessionBackgroundEventActivity & syncBackgroundCommandWork
+  // Gap: Antigravity/ACP sessions emit turnScope:'background' events without going through the Claude
+  // loopback proxy and report background commands via hasLiveBackgroundWork() instead of listBackgroundTasks().
+  // Minimal failing input: turn ends on an antigravity session, then background progress arrives inside the
+  // grace window or hasLiveBackgroundWork() returns true while listBackgroundTasks() is empty.
+  it('background 事件活动立即可见并在静默窗后自动熄灭，前台 turn 期间不误亮', () => {
+    const sid = 'agy-bg-1';
+    noteClaudeSessionTurnState(sid, true);
+    recordSessionBackgroundEventActivity(sid);
+    expect(getClaudeSessionBackgroundActivity(sid)).toBe(false);
+
+    noteClaudeSessionTurnState(sid, false);
+    vi.advanceTimersByTime(200);
+    recordSessionBackgroundEventActivity(sid);
+    expect(getClaudeSessionBackgroundActivity(sid)).toBe(true);
+    expect(broadcasts.at(-1)).toEqual({ sessionId: sid, active: true });
+
+    vi.advanceTimersByTime(ACTIVITY_WINDOW_MS + TURN_END_GRACE_MS + 100);
+    expect(getClaudeSessionBackgroundActivity(sid)).toBe(false);
+    expect(broadcasts.at(-1)).toEqual({ sessionId: sid, active: false });
+  });
+
+  it('antigravity 回合结束时通过 hasLiveBackgroundWork 轮询点亮后台命令工作，并在退出或新回合时熄灭', async () => {
+    const workBroadcasts: Array<{ sessionId: string; active: boolean }> = [];
+    setClaudeBackgroundCommandWorkBroadcaster((p) => workBroadcasts.push(p));
+
+    const sid = 'agy-work-1';
+    let live = true;
+    const hasLiveBackgroundWork = vi.fn(async () => live);
+    const session = {
+      id: sid,
+      agentKind: 'antigravity',
+      listBackgroundTasks: () => [],
+      hasLiveBackgroundWork,
+    };
+
+    noteClaudeSessionTurnState(sid, true);
+    noteClaudeSessionTurnState(sid, false);
+    syncBackgroundCommandWork(session);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hasLiveBackgroundWork).toHaveBeenCalledTimes(1);
+    expect(listClaudeBackgroundCommandWorkSessions()).toEqual([sid]);
+    expect(workBroadcasts).toEqual([{ sessionId: sid, active: true }]);
+
+    // 4 秒后后台命令结束：轮询自动停止，经过续跑宽限后熄灭。
+    live = false;
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(hasLiveBackgroundWork).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(listClaudeBackgroundCommandWorkSessions()).toEqual([]);
+    expect(workBroadcasts.at(-1)).toEqual({ sessionId: sid, active: false });
+
+    // 再次开启轮询，前台新 turn 启动立即清理定时器且不再继续探测。
+    live = true;
+    syncBackgroundCommandWork(session);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listClaudeBackgroundCommandWorkSessions()).toEqual([sid]);
+    noteClaudeSessionTurnState(sid, true);
+    expect(listClaudeBackgroundCommandWorkSessions()).toEqual([]);
+    const callsAfterTurnStart = hasLiveBackgroundWork.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(hasLiveBackgroundWork).toHaveBeenCalledTimes(callsAfterTurnStart);
+    clearBackgroundCommandWorkWatch(sid);
   });
 });
