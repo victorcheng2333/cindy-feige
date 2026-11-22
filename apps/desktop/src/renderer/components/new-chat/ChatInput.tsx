@@ -2048,7 +2048,10 @@ export function ChatInput({
   const ccCaps = useAgentCapabilities('claude-code', catalogDeviceId);
   const codexCaps = useAgentCapabilities('codex', catalogDeviceId);
   const piCaps = useAgentCapabilities('pi', catalogDeviceId);
-  const antigravityCaps = useAgentCapabilities(agentKind === 'antigravity' ? 'antigravity' : null, catalogDeviceId);
+  const antigravityCaps = useAgentCapabilities(
+    agentKind === 'antigravity' || composerSelection.display.agentKind === 'antigravity' ? 'antigravity' : null,
+    catalogDeviceId,
+  );
   const cursorCaps = useAgentCapabilities('cursor', catalogDeviceId);
   const activeAgentCapabilities =
     agentKind === 'antigravity' ? antigravityCaps.capabilities : agentKind === 'cursor' ? cursorCaps.capabilities : agentKind === 'codex'
@@ -2286,6 +2289,8 @@ export function ChatInput({
     cc: ccCaps,
     codex: codexCaps,
     pi: piCaps,
+    cursor: cursorCaps,
+    antigravity: antigravityCaps,
     providers: remoteProviders,
   });
   const providersLoading = catalogDeviceId
@@ -2310,6 +2315,15 @@ export function ChatInput({
   // Other engines can still execute on the provider computer (e.g. shared Pi
   // without Pi installed locally), so keep their existing catalog-scoped roster.
   const taskComputerAgents = useAvailableAgents(deviceLinkDeviceId ?? undefined);
+  const hostOffersControlledAntigravity = !!deviceLinkDeviceId && !isScopedPeer(deviceLinkDeviceId) &&
+    taskComputerAgents.loaded && taskComputerAgents.availableVendors.has('antigravity');
+  const hostAntigravityCaps = useAgentCapabilities(
+    hostOffersControlledAntigravity ? 'antigravity' : null,
+    deviceLinkDeviceId ?? undefined,
+  );
+  const hostSupportsControlledAntigravityCreation = !deviceLinkDeviceId ||
+    (hostOffersControlledAntigravity &&
+      hostAntigravityCaps.capabilities?.supportsControlledAntigravityCreation === true);
   const { availableVendors: runtimeAvailableVendors, loaded: runtimeAgentsLoaded } =
     useAvailableAgents(catalogDeviceId);
   const unifiedAgents = useMemo<readonly AgentKind[] | undefined>(() => {
@@ -2317,16 +2331,18 @@ export function ChatInput({
     const kinds = UNIFIED_AGENT_KINDS.filter(
       (kind) => {
         if (kind === 'antigravity') {
-          // A draft may borrow another own computer for Agy, but the task computer still
-          // registers the Agy runtime that creates the session. Provider shares cannot run Agy.
+          // A draft may run on a same-account controlled computer or borrow another own computer
+          // for Agy, as long as the task computer registers Agy and supports controlled creation.
+          // SSH hosts, scoped peers, and provider shares cannot run Agy.
           if (!sessionId) {
-            return !deviceLinkDeviceId && !remoteHostId && !isProviderShareAgentDeviceId(effectiveAgentDeviceId) &&
+            return hostSupportsControlledAntigravityCreation && !remoteHostId &&
+              !isProviderShareAgentDeviceId(effectiveAgentDeviceId) &&
               taskComputerAgents.availableVendors.has('antigravity');
           }
           // An existing task keeps a borrowed own computer for Agy; a provider-share source
-          // hands off home. Only a task controlled on another computer cannot offer it here.
+          // hands off home. Controlled tasks require host support for Agy creation and switch.
           return agentKind === kind || (sessionAgentSwitchSupported && hostSupportsAntigravitySessionSwitch &&
-            !deviceLinkDeviceId && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
+            hostSupportsControlledAntigravityCreation && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
             taskComputerAgents.availableVendors.has('antigravity'));
         }
         if (kind === 'cursor') {
@@ -2338,7 +2354,7 @@ export function ChatInput({
     return kinds;
   }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId,
     taskComputerAgents.loaded, taskComputerAgents.availableVendors, catalogDeviceId, effectiveAgentDeviceId, sessionAgentSwitchSupported,
-    hostSupportsAntigravitySessionSwitch, deviceLinkDeviceId, remoteHostId, sessionOrcaRole, sessionOrcaRemoteWorker]);
+    hostSupportsAntigravitySessionSwitch, hostSupportsControlledAntigravityCreation, remoteHostId, sessionOrcaRole, sessionOrcaRemoteWorker]);
   // 已有 device-link 任务在断链时仍有 pinned deviceId + renderer outbox 可接住发送，
   // 不能因为被控端 provider 目录暂时拉不到就禁用 composer。远程草稿没有既有 session
   // 可以排队，仍与本地任务一样保留来源门禁。

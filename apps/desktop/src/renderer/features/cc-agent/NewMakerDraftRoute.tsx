@@ -4756,7 +4756,6 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
               | undefined;
             // 提出来存一份:交接收尾要按**实际提交的** model / effort / permission / workspaceKind
             // 组装临时会话行(见 commitRemoteSessionHandoff),不能再各自推一遍。
-            if (persistedAgentKind === 'antigravity') return false;
             const createArgs = resolveDeviceLinkSubmission({
               agentKind: persistedAgentKind,
               // 先用所选项目归组。启用 worktree 时，创建请求随后使用实际分配的路径。
@@ -6157,7 +6156,6 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             remoteGoalTitlePreviewId = presetSessionId;
           }
           // 与 handleSend 同口径先存一份 args:临时行要按实际提交的值组装(见 commitRemoteSessionHandoff)。
-          if (persistedAgentKind === 'antigravity') return;
           const createArgs = resolveDeviceLinkSubmission({
             agentKind: persistedAgentKind,
             // 无项目 → 不传,由 workingDir 派生 workspaceKind:'dialogue'。

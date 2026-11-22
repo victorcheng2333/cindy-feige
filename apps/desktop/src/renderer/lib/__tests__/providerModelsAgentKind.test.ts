@@ -5,6 +5,7 @@ import type { ModelDescriptor } from '@/hooks/useAgentCapabilities';
 import {
   resolveProviderModelContextWindow,
   resolveVisibleModelAgentKind,
+  selectVisibleModels,
 } from '../providerModels';
 
 const model = (id: string): ModelDescriptor => ({
@@ -96,6 +97,20 @@ describe('provider model routing helpers', () => {
         agentKind: 'claude-code',
       }),
     ).toBe(200_000);
+  });
+
+  it('returns controlled-device Antigravity models when deviceId is set', () => {
+    const agyModel = model('gemini-4-neon');
+    expect(
+      selectVisibleModels({
+        agentKind: 'antigravity',
+        deviceId: 'm5',
+        providers: [],
+        deviceCcModels: [],
+        deviceCodexModels: [],
+        deviceAntigravityModels: [agyModel],
+      }),
+    ).toEqual([agyModel]);
   });
 
   it('honors an explicitly filtered agent', () => {

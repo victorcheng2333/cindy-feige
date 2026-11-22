@@ -562,8 +562,8 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
       mod.prefetchDeviceCapabilities('dev-1'),
       mod.prefetchDeviceCapabilities('dev-1'),
     ]);
-    // 四个引擎各一次，并发预取复用同一请求。
-    expect(invoke).toHaveBeenCalledTimes(4);
+    const requestedKinds = invoke.mock.calls.map(([, , args]) => args[0]);
+    expect(requestedKinds.sort()).toEqual(['antigravity', 'claude-code', 'codex', 'cursor', 'pi']);
   });
 
   it('驱逐:evict 只清该设备,本地与其它设备保留', async () => {
@@ -656,11 +656,12 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     const stale = mod.prefetchDeviceCapabilities('dev-1');
     mod.evictDeviceCapabilities('dev-1');
     const fresh = mod.prefetchDeviceCapabilities('dev-1');
-    // Four engine requests per generation, including Cursor.
-    for (const [index, kind] of ['claude', 'codex', 'pi', 'cursor'].entries())
-      resolvers[index + 4](caps(`fresh:${kind}`));
+    const kinds = ['claude', 'codex', 'pi', 'cursor', 'antigravity'];
+    expect(resolvers).toHaveLength(kinds.length * 2);
+    for (const [index, kind] of kinds.entries())
+      resolvers[index + kinds.length](caps(`fresh:${kind}`));
     await fresh;
-    for (const [index, kind] of ['claude', 'codex', 'pi', 'cursor'].entries())
+    for (const [index, kind] of kinds.entries())
       resolvers[index](caps(`stale:${kind}`));
     await stale;
 

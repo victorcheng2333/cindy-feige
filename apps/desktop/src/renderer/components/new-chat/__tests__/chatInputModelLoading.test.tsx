@@ -46,6 +46,8 @@ const h = vi.hoisted(() => ({ t: (key: string) => key, confirm: vi.fn(), editor:
   sshCatalogHosts: [] as (string | null)[],
   sshCodex: undefined as undefined | { status: string; refresh: () => void },
   platform: 'darwin',
+  controlledAgyCreation: undefined as boolean | undefined,
+  controlledAgyRegistered: false,
   processing: null as 'submitting' | 'refining' | null,
   ghosts: [] as InstalledGhost[],
   showPluginChoices: false,
@@ -84,13 +86,13 @@ vi.mock('@/components/sidebar/SortableList', () => ({
     </div>
   ),
 }));
-vi.mock('../ModelSelector', async (original) => ({ ...await original<typeof import('../ModelSelector')>(), ModelSelector: ({ modelId, onModelChange, disabled, effort, sshCodex, onThinkingChange, thinkingEnabled }: { modelId: string; onModelChange: typeof h.selectModel; disabled?: boolean; effort?: string | null; sshCodex?: typeof h.sshCodex; onThinkingChange?: typeof h.selectThinking; thinkingEnabled?: boolean }) => {
+vi.mock('../ModelSelector', async (original) => ({ ...await original<typeof import('../ModelSelector')>(), ModelSelector: ({ modelId, onModelChange, disabled, effort, sshCodex, onThinkingChange, thinkingEnabled, unifiedAgents }: ComponentProps<typeof import('../ModelSelector').ModelSelector>) => {
   h.sshCodex = sshCodex;
-  h.selectModel = onModelChange;
+  h.selectModel = async (id) => onModelChange(id);
   h.selectEffort = effort;
   h.selectThinking = onThinkingChange;
   h.thinkingValue = thinkingEnabled;
-  return <button data-testid="model-selector" disabled={disabled}>{modelId}</button>;
+  return <button data-testid="model-selector" data-harnesses={unifiedAgents?.join(',')} disabled={disabled}>{modelId}</button>;
 } }));
 vi.mock('@/hooks/useSshCodexProviders', () => ({ useSshCodexProviders: (hostId?: string | null) => {
   h.sshCatalogHosts.push(hostId ?? null);
@@ -114,8 +116,18 @@ vi.mock('@/voice-input/useVoiceInput', () => ({ useVoiceInput: (editor: Editor |
 vi.mock('@/hooks/useProviders', () => ({ useProviders: () => ({ providers: h.localProviders, loading: false }) }));
 vi.mock('@/hooks/useDeviceProviders', () => ({ useDeviceProviders: () => ({ providers: [], loading: false, unsupported: false }) }));
 vi.mock('@/hooks/useConnectedSource', () => ({ useConnectedSource: () => ({ hasConnectedSource: true, loading: false }) }));
-vi.mock('@/hooks/useAvailableAgents', () => ({ useAvailableAgents: () => ({ agents: [], loading: false }) }));
-vi.mock('@/hooks/useAgentCapabilities', async (original) => ({ ...await original<typeof import('@/hooks/useAgentCapabilities')>(), useAgentCapabilities: () => ({ capabilities: null, loading: false }) }));
+vi.mock('@/hooks/useAvailableAgents', () => ({ useAvailableAgents: () => ({
+  loaded: h.controlledAgyRegistered,
+  availableVendors: new Set(h.controlledAgyRegistered ? ['codex', 'antigravity'] : []),
+}) }));
+vi.mock('@/hooks/useAgentCapabilities', async (original) => ({ ...await original<typeof import('@/hooks/useAgentCapabilities')>(),
+  useAgentCapabilities: (agent: string | null, deviceId?: string) => ({
+    capabilities: agent === 'antigravity' && deviceId
+      ? { availableModels: [], supportsControlledAntigravityCreation: h.controlledAgyCreation }
+      : null,
+    loading: false,
+  }),
+}));
 
 vi.mock('@/state/newMakerDraft', async (original) => {
   const actual = await original<typeof import('@/state/newMakerDraft')>();
@@ -158,10 +170,28 @@ const props = {
 };
 
 afterEach(() => {
+  h.controlledAgyCreation = undefined;
+  h.controlledAgyRegistered = false;
   h.setThinkingEnabled.mockReset();
   h.switchSessionAgent.mockReset();
   h.selectThinking = undefined;
   makerChatStore.clearAgentSwitchIntent('thinking-write-test');
+});
+
+// Unit regression for the reported M1Max → M5 draft. Existing routing tests
+// cover the create payload; render the composer to verify whether its picker offers Agy.
+it.each([
+  ['test-host', true, true],
+  ['test-host', undefined, false],
+  [sharedTaskHostPeer('shared', 'host'), true, false],
+] as const)('offers Agy on a controlled draft only with host support (%s, %s)', (deviceId, supported, offered) => {
+  h.controlledAgyRegistered = true;
+  h.controlledAgyCreation = supported;
+  render(<ChatInput {...props} sessionId={undefined} deviceLinkDeviceId={deviceId}
+    hideRuntimeControls={false} initialModel="gpt-6-sol" onSend={vi.fn()} />);
+  const harnesses = screen.getByTestId('model-selector').getAttribute('data-harnesses')?.split(',');
+  expect(harnesses).toContain('codex');
+  expect(harnesses?.includes('antigravity')).toBe(offered);
 });
 
 // #10434, unit: the picker-only failure fixture used a successful-write-first

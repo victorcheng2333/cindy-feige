@@ -59,6 +59,7 @@ function allCachedModels(deviceId?: string): ModelDefinition[] {
     ...(codex?.availableModels ?? []).map((m) => toLegacy(m, 'codex')),
     ...(getCachedCapabilities('pi', deviceId)?.availableModels ?? []).map((m) => toLegacy(m, 'pi')),
     ...(getCachedCapabilities('cursor', deviceId)?.availableModels ?? []).map((m) => toLegacy(m, 'cursor')),
+    ...(getCachedCapabilities('antigravity', deviceId)?.availableModels ?? []).map((m) => toLegacy(m, 'antigravity')),
   ];
 }
 

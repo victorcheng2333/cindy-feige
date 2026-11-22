@@ -3449,7 +3449,7 @@ describe('ModelSelector trigger variants', () => {
       id: 'gpt-6.2-sol',
       displayName: 'GPT-6.2-Sol',
       contextWindow: 872000,
-      efforts: ['low', 'medium', 'high'] as const,
+      efforts: ['low', 'medium', 'high'],
       defaultEffort: 'high' as const,
       supportsFastMode: true,
       supportsUltrafastMode: true,
