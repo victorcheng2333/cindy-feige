@@ -12,6 +12,7 @@ import { ensureDialogueWorkspaceDir } from '../dialogueWorkspace.js';
 import { resolveBusinessSessionId } from '../../sessionIds.js';
 import { normalizeWorkingDirForStorage } from '../../../shared/workingDir.js';
 import { isRetainableProjectSession } from '../../../shared/sessionSource.js';
+import { isProviderShareAgentDeviceId } from '../../../shared/providerShare.js';
 import { throwIpcError } from '../../utils/ipcValidate.js';
 import { assertRendererSessionSourceAllowed } from './sessionSourceGuard.js';
 import { consumeWritableDirectoryPickerGrants, WritableDirectoryPickerGrantError } from '../../maker-ipc/writableDirectoryPickerGrant.js';
@@ -57,7 +58,10 @@ export async function createUserSession(body: unknown, ports: UserSessionCreateP
     const { provisional: provisionalFlag, ...bodyWithoutProvisional } = bodyObj;
     const provisional = provisionalFlag === true;
     if (provisional && (
-      bodyObj.remoteHostId || bodyObj.agentDeviceId || bodyObj.orcaRole || bodyObj.source !== undefined
+      bodyObj.remoteHostId || bodyObj.orcaRole || bodyObj.source !== undefined
+      // Agy borrowed from an own computer may start early; see isAgentDevicePrewarmEligible.
+      || (bodyObj.agentDeviceId && (bodyObj.agentKind !== 'antigravity'
+        || typeof bodyObj.agentDeviceId !== 'string' || isProviderShareAgentDeviceId(bodyObj.agentDeviceId)))
       || (Array.isArray(bodyObj.writableDirs) && bodyObj.writableDirs.length > 0)
     )) {
       throwIpcError('INVALID_PARAMS', 'only ordinary local tasks can be opened before the first send');

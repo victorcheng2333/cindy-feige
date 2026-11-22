@@ -1101,7 +1101,7 @@ import {
   stampTrustedDesktopQueuedOrigin,
   TRUSTED_DESKTOP_QUEUE_ORIGIN,
 } from './makerSendTransaction.js';
-import { createAgentPrewarmer, isAgentPrewarmEligible } from './agentPrewarm.js';
+import { createAgentPrewarmer, isAgentDevicePrewarmEligible, isAgentPrewarmEligible } from './agentPrewarm.js';
 import { isProvisionalSession } from '../localDb/provisionalSessions.js';
 import { createUserSession } from '../localDb/ipc/createUserSession.js';
 import {
@@ -19047,7 +19047,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   });
 
   // 输入框开始输入（打字、粘贴、开始语音输入）时预热 Agent（本机与 device-link 控制端共用）。只覆盖用户自己的普通
-  // 任务、且 Agent 在本机运行；Bot / IM / 定时 / 审查 / 共享 / 协同 / 远程主机等任务的
+  // 任务、且 Agent 在本机运行（Agy 借用自己其他电脑时例外，见 isAgentDevicePrewarmEligible）；Bot / IM / 定时 / 审查 / 共享 / 协同 / 远程主机等任务的
   // 启动另有专门的路由与权限检查，仍由真实发送处理。启动走发送路径的同一个懒创建，
   // 并在同一把会话发送锁里执行，真实发送不会与预热并发重复启动。
   const agentPrewarmer = createAgentPrewarmer({
@@ -19063,6 +19063,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           source: sessions.source,
           workingDir: sessions.workingDir,
           remoteHostId: sessions.remoteHostId,
+          agentKind: sessions.agentKind,
           agentDeviceId: sessions.agentDeviceId,
           orcaRole: sessions.orcaRole,
         })
@@ -19072,7 +19073,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       if (!isAgentPrewarmEligible(row)) return false;
       const co = buildCreateOptsWithStderr({ ...(createOpts as CreateOpts), id: sessionId });
       await reconcileCreateOptsAgainstDb(sessionId, co);
-      if (co.remoteHostId || co.agentDeviceId) return false;
+      if (co.remoteHostId || !isAgentDevicePrewarmEligible(co.agentKind, co.agentDeviceId)) return false;
       return prewarmSessionRuntime(sessionId, co);
     }),
     isLive: (sessionId) => maker.getSession(sessionId) !== undefined,

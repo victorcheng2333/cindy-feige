@@ -3,8 +3,8 @@
  * 它立刻出现在任务列表里、标题随输入变化，Agent 也能像已有任务一样提前启动；输入清空
  * 就真正删掉；第一次发送时直接接着用这条任务，不再新建。
  *
- * 只覆盖本机普通项目与对话草稿：远程电脑 / SSH / Agent 在另一台电脑 / 工作区 / 可写目录
- * 的草稿不提前建任务。草稿里影响任务本身的设置变了就删掉重建（同一个 id：还没发送的任务
+ * 只覆盖本机普通项目与对话草稿：远程电脑 / SSH / Agent 在另一台电脑（Agy 借用自己的其他电脑除外）/
+ * 工作区 / 可写目录的草稿不提前建任务。草稿里影响任务本身的设置变了就删掉重建（同一个 id：还没发送的任务
  * 是真删，id 可以复用）；发送时设置与提前建的不一致，也是先删掉再按原流程新建。
  *
  * 所有操作串行执行，避免「建到一半又删」与「发送接管」交错。Main 侧见
@@ -24,6 +24,8 @@ import { makerChatStore } from '@/lib/makerChatStore';
 import * as sessionService from '@/lib/sessionService';
 import { emitAutoTitlePreview, emitAutoTitlePreviewCleared } from '@/lib/sessionsBus';
 import { sessionsStore } from '@/lib/sessionsStore';
+
+import { isProviderShareAgentDeviceId } from '../../../shared/providerShare';
 
 import {
   getProvisionalDraftTaskId,
@@ -95,12 +97,12 @@ export function provisionalDraftArgsKey(args: ProvisionalDraftCreateArgs): strin
   ]);
 }
 
-/** 只有本机普通任务才提前建出来。 */
+/** 只有本机普通任务才提前建出来；Agy 借用自己的其他电脑时也提前建，好在输入时预热那台的会话。 */
 export function canOpenProvisionalDraftTask(args: ProvisionalDraftCreateArgs): boolean {
   return (
     !!args.model &&
     !args.remoteHostId &&
-    !args.agentDeviceId &&
+    (!args.agentDeviceId || (args.agentKind === 'antigravity' && !isProviderShareAgentDeviceId(args.agentDeviceId))) &&
     (args.writableDirs?.length ?? 0) === 0 &&
     (args.workspaceKind === 'dialogue' || !!args.workingDir)
   );

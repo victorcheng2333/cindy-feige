@@ -117,6 +117,7 @@ describe('Agent prewarm lifecycle', () => {
       source: 'desktop',
       workingDir: '/repo',
       remoteHostId: null,
+      agentKind: 'cc',
       agentDeviceId: null,
       orcaRole: null,
       ...patch,
@@ -126,12 +127,19 @@ describe('Agent prewarm lifecycle', () => {
       expect(isAgentPrewarmEligible(row())).toBe(true);
     });
 
+    // Remote Agy spent ~3 s in ACP session/new on the other computer before the first
+    // prompt (2026-11-22); prewarm moves that into typing time for own computers only.
+    it('prewarms Agy borrowed from another own computer', () => {
+      expect(isAgentPrewarmEligible(row({ agentKind: 'antigravity', agentDeviceId: 'other-computer' }))).toBe(true);
+    });
+
     it.each([
       { status: 'archived' },
       { source: 'scheduler' },
       { workingDir: null },
       { remoteHostId: 'ssh-1' },
       { agentDeviceId: 'other-computer' },
+      { agentKind: 'antigravity', agentDeviceId: 'share:abc' },
       { orcaRole: 'worker' },
     ])('skips %o', (patch) => {
       expect(isAgentPrewarmEligible(row(patch))).toBe(false);

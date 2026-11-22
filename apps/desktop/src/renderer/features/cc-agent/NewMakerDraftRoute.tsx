@@ -2780,7 +2780,9 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
   // ─── 未发送任务(见 provisionalDraftTask.ts):开始输入就先在本机建出任务并预热 Agent,
   // 清空输入就删掉,发送时直接接着用。只覆盖本机普通项目 / 对话草稿。
   const provisionalDraftArgs = useMemo<ProvisionalDraftCreateArgs | null>(() => {
-    if (isDeviceLinkDraft || usesDeviceCatalog) return null;
+    // Without device-link, the only device catalog is the borrowed Agent computer;
+    // canOpenProvisionalDraftTask decides which of those may start early.
+    if (isDeviceLinkDraft || (usesDeviceCatalog && !effectiveAgentDeviceId)) return null;
     if (wtEnabled && wtConfirmedIneligible !== true) return null;
     const workingDir = effectiveWorkingDir?.trim() || undefined;
     return {

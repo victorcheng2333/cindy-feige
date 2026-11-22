@@ -9,6 +9,8 @@
  * 启动本身复用发送路径的懒创建，失败只记日志，下一次发送照常冷启动。
  */
 
+import { isProviderShareAgentDeviceId } from '../../shared/providerShare.js';
+
 export const AGENT_PREWARM_MAX_WARM = 2;
 /** Ordinary user-owned tasks only; other sources keep their own start-up routing and checks. */
 export const AGENT_PREWARM_SESSION_SOURCES: ReadonlySet<string> = new Set([
@@ -23,8 +25,18 @@ export interface AgentPrewarmSessionRow {
   source: string | null;
   workingDir: string | null;
   remoteHostId: string | null;
+  agentKind: string | null;
   agentDeviceId: string | null;
   orcaRole: string | null;
+}
+
+/**
+ * Agy borrowed from another of the user's own computers spends seconds in ACP
+ * `session/new` (tunnel MCP preload) before the first prompt. Other engines and
+ * provider shares keep starting on the real send.
+ */
+export function isAgentDevicePrewarmEligible(agentKind: string | null | undefined, agentDeviceId: string | null | undefined): boolean {
+  return !agentDeviceId || (agentKind === 'antigravity' && !isProviderShareAgentDeviceId(agentDeviceId));
 }
 
 /**
@@ -40,7 +52,7 @@ export function isAgentPrewarmEligible(row: AgentPrewarmSessionRow | undefined):
     row.status === 'active' &&
     !!row.workingDir &&
     !row.remoteHostId &&
-    !row.agentDeviceId &&
+    isAgentDevicePrewarmEligible(row.agentKind, row.agentDeviceId) &&
     !row.orcaRole &&
     AGENT_PREWARM_SESSION_SOURCES.has(row.source ?? 'user')
   );

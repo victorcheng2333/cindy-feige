@@ -241,6 +241,8 @@ describe('provisional draft task', () => {
     expect(canOpenProvisionalDraftTask(args({ workspaceKind: 'dialogue', workingDir: undefined }))).toBe(true);
     expect(canOpenProvisionalDraftTask(args({ remoteHostId: 'ssh-1' }))).toBe(false);
     expect(canOpenProvisionalDraftTask(args({ agentDeviceId: 'other' }))).toBe(false);
+    expect(canOpenProvisionalDraftTask(args({ agentKind: 'antigravity', agentDeviceId: 'other' }))).toBe(true);
+    expect(canOpenProvisionalDraftTask(args({ agentKind: 'antigravity', agentDeviceId: 'share:abc' }))).toBe(false);
     expect(canOpenProvisionalDraftTask(args({ writableDirs: ['/out'] }))).toBe(false);
     expect(canOpenProvisionalDraftTask(args({ workingDir: undefined }))).toBe(false);
   });
