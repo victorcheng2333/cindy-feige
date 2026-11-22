@@ -2232,10 +2232,12 @@ function CCAgentSessionContent({
   // 能力取**真实 agent**(displayAgentKind 在 pending switch 期间可能乐观指向目标 agent,
   // 用它判定会与 realAgentKind 分流不一致);remoteDeviceId 让远程 pi 取被控端能力。
   const { capabilities: realSessionCaps } = useAgentCapabilities(realAgentKind, remoteDeviceId);
-  // Steering joins the running turn, so it follows the computer the Agent runs on
-  // (an Agy borrowed from another computer may be unusable on this one).
+  // Agy reports steering only after its ACP handshake, so a borrowed Agy follows the
+  // computer it runs on (this one may be signed out). Other engines declare steering
+  // statically; reuse the task computer's entry instead of reading another device.
   const { capabilities: steerCaps } = useAgentCapabilities(
-    realAgentKind, remoteDeviceId ?? session?.agentDeviceId ?? undefined,
+    realAgentKind,
+    realAgentKind === 'antigravity' ? remoteDeviceId ?? session?.agentDeviceId ?? undefined : remoteDeviceId,
   );
   const canSteer = steerCaps?.sameTurnSteer?.supported ?? realAgentKind !== 'antigravity';
   const queueSteer = canSteer ? steerQueuedMessage : undefined;

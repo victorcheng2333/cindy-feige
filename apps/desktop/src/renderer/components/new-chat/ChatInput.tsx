@@ -2317,13 +2317,14 @@ export function ChatInput({
     const kinds = UNIFIED_AGENT_KINDS.filter(
       (kind) => {
         if (kind === 'antigravity') {
-          // A draft may borrow another computer for Agy, but the task computer still
-          // registers the Agy runtime that creates the session.
+          // A draft may borrow another own computer for Agy, but the task computer still
+          // registers the Agy runtime that creates the session. Provider shares cannot run Agy.
           if (!sessionId) {
-            return !deviceLinkDeviceId && !remoteHostId && taskComputerAgents.availableVendors.has('antigravity');
+            return !deviceLinkDeviceId && !remoteHostId && !isProviderShareAgentDeviceId(effectiveAgentDeviceId) &&
+              taskComputerAgents.availableVendors.has('antigravity');
           }
-          // Agy runs on the task computer: a borrowed source (agentDeviceId) hands off home,
-          // like Cursor. Only a task controlled on another computer cannot offer it here.
+          // An existing task keeps a borrowed own computer for Agy; a provider-share source
+          // hands off home. Only a task controlled on another computer cannot offer it here.
           return agentKind === kind || (sessionAgentSwitchSupported && hostSupportsAntigravitySessionSwitch &&
             !deviceLinkDeviceId && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
             taskComputerAgents.availableVendors.has('antigravity'));
@@ -2336,7 +2337,7 @@ export function ChatInput({
     );
     return kinds;
   }, [runtimeAgentsLoaded, runtimeAvailableVendors, agentKind, sessionId,
-    taskComputerAgents.loaded, taskComputerAgents.availableVendors, catalogDeviceId, sessionAgentSwitchSupported,
+    taskComputerAgents.loaded, taskComputerAgents.availableVendors, catalogDeviceId, effectiveAgentDeviceId, sessionAgentSwitchSupported,
     hostSupportsAntigravitySessionSwitch, deviceLinkDeviceId, remoteHostId, sessionOrcaRole, sessionOrcaRemoteWorker]);
   // 已有 device-link 任务在断链时仍有 pinned deviceId + renderer outbox 可接住发送，
   // 不能因为被控端 provider 目录暂时拉不到就禁用 composer。远程草稿没有既有 session
