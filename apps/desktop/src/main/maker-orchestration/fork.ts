@@ -234,7 +234,8 @@ async function seedForkHandoffAfterSameEngineRebuild(opts: {
     opts.agentKind === 'codex' ? 'Codex'
       : opts.agentKind === 'pi' ? 'Pi'
         : opts.agentKind === 'cursor' ? 'Cursor'
-          : 'Claude Code';
+          : opts.agentKind === 'antigravity' ? 'Agy'
+            : 'Claude Code';
   const { handoff, handoffCoverage } = buildHandoff(handoffMessages, {
     targetContextWindow: opts.targetContextWindow,
     fromLabel: label,
@@ -290,7 +291,8 @@ function parseContextRebuildBoundary(content: string): ParsedContextRebuildBound
       ...(parsed.sourceAgentKind === 'cc' ||
       parsed.sourceAgentKind === 'codex' ||
       parsed.sourceAgentKind === 'pi' ||
-      parsed.sourceAgentKind === 'cursor'
+      parsed.sourceAgentKind === 'cursor' ||
+      parsed.sourceAgentKind === 'antigravity'
         ? { sourceAgentKind: parsed.sourceAgentKind }
         : {}),
       ...(typeof parsed.sourceModel === 'string' ? { sourceModel: parsed.sourceModel } : {}),
@@ -319,12 +321,14 @@ function parseAgentSwitchBoundary(content: string): ParsedAgentSwitchBoundary | 
       parsed.fromAgentKind !== 'cc' &&
       parsed.fromAgentKind !== 'codex' &&
       parsed.fromAgentKind !== 'pi' &&
-      parsed.fromAgentKind !== 'cursor'
+      parsed.fromAgentKind !== 'cursor' &&
+      parsed.fromAgentKind !== 'antigravity'
     )
       return null;
     const toAgentKind =
       parsed.toAgentKind === 'cc' || parsed.toAgentKind === 'codex' ||
-      parsed.toAgentKind === 'pi' || parsed.toAgentKind === 'cursor'
+      parsed.toAgentKind === 'pi' || parsed.toAgentKind === 'cursor' ||
+      parsed.toAgentKind === 'antigravity'
         ? parsed.toAgentKind
         : undefined;
     return {
@@ -962,10 +966,9 @@ export async function forkSessionAtMessage(
   // Codex: 从当前时间线倒扫 agent_switch，把 copy boundary 之后、确实写入所选
   // 原生 thread 的 user turn 计为 rollback 数；其它引擎片段不能混算。
   const isCodex = forkSource.agentKind === 'codex';
-  // Cursor has no native transcript fork. Copy the visible history and hand the
-  // new conversation that context on its first message.
-  if (forkSource.agentKind === 'antigravity') throw new Error('Antigravity does not support fork.');
-  const isCursor = forkSource.agentKind === 'cursor';
+  // Cursor and Antigravity have no native transcript fork. Copy the visible
+  // history and hand the new conversation that context on its first message.
+  const usesHandoffFork = forkSource.agentKind === 'cursor' || forkSource.agentKind === 'antigravity';
   // pi 复用 codex 的粗粒度 tail-turn fork:countCodexTailTurns 只按 sdkSessionId
   // 数边界后的 user turn(引擎无关),pi 的 forkSdkSession 按 tailTurnsToDrop rewind
   // 到目标 user 消息。只有 Claude(cc)走 message-uuid 锚点路径。
@@ -980,7 +983,7 @@ export async function forkSessionAtMessage(
     target.role,
     forkSource.agentKind,
   );
-  if (!isCursor && !usesTailTurnFork && forkSource.sdkSessionId) {
+  if (!usesHandoffFork && !usesTailTurnFork && forkSource.sdkSessionId) {
     claudeAnchorIndex = forkSource.agentDeviceId ? null : await loadClaudeTranscriptAnchorIndex({
       sdkSessionId: forkSource.sdkSessionId,
       workingDir: source.workingDir,
@@ -996,7 +999,7 @@ export async function forkSessionAtMessage(
     if (!assistantUuid && !resetHandoffBoundaryClientId) {
       throw forkError('NO_PRIOR_ASSISTANT', '请在 AI 回复之后的提问上 fork');
     }
-  } else if (!isCursor && forkSource.reuseVendorSession && forkSource.sdkSessionId) {
+  } else if (!usesHandoffFork && forkSource.reuseVendorSession && forkSource.sdkSessionId) {
     if (isCodex) {
       lastTurnId = resolveCodexTurnAnchor(sourceMessages, forkSource.sdkSessionId);
       if (!lastTurnId) forkAtTimestampMs = resolveCodexForkEventTimestamp(sourceMessages);
@@ -1203,7 +1206,7 @@ export async function forkSessionAtMessage(
   if (!row) {
     throw new Error('Fork session 创建后查询失败');
   }
-  const handoffReason = isCursor ? 'native-session-recovery'
+  const handoffReason = usesHandoffFork ? 'native-session-recovery'
     : !needsHistoryRecovery && !forkSource.reuseVendorSession ? forkSource.rebuildReason : undefined;
   if (handoffReason) {
     await assertTaskActionCurrent();

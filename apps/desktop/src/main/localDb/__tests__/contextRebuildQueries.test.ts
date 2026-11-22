@@ -62,8 +62,14 @@ describe('findLatestContextRebuildMeta', () => {
       reason: 'context-overflow', sourceUserClientId: 'u1', sourceAgentKind: 'codex', sourceModel: 'gpt', sourceProviderId: 'p',
     });
     row({ role: 'context_rebuild', content: marker({
-      reason: 3, sourceUserClientId: 7, sourceAgentKind: 'gemini', sourceModel: null, sourceProviderId: null,
+      reason: 'native-session-recovery', sourceUserClientId: 'u2', sourceAgentKind: 'antigravity', sourceModel: 'gemini-3-pro', sourceProviderId: 'antigravity',
     }), createdAt: 2 });
+    expect(await findLatestContextRebuildMeta('s1')).toEqual({
+      reason: 'native-session-recovery', sourceUserClientId: 'u2', sourceAgentKind: 'antigravity', sourceModel: 'gemini-3-pro', sourceProviderId: 'antigravity',
+    });
+    row({ role: 'context_rebuild', content: marker({
+      reason: 3, sourceUserClientId: 7, sourceAgentKind: 'gemini', sourceModel: null, sourceProviderId: null,
+    }), createdAt: 3 });
     expect(await findLatestContextRebuildMeta('s1')).toEqual({ reason: undefined, sourceUserClientId: null });
   });
 

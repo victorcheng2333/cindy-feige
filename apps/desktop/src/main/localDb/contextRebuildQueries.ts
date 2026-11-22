@@ -40,7 +40,8 @@ export async function findLatestContextRebuildMeta(sessionId: string): Promise<{
       ...(parsed.sourceAgentKind === 'cc' ||
       parsed.sourceAgentKind === 'codex' ||
       parsed.sourceAgentKind === 'pi' ||
-      parsed.sourceAgentKind === 'cursor'
+      parsed.sourceAgentKind === 'cursor' ||
+      parsed.sourceAgentKind === 'antigravity'
         ? { sourceAgentKind: parsed.sourceAgentKind }
         : {}),
       ...(typeof parsed.sourceModel === 'string' ? { sourceModel: parsed.sourceModel } : {}),

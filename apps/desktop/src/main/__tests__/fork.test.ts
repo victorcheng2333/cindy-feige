@@ -612,6 +612,51 @@ describe('forkSessionAtMessage', () => {
     );
   });
 
+  // Unit: Antigravity lacks native transcript fork, so createSideChat must copy
+  // visible replies and seed a native-session-recovery handoff instead of throwing.
+  // Minimal failure: an active antigravity session with one assistant reply.
+  it('opens an Antigravity side chat from visible replies and hands that context to the first message', async () => {
+    const source = makeSourceRow({
+      agentKind: 'antigravity',
+      model: 'gemini-3-pro',
+      providerId: 'antigravity',
+      activeTurnStartedAt: 3001,
+      lastTurnEndedAt: 2600,
+    });
+    const reply = makeMessageRow({
+      role: 'assistant',
+      clientId: 'agy-reply',
+      content: '"checked the mobile logs"',
+      createdAt: 2500,
+      agentMeta: null,
+    });
+    selectQueue.push(
+      [source],
+      [{ clientId: reply.clientId }],
+      [source],
+      [reply],
+      [],
+      [reply],
+      [makeSourceRow({ id: 'child', source: 'side-chat', agentKind: 'antigravity', sdkSessionId: null })],
+    );
+    const child = await createSideChat('src-session');
+    expect(child.id).toBe('child');
+    expect(forkSdkSessionMock).not.toHaveBeenCalled();
+    const transaction = txCalls.find(call => call.name === 'fork.session')?.args as { newSession: Record<string, unknown> };
+    expect(transaction.newSession).toMatchObject({
+      source: 'side-chat',
+      agentKind: 'antigravity',
+      sdkSessionId: null,
+      parentSessionId: 'src-session',
+    });
+    expect(commitContextRebuildMock).toHaveBeenCalledWith(
+      forkedSessionIdFromTx(),
+      expect.stringContaining('checked the mobile logs'),
+      expect.objectContaining({ reason: 'native-session-recovery', sourceAgentKind: 'antigravity' }),
+    );
+    expect(createMessageMock).toHaveBeenCalled();
+  });
+
   it('leaves an empty parent untouched when there is no completed reply', async () => {
     selectQueue.push([makeSourceRow()], []);
     await expect(createSideChat('src-session')).rejects.toMatchObject({ code: 'NO_PRIOR_ASSISTANT' });
