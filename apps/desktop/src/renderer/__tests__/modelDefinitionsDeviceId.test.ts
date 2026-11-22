@@ -15,14 +15,28 @@ function model(id: string, ctx: number) {
 function stubElectron() {
   // 本地 cc: 仅 'm'(ctx=100);本地 codex 空。
   const getCapabilities = vi.fn(async (k: string) => ({
-    availableModels: k === 'cursor' ? [model('cursor-shared', 400)] : k === 'claude-code' ? [model('m', 100)] : [],
+    availableModels:
+      k === 'antigravity'
+        ? [model('agy-shared', 500)]
+        : k === 'cursor'
+          ? [model('cursor-shared', 400)]
+          : k === 'claude-code'
+            ? [model('m', 100)]
+            : [],
     hasFastMode: false,
     effortLevels: [],
     permissionModes: [],
   }));
   // dev-1 cc: 'm'(ctx=200,与本地不同)+ 被控端独有 'host-only';dev-1 codex 空。
   const invoke = vi.fn(async (_deviceId: string, _channel: string, args: unknown[]) => ({
-    availableModels: args[0] === 'cursor' ? [model('cursor-shared', 800), model('cursor-host-only', 900)] : args[0] === 'claude-code' ? [model('m', 200), model('host-only', 300)] : [],
+    availableModels:
+      args[0] === 'antigravity'
+        ? [model('agy-shared', 950), model('agy-host-only', 1000)]
+        : args[0] === 'cursor'
+          ? [model('cursor-shared', 800), model('cursor-host-only', 900)]
+          : args[0] === 'claude-code'
+            ? [model('m', 200), model('host-only', 300)]
+            : [],
     hasFastMode: false,
     effortLevels: [],
     permissionModes: [],
@@ -70,4 +84,16 @@ it('resolves Cursor metadata from the controlled computer', async () => {
   expect(md.getModelById('cursor-shared')?.contextWindow).toBe(400);
   expect(md.getEffortsForModel('cursor-host-only', 'dev-1')).toEqual(['high']);
   expect(md.getModelById('cursor-host-only')).toBeUndefined();
+});
+
+it('resolves Antigravity metadata from the controlled computer', async () => {
+  stubElectron();
+  await capsMod.preloadAllCapabilities();
+  await capsMod.prefetchDeviceCapabilities('dev-1');
+  expect(md.getModelsForVendor('antigravity', 'dev-1').map(m => m.id))
+    .toEqual(['agy-shared', 'agy-host-only']);
+  expect(md.getModelById('agy-shared', 'dev-1')?.contextWindow).toBe(950);
+  expect(md.getModelById('agy-shared')?.contextWindow).toBe(500);
+  expect(md.getEffortsForModel('agy-host-only', 'dev-1')).toEqual(['high']);
+  expect(md.getModelById('agy-host-only')).toBeUndefined();
 });

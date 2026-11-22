@@ -1258,6 +1258,7 @@ export function resolveRemoteModelListStatus({
   codex,
   pi,
   cursor,
+  antigravity,
   providers,
 }: {
   deviceId?: string;
@@ -1266,11 +1267,22 @@ export function resolveRemoteModelListStatus({
   codex: RemoteCapabilityLoadState;
   pi: RemoteCapabilityLoadState;
   cursor?: RemoteCapabilityLoadState;
+  antigravity?: RemoteCapabilityLoadState;
   providers: RemoteProviderLoadState;
 }): RemoteModelListStatus {
   if (!deviceId) return 'idle';
   const required = agentKind
-    ? [agentKind === 'cursor' && cursor ? cursor : agentKind === 'claude-code' ? cc : agentKind === 'codex' ? codex : pi]
+    ? [
+        agentKind === 'antigravity' && antigravity
+          ? antigravity
+          : agentKind === 'cursor' && cursor
+            ? cursor
+            : agentKind === 'claude-code'
+              ? cc
+              : agentKind === 'codex'
+                ? codex
+                : pi,
+      ]
     : [cc, codex, pi];
   if (required.some((state) => !!state.error)) return 'error';
   if (providers.error && !providers.unsupported) return 'error';
@@ -1507,6 +1519,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const codex = useAgentCapabilities('codex', catalogDeviceId);
   const pi = useAgentCapabilities('pi', catalogDeviceId);
   const cursor = useAgentCapabilities('cursor', catalogDeviceId);
+  const antigravity = useAgentCapabilities(agentKind === 'antigravity' ? 'antigravity' : null, catalogDeviceId);
   // 本机折扣 GPT 仍按本机 API key gate；device-link 必须只看被控端 provider 状态。
   // 旧被控端不支持 provider:list 时按远端 capabilities 退化，不得误用控制端 key。
   const { hasSavedKey, canReadKey } = useApiKey();
@@ -1559,6 +1572,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     codex,
     pi,
     cursor,
+    antigravity,
     providers: remoteProviders,
   });
   // 分享来的供应商：分享者电脑上的 Cindy 太旧，只答得了模型目录、答不了 Agent 能力
@@ -2159,6 +2173,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
         deviceCodexModels: codex.capabilities?.availableModels ?? [],
         devicePiModels: pi.capabilities?.availableModels ?? [],
         deviceCursorModels: cursor.capabilities?.availableModels ?? [],
+        deviceAntigravityModels: antigravity.capabilities?.availableModels ?? [],
         excludeSubscriptionDirect,
         excludeChatBridgedCodex,
       }),
@@ -2170,6 +2185,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       codex.capabilities,
       pi.capabilities,
       cursor.capabilities,
+      antigravity.capabilities,
       excludeSubscriptionDirect,
       excludeChatBridgedCodex,
     ],
@@ -4811,6 +4827,7 @@ export function ModelSelector({
   const codex = useAgentCapabilities('codex', deviceId);
   const pi = useAgentCapabilities('pi', deviceId);
   const cursor = useAgentCapabilities('cursor', deviceId);
+  const antigravity = useAgentCapabilities(agentKind === 'antigravity' ? 'antigravity' : null, deviceId);
   const gatewayPricing = useGatewayModelPricing();
   const referencePricing = useReferenceModelPricing();
   const { accountTier: modelAccessAccountTier } = useModelAccessStatus();
@@ -4841,13 +4858,22 @@ export function ModelSelector({
     codex,
     pi,
     cursor,
+    antigravity,
     providers: remoteProviders,
   });
   const remoteModelLoading = providersOverrideState?.status === 'loading' ||
     (sshCodexCurrent && sshCodex?.status === 'loading') || (!!deviceId && remoteModelListStatus === 'loading');
   const localModelLoading = !deviceId && !providersOverride && !sshCodexCurrent && !localProviders.loadFailed && (
     localProviders.loading ||
-    (agentKind === 'cursor' ? cursor.loading : agentKind === 'codex' ? codex.loading : agentKind === 'pi' ? pi.loading : cc.loading)
+    (agentKind === 'antigravity'
+      ? antigravity.loading
+      : agentKind === 'cursor'
+        ? cursor.loading
+        : agentKind === 'codex'
+          ? codex.loading
+          : agentKind === 'pi'
+            ? pi.loading
+            : cc.loading)
   );
   const visibleModels = useMemo(
     () =>
@@ -4859,6 +4885,7 @@ export function ModelSelector({
         deviceCodexModels: codex.capabilities?.availableModels ?? [],
         devicePiModels: pi.capabilities?.availableModels ?? [],
         deviceCursorModels: cursor.capabilities?.availableModels ?? [],
+        deviceAntigravityModels: antigravity.capabilities?.availableModels ?? [],
         excludeSubscriptionDirect,
         excludeChatBridgedCodex,
       }),
@@ -4870,6 +4897,7 @@ export function ModelSelector({
       codex.capabilities,
       pi.capabilities,
       cursor.capabilities,
+      antigravity.capabilities,
       excludeSubscriptionDirect,
       excludeChatBridgedCodex,
     ],
@@ -4882,7 +4910,15 @@ export function ModelSelector({
     : visibleModels.find((m) => m.id === modelId);
   // Keep directory refresh errors in the picker when the task model is known
   // and the selected engine still reports its capabilities.
-  const agentCapabilities = agentKind === 'claude-code' ? cc : agentKind === 'codex' ? codex : pi;
+  const agentCapabilities = agentKind === 'antigravity'
+    ? antigravity
+    : agentKind === 'cursor'
+      ? cursor
+      : agentKind === 'claude-code'
+        ? cc
+        : agentKind === 'codex'
+          ? codex
+          : pi;
   const confirmedRemoteModel = actualRoute && agentIdentity?.state === 'current' && !!currentModel &&
     agentCapabilities.capabilities != null && !agentCapabilities.error &&
     !isProviderAccessDeniedError(remoteProviders.error);

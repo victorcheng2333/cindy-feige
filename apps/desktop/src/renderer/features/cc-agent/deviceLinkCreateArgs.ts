@@ -21,10 +21,11 @@ import { effectiveSourceIdForModel, getModel, reconcileInvocationEffort, type Pr
 import type { Session, WorkspaceKind } from '@/lib/ccAgent.types';
 import type { AgentKind } from '@/hooks/useAgentCapabilities';
 import type { Effort, PermissionMode } from '@/lib/userPreferences.types';
+import { isProviderShareAgentDeviceId } from '../../../shared/providerShare';
 
 export interface DeviceLinkCreateParams {
-  /** 草稿 vendor 形态:'cc' | 'codex' | 'pi' | 'cursor'(persistedAgentKind)。 */
-  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
+  /** 草稿 vendor 形态:'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'(persistedAgentKind)。 */
+  agentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /**
    * 被控端上的项目目录。缺省 / 空白 = 在该设备上建**不绑项目的 standalone dialogue**,
    * workspaceKind 随之派生为 'dialogue',运行目录由被控端分配。
@@ -63,7 +64,7 @@ export interface DeviceLinkCreateParams {
 }
 
 export interface DeviceLinkCreateArgs {
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /** 控制端预生成的会话 id(worktree 流程中与 worktree:create 登记的绑定同 id)。 */
   id?: string;
   /** 仅项目会话出现;dialogue 不带此字段(被控端自行分配运行目录)。 */
@@ -89,6 +90,8 @@ export function buildDeviceLinkCreateArgs(p: DeviceLinkCreateParams): DeviceLink
   // from another provider computer is a different, unsupported execution path.
   if (p.agentKind === 'cursor' && p.agentDeviceId)
     throw new Error('Cursor requires execution on the task computer');
+  if (p.agentKind === 'antigravity' && p.agentDeviceId && isProviderShareAgentDeviceId(p.agentDeviceId))
+    throw new Error('Antigravity cannot run on a shared provider');
   // 空白目录一律当「没选项目」处理(与本机 selectedWorkingDir 的 trim() || undefined 同口径),
   // 免得 '  ' 这种脏值在被控端被当成一个真实路径去校验。
   const dir = p.workingDir?.trim();
@@ -132,7 +135,7 @@ export interface DeviceLinkSubmissionCandidate {
 }
 
 export interface DeviceLinkSubmissionParams {
-  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
+  agentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   workingDir?: string;
   id?: string;
   extraDirs?: string[];

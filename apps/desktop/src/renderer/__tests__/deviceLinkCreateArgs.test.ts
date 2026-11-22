@@ -79,6 +79,65 @@ describe('buildDeviceLinkCreateArgs', () => {
       model: 'fixture-model', effort: null, permissionMode: 'auto', fastMode: false }))
       .toThrow('task computer');
   });
+  it('submits Antigravity on the controlled project computer and allows own-computer borrowing', () => {
+    const localArgs = resolveDeviceLinkSubmission({
+      agentKind: 'antigravity',
+      workingDir: '/m5/project',
+      capabilityAgentKind: 'antigravity',
+      deviceProviders: [],
+      candidate: {
+        model: 'gemini-4-neon',
+        providerId: 'antigravity',
+        effort: 'high',
+        permissionMode: 'auto',
+        fastMode: false,
+      },
+    });
+    expect(localArgs).toMatchObject({
+      agentKind: 'antigravity',
+      workingDir: '/m5/project',
+      workspaceKind: 'project',
+      providerId: 'antigravity',
+      effort: 'high',
+    });
+    expect(localArgs).not.toHaveProperty('agentDeviceId');
+    expect(buildProvisionalRemoteSession({
+      sessionId: 'remote-agy',
+      workDir: '/m5/project',
+      args: localArgs,
+      nowIso: '2026-11-23T00:00:00Z',
+    }).agentKind).toBe('antigravity');
+
+    const borrowedArgs = resolveDeviceLinkSubmission({
+      agentKind: 'antigravity',
+      workingDir: '/m5/project',
+      capabilityAgentKind: 'antigravity',
+      deviceProviders: [],
+      agentDeviceId: 'own-m1max',
+      candidate: {
+        model: 'gemini-4-neon',
+        providerId: 'antigravity',
+        effort: 'high',
+        permissionMode: 'auto',
+        fastMode: false,
+      },
+    });
+    expect(borrowedArgs).toMatchObject({
+      agentKind: 'antigravity',
+      agentDeviceId: 'own-m1max',
+      workspaceKind: 'project',
+    });
+  });
+  it('rejects Antigravity on a shared provider device', () => {
+    expect(() => buildDeviceLinkCreateArgs({
+      agentKind: 'antigravity',
+      agentDeviceId: 'share:share-1',
+      model: 'gemini-4-neon',
+      effort: null,
+      permissionMode: 'auto',
+      fastMode: false,
+    })).toThrow('shared provider');
+  });
   it.each([undefined, '/remote/project'])('carries initial plan mode through creation and provisional UI (%s)', (workingDir) => {
     const args = resolveDeviceLinkSubmission({
       agentKind: 'codex', workingDir, capabilityAgentKind: 'codex', deviceProviders: [],

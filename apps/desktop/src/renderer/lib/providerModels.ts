@@ -239,6 +239,7 @@ export function selectVisibleModels(params: {
   deviceCodexModels: ModelDescriptor[];
   devicePiModels?: ModelDescriptor[];
   deviceCursorModels?: ModelDescriptor[];
+  deviceAntigravityModels?: ModelDescriptor[];
   /**
    * SSH 远程会话(remoteHostId)传 true:订阅直连模型(chatgpt/ / xai/)不再被过滤,
    * 而是保留在清单中由调用方按 isSubscriptionDirectModel 标记禁用(置灰 + 原因提示)。
@@ -265,6 +266,7 @@ export function selectVisibleModels(params: {
     deviceCodexModels,
     devicePiModels = [],
     deviceCursorModels = [],
+    deviceAntigravityModels = [],
     excludeSubscriptionDirect,
     excludeChatBridgedCodex,
   } = params;
@@ -284,11 +286,12 @@ export function selectVisibleModels(params: {
       model.id.endsWith('[1m]')
     ));
   const cursor = pass(deviceId ? deviceCursorModels : deriveModelsFromProviders(providers, 'cursor'));
+  const antigravity = pass(deviceId ? deviceAntigravityModels : deriveModelsFromProviders(providers, 'antigravity'));
   if (agentKind === 'claude-code') return cc;
   if (agentKind === 'codex') return codex;
   if (agentKind === 'pi') return pi;
   if (agentKind === 'cursor') return cursor;
-  if (agentKind === 'antigravity') return deviceId ? [] : deriveModelsFromProviders(providers, agentKind);
+  if (agentKind === 'antigravity') return antigravity;
   const merged = [...cc];
   const seen = new Set(merged.map((m) => m.id));
   for (const list of [codex, pi]) {

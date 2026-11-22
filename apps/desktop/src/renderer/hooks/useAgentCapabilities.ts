@@ -118,6 +118,7 @@ export interface AgentCapabilities {
    */
   supportsSessionAgentSwitch?: boolean;
   supportsAntigravitySessionSwitch?: boolean;
+  supportsControlledAntigravityCreation?: boolean;
   /**
    * 同引擎重选是否返回可供 SET_MODEL 二次校验的 CAS 修订号。首版切换 host 只有上面的
    * 基础能力位；远程控制端必须同时看到本位才开放入口，避免旧 host 的清除回流先于 ack
@@ -320,6 +321,7 @@ function parseAgentCapabilities(value: unknown): AgentCapabilities {
     !value.permissionModes.every(isNamedDescriptor) ||
     !isOptionalBoolean(value.supportsSessionAgentSwitch) ||
     !isOptionalBoolean(value.supportsAntigravitySessionSwitch) ||
+    !isOptionalBoolean(value.supportsControlledAntigravityCreation) ||
     !isOptionalBoolean(value.supportsSessionAgentSwitchCas) ||
     !isOptionalBoolean(value.supportsRemoteModelWindowRebuild) ||
     !isOptionalBoolean(value.supportsQueueHeadRetry) ||
