@@ -3127,7 +3127,10 @@ export class AgentInputCoordinator {
           this.fallbackPreparedAsTurn(sessionId, item, opts?.removeFromQueue === true);
         }
         if (opts?.touchUserSend) this.touchUserSend(sessionId);
-        return finishSteerRequest(true);
+        // Composer steers return true once safely queued so the draft clears without
+        // duplicating input; promoting an already-queued row returns false because it
+        // stayed in the queue rather than steering the running turn.
+        return finishSteerRequest(opts?.removeFromQueue !== true);
       }
 
       if (isNoActiveTurnError(err)) {

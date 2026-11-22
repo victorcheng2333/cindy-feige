@@ -24,6 +24,8 @@ const OUTPUT_UPDATES = new Set([
   "tool-call-started",
 ]);
 
+const STEER_START_WAIT_MS = 5_000;
+
 /** SDK rejection when the persisted agent row still references an unfinished run. */
 export function isOrphanedActiveRunError(error: unknown): boolean {
   const message =
@@ -39,6 +41,8 @@ export class CursorHostRuntime {
   private storeHandle?: CursorStoreHandle;
   private storeDir?: string;
   private run?: SDK.Run;
+  private runStartPromise?: Promise<void>;
+  private runStartWake?: () => void;
   private turnId?: number;
   private busy = false;
   private cancelled = false;
@@ -242,15 +246,31 @@ export class CursorHostRuntime {
       if (compact) this.run = await agent.summarize();
       else {
         const force = this.recoverResumedRun;
+        let resolveStart!: () => void;
+        const startGate = new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        });
+        this.runStartPromise = startGate;
+        this.runStartWake = resolveStart;
         try {
-          this.run = await start(force);
-        } catch (error) {
-          // The agent row can still name a run that a previous worker stopped without
-          // finalizing (app quit, cancelled before the store settled). This runtime holds
-          // the task lease and has no live run of its own, so recover exactly once.
-          if (force || this.cancelled || !isOrphanedActiveRunError(error))
-            throw error;
-          this.run = await start(true);
+          try {
+            this.run = await start(force);
+          } catch (error) {
+            // The agent row can still name a run that a previous worker stopped without
+            // finalizing (app quit, cancelled before the store settled). This runtime holds
+            // the task lease and has no live run of its own, so recover exactly once.
+            if (force || this.cancelled || !isOrphanedActiveRunError(error))
+              throw error;
+            this.run = await start(true);
+          }
+        } finally {
+          if (this.runStartPromise === startGate) {
+            this.runStartPromise = undefined;
+          }
+          if (this.runStartWake === resolveStart) {
+            this.runStartWake = undefined;
+          }
+          resolveStart();
         }
       }
       timing.acceptedMs = elapsed();
@@ -280,6 +300,7 @@ export class CursorHostRuntime {
 
   async cancel(): Promise<void> {
     this.cancelled = true;
+    this.runStartWake?.();
     this.loginAbort?.abort();
     await this.run?.cancel();
   }
@@ -288,6 +309,26 @@ export class CursorHostRuntime {
     text: string,
     expectedTurnId: number,
   ): Promise<SDK.SteerAckOutcome> {
+    if (
+      this.closed ||
+      this.cancelled ||
+      this.turnId !== expectedTurnId
+    )
+      return "revert_to_followup";
+    if (!this.run && this.runStartPromise) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.runStartPromise,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, STEER_START_WAIT_MS);
+            timer.unref?.();
+          }),
+        ]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    }
     const run = this.run;
     if (
       this.closed ||

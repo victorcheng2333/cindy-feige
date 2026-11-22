@@ -96,6 +96,7 @@ export interface AgentCapabilities {
   effortLevels: EffortDescriptor[];
   permissionModes: PermissionModeDescriptor[];
   sameTurnSteer?: CapabilityStatus;
+  sameTurnSteerTextOnly?: boolean;
   /**
    * 计划模式一级开关(composer「+」菜单入口)据此显示 / 隐藏。
    * device-link 老被控端序列化的 capabilities 无此字段 → undefined = 不支持。
@@ -329,6 +330,7 @@ function parseAgentCapabilities(value: unknown): AgentCapabilities {
     !isOptionalBoolean(value.supportsOrcaAgentRelocation) ||
     !isOptionalBoolean(value.supportsOrcaRemoteWorkerAgentRelocation) ||
     !isOptionalCapabilityStatus(value.sameTurnSteer) ||
+    !isOptionalBoolean(value.sameTurnSteerTextOnly) ||
     !isOptionalCapabilityStatus(value.writableDirs) ||
     !isOptionalCapabilityStatus(value.manualCompact)
   ) {

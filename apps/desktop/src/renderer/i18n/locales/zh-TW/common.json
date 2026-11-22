@@ -13866,7 +13866,8 @@
       "steerTooltip": "點選插話，不打斷當前任務；按 {{shortcut}} 排隊傳送",
       "steerTooltipSendMode": "點選或按 {{shortcut}} 插話，不打斷當前任務",
       "stop": "停止生成",
-      "steer": "插話到當前任務"
+      "steer": "插話到當前任務",
+      "steerImageQueuesTooltip": "目前 Agent 不支援帶圖片插話，傳送後將排隊"
     },
     "pluginSetup": {
       "account": {
@@ -14397,7 +14398,10 @@
       "editSaveAria": "儲存編輯（Enter）",
       "editCancelAria": "取消編輯（Esc）",
       "syntheticContinueLabel": "繼續未完成的任務（系統指令）",
-      "syntheticTriggerLabel": "系統指令"
+      "syntheticTriggerLabel": "系統指令",
+      "steerKeptInQueue": "暫時無法插話，訊息仍保留在佇列中。",
+      "steerFellBackToQueue": "這條訊息暫時無法插話到當前任務，已轉為排隊傳送。",
+      "steerImageDisabled": "目前 Agent 僅支援純文字插話，帶圖片的訊息會排隊傳送。"
     },
     "newChatView": {
       "missing": {

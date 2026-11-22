@@ -13866,7 +13866,8 @@
       "steerTooltip": "クリックでタスクを中断せずに割り込み送信。{{shortcut}} でキューに追加",
       "steerTooltipSendMode": "クリックまたは {{shortcut}} でタスクを中断せずに割り込み送信",
       "stop": "生成を停止",
-      "steer": "実行中のタスクに割り込む"
+      "steer": "実行中のタスクに割り込む",
+      "steerImageQueuesTooltip": "この Agent は画像付きの割り込みに対応していないため、送信するとキューに入ります"
     },
     "pluginSetup": {
       "account": {
@@ -14397,7 +14398,10 @@
       "editSaveAria": "編集を保存（Enter）",
       "editCancelAria": "編集をキャンセル（Esc）",
       "syntheticContinueLabel": "未完了のタスクを続行（システム指示）",
-      "syntheticTriggerLabel": "システム指示"
+      "syntheticTriggerLabel": "システム指示",
+      "steerKeptInQueue": "今は割り込み送信できないため、メッセージはキューに保持されます。",
+      "steerFellBackToQueue": "このメッセージは実行中のタスクに割り込めないため、キューに追加しました。",
+      "steerImageDisabled": "この Agent はテキストのみの割り込みに対応しているため、画像付きメッセージはキューで送信されます。"
     },
     "newChatView": {
       "missing": {

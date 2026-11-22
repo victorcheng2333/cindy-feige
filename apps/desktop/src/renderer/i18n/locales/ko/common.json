@@ -13866,7 +13866,8 @@
       "steerTooltip": "클릭하면 작업을 중단하지 않고 끼어듭니다. {{shortcut}}를 누르면 대기열에 추가됩니다",
       "steerTooltipSendMode": "클릭하거나 {{shortcut}}를 누르면 작업을 중단하지 않고 끼어듭니다",
       "stop": "생성 중지",
-      "steer": "실행 중인 작업에 끼어들기"
+      "steer": "실행 중인 작업에 끼어들기",
+      "steerImageQueuesTooltip": "이 Agent는 이미지 끼어들기를 지원하지 않아 전송 시 대기열에 추가됩니다"
     },
     "pluginSetup": {
       "account": {
@@ -14397,7 +14398,10 @@
       "editSaveAria": "편집 저장 (Enter)",
       "editCancelAria": "편집 취소 (Esc)",
       "syntheticContinueLabel": "미완료 작업 계속(시스템 지시)",
-      "syntheticTriggerLabel": "시스템 지시"
+      "syntheticTriggerLabel": "시스템 지시",
+      "steerKeptInQueue": "지금은 끼어들 수 없어 메시지가 대기열에 그대로 유지됩니다.",
+      "steerFellBackToQueue": "이 메시지는 실행 중인 작업에 끼어들 수 없어 대기열에 추가되었습니다.",
+      "steerImageDisabled": "이 Agent는 텍스트 끼어들기만 지원하므로 이미지가 포함된 메시지는 대기열로 전송됩니다."
     },
     "newChatView": {
       "missing": {

@@ -120,6 +120,7 @@ export function buildQueueRowPresentation(input: {
   projection: QueueRowProjectionLike;
   queueLength: number;
   readOnlyReason?: string | null;
+  steerDisabledReason?: string | null;
 }, localizer?: PresentationLocalizer): QueueRowPresentation {
   const steering = input.projection.steeringQueueClientIds.includes(input.item.clientId);
   const editLocked = input.projection.queueEditLocks.includes(input.item.clientId);
@@ -156,7 +157,7 @@ export function buildQueueRowPresentation(input: {
     actions: {
       moveUp: queueRowAction(baseDisabledReason, moveUpTarget, presentationText(localizer, 'message.queuePresentation.row.first', '已经是队列第一条。')),
       moveDown: queueRowAction(baseDisabledReason, moveDownTarget, presentationText(localizer, 'message.queuePresentation.row.last', '已经是队列最后一条。')),
-      steer: queueRowAction(baseDisabledReason ?? syntheticEditReason ?? autoSentReason),
+      steer: queueRowAction(baseDisabledReason ?? syntheticEditReason ?? autoSentReason ?? input.steerDisabledReason ?? null),
       edit: queueRowAction(baseDisabledReason ?? syntheticEditReason ?? autoSentReason ?? orcaEditReason),
       remove: queueRowAction(baseDisabledReason),
     },

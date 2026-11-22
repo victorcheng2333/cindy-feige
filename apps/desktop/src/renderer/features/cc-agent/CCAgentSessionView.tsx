@@ -5587,12 +5587,22 @@ function CCAgentSessionContent({
   const renderPendingMessage = (message: ChatMessage, pluginUi: import('@/cindy-brain/PluginUiContributions').PluginUiMessageCandidates) => {
     const index = pendingQueue.findIndex((entry) => entry.clientId === message.clientId);
     const entry = pendingQueue[index];
+    const hasQueuedImage = Boolean(
+      entry &&
+        (entry.files?.some((file) => file.category === 'image') ||
+          (Array.isArray(entry.chatMessage.content) &&
+            entry.chatMessage.content.some((block) => block.type === 'image'))),
+    );
+    const steerDisabledReason =
+      steerCaps?.sameTurnSteerTextOnly && hasQueuedImage
+        ? t('newChat.pendingQueue.steerImageDisabled')
+        : null;
     return entry ? <PendingQueueBubble pluginUi={pluginUi} entry={entry} sessionId={sessionId} index={index} count={pendingQueue.length}
       editingClientId={activeQueueComposerEdit?.clientId ?? null}
       steeringClientIds={steeringQueueClientIds} editLocks={queueEditLocks} interactionLocks={queueInteractionLocks}
       readOnly={readOnly || queueAbortPending}
       simplifiedBotConversation={Boolean(botChatIdentity)} localSend={isLocalUserSend(entry.clientId)} onEdit={beginQueueComposerEdit}
-      onSteer={queueSteer} onRemove={removeFromQueue} onMove={moveQueueItem} /> : null;
+      onSteer={queueSteer} steerDisabledReason={steerDisabledReason} onRemove={removeFromQueue} onMove={moveQueueItem} /> : null;
   };
   const showErrorTailBanner = !readOnly && !!errorTailMsg && !errorTailBannerHidden
     && !syntheticContinuationPending && !error && !credentialSwitchWait
@@ -6505,6 +6515,7 @@ function CCAgentSessionContent({
                   onQueueEditSubmit={submitQueueComposerEdit}
                   onQueueEditCancel={cancelQueueComposerEdit}
                   onQueueSteer={queueSteer}
+                  steerTextOnly={steerCaps?.sameTurnSteerTextOnly === true}
                   steeringQueueClientIds={steeringQueueClientIds}
                   messages={sideChatMessages}
                   placeholder={

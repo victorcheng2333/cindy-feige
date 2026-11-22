@@ -86,6 +86,7 @@ export const CURSOR_CAPABILITIES: Capabilities = {
   sessionHtmlExport: missing,
   abort: supported,
   sameTurnSteer: supported,
+  sameTurnSteerTextOnly: true,
   memory: { supported: missing },
   extraDirs: missing,
   writableDirs: supported,

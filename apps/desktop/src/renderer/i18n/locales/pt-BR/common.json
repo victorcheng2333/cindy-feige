@@ -14035,7 +14035,8 @@
       "steerTooltip": "Clique para orientar sem interromper a tarefa; pressione {{shortcut}} para colocar na fila",
       "steerTooltipSendMode": "Clique ou pressione {{shortcut}} para orientar sem interromper a tarefa",
       "stop": "Parar geração",
-      "steer": "Orientar a tarefa em andamento"
+      "steer": "Orientar a tarefa em andamento",
+      "steerImageQueuesTooltip": "Mensagens com imagem não podem encaminhar este agente; ao enviar, irão para a fila"
     },
     "pluginSetup": {
       "account": {
@@ -14567,7 +14568,10 @@
       "editCancelAria": "Cancelar edição (Esc)",
       "syntheticContinueLabel": "Continuar a tarefa inacabada (instrução do sistema)",
       "syntheticTriggerLabel": "Instrução do sistema",
-      "showMore_many": "mais {{count}}"
+      "showMore_many": "mais {{count}}",
+      "steerKeptInQueue": "Não foi possível encaminhar agora; a mensagem continua na fila.",
+      "steerFellBackToQueue": "Não foi possível encaminhar esta mensagem para a tarefa em execução; ela foi colocada na fila.",
+      "steerImageDisabled": "Este agente só aceita encaminhamento de texto; mensagens com imagens ficam na fila."
     },
     "newChatView": {
       "missing": {

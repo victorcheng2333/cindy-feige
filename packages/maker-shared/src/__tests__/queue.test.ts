@@ -332,6 +332,27 @@ describe('shared queue presentation model', () => {
     expect(isAutoSentQueueItem({ origin: { kind: 'orca', senderLabel: 'Lead' } })).toBe(false);
     expect(isAutoSentQueueItem({})).toBe(false);
   });
+
+  it('disables steer with steerDisabledReason while preserving edit, reorder and cancel', () => {
+    const row = buildQueueRowPresentation({
+      item: queued('q-img'),
+      originalIndex: 0,
+      projection: {
+        steeringQueueClientIds: [],
+        queueEditLocks: [],
+        queueInteractionLocks: [],
+      },
+      queueLength: 2,
+      steerDisabledReason: 'Text-only steering',
+    });
+    expect(row.actions.steer).toEqual({
+      disabled: true,
+      disabledReason: 'Text-only steering',
+    });
+    expect(row.actions.edit.disabled).toBe(false);
+    expect(row.actions.moveDown.disabled).toBe(false);
+    expect(row.actions.remove.disabled).toBe(false);
+  });
 });
 
 describe('queueItemVisibleText', () => {

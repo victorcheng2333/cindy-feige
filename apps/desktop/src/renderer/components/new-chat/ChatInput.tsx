@@ -733,6 +733,8 @@ interface ChatInputProps {
    * row's text/files/mentions snapshot stays the same as normal queue send.
    */
   onQueueSteer?: (clientId: string) => Promise<boolean>;
+  /** True when the running harness only accepts text-only steering (e.g. Cursor). */
+  steerTextOnly?: boolean;
   /** Queue row ids currently being delivered through onQueueSteer. */
   steeringQueueClientIds?: string[];
   /** Chat messages — used to derive user message history for ↑/↓ navigation. */
@@ -1389,6 +1391,7 @@ export function ChatInput({
   onQueueEditSubmit,
   onQueueEditCancel,
   onQueueSteer,
+  steerTextOnly = false,
   steeringQueueClientIds = [],
   messages,
   placeholder,
@@ -1634,16 +1637,6 @@ export function ChatInput({
   }, [onStop]);
   const showStopButtonRef = useRef(showStopButton);
   showStopButtonRef.current = showStopButton;
-  // Only surfaces that can steer a running turn (the task view) honor a steer default.
-  const runningDeliveryMode: MessageDeliveryMode = onQueueSteer ? followUpBehavior : 'queue';
-  const alternateDeliveryMode: MessageDeliveryMode = runningDeliveryMode === 'steer' ? 'queue' : 'steer';
-  // The same surfaces offer both modes for one message: with Enter as the send key,
-  // modifier+Enter (and modifier+click) sends it the other way. Key handlers read the ref.
-  const canSteerRunningTurnRef = useRef(Boolean(onQueueSteer));
-  canSteerRunningTurnRef.current = Boolean(onQueueSteer);
-  // What a click or the configured submit command sends: the follow-up default
-  // while a turn runs, an ordinary send otherwise.
-  const defaultDeliveryMode: MessageDeliveryMode = showStopButton ? runningDeliveryMode : 'queue';
 
   // turnGen 继续作为 renderer 侧请求代次；跨 session / 新 turn 的真实归属由
   // promptRecommendationStore 的 sessionId + completion revision + requestSeq 保证。
@@ -1786,6 +1779,20 @@ export function ChatInput({
   const [browserComments, setBrowserComments] = useState<BrowserCommentDraftItem[]>([]);
   const browserCommentsRef = useRef<BrowserCommentDraftItem[]>(browserComments);
   browserCommentsRef.current = browserComments;
+  const hasImageAttachment =
+    attachments.some((file) => file.category === 'image') || browserComments.length > 0;
+  const steerBlockedByImage = Boolean(steerTextOnly && hasImageAttachment);
+  const canSteerDraft = Boolean(onQueueSteer) && !steerBlockedByImage;
+  // Only surfaces that can steer a running turn (the task view) honor a steer default.
+  const runningDeliveryMode: MessageDeliveryMode = canSteerDraft ? followUpBehavior : 'queue';
+  const alternateDeliveryMode: MessageDeliveryMode = runningDeliveryMode === 'steer' ? 'queue' : 'steer';
+  // The same surfaces offer both modes for one message: with Enter as the send key,
+  // modifier+Enter (and modifier+click) sends it the other way. Key handlers read the ref.
+  const canSteerRunningTurnRef = useRef(canSteerDraft);
+  canSteerRunningTurnRef.current = canSteerDraft;
+  // What a click or the configured submit command sends: the follow-up default
+  // while a turn runs, an ordinary send otherwise.
+  const defaultDeliveryMode: MessageDeliveryMode = showStopButton ? runningDeliveryMode : 'queue';
 
   // Ref bridge for Tiptap handlePaste — editorProps can't read React
   // state directly, so we expose attachment writers via stable refs.
@@ -6672,6 +6679,15 @@ export function ChatInput({
         if (!sourceSessionId) clearSentComposer();
         releaseRemoteComposerTransition();
         markRecentPluginUsage();
+        if (
+          showStopButtonRef.current &&
+          steerTextOnly &&
+          getComposerFollowUpBehavior() === 'steer' &&
+          deliveryMode === 'queue' &&
+          filesToSend?.some((file) => file.category === 'image')
+        ) {
+          toast.info(t('newChat.pendingQueue.steerImageDisabled'));
+        }
       } finally {
         dispatchSendInFlightKeysRef.current.delete(sendInFlightKey);
         dispatchSendClearedKeysRef.current.delete(sendInFlightKey);
@@ -6722,6 +6738,7 @@ export function ChatInput({
       captureSendFocusForRestore,
       slashCommandsReady,
       mergedCommands,
+      steerTextOnly,
     ],
   );
   useEffect(() => {
@@ -9566,7 +9583,7 @@ export function ChatInput({
   // 发送键的悬停提示换成 SendDeliveryTip。录音、编辑排队消息、松手发送期间保持原有提示。
   const deliveryChoiceAvailable =
     showStopButton &&
-    Boolean(onQueueSteer) &&
+    canSteerDraft &&
     !queueEditActive &&
     !mainSlotIsStop &&
     !mainSlotIsVoice &&
@@ -10558,7 +10575,9 @@ export function ChatInput({
                             : voiceInput.isListening && !sendButtonDisabled
                               ? `${t('newChat.chatInput.voiceInput.finishAndSend')} · ${composerSendShortcutLabel}`
                               : showStopButton
-                                ? runningDeliveryMode === 'steer'
+                                ? steerBlockedByImage && followUpBehavior === 'steer'
+                                  ? t('newChat.sendButton.steerImageQueuesTooltip')
+                                  : runningDeliveryMode === 'steer'
                                   ? composerSendShortcutPreference === 'modifier-enter'
                                     ? t('newChat.sendButton.steerTooltipSendMode', {
                                         shortcut: composerSendShortcutLabel,

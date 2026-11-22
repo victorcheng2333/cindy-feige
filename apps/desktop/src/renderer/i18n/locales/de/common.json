@@ -13920,7 +13920,8 @@
       "steerTooltip": "Klicken, um zu steuern, ohne die Aufgabe zu unterbrechen; drücke {{shortcut}} zum Einreihen",
       "steerTooltipSendMode": "Klicken oder {{shortcut}} drücken, um zu steuern, ohne die Aufgabe zu unterbrechen",
       "stop": "Generierung stoppen",
-      "steer": "Laufende Aufgabe steuern"
+      "steer": "Laufende Aufgabe steuern",
+      "steerImageQueuesTooltip": "Bildnachrichten können diesen Agent nicht steuern – beim Senden wird eingereiht"
     },
     "pluginSetup": {
       "account": {
@@ -14451,7 +14452,10 @@
       "editSaveAria": "Änderung speichern (Enter)",
       "editCancelAria": "Bearbeitung abbrechen (Esc)",
       "syntheticContinueLabel": "Unvollendete Aufgabe fortsetzen (Systemanweisung)",
-      "syntheticTriggerLabel": "Systemanweisung"
+      "syntheticTriggerLabel": "Systemanweisung",
+      "steerKeptInQueue": "Einbringen ist gerade nicht möglich; die Nachricht bleibt in der Warteschlange.",
+      "steerFellBackToQueue": "Diese Nachricht kann nicht in die laufende Aufgabe eingebracht werden und wurde stattdessen in die Warteschlange gestellt.",
+      "steerImageDisabled": "Dieser Agent unterstützt nur reines Text-Einbringen; Nachrichten mit Bildern bleiben in der Warteschlange."
     },
     "newChatView": {
       "missing": {

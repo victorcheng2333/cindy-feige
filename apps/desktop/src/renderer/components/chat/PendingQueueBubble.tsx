@@ -29,6 +29,7 @@ export interface PendingQueueBubbleProps {
   simplifiedBotConversation?: boolean;
   onEdit(entry: QueuedMessage): void;
   onSteer?(clientId: string): Promise<boolean>;
+  steerDisabledReason?: string | null;
   onRemove(clientId: string): void;
   onMove(clientId: string, targetIndex: number): void;
 }
@@ -49,6 +50,7 @@ export function PendingQueueBubble({
   simplifiedBotConversation = false,
   onEdit,
   onSteer,
+  steerDisabledReason = null,
   onRemove,
   onMove,
 }: PendingQueueBubbleProps) {
@@ -62,6 +64,7 @@ export function PendingQueueBubble({
     queueLength: count,
     busy: Boolean(sending),
     readOnlyReason: readOnly ? t('newChat.pendingQueue.regionAria') : null,
+    steerDisabledReason,
     projection: {
       steeringQueueClientIds: steeringClientIds,
       queueEditLocks: editLocks,

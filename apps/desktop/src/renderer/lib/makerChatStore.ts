@@ -16611,13 +16611,22 @@ async function steerMessageCore(
   return steerApi.input
     .steer(sessionId, queued, { touchUserSend: true })
     .then(async (ok) => {
-      if (ok) {
-        _disposedLiveErrorIntents.delete(sessionId);
-        commitAutoTitle();
-        requestInputProjection(sessionId);
-        recordGithubStarPromptSend(sessionId, queued.clientId, starPromptOwner);
-        return true;
-      }
+        if (ok) {
+          _disposedLiveErrorIntents.delete(sessionId);
+          commitAutoTitle();
+          void requestInputProjection(sessionId)
+            ?.then((res) => {
+              if (
+                res?.current &&
+                res.projection.pendingQueue.some((q) => q.clientId === queued.clientId)
+              ) {
+                toast.info(i18n.t('newChat.pendingQueue.steerFellBackToQueue'));
+              }
+            })
+            .catch(() => undefined);
+          recordGithubStarPromptSend(sessionId, queued.clientId, starPromptOwner);
+          return true;
+        }
       // steer 失败后拉一次权威 projection:投递结果不确定时 coordinator 会把这条
       // 消息物化进暂停队列(ack 超时 / post-send abort)。物化即"已处置"——文本
       // 由队列行接管显示,这里必须返回 true 让 composer 清空草稿,否则用户面前
@@ -16791,8 +16800,22 @@ function steerQueuedMessage(sessionId: string, clientId: string): Promise<boolea
           ...getRemoteInputClearBoundaryOpts(sessionId),
         })
         .then((ok) => {
-          if (!ok) unmarkLocalSentUserMessage(sessionId, clientId);
-          requestInputProjection(sessionId);
+          if (!ok) {
+            unmarkLocalSentUserMessage(sessionId, clientId);
+            toast.info(i18n.t('newChat.pendingQueue.steerKeptInQueue'));
+            requestInputProjection(sessionId);
+          } else {
+            void requestInputProjection(sessionId)
+              ?.then((res) => {
+                if (
+                  res?.current &&
+                  res.projection.pendingQueue.some((q) => q.clientId === clientId)
+                ) {
+                  toast.info(i18n.t('newChat.pendingQueue.steerKeptInQueue'));
+                }
+              })
+              .catch(() => undefined);
+          }
           return ok;
         })
         .catch((err) => {

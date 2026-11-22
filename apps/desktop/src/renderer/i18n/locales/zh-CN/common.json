@@ -13866,7 +13866,8 @@
       "steerTooltip": "点击插话，不打断当前任务；按 {{shortcut}} 排队发送",
       "steerTooltipSendMode": "点击或按 {{shortcut}} 插话，不打断当前任务",
       "stop": "停止生成",
-      "steer": "插话到当前任务"
+      "steer": "插话到当前任务",
+      "steerImageQueuesTooltip": "当前 Agent 不支持带图片插话，发送后将排队"
     },
     "pluginSetup": {
       "account": {
@@ -14397,7 +14398,10 @@
       "editSaveAria": "保存编辑（回车）",
       "editCancelAria": "取消编辑（Esc）",
       "syntheticContinueLabel": "继续未完成的任务（系统指令）",
-      "syntheticTriggerLabel": "系统指令"
+      "syntheticTriggerLabel": "系统指令",
+      "steerKeptInQueue": "暂时无法插话，消息仍保留在队列中。",
+      "steerFellBackToQueue": "这条消息暂时无法插话到当前任务，已转为排队发送。",
+      "steerImageDisabled": "当前 Agent 仅支持纯文本插话，带图片的消息会排队发送。"
     },
     "newChatView": {
       "missing": {

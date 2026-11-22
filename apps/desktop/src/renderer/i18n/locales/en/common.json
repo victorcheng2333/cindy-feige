@@ -13920,7 +13920,8 @@
       "steerTooltip": "Click to steer without interrupting the task; press {{shortcut}} to queue",
       "steerTooltipSendMode": "Click or press {{shortcut}} to steer without interrupting the task",
       "stop": "Stop generating",
-      "steer": "Steer running task"
+      "steer": "Steer running task",
+      "steerImageQueuesTooltip": "Image messages can’t steer this agent — sending will queue"
     },
     "pluginSetup": {
       "account": {
@@ -14451,7 +14452,10 @@
       "editSaveAria": "Save edit (Enter)",
       "editCancelAria": "Cancel edit (Esc)",
       "syntheticContinueLabel": "Continue the unfinished task (system instruction)",
-      "syntheticTriggerLabel": "System instruction"
+      "syntheticTriggerLabel": "System instruction",
+      "steerKeptInQueue": "Cannot steer right now; the message remains queued.",
+      "steerFellBackToQueue": "Cannot steer this message into the running task; it was queued instead.",
+      "steerImageDisabled": "This agent only supports text-only steering; messages with images stay queued."
     },
     "newChatView": {
       "missing": {

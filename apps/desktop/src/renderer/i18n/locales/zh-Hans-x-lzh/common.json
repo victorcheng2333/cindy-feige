@@ -13866,7 +13866,8 @@
       "steerTooltip": "点之则插话，不断今之差事；按 {{shortcut}} 排队遣",
       "steerTooltipSendMode": "点之或按 {{shortcut}} 插话，不断今之差事",
       "stop": "止生成",
-      "steer": "插话于今之差事"
+      "steer": "插话于今之差事",
+      "steerImageQueuesTooltip": "今之 Agent 不许附画插话，遣后将列待行"
     },
     "pluginSetup": {
       "account": {
@@ -14397,7 +14398,10 @@
       "editSaveAria": "存所修（Enter）",
       "editCancelAria": "罢修（Esc）",
       "syntheticContinueLabel": "续未竟之差事（系统指令）",
-      "syntheticTriggerLabel": "系统之令"
+      "syntheticTriggerLabel": "系统之令",
+      "steerKeptInQueue": "暂不能插话，讯仍留队列中。",
+      "steerFellBackToQueue": "此讯暂不能插话于今之差事，已改列待遣。",
+      "steerImageDisabled": "今之 Agent 仅许纯文插话，附画之讯须列待遣。"
     },
     "newChatView": {
       "missing": {

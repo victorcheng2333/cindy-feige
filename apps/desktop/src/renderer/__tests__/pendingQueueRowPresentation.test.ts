@@ -115,6 +115,36 @@ describe('PendingQueueBubble after a plugin edit', () => {
     expect(rendered.container.querySelector('[data-pending-queue-message="client-1"]')).toBe(bubble);
     if (withAttachment) expect(rendered.getByText(file.name, { exact: true })).toBeTruthy();
   });
+
+  it('hides the steer menu action when steerDisabledReason is provided', async () => {
+    const entry = queuedMessage();
+    const rendered = render(createElement(PendingQueueBubble, {
+      pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+      entry,
+      index: 0,
+      count: 1,
+      editingClientId: null,
+      steeringClientIds: [],
+      editLocks: [],
+      interactionLocks: [],
+      onEdit: () => {},
+      onSteer: async () => false,
+      steerDisabledReason: 'Text-only steering',
+      onRemove: () => {},
+      onMove: () => {},
+    }), {
+      wrapper: ({ children }: PropsWithChildren) =>
+        createElement(MemoryRouter, null, createElement(ConfirmDialogProvider, { children })),
+    });
+    await act(async () => {});
+    const trigger = rendered.getByRole('button', { name: i18n.t('newChat.pendingQueue.queued') });
+    expect(trigger).toBeTruthy();
+    await act(async () => {
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(rendered.getByText(i18n.t('newChat.pendingQueue.editAction'))).toBeTruthy();
+    expect(rendered.queryByText(i18n.t('newChat.pendingQueue.steerAction'))).toBeNull();
+  });
 });
 
 describe('getPendingQueueRowPresentation', () => {

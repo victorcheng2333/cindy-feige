@@ -14035,7 +14035,8 @@
       "steerTooltip": "Haz clic para dar indicaciones sin interrumpir la tarea; presiona {{shortcut}} para poner en cola",
       "steerTooltipSendMode": "Haz clic o presiona {{shortcut}} para dar indicaciones sin interrumpir la tarea",
       "stop": "Detener generación",
-      "steer": "Dar indicaciones a la tarea en curso"
+      "steer": "Dar indicaciones a la tarea en curso",
+      "steerImageQueuesTooltip": "Las imágenes no pueden orientar a este agente; al enviar se pondrán en cola"
     },
     "pluginSetup": {
       "account": {
@@ -14567,7 +14568,10 @@
       "editCancelAria": "Cancelar edición (Esc)",
       "syntheticContinueLabel": "Continuar la tarea inconclusa (instrucción del sistema)",
       "syntheticTriggerLabel": "Instrucción del sistema",
-      "showMore_many": "{{count}} más"
+      "showMore_many": "{{count}} más",
+      "steerKeptInQueue": "No se puede incorporar ahora; el mensaje permanece en cola.",
+      "steerFellBackToQueue": "Este mensaje no se puede incorporar a la tarea en curso; se puso en cola.",
+      "steerImageDisabled": "Este agente solo admite incorporar texto; los mensajes con imágenes se envían en cola."
     },
     "newChatView": {
       "missing": {

@@ -94,6 +94,11 @@ export interface Capabilities {
    * 可能支持取消但不支持 same-turn steering。
    */
   sameTurnSteer: CapabilityStatus;
+  /**
+   * When true, `sameTurnSteer` only accepts plain-text messages; messages with
+   * images or skill invocations cannot be steered mid-turn and stay queued.
+   */
+  sameTurnSteerTextOnly?: boolean;
 
   /**
    * 自动记忆通道 (Claude auto-memory / Codex experimental memories)。

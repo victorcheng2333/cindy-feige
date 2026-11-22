@@ -9565,6 +9565,12 @@ describe('AgentInputCoordinator steer transaction', () => {
     await flush();
     expect(h.sendToAgent).toHaveBeenCalledTimes(1);
     expect(latestProjection(h.projections).pendingQueue.map(item => item.clientId)).toEqual(['q-2']);
+    // 队列行显式点击插话（removeFromQueue: true）被 STEER_FOLLOWUP_REQUIRED 拒绝时，
+    // 消息仍保留在队首且必须返回 false，不能假报成功让 UI 毫无反馈。
+    h.steerToAgent.mockRejectedValueOnce(new Error('[STEER_FOLLOWUP_REQUIRED] native refusal'));
+    expect(await h.coordinator.steer(sid, second, { removeFromQueue: true })).toBe(false);
+    await flush();
+    expect(latestProjection(h.projections).pendingQueue.map(item => item.clientId)).toEqual(['q-2']);
     h.setRunning(false);
     h.coordinator.onTurnEvent(sid, 'done');
     await flush();

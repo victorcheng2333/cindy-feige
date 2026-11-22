@@ -14035,7 +14035,8 @@
       "steerTooltip": "Cliquez pour réorienter la tâche sans l'interrompre ; appuyez sur {{shortcut}} pour mettre en file d'attente",
       "steerTooltipSendMode": "Cliquez ou appuyez sur {{shortcut}} pour réorienter la tâche sans l'interrompre",
       "stop": "Arrêter la génération",
-      "steer": "Réorienter la tâche en cours"
+      "steer": "Réorienter la tâche en cours",
+      "steerImageQueuesTooltip": "Les messages avec image ne peuvent pas réorienter cet Agent ; l’envoi sera mis en file d’attente"
     },
     "pluginSetup": {
       "account": {
@@ -14567,7 +14568,10 @@
       "editCancelAria": "Annuler la modification (Esc)",
       "syntheticContinueLabel": "Poursuivre la tâche inachevée (instruction système)",
       "syntheticTriggerLabel": "Instruction système",
-      "showMore_many": "{{count}} de plus"
+      "showMore_many": "{{count}} de plus",
+      "steerKeptInQueue": "Impossible de réorienter pour le moment ; le message reste en file d’attente.",
+      "steerFellBackToQueue": "Ce message ne peut pas réorienter la tâche en cours ; il a été mis en file d’attente.",
+      "steerImageDisabled": "Cet Agent ne prend en charge que la réorientation par texte ; les messages avec images restent en file d’attente."
     },
     "newChatView": {
       "missing": {

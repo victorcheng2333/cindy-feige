@@ -951,6 +951,84 @@ describe("CursorAgent", () => {
     await runtime.close();
   });
 
+  // 生产入口：CursorHostRuntime.steer（用户刚发消息、agent.send 尚未返回 Run 时立刻插话）
+  // 依据：agent.send 启动异步窗口期间 this.run 尚未赋值，旧实现立即返回 revert_to_followup。
+  it("waits for an in-flight send startup before steering and aborts wait on cancel", async () => {
+    let resolveRun!: (run: unknown) => void;
+    let endStream!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      endStream = resolve;
+    });
+    const steer = vi.fn(async () => "complete_delivered" as const);
+    const send = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const sdk = {
+      Agent: { create: async () => ({ agentId: "id", send, close() {} }) },
+      JsonlLocalAgentStore: class {},
+    };
+    const runtime = new TestCursorHostRuntime(sdk as never, () => {});
+    await runtime.open({
+      apiKey: "invalid-test-key",
+      workingDir: "/fixture",
+      stateDir: "/fixture/state",
+      model: { id: "test" },
+      permissionMode: "auto",
+    });
+
+    const pending = runtime.send(1, {
+      turnId: 1,
+      message: { text: "work" },
+      model: { id: "test" },
+      planMode: false,
+    });
+    await Promise.resolve();
+    const steering = runtime.steer("early steer", 1);
+    resolveRun({
+      steer,
+      cancel: async () => endStream(),
+      stream: async function* () {
+        await gate;
+        yield* [];
+      },
+      wait: async () => ({ id: "run", status: "finished" }),
+    });
+    expect(await steering).toBe("complete_delivered");
+    expect(steer).toHaveBeenCalledExactlyOnceWith("early steer");
+    endStream();
+    await pending;
+
+    let cancelStream!: () => void;
+    const gate2 = new Promise<void>((resolve) => {
+      cancelStream = resolve;
+    });
+    const pending2 = runtime.send(2, {
+      turnId: 2,
+      message: { text: "work 2" },
+      model: { id: "test" },
+      planMode: false,
+    });
+    await Promise.resolve();
+    const cancelledSteer = runtime.steer("cancelled steer", 2);
+    await runtime.cancel();
+    expect(await cancelledSteer).toBe("revert_to_followup");
+    resolveRun({
+      steer,
+      cancel: async () => cancelStream(),
+      stream: async function* () {
+        await gate2;
+        yield* [];
+      },
+      wait: async () => ({ id: "run", status: "cancelled" }),
+    });
+    cancelStream();
+    await pending2;
+    await runtime.close();
+  });
+
   it("rejects remote execution and host approval requirements before dispatch", async () => {
     const f = fixture();
     await expect(
