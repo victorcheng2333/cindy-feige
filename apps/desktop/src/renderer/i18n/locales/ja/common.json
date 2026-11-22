@@ -19393,6 +19393,11 @@
       "remoteCodexNoSourceDescription": "デバイス「{{device}}」には Codex で利用可能なモデルソースが接続されていないため、ここからセッションを開始できません。そのデバイスで {{appName}} を開き、「設定 → プロバイダー」で OpenAI にログインするか他のソースを接続してから再試行してください。",
       "remoteCcNoSourceTitle": "リモートデバイスに利用可能な Claude ソースがありません",
       "remoteCcNoSourceDescription": "デバイス「{{device}}」には利用可能な Claude モデルソースが接続されていないため、ここからセッションを開始できません。そのデバイスで {{appName}} を開き、「設定 → プロバイダー」でソースを接続してから再試行してください。",
+      "remoteAgyBinaryMissingTitle": "リモートデバイスの Agy が未準備です",
+      "remoteAgyNoSourceTitle": "リモートデバイスに利用可能な Agy ソースがありません",
+      "remoteAgyNoSourceDescription": "デバイス「{{device}}」の Agy はサインインしていないか、ほかのコンピューターに公開しているモデルがないため、ここからセッションを開始できません。そのデバイスで {{appName}} を開き、「設定 → プロバイダー」で Agy にサインインして「リモート利用を許可」をオンにしてから再試行してください。",
+      "remoteAgyUnsupportedTitle": "ここでは Agy を使えません",
+      "remoteAgyUnsupportedDescription": "Agy はこのコンピューターか、ご自身のほかのコンピューターでのみ実行できます。SSH のセッションや、ほかの人が共有したプロバイダーでは使えません。別のモデルを選んで再試行してください。",
       "gotIt": "OK"
     },
     "fileTypes": {

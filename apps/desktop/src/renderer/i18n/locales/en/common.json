@@ -19468,6 +19468,11 @@
       "remoteCodexNoSourceDescription": "“{{device}}” has no model source connected for Codex, so sessions can’t be started from here. Open {{appName}} on that device, sign in to OpenAI or connect another source under Settings → Providers, then try again.",
       "remoteCcNoSourceTitle": "No Claude source connected on the remote device",
       "remoteCcNoSourceDescription": "“{{device}}” has no Claude model source connected, so sessions can’t be started from here. Open {{appName}} on that device, connect a source under Settings → Providers, then try again.",
+      "remoteAgyBinaryMissingTitle": "Agy not ready on the remote device",
+      "remoteAgyNoSourceTitle": "No Agy source on the remote device",
+      "remoteAgyNoSourceDescription": "Agy on “{{device}}” isn’t signed in or has no models open to other computers, so sessions can’t be started from here. Open {{appName}} on that device, sign in to Agy under Settings → Providers, turn on “Allow remote use”, then try again.",
+      "remoteAgyUnsupportedTitle": "Agy can’t run here",
+      "remoteAgyUnsupportedDescription": "Agy runs only on this computer or your own other computers. It isn’t available for SSH sessions or providers others share with you. Choose another model and try again.",
       "gotIt": "Got it"
     },
     "fileTypes": {

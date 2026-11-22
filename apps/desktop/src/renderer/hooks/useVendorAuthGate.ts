@@ -1,6 +1,7 @@
 import { deviceDisplayName } from '@/lib/deviceName';
 import { invokeModelCatalog } from '@/lib/invokeModelCatalog';
 import { parseModelCatalogKey } from '../../shared/controlledModelCatalog';
+import { isProviderShareAgentDeviceId } from '../../shared/providerShare';
 /**
  * useVendorAuthGate —— vendor 未就绪时弹通用 confirmDialog,确认后跳 settings。
  *
@@ -254,10 +255,22 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
       // provider:list 只有结构化 unsupported 才能回退 agent:status。真实网络 / 协议失败
       // 必须 fail closed，否则模型选择器已经显示读取失败，发送门禁却仍会放行旧快照。
       const deviceId = options?.deviceId;
-      if (vendor === 'antigravity' && (deviceId || options?.remoteHostId)) return { proceed: false };
+      // Agy can borrow only the user's own computers; SSH hosts and provider shares cannot run it.
+      if (vendor === 'antigravity' && (options?.remoteHostId || (deviceId && isProviderShareAgentDeviceId(
+        parseModelCatalogKey(deviceId)?.agentDeviceId ?? deviceId,
+      )))) {
+        await confirm({
+          title: t('logic.confirm.remoteAgyUnsupportedTitle'),
+          description: t('logic.confirm.remoteAgyUnsupportedDescription'),
+          confirmText: t('logic.confirm.gotIt'),
+          showCancel: false,
+          autoFocusConfirm: true,
+        });
+        return { proceed: false };
+      }
       if (deviceId) {
         const providerAgent: ProviderAgentKind =
-          vendor === 'cursor' ? 'cursor' : vendor === 'codex' ? 'codex' : vendor === 'pi' ? 'pi' : 'claude-code';
+          vendor === 'antigravity' ? 'antigravity' : vendor === 'cursor' ? 'cursor' : vendor === 'codex' ? 'codex' : vendor === 'pi' ? 'pi' : 'claude-code';
         const includeSuspended = options?.existingSessionRoute === true;
         // 模型选择器已读到的来源快照(被控端来源变化推送会令其失效)显示已有可用来源时直接复用:
         // provider:list 经隧道实测 1–5 秒,重拉一遍会整段挡在远程新建任务的第一步。
@@ -270,7 +283,8 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
           sourceReadyFromProviderList(cachedProviders, providerAgent, { includeSuspended }) ===
             true;
         const [statusRes, providersRes] = await Promise.allSettled([
-          cachedSourceReady && vendor === 'cc'
+          // A connected Agy source already proves its CLI is installed on that computer.
+          cachedSourceReady && (vendor === 'cc' || vendor === 'antigravity')
             ? Promise.resolve(null)
             : invokeModelCatalog(window.electronAPI.deviceLink, deviceId, 'maker:agent:status', [providerAgent]),
           cachedSourceReady
@@ -323,8 +337,13 @@ export function useVendorAuthGate(): UseVendorAuthGateReturn {
             ? 'logic.confirm.remotePiBinaryMissingTitle'
             : vendor === 'cc'
               ? 'logic.confirm.remoteCcBinaryMissingTitle'
-              : 'logic.confirm.remoteCodexBinaryMissingTitle');
+              : vendor === 'antigravity'
+                ? 'logic.confirm.remoteAgyBinaryMissingTitle'
+                : 'logic.confirm.remoteCodexBinaryMissingTitle');
           description = t('logic.confirm.remoteAuthDescription', { device });
+        } else if (vendor === 'antigravity') {
+          title = t('logic.confirm.remoteAgyNoSourceTitle');
+          description = t('logic.confirm.remoteAgyNoSourceDescription', { device });
         } else if (vendor === 'codex') {
           title = t('logic.confirm.remoteCodexNoSourceTitle');
           description = t('logic.confirm.remoteCodexNoSourceDescription', { device });

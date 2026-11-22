@@ -2232,7 +2232,12 @@ function CCAgentSessionContent({
   // 能力取**真实 agent**(displayAgentKind 在 pending switch 期间可能乐观指向目标 agent,
   // 用它判定会与 realAgentKind 分流不一致);remoteDeviceId 让远程 pi 取被控端能力。
   const { capabilities: realSessionCaps } = useAgentCapabilities(realAgentKind, remoteDeviceId);
-  const canSteer = realSessionCaps?.sameTurnSteer?.supported ?? realAgentKind !== 'antigravity';
+  // Steering joins the running turn, so it follows the computer the Agent runs on
+  // (an Agy borrowed from another computer may be unusable on this one).
+  const { capabilities: steerCaps } = useAgentCapabilities(
+    realAgentKind, remoteDeviceId ?? session?.agentDeviceId ?? undefined,
+  );
+  const canSteer = steerCaps?.sameTurnSteer?.supported ?? realAgentKind !== 'antigravity';
   const queueSteer = canSteer ? steerQueuedMessage : undefined;
   const compactChannel = useMemo(
     () => resolveManualCompactChannel(realAgentKind, realSessionCaps),

@@ -112,6 +112,47 @@ describe('useVendorAuthGate device-link 来源快照复用', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  // unit: Agy borrowed from another own computer was dropped silently before any
+  // request reached that computer. Minimum input: local task, agentDeviceId 'm5'.
+  it.each([
+    [true, { proceed: true }, null],
+    [false, { proceed: false }, 'logic.confirm.remoteAgyNoSourceTitle'],
+  ] as const)('checks Agy on an own computer with its Agy source (connected=%s)', async (connected, expected, title) => {
+    invoke.mockImplementation(async (_deviceId: string, channel: string) => {
+      if (channel === 'maker:agent:status') return { binaryReady: true, authReady: connected };
+      if (channel === 'maker:provider:list') return { providers: [
+        provider({ id: 'anthropic', agents: ['claude-code'], routing: { 'claude-code': { upstream: '', authStrategy: 'none' } }, models: { 'claude-code': [] } }),
+        provider({ id: 'antigravity', connected, agents: ['antigravity'], routing: { antigravity: { upstream: '', authStrategy: 'none' } }, models: { antigravity: [] } }),
+      ] };
+      throw new Error('unexpected channel ' + channel);
+    });
+    const { result } = renderHook(() => useVendorAuthGate());
+    await expect(result.current.checkAndConfirm('antigravity', { deviceId: 'm5' })).resolves.toEqual(expected);
+    expect(invoke).toHaveBeenCalledWith('m5', 'maker:agent:status', ['antigravity']);
+    if (title) expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title }));
+    else expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('sends Agy without a tunnel round trip when the picker already saw its source connected', async () => {
+    cachedProviders.mockReturnValue({ providers: [
+      provider({ id: 'antigravity', agents: ['antigravity'], routing: { antigravity: { upstream: '', authStrategy: 'none' } }, models: { antigravity: [] } }),
+    ] });
+    const { result } = renderHook(() => useVendorAuthGate());
+    await expect(result.current.checkAndConfirm('antigravity', { deviceId: 'm5' })).resolves.toEqual({ proceed: true });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ deviceId: 'share:abc' }],
+    [{ deviceId: modelCatalogKey('share:abc', 'host-b') }],
+    [{ remoteHostId: 'ssh-host' }],
+  ])('explains that Agy cannot run on %j', async (options) => {
+    const { result } = renderHook(() => useVendorAuthGate());
+    await expect(result.current.checkAndConfirm('antigravity', options)).resolves.toEqual({ proceed: false });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'logic.confirm.remoteAgyUnsupportedTitle' }));
+  });
+
   it('keeps the scoped cache optimization but blocks a missing source binary without opening local settings', async () => {
     const key = modelCatalogKey('self-a', 'host-b')!;
     cachedProviders.mockImplementation(id => id === key ? { providers: [provider({})] } : null);
@@ -244,8 +285,9 @@ describe('useVendorAuthGate 本机运行时轴', () => {
       maker: { agent: { getStatus }, listProviders: async () => ({ providers: [provider({})] }) },
     });
     const { result } = renderHook(() => useVendorAuthGate());
-    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(5));
     expect(getStatus).toHaveBeenCalledWith('cursor');
+    expect(getStatus).toHaveBeenCalledWith('antigravity');
     getStatus.mockClear();
 
     await expect(result.current.checkAndConfirm('cc', { remoteHostId: 'ssh-host' }))

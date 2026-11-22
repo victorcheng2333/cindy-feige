@@ -19393,6 +19393,11 @@
       "remoteCodexNoSourceDescription": "远程设备「{{device}}」尚未连接 Codex 可用的模型来源，无法在这里新建并运行任务。请在该设备上打开 {{appName}}，在「设置 → 模型供应商」登录 OpenAI 或连接其他来源后重试。",
       "remoteCcNoSourceTitle": "远程设备 Claude 暂无可用来源",
       "remoteCcNoSourceDescription": "远程设备「{{device}}」尚未连接可用的 Claude 模型来源，无法在这里新建并运行任务。请在该设备上打开 {{appName}}，在「设置 → 模型供应商」连接来源后重试。",
+      "remoteAgyBinaryMissingTitle": "远程设备 Agy 组件未就绪",
+      "remoteAgyNoSourceTitle": "远程设备 Agy 暂无可用来源",
+      "remoteAgyNoSourceDescription": "远程设备「{{device}}」上的 Agy 尚未登录，或还没有开放可用的模型，无法在这里新建并运行任务。请在该设备上打开 {{appName}}，在「设置 → 模型供应商」登录 Agy 并打开「允许被远程调用」后重试。",
+      "remoteAgyUnsupportedTitle": "无法在这里使用 Agy",
+      "remoteAgyUnsupportedDescription": "Agy 只能在这台电脑或你自己的其他电脑上运行，不支持 SSH 任务和别人分享的供应商。请换一个模型后重试。",
       "gotIt": "知道了"
     },
     "fileTypes": {

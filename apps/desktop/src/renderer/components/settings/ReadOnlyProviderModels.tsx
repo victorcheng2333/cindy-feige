@@ -18,7 +18,7 @@ export interface ReadOnlyProviderModel {
   name: string;
 }
 
-const AGENT_ORDER: readonly AgentKind[] = ['claude-code', 'codex', 'pi'];
+const AGENT_ORDER: readonly AgentKind[] = ['claude-code', 'codex', 'pi', 'antigravity'];
 
 /** 那台电脑上这个供应商开放的模型：去掉停用与隐藏的，按 Agent 顺序去重。 */
 export function readOnlyProviderModels(

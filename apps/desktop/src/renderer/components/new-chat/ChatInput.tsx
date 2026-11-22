@@ -2317,7 +2317,11 @@ export function ChatInput({
     const kinds = UNIFIED_AGENT_KINDS.filter(
       (kind) => {
         if (kind === 'antigravity') {
-          if (!sessionId) return !catalogDeviceId && runtimeAvailableVendors.has('antigravity');
+          // A draft may borrow another computer for Agy, but the task computer still
+          // registers the Agy runtime that creates the session.
+          if (!sessionId) {
+            return !deviceLinkDeviceId && !remoteHostId && taskComputerAgents.availableVendors.has('antigravity');
+          }
           // Agy runs on the task computer: a borrowed source (agentDeviceId) hands off home,
           // like Cursor. Only a task controlled on another computer cannot offer it here.
           return agentKind === kind || (sessionAgentSwitchSupported && hostSupportsAntigravitySessionSwitch &&
@@ -10190,7 +10194,8 @@ export function ChatInput({
                     permissionMode={activePermissionMode}
                     onPermissionModeChange={handlePermissionModeChange}
                     vendorKey={vendorKey}
-                    deviceId={deviceLinkDeviceId ?? undefined}
+                    // Agy's modes must be accepted by the Agy session on the computer it runs on.
+                    deviceId={(agentKind === 'antigravity' ? catalogDeviceId : deviceLinkDeviceId) ?? undefined}
                     disabled={composerEditorLocked || settingsLocked || sharedGuest}
                     dense={effectiveDenseToolbar}
                     iconOnly={Boolean(sessionId) || useUltraCompactToolbar}

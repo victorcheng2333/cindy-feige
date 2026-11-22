@@ -60,3 +60,18 @@ it('keeps different route IDs visible while deduplicating the same ID across eng
   ]);
   expect(screen.getByText('chatgpt/gpt-6.1-sol')).toBeTruthy();
 });
+
+// unit: an own computer's shared Agy provider listed "0 models" because only
+// Claude Code / Codex / Pi rows were counted. Minimal failing input: an
+// antigravity-only provider with one model enabled on that computer.
+it('counts the models an Agy provider opens on the other computer', () => {
+  const model = (id: string, defaultEnabled: boolean) => ({ id, name: id, contextWindow: 1000000, efforts: [], defaultEffort: null, defaultEnabled });
+  const provider: ProviderView = {
+    id: 'antigravity', name: 'Agy-M5', source: 'builtin', connected: true,
+    auth: { method: 'none' }, agents: ['antigravity'], routing: {},
+    models: { antigravity: [model('gemini-4-neon', true), model('gemini-4-flash', false)] },
+  };
+  expect(readOnlyProviderModels(provider, {}).map(row => row.id)).toEqual(['gemini-4-neon']);
+  expect(readOnlyProviderModels(provider, { 'antigravity:antigravity:gemini-4-flash': true }).map(row => row.id))
+    .toEqual(['gemini-4-neon', 'gemini-4-flash']);
+});

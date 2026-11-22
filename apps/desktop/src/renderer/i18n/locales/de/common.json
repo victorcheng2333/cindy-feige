@@ -19468,6 +19468,11 @@
       "remoteCodexNoSourceDescription": "Auf „{{device}}“ ist keine Modellquelle für Codex verbunden, daher können von hier aus keine Sitzungen gestartet werden. Öffne {{appName}} auf diesem Gerät, melde dich bei OpenAI an oder verbinde unter Einstellungen → Anbieter eine andere Quelle und versuche es dann erneut.",
       "remoteCcNoSourceTitle": "Keine Claude-Quelle auf dem Remote-Gerät verbunden",
       "remoteCcNoSourceDescription": "Auf „{{device}}“ ist keine Claude-Modellquelle verbunden, daher können von hier aus keine Sitzungen gestartet werden. Öffne {{appName}} auf diesem Gerät, verbinde unter Einstellungen → Anbieter eine Quelle und versuche es dann erneut.",
+      "remoteAgyBinaryMissingTitle": "Agy auf dem Remote-Gerät nicht bereit",
+      "remoteAgyNoSourceTitle": "Keine Agy-Quelle auf dem Remote-Gerät",
+      "remoteAgyNoSourceDescription": "Agy ist auf „{{device}}“ nicht angemeldet oder gibt keine Modelle für andere Computer frei, daher können von hier aus keine Sitzungen gestartet werden. Öffne {{appName}} auf diesem Gerät, melde dich unter Einstellungen → Anbieter bei Agy an, aktiviere „Remote-Nutzung erlauben“ und versuche es dann erneut.",
+      "remoteAgyUnsupportedTitle": "Agy kann hier nicht ausgeführt werden",
+      "remoteAgyUnsupportedDescription": "Agy läuft nur auf diesem Computer oder auf deinen anderen eigenen Computern. Für SSH-Sitzungen und von anderen freigegebene Anbieter ist Agy nicht verfügbar. Wähle ein anderes Modell und versuche es erneut.",
       "gotIt": "Verstanden"
     },
     "fileTypes": {

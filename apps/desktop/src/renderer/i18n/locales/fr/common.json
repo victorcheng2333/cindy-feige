@@ -19651,6 +19651,11 @@
       "remoteCodexNoSourceDescription": "« {{device}} » n'a aucune source de modèle connectée pour Codex, il est donc impossible de démarrer des sessions depuis ici. Ouvrez {{appName}} sur cet appareil, connectez-vous à OpenAI ou connectez une autre source dans Paramètres → Fournisseurs, puis réessayez.",
       "remoteCcNoSourceTitle": "Aucune source Claude connectée sur l'appareil distant",
       "remoteCcNoSourceDescription": "« {{device}} » n'a aucune source de modèle Claude connectée, il est donc impossible de démarrer des sessions depuis ici. Ouvrez {{appName}} sur cet appareil, connectez une source dans Paramètres → Fournisseurs, puis réessayez.",
+      "remoteAgyBinaryMissingTitle": "Agy non prêt sur l'appareil distant",
+      "remoteAgyNoSourceTitle": "Aucune source Agy sur l'appareil distant",
+      "remoteAgyNoSourceDescription": "Agy n'est pas connecté sur « {{device}} » ou n'ouvre aucun modèle aux autres ordinateurs : impossible de démarrer des sessions depuis ici. Ouvrez {{appName}} sur cet appareil, connectez-vous à Agy dans Paramètres → Fournisseurs, activez « Autoriser l'utilisation à distance », puis réessayez.",
+      "remoteAgyUnsupportedTitle": "Agy ne peut pas s'exécuter ici",
+      "remoteAgyUnsupportedDescription": "Agy s'exécute uniquement sur cet ordinateur ou sur vos autres ordinateurs. Il n'est pas disponible pour les sessions SSH ni pour les fournisseurs que d'autres personnes partagent avec vous. Choisissez un autre modèle et réessayez.",
       "gotIt": "Compris"
     },
     "fileTypes": {

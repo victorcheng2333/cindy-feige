@@ -19393,6 +19393,11 @@
       "remoteCodexNoSourceDescription": "远程设备「{{device}}」尚未连 Codex 可用之模型来源，无从于此新开差事而行之。请于该设备开 {{appName}}，于「规制 → 模型供方」登录 OpenAI 或连他源，再试之。",
       "remoteCcNoSourceTitle": "远方之机 Claude 暂无可用之源",
       "remoteCcNoSourceDescription": "远程设备「{{device}}」尚未连可用之 Claude 模型来源，无从于此新开差事而行之。请于该设备开 {{appName}}，于「规制 → 模型供方」连源，再试之。",
+      "remoteAgyBinaryMissingTitle": "远方之机 Agy 组件未备",
+      "remoteAgyNoSourceTitle": "远方之机 Agy 暂无可用之源",
+      "remoteAgyNoSourceDescription": "远程设备「{{device}}」之 Agy 尚未登录，或未开可用之模型，无从于此新开差事而行之。请于该设备开 {{appName}}，于「规制 → 模型供方」登录 Agy 并启「允许远程调用」，再试之。",
+      "remoteAgyUnsupportedTitle": "此处不可用 Agy",
+      "remoteAgyUnsupportedDescription": "Agy 唯可行于此机或君之他机，不支 SSH 差事与他人分享之供方。请易一模型，再试之。",
       "gotIt": "知矣"
     },
     "fileTypes": {
