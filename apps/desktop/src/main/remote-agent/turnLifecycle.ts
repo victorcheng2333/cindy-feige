@@ -10,7 +10,8 @@ export function startsRemoteProductTurn(event: AgentEvent): boolean {
   if (typeof parent === 'string' && parent.length > 0) return false;
   if (event.type === 'status') {
     const data = event.data as { isRunning?: unknown; providerInitiatedTurn?: unknown } | null;
-    return event.source === 'claude-code' && data?.isRunning === true && data.providerInitiatedTurn === true;
+    return (event.source === 'claude-code' || event.source === 'antigravity')
+      && data?.isRunning === true && data.providerInitiatedTurn === true;
   }
   return event.type === 'text' || event.type === 'thinking' || event.type === 'image'
     || event.type === 'tool_use' || event.type === 'tool_result' || event.type === 'tool_result_full';

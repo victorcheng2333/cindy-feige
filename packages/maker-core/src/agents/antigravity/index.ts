@@ -355,6 +355,7 @@ export class AntigravityAgent extends BaseAgent {
         classifyWarning: classifyAgyWarning,
         additionalDirectories: hosted ? undefined : writableDirs,
         steerByPrompt: true,
+        continueWhileToolsPending: true,
         ...(hosted
           ? { interceptToolCall: remoteGuard!.inspect }
           : { reviewPermission: toolCall => reviewAutoAction(normalizeAcpToolForAutoReview(toolCall)) }),

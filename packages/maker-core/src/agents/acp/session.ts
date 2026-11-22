@@ -56,6 +56,9 @@ import { acpToolDisplayName, AcpUpdateTranslator, type AcpTurnOutcome } from './
 
 const DEFAULT_CANCEL_GRACE_MS = 15_000;
 const SESSION_CLOSE_TIMEOUT_MS = 2_000;
+const DEFAULT_BG_AFTER_TOOL_SETTLED_MS = 20_000;
+const DEFAULT_BG_AFTER_THINKING_MS = 30_000;
+const DEFAULT_BG_AFTER_TEXT_MS = 3_000;
 /** Keep base64-encoded inline images safely below ACP's 32 MiB line cap; larger files fall back to resource_link. */
 const MAX_INLINE_IMAGE_BYTES = 16 * 1024 * 1024;
 
@@ -127,6 +130,18 @@ export interface OpenAcpSessionOptions {
    * request ends the turn, so its result (with usage) closes the Cindy turn.
    */
   steerByPrompt?: boolean;
+  /**
+   * Keep the Cindy turn running after `end_turn` when non-daemon tool calls are still
+   * unsettled (e.g. Agy background commands/subagents whose completion wakes the agent up
+   * asynchronously), and treat subsequent autonomous wakeups as foreground turns.
+   */
+  continueWhileToolsPending?: boolean;
+  /** Idle-settle delays after background tools finish (override in tests). */
+  backgroundContinuationDelaysMs?: {
+    afterToolSettledMs?: number;
+    afterThinkingMs?: number;
+    afterTextMs?: number;
+  };
   /**
    * Optional per-tool-call filter/rewriter (used by device-hosted remote-workspace mode to
    * unwrap MCP tool calls and fail closed if the agent ever attempts a local file/shell tool).
@@ -300,6 +315,14 @@ interface ActiveTurn {
   token: number;
   settled: boolean;
   cancelTimer: ReturnType<typeof setTimeout> | null;
+  /** Idle-settle timer used once all background tools finish with no active `session/prompt`. */
+  backgroundSettleTimer: ReturnType<typeof setTimeout> | null;
+  /** True while keeping the turn alive past `end_turn` for background tools or an autonomous wakeup. */
+  continuingInBackground: boolean;
+  /** Deferred prompt outcome held until background work settles. */
+  deferredOutcome: AcpTurnOutcome | null;
+  /** Whether the post-wakeup phase has emitted assistant text since the last tool/thought started. */
+  sawTextSinceBackgroundWait: boolean;
   /** Newest `session/prompt` serving this turn; only its result ends the turn. */
   lease: number;
   /** Prompts sent for this turn whose `session/prompt` has not returned yet. */
@@ -381,6 +404,10 @@ export class AcpSession {
   private readonly reviewPermission: OpenAcpSessionOptions['reviewPermission'];
   private readonly interceptToolCall: OpenAcpSessionOptions['interceptToolCall'];
   private readonly steerByPrompt: boolean;
+  private readonly continueWhileToolsPending: boolean;
+  private readonly bgAfterToolSettledMs: number;
+  private readonly bgAfterThinkingMs: number;
+  private readonly bgAfterTextMs: number;
   private violationTerminated = false;
   private readonly queue = createAsyncQueue<AgentEvent>();
   private readonly translator: AcpUpdateTranslator;
@@ -426,6 +453,10 @@ export class AcpSession {
     this.reviewPermission = init.options.reviewPermission;
     this.interceptToolCall = init.options.interceptToolCall;
     this.steerByPrompt = init.options.steerByPrompt === true;
+    this.continueWhileToolsPending = init.options.continueWhileToolsPending === true;
+    this.bgAfterToolSettledMs = init.options.backgroundContinuationDelaysMs?.afterToolSettledMs ?? DEFAULT_BG_AFTER_TOOL_SETTLED_MS;
+    this.bgAfterThinkingMs = init.options.backgroundContinuationDelaysMs?.afterThinkingMs ?? DEFAULT_BG_AFTER_THINKING_MS;
+    this.bgAfterTextMs = init.options.backgroundContinuationDelaysMs?.afterTextMs ?? DEFAULT_BG_AFTER_TEXT_MS;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
     this.translator = new AcpUpdateTranslator({
       blockIdPrefix: `acp-${init.sessionId}`, classifyWarning: init.options.classifyWarning,
@@ -556,6 +587,18 @@ export class AcpSession {
       return;
     }
     if (turn.settled || turn.cancelTimer) return;
+    if (turn.continuingInBackground && turn.outstanding.size === 0) {
+      // No `session/prompt` RPC is in flight to resolve after `session/cancel`;
+      // cancel permissions, notify the agent, and close the turn immediately
+      // without retiring a healthy endpoint.
+      this.clearBackgroundSettleTimer(turn);
+      this.cancelPermissions();
+      if (!this.connection.closed) {
+        try { this.connection.notify('session/cancel', { sessionId: this.nativeId }); } catch { /* closing */ }
+      }
+      this.finishTurn(turn.token, { stopReason: 'cancelled' });
+      return;
+    }
     turn.cancelTimer = setTimeout(() => {
       this.logger?.warn('acp: agent did not settle a cancelled prompt in time', { graceMs: this.cancelGraceMs });
       // Mark the handle as closing before emitting done so no queued or later prompt
@@ -685,6 +728,7 @@ export class AcpSession {
       case 'tool_call_update': {
         if (this.violationTerminated) return;
         const fields = normalizeToolCallFields(update);
+        if (fields && this.shouldOpenAutonomousTurnForTool(fields)) this.beginAutonomousTurn();
         if (fields && this.interceptToolCall) {
           const verdict = this.interceptToolCall(fields, 'update');
           if (verdict.action === 'block') {
@@ -693,15 +737,19 @@ export class AcpSession {
           }
           if (verdict.action === 'rewrite') {
             this.emit(this.translator.noteToolCall(verdict.toolCall));
+            this.afterBackgroundContentUpdate(update);
             return;
           }
         }
         this.emit(this.translator.handleUpdate(update));
+        this.afterBackgroundContentUpdate(update);
         return;
       }
       default:
         if (STATE_UPDATES.has(update.sessionUpdate)) return;
+        if (this.shouldOpenAutonomousTurnForContent(update)) this.beginAutonomousTurn();
         this.emit(this.translator.handleUpdate(update));
+        this.afterBackgroundContentUpdate(update);
     }
   }
 
@@ -715,12 +763,35 @@ export class AcpSession {
   }
 
   private pump(): void {
-    if (this.turn || this.ended || this.closing) return;
+    if (this.ended || this.closing) return;
+    if (
+      this.turn?.continuingInBackground
+      && this.turn.outstanding.size === 0
+      && !this.turn.settled
+      && !this.turn.cancelTimer
+      && this.pendingPrompts.length > 0
+    ) {
+      // A queued follow-up prompt explicitly starts a new turn; settle the
+      // background continuation first so `finishTurn` pumps the queued prompt.
+      this.finishTurn(this.turn.token, this.resolveBackgroundOutcome(this.turn));
+      return;
+    }
+    if (this.turn) return;
     const prompt = this.pendingPrompts.shift();
     if (!prompt) return;
     // Output produced between turns (autonomous agent work) is closed off as background.
     this.emit(this.translator.flushPending());
-    const turn: ActiveTurn = { token: ++this.turnSeq, settled: false, cancelTimer: null, lease: 0, outstanding: new Map() };
+    const turn: ActiveTurn = {
+      token: ++this.turnSeq,
+      settled: false,
+      cancelTimer: null,
+      backgroundSettleTimer: null,
+      continuingInBackground: false,
+      deferredOutcome: null,
+      sawTextSinceBackgroundWait: false,
+      lease: 0,
+      outstanding: new Map(),
+    };
     this.turn = turn;
     if (!this.identityPublished) {
       this.identityPublished = true;
@@ -733,6 +804,10 @@ export class AcpSession {
 
   /** Sends a prompt for `turn`; a later one (a steer) takes over ending the turn. */
   private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
+    this.clearBackgroundSettleTimer(turn);
+    turn.continuingInBackground = false;
+    turn.deferredOutcome = null;
+    turn.sawTextSinceBackgroundWait = false;
     const lease = ++turn.lease;
     turn.outstanding.set(lease, prompt);
     this.connection.request('session/prompt', { sessionId: this.nativeId, prompt }, { timeoutMs: null }).then(
@@ -755,6 +830,27 @@ export class AcpSession {
       if (prompt && !turn.cancelTimer) this.pendingPrompts.unshift(prompt);
       return;
     }
+    if (
+      this.continueWhileToolsPending
+      && turn.outstanding.size === 0
+      && !turn.settled
+      && !turn.cancelTimer
+      && !refused
+      && 'stopReason' in outcome
+      && outcome.stopReason === 'end_turn'
+      && this.pendingPrompts.length === 0
+      && this.translator.hasPendingNonDaemonTools()
+    ) {
+      // Agy resolves `session/prompt` when the model yields to wait for a
+      // background command or subagent. Keep the foreground turn open until
+      // those tools finish and the agent finishes its wakeup step.
+      turn.continuingInBackground = true;
+      turn.deferredOutcome = outcome;
+      turn.sawTextSinceBackgroundWait = false;
+      this.emit(this.translator.flushPending());
+      this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+      return;
+    }
     this.finishTurn(turn.token, turn.usage ? { ...outcome, usage: turn.usage } : outcome);
   }
 
@@ -763,6 +859,7 @@ export class AcpSession {
     if (!turn || turn.token !== token || turn.settled) return;
     turn.settled = true;
     if (turn.cancelTimer) clearTimeout(turn.cancelTimer);
+    this.clearBackgroundSettleTimer(turn);
     this.cancelPermissions();
     this.turn = null;
     if (outcome.usage) {
@@ -775,6 +872,95 @@ export class AcpSession {
     }
     this.publishTurnEnd(outcome);
     this.pump();
+  }
+
+  private resolveBackgroundOutcome(turn: ActiveTurn): AcpTurnOutcome {
+    const base = turn.deferredOutcome ?? { stopReason: 'end_turn' as const };
+    return turn.usage ? { ...base, usage: turn.usage } : base;
+  }
+
+  private clearBackgroundSettleTimer(turn: ActiveTurn): void {
+    if (!turn.backgroundSettleTimer) return;
+    clearTimeout(turn.backgroundSettleTimer);
+    turn.backgroundSettleTimer = null;
+  }
+
+  private shouldOpenAutonomousTurnForTool(fields: AcpToolCallFields): boolean {
+    if (this.turn !== null || !this.continueWhileToolsPending || this.ended || this.closing || this.violationTerminated) {
+      return false;
+    }
+    return fields.status !== 'completed' && fields.status !== 'failed';
+  }
+
+  private shouldOpenAutonomousTurnForContent(update: AcpRecord): boolean {
+    if (this.turn !== null || !this.continueWhileToolsPending || this.ended || this.closing || this.violationTerminated) {
+      return false;
+    }
+    if (update.sessionUpdate !== 'agent_thought_chunk' && update.sessionUpdate !== 'agent_message_chunk') {
+      return false;
+    }
+    const block = asRecord(update.content);
+    return block.type === 'text' && typeof block.text === 'string' && block.text.length > 0;
+  }
+
+  private beginAutonomousTurn(): void {
+    if (this.turn !== null || this.ended || this.closing || this.violationTerminated) return;
+    const turn: ActiveTurn = {
+      token: ++this.turnSeq,
+      settled: false,
+      cancelTimer: null,
+      backgroundSettleTimer: null,
+      continuingInBackground: true,
+      deferredOutcome: { stopReason: 'end_turn' },
+      sawTextSinceBackgroundWait: false,
+      lease: 0,
+      outstanding: new Map(),
+    };
+    this.turn = turn;
+    if (!this.identityPublished) {
+      this.identityPublished = true;
+      this.queue.push({ type: 'session_id', data: this.nativeId, source: this.agentKind });
+    }
+    this.usage = { ...this.usage, tokenUsage: 0, outputTokens: 0 };
+    this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true, providerInitiatedTurn: true } }]);
+  }
+
+  private afterBackgroundContentUpdate(update?: AcpRecord): void {
+    const turn = this.turn;
+    if (!turn || !turn.continuingInBackground || turn.settled || turn.cancelTimer || turn.outstanding.size > 0) return;
+    this.clearBackgroundSettleTimer(turn);
+    if (this.permissionControllers.size > 0) return;
+    if (this.translator.hasPendingNonDaemonTools()) {
+      turn.sawTextSinceBackgroundWait = false;
+      return;
+    }
+    const kind = update?.sessionUpdate;
+    if (kind === 'agent_message_chunk') {
+      const block = asRecord(update?.content);
+      if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
+        turn.sawTextSinceBackgroundWait = true;
+      }
+    } else if (kind === 'agent_thought_chunk') {
+      turn.sawTextSinceBackgroundWait = false;
+    }
+    const delayMs = this.translator.hasOpenThinking()
+      ? this.bgAfterThinkingMs
+      : turn.sawTextSinceBackgroundWait
+        ? this.bgAfterTextMs
+        : this.bgAfterToolSettledMs;
+    turn.backgroundSettleTimer = setTimeout(() => {
+      turn.backgroundSettleTimer = null;
+      if (
+        turn.settled
+        || this.turn !== turn
+        || !turn.continuingInBackground
+        || turn.outstanding.size > 0
+        || this.permissionControllers.size > 0
+        || this.translator.hasPendingNonDaemonTools()
+      ) return;
+      this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
+    }, delayMs);
+    (turn.backgroundSettleTimer as unknown as { unref?: () => void }).unref?.();
   }
 
   private publishTurnEnd(outcome: AcpTurnOutcome): void {
@@ -840,11 +1026,15 @@ export class AcpSession {
       if (verdict.action === 'rewrite') {
         toolCall = verdict.toolCall;
         if (verdict.autoApproveOnce && allowOnce) {
+          if (this.shouldOpenAutonomousTurnForTool(toolCall)) this.beginAutonomousTurn();
+          if (this.turn?.continuingInBackground) this.clearBackgroundSettleTimer(this.turn);
           this.emit(this.translator.noteToolCall(toolCall));
           return selected(allowOnce);
         }
       }
     }
+    if (this.shouldOpenAutonomousTurnForTool(toolCall)) this.beginAutonomousTurn();
+    if (this.turn?.continuingInBackground) this.clearBackgroundSettleTimer(this.turn);
     this.emit(this.translator.noteToolCall(toolCall));
     // Only the agent can define the lifetime and scope of a persistent grant.
     // When it offers no one-time approval, Allow (and Full access) answers with

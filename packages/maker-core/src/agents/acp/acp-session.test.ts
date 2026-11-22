@@ -962,3 +962,149 @@ describe('AcpSession steering by prompt', () => {
     await session.close();
   });
 });
+
+// Unit: Agy resolves `session/prompt` with `end_turn` as soon as the model yields
+// to wait for a backgrounded command, while the command's `tool_call` remains
+// in_progress and later wakes the agent up via `session/update`.
+// Gap: existing ACP turn tests settle every tool before `end_turn`; without this,
+// Cindy prematurely emits `done` + fake `done` tool results and marks the wakeup
+// as `turnScope: 'background'`, hiding running status on desktop and mobile.
+// Minimal failing input: `continueWhileToolsPending: true` + `end_turn` while one
+// non-daemon tool is still `in_progress`.
+describe('AcpSession background tool continuation', () => {
+  const fastDelays = { afterToolSettledMs: 60, afterThinkingMs: 80, afterTextMs: 25 };
+
+  it('keeps the foreground turn alive across end_turn until background tools and wakeup text finish', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      continueWhileToolsPending: true,
+      backgroundContinuationDelaysMs: fastDelays,
+    });
+    await session.send({ type: 'user', content: 'run tests' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+    agent.update({ sessionUpdate: 'tool_call', toolCallId: 'bg-cmd', title: 'vitest', kind: 'execute', status: 'in_progress', rawInput: { CommandLine: 'vitest' } });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Waiting for vitest.' } });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'text' && (e.data as AcpRecord).isFinal === true)).toBe(true));
+
+    // Turn must remain running: no `done`, no synthetic `tool_result`.
+    expect(session.isTurnRunning()).toBe(true);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+    expect(events.some((e) => e.type === 'tool_result')).toBe(false);
+
+    // Background command finishes later and wakes Agy up to write the final answer.
+    agent.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'bg-cmd',
+      status: 'completed',
+      rawOutput: '104 passed',
+    });
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'tool_result')).toBe(true));
+    agent.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'All tests passed.' } });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'All 104 tests passed.' } });
+
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(session.isTurnRunning()).toBe(false);
+    // No duplicate tool_use row when the real completion arrives, and no background turnScope.
+    expect(events.filter((e) => e.type === 'tool_use')).toHaveLength(1);
+    expect((events.find((e) => e.type === 'tool_result_full')?.data as AcpRecord).fullText).toContain('104 passed');
+    expect(events.every((e) => e.turnScope === undefined)).toBe(true);
+    expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'All 104 tests passed.', stopReason: 'end_turn' });
+    await session.close();
+  });
+
+  it('does not hold the turn open for an IsDaemon tool', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      continueWhileToolsPending: true,
+      backgroundContinuationDelaysMs: fastDelays,
+    });
+    await session.send({ type: 'user', content: 'start dev server' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+    agent.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'daemon-1',
+      title: 'dev server',
+      kind: 'execute',
+      status: 'in_progress',
+      rawInput: { CommandLine: 'vite', IsDaemon: true },
+    });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Server started.' } });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(session.isTurnRunning()).toBe(false);
+    await session.close();
+  });
+
+  it('cancels immediately without retiring the endpoint when stopped during background wait', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      continueWhileToolsPending: true,
+      backgroundContinuationDelaysMs: fastDelays,
+    });
+    await session.send({ type: 'user', content: 'long task' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+    agent.update({ sessionUpdate: 'tool_call', toolCallId: 'bg-stop', title: 'build', kind: 'execute', status: 'in_progress' });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'tool_use')).toBe(true));
+    expect(session.isTurnRunning()).toBe(true);
+
+    await session.abort();
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(events.at(-1)?.data).toMatchObject({ status: 'cancelled', stopReason: 'cancelled' });
+    expect(agent.methods()).toContain('session/cancel');
+    expect(agent.closedByClient).toBe(false);
+    expect(session.isTurnRunning()).toBe(false);
+    await session.close();
+  });
+
+  it('lets steer take over turn ownership during background wait', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      steerByPrompt: true,
+      continueWhileToolsPending: true,
+      backgroundContinuationDelaysMs: fastDelays,
+    });
+    await session.send({ type: 'user', content: 'first' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+    agent.update({ sessionUpdate: 'tool_call', toolCallId: 'bg-steer', title: 'test', kind: 'execute', status: 'in_progress' });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'tool_use')).toBe(true));
+
+    await session.steer({ type: 'user', content: 'status?' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 'bg-steer', status: 'completed', rawOutput: 'ok' });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Steer reply.' } });
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Steer reply.' });
+    await session.close();
+  });
+
+  it('opens a provider-initiated foreground turn on autonomous wakeup after idle', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      continueWhileToolsPending: true,
+      backgroundContinuationDelaysMs: fastDelays,
+    });
+    agent.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Timer fired.' } });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Reminder done.' } });
+
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(events.find((e) => e.type === 'status')?.data).toMatchObject({ isRunning: true, providerInitiatedTurn: true });
+    expect(events.every((e) => e.turnScope === undefined)).toBe(true);
+    expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Reminder done.' });
+    await session.close();
+  });
+});

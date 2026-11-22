@@ -118,6 +118,12 @@ export function acpToolDisplayName(fields: Pick<AcpToolCallFields, 'title' | 'na
   return fields.title ?? fields.name ?? fields.kind ?? 'tool';
 }
 
+function isDaemonToolInput(rawInput: unknown): boolean {
+  if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return false;
+  const record = rawInput as Record<string, unknown>;
+  return record.IsDaemon === true || record.isDaemon === true;
+}
+
 export class AcpUpdateTranslator {
   private segmentText = '';
   private segmentMessageId: string | undefined;
@@ -207,6 +213,22 @@ export class AcpUpdateTranslator {
     this.flushText(events);
     this.closeThinking(events);
     return events;
+  }
+
+  /** True while at least one non-daemon tool call has not yet received a terminal status. */
+  hasPendingNonDaemonTools(): boolean {
+    for (const tool of this.tools.values()) {
+      if (!tool.settled && !isDaemonToolInput(tool.rawInput)) return true;
+    }
+    return false;
+  }
+
+  hasOpenThinking(): boolean {
+    return this.thinking !== null;
+  }
+
+  hasPendingText(): boolean {
+    return this.segmentText.length > 0;
   }
 
   /** Ends the current turn: closes segments, settles open tool calls, emits `done` or a terminal `error`. */
