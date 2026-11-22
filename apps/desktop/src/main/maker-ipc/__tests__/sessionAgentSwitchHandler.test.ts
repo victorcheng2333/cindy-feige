@@ -207,6 +207,29 @@ describe('Cursor model picker admission', () => {
   });
 
   it.each([
+    { target: 'antigravity' as const, providerId: 'antigravity', expectedDbKind: 'antigravity', expectedProviderId: 'antigravity' },
+    { target: 'claude-code' as const, providerId: null, expectedDbKind: 'cc', expectedProviderId: null },
+    { target: 'codex' as const, providerId: null, expectedDbKind: 'codex', expectedProviderId: null },
+  ])('hands local Cursor history to remote $target on another computer', async ({ target, providerId, expectedDbKind, expectedProviderId }) => {
+    const { deps } = makeDeps({
+      getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cursor', agentDeviceId: null })),
+    });
+    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
+    await expect(ipc.invoke(
+      MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', target, 'model', providerId, 'high', false,
+      { agentDeviceId: 'other-mac' },
+    )).resolves.toMatchObject({ switched: true, agentKind: target, engineReady: true });
+    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
+      agentKind: expectedDbKind, providerId: expectedProviderId, agentDeviceId: 'other-mac', sdkSessionId: null,
+    }));
+    expect(deps.insertBoundaryMessage).toHaveBeenCalledWith('s1', expect.objectContaining({
+      fromAgentKind: 'cursor', toAgentKind: expectedDbKind, handoff: expect.stringContaining('你好'),
+    }));
+    expect(deps.setPendingHandoff).toHaveBeenCalledWith('s1', expect.stringContaining('Cursor'), undefined);
+    expect(deps.bootstrapSwitchedSession).toHaveBeenCalled();
+  });
+
+  it.each([
     { source: 'cursor', target: 'cursor', device: 'other-device' },
   ])('rejects moving Cursor from $source to $target ($device)', async ({ source, target, device }) => {
     const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));

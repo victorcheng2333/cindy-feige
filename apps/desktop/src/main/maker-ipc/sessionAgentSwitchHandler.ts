@@ -888,7 +888,9 @@ export async function performSessionAgentSwitch(
   // Local Cursor uses the shared bounded handoff and parked-thread resume flow.
   // Moving an already-Cursor runtime between computers is still unsupported.
   // Switching *to* Cursor from a borrowed source is allowed: destination is local.
-  if (row.agentKind === 'cursor' && (row.agentDeviceId || rawAgentDeviceId)) {
+  // Switching *from* local Cursor to a remote-capable engine (e.g. remote Agy/Claude/Codex)
+  // hands off conversation history via Cindy instead of moving the Cursor runtime.
+  if (row.agentKind === 'cursor' && targetAgentKind === 'cursor' && (row.agentDeviceId || rawAgentDeviceId)) {
     throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires execution on the task computer');
   }
   if (targetAgentKind === 'cursor') {

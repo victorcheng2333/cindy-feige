@@ -2827,7 +2827,11 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     ? resolveSessionAgentKind(currentSession)
     : 'claude-code';
   const agentSwitchIntent = currentSession?.agentSwitchIntent ?? null;
-  const supportsSameTurnSteer = capabilities?.supportsSameTurnSteer ?? sessionAgentKind !== 'antigravity';
+  // Remote Agy runs on another computer (requiring agy >= 1.5.13 over ACP, which supports
+  // steering); do not let the task computer's unauthenticated/static Agy capabilities hide it.
+  const supportsSameTurnSteer =
+    (sessionAgentKind === 'antigravity' && sessionAgentRunsOnOtherComputer(currentSession))
+    || (capabilities?.supportsSameTurnSteer ?? sessionAgentKind !== 'antigravity');
   const composerDisplayAgentKind = agentSwitchIntent?.targetAgentKind ?? sessionAgentKind;
   const composerSwitchesAgent = composerDisplayAgentKind !== sessionAgentKind;
   const sessionAgentSwitchSupported = !!currentSession
