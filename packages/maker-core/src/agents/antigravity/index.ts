@@ -449,7 +449,7 @@ export class AntigravityAgent extends BaseAgent {
         validateSendOptions: validate,
         events: () => observeAgentText(session.events()),
         reviewAutoPermissionAction: reviewAutoAction,
-        hasLiveBackgroundWork: () => liveEndpoint.hasForeignProcesses(),
+        hasLiveBackgroundWork: async () => session.isTurnRunning() || await liveEndpoint.hasForeignProcesses(),
         // Review scope follows at once. Agy itself learns new writable folders when the task
         // next starts (they are passed as additionalDirectories); until then Auto-review
         // approves writes there and Default asks, as for any folder outside the workspace.

@@ -124,6 +124,35 @@ function isDaemonToolInput(rawInput: unknown): boolean {
   return record.IsDaemon === true || record.isDaemon === true;
 }
 
+function normalizeAcpToolBaseName(tool: Pick<AcpToolCallFields, 'name' | 'title'>): string {
+  const raw = (tool.name ?? tool.title ?? '').trim();
+  return raw.replace(/^Run\s+/i, '').trim().toLowerCase();
+}
+
+function isAsyncBackgroundLauncher(tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>): boolean {
+  const base = normalizeAcpToolBaseName(tool);
+  if (base === 'invoke_subagent' || base === 'run_workflow') return true;
+  const input = tool.rawInput && typeof tool.rawInput === 'object' && !Array.isArray(tool.rawInput)
+    ? tool.rawInput as Record<string, unknown>
+    : null;
+  if (base === 'swarm') return input?.action === 'add';
+  if (base === 'schedule') {
+    if (isDaemonToolInput(tool.rawInput)) return false;
+    return typeof input?.DurationSeconds === 'number' && input.DurationSeconds > 0;
+  }
+  return false;
+}
+
+function isAsyncBackgroundCanceller(tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>): boolean {
+  const base = normalizeAcpToolBaseName(tool);
+  const input = tool.rawInput && typeof tool.rawInput === 'object' && !Array.isArray(tool.rawInput)
+    ? tool.rawInput as Record<string, unknown>
+    : null;
+  if (base === 'manage_subagents') return input?.Action === 'kill' || input?.Action === 'kill_all';
+  if (base === 'swarm') return input?.action === 'kill';
+  return false;
+}
+
 export class AcpUpdateTranslator {
   private segmentText = '';
   private segmentMessageId: string | undefined;
@@ -132,6 +161,7 @@ export class AcpUpdateTranslator {
   private thinking: ThinkingBlock | null = null;
   private thinkingSeq = 0;
   private readonly tools = new Map<string, ToolState>();
+  private awaitingAsyncLaunch = false;
   private planId: string | undefined;
   private planSeq = 0;
   private readonly now: () => number;
@@ -223,6 +253,15 @@ export class AcpUpdateTranslator {
     return false;
   }
 
+  /** True when a fire-and-forget async launcher (e.g. `invoke_subagent`) succeeded since last cleared. */
+  hasAwaitingAsyncLaunch(): boolean {
+    return this.awaitingAsyncLaunch;
+  }
+
+  clearAwaitingAsyncLaunch(): void {
+    this.awaitingAsyncLaunch = false;
+  }
+
   hasOpenThinking(): boolean {
     return this.thinking !== null;
   }
@@ -251,6 +290,7 @@ export class AcpUpdateTranslator {
       this.settleTool(tool, events, interrupted ? 'interrupted' : 'done');
     }
     this.tools.clear();
+    this.awaitingAsyncLaunch = false;
     this.planId = undefined;
     const result = this.lastText;
     this.lastText = '';
@@ -311,6 +351,10 @@ export class AcpUpdateTranslator {
       }
     }
     if (!tool.settled && (tool.status === 'completed' || tool.status === 'failed')) {
+      if (tool.status === 'completed') {
+        if (isAsyncBackgroundLauncher(tool)) this.awaitingAsyncLaunch = true;
+        else if (isAsyncBackgroundCanceller(tool)) this.awaitingAsyncLaunch = false;
+      }
       this.settleTool(tool, events, tool.status === 'failed' ? 'failed' : 'done');
     }
   }

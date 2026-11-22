@@ -1107,4 +1107,82 @@ describe('AcpSession background tool continuation', () => {
     expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Reminder done.' });
     await session.close();
   });
+
+  // Unit: fire-and-forget async launchers like `invoke_subagent` return `completed`
+  // immediately before `end_turn` while the subagent runs asynchronously.
+  // Minimal failing input: `Run invoke_subagent` completes, then `session/prompt` resolves `end_turn`.
+  it('keeps the foreground turn alive across end_turn after invoke_subagent completes until the subagent wakes the parent', async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        continueWhileToolsPending: true,
+        backgroundContinuationDelaysMs: fastDelays,
+      });
+      await session.send({ type: 'user', content: 'review and ship' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'sub-1',
+        title: 'Run invoke_subagent',
+        status: 'in_progress',
+        rawInput: { TypeName: 'research', Role: 'Adversarial Reviewer', Prompt: 'Review diff' },
+      });
+      agent.update({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'sub-1',
+        status: 'completed',
+        rawOutput: 'Created the following subagent: {"conversationId":"sub-conv-1"}',
+      });
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Review in progress.' } });
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'text' && (e.data as AcpRecord).isFinal === true)).toBe(true));
+
+      // Advance well past all fast idle timers: must STAY running while waiting for subagent wakeup.
+      await vi.advanceTimersByTimeAsync(500);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some((e) => e.type === 'done')).toBe(false);
+
+      // Subagent finishes and wakes parent up; parent writes final response and settles cleanly.
+      agent.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Review passed.' } });
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Shipped.' } });
+      await vi.advanceTimersByTimeAsync(fastDelays.afterTextMs + 5);
+
+      await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+      expect(session.isTurnRunning()).toBe(false);
+      expect(events.every((e) => e.turnScope === undefined)).toBe(true);
+      expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Shipped.' });
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not hold the turn open when manage_subagents kills the launched subagent in the same turn', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      continueWhileToolsPending: true,
+      backgroundContinuationDelaysMs: fastDelays,
+    });
+    await session.send({ type: 'user', content: 'start then cancel subagent' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+    agent.update({ sessionUpdate: 'tool_call', toolCallId: 'sub-2', title: 'Run invoke_subagent', status: 'completed' });
+    agent.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'kill-2',
+      title: 'Run manage_subagents',
+      status: 'completed',
+      rawInput: { Action: 'kill_all' },
+    });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Cancelled.' } });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(session.isTurnRunning()).toBe(false);
+    await session.close();
+  });
 });

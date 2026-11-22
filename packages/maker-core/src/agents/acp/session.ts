@@ -319,6 +319,8 @@ interface ActiveTurn {
   backgroundSettleTimer: ReturnType<typeof setTimeout> | null;
   /** True while keeping the turn alive past `end_turn` for background tools or an autonomous wakeup. */
   continuingInBackground: boolean;
+  /** True while waiting for an async launcher (e.g. subagent/workflow) to wake the parent up. */
+  awaitingAsyncWakeup: boolean;
   /** Deferred prompt outcome held until background work settles. */
   deferredOutcome: AcpTurnOutcome | null;
   /** Whether the post-wakeup phase has emitted assistant text since the last tool/thought started. */
@@ -787,6 +789,7 @@ export class AcpSession {
       cancelTimer: null,
       backgroundSettleTimer: null,
       continuingInBackground: false,
+      awaitingAsyncWakeup: false,
       deferredOutcome: null,
       sawTextSinceBackgroundWait: false,
       lease: 0,
@@ -806,6 +809,7 @@ export class AcpSession {
   private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
     this.clearBackgroundSettleTimer(turn);
     turn.continuingInBackground = false;
+    turn.awaitingAsyncWakeup = false;
     turn.deferredOutcome = null;
     turn.sawTextSinceBackgroundWait = false;
     const lease = ++turn.lease;
@@ -830,6 +834,8 @@ export class AcpSession {
       if (prompt && !turn.cancelTimer) this.pendingPrompts.unshift(prompt);
       return;
     }
+    const hasPendingTools = this.translator.hasPendingNonDaemonTools();
+    const hasAsyncLaunch = this.translator.hasAwaitingAsyncLaunch();
     if (
       this.continueWhileToolsPending
       && turn.outstanding.size === 0
@@ -839,14 +845,16 @@ export class AcpSession {
       && 'stopReason' in outcome
       && outcome.stopReason === 'end_turn'
       && this.pendingPrompts.length === 0
-      && this.translator.hasPendingNonDaemonTools()
+      && (hasPendingTools || hasAsyncLaunch)
     ) {
       // Agy resolves `session/prompt` when the model yields to wait for a
       // background command or subagent. Keep the foreground turn open until
-      // those tools finish and the agent finishes its wakeup step.
+      // those tools/subagents finish and the agent finishes its wakeup step.
       turn.continuingInBackground = true;
+      turn.awaitingAsyncWakeup = hasAsyncLaunch;
       turn.deferredOutcome = outcome;
       turn.sawTextSinceBackgroundWait = false;
+      this.translator.clearAwaitingAsyncLaunch();
       this.emit(this.translator.flushPending());
       this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
       return;
@@ -911,6 +919,7 @@ export class AcpSession {
       cancelTimer: null,
       backgroundSettleTimer: null,
       continuingInBackground: true,
+      awaitingAsyncWakeup: false,
       deferredOutcome: { stopReason: 'end_turn' },
       sawTextSinceBackgroundWait: false,
       lease: 0,
@@ -930,11 +939,26 @@ export class AcpSession {
     if (!turn || !turn.continuingInBackground || turn.settled || turn.cancelTimer || turn.outstanding.size > 0) return;
     this.clearBackgroundSettleTimer(turn);
     if (this.permissionControllers.size > 0) return;
+    const kind = update?.sessionUpdate;
+    if (this.translator.hasAwaitingAsyncLaunch()) {
+      turn.awaitingAsyncWakeup = true;
+      turn.sawTextSinceBackgroundWait = false;
+      this.translator.clearAwaitingAsyncLaunch();
+      return;
+    }
     if (this.translator.hasPendingNonDaemonTools()) {
       turn.sawTextSinceBackgroundWait = false;
       return;
     }
-    const kind = update?.sessionUpdate;
+    if (turn.awaitingAsyncWakeup) {
+      const wokeByTextOrThought = (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk')
+        && asRecord(update?.content).type === 'text'
+        && typeof asRecord(update?.content).text === 'string'
+        && (asRecord(update?.content).text as string).length > 0;
+      const wokeByTool = kind === 'tool_call';
+      if (!wokeByTextOrThought && !wokeByTool) return;
+      turn.awaitingAsyncWakeup = false;
+    }
     if (kind === 'agent_message_chunk') {
       const block = asRecord(update?.content);
       if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
@@ -954,9 +978,11 @@ export class AcpSession {
         turn.settled
         || this.turn !== turn
         || !turn.continuingInBackground
+        || turn.awaitingAsyncWakeup
         || turn.outstanding.size > 0
         || this.permissionControllers.size > 0
         || this.translator.hasPendingNonDaemonTools()
+        || this.translator.hasAwaitingAsyncLaunch()
       ) return;
       this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
     }, delayMs);
