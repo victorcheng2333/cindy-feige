@@ -809,7 +809,7 @@ function aggregateToolSummaryVerbs<TMessage extends MessagePresentationToolLike>
   const counter = new Map<ToolSummaryVerb, number>();
   for (const tool of tools) {
     const verb = TOOL_SUMMARY_VERB_BY_LABEL[tool.label]
-      ?? acpKindToToolVerb(toolRowInput(tool))
+      ?? acpKindToToolVerb(toolRowInput(tool), tool.label)
       ?? 'used';
     counter.set(verb, (counter.get(verb) ?? 0) + 1);
   }

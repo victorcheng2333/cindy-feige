@@ -268,12 +268,25 @@ const ACP_KIND_TO_VERB: Record<string, AcpToolSummaryVerb> = {
  * 将 ACP `tool_call.kind`（透传在 `input.acpKind`）映射为工具聚合摘要动词。
  * 非 ACP 工具或未知 kind 返回 undefined，由调用方回退默认 `'used'`。
  */
-export function acpKindToToolVerb(input: unknown): AcpToolSummaryVerb | undefined {
+export function acpKindToToolVerb(input: unknown, toolName?: string): AcpToolSummaryVerb | undefined {
   const inp = readRecord(input);
   const kind = readNonEmptyString(inp?.acpKind);
   if (!kind) return undefined;
   if (kind === 'edit' && isAcpCreateFileInput(inp)) return 'created';
+  if (kind === 'search' && isAcpWebSearch(toolName, inp)) return 'fetched';
   return ACP_KIND_TO_VERB[kind];
+}
+
+function isAcpWebSearch(toolName: string | undefined, inp: Record<string, unknown> | null): boolean {
+  if (!toolName) return false;
+  const hasLocalPath = Boolean(
+    readNonEmptyString(inp?.path)
+    ?? readNonEmptyString(inp?.Path)
+    ?? readNonEmptyString(inp?.SearchPath)
+    ?? readNonEmptyString(inp?.SearchDirectory),
+  );
+  if (hasLocalPath) return false;
+  return /\bon web\s*$/i.test(toolName.trim()) || toolName.trim() === 'search_web';
 }
 
 function isAcpCreateFileInput(inp: Record<string, unknown> | null): boolean {
@@ -504,6 +517,9 @@ function describeAcpToolUse(
         ?? readNonEmptyString(inp?.query)
         ?? readNonEmptyString(inp?.Query);
       if (!pattern) return genericDescriptor(toolName, inp);
+      if (isAcpWebSearch(toolName, inp)) {
+        return { kind: 'web', toolName, mode: 'search', target: pattern };
+      }
       const path = readNonEmptyString(inp?.path)
         ?? readNonEmptyString(inp?.Path)
         ?? readNonEmptyString(inp?.SearchPath)

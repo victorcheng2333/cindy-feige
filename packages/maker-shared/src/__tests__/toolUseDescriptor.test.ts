@@ -741,5 +741,15 @@ describe('describeToolUse — ACP acpKind mapping', () => {
       description: 'Codebase Researcher',
       subagentType: 'research',
     });
+
+    expect(
+      describeToolUse('"GTA 6 release date" on Web', { acpKind: 'search', query: 'GTA 6 release date' }),
+    ).toEqual({
+      kind: 'web',
+      toolName: '"GTA 6 release date" on Web',
+      mode: 'search',
+      target: 'GTA 6 release date',
+    });
+    expect(acpKindToToolVerb({ acpKind: 'search', query: 'GTA 6' }, '"GTA 6" on Web')).toBe('fetched');
   });
 });

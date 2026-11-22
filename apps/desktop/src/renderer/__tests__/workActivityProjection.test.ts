@@ -196,6 +196,10 @@ describe('projectWorkActivities', () => {
   it('groups multi-phase thinking and tool runs into titled phases', () => {
     expect(extractThinkingPhaseTitle('**Inspect translator.ts first.** Then check tests.\nSecond line'))
       .toBe('Inspect translator.ts first.');
+    expect(extractThinkingPhaseTitle("I'm thinking through how to approach this. Check Take-Two's business model first."))
+      .toBe("Check Take-Two's business model first.");
+    expect(extractThinkingPhaseTitle("I'm thinking through how to approach this."))
+      .toBe("I'm thinking through how to approach this.");
 
     const projection = projectWorkActivities([
       {

@@ -127,7 +127,7 @@ export function verbLabelKeyForIntent(action: CommandIntentAction): string {
 
 /** Pure helper — exposed for unit testing the per-row label too. */
 export function verbForTool(toolName: string, toolInput?: unknown): Verb {
-  return TOOL_TO_VERB[toolName] ?? acpKindToToolVerb(toolInput) ?? 'used';
+  return TOOL_TO_VERB[toolName] ?? acpKindToToolVerb(toolInput, toolName) ?? 'used';
 }
 
 /**

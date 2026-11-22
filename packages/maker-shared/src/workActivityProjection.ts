@@ -426,19 +426,37 @@ export function teammateWorkSummaryText(
 
 const PHASE_TITLE_MAX_CHARS = 88;
 
+const BOILERPLATE_THINKING_OPENING_RE = /^(?:i(?:'m| am)\s+thinking(?:\s+through)?(?:\s+how\s+to\s+approach\s+this|\s+about\s+this)?|let(?:'s|\s+me)\s+think(?:\s+through|\s+about)?(?:\s+this|\s+how\s+to\s+approach\s+this)?|thinking(?:\s+about\s+this)?)\s*[.。!！…]*$/i;
+
+function splitSentences(line: string): string[] {
+  const sentences: string[] = [];
+  let remaining = line.trim();
+  while (remaining) {
+    const match = /^(.+?[。！？.!?])(?:\s+|$)/.exec(remaining);
+    if (!match) {
+      sentences.push(remaining);
+      break;
+    }
+    sentences.push(match[1]!.trim());
+    remaining = remaining.slice(match[0].length).trim();
+  }
+  return sentences;
+}
+
 /**
  * Extract a concise single-line phase heading from a thinking block.
- * Strips common markdown prefixes and takes the first meaningful sentence/line.
+ * Strips common markdown prefixes, skips generic filler openings, and takes
+ * the first meaningful sentence/line.
  */
 export function extractThinkingPhaseTitle(rawContent: string): string {
   const lines = rawContent
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s+)+/, '').replace(/[*_`]+/g, '').trim())
     .filter(Boolean);
-  const firstLine = lines[0] ?? rawContent.replace(/\s+/g, ' ').trim();
-  if (!firstLine) return '';
-  const sentenceMatch = /^(.{8,}?[。！？.!?])(?:\s|$)/.exec(firstLine);
-  const candidate = sentenceMatch ? sentenceMatch[1]! : firstLine;
+  const candidates = lines.flatMap(splitSentences).filter(Boolean);
+  const meaningful = candidates.find((sentence) => !BOILERPLATE_THINKING_OPENING_RE.test(sentence));
+  const candidate = meaningful ?? candidates[0] ?? rawContent.replace(/\s+/g, ' ').trim();
+  if (!candidate) return '';
   if (candidate.length <= PHASE_TITLE_MAX_CHARS) return candidate;
   return `${candidate.slice(0, PHASE_TITLE_MAX_CHARS - 1).trimEnd()}…`;
 }
