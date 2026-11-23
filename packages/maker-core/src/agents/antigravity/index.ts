@@ -41,7 +41,10 @@ import {
 } from './native-state.js';
 import {
   ANTIGRAVITY_REMOTE_AGENT_NAME,
+  ANTIGRAVITY_REMOTE_AGENT_START_ATTEMPTS,
   ANTIGRAVITY_REMOTE_WORKSPACE_MIN_VERSION,
+  AntigravityRemoteAgentUnavailableError,
+  antigravityRemoteAgentFellBack,
   buildAntigravityHostedMcpServers,
   createAntigravityRemoteWorkspaceGuard,
   isAntigravityRemoteWorkspaceVersionSupported,
@@ -191,6 +194,20 @@ export class AntigravityAgent extends BaseAgent {
   }
 
   async startSession(opts: StartSessionOptions): Promise<AgentSessionHandle> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.startSessionOnce(opts);
+      } catch (error) {
+        // Only a confirmed exit (AgentStartupStoppedError) makes a fresh start safe.
+        const fellBack = error instanceof AgentStartupStoppedError
+          && error.cause instanceof AntigravityRemoteAgentUnavailableError;
+        if (!fellBack || attempt >= ANTIGRAVITY_REMOTE_AGENT_START_ATTEMPTS) throw error;
+        this.agyDeps.logger.warn('Agy started without the restricted remote agent; restarting it', { attempt });
+      }
+    }
+  }
+
+  private async startSessionOnce(opts: StartSessionOptions): Promise<AgentSessionHandle> {
     let bridge: Awaited<ReturnType<AntigravityAgentDeps['prepareAcp']>> | undefined;
     let remoteWorkspace: Awaited<ReturnType<typeof prepareAntigravityRemoteWorkspaceDir>> | undefined;
     let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
@@ -324,6 +341,7 @@ export class AntigravityAgent extends BaseAgent {
       }
       const launchCwd = remoteWorkspace ? remoteWorkspace.dir : cwd;
       const remoteGuard = hostedMcp ? createAntigravityRemoteWorkspaceGuard(hostedMcp.serverNames) : undefined;
+      const launchedAt = Date.now();
       endpoint = startAgyAcpProcess(
         this.deps.binaryPath,
         launchCwd,
@@ -384,6 +402,7 @@ export class AntigravityAgent extends BaseAgent {
       sessionRef = session;
       const liveEndpoint = endpoint;
       if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
+      if (hosted && await antigravityRemoteAgentFellBack(stateDir, launchedAt)) throw new AntigravityRemoteAgentUnavailableError();
       if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
       if (!antigravityCapabilities(session).permissionModes.some(option => option.id === mode)) {
         mode = 'default';

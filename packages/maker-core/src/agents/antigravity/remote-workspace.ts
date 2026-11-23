@@ -11,7 +11,7 @@
  *    versions below 1.5.13 are refused, and any non-MCP tool call that reads, edits or
  *    executes locally immediately rejects and terminates the Agy process group.
  */
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DeviceHostedSession } from '../base-agent.js';
 import type { AcpMcpServer, AcpToolCallFields } from '../acp/protocol.js';
@@ -57,6 +57,38 @@ const EXEC_TOOL_KINDS: Readonly<Record<string, string>> = {
 export const ANTIGRAVITY_REMOTE_TOOL_BLOCKED_MESSAGE =
   'Antigravity tried to use a local tool on the Agent computer, so the task was stopped. '
   + "This task's files are on another computer; it may only use the tools that computer provides.";
+
+export const ANTIGRAVITY_REMOTE_AGENT_START_ATTEMPTS = 3;
+
+/**
+ * Agy 1.5.14 applies `--agent` definitions only after its startup flags arrive from Google.
+ * When those requests fail it logs this line and silently runs its default agent, which
+ * still has Agy's own file and shell tools.
+ */
+const REMOTE_AGENT_FALLBACK_LOG = `Agent "${ANTIGRAVITY_REMOTE_AGENT_NAME}" not found`;
+
+export class AntigravityRemoteAgentUnavailableError extends Error {
+  constructor() {
+    super(
+      'Agy on the Agent computer could not turn on the restricted mode for tasks whose files are on another computer, '
+      + "usually because it could not reach Google's servers. Check that computer's network or Agy proxy, then try again.",
+    );
+    this.name = 'AntigravityRemoteAgentUnavailableError';
+  }
+}
+
+/** True when an Agy worker started at or after `launchedAtMs` logged that it fell back to its default agent. */
+export async function antigravityRemoteAgentFellBack(stateDir: string, launchedAtMs: number): Promise<boolean> {
+  const names = await readdir(stateDir).catch(() => [] as string[]);
+  for (const name of names) {
+    if (!/^acp\.log\.\d+$/.test(name)) continue;
+    const file = path.join(stateDir, name);
+    const info = await stat(file).catch(() => null);
+    if (!info || info.mtimeMs < launchedAtMs) continue;
+    if ((await readFile(file, 'utf8').catch(() => '')).includes(REMOTE_AGENT_FALLBACK_LOG)) return true;
+  }
+  return false;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

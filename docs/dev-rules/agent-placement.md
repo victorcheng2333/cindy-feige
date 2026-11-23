@@ -26,6 +26,13 @@ Cursor 依赖任务所在电脑上的 CLI、订阅和进程组，只能在任务
 只有一个正本：`packages/maker-shared/src/agentPlacement.ts`
 （`TASK_COMPUTER_ONLY_AGENT_KINDS`、`runsOnTaskComputerOnly`、`canHandOffToTaskComputerOnlyEngine`）。
 
+Agy 远程运行时，受限 `cindy-remote` 是否生效只能从 agy 自己的 worker 日志判断：agy 1.5.14
+启动时连不上 Google、拿不到功能开关，就记一行 `Agent "cindy-remote" not found` 并改用带全部本地
+工具的默认 agent，ACP 回包与正常时一样。`AntigravityAgent.startSession` 在发出首条消息前读日志，
+确认进程已退出后重启，最多 3 次，仍失败就报告那台电脑连不上 Google；进程退出未确认时不重启。
+本地工具拦截（`acp-remote-tool-blocked`）保留为最后一道防线。依据是 2026-11-23 M3 上 7 次远程
+启动有 2 次回落，首条命令即被拦停；回归见 `remote-workspace.test.ts`。
+
 - **能否切换只看任务位置和角色**：SSH 任务、Orca 角色或远端 Lead／Worker 关联、非 Desktop
   来源（评审、IM 等）不能切；`agentDeviceId` 不参与判断，不得再作为拒绝条件加回去。
 - **目标位置固定为任务所在电脑**：切换到这类引擎时，目的地 `agentDeviceId` 一律为 `null`，

@@ -2,13 +2,14 @@
  * Tier: unit.
  * Production entry: `AntigravityAgent.startSession` (`deviceHosted`) and `remote-workspace.ts`.
  * Verifies the restricted `--agent cindy-remote` launch, tunnel MCP routing (`cindy_exec`),
- * MCP tool unwrapping, fail-closed version gate (< 1.5.13), guest rejection, and immediate
- * termination when Agy attempts any local file or shell tool on the Agent computer.
+ * MCP tool unwrapping, fail-closed version gate (< 1.5.13), guest rejection, immediate
+ * termination when Agy attempts any local file or shell tool on the Agent computer, and
+ * restarting Agy when it falls back to its default agent instead of loading `cindy-remote`.
  */
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -57,10 +58,15 @@ class FakeRemoteAgyProcess extends EventEmitter {
   readonly permissionResponses: RpcMsg[] = [];
   private readonly sessionId = 'remote-acp-1';
   private onPrompt?: (proc: FakeRemoteAgyProcess, id: number | string) => void;
+  private onNewSession?: () => Promise<void>;
 
-  constructor(onPrompt?: (proc: FakeRemoteAgyProcess, id: number | string) => void) {
+  constructor(
+    onPrompt?: (proc: FakeRemoteAgyProcess, id: number | string) => void,
+    onNewSession?: () => Promise<void>,
+  ) {
     super();
     this.onPrompt = onPrompt;
+    this.onNewSession = onNewSession;
     let buf = '';
     this.stdin.on('data', (chunk: Buffer) => {
       buf += chunk.toString('utf8');
@@ -103,9 +109,10 @@ class FakeRemoteAgyProcess extends EventEmitter {
           },
         });
         break;
-      case 'session/new':
-        this.send({
-          id: msg.id,
+      case 'session/new': {
+        const id = msg.id;
+        void (this.onNewSession?.() ?? Promise.resolve()).then(() => this.send({
+          id,
           result: {
             sessionId: this.sessionId,
             configOptions: [
@@ -113,8 +120,9 @@ class FakeRemoteAgyProcess extends EventEmitter {
               { id: 'mode', name: 'Mode', type: 'select', currentValue: 'default', options: [{ value: 'default', name: 'Default' }, { value: 'auto', name: 'Auto' }] },
             ],
           },
-        });
+        }));
         break;
+      }
       case 'session/set_config_option':
         this.send({ id: msg.id, result: {} });
         break;
@@ -413,6 +421,49 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
       expect(events.at(-1)).toMatchObject({
         type: 'error',
         data: { isTerminal: true, reason: 'acp-remote-tool-blocked' },
+      });
+    } finally {
+      await handle?.close().catch(() => {});
+      await h.cleanup();
+    }
+  });
+
+  // Regression (2026-11-23): when Agy could not reach Google at startup it logged
+  // `Agent "cindy-remote" not found` and ran its default agent; the first `date` then
+  // hit Agy's own run_command and the task stopped with acp-remote-tool-blocked.
+  it.each([
+    { name: 'restarts Agy once and serves the task from the restricted agent', loads: [false, true] },
+    { name: 'gives up before any prompt when every start falls back', loads: [false, false, false] },
+  ])('$name', async ({ loads }) => {
+    const h = await createHarness('1.5.14');
+    let handle: AgentSessionHandle | undefined;
+    try {
+      const procs = loads.map((loaded, index) => new FakeRemoteAgyProcess(undefined, () => writeFile(
+        path.join(h.stateDir, `acp.log.${100 + index}`),
+        loaded
+          ? 'I1123 server.go:1225] Creating new cascade trajectory (agentScript=true)\n'
+          : `W1123 session_handlers.go:83] Agent "${ANTIGRAVITY_REMOTE_AGENT_NAME}" not found, falling back to default\n`,
+      )));
+      const start = h.agent.startSession({
+        workingDir: h.dir,
+        model: 'gemini-4-neon',
+        permissionMode: 'auto',
+        deviceHosted: sampleHosted(),
+      } as StartSessionOptions);
+
+      if (loads.at(-1)) {
+        handle = await start;
+        await handle.send({ type: 'user', content: 'Run date' });
+        for await (const ev of handle.events()) if (ev.type === 'done' || ev.type === 'error') break;
+      } else {
+        await expect(start).rejects.toThrow(/restricted mode/);
+      }
+
+      expect(spawnMock).toHaveBeenCalledTimes(loads.length);
+      procs.forEach((proc, index) => {
+        const prompted = proc.incoming.some(m => m.method === 'session/prompt');
+        expect(prompted).toBe(loads[index]);
+        if (!loads[index]) expect(proc.stdin.writableEnded).toBe(true);
       });
     } finally {
       await handle?.close().catch(() => {});
