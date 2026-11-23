@@ -101,7 +101,7 @@ class AgyProcess extends EventEmitter {
   }
 }
 
-async function withAgy(run: (start: (overrides?: Partial<StartSessionOptions>) => Promise<AgentSessionHandle>) => Promise<void>) {
+async function withAgy(run: (start: (overrides?: Partial<StartSessionOptions>) => Promise<AgentSessionHandle>, agent: AntigravityAgent) => Promise<void>) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-acp-test-'));
   const agent = new AntigravityAgent({
     binaryPath: '/test/agy',
@@ -124,7 +124,7 @@ async function withAgy(run: (start: (overrides?: Partial<StartSessionOptions>) =
       const handle = await agent.startSession({ workingDir: dir, model: 'gemini-4-neon', ...overrides });
       handles.push(handle);
       return handle;
-    });
+    }, agent);
   } finally {
     try { await Promise.all(handles.map(handle => handle.close())); }
     finally { await rm(dir, { recursive: true, force: true }); }
@@ -147,7 +147,9 @@ describe('Agy ACP-only sessions', () => {
   beforeEach(() => spawnMock.mockReset());
 
   it('prepares ACP before send, drops a CLI identity and resumes the new ACP identity', async () => {
-    await withAgy(async start => {
+    await withAgy(async (start, agent) => {
+      // Pre-discovery capabilities must advertise Auto so PermissionSelector does not snap Auto to Default.
+      expect(agent.capabilities.permissionModes.map(mode => mode.id)).toEqual(['default', 'auto', 'bypassPermissions']);
       const fresh = new AgyProcess('acp-saved');
       const handle = await start({ resumeSessionId: 'old-cli-id', model: 'gemini-3.8-flash-ultra' });
       expect(handle.id).toBe('<pending>');

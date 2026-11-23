@@ -19788,11 +19788,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
             if (existingDraft.route !== route) {
               try {
                 await live.setModel(opts.model, { providerId: 'antigravity', effort: opts.effort });
-                await live.setPermissionMode(opts.permissionMode ?? 'default');
+                await live.setPermissionMode(opts.permissionMode ?? 'auto');
                 await live.setPlanMode(!!opts.planMode);
                 if (getCurrentDbClientSnapshot() !== owner || maker.getSession(sid) !== live) return { accepted: false };
                 await persistSessionFields(sid, {
-                  model: opts.model, effort: opts.effort ?? null, permissionMode: opts.permissionMode ?? 'default',
+                  model: opts.model, effort: opts.effort ?? null, permissionMode: opts.permissionMode ?? 'auto',
                   planModeEnabled: !!opts.planMode,
                 });
                 existingDraft.route = route;

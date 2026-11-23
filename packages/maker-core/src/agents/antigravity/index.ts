@@ -58,6 +58,7 @@ const execFileAsync = promisify(execFile);
 const supported = { supported: true } as const;
 const unavailable = { supported: false, reason: 'not-implemented' } as const;
 const defaultMode = { id: 'default', displayName: 'Default' } as const;
+const autoMode = { id: 'auto', displayName: 'Auto' } as const;
 const fullAccess = { id: 'bypassPermissions', displayName: 'Full access' } as const;
 
 export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
@@ -67,7 +68,7 @@ export const ANTIGRAVITY_CAPABILITIES: Capabilities = {
   effort: unavailable,
   effortLevels: [],
   reasoningDisplay: ['full'],
-  permissionModes: [defaultMode, fullAccess],
+  permissionModes: [defaultMode, autoMode, fullAccess],
   setPermissionModeMidSession: supported,
   turnPermissionPolicy: {
     supported: unavailable,

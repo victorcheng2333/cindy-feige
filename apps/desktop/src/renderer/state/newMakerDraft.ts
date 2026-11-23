@@ -409,12 +409,14 @@ function sanitize(raw: unknown): NewMakerDraft {
       ? r.newChatDefaultPermissionMode : null;
   const sanitizeVendorPrefs = (p: Partial<VendorPrefs> | undefined, v: MakerVendor): VendorPrefs => {
     const defaults = defaultVendorPrefs(v);
-    const fallback = v !== 'antigravity' && newChatDefaultPermissionMode
+    const fallback = newChatDefaultPermissionMode
       ? { ...defaults, permissionMode: newChatDefaultPermissionMode }
       : defaults;
     const permissionModeCustomized = p?.permissionModeCustomized === true ||
       (p?.permissionModeCustomized === undefined && typeof p?.permissionMode === 'string' &&
-        p.permissionMode !== 'auto' && (v === 'cursor' || p.permissionMode !== 'plan'));
+        p.permissionMode !== 'auto' &&
+        (v !== 'antigravity' || p.permissionMode !== 'default') &&
+        (v === 'cursor' || p.permissionMode !== 'plan'));
     if (!p || typeof p !== 'object') return fallback;
     // 计划模式独立成一级开关后, 历史草稿里 permissionMode='plan' 迁移为
     // planMode=true + 该 vendor 默认权限档(与 DB 迁移同语义)。
@@ -912,7 +914,7 @@ export function setNewChatDefaultPermissionMode(mode: PermissionMode | null): vo
   if (mode !== null && mode !== 'auto' && mode !== 'bypassPermissions') return;
   rebaseStoredDefaultTuplePreference();
   const lastByVendor = { ...currentDraft.lastByVendor };
-  for (const vendor of ['cc', 'pi', 'codex', 'orca', 'cursor'] as const) {
+  for (const vendor of ['cc', 'pi', 'codex', 'orca', 'cursor', 'antigravity'] as const) {
     if (!lastByVendor[vendor].permissionModeCustomized) {
       lastByVendor[vendor] = { ...lastByVendor[vendor], permissionMode: mode ?? 'auto', permissionModeCustomized: false };
     }

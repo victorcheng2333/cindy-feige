@@ -198,7 +198,7 @@ export function buildQueuedTextMessage(
   const agentKind = session.agentKind === 'antigravity' || session.agentKind === 'cursor' || session.agentKind === 'codex' || session.agentKind === 'pi'
     ? session.agentKind
     : 'claude-code';
-  const permissionMode = permissionModeOrAsk(session.permissionMode ?? (agentKind === 'antigravity' ? 'default' : null));
+  const permissionMode = permissionModeOrAsk(session.permissionMode ?? (agentKind === 'antigravity' ? 'auto' : null));
   const persistedContent = stringifyUserContent(
     trimmed,
     persistedImageRefs,

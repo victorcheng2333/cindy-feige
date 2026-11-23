@@ -1246,15 +1246,20 @@ describe('newMakerDraft store', () => {
     expect(d.workingDir).toBeNull();
   });
 
-  // A previously saved system default should follow the new seed on restart.
+  // A previously saved system default (including pre-Auto legacy drafts without permissionModeCustomized)
+  // should follow the Auto seed on restart, while an explicit Default choice stays preserved.
   it.each([
+    { permissionModeCustomized: undefined, expected: 'auto' },
     { permissionModeCustomized: false, expected: 'auto' },
     { permissionModeCustomized: true, expected: 'default' },
   ])('restores the Agy draft permission with customization $permissionModeCustomized', async ({ permissionModeCustomized, expected }) => {
     memStorage.setItem(
       'xdt:newMakerDraft:v1',
       JSON.stringify({ vendor: 'antigravity', lastByVendor: {
-        antigravity: { permissionMode: 'default', permissionModeCustomized },
+        antigravity: {
+          permissionMode: 'default',
+          ...(permissionModeCustomized !== undefined ? { permissionModeCustomized } : {}),
+        },
       } }),
     );
     const { getDraft } = await reloadModule();
@@ -2182,17 +2187,22 @@ it('persists the default, preserves explicit permissions, isolates owners and re
   m.setNewChatDefaultPermissionMode('bypassPermissions');
   expect(m.getDraft().lastByVendor.cc.permissionMode).toBe('acceptEdits');
   expect(m.getDraft().lastByVendor.pi.permissionMode).toBe('bypassPermissions');
+  expect(m.getDraft().lastByVendor.antigravity.permissionMode).toBe('bypassPermissions');
   m.setNewMakerDraftOwner('another-owner');
   expect(m.getDraft().lastByVendor.pi.permissionMode).toBe('auto');
+  expect(m.getDraft().lastByVendor.antigravity.permissionMode).toBe('auto');
   m.setNewMakerDraftOwner('permission-owner');
   expect(m.getDraft().newChatDefaultPermissionMode).toBe('bypassPermissions');
+  expect(m.getDraft().lastByVendor.antigravity.permissionMode).toBe('bypassPermissions');
   m.setNewChatDefaultPermissionMode(null);
   expect(m.getDraft().lastByVendor.pi.permissionMode).toBe('auto');
+  expect(m.getDraft().lastByVendor.antigravity.permissionMode).toBe('auto');
   expect(m.getDraft().lastByVendor.cc.permissionMode).toBe('acceptEdits');
   m.setNewMakerDraftOwner('another-owner');
   m.setNewMakerDraftOwner('permission-owner');
   expect(m.getDraft().newChatDefaultPermissionMode).toBeNull();
   expect(m.getDraft().lastByVendor.pi.permissionMode).toBe('auto');
+  expect(m.getDraft().lastByVendor.antigravity.permissionMode).toBe('auto');
 });
 
 // unit regression: returning to Claude after selecting a local Codex model
