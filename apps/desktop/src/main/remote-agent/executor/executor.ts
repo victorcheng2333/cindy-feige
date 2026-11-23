@@ -405,18 +405,27 @@ export class RemoteExecutor {
   // ─── Claude Code 风格工具 ──────────────────────────────────────
 
   async callTool(name: string, rawArgs: unknown, signal?: AbortSignal, localArguments = false): Promise<ToolResult> {
-    const result = await this.runTool(name, rawArgs, signal, localArguments);
+    let readTotalLines: number | undefined;
+    const result = await this.runTool(name, rawArgs, signal, localArguments, (stats) => {
+      readTotalLines = stats.totalLines;
+    });
     const max = this.opts.maxResultBytes;
     if (!max) return result;
     return {
       ...result,
       content: result.content.map((item) => item.type === 'text' && Buffer.byteLength(item.text) > max
-        ? { ...item, text: name === 'Read' ? fitReadResult(item.text, max) : fitToolOutput(item.text, max) }
+        ? { ...item, text: name === 'Read' ? fitReadResult(item.text, max, readTotalLines) : fitToolOutput(item.text, max) }
         : item),
     };
   }
 
-  private async runTool(name: string, rawArgs: unknown, signal?: AbortSignal, localArguments = false): Promise<ToolResult> {
+  private async runTool(
+    name: string,
+    rawArgs: unknown,
+    signal?: AbortSignal,
+    localArguments = false,
+    onReadStats?: (stats: { totalLines: number }) => void,
+  ): Promise<ToolResult> {
     this.workspace.virtualizeDirs([this.shell.getTempDir()]);
     if (this.closed) return textResult('The task has ended on the computer where it runs.', true);
     let args: Record<string, unknown>;
@@ -449,7 +458,7 @@ export class RemoteExecutor {
             offset: optionalNumber(args, 'offset'),
             limit: optionalNumber(args, 'limit'),
             pages: optionalString(args, 'pages'),
-          }, this.readState, this.workspace.toAgentPath(this.workspace.workingDir), this.opts.extractPdfText, this.workspace.toAgentPath(target)));
+          }, this.readState, this.workspace.toAgentPath(this.workspace.workingDir), this.opts.extractPdfText, this.workspace.toAgentPath(target), onReadStats));
         }
         case 'Write': {
           const target = localArguments ? path.resolve(this.shell.getCwd(), str(args, 'file_path')) : this.resolvePath(str(args, 'file_path'), this.shell.getCwd());
@@ -579,20 +588,35 @@ function fitToolOutput(text: string, max: number): string {
 }
 
 const READ_LINE_NUMBER = /^(\d+)\t/;
-const READ_FOOTER_RESERVE_BYTES = 200;
 
-function fitReadResult(text: string, max: number): string {
+function buildReadTruncationFooter(first: string, last: string, totalLines?: number): string {
+  const ofTotal = totalLines !== undefined ? ` of ${totalLines}` : '';
+  const remaining = totalLines !== undefined ? Math.max(0, totalLines - Number(last)) : undefined;
+  const remainingNote = remaining ? ` (${remaining} more line${remaining === 1 ? '' : 's'} remain)` : '';
+  return `\n\n[Truncated: showing lines ${first}-${last}${ofTotal}${remainingNote} to fit one tool result. Call Read again with offset=${Number(last) + 1} to read the rest.]`;
+}
+
+function fitReadResult(text: string, max: number, totalLines?: number): string {
   const kept: string[] = [];
   let used = 0;
   for (const line of text.split('\n')) {
-    used += Buffer.byteLength(line) + 1;
-    if (used > max - READ_FOOTER_RESERVE_BYTES) break;
+    const add = Buffer.byteLength(line) + (kept.length > 0 ? 1 : 0);
+    if (used + add > max) break;
     kept.push(line);
+    used += add;
   }
-  const first = READ_LINE_NUMBER.exec(kept[0] ?? '')?.[1];
-  const last = READ_LINE_NUMBER.exec(kept.at(-1) ?? '')?.[1];
-  if (!first || !last) return fitToolOutput(text, max);
-  return `${kept.join('\n')}\n\n[Showing lines ${first}-${last} only; the rest did not fit in one result. Call Read again with offset=${Number(last) + 1} to continue.]`;
+  while (kept.length > 0) {
+    const first = READ_LINE_NUMBER.exec(kept[0] ?? '')?.[1];
+    const last = READ_LINE_NUMBER.exec(kept.at(-1) ?? '')?.[1];
+    if (!first || !last) return fitToolOutput(text, max);
+    const footer = buildReadTruncationFooter(first, last, totalLines);
+    if (used + Buffer.byteLength(footer) <= max) {
+      return kept.join('\n') + footer;
+    }
+    const removed = kept.pop()!;
+    used -= Buffer.byteLength(removed) + (kept.length > 0 ? 1 : 0);
+  }
+  return fitToolOutput(text, max);
 }
 
 /** 给 Claude Code 的工具定义(参数名与自带工具一致；说明是 Cindy 自己写的)。 */

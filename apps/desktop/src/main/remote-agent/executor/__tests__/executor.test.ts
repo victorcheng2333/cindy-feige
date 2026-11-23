@@ -283,6 +283,7 @@ describe('Claude Code style file tools', () => {
 
   // Regression (2026-11-23): remote Agy got a 10.6 KB AGENTS.md read replaced by a file path on the
   // Agent computer (agy spills MCP results of about 10 KB), so it had to read the file again.
+  // Also include the total and remaining line counts so the model knows it has not read the whole file.
   it('pages a Read that does not fit maxResultBytes and continues from the offset it gives', async () => {
     const { executor } = makeExecutor('normal', { maxResultBytes: 8 * 1024 });
     const file = path.join(project, 'notes.md');
@@ -291,6 +292,7 @@ describe('Claude Code style file tools', () => {
     expect(Buffer.byteLength(first)).toBeLessThanOrEqual(8 * 1024);
     const next = Number(/offset=(\d+)/.exec(first)?.[1]);
     expect(first).toContain(`\n${next - 1}\t第 ${next - 1} 行`);
+    expect(first).toContain(`lines 1-${next - 1} of 400 (${400 - (next - 1)} more lines remain)`);
     expect(text(await executor.callTool('Read', { file_path: file, offset: next, limit: 1 }))).toBe(`${next}\t第 ${next} 行 ${'说明'.repeat(10)}`);
   });
 

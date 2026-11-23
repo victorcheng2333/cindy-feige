@@ -329,6 +329,7 @@ export async function ccRead(
   cwd: string,
   extractPdfText?: PdfTextExtractor,
   displayPath = absPath,
+  onReadStats?: (stats: { totalLines: number }) => void,
 ): Promise<ToolResult> {
   const stat = await statOrNull(absPath);
   if (!stat) {
@@ -368,6 +369,7 @@ export async function ccRead(
   const start = Math.max(1, Math.floor(input.offset ?? 1) || 1);
   const limit = Math.max(1, Math.floor(input.limit ?? CC_READ_DEFAULT_LIMIT) || CC_READ_DEFAULT_LIMIT);
   const { lines, total } = await readLineRange(absPath, start, limit);
+  onReadStats?.({ totalLines: total });
   readState.record(absPath, stat.mtimeMs);
   if (lines.length === 0) {
     return textResult(
