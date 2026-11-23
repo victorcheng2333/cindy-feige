@@ -2,6 +2,7 @@ import { observeManagedClaudeStatus } from './maker-host/claude-account-auth.js'
 import { noteManagedClaudeModels, refreshManagedClaudeModels } from './maker-host/claude-account-models.js';
 import { claudeCliLoginRevision } from './maker-host/claude-native-cli-status.js';
 import { VERTEX_SERVICE_ACCOUNT_PREFIX } from '@cindy/model-providers';
+import { createCompanyTokenReporting } from './usage/companyTokenReporting.desktop.js';
 import type { HostConnectionState } from '@cindy/maker-shared/host-event-stream';
 import { applyMacWindowBackdrop, setMacSidebarWidth } from './macosDesktopBlur';
 import { createPersonalBuildMonitor, createPersonalRendererProbe, personalMonitorEnvironment } from './personalBuildMonitor.js';
@@ -257,6 +258,7 @@ function readGitText(args: string[]): string | null {
   try {
     const value = execFileSync('git', args, {
       cwd: app.getAppPath(),
+      windowsHide: true,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
@@ -324,7 +326,7 @@ import {
   startImConnection,
   stopImConnection,
 } from './im';
-import { buildBotImConnectionListPayload } from './im/shared/botImConnectionRuntime.js';
+import { buildBotImConnectionListPayload, configureTeammateIMessageGroup, listTeammateIMessageGroups } from './im/shared/botImConnectionRuntime.js';
 import { readWechatChannelSettings } from './im/wechat/channelSettings.js';
 import { readXCompanionAssignment } from './hook-control/ipc.js';
 import type { BotControlState } from '@cindy/mcps';
@@ -500,7 +502,7 @@ import { createIpcChannelUsage, registeredIpcChannels, tapIpcChannelUsage } from
 import { hasRecentWorkdir, listRecentWorkdirs } from './localDb/ipc/recentWorkdirs';
 import { getActiveCatalog } from './maker-host/active-catalog';
 import { resolveSessionContextWindow } from '../shared/sessionContextWindow';
-import { resumeDeletedPiSubagentCleanup } from './localDb/ipc/sessions';
+import { resumeDeletedPiSubagentCleanup, setWorktreePathInDb } from './localDb/ipc/sessions';
 import {
   didMigrateLegacyDataForUser,
   registerLegacyMigrationIpc,
@@ -512,14 +514,18 @@ import {
   inspectPassiveLocalProfileAdoption,
 } from './localProfileDataMigration';
 import { acquireWindowsPackagedInstanceBarrier } from './windowsPackagedInstanceBarrier';
+import { openSystemPreview } from './file-browser/system-preview';
 import { registerFsBrowseIpc } from './fsBrowse/ipc';
 import {
   ensureReady as localDbEnsureReady,
   getRawDb as localDbGetRawDb,
   closeDb as localDbCloseDb,
   getCurrentDbPath as localDbGetCurrentDbPath,
+  getCurrentUserId as localDbGetCurrentUserId,
+  markRuntimeDbCorrupt as localDbMarkRuntimeDbCorrupt,
   getDbPathForUser,
 } from './localDb/index';
+import { notifyRuntimeDbCorruption } from './localDb/fatalDetailsClipboard';
 import { createDbClient, createInprocDbClient } from './localDb/client/DbClient';
 import { createLifecycleDbClientManager } from './localDb/client/lifecycleDbClient';
 import { deliverPendingAgentAppUpdateResult } from './agent-app-update/index';
@@ -564,7 +570,7 @@ import {
   freezeSessionActiveTurnMarkers,
 } from './localDb/sessionActiveTurn';
 import { configureMigrationRuntime } from './localDb/migrationRuntime';
-import { configureLocalDbHostUi } from './localDb/hostUi';
+import { configureLocalDbHostUi, localDbHostUi } from './localDb/hostUi';
 import { configureUiText } from './uiText';
 import { runPendingDbSlimmingAtStartup } from './localDb/dbSlimmingStartup';
 import { shouldShowNativeFatalDialog } from './localDb/fatalDialogPolicy';
@@ -592,6 +598,7 @@ import { registerDevEmbeddingIpc } from './ipc/dev/embedding';
 import {
   acquirePiSubagentLaunchFence,
   clearStalePiSubagentLaunchFence,
+  hasActivePiSubagentRuns,
   hasActivePiSubagentRunsSync,
   stopAllPiSubagentRunsForExit,
 } from '@cindy/maker-core/pi-subagent-runs';
@@ -622,7 +629,7 @@ import {
   clearAllSessionAttention,
   refreshWindowsAppBadge,
 } from './appBadgeService';
-import { initNotificationService, showDeviceSessionDesktopEvent } from './notificationService';
+import { initNotificationService, showDeviceSessionDesktopEvent, showPrivacyScreenNotification } from './notificationService';
 import { initWecomGroupNotificationIpc } from './wecomGroupNotification';
 import { getAgentIslandService, initAgentIslandService } from './agent-island/service.js';
 import { startAgentIslandQuota } from './agent-island/quota.js';
@@ -670,6 +677,7 @@ import {
   setAwayCaptureExcludedWindows,
   startLinuxAwayCover,
 } from './remote-desktop';
+import { registerLocalNetworkIpc } from './local-network/index.js';
 import { isAwayCoverUp, registerAwayGuardIpc, startAwayGuard } from './remote-desktop/awayGuardService';
 import { lockedUseHint, prepareLockedDesktop, registerLockedUseIpc, startLockedUse } from './remote-desktop/lockedUseService';
 import { remoteDesktop } from './remote-desktop/index';
@@ -683,7 +691,8 @@ import {
   setLockedDesktopPorts,
   setPhysicalInputShielded,
 } from './mcp-integrations/computer.desktop.js';
-import { initAnalyticsSettingsService, noteAuthColdStartState } from './analyticsSettingsService';
+import * as usageReporting from './product-token-usage/reporting.js';
+import { initAnalyticsSettingsService, noteAuthColdStartState, onAnalyticsPermissionChange } from './analyticsSettingsService';
 import { initCrashDiagnosisService } from './crash-diagnosis';
 import { initLaunchResumeInterruptedTasks } from './launchResumeInterruptedTasks';
 import { initLogUploadService, scheduleStartupBackfill } from './log-upload';
@@ -713,8 +722,11 @@ import {
   handleDeviceLinkSystemResume,
   handleDeviceLinkSystemSuspend,
   getControllerName,
+  remoteBackgroundInvoke,
   revokeController,
 } from './device-link';
+import { findReceivedShare, getReceivedShares } from './device-link/providerShareGuest.js';
+import { configureSharedImageAccess } from './cindy-media/sharedImageCatalog.js';
 import { closeSharedTasksBeforeLogout } from './device-link/sharedTaskRuntime.js';
 import { closeSharedTasksBeforeAccountHandover } from './device-link/sharedTaskAccountBoundary.js';
 import { registerSharedTaskIpc } from './device-link/sharedTaskIpc.js';
@@ -723,7 +735,8 @@ import { agentNetSwitchRemoteHandler, registerSelfHostedRelayIpc } from './devic
 import { registerProviderGroupIpc } from './provider-group/ipc.js';
 import { registerSubscriptionAccountsIpc } from './subscription-accounts/ipc.js';
 import { startUpgradeSplitRepair } from './subscription-accounts/upgradeSplitRepair.desktop.js';
-import { attachDefaultSubscriptionPool, disconnectSubscriptionPool, observeDefaultClaudeSubscriptionStatus } from './subscription-accounts/runtime.js';
+import { acquireSubscriptionAccount, attachDefaultSubscriptionPool, disconnectSubscriptionPool, hasCreatedOpenAiImageAuth, observeDefaultClaudeSubscriptionStatus } from './subscription-accounts/runtime.js';
+import { resolveSubscriptionPoolProvider } from './subscription-accounts/placement.js';
 import { registerProviderGroupRemoteHandler } from './provider-group/remoteRegistration.js';
 import { providerGroupReshare, registerProviderGroupReshare } from './provider-group/reshareRuntime.js';
 import {
@@ -731,6 +744,7 @@ import {
   hasInFlightRemoteInvokes,
   setHistoryToolNameReader,
   setUsageWidgetSnapshotReader,
+  publishHostTaskActivity,
   pushSessionActivityToController,
   setSessionsSubscribedListener,
   setAgentNetSwitchRemoteHandler,
@@ -749,6 +763,8 @@ import { registerRemoteResourcesIpc } from './device-link/remoteResourcesIpc';
 // worktree-parallel-sessions: IPC 注册 + close-session 内的 fire-and-forget 删除钩子
 import {
   registerWorktreeIpc,
+  configureWorktreeStoreDbSync,
+  WorktreeManager,
   WorktreePool,
   reconcilePendingSafeDirectoryCleanups,
   worktreeStore,
@@ -785,6 +801,7 @@ import { registerSkillhubIpc } from './skillhub/registerIpc';
 import { listAllowedSkillhubProjectRoots } from './skillhub/allowedProjectRoots';
 import { SkillhubMarketService } from './skillhub/marketService';
 import { skillhubAutoSyncService } from './skillhub/autoSyncService';
+import { closeIdleDesktopSessionForMove } from './localDb/ipc/sessionWorkingDirMove.desktop.js';
 import { rehydrateCloseSuppression } from './maker-host/rehydrateCloseSuppression.js';
 import {
   builtInSkillDescriptors,
@@ -992,7 +1009,7 @@ import {
   readClaudeCliLoginStatus,
   runClaudeCliLogin,
 } from './maker-host/claude-native-cli.desktop.js';
-import { closeClaudeCliProxyBridge } from './maker-host/claude-cli-proxy-bridge.js';
+import { closeCliProxyBridge } from './maker-host/cli-proxy-bridge.js';
 import { startLegacyClaudeConfigMigration } from './maker-host/claude-legacy-config-migration.js';
 import { isNativeProviderAuthBound, isNativeProviderAuthRevoked } from './maker-host/nativeProviderAuthBinding.js';
 import {
@@ -1006,6 +1023,7 @@ import { setXaiAuthInvalidatedHandler } from './maker-host/xai-auth-invalidation
 import { clearXaiMediaModels } from './maker-host/model-discovery/xai-media.js';
 import {
   getChatgptBridgeAuth,
+  getChatgptBridgeAuthForDispatch,
   invalidateChatgptBridgeAuth,
 } from './maker-host/anthropic-responses-bridge-host.js';
 import {
@@ -1018,9 +1036,7 @@ import {
   resetSessionRuntimeFallbackSettings,
   writeSessionRuntimeFallbackEnabled,
 } from './maker-host/session-runtime-fallback-store.js';
-import { clearAllSessionProviders } from './maker-host/session-provider-store.js';
-import { clearAllSessionRuntimeAxes } from './maker-host/session-effort-store.js';
-import { clearAllSessionRuntimeControlStates } from './maker-ipc/sessionRuntimeControl.js';
+import { clearOwnerScopedSessionRuntimeSelection } from './maker-ipc/sessionRuntimeControl.js';
 import {
   resolveOwnerScopedSecretStorageKey,
   getProviderSecretStore,
@@ -1144,6 +1160,7 @@ import {
   findOpenFolderInArgv,
   findOpenShareFileInArgv,
   setDeepLinkMainWindow,
+  openMainWindowSettingsNavigation,
   focusMainWindow as activateMainWindow,
   takePendingDeepLinkFromRenderer,
 } from './deepLink.js';
@@ -1190,6 +1207,7 @@ import {
 } from '../shared/windowBehavior.js';
 import { getDesktopCommandRegistry, registerBuiltinDesktopCommands } from './commands/index.js';
 import { registerRemoteCmdIpc } from './commands/remoteCmdIpc.js';
+import { readDisplayLanguagePreference, registerDisplayLanguagePreference } from './display-language-preference.js';
 import { resolvePreferredSystemLocale, resolveSystemLocale } from '../shared/locale.js';
 import {
   isImDefaultSettingsChannel,
@@ -1280,7 +1298,7 @@ import {
   getLiveScreenHost,
   pluginLiveScreenViews,
 } from './cindy-brain/index.js';
-import { setCodexImageAuthBinding } from './cindy-brain/codexImageAuthBinding.js';
+import { createCodexImageAuthAcquirer, setCodexImageAuthBinding } from './cindy-brain/codexImageAuthBinding.js';
 import { configureMailAttachmentHost } from './cindy-brain/mailAttachmentUpload.js';
 import { writeTempFile, materializeDirectSendOssAttachments } from './maker-ipc/normalizeAttachments.desktop.js';
 import { listActiveClaudeBackgroundActivitySessions } from './maker-host/claude-session-background-activity.js';
@@ -1405,6 +1423,7 @@ function installHostClientMode(): boolean {
   // to the Host instance and to the account the windows show.
   const hostIpcLog = createLogger('host-ipc');
   const ipcProxy = createHostIpcProxy({
+    preconditionMessage: () => t('ipcError.PRECONDITION_FAILED'),
     baseUrl: delegation.baseUrl,
     token: delegation.token,
     instanceId: delegation.instanceId,
@@ -1507,7 +1526,11 @@ function installHostClientMode(): boolean {
       }
     },
     onPluginPush: (channel, payload) => {
-      if (['ghosts:changed', 'ghosts:runtime-changed', 'ghosts:card-updated', 'ghosts:notify'].includes(channel)) {
+      // Pushes the windows take as they come from the local main process; the recent projects push is the
+      // one updateSessionInDb sends after a move (sessions.ts broadcastRecentWorkdirsChanged).
+      if (['ghosts:changed', 'ghosts:runtime-changed', 'ghosts:card-updated', 'ghosts:notify',
+        'ghosts:user-message-blocked', 'ghosts:user-message-rewritten', 'ghosts:hook-fused',
+        'local-db:recent-workdirs:changed'].includes(channel)) {
         for (const win of BrowserWindow.getAllWindows())
           if (isTrustedAppRendererWindow(win)) win.webContents.send(channel, payload);
         return;
@@ -2080,6 +2103,8 @@ configureMigrationRuntime({
   isPackaged: app.isPackaged,
 });
 configureSqliteVecExtPath(resolveDesktopSqliteVecExtPath(app.isPackaged));
+// The Worktree registry keeps sessions.worktree_path as a denormalized snapshot.
+configureWorktreeStoreDbSync(setWorktreePathInDb);
 // Database startup reaches the user through these ports; the Node host installs
 // headless equivalents instead of importing Electron.
 configureUiText((key, fallback) => {
@@ -2154,16 +2179,32 @@ const piSubagentLog = createLogger('pi-subagent');
 let rendererBootGuard: RendererBootGuard | null = null;
 
 const lifecycleDbClientManager = createLifecycleDbClientManager({
+  closeMainDb: (userId) => {
+    localDbCloseDb({ skipOptimize: true, recoverRuntimeCorruptionForUserId: userId });
+  },
+  quarantineMainDb: (userId, error) => {
+    localDbMarkRuntimeDbCorrupt(userId, error);
+  },
   getCurrentDbPath: localDbGetCurrentDbPath,
   createWorkerClient: createDbClient,
-  createInprocClient: () => createInprocDbClient(),
-  setCurrentDbClient,
+  createInprocClient: (options) => createInprocDbClient(options),
+  setCurrentDbClient(client, userId) {
+    setCurrentDbClient(client, userId);
+    usageReporting.prepareTokenReporting();
+  },
   clearCurrentDbClient,
   log: dbClientLog,
 });
 
 async function ensureLifecycleDbClient(userId: string) {
+  const ownerStamp = getActiveDataOwnerPushStamp();
   return lifecycleDbClientManager.ensure(userId, {
+    onCorruption: () => {
+      const current = getActiveDataOwnerPushStamp();
+      if (ownerStamp.dataOwnerId !== userId || current.dataOwnerId !== userId
+        || current.ownerGeneration !== ownerStamp.ownerGeneration) return;
+      notifyRuntimeDbCorruption(ownerStamp, (stamp) => localDbHostUi().broadcast('local-db:runtime-corruption', stamp));
+    },
     drizzleDir: getDrizzleDir(),
     sqliteVecExtPath: resolveSqliteVecExtPath(),
     nativeBinding: resolveBetterSqliteNativeBinding() ?? undefined,
@@ -3054,7 +3095,12 @@ registerLayoutIpc();
 // 图片通道的 ChatGPT 鉴权必须由 Main 静态装配；禁止在请求时 import maker-host
 // 生成延迟 chunk（Main bundle 反向 require 会重复执行启动副作用）。
 setCodexImageAuthBinding({
+  acquireAuth: createCodexImageAuthAcquirer({
+    resolveSubscriptionPoolProvider, acquireSubscriptionAccount,
+    getChatgptBridgeAuthForDispatch, invalidateChatgptBridgeAuth,
+  }),
   hasAuth: (providerId) => codexAccountState(providerId).authenticated,
+  hasPoolImageAuth: hasCreatedOpenAiImageAuth,
   getAuth: getChatgptBridgeAuth,
   onAuthFailure: invalidateChatgptBridgeAuth,
 });
@@ -3091,9 +3137,7 @@ setAppSessionCommitBoundaryHook(() => {
   remoteDesktopViewerWindows.reset();
   // 弹出的页签窗口带着旧 owner 的任务指派与 renderer 本地页签缓存:同步销毁,不让新 owner 看到旧内容。
   sidebarTabWindowsController.destroyAllWindows();
-  clearAllSessionProviders();
-  clearAllSessionRuntimeAxes();
-  clearAllSessionRuntimeControlStates();
+  clearOwnerScopedSessionRuntimeSelection();
 });
 const ownerBackgroundLog = createLogger('owner-background');
 const builtinPostCommitStep = new StableOwnerPostCommitStep({
@@ -3358,6 +3402,11 @@ function getPreferredApplicationLocale(): ApplicationMenuLocale {
   return resolvePreferredSystemLocale(langs.length > 0 ? langs : [app.getLocale()]);
 }
 
+function getInitialApplicationLocale(): ApplicationMenuLocale {
+  const saved = readDisplayLanguagePreference();
+  return saved && saved !== 'system' ? saved : getPreferredApplicationLocale();
+}
+
 function dispatchApplicationMenuCommand(
   menuWindow: BrowserWindow,
   command: ApplicationMenuCommand,
@@ -3455,7 +3504,7 @@ function persistedZoomMenuItems(
 
 function installApplicationMenu(
   mainWindow: BrowserWindow,
-  locale: ApplicationMenuLocale = getPreferredApplicationLocale(),
+  locale: ApplicationMenuLocale = getInitialApplicationLocale(),
 ): void {
   if (process.platform !== 'darwin') {
     Menu.setApplicationMenu(null);
@@ -3640,13 +3689,14 @@ function reinstallApplicationMenuIfPresent(): void {
   if (mainWindow) {
     installApplicationMenu(
       mainWindow,
-      currentApplicationMenuLocale ?? getPreferredApplicationLocale(),
+      currentApplicationMenuLocale ?? getInitialApplicationLocale(),
     );
   }
 }
 getAppShortcutStore().subscribe(reinstallApplicationMenuIfPresent);
 subscribeAppShortcutRecording(reinstallApplicationMenuIfPresent);
 
+registerDisplayLanguagePreference();
 ipcMain.on('app-locale:get-preferred-system-locale-sync', (event) => {
   event.returnValue = getPreferredApplicationLocale();
 });
@@ -4795,7 +4845,7 @@ const createWindow = () => {
 
   installApplicationMenu(
     mainWindow,
-    currentApplicationMenuLocale ?? getPreferredApplicationLocale(),
+    currentApplicationMenuLocale ?? getInitialApplicationLocale(),
   );
 
   // Windows / Linux 没有 Mac 应用菜单 accelerator。主窗口和会话副窗口都走
@@ -4874,12 +4924,12 @@ const createWindow = () => {
       resourceUsagePrewarmTimer = null;
       if (isQuitting || mainWindowRef !== mainWindow || mainWindow.isDestroyed()) return;
       resourceUsageWindowController.setLocale(
-        currentApplicationMenuLocale ?? getPreferredApplicationLocale(),
+        currentApplicationMenuLocale ?? getInitialApplicationLocale(),
       );
       resourceUsageWindowController.prewarm();
       windowsQuotaPanel?.prewarm();
       remoteDesktopViewerWindows.setLocale(
-        currentApplicationMenuLocale ?? getPreferredApplicationLocale(),
+        currentApplicationMenuLocale ?? getInitialApplicationLocale(),
       );
       remoteDesktopViewerWindows.prewarm();
       // 侧栏「弹出」已改为按页签弹出(sidebar tab window):预热一扇未指派的隐藏
@@ -5276,7 +5326,29 @@ const registerIpcHandlers = () => {
   // 定向 replay:快照只补发给刚完成 sessions 订阅的那一台控制端。若沿默认广播
   // 通道扇出,每次 subscribe 都会把 O(会话数) 的帧重复灌给其它所有控制端,
   // 多控制端重连风暴中会互相挤爆对方的可靠传输窗口。
+  let lastActivityRevision: number | undefined;
+  const readHostActivity = () => getAgentIslandService()?.getForegroundTaskActivity() ?? null;
+  let summaryTimer: ReturnType<typeof setTimeout> | undefined;
+  const stopIslandUpdates = getAgentIslandService()?.subscribeTaskOverview(() => {
+    // Tool and text updates can be much more frequent than changes to the three counts.
+    if (summaryTimer) return;
+    summaryTimer = setTimeout(() => {
+      summaryTimer = undefined;
+      publishHostTaskActivity(() => {
+        const summary = readHostActivity();
+        if (!summary || summary.revision === lastActivityRevision) return null;
+        lastActivityRevision = summary.revision;
+        return summary;
+      });
+    }, 80);
+    summaryTimer.unref();
+  });
+  if (stopIslandUpdates) onQuit('foreground-task-activity', () => {
+    clearTimeout(summaryTimer);
+    stopIslandUpdates();
+  });
   setSessionsSubscribedListener((controllerDeviceId) => {
+    publishHostTaskActivity(readHostActivity, controllerDeviceId);
     getAgentIslandService()?.replaySessionActivity((payload) => {
       pushSessionActivityToController(controllerDeviceId, payload);
     });
@@ -5306,6 +5378,13 @@ const registerIpcHandlers = () => {
     });
     startAwayGuard({
       excludedWindows: setAwayCaptureExcludedWindows,
+      notifyFailure: (reason) => showPrivacyScreenNotification(
+        t('settings.windowBehavior.awayGuard.label'),
+        t(reason === 'permission' ? 'settings.windowBehavior.awayGuard.permissionMissing' : 'settings.windowBehavior.awayGuard.previewUnavailable'),
+        () => openMainWindowSettingsNavigation({
+          deviceId: authManager.getDeviceId(), tab: 'general', section: 'settings.windowBehavior.awayGuard.label',
+        }),
+      ),
       needsDisplay: () => displayDemand.needed(),
       enabled: () => readWindowBehaviorSettings().awayGuard,
       delaySeconds: () => readWindowBehaviorSettings().awayGuardDelaySeconds,
@@ -6179,7 +6258,7 @@ const registerIpcHandlers = () => {
   // 退出时结束进行中的登录子进程(CLI 的本机回调监听没有超时),并关闭 CLI 的代理桥。
   app.once('will-quit', () => {
     cancelAllClaudeCliLogins();
-    void closeClaudeCliProxyBridge();
+    void closeCliProxyBridge();
   });
   ipcMain.handle(MAKER_IPC_INVOKE.CLAUDE_OAUTH_STATUS, async () => {
     // 没有使用许可时结论恒为 false,不必拉起 CLI(状态栏等常驻读取对所有用户都会调用)。
@@ -6964,6 +7043,8 @@ const registerIpcHandlers = () => {
 
   // ── Auth IPC handlers (delegated to authManager) ──
 
+  const companyReporting = !hostClientMode ? createCompanyTokenReporting(onAnalyticsPermissionChange) : null;
+  app.once('will-quit', () => companyReporting?.dispose());
   ipcMain.handle('auth:initialize', async () => {
     try {
       let pendingCompletion: Promise<authManager.AuthState> | null = null;
@@ -6979,6 +7060,7 @@ const registerIpcHandlers = () => {
       // 以后台完成的那次登录为准。
       const markAuthMilestone = (s: authManager.AuthState) => {
         if (s.isAuthenticated) markStartupMilestone('auth-initialized');
+        if (s.canEnterApp || !pendingCompletion) companyReporting?.refresh();
       };
       markAuthMilestone(state);
       void (pendingCompletion as Promise<authManager.AuthState> | null)?.then(markAuthMilestone, () => undefined);
@@ -7242,11 +7324,12 @@ const registerIpcHandlers = () => {
       const connections: NonNullable<BotControlState['conversations']>['connections'] =
         buildBotImConnectionListPayload(botId).connections
           .map(record => ({ channel: record.service ?? record.channel, connectionId: record.id, status: record.status.kind }));
+      connections.push(...listTeammateIMessageGroups(botId));
       if (readWechatChannelSettings().companionBotId === botId) connections.push({ channel: 'wechat', status: 'assigned' });
       const x = readXCompanionAssignment();
       if (x?.botId === botId) connections.push({ channel: 'x', status: x.enabled ? 'assigned' : 'disabled' });
       return connections;
-    });
+    }, configureTeammateIMessageGroup);
     // 模型供应商目录(providers.json)按「OSS 真源 / bundled 兜底」加载一次存内存:必须在第一次
     // getMakerCore()(下面构造 Maker、同步从 getActiveCatalog() 派生 availableModels)之前完成,
     // 否则首个进程会用内置兜底目录派生模型清单。ensureActiveCatalogLoaded 幂等且永不抛
@@ -7321,6 +7404,8 @@ const registerIpcHandlers = () => {
         app.once('will-quit', () => { clearInterval(monitorTimer); stopObserving(); });
       }
       registerRelaunchBusyActivityIpc(readRelaunchActivitySources, {
+        readPiActivityForBanner: () =>
+          hasActivePiSubagentRuns(path.join(app.getPath('userData'), 'pi-agent-home'), { hostPid: process.pid }),
         describeTurns: () => describeRelaunchTurns(() => listInTurnSessionIds(getMakerIfReady())),
       });
       // Client mode returned above and never reaches the runtime assembly.
@@ -7341,6 +7426,10 @@ const registerIpcHandlers = () => {
       });
       registerMakerCoreIpc(ipcMaker, {
         builtinApiKeyDeps,
+        // Keep aligned with maker-host/index.ts historyRemote injection. That provider fact wires
+        // sendToRemoteSession into cindy_helper; the shared register option carries the same fact
+        // into model-facing delivery hints.
+        supportsRemoteSessionHandoff: true,
         onAnySessionTurnKeepaliveChange: (isRunning) => {
           setMainWindowBackgroundThrottlingForActiveTurn(isRunning);
           notifyUpdateAutoRelaunchBusyStateChanged();
@@ -7990,6 +8079,7 @@ const registerIpcHandlers = () => {
       app.getPath('userData'),
       app.getPath('appData'),
     ),
+    prepareSharedSkills: () => desktopClaudeAuthAdapter.ensureSharedGlobalSkills(),
     getAllowedProjectRoots: listAllowedSkillhubProjectRoots,
   });
   // 新电脑设置(docs/product-rules/new-device-setup-migration.md)：从同账号另一台电脑读取非秘密配置，
@@ -8001,6 +8091,7 @@ const registerIpcHandlers = () => {
       app.getPath('userData'),
       app.getPath('appData'),
     ),
+    prepareSharedSkills: () => desktopClaudeAuthAdapter.ensureSharedGlobalSkills(),
     getMainWindow: () => mainWindowRef,
     getLegacyMigrated: () => didMigrateLegacyDataForUser(authManager.getCurrentUserId()),
   });
@@ -9368,6 +9459,11 @@ const registerIpcHandlers = () => {
     );
   }
 
+  ipcMain.handle('file:system-preview', (event, filePath: unknown) => {
+    assertTrustedAppRendererEvent(event);
+    return openSystemPreview(BrowserWindow.fromWebContents(event.sender), filePath);
+  });
+
   // 附件卡缩略图:系统缩略图服务(macOS QuickLook / Windows Shell)按路径出小预览。
   // 高权限入口——先过 sender 闸,再由 readFileThumbnail 做路径策略与 payload 校验;
   // 任何失败都回 null,由 renderer 回落到自绘文件图标。
@@ -10165,14 +10261,18 @@ app.on('ready', async () => {
   // Cindy-owned Skill activation and all home-level projections happen through
   // one stable-owner boundary. Passive shared-userData instances may consume the
   // active bundle but cannot switch it or its projections.
-  try {
-    await desktopClaudeAuthAdapter.ensureSharedGlobalSkills();
-  } catch (error) {
+  //
+  // Warm-up only; the first window does not wait for it. Every Agent launch and
+  // Skill listing awaits the same preparation itself, and PreparationCache lets
+  // them join this run instead of starting another. Waiting here cost 0.7–3.9 s
+  // before the main window, and with a saved sign-in the owner is usually still
+  // being restored, so the owner guard rejected this pass anyway.
+  void desktopClaudeAuthAdapter.ensureSharedGlobalSkills().catch((error: unknown) => {
     // A broken optional Skill must not block the desktop from starting.
     createLogger('built-in-skills').warn('built-in Skill preparation failed', {
       error: error instanceof Error ? error.message : String(error),
     });
-  }
+  });
 
   // macOS App Translocation fix: when the user launches the app without
   // dragging it to /Applications first, macOS runs it from a read-only
@@ -10277,16 +10377,21 @@ app.on('ready', async () => {
     resolveContextWindow: (session) => resolveSessionContextWindow(getActiveCatalog(), session),
     requestWorktreeRecycle,
     lookupSessionWorktreeBinding: (sessionId) => worktreeStore.get(sessionId)?.path ?? null,
-    closeIdleSessionForMove: async (sessionId) => {
-      const maker = getMakerIfReady();
-      if (maker?.getSession(sessionId)?.isTurnRunning()) return false;
-      if (maker) {
-        await rehydrateCloseSuppression.withSuppressed(sessionId, () =>
-          maker.closeSession(sessionId),
-        );
-      }
-      return true;
+    localPluginWorktrees: {
+      create: (request, assertCurrent) => {
+        if (worktreeStore.get(request.sessionId)) {
+          throwIpcError('PRECONDITION_FAILED', 'The task already has a worktree');
+        }
+        return WorktreeManager.createWorktree(request, {
+          awaitFullCheckout: true,
+          refreshDefaultSource: true,
+          assertCurrent,
+        });
+      },
+      discard: (sessionId, managedPath, canRemove) =>
+        WorktreeManager.discardPrecreatedWorktree(sessionId, managedPath, { canRemove }),
     },
+    closeIdleSessionForMove: closeIdleDesktopSessionForMove,
     // 任务级窗口预算落库后的运行时应用：与模型级上限编辑同一套「关 handle
     // 冷重建 / 回合中登记 pending」语义。
     applyContextWindowBudget: applySessionContextWindowBudgetChange,
@@ -10302,12 +10407,23 @@ app.on('ready', async () => {
         return false;
       }
     },
-    isOwnerCurrent: (userId) =>
-      isLocalDbOwnerCurrent(authManager.getAuthState(), userId, isAppSessionBoundaryPending()),
+    isOwnerCurrent: (userId, recovery) => {
+      const current = getActiveDataOwnerPushStamp();
+      return isLocalDbOwnerCurrent(authManager.getAuthState(), userId, isAppSessionBoundaryPending())
+        && (!recovery || (recovery.dataOwnerId === userId
+          && recovery.ownerGeneration === current.ownerGeneration));
+    },
     discardStaleOwner: (userId) =>
       lifecycleDbClientManager.dispose(`stale-owner-after-ready:${userId}`),
-    beforeEnsureReady: async (userId) => {
+    beforeEnsureReady: async (userId, recovery) => {
       if (hostClientMode) return;
+      // Readiness from another window must not clear a corrupt instance. Only
+      // the explicit, current-generation recovery request retires its handles.
+      await lifecycleDbClientManager.prepareForEnsure(userId, recovery !== undefined, () => {
+        const current = getActiveDataOwnerPushStamp();
+        return isLocalDbOwnerCurrent(authManager.getAuthState(), userId, isAppSessionBoundaryPending())
+          && (!recovery || recovery.ownerGeneration === current.ownerGeneration);
+      });
       // Provider discovery is detached from DB read readiness for the same owner, but a
       // different owner must not replace the DB while the previous account task can still
       // update owner-scoped catalogs or agent environments.
@@ -10870,7 +10986,12 @@ app.on('ready', async () => {
   // tapdbClient 一挂载就 invoke analytics:settings-get 来决定是否初始化 SDK,
   // handler 还没注册的话那次 invoke 会 reject,而它是 fail closed 的 —— 已同意
   // 的用户会一直不上报,直到手动去设置里拨一下开关。
-  initAnalyticsSettingsService();
+  initAnalyticsSettingsService({
+    prepare: usageReporting.prepareTokenReporting,
+    interrupt: usageReporting.interruptTokenReporting,
+    revokeAll: usageReporting.revokeAllTokenReporting,
+    report: usageReporting.reportTokenUsage,
+  });
   // 日志上报:同样必须在 createWindow 之前注册 —— 设置页一挂载就 invoke
   // log-upload:settings-get 决定入口可用性;更重要的是崩溃即时路径要在
   // onFatalShutdown 上就位,否则 createWindow 之后立刻崩的那一次拿不到标记。
@@ -10932,6 +11053,13 @@ app.on('ready', async () => {
   );
   registerSharedTaskIpc(isSharedTaskAvailable, isSharedTaskRelayOnline, waitForSharedTaskRelay);
   registerProviderShareIpc();
+  configureSharedImageAccess({
+    getReceivedShares, findReceivedShare, invoke: remoteBackgroundInvoke,
+    captureOwner: () => {
+      const owner = activeOwnerScopeKey();
+      return () => !isAppSessionBoundaryPending() && activeOwnerScopeKey() === owner;
+    },
+  });
   // 自建中转服务(docs/self-hosted-relay-plan.md):本机中转与加入别的中转。
   registerSelfHostedRelayIpc();
   // 同账号电脑远程切换这台电脑的 Agent-Net(docs/product-rules/agent-net.md「远程切换其他电脑的连接方式」)。
@@ -10944,6 +11072,7 @@ app.on('ready', async () => {
   registerProviderGroupRemoteHandler({ onGroupChanged: () => providerGroupReshare.kick('group') });
   registerProviderGroupReshare();
   registerFilePeerIpc();
+  registerLocalNetworkIpc();
   registerRemoteDesktopIpc(
     isGlobalVoiceInputOverlaySender,
     { name: getControllerName, revoke: revokeController },

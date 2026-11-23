@@ -68,13 +68,13 @@ export function SessionUsageSummary({
   const { t, i18n } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
-  const amounts = sessionUsageAmounts(session, usage.estimate);
+  const amounts = sessionUsageAmounts(session, usage.estimate, usage.estimateAmounts);
   const account = usage.account;
   const source = account?.source;
   const sourceLabel = providerName?.trim() || (
     !account?.accountOnly &&
     source &&
-    source !== "api" &&
+    source !== "api" && source !== "plugin" &&
     source !== "unavailable"
       ? t(`session.menu.usage.source.${source}`)
       : null);
@@ -190,7 +190,7 @@ export function SessionUsageSummary({
                 {t("session.menu.usage.actualCost")}
               </Text>
               <Text style={styles.value}>
-                {formatSessionUsageMoney(amounts.actual)}
+                {amounts.actualAmounts.map(formatSessionUsageMoney).join(" · ")}
               </Text>
             </View>
           ) : null}
@@ -200,7 +200,7 @@ export function SessionUsageSummary({
                 {t("session.menu.usage.estimatedValue")}
               </Text>
               <Text style={styles.value}>
-                {formatSessionUsageMoney(amounts.estimate)}
+                {amounts.estimates.map(formatSessionUsageMoney).join(" · ")}
               </Text>
             </View>
           ) : null}

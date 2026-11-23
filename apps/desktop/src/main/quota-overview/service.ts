@@ -50,7 +50,7 @@ import { getResolvedMainLocale, mainStringKeysUnder, rawMainString } from '../i1
 import { getSessionRowSnapshot } from '../localDb/ipc/sessions.js';
 import { createLogger } from '../logger.js';
 import { getDesktopProviderService } from '../maker-host/createDesktopProviderService.js';
-import { readKimiCodingAccountUsage, readOpenCodeGoAccountUsage } from '../maker-host/provider-account-usage.js';
+import { readKimiCodingAccountUsage, readOpenCodeGoAccountUsage, readZhipuCodingPlanAccountUsage } from '../maker-host/provider-account-usage.js';
 import { getSessionProvider, hasSessionProvider } from '../maker-host/session-provider-store.js';
 import {
   readClaudeSubscriptionUsageSnapshotForDeviceLink,
@@ -140,6 +140,7 @@ export interface QuotaOverviewBuild {
 type BuildListener = (build: QuotaOverviewBuild) => void;
 
 interface UsageCacheEntry {
+  currency?: 'CNY' | 'USD';
   /** Data owner the history belongs to; a read that outlives an account switch is dropped. */
   ownerId: string | null;
   payload: UsageHistoryPayload;
@@ -511,19 +512,27 @@ export class QuotaOverviewService {
     }
   }
 
+  private usageCurrency() {
+    const currency = this.currentSettings.currency;
+    return currency === 'auto' ? undefined : currency;
+  }
+
   private async collectAndPublish(nowMs: number, force: boolean, markStale: () => void): Promise<void> {
     const generation = getActiveAppSession().generation;
     const accountsRevision = this.accountsRevision;
+    const currency = this.usageCurrency();
     const quotaRevision = readClaudeAccountUsageRevision();
     let stale = false;
     const collected = await collectMenubarInputs({
       nowMs,
+      now: Date.now,
       listProviders: () => getDesktopProviderService().listProviders({ allowSideEffects: false }),
       readCursor: () => readCursorQuota(force),
       readAntigravity: () => readAntigravityQuota(),
       readSubscriptionPool: (providerId) => force ? refreshSubscriptionPool(providerId, true) : readSubscriptionPool(providerId),
       readKimi: (providerId) => readKimiCodingAccountUsage({ providerId, forceRefresh: force }),
       readOpenCodeGo: (providerId) => readOpenCodeGoAccountUsage({ providerId, forceRefresh: force }),
+      readZhipu: (providerId) => readZhipuCodingPlanAccountUsage({ providerId, forceRefresh: force }),
       readCodex: (providerId) => readCodexAccountUsageSnapshot(providerId),
       readClaude: (providerId) => readClaudeSubscriptionUsageSnapshotForDeviceLink(providerId),
       readXai: (providerId) => readXaiSubscriptionUsageSnapshotForDeviceLink(providerId),
@@ -531,7 +540,7 @@ export class QuotaOverviewService {
       readRemoteSubscriptions: () => this.readRemote(force, nowMs),
       readBalance: () => this.readBalance(force, nowMs),
       readUsage: async (scope: MenubarUsageScope) => {
-        const payload = await this.readUsage(scope, force, nowMs);
+        const payload = await this.readUsage(scope, force, nowMs, currency);
         if (payload.stale) {
           stale = true;
           markStale();
@@ -558,7 +567,7 @@ export class QuotaOverviewService {
     // An owner switch that started during the reads makes them the old owner's data.
     const after = getActiveAppSession();
     if (!this.started || isAppSessionBoundaryPending() || after.generation !== generation) return;
-    if (readClaudeAccountUsageRevision() !== quotaRevision || this.accountsRevision !== accountsRevision) {
+    if (currency !== this.usageCurrency() || readClaudeAccountUsageRevision() !== quotaRevision || this.accountsRevision !== accountsRevision) {
       this.scheduleRebuild(0);
       return;
     }
@@ -572,7 +581,7 @@ export class QuotaOverviewService {
     const input: MenubarBuildInput = {
       nowMs,
       locale,
-      moneySymbol: currentLedgerCurrency() === 'CNY' ? '¥' : '$',
+      moneySymbol: (collected.usage.scopes[this.currentSettings.scope].currency ?? this.usageCurrency() ?? currentLedgerCurrency()) === 'CNY' ? '¥' : '$',
       settings: this.currentSettings,
       // Shares have no disclosed account identity, so they are never merged with other accounts.
       sources: gate ? collected.sources : [...collected.sources, ...this.sharedSources(t)],
@@ -596,14 +605,15 @@ export class QuotaOverviewService {
   }
 
   /** Cached usage history; a stale payload is re-read on the next build. */
-  private async readUsage(scope: MenubarUsageScope, force: boolean, nowMs: number): Promise<UsageHistoryPayload> {
+  private async readUsage(scope: MenubarUsageScope, force: boolean, nowMs: number, currency?: 'CNY' | 'USD'): Promise<UsageHistoryPayload> {
     const ownerId = getActiveAppSession().dataOwnerId;
     const entry = this.usageCache.get(scope);
-    const cached = entry?.ownerId === ownerId ? entry : null;
+    const cached = entry?.ownerId === ownerId && entry.currency === currency ? entry : null;
     const maxAge = this.interactive ? USAGE_FRESH_WHILE_OPEN_MS : USAGE_FRESH_WHILE_CLOSED_MS;
     if (cached && !force && !cached.payload.stale && nowMs - cached.readAtMs < maxAge) return cached.payload;
     const read = this.usageChain.then(() =>
       readUsageHistory({
+        currency,
         days: MENUBAR_USAGE_DAYS,
         modelDays: MENUBAR_USAGE_DAYS,
         device: scope,
@@ -613,7 +623,7 @@ export class QuotaOverviewService {
     );
     this.usageChain = read.catch(() => undefined);
     const payload = await read;
-    if (getActiveAppSession().dataOwnerId === ownerId) this.usageCache.set(scope, { ownerId, payload, readAtMs: Date.now() });
+    if (getActiveAppSession().dataOwnerId === ownerId) this.usageCache.set(scope, { ownerId, currency, payload, readAtMs: Date.now() });
     return payload;
   }
 

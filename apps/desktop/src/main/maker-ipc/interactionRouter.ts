@@ -14,7 +14,8 @@ import type {
   TurnPermissionOrigin,
 } from '@cindy/maker-core';
 import { acpAllowPersists } from '@cindy/maker-shared/interaction';
-import { t } from '../i18n.desktop.js';
+import { createMainI18n } from '../i18n.js';
+const { t } = createMainI18n(() => [Intl.DateTimeFormat().resolvedOptions().locale]);
 import { createSharedPermission, type SharedPermission } from './sharedPermission';
 import {
   isUnattendedTurn,

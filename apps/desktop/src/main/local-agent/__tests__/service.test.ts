@@ -62,6 +62,7 @@ vi.mock('../../device-link/crossProcessLock.js', () => ({
 }));
 vi.mock('../../appSessionState.js', () => ({
   onAppSessionInvalidated: () => () => {},
+  getDataOwnerLifetime: () => 0,
   getActiveAppSession: () => ({ mode: 'local', dataOwnerId: mock.owner }),
   activeOwnerScopeKey: () => `local:${mock.owner}:${mock.generation}`,
   isAppSessionBoundaryPending: () => false,

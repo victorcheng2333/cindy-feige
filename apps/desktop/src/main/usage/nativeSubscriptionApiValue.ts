@@ -108,6 +108,6 @@ export function nativeSubscriptionApiValue(
       if (tokens[bucket] > 0 && (quote[rate] === undefined || rates[rate] !== quote[rate])) return null;
     }
   }
-  const money = computePriceQuoteTurnMoney(tokens, quote, currency);
+  const money = computePriceQuoteTurnMoney(tokens, quote);
   return money?.currency === currency ? money : null;
 }

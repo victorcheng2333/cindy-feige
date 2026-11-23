@@ -40,7 +40,7 @@ import {
 } from '../../shared/menubarQuota.js';
 
 export type MenubarHarness = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
-export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi' | 'opencode-go' | 'cursor' | 'antigravity' | 'shared';
+export type MenubarFamily = 'claude' | 'codex' | 'grok' | 'kimi' | 'opencode-go' | 'zhipu' | 'cursor' | 'antigravity' | 'shared';
 
 export interface MenubarWindowInput {
   kind: 'session' | 'week' | 'scoped' | 'period';
@@ -176,6 +176,7 @@ export interface MenubarUsageDeviceInput {
 }
 
 export interface MenubarUsageScopeInput {
+  currency?: 'USD' | 'CNY';
   daily: MenubarUsageScopeData['daily'];
   models: MenubarUsageScopeData['models'];
   devices: MenubarUsageDeviceInput[];
@@ -228,13 +229,14 @@ const MIN_PACE_ELAPSED = 0.03;
 const ROOMY_CELL_LIMIT = 4;
 /** Settings' soft daily limit for a period quota: period total / 30 × 4.5 (a display hint, not a cap). */
 const DAILY_SOFT_LIMIT_FACTOR = 4.5;
-const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3, 'opencode-go': 4, cursor: 5, antigravity: 6, shared: 7 };
+const FAMILY_ORDER: Record<MenubarFamily, number> = { claude: 0, codex: 1, grok: 2, kimi: 3, 'opencode-go': 4, zhipu: 5, cursor: 6, antigravity: 7, shared: 8 };
 const FAMILY_COLORS: Record<MenubarFamily, MenubarColor[]> = {
   claude: ['claude', 'claude2', 'claude3'],
   codex: ['codex'],
   grok: ['fill'],
   kimi: ['fill'],
   'opencode-go': ['fill'],
+  zhipu: ['fill'],
   cursor: ['fill', 'ink2'],
   antigravity: ['fill', 'ink2'],
   shared: ['fill'],
@@ -1239,6 +1241,11 @@ class Builder {
     return `${Math.round(remaining)}%`;
   }
 
+  private taskMoneySymbol(): string {
+    const currency = this.input.usage.scopes.local.currency;
+    return currency ? (currency === 'CNY' ? '¥' : '$') : this.input.moneySymbol;
+  }
+
   private statusTexts(): Record<MenubarStatusTextMode, string | null> {
     const tightest = this.tightest();
     const hasSubscriptions = this.visibleSubscriptions().some((source) => this.usableRemaining(source) !== null);
@@ -1253,7 +1260,7 @@ class Builder {
       icon: null,
       lowest: tightest ? `${Math.round(this.remaining(tightest) ?? 0)}%` : hasSubscriptions ? '0%' : null,
       today: today ? this.money(today.money.reduce((sum, value) => sum + value, 0)) : null,
-      task: running.length ? this.money(running.reduce((sum, task) => sum + task.valueToday, 0)) : null,
+      task: running.length ? this.money(running.reduce((sum, task) => sum + task.valueToday, 0), this.taskMoneySymbol()) : null,
     };
   }
 
@@ -1262,7 +1269,8 @@ class Builder {
     const tasks = this.tasks();
     return {
       locale: this.input.locale,
-      moneySymbol: this.usageSymbol(),
+      moneySymbol: this.input.moneySymbol,
+      taskMoneySymbol: this.taskMoneySymbol(),
       strings: this.input.uiStrings,
       statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(),
       updatedAtMs: this.input.updatedAtMs,

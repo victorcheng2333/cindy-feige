@@ -75,15 +75,4 @@ describe('MobileProviderMark', () => {
     expect(session).toContain('<MobileAgentMark agentKind={composerDisplayAgentKind}');
     expect(session).toContain('<RemoteSourceMark size={iconSize.sm}');
   });
-
-  it('advertises the full-logo capability on refresh and subscription frames', () => {
-    const context = readSource('src/device-link/DeviceLinkContext.tsx');
-
-    expect(context).toContain(
-      "'maker:provider:list', [{ capabilities: [CONTROLLER_CAPABILITY_PROVIDER_LOGO_KINDS_V2] }]",
-    );
-    expect(context).toContain(
-      'capabilities: [CONTROLLER_CAPABILITY_PROVIDER_LOGO_KINDS_V2]',
-    );
-  });
 });

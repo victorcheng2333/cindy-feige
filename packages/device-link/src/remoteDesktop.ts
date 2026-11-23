@@ -300,6 +300,8 @@ export interface RemoteDesktopCapabilities {
   cursorOverlay?: boolean;
   clipboardText?: boolean;
   clipboardContent?: boolean;
+  /** Can identify the text field at a delivered click on the controlled display. */
+  editableClick?: boolean;
   clipboardSync?: boolean;
   /** Bounded single-message clipboard payloads, with legacy chunk fallback. */
   clipboardInline?: boolean;
@@ -478,6 +480,7 @@ export type RemoteDesktopRequest =
   | { op: "viewerHidden"; lease: string; hidden: boolean }
   | { op: "clipboardSync"; lease: string; enabled: boolean }
   | { op: "clipboardVersion"; lease: string }
+  | { op: "editableClick"; lease: string; sequence: number }
   | RemoteDesktopIceRequest
   | ClipboardContentRequest
   | { op: "capabilities" }
@@ -681,6 +684,8 @@ export function parseRemoteDesktopRequest(
     typeof v.enabled === "boolean"
   )
     return { op: v.op, lease, enabled: v.enabled };
+  if (v.op === "editableClick" && Number.isSafeInteger(v.sequence) && (v.sequence as number) >= 0)
+    return { op: v.op, lease, sequence: v.sequence as number };
   if (v.op === "clipboardVersion") return { op: v.op, lease };
   if (v.op === "viewerHidden" && typeof v.hidden === "boolean")
     return { op: v.op, lease, hidden: v.hidden };
@@ -869,6 +874,7 @@ export const REMOTE_DESKTOP_CHANNEL_OPS: ReadonlySet<string> = new Set([
   "displayModes",
   "clipboardSync",
   "clipboardVersion",
+  "editableClick",
   "screenShape",
 ]);
 export const REMOTE_DESKTOP_CHANNEL_MAX_ID_CHARS = 64;

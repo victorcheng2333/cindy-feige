@@ -173,7 +173,7 @@ export function useRemoteSessionsPhaseMap(
   }, [key]);
 }
 
-function getRevision(): number {
+export function getRemoteSessionActivityRevision(): number {
   return revision;
 }
 
@@ -182,7 +182,7 @@ function getRevision(): number {
  *  ⚠️ 逐行组件(SessionItem)仍必须走 useRemoteSessionActivity 精准订阅,
  *  拿这个 hook 逐行用会退化成整表订阅、违反上面的性能不变量。 */
 export function useRemoteSessionActivityRevision(): number {
-  return useSyncExternalStore(subscribeRemoteSessionActivity, getRevision, getRevision);
+  return useSyncExternalStore(subscribeRemoteSessionActivity, getRemoteSessionActivityRevision, getRemoteSessionActivityRevision);
 }
 
 /** onRemotePush 路由入口:按上述保留语义写入 / 删除。非法 payload 静默忽略。 */

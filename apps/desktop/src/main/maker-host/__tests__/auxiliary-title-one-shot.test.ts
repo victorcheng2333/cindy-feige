@@ -24,6 +24,7 @@ vi.mock('../model-route-guard-live.js', () => ({
 
 vi.mock('../../appSessionState.js', () => ({
   onAppSessionInvalidated: () => () => {},
+  getDataOwnerLifetime: () => 0,
   activeOwnerScopeKey: () => h.ownerScope,
   isAppSessionBoundaryPending: () => h.sessionBoundaryPending,
 }));

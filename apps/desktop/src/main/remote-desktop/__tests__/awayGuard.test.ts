@@ -12,7 +12,7 @@
  *   解锁前盖好的遮罩必须留下，结束时一律真锁屏，有人碰电脑要报给锁屏后继续使用。
  * - tier：unit，内存 fake，无 Electron / 原生进程。
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AWAY_GUARD_PREVIEW_MS,
   AWAY_GUARD_RETRY_MS,
@@ -62,6 +62,7 @@ function setup(overrides: Partial<AwayGuardDeps> = {}) {
       state.events.push('hide');
     },
     now: () => state.now,
+    notifyFailure: () => {},
     log: () => {},
     ...overrides,
   };
@@ -152,6 +153,27 @@ describe('AwayGuardController', () => {
     expect(state.events).toEqual(['show']);
     expect(state.awake).toBe(true);
     expect(guard.masked).toBe(true);
+  });
+
+  // Unit: background denial previously retried every minute with only a log entry.
+  it('notifies once per background failure and re-arms after a successful cover', async () => {
+    const notifyFailure = vi.fn();
+    let denied = true;
+    const { guard, away, state } = setup({
+      notifyFailure,
+      showMasks: async () => { if (denied) throw new Error('DESKTOP_ACCESSIBILITY_REQUIRED'); },
+    });
+    await away(AWAY_MS);
+    await away(AWAY_GUARD_RETRY_MS);
+    expect(notifyFailure.mock.calls).toEqual([['permission']]);
+    expect(state.awake).toBe(false);
+    denied = false;
+    await away(AWAY_GUARD_RETRY_MS);
+    expect(guard.inputShielded).toBe(true);
+    guard.masksEnded();
+    denied = true;
+    await away(AWAY_MS);
+    expect(notifyFailure.mock.calls).toEqual([['permission'], ['permission']]);
   });
 
   it('falls back to the system lock when the masks cannot start', async () => {

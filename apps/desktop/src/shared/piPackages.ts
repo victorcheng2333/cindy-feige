@@ -172,7 +172,8 @@ export function shouldListPiPackageCommands(
   requestedAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
   sessionIdProvided: boolean,
   session: {
-    agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+    /** 'acp' is a plugin-engine task; it never lists Pi package commands. */
+    agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp';
     reviewMode?: true;
     remoteHostId?: string;
   } | null,

@@ -1,9 +1,13 @@
+import { refineCreatedTaskTitle } from '../../maker-ipc/createdTaskTitles.js';
+import { captureChannelAccount } from './openChannelSession';
 import { beginTemporaryImPermission } from './temporaryTurnPermission';
 import { imText } from './imText';
+import { formatTaskTopicTitle } from '@cindy/maker-shared/session-title';
 import { getSessionRuntimeStartOverride } from '../../maker-ipc/sessionRuntimeControl';
 import { readImRemoteProviderRoute } from '../remoteProviderRoute';
 import {
   createLocalImSource,
+  imChannelDisplayName,
   type ImContextSnapshot,
   type ImMessageOrigin,
 } from '../../../shared/imMessageSource';
@@ -115,6 +119,8 @@ import type {
 import { transformXdtRefs } from '@cindy/im';
 import type { AutoReviewUserReferences } from '@cindy/maker-shared/auto-review-intent';
 
+import { isPluginEngineKind } from '../../../shared/agentKindConversion';
+import { isPluginEngineTask, PluginEngineUnsupportedError } from '../../maker-host/engineKind';
 import { persistUserMessage } from '../messagePersistence';
 import { imAutoReviewReferences } from './autoReviewReferences';
 import { bindingStore } from '../binding';
@@ -167,8 +173,7 @@ import {
   FBOT_DRAFT_TITLE,
   FBOT_TITLE_PREFIX,
   generateAndPersistFbotTitle,
-  generateImSessionTitleText,
-  persistGeneratedSessionTitle,
+  persistChannelSourceTitle,
 } from './fbotTitle';
 import { localTaskImagePath, rewriteTaskImageReferences, taskImageReferences } from '../../cindy-media/taskImageMarkdown';
 import { materializeLocalMarkdownImageRefs, materializeLocalMarkdownImages } from './localMarkdownImages';
@@ -325,6 +330,7 @@ interface TurnState {
   terminalErrorCode: string | null;
   /** Whether a callback-bound text response has already been reserved. */
   chunkedReplyBegun: boolean;
+  commitChunkedFinal?: ChannelToolScope['commitChunkedFinal'];
   queueMode: 'internal' | 'external';
   /**
    * 授权检查通过的「将要运行」路由(渠道默认跟随会切过去的那条; 未跟随则为 null)。
@@ -376,13 +382,31 @@ interface QueuedSend {
 
 type DetachDrainOutcome = 'rewire' | 'cancelled';
 
+/**
+ * 插件引擎任务第一期不接 IM 渠道(docs/plans/acp-plugin-bridge.md):接线、换绑与
+ * 读行入口都明确拒绝,不把 'acp' 当成内置引擎跑。
+ */
+const IM_CHANNEL_FEATURE = 'IM channels';
+
+/** A Maker session running on a built-in engine — the only kind an IM channel drives. */
+type BuiltinMakerSession = MakerSession & { agentKind: AgentKind };
+
+/** Refuses only plugin-engine sessions; every other session keeps its existing IM path. */
+function runsOnBuiltinEngine(session: MakerSession): session is BuiltinMakerSession {
+  return !isPluginEngineTask(session);
+}
+
+function refusePluginEngineRow(row: { agentKind: string }): void {
+  if (isPluginEngineKind(row.agentKind)) throw new PluginEngineUnsupportedError(IM_CHANNEL_FEATURE);
+}
+
 interface SessionState {
   /** Keep the original session configuration even when no persistent takeover exists. */
   preserveSessionConfig: boolean;
   /** Both cancel this channel's turn; only runtime disposal retires late replacements. */
   disposalIntent?: 'runtime' | 'observation';
-  /** Maker session (in-process). */
-  makerSession: MakerSession;
+  /** Maker session (in-process), always on a built-in engine (see IM_CHANNEL_FEATURE). */
+  makerSession: BuiltinMakerSession;
   /** 渠道 user id of the bot's owner — kept here so listeners can address replies. */
   userId: string;
   /** 当前 session 的受管工作目录；本地生成图片仅允许从这里物化。 */
@@ -666,6 +690,7 @@ export interface ImTurnRunner {
   /** 接管 detach 清理(原 detachFeishuFromSession)— binding cleanup hook 调用。 */
   detachFromSession(sessionId: string): void;
   disposeAllSessions(): Promise<void>;
+  detachIdleCompanionGroup(botContextId: string, chatId: string): void;
   disposeOneSession(sessionId: string): Promise<void>;
   /** Get the live Maker Session for a given DB session id, or null. */
   getMakerSessionById(sessionId: string): MakerSession | null;
@@ -841,6 +866,7 @@ export function createTurnRunner(
     if (!row?.workingDir || row.status === 'deleted' || row.status === 'archived' || row.orcaRole === 'worker') {
       throw new Error('Notification target session is unavailable');
     }
+    refusePluginEngineRow(row);
     return {
       row: { id: row.id, agentKind: toCoreAgentKind(row.agentKind), workingDir: row.workingDir,
         model: row.model, effort: row.effort, permissionMode: row.permissionMode, fastMode: row.fastMode,
@@ -883,9 +909,9 @@ export function createTurnRunner(
   /** 只告警一次的伙伴解析失败(按连接); 恢复后清掉, 下次再失败会再记一次。 */
   const companionFallbackWarned = new Set<string>();
 
-  function companionBotIdFor(botContextId: string): string | null {
+  function companionBotIdFor(botContextId: string, chatId?: string): string | null {
     if (!deps.companion || !adapter.companionLane) return null;
-    return deps.companion.readBinding(botContextId);
+    return deps.companion.readBinding(botContextId, chatId);
   }
 
   /**
@@ -905,7 +931,7 @@ export function createTurnRunner(
     create: boolean,
   ): Promise<RouteTarget | 'absent' | null> {
     const companion = deps.companion;
-    const botId = companionBotIdFor(botContextId);
+    const botId = companionBotIdFor(botContextId, userId);
     if (!companion || !botId || !adapter.companionLane) return null;
     const lane = adapter.companionLane(userId);
     const target: ImCompanionSessionTarget =
@@ -926,7 +952,10 @@ export function createTurnRunner(
         message: err instanceof Error ? err.message : String(err),
       };
     }
-    if (!resolved) return 'absent';
+    if (!resolved) {
+      if (create && adapter.requiresCompanionLane?.(userId)) throw new Error('GROUP_RECIPIENT_UNAVAILABLE');
+      return 'absent';
+    }
     if (resolved.ok) {
       const row = await repo.peekSessionById(resolved.sessionId);
       if (row) {
@@ -941,6 +970,7 @@ export function createTurnRunner(
       }
       resolved = { ok: false, errorCode: 'SESSION_UNAVAILABLE', message: 'companion session row missing' };
     }
+    if (adapter.requiresCompanionLane?.(userId)) throw new Error('GROUP_RECIPIENT_UNAVAILABLE');
     if (!companionFallbackWarned.has(botContextId)) {
       companionFallbackWarned.add(botContextId);
       log.warn(
@@ -964,7 +994,7 @@ export function createTurnRunner(
     userId: string,
   ): Promise<'unbound' | 'owner-dm' | 'rotated'> {
     const companion = deps.companion;
-    const botId = companionBotIdFor(botContextId);
+    const botId = companionBotIdFor(botContextId, userId);
     if (!companion || !botId || !adapter.companionLane) return 'unbound';
     const lane = adapter.companionLane(userId);
     if (lane.kind === 'owner-dm') {
@@ -974,7 +1004,7 @@ export function createTurnRunner(
       return current && current !== 'absent' ? 'owner-dm' : 'unbound';
     }
     const routeKey = companionLaneRouteKey(channel, botContextId, lane);
-    const archived = await companion.archiveLane(routeKey);
+    const archived = channel === 'imessage' ? await companion.archiveLane(routeKey, botId) : await companion.archiveLane(routeKey);
     for (const sessionId of archived) await disposeOneSession(sessionId);
     const fresh = await resolveCompanionRouteTarget(botContextId, userId, undefined, true);
     return fresh && fresh !== 'absent' ? 'rotated' : 'unbound';
@@ -1004,6 +1034,8 @@ export function createTurnRunner(
         .limit(1);
       const row = rows[0];
       if (row?.workingDir) {
+        // 接管到插件引擎任务:明确报错,不按 toCoreAgentKind 落成 Claude 去跑。
+        refusePluginEngineRow(row);
         return {
           row: {
             id: row.id,
@@ -1322,6 +1354,9 @@ export function createTurnRunner(
       terminalKind: 'done',
       terminalErrorCode: null,
       chunkedReplyBegun: false,
+      commitChunkedFinal: output.kind === 'chunked-text'
+        ? (args.channelToolScope?.commitChunkedFinal ?? output.commitFinal.bind(output))
+        : undefined,
       queueMode: args.queueMode,
       followAuthRoute: followTarget ?? null,
       terminalPromise,
@@ -1426,7 +1461,27 @@ export function createTurnRunner(
     // 是同一条边界被绕过, 而且主 turn 最终没被 provider 接受时照样会留下。
     // 宁可停在草稿标题。
     const titleFromText = args.protectedContent !== true;
-    if (titleFromText && target.attached && text.trim().length > 0) {
+    if (target.botOwned?.lane === 'channel' && (target.created || row.sdkSessionId == null) && titleFromText) {
+      const initial = adapter.sessions.defaultTitle(userId);
+      const label = imChannelDisplayName(adapter.messageSourceIm?.() ?? channel) ?? channel;
+      const lane = adapter.companionLane?.(userId);
+      const stableName = lane?.kind === 'group' && !lane.threadId ? args.channelNoteSource?.chatName : undefined;
+      if (stableName || adapter.sessions.skipOneshotTitleFor?.(userId)) {
+        startBackgroundTask(async () => {
+          try {
+            const owner = captureChannelAccount();
+            const title = stableName ? formatTaskTopicTitle(stableName, label)
+              : await adapter.sessions.resolveSessionTitle?.(userId, target.scopeKey);
+            owner();
+            if (title) await persistChannelSourceTitle(row.id, title, initial);
+          } catch (error) {
+            log.warn('Companion channel name unavailable', { errorName: error instanceof Error ? error.name : 'unknown' });
+          }
+        });
+      } else {
+        startBackgroundTask(async () => { await composeOrGenerateTitle(row.id, userId, target.scopeKey, text, label + ' · ', initial); });
+      }
+    } else if (titleFromText && target.attached && text.trim().length > 0) {
       startBackgroundTask(() =>
         maybeGenerateFbotTitleOnFirstMessage(row.id, text, {
           botContextId,
@@ -1439,7 +1494,6 @@ export function createTurnRunner(
       !target.notificationReply &&
       !target.botOwned &&
       titleFromText &&
-      text.trim().length > 0 &&
       (adapter.threadScoped
         ? target.created
         : adapter.sessions.skipOneshotTitleFor?.(userId) !== true &&
@@ -1449,11 +1503,14 @@ export function createTurnRunner(
       // threadScoped 新 thread 会话: 用首条消息生成正式标题(渠道前缀),
       // 完成后把 thread 名片卡升级为「{正式标题}」。
       // 非 threadScoped 渠道(feishu/discord, 一 (bot,user) 一行长期复用):
-      // 每条"新对话"的首条消息重新起名 —— sdkSessionId == null 即新上下文
-      // (首次建行 / /new 重置后), 标题跟随当前话题而不是永远停在第一次。
+      // 新上下文只允许替换本渠道的草稿标题；继续使用已有正式标题的任务保留原名。
       startBackgroundTask(() =>
-        maybeGenerateImSessionTitle(row.id, userId, target.scopeKey, text, threadHeaderCardId),
+        maybeGenerateImSessionTitle(row.id, userId, target.scopeKey, text, threadHeaderCardId,
+          row.initialTitle ?? adapter.sessions.defaultTitle(userId)),
       );
+    } else if (titleFromText && text.trim() && !target.notificationReply && !target.attached
+        && target.botOwned?.lane !== 'canonical') {
+      startBackgroundTask(async () => { await refineCreatedTaskTitle(row.id, text); });
     }
 
     // 入站非媒体文件此刻才确定归哪个任务(授权等早退都已过): 暂存的移入该任务的
@@ -2248,6 +2305,7 @@ export function createTurnRunner(
       if (!row.workingDir) {
         throw createSessionUnavailableError('SESSION_CLOSED', `session ${sessionId} missing after deferred agent switch`);
       }
+      refusePluginEngineRow(row);
       const agentKind = toCoreAgentKind(row.agentKind);
       const startOverride = getSessionRuntimeStartOverride(sessionId, agentKind, row.agentDeviceId);
       hydrateSessionProvider(sessionId, startOverride.providerId === undefined ? row.providerId ?? null : startOverride.providerId);
@@ -2301,6 +2359,8 @@ export function createTurnRunner(
       throw createSessionUnavailableError('SESSION_CLOSED', `session ${sessionId} detached while preparing its runtime`);
     }
     if (current === previous) return;
+    // 延迟切换可能把任务换到了插件引擎:渠道不接,明确失败而不是继续驱动它。
+    if (!runsOnBuiltinEngine(current)) throw new PluginEngineUnsupportedError(IM_CHANNEL_FEATURE);
 
     rebindSessionOutput(state, current, userId);
     wireSessionToIpcExternal(current);
@@ -2360,7 +2420,7 @@ export function createTurnRunner(
   }
 
   /** Rebind observation without discarding accepted or queued IM messages. */
-  function rebindSessionOutput(state: SessionState, current: MakerSession, userId: string): void {
+  function rebindSessionOutput(state: SessionState, current: BuiltinMakerSession, userId: string): void {
     for (const unsubscribe of state.unsubscribers) {
       try {
         unsubscribe();
@@ -2637,6 +2697,8 @@ export function createTurnRunner(
       vendorOptions,
       resumeSessionId: row.sdkSessionId ?? undefined,
     });
+    // createSession 对已活着的同 id 实例直接复用;它若跑在插件引擎上,渠道不接线。
+    if (!runsOnBuiltinEngine(makerSession)) throw new PluginEngineUnsupportedError(IM_CHANNEL_FEATURE);
 
     // 把 desktop 端的 IPC fan-out (broadcastToAllWindows + messagePersistBroadcaster
     // 的 assistant / tool_use / tool_result / thinking 落库 + 默认 interaction
@@ -2880,30 +2942,18 @@ export function createTurnRunner(
     }
   }
 
-  /**
-   * 标题拼装的公共路径: 渠道自定义拼装优先(飞书话题 lane → [飞书·{群名}·
-   * {话题简介}] {threadId}), 拼装不适用(飞书 DM)回落 fallbackPrefix +
-   * oneshot 简介。没有渠道拼装的渠道直接走 fallbackPrefix。
-   */
+  /** Add the channel and optional context to a single shared model completion. */
   async function composeOrGenerateTitle(
     sessionId: string,
     userId: string,
     scopeKey: string | undefined,
     text: string,
     fallbackPrefix: string,
+    initialTitle = FBOT_DRAFT_TITLE,
   ): Promise<string | null> {
     const composeTitle = adapter.sessions.composeGeneratedTitle;
-    if (!composeTitle) {
-      return generateAndPersistFbotTitle(sessionId, text, fallbackPrefix);
-    }
-    const generated = await generateImSessionTitleText(sessionId, text);
-    if (!generated) return null;
-    const title = await composeTitle(userId, scopeKey, generated, sessionId);
-    if (title) {
-      await persistGeneratedSessionTitle(sessionId, title);
-      return title;
-    }
-    return generateAndPersistFbotTitle(sessionId, text, fallbackPrefix);
+    return generateAndPersistFbotTitle(sessionId, text, fallbackPrefix, initialTitle,
+      composeTitle ? topic => composeTitle(userId, scopeKey, topic, sessionId) : undefined);
   }
 
   /**
@@ -2912,7 +2962,7 @@ export function createTurnRunner(
    *
    * 命名与渠道默认会话对齐: 有 composeGeneratedTitle 的渠道(feishu)走同一条
    * 拼装路径(话题 lane 与普通话题会话同名族), compose 不适用(DM)回落渠道
-   * generatedTitlePrefix([飞书·DM] {简介}); 其它渠道保持 'FBot · {简介}'。
+   * generatedTitlePrefix(飞书 · 主题); 其它渠道保持 'FBot · {简介}'。
    *
    * 用 drizzle 查 title 而不是从 row 里带 — row 来自 resolveRouteTarget 早一步,
    * 几十毫秒内 title 不会变, 但显式查一次更稳 (避免读到已被并发更新的旧值, 虽然
@@ -2983,7 +3033,7 @@ export function createTurnRunner(
 
   /**
    * 渠道默认(非接管)会话的标题生成 — 用首条消息 oneshot 起名(渠道前缀,
-   * 如 'Slack · ' / '[飞书·DM] ')。
+   * 如 'Slack · ' / '飞书 · ')。
    *   - threadScoped(slack): 新 thread 会话触发, 落库后把 thread 名片卡升级
    *     为正式标题;
    *   - 非 threadScoped(feishu/discord): 新上下文(建行 / /new 后)的首条
@@ -2996,6 +3046,7 @@ export function createTurnRunner(
     scopeKey: string | undefined,
     text: string,
     headerCardId: string | null,
+    initialTitle: string,
   ): Promise<void> {
     const threadUiPack = adapter.ui.thread;
     const configuredPrefix = adapter.sessions.generatedTitlePrefix;
@@ -3008,15 +3059,14 @@ export function createTurnRunner(
       return;
     const prefix = typeof configuredPrefix === 'function' ? configuredPrefix() : configuredPrefix;
     try {
-      // 渠道自定义拼装(feishu 话题 lane → [飞书·{群名}·{简介}] {threadId 后 6 位}):
-      // oneshot 只负责出「话题简介」文本, 完整标题由渠道按 lane 拼; compose
-      // 不适用(feishu DM)回落渠道前缀。无 compose 的渠道直接前缀 + 简介。
+      // The same completion supplies the subject for both the task and its IM card.
       const title = await composeOrGenerateTitle(
         sessionId,
         userId,
         scopeKey,
         text,
         prefix ?? FBOT_TITLE_PREFIX,
+        initialTitle,
       );
       if (!richIm || !title || !headerCardId || !threadUiPack) return;
       await richIm.updateInteractiveCard(headerCardId, {
@@ -3582,7 +3632,9 @@ export function createTurnRunner(
     if (!t) return;
     state.scheduledTranspond = null; // 防重入(下一条 stray 不会再命中)
     // 静默须在终态事件同步读(run 此时仍在跑)。失败照发；已开卡的不留半截卡。
-    const silenced = !errMsg && isSilencedSchedulerTurn(t.origin);
+    // A teammate's channel lane exists to talk in this chat: a scheduled run there always posts its
+    // result (owner 2026-11-22); silence only quiets desktop notifications.
+    const silenced = !errMsg && state.botLane !== 'channel' && isSilencedSchedulerTurn(t.origin);
     state.pendingTranspondFinals += 1;
     clearSilentStopSettleWait(t);
     clearTranspondTicker(t);
@@ -4079,8 +4131,8 @@ export function createTurnRunner(
       async finalize(finalText: string) {
         if (closed) return;
         closed = true;
-        if (output.kind === 'chunked-text') {
-          await output.commitFinal({
+        if (turn.commitChunkedFinal) {
+          await turn.commitChunkedFinal({
             userId: turn.userId,
             text: finalText,
             terminal: turn.terminalKind,
@@ -4217,8 +4269,8 @@ export function createTurnRunner(
       // 实现兑现)。发送失败只记脱敏日志,不阻塞 settle / 队列放行。
       try {
         const fallbackText = composeStreamingView(turn);
-        if (output.kind === 'chunked-text') {
-          await output.commitFinal({
+        if (turn.commitChunkedFinal) {
+          await turn.commitChunkedFinal({
             userId,
             text: fallbackText,
             terminal: turn.terminalKind,
@@ -4949,6 +5001,8 @@ export function createTurnRunner(
 
   return {
     attachSessionOutput: (session, userId, route, source) => {
+      // 插件引擎任务不接 IM 渠道:不把它的输出转播到渠道。
+      if (!runsOnBuiltinEngine(session)) return;
       const existing = sessionStates.get(session.id);
       if (existing) {
         existing.replyRequesterIsOwner = undefined;
@@ -5009,6 +5063,13 @@ export function createTurnRunner(
     prewireAttachedSession,
     detachFromSession,
     disposeAllSessions,
+    detachIdleCompanionGroup(botContextId, chatId) {
+      if (bindingStore.get({ channel, botContextId, userId: chatId })) throw new Error('GROUP_HAS_TASK_BINDING');
+      const states = [...sessionStates.entries()].filter(([, state]) => state.botLane === 'channel' && state.userId === chatId);
+      if (states.some(([, state]) => state.queue.length || state.sendQueue.length || state.scheduledTranspond
+        || state.pendingTranspondFinals || state.makerSession.isTurnRunning())) throw new Error('GROUP_BUSY');
+      for (const [id, state] of states) detachSessionStateNow(id, state);
+    },
     disposeOneSession,
     getMakerSessionById,
     vendorOptionsForSession: (sessionId) => {

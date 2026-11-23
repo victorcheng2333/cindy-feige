@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { useWindowWidth } from '@/platform/windowDimension';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   interpolate,
@@ -21,6 +22,7 @@ import {
 } from "@/theme";
 import { radius, spacing } from "@/theme/tokens";
 import { usePaneEdgeInset } from './SessionPaneDivider';
+import { useWallpaper } from '@/theme/wallpaper';
 
 // Match the floating circular actions in SwipeableSessionRow on both platforms.
 const ACTION_SIZE = 56;
@@ -54,6 +56,9 @@ export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
   const edgeInset = usePaneEdgeInset();
   const hitSlop = useMemo(() => ({ ...EDGE_HIT_SLOP, right: -edgeInset }), [edgeInset]);
   const rowKey = `project:${projectKey}`;
+  const { selected } = useWallpaper();
+  const [swiping, setSwiping] = useState<string | null>(null);
+  const surface = selected === 'none' || swiping === rowKey ? styles.surface : undefined;
   const close = useCallback(() => methods.current?.close(), []);
   useEffect(() => {
     methods.current?.reset();
@@ -75,18 +80,20 @@ export const SwipeableProjectHeader = memo(function SwipeableProjectHeader({
   const handleOpenStartDrag = useCallback(() => {
     const { registry, rowKey } = gestureInputs.current;
     registry.onRowOpen(rowKey, close);
-  }, [close]);
+    if (selected !== 'none') setSwiping(rowKey);
+  }, [close, selected]);
   const handleClose = useCallback(() => {
     const { registry, rowKey } = gestureInputs.current;
     registry.onRowClose(rowKey);
+    setSwiping(null);
   }, []);
 
   return (
     <ReanimatedSwipeable
       ref={methods}
       testID={`home.projectSwipe.${projectKey}`}
-      containerStyle={styles.surface}
-      childrenContainerStyle={styles.surface}
+      containerStyle={surface}
+      childrenContainerStyle={surface}
       // Leave the screen edge to native back and the pane edge to resizing.
       hitSlop={hitSlop}
       overshootLeft={false}

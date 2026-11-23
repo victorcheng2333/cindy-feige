@@ -74,6 +74,7 @@ import type {
   BotGroupQuoteView,
 } from '../../../shared/botGroupChat';
 import { botGroupQuoteFromMessage, isBotGroupMessageQuotable, resolveBotGroupQuote } from '../../../shared/botGroupChat';
+import { useSplitPaneFocus } from '../cc-agent/splitPaneFocus';
 import { useRegisterContentHeader } from '../feature-context';
 import { BotGroupAvatarStack } from './BotGroupAvatars';
 import { botGroupAttachmentScope, refreshPendingBotGroupAttachments } from './botGroupAttachments';
@@ -231,11 +232,13 @@ function BotGroupChatContent({ groupId, direct }: { groupId: string; direct: boo
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
   const shareScope = `bot-group:${groupId}`;
+  const focused = useSplitPaneFocus();
   const sharing = useShareSelectionActive(shareScope);
   useEffect(() => {
+    if (!focused) return;
     shareSelectionStore.exitIfNotSession(shareScope);
     return () => { if (shareSelectionStore.isActive(shareScope)) shareSelectionStore.exit(); };
-  }, [shareScope]);
+  }, [focused, shareScope]);
   const navigate = useNavigate();
   const location = useLocation();
   const notificationTarget = useMemo(() => {
@@ -830,7 +833,7 @@ function BotGroupChatContent({ groupId, direct }: { groupId: string; direct: boo
     return true;
   }, []);
   useEffect(() => {
-    if (!group?.serverBacked || !threadRootId) return;
+    if (!focused || !group?.serverBacked || !threadRootId) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       if (event.target !== document.body && !threadLayoutRef.current?.contains(event.target as Node) && !threadHeaderRef.current?.contains(event.target as Node)) return;
@@ -841,7 +844,7 @@ function BotGroupChatContent({ groupId, direct }: { groupId: string; direct: boo
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [group?.serverBacked, threadRootId, closeThread, shareScope]);
+  }, [focused, group?.serverBacked, threadRootId, closeThread, shareScope]);
 
   const settingsLabel = t('bots.groupChat.settings.open');
   const mainHeaderSpeakers = headerGroup?.round?.speakers.filter(speaker => speaker.threadRootId === null || (!speaker.sourceMessageId && !speaker.threadRootId));
@@ -1605,7 +1608,7 @@ function BotGroupChatContent({ groupId, direct }: { groupId: string; direct: boo
       {dragOver ? (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 z-50"
+          className="pointer-events-none absolute inset-0 z-float"
           style={{
             backgroundColor: 'var(--drop-overlay-bg)',
             border: '2px dashed var(--drop-overlay-border)',

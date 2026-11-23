@@ -51,6 +51,27 @@ describe("existing remote quota compatibility", () => {
     expect(await readSessionMenuAccountUsage(cursor, r)).toMatchObject({ source: 'unavailable', windows: [], amounts: [] });
     expect(r.getCodexRateLimits).not.toHaveBeenCalled();
     expect(r.getSubscriptionUsage).not.toHaveBeenCalled();
+  });
+
+  // A plugin task with a Codex-looking model must use the plugin account on its executing device.
+  it('keeps plugin balances and reset windows on the plugin route, including on older hosts', async () => {
+    const task = { ...session, agentKind: 'acp', providerId: 'acp-plugin:demo:engine' } as unknown as RemoteSession;
+    const r = { ...reader(), getPluginEngineUsage: vi.fn(async () => ({
+      updatedAt: 2000, balances: [{ currency: 'EUR', amount: '0.00' }],
+      windows: [{ label: 'Week', remainingPercent: 0, resetsAt: 1893456000000 }],
+    })) };
+    expect(await readSessionMenuAccountUsage(task, r)).toEqual({
+      source: 'plugin', plan: null, updatedAt: 2000,
+      amounts: [{ id: 'balance', currency: 'EUR', amount: 0 }],
+      windows: [{ id: '0', minutes: null, modelLabel: 'Week', remainingPercent: 0, resetsAt: 1893456000 }],
+    });
+    // The controlled computer's own task names itself, so an engine with several accounts reports the
+    // task's account (plugin engine accounts, 2026-11-23); a task whose Agent runs elsewhere does not.
+    expect(r.getPluginEngineUsage).toHaveBeenCalledWith('demo:engine', 's1');
+    await readSessionMenuAccountUsage({ ...task, agentDeviceId: 'box' } as RemoteSession, r);
+    expect(r.getPluginEngineUsage).toHaveBeenLastCalledWith('demo:engine');
+    expect(await readSessionMenuAccountUsage(task, { ...r, getPluginEngineUsage: undefined })).toMatchObject({ windows: [], amounts: [] });
+    expect(r.getCodexRateLimits).not.toHaveBeenCalled();
     expect(r.getAccountUsage).not.toHaveBeenCalled();
   });
 
@@ -643,7 +664,7 @@ describe("new subscription families cannot be skipped", () => {
     expect(exposed.length).toBeGreaterThan(0);
     // Cursor quota is readable by the usage clients, but Cursor remote sessions are
     // intentionally unsupported. It must not become a native session auth family.
-    expect([...Object.values(SUBSCRIPTION_USAGE_CHANNELS), "maker:usage:cursor-subscription"].sort())
+    expect([...Object.values(SUBSCRIPTION_USAGE_CHANNELS), "maker:usage:cursor-subscription", "maker:usage:antigravity-subscription"].sort())
       .toEqual(exposed.sort());
   });
 

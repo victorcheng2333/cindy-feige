@@ -1168,28 +1168,19 @@ function handleSystem(
       } });
       return;
     }
-    //
-    // 判据是 parseOverloadError 的**两种**形态都算（`overloaded`：529 /
-    // overloaded_error；`capacity`：`at capacity`），不只 529：renderer 侧的镜像
-    // (renderer/utils/overloadError.ts) 对两种形态都有本地化文案，所以放开 capacity
-    // 不会产生裸英文；反过来只认 529 会把一条措辞为 `at capacity` 的过载错误静默掉，
-    // 用户看到的是"什么都没发生"。
-    const overloadRetry =
-      typeof msg.attempt === 'number' &&
-      typeof msg.max_retries === 'number' &&
-      msg.attempt >= 2 &&
-      parseOverloadError(`${sdkError} ${statusLabel}`, msg.error_status ?? undefined) !== null;
-    if (overloadRetry) {
+    const overloadRetry = parseOverloadError(
+      `${sdkError} ${statusLabel}`,
+      msg.error_status ?? undefined,
+    ) !== null;
+    const networkRetry = [500, 502, 503, 504].includes(msg.error_status ?? 0);
+    if (validRetry && (msg.attempt ?? 0) >= 2 && (overloadRetry || networkRetry)) {
+      const detail = `SDK API request failed: ${sdkError} (${statusLabel})`;
       queue.push({
         type: 'error',
         data: {
-          // 进度用 `(auto-retry N/M)` 后缀编码，与 Codex 侧同一套跨 agent 协议，
-          // renderer 只需一份解析。原始状态留在正文里供分类与折叠查看。
-          message: formatOverloadRetryMessage(
-            `SDK API request failed: ${sdkError} (${statusLabel})`,
-            msg.attempt as number,
-            msg.max_retries as number,
-          ),
+          message: overloadRetry
+            ? formatOverloadRetryMessage(detail, msg.attempt as number, msg.max_retries as number)
+            : `Reconnecting... ${msg.attempt}/${msg.max_retries} (${detail})`,
           isTerminal: false,
           willRetry: true,
           ...(msg.error_status != null ? { errorStatus: msg.error_status } : {}),
@@ -2285,6 +2276,11 @@ function handleResult(
   // Snap to this turn's streamed main-thread usage: the result aggregate can be
   // a session total turned into a wrong delta, and a bad snap is worse than the estimate.
   liveGeneration.tokenSpeed.stop(mainTurnOutputTokens(ctx.tracker));
+  // Display only: lets the finished message show the chart the turn ran with. The meter pairs
+  // each main-thread request with its own usage and invalidates itself on a broken clock, so
+  // it does not depend on `reliable`, which covers the legacy counters: those fail closed when
+  // the turn's aggregate includes subagent output (a quarter of real Claude turns lost the chart).
+  const generationTrace = liveGeneration.tokenSpeed.trace();
   const endSnapshot = ctx.tracker.endTurn(
     resultUsage
       ? {
@@ -2594,6 +2590,7 @@ function handleResult(
     usageSegments: turnUsageSegments,
     usageSegmentsComplete,
     modelUsageCumulativeStartsAtZero: ctx.modelUsageCumulativeStartsAtZero?.() === true,
+    ...(generationTrace ? { generationTrace } : {}),
   };
   const resultWithAssistantMessageId = ctx.turn.lastAssistantRequestId
     ? { ...resultWithUsageSegments, assistant_message_id: ctx.turn.lastAssistantRequestId }

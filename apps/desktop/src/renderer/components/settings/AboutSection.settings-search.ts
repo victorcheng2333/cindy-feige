@@ -39,6 +39,7 @@ export const aboutSettings = defineSettings({
     titleKey: 'settings.about.analyticsLabel',
     sectionKey: 'settings.tabs.about',
     descriptionKey: 'settings.about.analyticsDescription',
+    aliases: ['token', '模型用量', 'model usage'],
   },
   harnessShowInPicker: {
     id: 'settings.about.harnessShowInPicker',

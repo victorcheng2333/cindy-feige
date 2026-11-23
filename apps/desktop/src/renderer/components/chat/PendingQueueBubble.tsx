@@ -28,6 +28,7 @@ export interface PendingQueueBubbleProps {
   localSend?: boolean;
   simplifiedBotConversation?: boolean;
   onEdit(entry: QueuedMessage): void;
+  /** Omitted when the task's engine cannot take input into its running turn: no steer item. */
   onSteer?(clientId: string): Promise<boolean>;
   steerDisabledReason?: string | null;
   onRemove(clientId: string): void;

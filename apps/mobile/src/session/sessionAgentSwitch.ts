@@ -5,6 +5,7 @@
 import { canHandOffToTaskComputerOnlyEngine } from '@cindy/maker-shared/agent-placement';
 export { runsOnTaskComputerOnly } from '@cindy/maker-shared/agent-placement';
 import type { MobileAgentCapabilities } from './agentCapabilities';
+import { normalizePluginEngineSwitchIntent } from './pluginEngines';
 import type { RemoteSession, RemoteSessionAgentSwitchIntent } from './types';
 
 export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
@@ -24,6 +25,23 @@ export function canSwitchSessionToAntigravity(
   capabilities: MobileAgentCapabilities | null,
 ): boolean {
   return capabilities?.supportsAntigravitySessionSwitch === true && canHandOffToTaskComputerOnlyEngine(session);
+}
+
+/**
+ * desktop 意图投影拆成两个会话字段：切到内置引擎的进 agentSwitchIntent(既有展示与切换链路不变)，
+ * 切到插件引擎的进 pluginEngineSwitchIntent(targetAgentKind = 'acp' 且带 acp-plugin: 标识)。
+ * 两者互斥；非法值两边都按「无意图」。
+ */
+export function sessionAgentSwitchIntentPatch(
+  value: unknown,
+): {
+  agentSwitchIntent: RemoteSessionAgentSwitchIntent | null;
+  pluginEngineSwitchIntent: NonNullable<RemoteSession['pluginEngineSwitchIntent']> | null;
+} {
+  return {
+    agentSwitchIntent: normalizeSessionAgentSwitchIntent(value),
+    pluginEngineSwitchIntent: normalizePluginEngineSwitchIntent(value),
+  };
 }
 
 /** 将不可信 device-link payload 收窄为公开 intent；非法值按“无意图”处理。 */
@@ -87,7 +105,18 @@ export function mobileAgentLabel(agentKind: MobileSessionAgentKind): string {
   return agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
-export function mobileAgentLabelFromUnknown(agentKind: unknown): string {
+/**
+ * 边界行等不可信数据里的引擎名。'acp' = 插件引擎：用切换时记下的引擎名(fromEngineName /
+ * toEngineName)，缺名称时用调用方本地化的通用名称(「插件引擎」)。
+ */
+export function mobileAgentLabelFromUnknown(
+  agentKind: unknown,
+  engineName?: unknown,
+  pluginEngineFallback = 'Plugin engine',
+): string {
+  if (agentKind === 'acp') {
+    return typeof engineName === 'string' && engineName.trim() ? engineName.trim() : pluginEngineFallback;
+  }
   return agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 

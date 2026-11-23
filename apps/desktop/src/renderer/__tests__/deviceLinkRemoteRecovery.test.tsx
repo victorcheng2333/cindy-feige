@@ -10,6 +10,7 @@ vi.mock('@/contexts/AuthContext', () => ({
   }),
 }));
 vi.mock('@/hooks/useAgentCapabilities', () => ({
+  getDeviceCapabilitiesGeneration: () => 0,
   getInterestedDeviceCapabilityTargets: () => [],
   prefetchDeviceCapabilities: vi.fn(),
   evictDeviceCapabilities: vi.fn(),
@@ -866,15 +867,10 @@ describe('stale device directory', () => {
   // setTimeout 溢出成「立刻触发」,退避变成对目录读的紧追循环。超过上限的等待必须按上限
   // 分片,每片到点按墙上时钟重新核对(Codex review #9360)。
   it('chunks a retry deadline beyond the 32-bit timer limit instead of tight-looping', async () => {
-    const fakeSetTimeout = globalThis.setTimeout;
-    const longTimers: Array<{ callback: () => void; delay: number }> = [];
-    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
-      if (typeof delay === 'number' && delay >= 800_000_000) {
-        longTimers.push({ callback: () => callback(...args), delay });
-        return fakeSetTimeout(() => {}, delay);
-      }
-      return fakeSetTimeout(callback, delay, ...args);
-    });
+    // Advance the retry timeouts without simulating weeks of periodic reconciliation.
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const listDevices = window.electronAPI.deviceLink.listDevices as unknown as ReturnType<typeof vi.fn>;
     const deadline = Date.now() + 3_000_000_000; // > 2^31 - 1(~24.8 天)
     listDevices.mockImplementation(async () => ({
@@ -894,15 +890,14 @@ describe('stale device directory', () => {
       await vi.advanceTimersByTimeAsync(1_000_000);
     });
     expect(listDevices.mock.calls.length).toBe(initial);
-    // Drive each long timer directly so unrelated periodic work does not run
-    // tens of thousands of times while the wall clock crosses the deadline.
-    expect(longTimers[0]?.delay).toBe(2_147_483_647);
-    vi.setSystemTime(deadline - 852_516_353);
-    await act(async () => { longTimers[0].callback(); });
+    // 第一片走完仍需等到服务端期限。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(deadline - Date.now() - 1);
+    });
     expect(listDevices.mock.calls.length).toBe(initial);
-    expect(longTimers[1]?.delay).toBe(852_516_353);
-    vi.setSystemTime(deadline);
-    await act(async () => { longTimers[1].callback(); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
     expect(listDevices.mock.calls.length).toBe(initial + 1);
   });
 

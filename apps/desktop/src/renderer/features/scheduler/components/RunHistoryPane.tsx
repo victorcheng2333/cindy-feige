@@ -25,7 +25,8 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import type { AgentKind, Schedule, ScheduleRun } from '@cindy/maker-scheduler';
+import type { Schedule, ScheduleAgentKind, ScheduleRun } from '@cindy/maker-scheduler';
+import { findPluginEngine, usePluginEngines } from '@/hooks/usePluginEngines';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { useCCSessions } from '@/hooks/useCCSessions';
 import { clearSessionAttentionMany } from '@/lib/sessionAttentionStore';
@@ -69,6 +70,9 @@ export function RunHistoryPane({
   connectionSetupVisible = true,
 }: Props) {
   const { t } = useTranslation();
+  // 插件引擎自动任务按引擎自己的名字显示(插件停用后用通用名称)。
+  const pluginEngines = usePluginEngines(s.agentKind === 'acp');
+  const pluginEngineName = findPluginEngine(pluginEngines, s.providerId)?.name;
   const projectLabel = useProjectLabel();
   // 展示策略（避免切任务闪烁）：
   // - hasLoaded=false（应用启动后第一次都没拉过）→ 整块 run 区域不挂载
@@ -96,18 +100,19 @@ export function RunHistoryPane({
   );
   const sessionReferences = useSessionReferences(runSessionIds);
   const sessionAgentMap = useMemo(() => {
-    const m = new Map<string, AgentKind | 'cursor'>();
+    const m = new Map<string, ScheduleAgentKind>();
     for (const sess of allSessions) {
-      if (sess.agentKind === 'antigravity') continue;
-      m.set(sess.id, sess.agentKind === 'cc' ? 'claude-code' : sess.agentKind);
+      if (sess.agentKind === 'antigravity' || sess.agentKind === 'cursor') continue;
+      m.set(sess.id, sess.agentKind === 'cc' ? 'claude-code' : sess.agentKind === 'pi' ? 'pi'
+        : (sess.agentKind as string) === 'acp' ? 'acp' : 'codex');
     }
     return m;
   }, [allSessions]);
   const resolveRunAgent = useCallback(
-    (run: ScheduleRun): AgentKind | 'cursor' => {
+    (run: ScheduleRun): ScheduleAgentKind => {
       if (!run.sessionId) return s.agentKind;
       const linkedAgent = sessionReferences.get(run.sessionId)?.agentKind;
-      const referenceAgent = linkedAgent === 'antigravity' ? undefined : linkedAgent;
+      const referenceAgent = linkedAgent === 'antigravity' || linkedAgent === 'cursor' ? undefined : linkedAgent;
       return (
         sessionAgentMap.get(run.sessionId) ||
         (referenceAgent === 'cc' ? 'claude-code' : referenceAgent) ||
@@ -227,7 +232,9 @@ export function RunHistoryPane({
   const cronText = prText ? (s.manual ? prText : `${timingText} · ${prText}`) : s.webhookTrigger
     ? s.manual ? t('scheduler.webhook.title') : `${timingText} · ${t('scheduler.webhook.title')}`
     : timingText;
-  const agentText = humanizeAgentKind(s.agentKind);
+  const agentText = s.agentKind === 'acp'
+    ? pluginEngineName ?? t('newChat.pluginEngines.genericName')
+    : humanizeAgentKind(s.agentKind);
   const dest = describeDestination(s, t);
   // title 兜底显示完整路径，悬浮即可看到 — basename 视觉简洁，hover/title 看全量
   const titleText = `${cronText} · ${agentText} · ${dest.prefix}${dest.workingDir ?? ''}`;
@@ -246,7 +253,7 @@ export function RunHistoryPane({
   return (
     <section className="flex min-w-0 flex-1 flex-col">
       {/* Pane header */}
-      <header className="flex shrink-0 items-start justify-between gap-3 px-6 pt-[18px]">
+      <header className="flex shrink-0 items-start justify-between gap-3 px-6 pt-4">
         <div className="flex min-w-0 flex-col gap-1.5">
           <h2 className="truncate text-lg font-medium text-[var(--msg-assistant-text)]">
             {s.name}

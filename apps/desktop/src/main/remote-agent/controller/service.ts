@@ -18,6 +18,7 @@ import type {
   AgentDeps,
   AgentEvent,
   AgentKind,
+  EngineKind,
   AgentSessionHandle,
   Logger,
   MakerMemoryManager,
@@ -255,16 +256,18 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
     }
     return pool;
   };
-  type StartInput = { agentKind: AgentKind; deviceId: string; options: StartSessionOptions };
+  /** `acp` = a plugin engine of that computer (`options.providerId` names it). */
+  type StartInput = { agentKind: EngineKind; deviceId: string; options: StartSessionOptions };
   const startAttempt = async (input: StartInput, skipDirect: boolean,
     attempt: ReturnType<typeof registerPendingRemoteStart>, recoverLostHistoryGrant = true,
     reissuedHistory = false): Promise<AgentSessionHandle> => {
     if (input.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
-    const agentKind: RemoteAgentKind = input.agentKind;
     const initialShareId = parseProviderShareAgentDeviceId(input.deviceId);
-    if (agentKind === 'antigravity' && (deps.isSharedProviderDevice?.(input.deviceId) === true || !!initialShareId)) {
+    if (input.agentKind === 'antigravity' && (deps.isSharedProviderDevice?.(input.deviceId) === true || !!initialShareId)) {
       throw new Error('[REMOTE_AGENT_UNSUPPORTED] Antigravity remote execution is available for your own computers only.');
     }
+    // 下面的分享组分配、直连与备用记录只认内置引擎；插件引擎走分享者本机直连，这里给内置分支一个兜底种类。
+    const agentKind: RemoteAgentKind = input.agentKind === 'acp' ? 'pi' : input.agentKind;
     const ownerScope = activeOwnerScopeKey();
     const initialOwner = initialShareId ? findReceivedShareForExecution(initialShareId) : null;
     const initialOwnerPeer = initialShareId && initialOwner?.hostDeviceId
@@ -366,10 +369,22 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         log.warn('shared provider failed direct allocation release will expire', { error: String(error) });
       }
     };
-    const standbyPlacement = shareId && sessionId ? await readAgentNetStandbyPlacement(shareId, sessionId) : undefined;
+    const standbyPlacement = input.agentKind !== 'acp' && shareId && sessionId ? await readAgentNetStandbyPlacement(shareId, sessionId) : undefined;
     const handoffPlacement = switchToken ? standbyPlacement : undefined;
     requireCurrent();
-    if (shareId && (opts.resumeSessionId || (standbyPlacement && !switchToken))) {
+    if (input.agentKind === 'acp' && shareId) {
+      if (initialOwnerPeer && (initialOwner?.hostDeviceOnline ?? initialOwner?.hostOnline)) {
+        const closeEpoch = getRemoteLinkCloseEpoch(initialOwnerPeer);
+        startupOwnerPeer = initialOwnerPeer;
+        assertOwnerLinkCurrent = () => {
+          if (getRemoteLinkCloseEpoch(initialOwnerPeer) !== closeEpoch) {
+            throw new Error('[LINK_NOT_OPEN] shared owner link closed during startup');
+          }
+        };
+        await deps.renewSharedProviderLink?.(initialOwnerPeer);
+        requireCurrent();
+      }
+    } else if (shareId && (opts.resumeSessionId || (standbyPlacement && !switchToken))) {
       if (!sessionId) throw new Error('[REMOTE_AGENT_INVALID] shared history requires its task identity');
       const allocationStartedAt = Date.now();
       const allocationStartedMonotonic = performance.now();
@@ -382,7 +397,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       target = authorization.target;
       const taskKey = `${shareId}:${sessionId}`;
       directTasks.delete(taskKey);
-      if (authorization.direct) directTasks.set(taskKey, { target, availability: authorization.availability, standby: authorization.standby, agentKind: input.agentKind, model: opts.model,
+      if (authorization.direct) directTasks.set(taskKey, { target, availability: authorization.availability, standby: authorization.standby, agentKind: agentKind, model: opts.model,
         directStatusBatch: authorization.directStatusBatch,
         ...(authorization.reused ? { reused: true } : {}),
         accessEpoch: providerShareAccessEpoch(shareId),
@@ -394,7 +409,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         ...(authorization.generation ? { generation: authorization.generation } : {}) });
       selectedDirectRoute = directTasks.get(taskKey);
       if (authorization.standby) {
-        const authorized = captureSharedTaskAuthorizationCheck(input.deviceId, sessionId, input.agentKind, opts.model, target);
+        const authorized = captureSharedTaskAuthorizationCheck(input.deviceId, sessionId, agentKind, opts.model, target);
         startupOwnerPeer = target;
         assertOwnerLinkCurrent = () => {
           if (!authorized?.()) throw new Error('[ACCESS_REVOKED] Shared standby permission changed during startup');
@@ -405,7 +420,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       const taskKey = `${shareId}:${sessionId}`;
       const cached = directTasks.get(taskKey);
       if (cached && cached.accessEpoch === providerShareAccessEpoch(shareId) && cached.until > Date.now()
-        && cached.wallDeadline > Date.now() && cached.leaseDeadline > performance.now() && cached.agentKind === input.agentKind && cached.model === opts.model) {
+        && cached.wallDeadline > Date.now() && cached.leaseDeadline > performance.now() && cached.agentKind === agentKind && cached.model === opts.model) {
         try {
           // M's grant is memory-only. A process restart can invalidate it even
           // while G's cached route still has time left.
@@ -437,7 +452,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
             if (source.scope !== ownerScope || source.wallDeadline <= Date.now() || source.leaseDeadline <= performance.now()
               || getRemoteLinkCloseEpoch(source.target) !== source.closeEpoch) { standbySources.delete(key); continue; }
             if (source.shareId !== shareId || source.memberId !== owner.memberId || source.ownerDeviceId !== owner.hostDeviceId
-              || source.accessEpoch !== epoch || source.model !== opts.model || source.agentKind !== input.agentKind
+              || source.accessEpoch !== epoch || source.model !== opts.model || source.agentKind !== agentKind
               || source.ownerCloseEpoch !== initialOwnerCloseEpoch || source.sourceSessionId === sessionId) continue;
             const current = () => {
               requireCurrent();
@@ -452,7 +467,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
             let value: unknown;
             try {
               value = await remoteAgentInvoker(source.target, deps.remoteInvoke)([{
-                op: 'standby-admit', sourceSessionId: source.sourceSessionId, sessionId, admissionId, agentKind: input.agentKind, model: opts.model,
+                op: 'standby-admit', sourceSessionId: source.sourceSessionId, sessionId, admissionId, agentKind: agentKind, model: opts.model,
               }], { beforeDispatch: current });
             } catch (error) {
               current();
@@ -496,7 +511,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
               }
             };
             cloudAllocation = false;
-            selectedDirectRoute = { target, agentKind: input.agentKind, model: opts.model, reused: true, standby: true,
+            selectedDirectRoute = { target, agentKind: agentKind, model: opts.model, reused: true, standby: true,
               until: wallDeadline, authorizedUntil: wallDeadline, leaseDeadline, wallDeadline,
               renewAt: wall + (leaseDeadline - mono) * 2 / 3,
               accessEpoch: epoch, generation: admissionId };
@@ -545,7 +560,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
           const allocation = availability
             ? await allocateShareAvailability(shareId, sessionId, agentKind, opts.model)
             : await remoteAgentInvoker(input.deviceId, deps.remoteInvoke)([{
-              op: 'allocate', agentKind: input.agentKind, model: opts.model, sessionId, prepareStandby: true,
+              op: 'allocate', agentKind: agentKind, model: opts.model, sessionId, prepareStandby: true,
             }]);
           let row = allocation && typeof allocation === 'object'
             ? allocation as { deviceId?: unknown; generation?: unknown; directStatusBatch?: unknown; standby?: unknown;
@@ -567,7 +582,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
             const excludeExecutorDeviceId = typeof row.deviceId === 'string' ? row.deviceId : undefined;
             const accessEpoch = providerShareAccessEpoch(shareId);
             prepareStandby = async () => {
-              const key = JSON.stringify([ownerScope, shareId, input.agentKind, opts.model]);
+              const key = JSON.stringify([ownerScope, shareId, agentKind, opts.model]);
               if ((standbyPreparationAt.get(key) ?? 0) > performance.now()) return;
               const current = () => {
                 requireCurrent();
@@ -581,7 +596,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
               standbyPreparationAt.set(key, performance.now() + 5 * 60_000);
               const sourceSessionId = randomUUID(), mono = performance.now(), wall = Date.now();
               const value = await remoteAgentInvoker(input.deviceId, deps.remoteInvoke)([{
-                op: 'standby-prepare', agentKind: input.agentKind, model: opts.model, sessionId: sourceSessionId, excludeExecutorDeviceId,
+                op: 'standby-prepare', agentKind: agentKind, model: opts.model, sessionId: sourceSessionId, excludeExecutorDeviceId,
               }], { beforeDispatch: current });
               current();
               const prepared = value as { deviceId?: unknown; standby?: unknown } | null;
@@ -593,7 +608,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
               standbyPreparationAt.set(key, Math.max(performance.now() + 60_000, leaseDeadline - 5 * 60_000));
               rememberStandbySource({ scope: ownerScope, shareId, memberId: owner.memberId, ownerDeviceId: owner.hostDeviceId,
                 accessEpoch, target: executor, closeEpoch: getRemoteLinkCloseEpoch(executor), ownerCloseEpoch: initialOwnerCloseEpoch,
-                sourceSessionId, agentKind: input.agentKind, model: opts.model, leaseDeadline, wallDeadline: wall + leaseDeadline - mono });
+                sourceSessionId, agentKind: agentKind, model: opts.model, leaseDeadline, wallDeadline: wall + leaseDeadline - mono });
             };
             if (row.deviceId === undefined) row = null;
           }
@@ -613,7 +628,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
               requireCurrent();
               const caps = await RemoteAgentRunClient.caps(remoteAgentInvoker(proposed, deps.remoteInvoke));
               requireCurrent();
-              if (!caps.directGuestExecution || !caps.agents.some(agent => agent.kind === input.agentKind && agent.available)) {
+              if (!caps.directGuestExecution || !caps.agents.some(agent => agent.kind === agentKind && agent.available)) {
                 throw new Error('[REMOTE_AGENT_PEER_TOO_OLD] shared executor cannot accept this task');
               }
               if (leaseDeadline <= performance.now()) throw new Error('[REMOTE_AGENT_UNAVAILABLE] shared task authorization has expired');
@@ -625,7 +640,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
             target = proposed;
             for (const [key, route] of directTasks) if (route.until <= Date.now()) directTasks.delete(key);
             if (directTasks.size >= 512) directTasks.delete(directTasks.keys().next().value!);
-            directTasks.set(taskKey, { target, agentKind: input.agentKind, model: opts.model, availability,
+            directTasks.set(taskKey, { target, agentKind: agentKind, model: opts.model, availability,
               directStatusBatch: row?.directStatusBatch === true,
               accessEpoch: providerShareAccessEpoch(shareId),
               until: allocationStartedAt + 25 * 60_000,
@@ -639,7 +654,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
               rememberStandbySource({
                 scope: ownerScope, shareId, memberId: owner.memberId, ownerDeviceId: owner.hostDeviceId,
                 accessEpoch: providerShareAccessEpoch(shareId), target, closeEpoch: getRemoteLinkCloseEpoch(target),
-                ownerCloseEpoch: initialOwnerCloseEpoch, sourceSessionId: sessionId, agentKind: input.agentKind, model: opts.model,
+                ownerCloseEpoch: initialOwnerCloseEpoch, sourceSessionId: sessionId, agentKind: agentKind, model: opts.model,
                 leaseDeadline, wallDeadline: selectedDirectRoute.wallDeadline,
               });
             }
@@ -720,6 +735,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       assertStartupCurrent: requireCurrent,
       ...(preparedAdmission ? { onStartupOpenRequest: () => { standbyOpenRequested = true; } } : {}),
       nativeHistoryBackup: !shared && !isProviderSharePeer(target) && !opts[LOCAL_AGENT_CLIENT],
+      recoverSharedReconnect: shared && target === input.deviceId,
       reconnectAuthorization: (isCurrent, options) => reconnectAuthorization?.(isCurrent, options) ?? Promise.resolve(),
       onTaskGrantRenewable: (renewable) => { grantRenewable = renewable; },
       readImageDeliveryEpoch: deps.readImageDeliveryEpoch,
@@ -770,7 +786,8 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
           workingDir: startOpts.workingDir,
           ...(startOpts.makerMemoryScopeKey ? { memoryScopeKey: startOpts.makerMemoryScopeKey } : {}),
           memoryEnabled: startOpts.makerMemoryEnabled === true,
-          ...(startOpts.botRuntimeProfile?.mcpPolicy ? { botMcpPolicy: startOpts.botRuntimeProfile.mcpPolicy } : {}),
+          // V2 teammates (projectContext) use the ordinary task's MCP surface; their policy is a snapshot only.
+          ...(isolatedBotProfile(startOpts.botRuntimeProfile)?.mcpPolicy ? { botMcpPolicy: isolatedBotProfile(startOpts.botRuntimeProfile)!.mcpPolicy } : {}),
           vendorOptions,
           mcpCallerKind: 'root',
           mcpCallerAttested: true,
@@ -778,6 +795,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         return {
           servers: mcpTargets(extra),
           dispose: () => extra?.disposeSessionCtx?.(),
+          closeSessionInstance: () => extra?.closeSessionInstance?.(),
         };
       },
       capture: ({ kind, opts: startOpts }): ExecutorCaptureHooks | undefined => {
@@ -793,11 +811,11 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       },
       collectProjectFiles: (workingDir) => collectProjectInstructionFiles(workingDir, collect),
       // Codex 经执行环境在本机直接读取项目与上级目录的说明，不必同步。
-      collectAncestorFiles: input.agentKind === 'codex'
+      collectAncestorFiles: agentKind === 'codex'
         ? undefined
         : (workingDir) => collectAncestorInstructionFiles(workingDir, collect),
       // Codex 建线程时沿上级目录逐级查找 .git 与插件清单：先把有没有报过去，对方不再逐个经设备互联来问。
-      ...(input.agentKind === 'codex' ? { collectAncestorMarkers } : {}),
+      ...(agentKind === 'codex' ? { collectAncestorMarkers } : {}),
       collectPersonal: async (kind, projectFiles, agent) => {
         // 与本机引擎同一规则：隔离运行的伙伴按授权挑托管 Skill；V2 伙伴在自己项目里的对话按普通任务，
         // 不套伙伴授权。停用的都不带；个人 Skill 只按停用过滤。
@@ -1005,7 +1023,9 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
       };
       let authorizedUntil = openingDirectRoute?.authorizedUntil ?? Date.now();
       let authorizedAccessEpoch = initialAccessEpoch ?? providerShareAccessEpoch(shareId);
-      const permissionCurrent = () => (openingDirectRoute?.standby ? findReceivedShareForExecution(shareId) : findReceivedShare(shareId))?.status === 'active'
+      const permissionCurrent = () => (openingDirectRoute?.standby
+        ? findReceivedShareForExecution(shareId, { existingLease: true })
+        : findReceivedShare(shareId, { existingLease: true }))?.status === 'active'
         && providerShareAccessEpoch(shareId) === authorizedAccessEpoch && activeOwnerScopeKey() === ownerScope && !isAppSessionBoundaryPending();
       let offPermissionChange = () => {};
       // The same monotonic budget has been active throughout local preparation and M startup.
@@ -1033,9 +1053,9 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         const allocationStartedMonotonic = performance.now();
         const allocationAccessEpoch = providerShareAccessEpoch(shareId);
         const value = selectedDirectRoute?.availability
-          ? await allocateShareAvailability(shareId, sessionId, input.agentKind, model)
+          ? await allocateShareAvailability(shareId, sessionId, agentKind, model)
           : await remoteAgentInvoker(input.deviceId, deps.remoteInvoke)([{
-            op: 'allocate', agentKind: input.agentKind, model, sessionId,
+            op: 'allocate', agentKind: agentKind, model, sessionId,
             preferredExecutorDeviceId: targetDeviceId,
           }]);
         const row = value && typeof value === 'object'
@@ -1061,7 +1081,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         const nextLeaseDeadline = sharedTaskLeaseDeadline(value, allocationStartedMonotonic) ?? allocationStartedMonotonic + 30 * 60_000;
         const generation = typeof row.generation === 'string' && DIRECT_GRANT_ID.test(row.generation) ? row.generation : undefined;
         updateStatusGrant(generation, row.directStatusBatch === true);
-        directTasks.set(taskKey, { target, agentKind: input.agentKind, model, availability: selectedDirectRoute?.availability, standby: false,
+        directTasks.set(taskKey, { target, agentKind: agentKind, model, availability: selectedDirectRoute?.availability, standby: false,
           directStatusBatch: row.directStatusBatch === true,
           accessEpoch: allocationAccessEpoch,
           until: allocationStartedAt + 25 * 60_000,
@@ -1078,7 +1098,7 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
         if (row.standby === true && share?.status === 'active' && initialOwnerCloseEpoch !== undefined) {
           rememberStandbySource({ scope: ownerScope, shareId, memberId: share.memberId, ownerDeviceId: share.hostDeviceId,
             accessEpoch: allocationAccessEpoch, target, closeEpoch: getRemoteLinkCloseEpoch(target), ownerCloseEpoch: initialOwnerCloseEpoch,
-            sourceSessionId: sessionId, agentKind: input.agentKind, model, leaseDeadline, wallDeadline });
+            sourceSessionId: sessionId, agentKind: agentKind, model, leaseDeadline, wallDeadline });
         }
         rememberSharedTaskAuthorization(input.deviceId, sessionId, agentKind, model,
           { ...directTasks.get(taskKey)!, direct: true });

@@ -70,6 +70,12 @@ interface PermissionSelectorProps {
   allowedModes?: readonly PermissionMode[];
   /** Show a retained legacy value honestly instead of presenting the first available mode as selected. */
   fallbackModeLabel?: string;
+  /**
+   * A plugin engine is selected (draft) or runs the task (docs/plans/acp-plugin-bridge.md): offer
+   * exactly the modes it declares instead of a built-in Harness's capabilities. Labels come from
+   * `newChat.permissionSelector.modes.acp.*`.
+   */
+  pluginEngineModes?: readonly PermissionModeDescriptor[];
 }
 
 /**
@@ -129,6 +135,7 @@ export function PermissionSelector({
   disabledModes,
   allowedModes,
   fallbackModeLabel,
+  pluginEngineModes,
 }: PermissionSelectorProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -141,9 +148,11 @@ export function PermissionSelector({
   });
   const agentKind = vendorKeyToAgentKind(vendorKey);
   // device-link:deviceId 非空 → 权限档从被控端读(本地会话 undefined,行为不变)。
-  const { capabilities } = useAgentCapabilities(agentKind, deviceId);
+  // 插件引擎自带两档，不读任何内置 Harness 的能力。
+  const { capabilities } = useAgentCapabilities(pluginEngineModes ? null : agentKind, deviceId);
+  const labelNamespace = pluginEngineModes ? 'acp' : agentKind;
 
-  const options: PermissionModeDescriptor[] = (capabilities?.permissionModes ?? []).filter(
+  const options: PermissionModeDescriptor[] = (pluginEngineModes ?? capabilities?.permissionModes ?? []).filter(
     (option) => allowedModes === undefined || allowedModes.includes(option.id),
   );
   const effectiveMode =
@@ -152,7 +161,7 @@ export function PermissionSelector({
   const TriggerIcon = PERMISSION_ICONS[effectiveMode] ?? Hand;
   const labelOf = (option: PermissionModeDescriptor | undefined, fallbackId: string) => {
     const id = option?.id ?? fallbackId;
-    const key = `newChat.permissionSelector.modes.${agentKind}.${id}.label`;
+    const key = `newChat.permissionSelector.modes.${labelNamespace}.${id}.label`;
     const labels = agentKind === 'antigravity'
       ? [key, `newChat.permissionSelector.modes.claude-code.${id}.label`]
       : key;
@@ -160,7 +169,7 @@ export function PermissionSelector({
   };
   const descriptionOf = (option: PermissionModeDescriptor | undefined, fallbackId: string) => {
     const id = option?.id ?? fallbackId;
-    return t(`newChat.permissionSelector.modes.${agentKind}.${id}.description`, {
+    return t(`newChat.permissionSelector.modes.${labelNamespace}.${id}.description`, {
       defaultValue: option?.description ?? '',
     });
   };
@@ -216,7 +225,7 @@ export function PermissionSelector({
       {!isIconOnly && (
         // field 形态:chevron 靠右贴边(与 ModelSelector 的 field trigger 同规则),
         // chip 形态维持紧跟文字的历史排布。
-        <div className={cn('pt-[2px]', isFieldTrigger && 'ml-auto')}>
+        <div className={cn('pt-0.5', isFieldTrigger && 'ml-auto')}>
           <ChevronDown
             size={isCreateAgentVariant ? 8 : dense ? 13 : 14}
             className="shrink-0 text-current"
@@ -417,7 +426,7 @@ export function PermissionSelector({
               : 'w-[300px] max-w-[calc(100vw-16px)]',
             // 多行说明会让菜单变高: 高度受可用空间限制, 超出时内部滚动。
             'max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
-            'rounded-[12px] p-2',
+            'rounded-xl p-2',
             'bg-[var(--model-dropdown-bg)]',
             'border border-[var(--model-dropdown-border)]',
           )}

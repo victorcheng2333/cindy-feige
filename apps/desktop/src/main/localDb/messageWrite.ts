@@ -1,3 +1,4 @@
+import type { DbEngineKind } from '../../shared/agentKindConversion.js';
 import { createId } from '@paralleldrive/cuid2';
 import { and, eq } from 'drizzle-orm';
 import type { DbClient } from './client/DbClient.js';
@@ -12,7 +13,7 @@ export interface MessageWriteBody {
   content: unknown;
   toolUseId?: string;
   agentMeta?: AgentMeta | null;
-  agentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | null;
+  agentKind?: DbEngineKind | null;
   createdAt?: number;
 }
 export interface MessageWriteOptions {
