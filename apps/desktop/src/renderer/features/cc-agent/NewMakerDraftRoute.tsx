@@ -1,5 +1,5 @@
 import { isComposerAttachmentDrag } from '@/lib/composerDrop';
-import { useAlternateDraftModel } from './alternateDraftModel';
+import { useAlternateDraftModel, type AlternateDraftModel } from './alternateDraftModel';
 import { useProjectInfo } from './hooks/useProjectInfo';
 import { ProjectSettingsDialog } from './sidebar/ProjectSettingsDialog';
 import { ResolvedProjectIcon } from './sidebar/ResolvedProjectIcon';
@@ -781,6 +781,20 @@ interface DraftTargetRequest {
   };
 }
 
+/**
+ * A draft alternate is one draft's choice and is dropped after the send. When it ran the Agent on
+ * another computer, the next new task starts there too, as picking that row does when the saved
+ * model is usable: that computer's last model comes back from agentDeviceDraftMemory, and this
+ * computer's saved model is left as it was.
+ */
+function adoptAlternateAgentDevice(alternate: AlternateDraftModel | null): void {
+  if (!alternate?.agentDevice) return;
+  const saved = getDraft();
+  if (saved.deviceLinkDeviceId || saved.remoteHostId || saved.agentDeviceId) return;
+  switchVendor(alternate.vendor, { restoreAgentLocation: false });
+  patchDraft({ agentDeviceId: alternate.agentDevice.deviceId, agentDeviceName: alternate.agentDevice.name });
+}
+
 export function NewMakerDraftRoute() {
   const { state } = useLocation();
   const id = state?.remoteCreationRecoveryId;
@@ -810,6 +824,9 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
   useEffect(() => {
     if (alternateModel && !localAlternate) setAlternateModel(null);
   }, [alternateModel, localAlternate]);
+  // Read at send time: the send handlers drop the alternate, keeping a borrowed computer.
+  const localAlternateRef = useRef(localAlternate);
+  localAlternateRef.current = localAlternate;
   const location = useLocation();
   const activeDraftPage = useRef<object | null>(null);
   useLayoutEffect(() => {
@@ -3770,9 +3787,11 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
   // Harness。这样旧窗口的无关字段写入只 rebase，不会反向改掉另一窗口刚恢复的推荐。
   const patchActivePrefs = useCallback(
     (patch: Partial<VendorPrefs>) => {
-      patchVendorPrefs(draft.vendor, patch);
+      // An alternate can run the Agent on another computer while the saved draft stays here:
+      // write the slot of the location on screen, or Agy's permission lands in the wrong slot.
+      patchVendorPrefs(draft.vendor, patch, { agentDeviceId: draft.agentDeviceId });
     },
-    [draft.vendor],
+    [draft.vendor, draft.agentDeviceId],
   );
   const patchActiveTuplePrefs = useCallback(
     (patch: Partial<Pick<VendorPrefs, 'model' | 'providerId' | 'effort'>>) => {
@@ -5084,6 +5103,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             }
             if (stillOnSubmittingPage) {
               attachmentState.clearFiles();
+              adoptAlternateAgentDevice(localAlternateRef.current);
               setAlternateModel(null);
               setRemoteDraftPluginEngine(null);
               resetDraftWorkspaceAfterSend();
@@ -5290,6 +5310,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             }
             clearComposerDraftAndNotify(NEW_MAKER_DRAFT_KEY);
             attachmentState.clearFiles();
+            adoptAlternateAgentDevice(localAlternateRef.current);
             setAlternateModel(null);
             resetDraftWorkspaceAfterSend();
             navigate(`/cc-agent/${newSession.id}`, { replace: true, flushSync: true });
@@ -5845,6 +5866,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             }
             if (stillOnSubmittingPage) {
               attachmentState.clearFiles();
+              adoptAlternateAgentDevice(localAlternateRef.current);
               setAlternateModel(null);
               resetDraftWorkspaceAfterSend();
               navigate(`/cc-agent/${presetSessionId}`, { replace: true });
@@ -6301,6 +6323,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             // unmount cleanup would snapshot the stale text back under this key.
             clearComposerDraftAndNotify(NEW_MAKER_DRAFT_KEY);
             attachmentState.clearFiles();
+            adoptAlternateAgentDevice(localAlternateRef.current);
             setAlternateModel(null);
             resetDraftWorkspaceAfterSend();
 
@@ -6652,6 +6675,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             // effect 会把残留文本写回 NEW_MAKER_DRAFT_KEY,撤销这次 clear。
             clearComposerDraftAndNotify(NEW_MAKER_DRAFT_KEY);
             attachmentState.clearFiles();
+            adoptAlternateAgentDevice(localAlternateRef.current);
             setAlternateModel(null);
             resetDraftWorkspaceAfterSend();
           };
@@ -7374,6 +7398,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
             }
           })();
           clearComposerDraftAndNotify(NEW_MAKER_DRAFT_KEY);
+          adoptAlternateAgentDevice(localAlternateRef.current);
           setAlternateModel(null);
           resetDraftWorkspaceAfterSend();
           // 立刻导航:开协同的等待与协同 tab 的展开都由 SessionView 在消费 pendingGoal 时处理。
@@ -7536,6 +7561,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
         // 这里用目标文案补一次,与普通会话同款(立即占位 + 智能标题后台覆盖 + 不覆盖手动改名)。
         makerChatStore.autoNameSession(newSession.id, objective, capabilityAgentKind);
         clearComposerDraftAndNotify(NEW_MAKER_DRAFT_KEY);
+        adoptAlternateAgentDevice(localAlternateRef.current);
         setAlternateModel(null);
         resetDraftWorkspaceAfterSend();
         navigate(`/cc-agent/${newSession.id}`, {

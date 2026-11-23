@@ -358,6 +358,7 @@ async function submit(options: {
     NO_PROVIDERS: [],
     hasAcknowledgedRemoteSessionSubscription: async () => true,
     setAlternateModel: vi.fn(),
+    adoptAlternateAgentDevice: vi.fn(), localAlternateRef: { current: null },
     localModelIssueText: options.localModelIssueText ?? null,
     rememberedPluginEngineDeviceId: runInNewContext(pluginEngineSelectionCode, {
       isDeviceLinkDraft: !!options.deviceId,

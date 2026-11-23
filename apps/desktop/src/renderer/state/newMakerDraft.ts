@@ -1297,7 +1297,7 @@ export function clearDefaultTupleTuningCustomization(args: {
 function patchVendorPrefsInternal(
   vendor: MakerVendor,
   patch: Partial<VendorPrefs>,
-  opts: { markModelChoice: boolean; selectVendor?: boolean },
+  opts: { markModelChoice: boolean; selectVendor?: boolean; agentDeviceId?: string | null },
 ): void {
   rebaseStoredDefaultTuplePreference();
   const marksSelection = opts.markModelChoice && ('model' in patch || 'providerId' in patch);
@@ -1307,7 +1307,8 @@ function patchVendorPrefsInternal(
   delete nextPatch.permissionModeCustomized;
   delete nextPatch.remotePermissionMode;
   delete nextPatch.remotePermissionModeCustomized;
-  if (vendor === 'antigravity' && currentDraft.agentDeviceId != null && typeof nextPatch.permissionMode === 'string') {
+  const agentDeviceId = opts.agentDeviceId !== undefined ? opts.agentDeviceId : currentDraft.agentDeviceId;
+  if (vendor === 'antigravity' && agentDeviceId != null && typeof nextPatch.permissionMode === 'string') {
     nextPatch.remotePermissionMode = nextPatch.permissionMode;
     if (opts.markModelChoice) nextPatch.remotePermissionModeCustomized = true;
     delete nextPatch.permissionMode;
@@ -1366,9 +1367,18 @@ export function draftVendorPrefs(draft: NewMakerDraft, vendor: MakerVendor): Ven
 export function patchVendorPrefs(
   vendor: MakerVendor,
   patch: Partial<VendorPrefs>,
-  options?: { selectVendor?: boolean },
+  options?: {
+    selectVendor?: boolean;
+    /**
+     * Where the caller's draft runs the Agent, when it is not the saved draft's: a draft alternate
+     * (alternateDraftModel.ts) can borrow another computer while the saved draft stays here.
+     */
+    agentDeviceId?: string | null;
+  },
 ): void {
-  patchVendorPrefsInternal(vendor, patch, { markModelChoice: true, selectVendor: options?.selectVendor });
+  patchVendorPrefsInternal(vendor, patch, {
+    markModelChoice: true, selectVendor: options?.selectVendor, agentDeviceId: options?.agentDeviceId,
+  });
 }
 
 /**

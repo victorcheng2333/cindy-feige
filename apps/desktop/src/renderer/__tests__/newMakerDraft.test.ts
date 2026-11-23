@@ -2213,6 +2213,19 @@ describe('newMakerDraft agent computer', () => {
     expect(reloaded.draftVendorPrefs(reloaded.getDraft(), 'cc').permissionMode).toBe('auto');
   });
 
+  // Regression (2026-11-23): a draft alternate borrowed another computer while the saved draft
+  // stayed here, so picking Auto went to this computer's slot and the picker stayed on Full access.
+  it('writes Agy permission to the slot of the location the caller draft uses', async () => {
+    const store = await loadModule();
+    store.switchVendor('antigravity');
+    const alternate = () => store.draftVendorPrefs({ ...store.getDraft(), agentDeviceId: 'dev-b' }, 'antigravity');
+    expect(alternate().permissionMode).toBe('bypassPermissions');
+    store.patchVendorPrefs('antigravity', { permissionMode: 'auto' }, { agentDeviceId: 'dev-b' });
+    expect(alternate()).toMatchObject({ permissionMode: 'auto', permissionModeCustomized: true });
+    expect(store.getDraft().agentDeviceId).toBeNull();
+    expect(store.getDraft().lastByVendor.antigravity).toMatchObject({ permissionMode: 'auto', permissionModeCustomized: false });
+  });
+
   // 远程控制下新建任务:任务建到被控电脑 dev-a,Agent 在第三台电脑 dev-c。
   it('keeps the agent computer for a task on a controlled computer until that computer changes', async () => {
     const { getDraft, patchDraft } = await loadModule();
