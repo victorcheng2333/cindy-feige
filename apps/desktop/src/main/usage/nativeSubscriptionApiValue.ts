@@ -1,5 +1,5 @@
 import { resolveBaseModelReferencePrice, type ModelRegistry } from '@cindy/model-providers';
-import type { MoneyCurrency, ModelPriceQuote } from '../../shared/regionalMoney.js';
+import type { ModelPriceQuote } from '../../shared/regionalMoney.js';
 import { computePriceQuoteTurnMoney } from './turnCostCalculator.js';
 
 export type NativeSubscriptionProvider = 'cursor' | 'antigravity';
@@ -72,7 +72,6 @@ export function nativeSubscriptionApiValue(
   providerId: NativeSubscriptionProvider,
   modelId: string,
   tokens: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number },
-  currency: MoneyCurrency,
   at: string = new Date().toISOString(),
   override?: (reference: ModelPriceQuote | undefined) => ModelPriceQuote | undefined,
 ) {
@@ -108,6 +107,5 @@ export function nativeSubscriptionApiValue(
       if (tokens[bucket] > 0 && (quote[rate] === undefined || rates[rate] !== quote[rate])) return null;
     }
   }
-  const money = computePriceQuoteTurnMoney(tokens, quote);
-  return money?.currency === currency ? money : null;
+  return computePriceQuoteTurnMoney(tokens, quote);
 }

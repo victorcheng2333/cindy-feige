@@ -4,7 +4,6 @@ import { buildTurnUsageDetails } from '../../shared/turnUsageDetails.js';
 import { nativeSubscriptionApiValue } from '../usage/nativeSubscriptionApiValue.js';
 import { estimateAntigravitySubscriptionValue } from '../usage/antigravitySubscriptionValue.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
-import { currentLedgerCurrency } from '../usage/ledgerCurrency.js';
 import { recordSessionTurnTokens } from '../sessionSpendBroadcaster.js';
 import { recordSchedulerTurnCost, recordTurnUsageOnMessage } from '../turnCostBroadcaster.js';
 import { nativeSubscriptionUsageModelKey } from '../usage/usageHistory.js';
@@ -70,7 +69,6 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   if (totalTokens <= 0) return;
 
   const registry = getActiveCatalog()?.modelRegistry;
-  const currency = currentLedgerCurrency();
   const at = new Date().toISOString();
   let model = session.model ?? 'unknown';
   await recordSessionTurnTokens(session.id, totalTokens);
@@ -82,8 +80,8 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   if (!isDataOwnerBroadcastScopeCurrent(owner)) return;
 
   const money = source === 'antigravity'
-    ? estimateAntigravitySubscriptionValue(registry, model, tokens, currency, at)
-    : nativeSubscriptionApiValue(registry, source, model, tokens, currency, at);
+    ? estimateAntigravitySubscriptionValue(registry, model, tokens, at)
+    : nativeSubscriptionApiValue(registry, source, model, tokens, at);
   const details = buildTurnUsageDetails({
     ...turnBillingSource(turnContext, 'subscription'),
     ...(source === 'antigravity' && turnContext.providerId !== source

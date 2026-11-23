@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   recordSchedulerTurnCost: vi.fn(async () => null),
   recordTurnUsageOnMessage: vi.fn(async (_args: unknown) => true),
   catalog: undefined as typeof BUNDLED_CATALOG | undefined,
+  ledgerCurrency: 'USD' as 'USD' | 'CNY',
 }));
 
 vi.mock('../../usageBroadcaster.js', () => ({
@@ -21,7 +22,7 @@ vi.mock('../../turnCostBroadcaster.js', () => ({
   recordTurnUsageOnMessage: h.recordTurnUsageOnMessage,
 }));
 vi.mock('../../maker-host/active-catalog.js', () => ({ getActiveCatalog: () => h.catalog }));
-vi.mock('../../usage/ledgerCurrency.js', () => ({ currentLedgerCurrency: () => 'USD' }));
+vi.mock('../../usage/ledgerCurrency.js', () => ({ currentLedgerCurrency: () => h.ledgerCurrency }));
 vi.mock('../../device-link/broadcast-tap.js', () => ({
   captureDataOwnerBroadcastScope: () => ({}),
   isDataOwnerBroadcastScopeCurrent: () => true,
@@ -156,5 +157,36 @@ describe('recordSessionCursorTurnUsage', () => {
         perModelCost: [expect.objectContaining({ model: 'claude-opus-5-5' })],
       }),
     }));
+  });
+
+  it('preserves native USD reference estimates for Agy even when the account ledger currency is CNY', async () => {
+    vi.clearAllMocks();
+    h.catalog = BUNDLED_CATALOG;
+    h.ledgerCurrency = 'CNY';
+    try {
+      const marker = { amount: 0, currency: 'CNY', kind: 'value-estimate' } as never;
+      const deps = {
+        turnUsageContextBySession: new Map(),
+        turnModelPromiseBySession: new Map([['s1', Promise.resolve('gemini-4-neon')]]),
+        readSessionModelForUsage: vi.fn(async () => 'unused'),
+        unpricedSubscriptionValueMarker: () => marker,
+      };
+      const event = {
+        source: 'antigravity', type: 'done',
+        data: { usage: { inputTokens: 8_908, outputTokens: 1_623, cacheReadTokens: 167_384 } },
+      } as AgentEvent;
+      await recordSessionCursorTurnUsage(deps, { id: 's1' } as Session, event, 'assistant-agy-cny');
+      expect(h.recordModelTurnUsage).toHaveBeenCalledWith({
+        sessionId: 's1', agentKind: 'antigravity', model: 'gemini-4-neon#billing=subscription',
+        money: expect.objectContaining({ amount: expect.closeTo(0.0761766, 7), currency: 'USD', kind: 'value-estimate' }),
+        inputTokensDelta: 8_908, outputTokensDelta: 1_623, cacheReadTokensDelta: 167_384, cacheCreateTokensDelta: 0,
+      });
+      expect(h.recordSchedulerTurnCost).toHaveBeenCalledWith(expect.objectContaining({
+        clientId: 'assistant-agy-cny',
+        money: expect.objectContaining({ currency: 'USD', kind: 'value-estimate' }),
+      }));
+    } finally {
+      h.ledgerCurrency = 'USD';
+    }
   });
 });

@@ -1,10 +1,9 @@
 import type { ModelRegistry } from '@cindy/model-providers';
 
 import { localDayKey } from '../localDb/dailySpend.js';
-import { normalizeRegionalMoney, type MoneyCurrency } from '../../shared/regionalMoney.js';
+import { normalizeRegionalMoney } from '../../shared/regionalMoney.js';
 import { normalizeTurnUsageDetails } from '../../shared/turnUsageDetails.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
-import { currentLedgerCurrency } from './ledgerCurrency.js';
 import { mergeStoredModelPriceOverride, readModelPriceOverridesSnapshot } from './modelPriceOverrideStore.js';
 import { nativeSubscriptionApiValue } from './nativeSubscriptionApiValue.js';
 import type { TurnTokenDeltas } from './turnCostCalculator.js';
@@ -13,11 +12,10 @@ export function estimateAntigravitySubscriptionValue(
   registry: ModelRegistry | undefined,
   modelId: string,
   tokens: TurnTokenDeltas,
-  currency: MoneyCurrency,
   at: string,
   overrides = readModelPriceOverridesSnapshot(),
 ) {
-  return nativeSubscriptionApiValue(registry, 'antigravity', modelId, tokens, currency, at, reference =>
+  return nativeSubscriptionApiValue(registry, 'antigravity', modelId, tokens, at, reference =>
     mergeStoredModelPriceOverride({ providerId: 'antigravity', agent: 'antigravity', modelId }, reference, overrides));
 }
 
@@ -27,16 +25,14 @@ export function createAntigravityValueEstimator(
 ) {
   let pricing: {
     registry: ModelRegistry | undefined;
-    currency: MoneyCurrency;
     overrides: ReturnType<typeof readModelPriceOverridesSnapshot>;
   } | undefined;
   return (modelId: string, tokens: TurnTokenDeltas, at: string) => {
     pricing ??= {
       registry: getActiveCatalog().modelRegistry,
-      currency: currentLedgerCurrency(),
       overrides: overrides ?? readModelPriceOverridesSnapshot(),
     };
-    return estimateAntigravitySubscriptionValue(pricing.registry, modelId, tokens, pricing.currency, at, pricing.overrides);
+    return estimateAntigravitySubscriptionValue(pricing.registry, modelId, tokens, at, pricing.overrides);
   };
 }
 

@@ -44,19 +44,24 @@ describe('Cursor API equivalent without a native bill', () => {
     [tokens, 0.044426],
     [{ inputTokens: 21738, outputTokens: 36, cacheReadTokens: 21504, cacheCreateTokens: 0 }, 0.054444],
   ])('prices observed cache buckets independently', (usage, amount) => {
-    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, 'USD', '2026-11-04'))
+    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, '2026-11-04'))
       .toMatchObject({ amount: expect.closeTo(amount, 8), currency: 'USD', kind: 'value-estimate' });
+  });
+  it('returns the native USD reference estimate for Agy models regardless of ledger currency', () => {
+    const usage = { inputTokens: 8_908, outputTokens: 1_623, cacheReadTokens: 167_384, cacheCreateTokens: 0 };
+    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'antigravity', 'gemini-4-neon', usage, '2026-11-23'))
+      .toMatchObject({ amount: expect.closeTo(0.0761766, 7), currency: 'USD', kind: 'value-estimate' });
   });
   it('does not treat aggregate run tokens as one long-context request or invent a cache-write price', () => {
     for (const usage of [{ ...tokens, inputTokens: 210000 }, { ...tokens, cacheCreateTokens: 1 }]) {
-      expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, 'USD', '2026-11-04')).toBeNull();
+      expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, '2026-11-04')).toBeNull();
     }
   });
   it('rejects unknown and ambiguous base identities', () => {
-    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'unlisted-cursor-model', tokens, 'USD')).toBeNull();
+    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'unlisted-cursor-model', tokens)).toBeNull();
     const registry = BUNDLED_CATALOG.modelRegistry!;
     const base = registry.baseModels!.find(m => m.id === 'xai/grok-4.6')!;
-    expect(nativeSubscriptionApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'cursor', 'grok-4.6', tokens, 'USD')).toBeNull();
+    expect(nativeSubscriptionApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'cursor', 'grok-4.6', tokens)).toBeNull();
   });
   it('quotes unique official manufacturer prices for Cursor catalog ids', () => {
     const at = '2026-11-13';
