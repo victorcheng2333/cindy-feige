@@ -2146,6 +2146,35 @@ describe('newMakerDraft agent computer', () => {
     expect(getDraft()).toMatchObject({ agentDeviceId: null, remoteHostId: 'ssh-1' });
   });
 
+  // User preference (2026-11-23): this computer's Agy starts on Auto, a borrowed Agy source on
+  // Full access; each source keeps its own explicit choice, and other engines are unaffected.
+  it('gives Agy on a borrowed source its own permission, defaulting to Full access', async () => {
+    const store = await loadModule();
+    store.switchVendor('antigravity');
+    const agy = () => store.draftVendorPrefs(store.getDraft(), 'antigravity').permissionMode;
+    expect(agy()).toBe('auto');
+    store.patchDraft({ agentDeviceId: 'dev-b', agentDeviceName: 'Office Mac' });
+    expect(agy()).toBe('bypassPermissions');
+
+    store.patchVendorPrefs('antigravity', { permissionMode: 'auto' });
+    expect(agy()).toBe('auto');
+    store.patchDraft({ agentDeviceId: null });
+    expect(agy()).toBe('auto');
+    store.patchVendorPrefs('antigravity', { permissionMode: 'default' });
+    store.patchDraft({ agentDeviceId: 'dev-b', agentDeviceName: 'Office Mac' });
+    expect(agy()).toBe('auto');
+
+    // The borrowed source is not kept across restarts; both choices are.
+    const reloaded = await reloadModule();
+    expect(reloaded.getDraft().agentDeviceId).toBeNull();
+    expect(reloaded.draftVendorPrefs(reloaded.getDraft(), 'antigravity').permissionMode).toBe('default');
+    reloaded.patchDraft({ agentDeviceId: 'dev-b', agentDeviceName: 'Office Mac' });
+    expect(reloaded.draftVendorPrefs(reloaded.getDraft(), 'antigravity').permissionMode).toBe('auto');
+
+    reloaded.switchVendor('cc');
+    expect(reloaded.draftVendorPrefs(reloaded.getDraft(), 'cc').permissionMode).toBe('auto');
+  });
+
   // 远程控制下新建任务:任务建到被控电脑 dev-a,Agent 在第三台电脑 dev-c。
   it('keeps the agent computer for a task on a controlled computer until that computer changes', async () => {
     const { getDraft, patchDraft } = await loadModule();

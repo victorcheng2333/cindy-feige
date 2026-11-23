@@ -33,6 +33,13 @@ Agy 远程运行时，受限 `cindy-remote` 是否生效只能从 agy 自己的 
 本地工具拦截（`acp-remote-tool-blocked`）保留为最后一道防线。依据是 2026-11-23 M3 上 7 次远程
 启动有 2 次回落，首条命令即被拦停；回归见 `remote-workspace.test.ts`。
 
+Desktop 新建页里 Agy 的权限按 Agent 运行位置分两份记：在任务所在电脑运行用 `permissionMode`（默认
+Auto），借用另一台电脑时用 `remotePermissionMode`（默认完全访问），各自保留用户的显式选择；读取走
+`draftVendorPrefs`，其他引擎不分。原因是 agy 1.5.14 在多数会话里对每次 MCP 工具调用先跑自带的 Sonar
+小模型评估（`sir_flash_lite`，约 1.7 秒；换权限档与 `PreToolUse` 钩子都关不掉，自带文件工具不跑），远程
+再叠加任务所在电脑上的 Auto 审核明显变慢（2026-11-23 实测）。这是本 fork 的取舍；agy 提供可信 MCP
+跳过检查时重新评估。Mobile 新建任务未跟随。回归见 `newMakerDraft.test.ts`。
+
 - **能否切换只看任务位置和角色**：SSH 任务、Orca 角色或远端 Lead／Worker 关联、非 Desktop
   来源（评审、IM 等）不能切；`agentDeviceId` 不参与判断，不得再作为拒绝条件加回去。
 - **目标位置固定为任务所在电脑**：切换到这类引擎时，目的地 `agentDeviceId` 一律为 `null`，

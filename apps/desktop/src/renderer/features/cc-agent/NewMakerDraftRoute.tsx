@@ -117,6 +117,7 @@ import {
   useNewMakerDraft,
   switchVendor,
   getDraft,
+  draftVendorPrefs,
   patchDraft,
   patchCollab,
   patchVendorPrefs,
@@ -906,7 +907,7 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
   // 用户终裁(2026-07-17):Figma 185:2724 CREATE AGENT 没有首页用量仪表盘,
   // 新建页彻底解除挂载,不迁移、不新增入口。
   // 当前 vendor 对应的 prefs(切 vendor 后这里自动重算 → 透传到 ChatInput initial*)
-  const currentPrefs = draft.lastByVendor[draft.vendor];
+  const currentPrefs = draftVendorPrefs(draft, draft.vendor);
   /**
    * 统一模型选择器里选中的收藏锚点(规格 §1.5)。
    *

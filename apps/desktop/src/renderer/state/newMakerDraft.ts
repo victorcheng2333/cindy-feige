@@ -55,6 +55,13 @@ export interface VendorPrefs {
   /** Explicit picker choice; absent legacy non-auto values are preserved. */
   permissionModeCustomized?: boolean;
   /**
+   * Agy only: the permission used while the Agent runs on another computer (a shared source).
+   * Defaults to Full access; `permissionMode` stays the choice for this computer's own Agy.
+   * Read through `draftVendorPrefs`; `patchVendorPrefs` writes here while the draft borrows a source.
+   */
+  remotePermissionMode?: PermissionMode;
+  remotePermissionModeCustomized?: boolean;
+  /**
    * 计划模式一级开关(与 permissionMode 正交)。草稿开着时,发送建会话透传
    * planModeEnabled 落库 + createOpts.planMode 生效。老 localStorage 缺字段 → false。
    */
@@ -225,7 +232,13 @@ export interface NewMakerDraft {
  * 在目录里都是默认隐藏的模型 —— 种子默认模型压根不在用户看到的清单里。
  */
 function defaultVendorPrefs(vendor: MakerVendor): VendorPrefs {
-  if (vendor === 'antigravity') return { model: '', effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false, planMode: false, providerId: 'antigravity' };
+  if (vendor === 'antigravity') {
+    return {
+      model: '', effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false,
+      remotePermissionMode: 'bypassPermissions', remotePermissionModeCustomized: false,
+      planMode: false, providerId: 'antigravity',
+    };
+  }
   if (vendor === 'cursor') return { model: getDefaultModelForVendor('cursor').id, effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false, planMode: false, providerId: 'cursor' };
   if (vendor === 'pi') {
     return {
@@ -421,6 +434,8 @@ function sanitize(raw: unknown): NewMakerDraft {
     // 计划模式独立成一级开关后, 历史草稿里 permissionMode='plan' 迁移为
     // planMode=true + 该 vendor 默认权限档(与 DB 迁移同语义)。
     const legacyPlanPermission = v !== 'cursor' && p.permissionMode === 'plan';
+    const remotePermissionModeCustomized = v === 'antigravity' && p.remotePermissionModeCustomized === true
+      && typeof p.remotePermissionMode === 'string' && p.remotePermissionMode !== 'plan';
     return {
       model: typeof p.model === 'string' && p.model.length > 0 ? p.model : fallback.model,
       effort: typeof p.effort === 'string' ? (p.effort as Effort) : fallback.effort,
@@ -429,6 +444,12 @@ function sanitize(raw: unknown): NewMakerDraft {
           ? (p.permissionMode as PermissionMode)
           : fallback.permissionMode,
       permissionModeCustomized,
+      ...(v === 'antigravity' ? {
+        remotePermissionMode: remotePermissionModeCustomized
+          ? p.remotePermissionMode as PermissionMode
+          : defaults.remotePermissionMode,
+        remotePermissionModeCustomized,
+      } : {}),
       planMode: p.planMode === true || legacyPlanPermission,
       // providerId: 接受非空 string 或 null;脏数据 / 缺字段一律落 null(跟随默认路由)。
       providerId:
@@ -1244,7 +1265,13 @@ function patchVendorPrefsInternal(
   const modelChosen = { ...currentDraft.modelChosenByVendor };
   const nextPatch = { ...patch };
   delete nextPatch.permissionModeCustomized;
-  if (opts.markModelChoice && typeof nextPatch.permissionMode === 'string') {
+  delete nextPatch.remotePermissionMode;
+  delete nextPatch.remotePermissionModeCustomized;
+  if (vendor === 'antigravity' && currentDraft.agentDeviceId != null && typeof nextPatch.permissionMode === 'string') {
+    nextPatch.remotePermissionMode = nextPatch.permissionMode;
+    if (opts.markModelChoice) nextPatch.remotePermissionModeCustomized = true;
+    delete nextPatch.permissionMode;
+  } else if (opts.markModelChoice && typeof nextPatch.permissionMode === 'string') {
     nextPatch.permissionModeCustomized = true;
   }
   if (typeof nextPatch.model === 'string' && nextPatch.model.length > 0) {
@@ -1283,6 +1310,17 @@ function patchVendorPrefsInternal(
   };
   scheduleWrite({ preserveStoredDefaultTuplePreference: false });
   emit();
+}
+
+/** The vendor prefs a new task uses: Agy on a borrowed source gets the source's own permission slot. */
+export function draftVendorPrefs(draft: NewMakerDraft, vendor: MakerVendor): VendorPrefs {
+  const prefs = draft.lastByVendor[vendor];
+  if (vendor !== 'antigravity' || draft.agentDeviceId == null) return prefs;
+  return {
+    ...prefs,
+    permissionMode: prefs.remotePermissionMode ?? 'bypassPermissions',
+    permissionModeCustomized: prefs.remotePermissionModeCustomized === true,
+  };
 }
 
 export function patchVendorPrefs(
