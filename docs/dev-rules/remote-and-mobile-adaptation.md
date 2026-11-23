@@ -7,6 +7,14 @@
 > `apps/desktop/src/main/{remote-agent,remote-ssh}/**`、`apps/desktop/src/main/remote-desktop*/**`、
 > `apps/mobile/src/remote-desktop/**`、`apps/desktop/src/preload/preload.ts`
 
+## 远程 Agy 的单个工具结果上限（2026-11-23）
+
+agy 1.5.14 的自定义 agent（远程 Agy 用的 `cindy-remote`）把约 10 KB 以上的 MCP 结果换成 Agent 电脑上的
+文件路径；默认 agent 不这样做。远程 Agy 只能经 `cindy_exec` 访问任务所在电脑，读不到那份文件。2026-11-23
+实测远程 Agy 读 10.6 KB 的 `AGENTS.md` 只拿到路径，最后多读了一遍。任务所在电脑上 `startRemote.ts` 因此只给
+Agy 的执行器设 `maxResultBytes`（8 KB）：Read 截到整行并写明续读的 `offset`，其他工具保留首尾并写明省略的字节数。
+其他 Agent 不设上限。回归见 `executor.test.ts`。
+
 ## 远程 Agent 控制请求与发送取消（2026-11-18）
 
 `maker:remote-agent:v1` 按请求内容区分优先级：发送、插话、停止、关闭以及内联交互／回调／错误回复

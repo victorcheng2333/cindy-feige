@@ -26,7 +26,7 @@ let opaque: number;
 
 function makeExecutor(
   mode: ReturnType<typeof executorGateModeFor> = 'normal',
-  extra: { aliases?: Array<{ from: string; to: string }>; now?: () => number; extractPdfText?: PdfTextExtractor; webFetch?: GuardedFetch } = {},
+  extra: { aliases?: Array<{ from: string; to: string }>; now?: () => number; extractPdfText?: PdfTextExtractor; webFetch?: GuardedFetch; maxResultBytes?: number } = {},
 ) {
   const workspace = new ExecutorWorkspace({ workingDir: project, aliases: extra.aliases });
   const gate = new ExecutorGate(workspace, mode, extra.now);
@@ -37,6 +37,7 @@ function makeExecutor(
     tempDir: path.join(root, 'tmp'),
     ...(extra.extractPdfText ? { extractPdfText: extra.extractPdfText } : {}),
     ...(extra.webFetch ? { webFetch: extra.webFetch } : {}),
+    ...(extra.maxResultBytes ? { maxResultBytes: extra.maxResultBytes } : {}),
     capture: {
       beforeWrite: async (p) => {
         captured.push(p);
@@ -280,6 +281,19 @@ describe('Claude Code style file tools', () => {
     expect(ranged).toBe(`1\t${'x'.repeat(2000)}`);
   });
 
+  // Regression (2026-11-23): remote Agy got a 10.6 KB AGENTS.md read replaced by a file path on the
+  // Agent computer (agy spills MCP results of about 10 KB), so it had to read the file again.
+  it('pages a Read that does not fit maxResultBytes and continues from the offset it gives', async () => {
+    const { executor } = makeExecutor('normal', { maxResultBytes: 8 * 1024 });
+    const file = path.join(project, 'notes.md');
+    fs.writeFileSync(file, Array.from({ length: 400 }, (_, i) => `第 ${i + 1} 行 ${'说明'.repeat(10)}`).join('\n'));
+    const first = text(await executor.callTool('Read', { file_path: file }));
+    expect(Buffer.byteLength(first)).toBeLessThanOrEqual(8 * 1024);
+    const next = Number(/offset=(\d+)/.exec(first)?.[1]);
+    expect(first).toContain(`\n${next - 1}\t第 ${next - 1} 行`);
+    expect(text(await executor.callTool('Read', { file_path: file, offset: next, limit: 1 }))).toBe(`${next}\t第 ${next} 行 ${'说明'.repeat(10)}`);
+  });
+
   it('returns images as image content', async () => {
     const { executor } = makeExecutor();
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -434,6 +448,15 @@ describe.runIf(posix)('Claude Code style Bash', () => {
     expect(long.length).toBeLessThan(31_000);
     expect(long).toContain('lines truncated');
     expect(long.endsWith('END')).toBe(true);
+  });
+
+  it('keeps the start and end of command output within maxResultBytes', async () => {
+    const { executor } = makeExecutor('normal', { maxResultBytes: 8 * 1024 });
+    const output = text(await executor.callTool('Bash', { command: 'echo START; for i in $(seq 1 3000); do echo "行 $i"; done; echo END' }));
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    expect(output.startsWith('START')).toBe(true);
+    expect(output.endsWith('END')).toBe(true);
+    expect(output).toMatch(/\d+ bytes omitted/);
   });
 
   it('stops the whole process group when a command is interrupted', async () => {

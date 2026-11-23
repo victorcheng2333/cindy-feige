@@ -262,6 +262,12 @@ export function shadowAliases(
 /** 供应商分享的受邀者任务共用：同一个仓库的扫描结果留给后面的命令与任务。 */
 const sharedGitCredentials = new GitCredentialHistory();
 
+/**
+ * agy 1.5.14 的自定义 agent 把约 10 KB 以上的 MCP 结果换成 Agent 电脑上的文件路径，远程 Agy 读不到那份文件，
+ * 所以 cindy_exec 给 Agy 的单个结果留在这以下。
+ */
+const AGY_REMOTE_MAX_RESULT_BYTES = 8 * 1024;
+
 /** 凭证类操作的确认卡：用与 Agent 自带工具同名的工具显示本机路径或命令。 */
 export function credentialConfirmation(action: ExecutorAction, description: string): LocalConfirmation {
   const base = {
@@ -445,6 +451,7 @@ async function prepareAndStartRemoteAgentSession(
     ...(deps.extractPdfText ? { extractPdfText: deps.extractPdfText } : {}),
     // 只有 Claude Code 经 cindy_exec 使用这组工具。
     ...(kind === 'claude-code' && deps.webFetch ? { webFetch: deps.webFetch } : {}),
+    ...(kind === 'antigravity' ? { maxResultBytes: AGY_REMOTE_MAX_RESULT_BYTES } : {}),
     ...(credentialConsent
       ? {
           confirm: async (action: ExecutorAction, signal: AbortSignal) =>

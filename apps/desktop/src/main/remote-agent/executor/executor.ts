@@ -74,6 +74,11 @@ export interface RemoteExecutorOptions {
    * 回收重建后据此恢复；缺省时只在本执行器内有效。
    */
   credentialGrant?: { remember(): void; forget(): void; watch?(revoke: () => void): () => void };
+  /**
+   * 单个工具结果文字的上限(UTF-8 字节)。超出时 Read 截到整行并给出续读的 offset，其他工具保留首尾。
+   * 缺省不限制。
+   */
+  maxResultBytes?: number;
 }
 
 export class ExecutorRequestError extends Error {
@@ -400,6 +405,18 @@ export class RemoteExecutor {
   // ─── Claude Code 风格工具 ──────────────────────────────────────
 
   async callTool(name: string, rawArgs: unknown, signal?: AbortSignal, localArguments = false): Promise<ToolResult> {
+    const result = await this.runTool(name, rawArgs, signal, localArguments);
+    const max = this.opts.maxResultBytes;
+    if (!max) return result;
+    return {
+      ...result,
+      content: result.content.map((item) => item.type === 'text' && Buffer.byteLength(item.text) > max
+        ? { ...item, text: name === 'Read' ? fitReadResult(item.text, max) : fitToolOutput(item.text, max) }
+        : item),
+    };
+  }
+
+  private async runTool(name: string, rawArgs: unknown, signal?: AbortSignal, localArguments = false): Promise<ToolResult> {
     this.workspace.virtualizeDirs([this.shell.getTempDir()]);
     if (this.closed) return textResult('The task has ended on the computer where it runs.', true);
     let args: Record<string, unknown>;
@@ -537,6 +554,45 @@ class ExecutorDenied extends Error {
     super(message);
     this.name = 'ExecutorDenied';
   }
+}
+
+/** `text` 开头(fromEnd 时为结尾)不超过 budget 字节的最长一段，不拆开字符。 */
+function takeBytes(text: string, budget: number, fromEnd = false): string {
+  const chars = Array.from(text);
+  let used = 0;
+  let count = 0;
+  for (; count < chars.length; count += 1) {
+    const size = Buffer.byteLength(chars[fromEnd ? chars.length - 1 - count : count]!);
+    if (used + size > budget) break;
+    used += size;
+  }
+  return (fromEnd ? chars.slice(chars.length - count) : chars.slice(0, count)).join('');
+}
+
+function fitToolOutput(text: string, max: number): string {
+  const total = Buffer.byteLength(text);
+  const note = (omitted: number) => `\n\n[... ${omitted} bytes omitted to fit one tool result. Narrow the command (for example head, tail, grep or sed -n) to see them ...]\n\n`;
+  const budget = Math.max(0, max - Buffer.byteLength(note(total)));
+  const head = takeBytes(text, Math.floor(budget * 0.6));
+  const tail = takeBytes(text, budget - Buffer.byteLength(head), true);
+  return head + note(total - Buffer.byteLength(head) - Buffer.byteLength(tail)) + tail;
+}
+
+const READ_LINE_NUMBER = /^(\d+)\t/;
+const READ_FOOTER_RESERVE_BYTES = 200;
+
+function fitReadResult(text: string, max: number): string {
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of text.split('\n')) {
+    used += Buffer.byteLength(line) + 1;
+    if (used > max - READ_FOOTER_RESERVE_BYTES) break;
+    kept.push(line);
+  }
+  const first = READ_LINE_NUMBER.exec(kept[0] ?? '')?.[1];
+  const last = READ_LINE_NUMBER.exec(kept.at(-1) ?? '')?.[1];
+  if (!first || !last) return fitToolOutput(text, max);
+  return `${kept.join('\n')}\n\n[Showing lines ${first}-${last} only; the rest did not fit in one result. Call Read again with offset=${Number(last) + 1} to continue.]`;
 }
 
 /** 给 Claude Code 的工具定义(参数名与自带工具一致；说明是 Cindy 自己写的)。 */
