@@ -28,9 +28,9 @@ import {
 } from '../shared/auto-review-decision.js';
 import type { ReviewableAction } from '../shared/auto-review.js';
 import { deviceHostedGhostRoster } from '../shared/device-hosted.js';
-import { normalizeAcpToolForAutoReview } from '../acp/auto-review-policy.js';
-import { openAcpSession, type AcpSession } from '../acp/session.js';
-import { asRecord, type AcpMcpServer } from '../acp/protocol.js';
+import { normalizeAcpToolForAutoReview } from '../agy-acp/auto-review-policy.js';
+import { openAcpSession, type AcpSession } from '../agy-acp/session.js';
+import { asRecord, type AcpMcpServer } from '../agy-acp/protocol.js';
 import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
 import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
 import {

@@ -1,9 +1,9 @@
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { AcpConnection, methodNotFound } from '../acp/connection.js';
-import { ACP_PROTOCOL_VERSION, asRecord, normalizeInitializeResult } from '../acp/protocol.js';
-import { AcpLineDecoder, type AcpLineTransport, type AcpTransportClosed } from '../acp/line-transport.js';
+import { AcpConnection, methodNotFound } from '../agy-acp/connection.js';
+import { ACP_PROTOCOL_VERSION, asRecord, normalizeInitializeResult } from '../agy-acp/protocol.js';
+import { AcpLineDecoder, type AcpLineTransport, type AcpTransportClosed } from '../agy-acp/line-transport.js';
 
 /** Each start adds an `acp.log.<pid>` worker log; keep the newest few so restarts do not pile up. */
 const KEPT_AGY_LOGS = 3;

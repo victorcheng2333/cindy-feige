@@ -365,7 +365,12 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
       });
       expect(events).toContainEqual(expect.objectContaining({
         type: 'tool_use',
-        data: expect.objectContaining({ toolUseId: 'tc-1', toolName: 'Bash', input: { command: 'pwd' } }),
+        // The remote tool keeps its ACP kind for the action summary after unwrapping.
+        data: expect.objectContaining({
+          toolUseId: 'tc-1',
+          toolName: 'Bash',
+          input: { command: 'pwd', acpKind: 'execute' },
+        }),
       }));
       expect(events.at(-1)).toMatchObject({ type: 'done' });
 

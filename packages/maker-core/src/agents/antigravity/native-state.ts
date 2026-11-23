@@ -13,8 +13,8 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { AcpStopReason } from '../acp/protocol.js';
-import type { AcpTurnOutcome } from '../acp/translator.js';
+import type { AcpStopReason } from '../agy-acp/protocol.js';
+import type { AcpTurnOutcome } from '../agy-acp/translator.js';
 
 export const AGY_INVALID_THINKING_SIGNATURE_REASON = 'agy-invalid-thinking-signature';
 

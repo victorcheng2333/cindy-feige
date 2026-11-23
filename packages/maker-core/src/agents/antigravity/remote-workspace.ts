@@ -14,7 +14,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DeviceHostedSession } from '../base-agent.js';
-import type { AcpMcpServer, AcpToolCallFields } from '../acp/protocol.js';
+import type { AcpMcpServer, AcpToolCallFields } from '../agy-acp/protocol.js';
 import {
   DEVICE_HOSTED_EXEC_MCP_SERVER,
   deviceHostedEnvironmentNote,

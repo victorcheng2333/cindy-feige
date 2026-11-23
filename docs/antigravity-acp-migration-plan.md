@@ -58,11 +58,11 @@ agy acp --process-per-session（front）→ worker → 工具子进程
 
 | 文件 | 职责 |
 | --- | --- |
-| `agents/acp/connection.ts` | 与引擎无关的 JSON-RPC 层：id 映射、超时、`AbortSignal`、反向请求分发、连接关闭时让所有挂起请求失败。不含 agy 字段，日后接别的 ACP agent 可复用 |
-| `agents/acp/protocol.ts` | ACP v1 类型，只收 agy 实际发出过的字段；跳过无法识别的 `sessionUpdate` |
+| `agents/agy-acp/connection.ts` | 与引擎无关的 JSON-RPC 层：id 映射、超时、`AbortSignal`、反向请求分发、连接关闭时让所有挂起请求失败。不含 agy 字段，日后接别的 ACP agent 可复用 |
+| `agents/agy-acp/protocol.ts` | ACP v1 类型，只收 agy 实际发出过的字段；跳过无法识别的 `sessionUpdate` |
 | `agents/antigravity/acp-process.ts` | 启动参数、`detached` 进程组、stderr 丢弃、`--log-file` 位置、关闭（§3.5） |
-| `agents/acp/session.ts` | 状态机（§3.1）、模型 / 档位 / 模式映射、审批桥、usage 汇总 |
-| `agents/acp/translator.ts` | 事件翻译与错误识别（§3.6） |
+| `agents/agy-acp/session.ts` | 状态机（§3.1）、模型 / 档位 / 模式映射、审批桥、usage 汇总 |
+| `agents/agy-acp/translator.ts` | 事件翻译与错误识别（§3.6） |
 | `agents/antigravity/models.ts` | 保留。新增「Cindy 基座模型 + effort」与 `configOptions` 的 `model` / `thought_level` 互转 |
 | `agents/antigravity/index.ts` | `AntigravityAgent`：参数校验、能力表、组装上面几块 |
 | 删除 | `stream.ts`、CLI 分支的 `--input-format stream-json`、`--conversation`、`--dangerously-skip-permissions` 及对应测试 |
