@@ -3,7 +3,10 @@ import { getClientEndpoint } from '../clientEndpointsService.js';
 import { serverApiFetch, type ApiFetchOptions } from '../serverApiClient.desktop.js';
 import { createOfficialDeviceLinkApiFetch } from './deviceLinkApi.js';
 
-const officialDeviceLinkApiFetch = createOfficialDeviceLinkApiFetch({ getClientEndpoint, serverApiFetch });
+const officialDeviceLinkApiFetch = createOfficialDeviceLinkApiFetch({
+  getClientEndpoint: (...args) => getClientEndpoint(...args),
+  serverApiFetch: (...args) => serverApiFetch(...args),
+});
 
 const endpoint = '/api/device-link/plugin-automation-host';
 export interface AutomationHostChoice {
