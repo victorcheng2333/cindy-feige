@@ -249,6 +249,7 @@ import {
 import { mobileDebugLog } from '@/debug/mobileDebugLog';
 import {
   applyRemoteAgentPick,
+  remoteAntigravityPermissionMode,
   NEW_SESSION_AGENT_OPTIONS,
   availableNewSessionAgentOptions,
   defaultPermissionModeForNewSessionAgent,
@@ -676,6 +677,8 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     && remoteAgentChoice.pick.agentKind === draft.agentKind
     ? remoteAgentChoice.pick
     : null;
+  // Agy 借用另一台电脑运行时权限用单独那份(默认完全访问)，不读写本机 Agy 的权限记忆。
+  const remoteAntigravityActive = draft.agentKind === 'antigravity' && remoteAgentPick !== null;
   // 被控电脑支持给协同 Worker 单独选 Agent 所在电脑(远程供应商)时，Worker 与任务一样可以选其他
   // 电脑 / 分享的供应商，协同也不再与「任务的 Agent 在另一台电脑」互斥。
   const workerAgentLocationSupported = !!selectedDeviceId
@@ -1367,7 +1370,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     : pillSelectionSummary;
   // 权限按钮 / 权限下拉不体现 plan(对齐桌面 PR#494 / Cursor):计划模式激活时展示
   // 进入前的底层权限档(无记录时回退首个非 plan 档),激活态由 composer 的 PlanModeChip 表达。
-  const displayPermissionMode = draft.permissionMode === 'plan'
+  const displayPermissionMode = remoteAntigravityActive
+    ? remoteAntigravityPermissionMode(newSessionPreferences)
+    : draft.permissionMode === 'plan'
     ? prePlanPermissionModeRef.current && prePlanPermissionModeRef.current !== 'plan'
         ? prePlanPermissionModeRef.current
       : (runtimeOptions.permissionOptions.find((option) => option.id !== 'plan')?.id ?? 'ask')
@@ -2500,6 +2505,12 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // 非 plan 档写 per-agent 记忆(内存 + 落盘;对齐桌面 lastByVendor)。
   const selectPermissionMode = useCallback((mode: string) => {
     void (async () => {
+      if (remoteAntigravityActive) {
+        if (mode === 'plan') return;
+        setNewSessionPreferences((prev) => prev ? { ...prev, remoteAntigravityPermissionMode: mode } : prev);
+        void saveNewSessionPreferences({ remoteAntigravityPermissionMode: mode });
+        return;
+      }
       patchDraft({ permissionMode: mode });
       if (mode === 'plan') return; // 老被控端兼容档,不入记忆
       // 同步进本地 state:本次会话内切走再切回也能拿到最新记忆(落盘不回写 state)。
@@ -2513,7 +2524,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         permissionModeForAgent: { agentKind: draft.agentKind, mode },
       });
     })();
-  }, [draft.agentKind, draft.permissionMode, patchDraft]);
+  }, [draft.agentKind, draft.permissionMode, patchDraft, remoteAntigravityActive]);
 
   // —— worktree 资格探测:目录 / 设备 / 链路变化即重探(seq 防竞态,旧结果作废)。
   // CHANNEL_NOT_ALLOWED(老被控端)→ unsupported；OFF 时隐藏，旧 ON 镜像保留关闭
@@ -4123,7 +4134,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     try {
       if (!isCurrentOwner()) return;
       // 选了另一台电脑的模型:模型 / 来源 / 档位与 Agent 所在电脑一起落进要创建的草稿。
-      let effectiveDraft = applyRemoteAgentPick(draft, remoteAgentPick);
+      let effectiveDraft = applyRemoteAgentPick(draft, remoteAgentPick, newSessionPreferences);
       // ㉙ 设备守卫全程化(独立 review P1-1/P1-2):设备快照必须取自**闭包**
       // selectedDeviceId(真正会创建会话的目标设备)——selectedDeviceRef 是渲染后
       // 的最新值,若用户在渲染与点击之间切了设备,ref 已属新设备而闭包 maker/目录
@@ -4431,6 +4442,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     selectedDeviceName,
     draft,
     remoteAgentPick,
+    newSessionPreferences?.remoteAntigravityPermissionMode,
     finishVoiceRecording,
     flushRecoveredDraft,
     leaveForeignOutboxRecovery,
@@ -4626,7 +4638,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
 
       sessionId = createNewSessionId();
       // 选了另一台电脑的模型:与普通创建同一份覆盖(模型、来源、档位与 Agent 所在电脑)。
-      let effectiveDraft = applyRemoteAgentPick(draft, remoteAgentPick);
+      let effectiveDraft = applyRemoteAgentPick(draft, remoteAgentPick, newSessionPreferences);
       if (
         worktreeIntent.applicable
         && worktreeIntent.enabled
@@ -5186,6 +5198,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     confirmAgentUnauthenticated,
     draft,
     remoteAgentPick,
+    newSessionPreferences?.remoteAntigravityPermissionMode,
     goalBusy,
     leaveForeignOutboxRecovery,
     maker,

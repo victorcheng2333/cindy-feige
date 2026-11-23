@@ -128,10 +128,18 @@ export interface NewSessionRemoteAgentPick {
   fastMode: boolean | 'ultrafast';
 }
 
-/** 把选中的远程模型落进要创建的草稿;没选时原样返回。 */
+/** Agy 借用另一台电脑运行时的权限档：上次显式选过的，否则完全访问。 */
+export function remoteAntigravityPermissionMode(
+  preferences: Pick<NewSessionStoredPreferences, 'remoteAntigravityPermissionMode'> | null | undefined,
+): string {
+  return preferences?.remoteAntigravityPermissionMode ?? 'bypassPermissions';
+}
+
+/** 把选中的远程模型落进要创建的草稿;没选时原样返回。远程 Agy 用自己那份权限档。 */
 export function applyRemoteAgentPick(
   draft: NewSessionDraft,
   pick: NewSessionRemoteAgentPick | null,
+  preferences?: Pick<NewSessionStoredPreferences, 'remoteAntigravityPermissionMode'> | null,
 ): NewSessionDraft {
   if (!pick) return draft;
   return {
@@ -142,6 +150,7 @@ export function applyRemoteAgentPick(
     effort: pick.effort,
     fastMode: pick.fastMode,
     agentDeviceId: pick.deviceId,
+    ...(pick.agentKind === 'antigravity' ? { permissionMode: remoteAntigravityPermissionMode(preferences) } : {}),
   };
 }
 
@@ -175,6 +184,11 @@ export interface NewSessionStoredPreferences {
    * 没选过 = 缺失,回落该 agent 的安全种子默认。'plan' 不入记忆(计划模式是独立开关)。
    */
   permissionModeByAgent: Partial<Record<NewSessionAgentKind, string>>;
+  /**
+   * Agy 借用另一台电脑运行时上次显式选过的权限档；没选过按完全访问。与本机 Agy 的
+   * `permissionModeByAgent.antigravity` 分开记(与桌面 `remotePermissionMode` 同语义)。
+   */
+  remoteAntigravityPermissionMode?: string;
   /**
    * 每台被控电脑上次在新建页**显式选择**的项目目录(deviceId → 绝对路径,#4103)。
    * 只在用户点选最近项目 / 在目录浏览器里确认时写入;自动取最近项目首项不算显式选择。

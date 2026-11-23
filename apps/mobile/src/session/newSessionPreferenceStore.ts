@@ -21,6 +21,8 @@ export interface NewSessionPreferencePatch {
   workspaceKind?: NewSessionWorkspaceKind;
   /** 记住某 agent 在新建页选的权限档(单键合并进 permissionModeByAgent;'plan' 被忽略)。 */
   permissionModeForAgent?: { agentKind: NewSessionAgentKind; mode: string };
+  /** 记住 Agy 借用另一台电脑运行时选的权限档('plan' 被忽略)。 */
+  remoteAntigravityPermissionMode?: string;
   /** 记住某台被控电脑上次显式选择的项目目录(单键合并进 workingDirByDevice;空值被忽略,#4103)。 */
   workingDirForDevice?: { deviceId: string; workingDir: string };
   /** 记住(pick)或清掉(null)某台被控电脑上某 agent 选的另一台电脑 / 分享来的模型。 */
@@ -103,6 +105,9 @@ async function writeNewSessionPreferences(
       permissionPatch && isRememberablePermissionMode(permissionPatch.mode)
         ? { ...current.permissionModeByAgent, [permissionPatch.agentKind]: permissionPatch.mode }
         : current.permissionModeByAgent,
+    ...(patch.remoteAntigravityPermissionMode && isRememberablePermissionMode(patch.remoteAntigravityPermissionMode)
+      ? { remoteAntigravityPermissionMode: patch.remoteAntigravityPermissionMode }
+      : current.remoteAntigravityPermissionMode ? { remoteAntigravityPermissionMode: current.remoteAntigravityPermissionMode } : {}),
     workingDirByDevice:
       workingDirDeviceId && workingDirValue
         ? { ...current.workingDirByDevice, [workingDirDeviceId]: workingDirValue }
@@ -218,6 +223,7 @@ function normalizeStoredPreferences(value: unknown): NewSessionStoredPreferences
   if (!record) return emptyPreferences();
   const deviceId = readString(record.deviceId);
   const deviceName = readString(record.deviceName);
+  const remoteAntigravityPermissionMode = readString(record.remoteAntigravityPermissionMode);
   return {
     agentKind: normalizeNewSessionAgentKind(record.agentKind),
     workspaceKind: record.workspaceKind === 'project' || record.workspaceKind === 'dialogue'
@@ -227,6 +233,9 @@ function normalizeStoredPreferences(value: unknown): NewSessionStoredPreferences
       ? { deviceId, name: deviceName || deviceId }
       : null,
     permissionModeByAgent: normalizePermissionModeByAgent(record.permissionModeByAgent),
+    ...(remoteAntigravityPermissionMode && isRememberablePermissionMode(remoteAntigravityPermissionMode)
+      ? { remoteAntigravityPermissionMode }
+      : {}),
     workingDirByDevice: {},
     remoteAgentByDevice: {},
   };
@@ -258,6 +267,9 @@ function serializePreferences(
       : {}),
     ...(permissionEntries.length > 0
       ? { permissionModeByAgent: Object.fromEntries(permissionEntries) }
+      : {}),
+    ...(preferences.remoteAntigravityPermissionMode
+      ? { remoteAntigravityPermissionMode: preferences.remoteAntigravityPermissionMode }
       : {}),
   };
 }

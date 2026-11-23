@@ -42,6 +42,28 @@ describe('newSessionPreferenceStore', () => {
     expect((await readNewSessionPreferences()).workingDirByDevice).toEqual({ 'shared-device': '/account-b/private' });
   });
 
+  // User preference (2026-11-23), same as Desktop: Agy borrowed from another computer starts on
+  // Full access, remembers its own choice, and leaves this computer's Agy permission alone.
+  it('creates borrowed-source Agy tasks with their own remembered permission', async () => {
+    const { readNewSessionPreferences, saveNewSessionPreferences } =
+      await import('@/session/newSessionPreferenceStore');
+    const { applyRemoteAgentPick, DEFAULT_NEW_SESSION_DRAFT } = await import('@/session/newSession');
+    const draft = { ...DEFAULT_NEW_SESSION_DRAFT, agentKind: 'antigravity' as const, permissionMode: 'auto' };
+    const pick = (agentKind: 'antigravity' | 'codex') =>
+      ({ deviceId: 'agent-mac', agentKind, model: 'gemini-4-neon', providerId: null, effort: 'medium', fastMode: false });
+
+    expect(applyRemoteAgentPick(draft, pick('antigravity'), await readNewSessionPreferences()).permissionMode)
+      .toBe('bypassPermissions');
+    await saveNewSessionPreferences({ permissionModeForAgent: { agentKind: 'antigravity', mode: 'default' } });
+    await saveNewSessionPreferences({ remoteAntigravityPermissionMode: 'auto' });
+    await saveNewSessionPreferences({ remoteAntigravityPermissionMode: 'plan' });
+    const saved = await readNewSessionPreferences();
+    expect(saved.permissionModeByAgent.antigravity).toBe('default');
+    expect(applyRemoteAgentPick(draft, pick('antigravity'), saved)).toMatchObject({ agentDeviceId: 'agent-mac', permissionMode: 'auto' });
+    expect(applyRemoteAgentPick({ ...draft, agentKind: 'codex' }, pick('codex'), saved).permissionMode).toBe('auto');
+    expect(applyRemoteAgentPick(draft, null, saved).permissionMode).toBe('auto');
+  });
+
   it('does not adopt the unowned legacy directory map into a logged-in account', async () => {
     const { __testing, readNewSessionPreferences } = await import('@/session/newSessionPreferenceStore');
     store.set(__testing.storageKey, JSON.stringify({ agentKind: 'codex', workingDirByDevice: { devA: '/previous-owner/private' } }));
