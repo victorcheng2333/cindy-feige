@@ -36,7 +36,7 @@ export function useProviderBorrow(provider: ProviderView | null | undefined) {
     provider ? devices.map((device) => device.deviceId) : [],
     { retainDisplaySnapshot: true },
   );
-  const candidates: RunLocationCandidate[] = !provider || provider.id === 'cursor' || provider.suspended || provider.agents.length === 0
+  const candidates: RunLocationCandidate[] = !provider || provider.id === 'cursor' || provider.id === 'antigravity' || provider.suspended || provider.agents.length === 0
     ? []
     : devices.flatMap((device) => {
       const offered = catalogs.get(device.deviceId)?.providers.find((entry) => entry.connected && !entry.suspended
