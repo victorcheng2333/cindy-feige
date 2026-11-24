@@ -3622,7 +3622,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
                 )}
                 <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <span className="min-w-0 truncate text-14 font-medium leading-[1.43] text-[var(--model-item-text)]" title={disabledReason ?? displayName}>
+                    <span className="min-w-0 truncate text-14 font-medium leading-5 text-[var(--model-item-text)]" title={disabledReason ?? displayName}>
                       {displayName}
                     </span>
                     {rowEffort && (
@@ -5515,7 +5515,7 @@ export function ModelSelector({
   const modelLabelContent = modelDescription ? (
     <>
       <span>{modelId}</span>
-      <span className="block text-12 leading-5 text-[var(--model-trigger-meta)]">
+      <span className="block text-12 leading-[1.67] text-[var(--model-trigger-meta)]">
         {modelDescription}
       </span>
     </>

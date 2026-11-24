@@ -48,6 +48,7 @@ import {
   buildAntigravityHostedMcpServers,
   createAntigravityRemoteWorkspaceGuard,
   isAntigravityRemoteWorkspaceVersionSupported,
+  listAntigravityAcpLogs,
   prepareAntigravityRemoteWorkspaceDir,
 } from './remote-workspace.js';
 import { loadMemoryContext } from '../../memory/context.js';
@@ -333,6 +334,7 @@ export class AntigravityAgent extends BaseAgent {
       }
       const launchCwd = remoteWorkspace ? remoteWorkspace.dir : cwd;
       const remoteGuard = hostedMcp ? createAntigravityRemoteWorkspaceGuard(hostedMcp.serverNames) : undefined;
+      const priorAcpLogs = hosted ? await listAntigravityAcpLogs(stateDir) : undefined;
       const launchedAt = Date.now();
       endpoint = startAgyAcpProcess(
         this.deps.binaryPath,
@@ -394,7 +396,7 @@ export class AntigravityAgent extends BaseAgent {
       sessionRef = session;
       const liveEndpoint = endpoint;
       if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
-      if (hosted && await antigravityRemoteAgentFellBack(stateDir, launchedAt)) throw new AntigravityRemoteAgentUnavailableError();
+      if (hosted && await antigravityRemoteAgentFellBack(stateDir, launchedAt, priorAcpLogs)) throw new AntigravityRemoteAgentUnavailableError();
       if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
       if (!antigravityCapabilities(session).permissionModes.some(option => option.id === mode)) {
         mode = 'default';

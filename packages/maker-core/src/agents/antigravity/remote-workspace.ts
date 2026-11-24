@@ -77,14 +77,27 @@ export class AntigravityRemoteAgentUnavailableError extends Error {
   }
 }
 
+/** Snapshot of `acp.log.<pid>` files already in `stateDir` before launching a new worker. */
+export async function listAntigravityAcpLogs(stateDir: string): Promise<Set<string>> {
+  const names = await readdir(stateDir).catch(() => [] as string[]);
+  return new Set(names.filter(name => /^acp\.log\.\d+$/.test(name)));
+}
+
 /** True when an Agy worker started at or after `launchedAtMs` logged that it fell back to its default agent. */
-export async function antigravityRemoteAgentFellBack(stateDir: string, launchedAtMs: number): Promise<boolean> {
+export async function antigravityRemoteAgentFellBack(
+  stateDir: string,
+  launchedAtMs: number,
+  priorLogs?: ReadonlySet<string>,
+): Promise<boolean> {
   const names = await readdir(stateDir).catch(() => [] as string[]);
   for (const name of names) {
     if (!/^acp\.log\.\d+$/.test(name)) continue;
+    if (priorLogs?.has(name)) continue;
     const file = path.join(stateDir, name);
-    const info = await stat(file).catch(() => null);
-    if (!info || info.mtimeMs < launchedAtMs) continue;
+    if (!priorLogs) {
+      const info = await stat(file).catch(() => null);
+      if (!info || info.mtimeMs < launchedAtMs) continue;
+    }
     if ((await readFile(file, 'utf8').catch(() => '')).includes(REMOTE_AGENT_FALLBACK_LOG)) return true;
   }
   return false;

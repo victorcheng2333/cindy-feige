@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
 vi.mock('../../appSessionState.js', () => ({
   onAppSessionInvalidated: () => () => {},
   activeOwnerScopeKey: () => String(state.scope),
+  getDataOwnerLifetime: () => 0,
   isAppSessionBoundaryPending: () => false,
 }));
 vi.mock('../../maker-host/subscription-account-auth.js', () => ({

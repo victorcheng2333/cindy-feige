@@ -365,7 +365,7 @@ export class PendingCredentialSwitchService {
     try {
       const applyNative = target.deferredSelection ? undefined
         : (session?.agentKind ?? target.agentKind) === 'pi' ? this.deps.applyPiPending
-        : (session?.agentKind ?? target.agentKind) === 'claude-code' ? this.deps.applyClaudePending : undefined;
+        : (session?.agentKind ?? target.agentKind) === 'claude-code' && (session || target.previousRoute) ? this.deps.applyClaudePending : undefined;
       if (applyNative) {
         const resolved = await this.resolveApplyRoute(target);
         if (this.pending.get(sessionId) !== target || !this.permitted(sessionId, target)) return;

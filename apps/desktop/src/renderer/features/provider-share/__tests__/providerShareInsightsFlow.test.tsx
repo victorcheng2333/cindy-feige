@@ -32,6 +32,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../../main/appSessionState.js', () => ({
   activeOwnerScopeKey: () => 'isolated-owner',
   isAppSessionBoundaryPending: () => false,
+  onAppSessionInvalidated: () => () => {},
   ownerScopedUserDataPath: (file: string) => `${state.root}/${file}`,
 }));
 vi.mock('../../../../main/maker-host/createDesktopProviderService.js', () => ({

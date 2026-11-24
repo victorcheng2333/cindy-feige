@@ -186,6 +186,7 @@ function renderDraftPicker(pluginEngines?: React.ComponentProps<typeof ModelSele
       currentProviderId: 'anthropic',
       onProviderChange: vi.fn(),
       onUnifiedSelect: vi.fn(),
+      unifiedPanel: true,
       vendorKey: 'cc',
       remoteAgent: undefined,
       ...(pluginEngines ? { pluginEngines } : {}),

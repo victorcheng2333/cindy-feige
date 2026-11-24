@@ -542,7 +542,7 @@ export function mergeDiscoveredRuntimeModels(
         ...(hideNew ? { defaultEnabled: false } : {}),
       });
     else {
-      const { discoveredCost: _staleCost, ...existingModel } = models[index];
+      const { discoveredCost: _staleCost, discoveredSource: _staleSource, ...existingModel } = models[index];
       models[index] = {
         ...existingModel,
         ...accountCapabilities,

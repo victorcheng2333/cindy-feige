@@ -5,6 +5,7 @@ import type { InteractionDecision, InteractionRequest, InteractionResolver } fro
 import { createSharedPermission, type SharedPermission } from '../maker-ipc/sharedPermission';
 import { beginInteractionRoute, installDesktopInteractionHandler, type InteractionHandler, type InteractionSession } from '../maker-ipc/interactionRouter';
 import { assertSharedTaskInteractionResolveCurrent, assertSharedTaskInvoke, setSharedTaskInteractionReader, type SharedTaskPeerCapture } from '../device-link/sharedTaskDispatch.js';
+import { throwIpcError } from '../utils/ipcValidate.js';
 
 // Execute the production listener and control adapter without booting Electron.
 const source = readFileSync(new URL('../maker-ipc/register.ts', import.meta.url), 'utf8');
@@ -65,7 +66,8 @@ function harness() {
     assertSharedTaskInteractionResolveCurrent,
     setSharedTaskInteractionReader,
     isPluginSetupInteractionDecision: () => false,
-    isAcpPermissionDecisionAvailable: () => false,
+    isAcpPermissionDecisionAvailable: () => true,
+    throwIpcError,
     assertResolveInteractionOrigin: vi.fn(), isPendingDesktopOnlyConfirmation: () => false,
     issueConfirmBridge: { pendingSnapshots: () => [] },
     pendingInteractionResolvers: entries,

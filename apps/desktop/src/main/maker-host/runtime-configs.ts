@@ -11,6 +11,7 @@ import { createAgentRuntimeConfigs } from './runtimeConfigsCore.js';
 
 import type { AgentRuntimeConfig } from '@cindy/maker-core';
 import { app } from 'electron';
+import os from 'node:os';
 import path from 'node:path';
 import { getCachedBinaryStatus } from '../agent-binaries/index.js';
 
@@ -32,7 +33,7 @@ function desktopRipgrepCandidates(key: string): string[] {
 }
 
 export const desktopRuntimeConfigs = createAgentRuntimeConfigs({
-  userDataPath: () => app.getPath('userData'),
+  userDataPath: () => (typeof app?.getPath === 'function' ? app.getPath('userData') : os.tmpdir()),
   claudeAccountAuthenticated: providerId => claudeAccountState(providerId).authenticated,
   ripgrepCandidates: desktopRipgrepCandidates,
   codexBinaryPath: () => getCachedBinaryStatus('codex').binaryPath,
