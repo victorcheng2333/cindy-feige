@@ -12606,8 +12606,26 @@ function createRemoteHistoryView(sessionId: string) {
         ? state.messages.filter((message) => !message.cacheHydrated
           || historyCacheReceiptFollows(message.cacheReceipt, snapshot.readReceipt, snapshot.stale))
         : state.messages;
+      const currentByClientId = new Map(rawMessages.map((message) => [message.clientId, message]));
+      const costBackfillIds = new Set(
+        borrowed
+          .filter((persisted) => {
+            if (persisted.role !== 'assistant') return false;
+            const existing = currentByClientId.get(persisted.clientId);
+            if (!existing || existing.isStreaming) return false;
+            return (
+              (!existing.turnMoney && Boolean(persisted.turnMoney)) ||
+              (!existing.userTurnMoney && Boolean(persisted.userTurnMoney)) ||
+              (!existing.turnUsageDetails && Boolean(persisted.turnUsageDetails))
+            );
+          })
+          .map((message) => message.clientId),
+      );
       let messages = confirmRemoteUsers(
-        mergeMessages(borrowed, rawMessages, { addOnly: true }),
+        mergeMessages(borrowed, rawMessages, {
+          addOnly: true,
+          ...(costBackfillIds.size > 0 ? { addOnlyExcept: costBackfillIds } : {}),
+        }),
         new Set(available.filter((message) => message.role === 'user').map((message) => message.clientId)),
       );
       if (!snapshot.stale && !snapshot.error) {

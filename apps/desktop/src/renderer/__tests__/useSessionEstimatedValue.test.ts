@@ -121,6 +121,39 @@ describe('syncEstimatedValueCostsFromStoreSnapshot', () => {
     for (const clientId of removed) expect(result?.costs.has(clientId)).toBe(false);
     expect(result?.costs.has('visible-no-cost')).toBe(false);
   });
+
+  // Regression: remote/cached assistant messages can appear in the chat window
+  // without turnMoney yet; syncing the window must not wipe DB-backed estimates
+  // fetched from estimatedSessionValueFor, while an explicit actual-cost turn
+  // still clears any stale estimate for that row.
+  it('keeps DB-backed estimates for visible assistant rows without turnMoney and clears explicit actual-cost rows', () => {
+    const actualCostRow = {
+      ...assistantMessage('actual-row'),
+      turnMoney: { amount: 0.25, currency: 'USD', approximate: false, kind: 'actual-cost' },
+      turnCostIsEstimate: false,
+    } as ChatMessage;
+    const result = syncEstimatedValueCostsFromStoreSnapshot(
+      new Map([
+        ['earlier-db-only', [usdEstimate(0.32)]],
+        ['actual-row', [usdEstimate(0.10)]],
+        ['latest-turn', [usdEstimate(0.08)]],
+      ]),
+      ['earlier-db-only', 'actual-row', 'latest-turn'],
+      {
+        messages: [
+          assistantMessage('earlier-db-only'),
+          actualCostRow,
+          assistantMessage('latest-turn', 0.08),
+        ],
+        historyLoaded: true,
+        hasMoreMessages: false,
+      },
+    );
+
+    expect(result?.costs.get('earlier-db-only')).toEqual([usdEstimate(0.32)]);
+    expect(result?.costs.has('actual-row')).toBe(false);
+    expect(result?.costs.get('latest-turn')).toEqual([usdEstimate(0.08)]);
+  });
 });
 
 describe('resolveEstimatedValueTurnCostEntry', () => {

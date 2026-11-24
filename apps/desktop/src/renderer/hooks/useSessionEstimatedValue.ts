@@ -11,8 +11,11 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 
 import { useChatDisplaySnapshot } from '@/components/chat/ChatDisplaySnapshotContext';
 import { isDataOwnerPushCurrent } from '@/contexts/dataOwnerGeneration';
+import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
+import { getStickySessionDeviceId } from '@/features/device-link/stickySessionOrigin';
 import { makerChatStore, type ChatMessage } from '@/lib/makerChatStore';
 import { estimatedSessionValueFor } from '@/lib/makerTransport';
+import { isDeviceLinkRemotePushCurrent } from '@/lib/remoteDataOwnerPushFence';
 import { legacyEstimateMoney, turnEstimateAmounts } from '../../shared/turnEstimateAmounts';
 import {
   addCompatibleRegionalMoney,
@@ -50,6 +53,14 @@ type EstimateEntry = { clientId: string; money: RegionalMoney; additionalEstimat
 
 function estimateFromChatMessage(message: ChatMessage): EstimateEntry | null {
   return message.role === 'assistant' ? resolveEstimatedValueTurnCostEntry(message) : null;
+}
+
+function hasExplicitNonEstimateCost(message: ChatMessage): boolean {
+  if (message.role !== 'assistant') return true;
+  return (
+    message.turnCostIsEstimate === false &&
+    ((message.turnMoney?.amount ?? 0) > 0 || (message.turnCostUsd ?? 0) > 0)
+  );
 }
 
 function areMoneyEqual(a: RegionalMoney, b: RegionalMoney): boolean {
@@ -133,7 +144,7 @@ export function syncEstimatedValueCostsFromStoreSnapshot(
     const entry = estimateFromChatMessage(message);
     if (entry) {
       next.set(entry.clientId, [entry.money, ...(entry.additionalEstimates ?? [])]);
-    } else {
+    } else if (hasExplicitNonEstimateCost(message)) {
       next.delete(message.clientId);
     }
   }
@@ -164,6 +175,10 @@ export function useSessionEstimatedAmounts(
   const displaySnapshot = useChatDisplaySnapshot(sessionId);
   const displaySnapshotRef = useRef(displaySnapshot);
   const shouldListenForDirectTurnCost = !displaySnapshot || displaySnapshot.chatRealtime;
+  const originDeviceId = useSyncExternalStore(
+    remoteProjectsStore.subscribe,
+    () => getStickySessionDeviceId(sessionId),
+  );
   const costsRef = useRef<Map<string, RegionalMoney[]>>(new Map());
   const storeClientIdsRef = useRef<string[]>([]);
   const transcriptClearedRef = useRef(false);
@@ -247,20 +262,49 @@ export function useSessionEstimatedAmounts(
       };
     }
 
-    const unsubscribeTurnCost = window.electronAPI.onUsageMessageTurnCost?.(
-      (payload, ownerStamp) => {
-        if (!isDataOwnerPushCurrent(ownerStamp)) return;
-        if (payload.sessionId !== sessionId) return;
-        if (!canMerge(payload.clientId)) return;
-        const entry = resolveEstimatedValueTurnCostEntry(payload);
-        if (!entry && payload.turnCostIsEstimate === undefined && !payload.turnMoney) return;
-        updatedDuringRead?.add(payload.clientId);
-        const next = new Map(costsRef.current);
-        if (entry) next.set(entry.clientId, [entry.money, ...(entry.additionalEstimates ?? [])]);
-        else next.delete(payload.clientId);
-        applyCosts(next);
-      },
-    );
+    const handleTurnCostPayload = (payload: {
+      sessionId?: string;
+      clientId?: string;
+      turnMoney?: unknown;
+      turnCostUsd?: number;
+      turnCostIsEstimate?: boolean;
+      turnUsageDetails?: unknown;
+    } | null): void => {
+      if (!payload || payload.sessionId !== sessionId || !payload.clientId) return;
+      if (!canMerge(payload.clientId)) return;
+      const entry = resolveEstimatedValueTurnCostEntry({
+        clientId: payload.clientId,
+        turnMoney: payload.turnMoney,
+        turnCostUsd: payload.turnCostUsd,
+        turnCostIsEstimate: payload.turnCostIsEstimate,
+        turnUsageDetails: payload.turnUsageDetails,
+      });
+      if (!entry && payload.turnCostIsEstimate === undefined && !payload.turnMoney) return;
+      updatedDuringRead?.add(payload.clientId);
+      const next = new Map(costsRef.current);
+      if (entry) next.set(entry.clientId, [entry.money, ...(entry.additionalEstimates ?? [])]);
+      else next.delete(payload.clientId);
+      applyCosts(next);
+    };
+
+    const unsubscribeTurnCost = !originDeviceId
+      ? window.electronAPI.onUsageMessageTurnCost?.((payload, ownerStamp) => {
+          if (!isDataOwnerPushCurrent(ownerStamp)) return;
+          handleTurnCostPayload(payload);
+        })
+      : undefined;
+    const unsubscribeRemoteTurnCost = originDeviceId
+      ? window.electronAPI.deviceLink?.onRemotePush?.((push, stamp) => {
+          if (
+            push.deviceId !== originDeviceId ||
+            push.channel !== 'usage:message-turn-cost' ||
+            !isDeviceLinkRemotePushCurrent(push, stamp)
+          ) {
+            return;
+          }
+          handleTurnCostPayload(push.payload as Parameters<typeof handleTurnCostPayload>[0]);
+        })
+      : undefined;
     // 按会话来源路由:device-link 远程会话查被控端(本地库无该会话的行,查本机恒 0)。
     void estimatedSessionValueFor(sessionId)
       .then((snapshot) => {
@@ -290,8 +334,9 @@ export function useSessionEstimatedAmounts(
     return () => {
       cancelled = true;
       unsubscribeTurnCost?.();
+      unsubscribeRemoteTurnCost?.();
     };
-  }, [enabled, sessionId, shouldListenForDirectTurnCost]);
+  }, [enabled, sessionId, shouldListenForDirectTurnCost, originDeviceId]);
 
   return valueMoney;
 }
