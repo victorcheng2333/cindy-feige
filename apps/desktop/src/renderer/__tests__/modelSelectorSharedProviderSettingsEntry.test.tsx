@@ -23,16 +23,25 @@ vi.mock('react-i18next', async (importOriginal) => ({
 
 vi.mock('@/lib/scrollbarAutoHide', () => ({ flashScrollbar: vi.fn() }));
 
+const capabilityRequests = vi.hoisted(() => ({
+  calls: [] as Array<{ agent: string | null | undefined; deviceId: string | undefined }>,
+  errorByKey: {} as Record<string, string>,
+}));
+
 vi.mock('@/hooks/useAgentCapabilities', () => ({
   evictDeviceCapabilities: vi.fn(),
   prefetchDeviceCapabilities: vi.fn(async () => {}),
-  useAgentCapabilities: (agent: string, deviceId?: string) => ({
-    capabilities: { hasFastMode: false, effortLevels: [], availableModels:
-      agent === 'cursor' && deviceId === 'device-b'
-        ? [{ id: 'm5-cursor', displayName: 'M5 Cursor model', contextWindow: 200000, efforts: [], defaultEffort: null }] : [] },
-    loading: false,
-    error: null,
-  }),
+  useAgentCapabilities: (agent: string | null | undefined, deviceId?: string) => {
+    capabilityRequests.calls.push({ agent, deviceId });
+    const error = agent && deviceId ? capabilityRequests.errorByKey[`${deviceId}:${agent}`] ?? null : null;
+    return {
+      capabilities: error ? null : { hasFastMode: false, effortLevels: [], availableModels:
+        agent === 'cursor' && deviceId === 'device-b'
+          ? [{ id: 'm5-cursor', displayName: 'M5 Cursor model', contextWindow: 200000, efforts: [], defaultEffort: null }] : [] },
+      loading: false,
+      error,
+    };
+  },
 }));
 vi.mock('@/hooks/useApiKey', () => ({ useApiKey: () => ({ hasSavedKey: true }) }));
 vi.mock('@/hooks/useConnectedSource', () => ({
@@ -62,6 +71,8 @@ const catalogs = vi.hoisted(() => {
   return {
     shareError: null as string | null,
     shareLoading: false,
+    deviceError: {} as Record<string, string | null>,
+    deviceLoading: {} as Record<string, boolean>,
     local: [provider('a-local', 'A Local', 'a-model')] as unknown[],
     byDevice: {
       'device-b': [provider('b-main', 'B Main', 'b-model'),
@@ -85,22 +96,28 @@ vi.mock('@/hooks/useProviders', () => ({
 vi.mock('@/hooks/useDeviceProviders', () => ({
   evictDeviceProviders: vi.fn(),
   prefetchDeviceProviders: vi.fn(async () => {}),
-  useDeviceProviders: (deviceId?: string) => ({
-    providers: deviceId === 'share:abc' && (catalogs.shareError || catalogs.shareLoading) ? [] : deviceId ? (catalogs.byDevice[deviceId] ?? []) : [],
-    loading: deviceId === 'share:abc' && catalogs.shareLoading,
-    error: deviceId === 'share:abc' ? catalogs.shareError : null,
-    unsupported: false,
-  }),
+  useDeviceProviders: (deviceId?: string) => {
+    const error = deviceId === 'share:abc' ? catalogs.shareError : deviceId ? (catalogs.deviceError[deviceId] ?? null) : null;
+    const loading = deviceId === 'share:abc' ? catalogs.shareLoading : deviceId ? Boolean(catalogs.deviceLoading[deviceId]) : false;
+    return {
+      providers: error || loading ? [] : deviceId ? (catalogs.byDevice[deviceId] ?? []) : [],
+      loading,
+      error,
+      unsupported: false,
+    };
+  },
 }));
 vi.mock('@/hooks/useDevicesProviders', () => ({
   useDevicesProviders: (deviceIds: readonly string[]) =>
     new Map(
-      deviceIds.map((deviceId) => [
-        deviceId,
-        { providers: deviceId === 'share:abc' && (catalogs.shareError || catalogs.shareLoading) ? [] : catalogs.byDevice[deviceId] ?? [],
-          loading: deviceId === 'share:abc' && catalogs.shareLoading,
-          error: deviceId === 'share:abc' ? catalogs.shareError : null },
-      ]),
+      deviceIds.map((deviceId) => {
+        const error = deviceId === 'share:abc' ? catalogs.shareError : (catalogs.deviceError[deviceId] ?? null);
+        const loading = deviceId === 'share:abc' ? catalogs.shareLoading : Boolean(catalogs.deviceLoading[deviceId]);
+        return [
+          deviceId,
+          { providers: error || loading ? [] : catalogs.byDevice[deviceId] ?? [], loading, error },
+        ];
+      }),
     ),
 }));
 vi.mock('@/state/modelVisibilityPrefs', () => ({
@@ -165,6 +182,10 @@ beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
   catalogs.shareError = null;
   catalogs.shareLoading = false;
+  catalogs.deviceError = {};
+  catalogs.deviceLoading = {};
+  capabilityRequests.calls = [];
+  capabilityRequests.errorByKey = {};
   catalogs.byDevice['share:abc'] = [{ ...(catalogs.byDevice['share:abc'][0] as object), connected: true, hidden: false }];
   shareState.received = [];
   vi.clearAllMocks();
@@ -467,5 +488,95 @@ describe('远程目录 Cursor 入口', () => {
     // computer's capabilities before an engine switch, rather than local/empty caps.
     await act(async () => { fireEvent.click(screen.getAllByText('M5 Cursor model')[0]!); });
     expect(onSwitch).toHaveBeenCalledWith('cursor', 'm5-cursor', 'cursor', expect.any(Object));
+  });
+});
+
+// Unit regression (2026-11-23): opening or switching to Agy in the compact picker
+// mounted other computers whose catalog was loading/errored or selected for another
+// Harness, firing antigravity capability reads and flashing remote load errors for
+// computers that never shared Agy. Minimal input: a local Agy model plus an own
+// computer (Studio) that does not share Agy (loading, errored, or selected on Claude)
+// and a failed share. Tier: unit (in-memory provider fixtures).
+describe('Agy 列表不误查未共享 Agy 的远程电脑', () => {
+  const localAgyProvider = {
+    id: 'antigravity', name: 'Agy', source: 'builtin', agents: ['antigravity'],
+    auth: { method: 'oauth' }, routing: { antigravity: {} }, connected: true,
+    models: { antigravity: [{ id: 'agy-local', name: 'Agy Local Model', contextWindow: 200000, efforts: [], defaultEffort: null }] },
+  };
+
+  it('其他电脑目录加载中或失败、以及分享失败时，打开 Agy 不显示它们的错误也不查其 Agy 能力', () => {
+    const originalLocal = catalogs.local;
+    catalogs.local = [...originalLocal, localAgyProvider];
+    catalogs.deviceLoading['device-c'] = true;
+    catalogs.shareError = 'share catalog unavailable';
+    capabilityRequests.errorByKey['device-c:antigravity'] = 'antigravity not available';
+    capabilityRequests.errorByKey['share:abc:antigravity'] = 'UNSUPPORTED_CAPABILITY';
+    try {
+      const panel = renderPanel({ devices: [studio, share], selectedDeviceId: null }, {
+        unifiedPanel: false, compactProviderList: true, vendorKey: 'antigravity',
+        modelId: 'agy-local', currentProviderId: 'antigravity',
+      });
+      expect(screen.getByRole('option', { name: 'Agy Local Model' })).toBeTruthy();
+      expect(screen.queryByText(studio.name)).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.queryByText('newChat.modelSelector.remoteLoading')).toBeNull();
+      expect(capabilityRequests.calls.some((call) => call.agent === 'antigravity' && call.deviceId === 'device-c')).toBe(false);
+      expect(capabilityRequests.calls.some((call) => call.agent === 'antigravity' && call.deviceId === 'share:abc')).toBe(false);
+
+      catalogs.deviceLoading['device-c'] = false;
+      catalogs.deviceError['device-c'] = 'offline';
+      panel.refresh();
+      expect(screen.queryByText(studio.name)).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(capabilityRequests.calls.some((call) => call.agent === 'antigravity' && call.deviceId === 'device-c')).toBe(false);
+    } finally {
+      catalogs.local = originalLocal;
+    }
+  });
+
+  it('当前任务运行在其他电脑的 Claude 上时，切到 Agy 标签页不显示那台电脑的失败提示', async () => {
+    const originalLocal = catalogs.local;
+    catalogs.local = [...originalLocal, localAgyProvider];
+    capabilityRequests.errorByKey['device-c:antigravity'] = 'antigravity not available';
+    try {
+      renderPanel({ devices: [studio], selectedDeviceId: 'device-c' }, {
+        unifiedPanel: false, compactProviderList: true, onUnifiedSelect: undefined,
+        vendorKey: 'cc', modelId: 'c-model', currentProviderId: 'c-open',
+        unifiedAgents: ['claude-code', 'antigravity'],
+        agentSwitch: { currentVendor: 'cc', onSwitch: vi.fn(async () => true) },
+      });
+      await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Agy' })); });
+      expect(screen.getByRole('option', { name: 'Agy Local Model' })).toBeTruthy();
+      expect(screen.queryByText(studio.name)).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(capabilityRequests.calls.some((call) => call.agent === 'antigravity' && call.deviceId === 'device-c')).toBe(false);
+    } finally {
+      catalogs.local = originalLocal;
+    }
+  });
+
+  it('其他电脑明确远程共享了 Agy 时，Agy 列表仍正常列出它的模型', () => {
+    const originalLocal = catalogs.local;
+    const originalStudio = catalogs.byDevice['device-c'];
+    catalogs.local = [...originalLocal, localAgyProvider];
+    catalogs.byDevice['device-c'] = [
+      ...originalStudio,
+      {
+        ...localAgyProvider,
+        remoteInvocationEnabled: true,
+        models: { antigravity: [{ id: 'agy-studio', name: 'Agy Studio Model', contextWindow: 200000, efforts: [], defaultEffort: null }] },
+      },
+    ];
+    try {
+      renderPanel({ devices: [studio], selectedDeviceId: null }, {
+        unifiedPanel: false, compactProviderList: true, vendorKey: 'antigravity',
+        modelId: 'agy-local', currentProviderId: 'antigravity',
+      });
+      expect(screen.getByRole('option', { name: 'Agy Local Model' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'Agy Studio Model' })).toBeTruthy();
+    } finally {
+      catalogs.local = originalLocal;
+      catalogs.byDevice['device-c'] = originalStudio;
+    }
   });
 });

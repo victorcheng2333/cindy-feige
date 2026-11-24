@@ -1501,9 +1501,12 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   );
   const combinedCatalogs = compactProviderList && !useUnifiedPanel && !!remoteAgent;
   // Cursor uses the task computer's own account; other computers cannot supply its models.
+  // Antigravity runs only on your own computers, never on provider shares from other users.
   const remoteBrowse = useMemo(() => browseVendor === 'cursor' ? null : combinedCatalogs
     ? (catalogSection ? { deviceId: catalogSection.deviceId, providerId: null } : null)
-    : browseSource, [browseVendor, combinedCatalogs, catalogSection?.deviceId, browseSource]);
+    : browseVendor === 'antigravity' && browseSource && isProviderShareAgentDeviceId(browseSource.deviceId)
+      ? null
+      : browseSource, [browseVendor, combinedCatalogs, catalogSection?.deviceId, browseSource]);
   // 落点在面板之外变了(那台电脑被解除配对而回到本机等):跟到新落点,不停在旧目录上。
   const lastPreferredBrowseDeviceIdRef = useRef(preferredBrowseDeviceId);
   useEffect(() => {
@@ -1860,7 +1863,14 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   // ── 远程 Agent 的左侧栏数据 ──────────────────────────────────────────────────
   // 栏位要同时列出本机与各台电脑的供应商,而列表此刻只装着其中一份目录:本机格与远程格
   // 各自按**自己的**目录与可见性派生,不借用正在浏览的那一份。
-  const remoteAgentDevices = browseVendor === 'cursor' ? undefined : remoteAgent?.devices;
+  const remoteAgentDevices = useMemo(
+    () => browseVendor === 'cursor'
+      ? undefined
+      : browseVendor === 'antigravity'
+        ? remoteAgent?.devices.filter((device) => !isProviderShareAgentDeviceId(device.deviceId))
+        : remoteAgent?.devices,
+    [browseVendor, remoteAgent?.devices],
+  );
   const routedFavoriteSources = useMemo(() => remoteAgent?.catalogHostDeviceId
     ? new Map((remoteAgentDevices ?? []).flatMap(device => device.favoriteSource
       ? [[device.deviceId, device.favoriteSource] as const] : []))
@@ -4433,13 +4443,21 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const combinedRemoteDevices = combinedCatalogs && !catalogSection
     ? (remoteAgentDevices ?? []).filter((device) => {
         const catalog = remoteDeviceCatalogs.get(device.deviceId);
-        return remoteAgentGroups.some((group) => group.deviceId === device.deviceId &&
-          group.entries.some((entry) => !agentKind || entry.capabilities[agentKind])) ||
-          catalog?.loading || catalog?.error || device.deviceId === remoteAgentDeviceId;
+        const offersAgent = remoteAgentGroups.some((group) => group.deviceId === device.deviceId &&
+          group.entries.some((entry) => !agentKind || entry.capabilities[agentKind]));
+        // Only keep the current task's execution device when viewing its own Harness; switching
+        // to another Harness tab (e.g. Agy) must not mount or query a device that never shared it.
+        const selectedForCurrentHarness = !browsing && device.deviceId === remoteAgentDeviceId;
+        // Known provider shares stay visible while loading/errored so the user can retry, matching
+        // remoteAgentGroups. Own computers only appear once their catalog confirms a shared provider
+        // for this Harness, avoiding transient loading/error flashes for unshared Harnesses.
+        const pendingShare = isProviderShareAgentDeviceId(device.deviceId) &&
+          (catalog?.loading || Boolean(catalog?.error));
+        return offersAgent || selectedForCurrentHarness || pendingShare;
       })
     : [];
   // An empty catalog for this Harness adds no empty-state block between providers.
-  if (catalogSection && !hasAnyModel && !remoteStatusInList && !browsingSelectedCatalog) return null;
+  if (catalogSection && !hasAnyModel && !remoteStatusInList && (!browsingSelectedCatalog || browsing)) return null;
 
   // ── 主菜单:自然宽度 360,可随外层弹层伸缩(field 形态绑 trigger 宽度),选项浮层
   //    portal 到 body,hover 时主菜单完全不重排 ─────
