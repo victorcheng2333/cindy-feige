@@ -835,7 +835,7 @@ describe('new task model falls back when the seeded model is empty', () => {
 
   it('shows the saved host selection on the first render and waits for unknown defaults', () => {
     const preview = (ready: boolean) => callback<() => DeviceLinkDraftSelection | null>('deviceLinkInitial', {
-      usesDeviceCatalog: true, dlSel: null, deviceDraftDefaultsReady: ready,
+      usesDeviceCatalog: true, dlSel: null, deviceDraftDefaultsReady: ready, remoteDraftProviders: undefined,
       capabilities: { availableModels: ['first', 'saved'].map(id => ({
         id, displayName: id, efforts: [], defaultEffort: null,
       })), permissionModes: [], effortLevels: [] },
@@ -1778,7 +1778,7 @@ describe('the seed keeps a restored explicit choice', () => {
 // display the remembered model rather than the first model of the remote catalog.
 it('uses the remembered remote model on the first draft frame', () => {
   const initial = callback<() => DeviceLinkDraftSelection>('deviceLinkInitial', {
-    usesDeviceCatalog: true, dlSel: null,
+    usesDeviceCatalog: true, dlSel: null, deviceDraftDefaultsReady: true,
     capabilities: {
       availableModels: ['default-model', 'remembered-model'].map(id => ({
         id, displayName: id, contextWindow: 1000, efforts: ['high'], defaultEffort: 'high',

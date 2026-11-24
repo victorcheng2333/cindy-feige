@@ -1,4 +1,4 @@
-import { isClaudeSubscriptionProviderId } from '../maker-host/subscription-account-kind.js';
+import { isClaudeSubscriptionProviderId, subscriptionAccountKind } from '../maker-host/subscription-account-kind.js';
 /**
  * The pending credential switch service of the desktop (register.ts): its assembly, with the route
  * persistence a switch ends with (persistRoute), and the Pi transaction a pending Pi switch applies
@@ -83,8 +83,11 @@ export function createPendingCredentialSwitchService(ports: PendingCredentialSwi
     withDeferredSelectionLock: withSendToSessionLock,
     applyPiPending: (sessionId, target, resolved, isCurrent) =>
       applyPiPendingSelection(sessionId, target, resolved, isCurrent),
-    applyClaudePending: (sessionId, target, resolved, isCurrent) =>
-      applyPiPendingSelection(sessionId, target, resolved, isCurrent),
+    applyClaudePending: async (sessionId, target, resolved, isCurrent) =>
+      subscriptionAccountKind(target.providerId) === 'claude' ||
+      subscriptionAccountKind(target.previousRoute?.providerId) === 'claude'
+        ? applyPiPendingSelection(sessionId, target, resolved, isCurrent)
+        : 'fallback',
     broadcastFailed: (payload) => {
       broadcastToAllWindows(MAKER_PUSH.SESSION_CREDENTIAL_SWITCH_FAILED, payload);
     },

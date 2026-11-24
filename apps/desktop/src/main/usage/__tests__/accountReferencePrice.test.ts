@@ -10,10 +10,14 @@ import { providerReferencePriceQuote, getModelPriceQuote, modelPricingKey } from
 const accountCatalog: Catalog = { ...BUNDLED_CATALOG, providers: [buildUserProvider({
     id: 'openai-account', name: 'Account', auth: { method: 'oauth', native: 'codex' },
     runtimes: { codex: { baseUrl: 'https://chatgpt.com/backend-api/codex', models: [{ id: 'gpt-5.6-luna', name: 'Luna' }] } },
-  }), buildUserProvider({ id: 'openai-api-account', name: 'API', runtimes: {
-    codex: { baseUrl: 'https://api.openai.com/v1', catalogPresetId: 'openai-api',
-      models: [{ id: 'gpt-6.1-sol', name: 'Sol' }] },
-  } }), buildUserProvider({ id: 'openai-api-discovered', name: 'API discovery price', runtimes: {
+  }), (() => {
+    const provider = buildUserProvider({ id: 'openai-api-account', name: 'API', runtimes: {
+      codex: { baseUrl: 'https://api.openai.com/v1', catalogPresetId: 'openai-api',
+        models: [{ id: 'gpt-6.1-sol', name: 'Sol' }] },
+    } });
+    for (const model of provider.models.codex ?? []) delete (model as { cost?: unknown }).cost;
+    return provider;
+  })(), buildUserProvider({ id: 'openai-api-discovered', name: 'API discovery price', runtimes: {
     codex: { baseUrl: 'https://api.openai.com/v1', catalogPresetId: 'openai-api',
       models: [{ id: 'gpt-6.1-sol', name: 'Sol', discoveredCost: { input: 0, output: 0.5 } }] },
   } }), buildUserProvider({ id: 'router-account', name: 'Router', runtimes: {
@@ -102,10 +106,10 @@ describe('independent subscription account reference prices', () => {
       .toEqual({ ...base, providerId: 'openai-api-account' });
     expect(getModelPriceQuote(getReferenceModelPricing({ at }), 'openai-api-account', 'gpt-6.1-sol', 'codex'))
       .toEqual({ ...base, providerId: 'openai-api-account' });
-    // An explicit connection discovery quote still wins over the public tariff.
+    // Dated Model Registry tariffs take precedence over static/discovered model.cost when active;
+    // discoveredCost remains the fallback before the registry tariff's effective date.
     expect(getModelPriceQuote(getReferenceModelPricing({ at }), 'openai-api-discovered', 'gpt-6.1-sol', 'codex'))
-      .toEqual({ providerId: 'openai-api-discovered', modelId: 'gpt-6.1-sol', currency: 'USD',
-        source: 'provider-reference', approximate: true, inputPerMtok: 0, outputPerMtok: 0.5 });
+      .toEqual({ ...base, providerId: 'openai-api-discovered' });
     const beforeRelease = getReferenceModelPricing({ at: '2020-01-01' });
     expect(getModelPriceQuote(beforeRelease, 'openai-api-account', 'gpt-6.1-sol', 'codex')).toBeUndefined();
     expect(getModelPriceQuote(beforeRelease, 'openai-api-discovered', 'gpt-6.1-sol', 'codex'))

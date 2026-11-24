@@ -402,7 +402,7 @@ export function TeammatesSection() {
   }
   const displayedChats = showAllChats ? visibleChats : previewChats;
   const collapsedAvatars = collapsed && showCollapsedAvatars;
-  const showIconStrip = viewMode === 'icons' || collapsedAvatars;
+  const showIconStrip = (!collapsed && viewMode === 'icons') || collapsedAvatars;
   const iconChats = visibleChats;
 
   useEffect(() => {

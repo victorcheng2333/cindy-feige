@@ -279,6 +279,7 @@ function makeDeps(host: ReturnType<typeof createRemoteAgentHost>, controller = C
 }
 
 beforeEach(() => {
+  vi.stubEnv('PATH', `${path.dirname(RG)}${path.delimiter}${process.env.PATH ?? ''}`);
   guestPermission.epoch++; guestPermission.status = 'active'; guestPermission.listeners.clear();
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cindy-ra-')));
   project = path.join(root, 'project');
@@ -293,6 +294,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   fs.rmSync(root, { recursive: true, force: true });
 });
 

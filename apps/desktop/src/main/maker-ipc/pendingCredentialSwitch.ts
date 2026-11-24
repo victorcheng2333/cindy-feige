@@ -162,7 +162,12 @@ export interface PendingCredentialSwitchDeps {
     isCurrent: () => boolean,
   ) => Promise<'applied' | 'deferred'>;
   /** Claude account changes use the same host transaction and failure rollback. */
-  applyClaudePending?: PendingCredentialSwitchDeps['applyPiPending'];
+  applyClaudePending?: (
+    sessionId: string,
+    target: PendingCredentialSwitch,
+    resolved: { model: string; providerId: string | null },
+    isCurrent: () => boolean,
+  ) => Promise<'applied' | 'deferred' | 'fallback'>;
   broadcastFailed?: (payload: {
     sessionId: string;
     reason: 'apply-failed' | 'rollback-failed';
@@ -373,32 +378,37 @@ export class PendingCredentialSwitchService {
           await this.failNativePending(sessionId, target, new Error('Native model route could not be revalidated'));
           return;
         }
+        let fellBack = false;
         try {
           const outcome = await applyNative(sessionId, target, {
             model: resolved.model ?? target.model,
             providerId: resolved.providerId,
           }, () => this.pending.get(sessionId) === target && this.ownerCurrent(target) && this.permitted(sessionId, target));
-          if (outcome === 'deferred' || this.pending.get(sessionId) !== target || !this.ownerCurrent(target) || !this.permitted(sessionId, target)) return;
-          this.pending.delete(sessionId);
-          this.clearRetry(sessionId);
-          try { this.deps.onApplied?.(sessionId); } catch (error) {
-            this.deps.logger?.warn('pending native switch queue wake failed', {
-              sessionId, error: error instanceof Error ? error.message : String(error),
-            });
-          }
-          try {
-            this.deps.broadcastApplied?.({
-              sessionId, model: resolved.model ?? target.model, providerId: resolved.providerId,
-            });
-          } catch (error) {
-            this.deps.logger?.warn('pending native switch applied broadcast failed', {
-              sessionId, error: error instanceof Error ? error.message : String(error),
-            });
+          if (outcome === 'fallback') {
+            fellBack = true;
+          } else {
+            if (outcome === 'deferred' || this.pending.get(sessionId) !== target || !this.ownerCurrent(target) || !this.permitted(sessionId, target)) return;
+            this.pending.delete(sessionId);
+            this.clearRetry(sessionId);
+            try { this.deps.onApplied?.(sessionId); } catch (error) {
+              this.deps.logger?.warn('pending native switch queue wake failed', {
+                sessionId, error: error instanceof Error ? error.message : String(error),
+              });
+            }
+            try {
+              this.deps.broadcastApplied?.({
+                sessionId, model: resolved.model ?? target.model, providerId: resolved.providerId,
+              });
+            } catch (error) {
+              this.deps.logger?.warn('pending native switch applied broadcast failed', {
+                sessionId, error: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         } catch (error) {
           await this.failNativePending(sessionId, target, error);
         }
-        return;
+        if (!fellBack) return;
       }
       // An unusable choice does not require retiring the current runtime.
       if (target.deferredSelection) {
