@@ -102,13 +102,26 @@ export interface AntigravityAgentDeps extends AgentDeps {
   openReadonlySqlite?: OpenReadonlySqlite;
 }
 
-function antigravityCapabilities(session: AcpSession): Capabilities {
+function antigravityPermissionModes(
+  modes: Capabilities['permissionModes'],
+  includeCindyAuto: boolean,
+): Capabilities['permissionModes'] {
+  const nativeModes = modes.filter(mode => isAntigravityPermissionMode(mode.id));
+  const result = nativeModes.some(mode => mode.id === 'default') ? [...nativeModes] : [defaultMode, ...nativeModes];
+  if (includeCindyAuto && !result.some(mode => mode.id === 'auto')) {
+    const fullAccessIdx = result.findIndex(mode => mode.id === 'bypassPermissions');
+    if (fullAccessIdx >= 0) result.splice(fullAccessIdx, 0, autoMode);
+    else result.push(autoMode);
+  }
+  return result;
+}
+
+function antigravityCapabilities(session: AcpSession, options?: { includeCindyAuto?: boolean }): Capabilities {
   const { capabilities } = session;
-  const nativeModes = capabilities.permissionModes.filter(mode => isAntigravityPermissionMode(mode.id));
   return {
     ...ANTIGRAVITY_CAPABILITIES,
     ...capabilities,
-    permissionModes: nativeModes.some(mode => mode.id === 'default') ? nativeModes : [defaultMode, ...nativeModes],
+    permissionModes: antigravityPermissionModes(capabilities.permissionModes, options?.includeCindyAuto ?? true),
     availableModels: describeAntigravityCatalog(capabilities.availableModels, session.modelVariantIds),
     memory: ANTIGRAVITY_CAPABILITIES.memory,
     // Read-only folders only widen Cindy review; writable ones need Agy's additionalDirectories.
@@ -398,7 +411,8 @@ export class AntigravityAgent extends BaseAgent {
       if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
       if (hosted && await antigravityRemoteAgentFellBack(stateDir, launchedAt, priorAcpLogs)) throw new AntigravityRemoteAgentUnavailableError();
       if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
-      if (!antigravityCapabilities(session).permissionModes.some(option => option.id === mode)) {
+      const capOptions = { includeCindyAuto: !hosted };
+      if (!antigravityCapabilities(session, capOptions).permissionModes.some(option => option.id === mode)) {
         mode = 'default';
       }
       const initialPermissionMode = mode;
@@ -418,8 +432,8 @@ export class AntigravityAgent extends BaseAgent {
       await session.setPermissionMode(wantsPlan ? 'plan' : mode);
       await setModel(opts.model, opts.effort);
       if (!resumeSessionId) await writeFile(marker, session.nativeId, { mode: 0o600 });
-      let liveCapabilities = this.buildCapabilities(antigravityCapabilities(session));
-      session.onCapabilitiesChange(() => { liveCapabilities = this.buildCapabilities(antigravityCapabilities(session)); });
+      let liveCapabilities = this.buildCapabilities(antigravityCapabilities(session, capOptions));
+      session.onCapabilitiesChange(() => { liveCapabilities = this.buildCapabilities(antigravityCapabilities(session, capOptions)); });
 
       const validate = (options: SendOptions) => {
         if (options.turnPermissionPolicy || options.toolsDisabled) {

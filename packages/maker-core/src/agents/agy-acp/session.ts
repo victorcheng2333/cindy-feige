@@ -743,8 +743,14 @@ export class AcpSession {
   /** Switches the agent's own mode when it offers one standing for this Cindy mode. */
   private async applyAgentMode(mode: PermissionMode): Promise<void> {
     const option = findModeOption(this.configOptions);
-    const nativeMode = mode === 'bypassPermissions' ? 'default' : mode;
     const modes = mapModeValues(option);
+    // When Agy does not advertise native Auto (e.g. fresh isolated state dir), local tasks
+    // with Cindy Auto-review keep Agy in Default so every tool request is reviewed by Cindy.
+    const nativeMode = mode === 'bypassPermissions'
+      ? 'default'
+      : (mode === 'auto' && this.reviewPermission && !modes.some(entry => entry.mode === 'auto')
+        ? 'default'
+        : mode);
     const mapped = modes.find(entry => entry.mode === nativeMode)
       ?? (nativeMode === 'default' ? modes.find(entry => entry.mode === 'ask') : undefined);
     if (!option || !mapped) {

@@ -182,21 +182,41 @@ describe('Agy ACP-only sessions', () => {
     });
   });
 
-  it('starts a fixed model with a saved effort and Auto on an agent that only offers Default', async () => {
+  it('keeps Auto via Cindy review when Agy only advertises Default', async () => {
     await withAgy(async start => {
       const child = new AgyProcess('fixed-model', 'Ready', false, {
         model: ['gpt-oss-120b-medium'], thought_level: [], mode: ['default'],
       });
       const handle = await start({ model: 'gpt-oss-120b-medium', effort: 'medium', permissionMode: 'auto' });
       expect(handle.model).toBe('gpt-oss-120b-medium');
-      expect(handle.initialPermissionMode).toBe('default');
+      expect(handle.initialPermissionMode).toBe('auto');
       expect(handle.negotiatedCapabilities).toMatchObject({
         effort: { supported: false },
         planMode: { supported: false },
         multimodal: { image: { supported: false } },
       });
-      expect(handle.negotiatedCapabilities?.permissionModes.map(mode => mode.id)).toEqual(['default', 'bypassPermissions']);
+      expect(handle.negotiatedCapabilities?.permissionModes.map(mode => mode.id)).toEqual(['default', 'auto', 'bypassPermissions']);
+      // Agy stays on native default while Cindy handles Auto-review.
       expect(child.requests.some(request => request.method === 'session/set_config_option')).toBe(false);
+      expect((await sendTurn(handle)).at(-1)).toMatchObject({ type: 'done' });
+    });
+  });
+
+  it('inserts Cindy Auto before Full access and switches Agy back to Default when native Auto is absent', async () => {
+    await withAgy(async start => {
+      const child = new AgyProcess('no-native-auto', 'Ready', false, {
+        model: ['gemini-4-neon'], thought_level: ['high'], mode: ['default', 'accept-edits', 'plan'],
+      });
+      const handle = await start({ model: 'gemini-4-neon', permissionMode: 'acceptEdits' });
+      expect(handle.initialPermissionMode).toBe('acceptEdits');
+      expect(handle.negotiatedCapabilities?.permissionModes.map(mode => mode.id)).toEqual([
+        'default', 'acceptEdits', 'auto', 'bypassPermissions',
+      ]);
+      await handle.setPermissionMode?.('auto');
+      expect(child.requests).toContainEqual(expect.objectContaining({
+        method: 'session/set_config_option',
+        params: expect.objectContaining({ configId: 'mode', value: 'default' }),
+      }));
       expect((await sendTurn(handle)).at(-1)).toMatchObject({ type: 'done' });
     });
   });
