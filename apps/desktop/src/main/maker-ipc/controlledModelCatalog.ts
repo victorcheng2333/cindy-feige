@@ -82,7 +82,10 @@ export function createControlledModelCatalogReader(deps: ControlledModelCatalogD
       && Object.keys(providerOptions).every(key => key === 'capabilities')
       && Array.isArray(providerOptions.capabilities)
       && providerOptions.capabilities.every((value: unknown) => typeof value === 'string'));
-    if (agentRead ? request.args.length !== 1 || !['claude-code', 'codex', 'pi'].includes(request.args[0] as string)
+    const allowedAgentKinds = isProviderShareAgentDeviceId(request.agentDeviceId)
+      ? ['claude-code', 'codex', 'pi']
+      : ['claude-code', 'codex', 'pi', 'antigravity'];
+    if (agentRead ? request.args.length !== 1 || !allowedAgentKinds.includes(request.args[0] as string)
       : request.channel === 'maker:provider:list' ? !validProviderOptions && !shareStatusRead : request.args.length !== 0) {
       throwIpcError('INVALID_PARAMS', 'Invalid model catalog arguments');
     }

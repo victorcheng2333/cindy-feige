@@ -60,7 +60,9 @@ describe('controlled model catalogs', () => {
   // fixtures cannot detect lost runtime rosters or reasoning/context metadata.
   it.each([
     { channel: 'maker:get-capabilities', args: ['pi'], value: { availableModels: [{ id: 'custom', contextWindow: 128000 }], effortLevels: ['high'] } },
-    { channel: 'maker:list-available-agents', args: [], value: ['pi', 'codex'] },
+    { channel: 'maker:get-capabilities', args: ['antigravity'], value: { availableModels: [{ id: 'gemini-4-neon' }], effortLevels: ['medium'] } },
+    { channel: 'maker:agent:status', args: ['antigravity'], value: { binaryReady: true } },
+    { channel: 'maker:list-available-agents', args: [], value: ['pi', 'codex', 'antigravity'] },
   ])('preserves the source response for $channel through the renderer and host readers', async ({ channel, args, value }) => {
     const f = fixture();
     f.invoke.mockResolvedValue({ ok: true, result: value });
@@ -70,6 +72,17 @@ describe('controlled model catalogs', () => {
     }) };
     await expect(invokeModelCatalog(link, modelCatalogKey('device-a', 'device-b')!, channel, args)).resolves.toEqual(value);
     expect(f.invoke).toHaveBeenCalledWith('device-a', channel, args, f.assertOwner);
+  });
+
+  // 2026-11-24 用户反馈：A 远控 B 时，B 上已连接的另一台自有电脑（M3-Air）的 Agy 模型全部置灰并提示读取失败。
+  // 生产入口：invokeModelCatalog → B 的 maker:model-catalog:read 代读 maker:get-capabilities(['antigravity'])；
+  // 自有电脑放行 antigravity，跨账号分享（share:*）仍拒绝。
+  it('refuses antigravity agent reads for provider shares while allowing own-computer sources', async () => {
+    const f = fixture();
+    await expect(
+      f.read({ ...request('share:b-only'), channel: 'maker:get-capabilities', args: ['antigravity'] }),
+    ).rejects.toThrow('INVALID_PARAMS');
+    expect(f.invoke).not.toHaveBeenCalled();
   });
 
   it.each([
