@@ -68,6 +68,7 @@ function setup(orcaRole: 'lead' | 'worker' | null, supported = true, agentDevice
     modelSelectionUsesWindowIntent: windowState.ownerRebuild === true,
     showTransientNotice: vi.fn(), t: (key: string) => key,
     writeSessionAgentSwitchIntent: write, setComposerModel: setModel, runControlAction,
+    runsOnTaskComputerOnly: () => false,
     setModelSheetOpen: vi.fn(), setModelSheetAgentKind: vi.fn(),
   };
   const names = ['selectComposerModelRow', 'selectUnifiedComposerModel', 'selectComposerFlatModel',

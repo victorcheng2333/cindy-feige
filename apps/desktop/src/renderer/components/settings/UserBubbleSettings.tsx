@@ -23,8 +23,6 @@ import { appearanceSettings } from './AppearanceSection.settings-search';
 
 const SATURATION = 0.75;
 const VALUE = 0.9;
-const HUE_RAINBOW =
-  'linear-gradient(to right,#e85a5a,#e8c85a,#5ae85a,#5ae8e8,#5a5ae8,#e85ae8,#e85a5a)';
 
 function hueToHex(h: number): `#${string}` {
   const f = (n: number) => {
@@ -33,6 +31,8 @@ function hueToHex(h: number): `#${string}` {
   };
   return `#${[f(5), f(3), f(1)].map((c) => Math.round(c * 255).toString(16).padStart(2, '0')).join('')}`;
 }
+
+const HUE_RAINBOW = `linear-gradient(to right,${[0, 60, 120, 180, 240, 300, 360].map(hueToHex).join(',')})`;
 
 function hexToHue(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));

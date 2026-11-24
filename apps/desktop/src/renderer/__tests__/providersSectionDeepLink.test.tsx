@@ -167,6 +167,7 @@ import { resetPluginEnginesStoreForTests } from '@/hooks/usePluginEngines';
 vi.mock('@/components/settings/useProviderSubscriptionCard', () => ({
   useProviderSubscriptionCard: vi.fn(() => null),
   useDeviceProviderSubscriptionCard: vi.fn(() => null),
+  useLiveQuotaForeground: vi.fn(() => true),
 }));
 
 vi.mock('@/components/settings/LlamaCppProviderDetail', () => ({ LlamaCppProviderDetail: () => null }));
@@ -232,6 +233,11 @@ beforeEach(() => {
     }),
   ];
   (window as unknown as { electronAPI: unknown }).electronAPI = {
+    deviceLink: {
+      onRemotePush: vi.fn(() => () => undefined),
+      onPresenceChanged: vi.fn(() => () => undefined),
+      onStatusChanged: vi.fn(() => () => undefined),
+    },
     subscriptionAccounts: {
       command: vi.fn(async ({ providerId }: { providerId: string }) => ({
         providerId, configured: false, strategy: 'least', accounts: [],
@@ -243,7 +249,12 @@ beforeEach(() => {
       setProviderPresentation: vi.fn(async () => ({ ok: true })),
       providerOAuthLogout: vi.fn(async () => ({ ok: true })),
       onProviderOAuthProgress: vi.fn(() => () => undefined),
-      auth: { logout: codexAuthActions.logout },
+      auth: {
+        logout: codexAuthActions.logout,
+        getState: vi.fn(async () => ({ authenticated: false })),
+        onStateChanged: vi.fn(() => () => undefined),
+        onLoginProgress: vi.fn(() => () => undefined),
+      },
       scanLocalCli: vi.fn(async () => ({ detections: [] })),
       llamaCppStatus: vi.fn(async () => ({ installed: false, supported: true, running: false, models: [] })),
       localModelStatus: vi.fn(async () => ({ kind: 'ready' })),
@@ -1348,7 +1359,12 @@ describe('ProvidersSection — 深链定位', () => {
       maker: {
         listProviders: vi.fn(async () => ({ providers: providersState.providers, dataOwnerId: 'owner', ownerGeneration: 1 })),
       setProviderPresentation: vi.fn(async () => ({ ok: true })),
-      auth: { logout: codexAuthActions.logout },
+      auth: {
+        logout: codexAuthActions.logout,
+        getState: vi.fn(async () => ({ authenticated: false })),
+        onStateChanged: vi.fn(() => () => undefined),
+        onLoginProgress: vi.fn(() => () => undefined),
+      },
       scanLocalCli: vi.fn(async () => ({ detections: [] })),
         requestProviderModelsAutoRefresh: vi.fn(async () => ({ ok: true })),
         providerOAuthLogin,

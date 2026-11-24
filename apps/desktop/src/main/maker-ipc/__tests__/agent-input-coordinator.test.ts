@@ -8390,11 +8390,11 @@ describe('AgentInputCoordinator steer transaction', () => {
     const projection = latestProjection(h.projections);
     expect(projection.steerUnsupported).toBe(true);
     expect(projection.error).toBeNull();
-    expect(projection.pendingQueue.map((item) => item.clientId)).toEqual(['q-2', 'q-1']);
+    expect(projection.pendingQueue.map((item) => item.clientId)).toEqual(['q-1', 'q-2']);
 
     await expect(h.coordinator.steer(sid, makeItem('q-3', 'urgent'), { fallbackToTurn: false })).resolves.toBe(false);
     expect(h.steerToAgent).not.toHaveBeenCalled();
-    expect(latestProjection(h.projections).pendingQueue.map((item) => item.clientId)).toEqual(['q-2', 'q-1']);
+    expect(latestProjection(h.projections).pendingQueue.map((item) => item.clientId)).toEqual(['q-1', 'q-2']);
   });
 
   it.each(['restore', 'screening', 'references', 'valid'] as const)('runs the host steer authority guard after %s', async boundary => {

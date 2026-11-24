@@ -3751,7 +3751,7 @@
         "authFailed": "Impossible de modifier la connexion à Agy. Vérifiez le réseau et réessayez.",
         "label": "Proxy réseau",
         "save": "Enregistrer",
-        "hint": "S’applique à Agy sur ce Mac. Laissez vide pour utiliser l’environnement de démarrage standard. Les réponses en cours conservent leur proxy.",
+        "hint": "S’applique à Agy sur ce Mac. Laissez vide pour utiliser l’environnement de démarrage standard. Les réponses en cours d'exécution conservent leur proxy.",
         "invalid": "Saisissez une URL de proxy HTTP, HTTPS ou SOCKS5 sans identifiants.",
         "saved": "Proxy enregistré.",
         "readFailed": "Impossible de lire le réglage du proxy.",

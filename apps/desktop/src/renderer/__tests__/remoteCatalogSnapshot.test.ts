@@ -43,17 +43,17 @@ describe('remote catalog refresh scheduling', () => {
       const routedReads = () => invoke.mock.calls.filter(([, channel]) => channel === CONTROLLED_MODEL_CATALOG_CHANNEL);
       const pending = [refreshRemoteCatalogSnapshot(firstDevice)];
       try {
-        await vi.waitFor(() => expect(routedReads()).toHaveLength(4));
+        await vi.waitFor(() => expect(routedReads()).toHaveLength(6));
         revision = 'latest';
         const secondDevice = firstDevice === host ? source : host;
         for (const device of [secondDevice, firstDevice, secondDevice]) {
           pending.push(refreshRemoteCatalogSnapshot(device));
           await Promise.resolve(); // Let any newly scheduled reader start.
         }
-        expect(routedReads()).toHaveLength(4);
+        expect(routedReads()).toHaveLength(6);
         firstRead.resolve();
         await Promise.all(pending);
-        expect(routedReads()).toHaveLength(8);
+        expect(routedReads()).toHaveLength(12);
         expect(routedReads().every(([device]) => device === host)).toBe(true);
         expect(capabilities.getCachedCapabilities('codex', target)?.availableModels[0]?.id).toBe('latest');
       } finally {
@@ -66,9 +66,9 @@ describe('remote catalog refresh scheduling', () => {
 
   // #12157 P2 / unit: a detached route can exist only in the refresh queue.
   it.each([
-    ['source retirement', 4],
-    ['host disconnect', 4],
-    ['direct-only denial', 8],
+    ['source retirement', 6],
+    ['host disconnect', 6],
+    ['direct-only denial', 12],
   ])('only reopens a detached route when allowed after %s', async (reason, expectedReads) => {
     const source = 'share:detached';
     const host = 'task-host';
@@ -88,7 +88,7 @@ describe('remote catalog refresh scheduling', () => {
     const routedReads = () => invoke.mock.calls.filter(([, channel]) => channel === CONTROLLED_MODEL_CATALOG_CHANNEL);
     const pending = [refreshRemoteCatalogSnapshot(source)];
     try {
-      await vi.waitFor(() => expect(routedReads()).toHaveLength(4));
+      await vi.waitFor(() => expect(routedReads()).toHaveLength(6));
       pending.push(refreshRemoteCatalogSnapshot(source));
       off();
       expect(providers.getInterestedDeviceProviderTargets(source)).not.toContain(route);
@@ -103,8 +103,8 @@ describe('remote catalog refresh scheduling', () => {
       firstRead.resolve();
       await Promise.all(pending);
       expect(routedReads()).toHaveLength(expectedReads);
-      expect(providers.getCachedDeviceProviders(route) !== null).toBe(expectedReads === 8);
-      expect(capabilities.getCachedCapabilities('codex', route) !== null).toBe(expectedReads === 8);
+      expect(providers.getCachedDeviceProviders(route) !== null).toBe(expectedReads === 12);
+      expect(capabilities.getCachedCapabilities('codex', route) !== null).toBe(expectedReads === 12);
     } finally {
       off();
       firstRead.resolve();
@@ -138,7 +138,7 @@ describe('remote catalog refresh scheduling', () => {
       holdSource = false;
       source.resolve();
       await Promise.all([first, queued]);
-      expect(invoke.mock.calls.length).toBe(reads + 5); // Provider plus four engines: only the live source's trailing read.
+      expect(invoke.mock.calls.length).toBe(reads + 6); // Provider plus five engines: only the live source's trailing read.
       expect(capabilities.getCachedCapabilities('codex', target)).toBeNull();
       expect(providers.getCachedDeviceProviders(target)).toBeNull();
     } finally { off(); }
@@ -164,7 +164,7 @@ describe('remote catalog refresh scheduling', () => {
       holdSource = true;
       const first = refreshRemoteCatalogSnapshot('share:a');
       await Promise.resolve(); // Start the blocked source read before queuing its trailing refresh.
-      expect(invoke.mock.calls.filter(([, channel]) => channel !== CONTROLLED_MODEL_CATALOG_CHANNEL)).toHaveLength(5);
+      expect(invoke.mock.calls.filter(([, channel]) => channel !== CONTROLLED_MODEL_CATALOG_CHANNEL)).toHaveLength(6);
       const queued = refreshRemoteCatalogSnapshot('share:a');
       providers.evictDeviceProviders('task-host');
       capabilities.evictDeviceCapabilities('task-host');
@@ -257,17 +257,17 @@ describe('remote catalog refresh scheduling', () => {
     vi.stubGlobal('window', { electronAPI: { deviceLink: { invoke } } });
     const refresh = refreshRemoteCatalogSnapshot;
     const first = refresh('old');
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(5));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(6));
     const obsolete = refresh('old');
     await refresh('healthy');
-    expect(invoke).toHaveBeenCalledTimes(10);
+    expect(invoke).toHaveBeenCalledTimes(12);
     providers.evictDeviceProviders('old');
     hold = false;
     await refresh('old');
-    expect(invoke).toHaveBeenCalledTimes(15);
+    expect(invoke).toHaveBeenCalledTimes(18);
     old.resolve();
     await Promise.all([first, obsolete]);
-    expect(invoke).toHaveBeenCalledTimes(15);
+    expect(invoke).toHaveBeenCalledTimes(18);
   });
 
   // Unit: source-change recovery must discard the old read's rejection as well as
@@ -309,17 +309,17 @@ describe('remote catalog refresh scheduling', () => {
       const providerEvents = vi.fn();
       const offProviders = providers.subscribeDeviceProviders('test', providerEvents);
       const initial = refreshRemoteCatalogSnapshot('test');
-      await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(5));
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(6));
       revision = 'new';
       const burst = Array.from({ length: 20 }, () => refreshRemoteCatalogSnapshot('test'));
-      expect(invoke).toHaveBeenCalledTimes(5);
+      expect(invoke).toHaveBeenCalledTimes(6);
       if (disconnect) {
         providers.evictDeviceProviders('test');
         capabilities.evictDeviceCapabilities('test');
       }
       first.resolve();
       await Promise.all([initial, ...burst]);
-      expect(invoke).toHaveBeenCalledTimes(disconnect ? 5 : 10);
+      expect(invoke).toHaveBeenCalledTimes(disconnect ? 6 : 12);
       expect(events.mock.calls.some(([event]) => event.status === 'error')).toBe(false);
       expect(providerEvents.mock.calls.some(([event]) => event.status === 'error')).toBe(false);
       const ready = events.mock.calls
@@ -329,7 +329,7 @@ describe('remote catalog refresh scheduling', () => {
       if (!disconnect) expect(ready[0].capabilities.availableModels[0].id).toBe('new');
       // The completed coordinator does not cache results or suppress a later refresh.
       await refreshRemoteCatalogSnapshot('test');
-      expect(invoke).toHaveBeenCalledTimes(disconnect ? 10 : 15);
+      expect(invoke).toHaveBeenCalledTimes(disconnect ? 12 : 18);
       expect(providers.getCachedDeviceProviders('test')?.providers).toEqual([]);
       offCapabilities();
       offProviders();

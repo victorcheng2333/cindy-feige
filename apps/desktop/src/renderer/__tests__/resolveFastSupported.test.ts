@@ -62,7 +62,7 @@ const restorationJs = ts.transpileModule(restorationSource, {
 }).outputText;
 const createRestorer = new Function('resolveFastSupported', 'env', `
   const {catalogDeviceId, remoteProviders, providers, currentModelAgentKind,
-    ccCaps, codexCaps, piCaps, cursorCaps, modelMemory} = env;
+    ccCaps, codexCaps, piCaps, cursorCaps, antigravityCaps, modelMemory} = env;
   const useCallback = fn => fn;
   ${restorationJs}
   return resolveFast;
@@ -79,7 +79,7 @@ const switchFastJs = ts.transpileModule(switchFastSource, {
 }).outputText;
 const resolveSwitchFast = new Function('resolveFastSupported', 'env', `
   const {deviceLinkDeviceId, remoteProviders, providers, targetAgentKind,
-    ccCaps, codexCaps, piCaps, providerId, newModelId, modelMemory,
+    ccCaps, codexCaps, piCaps, cursorCaps, antigravityCaps, providerId, newModelId, modelMemory,
     overrides, fromOtherCatalog} = env;
   ${switchFastJs}
   return targetFast;

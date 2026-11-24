@@ -96,7 +96,11 @@ export const providersSettings = defineSettings({
     targetId: 'settings-panel-providers',
     titleKey: TAB_LABEL_KEY['providers'],
     sectionKey: 'settings.sections.providers',
-    keywordKeys: ['settings.providers.remote.modelsTitle'],
+    keywordKeys: [
+      'settings.providers.remote.modelsTitle',
+      'settings.providers.agyProxy.label',
+      'settings.providers.agyProxy.hint',
+    ],
   },
   pluginProviders: {
     id: 'providers.pluginProviders',

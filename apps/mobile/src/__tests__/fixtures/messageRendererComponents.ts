@@ -7,6 +7,7 @@ import { i18n } from '@/i18n';
 import { logUnhandledRenderItem } from '@/session/assertNever';
 import { useFoldableExpandedState } from '@/session/expandedBlockMemory';
 import { buildMessageHierarchyLayout } from '@/session/messageHierarchyLayout';
+import { groupWorkActivityPhases } from '@/session/workActivityProjection';
 import { formatLocalizedDuration } from '@/session/sessionDurationFormat';
 import { iconSize, iconStroke, lightColors } from '@/theme/tokens';
 
@@ -50,7 +51,7 @@ export function collaborationRenderer() {
     useThemedStyles: () => ({}), makeStyles: () => ({}),
     useAuth: () => ({ accountGeneration: state.accountGeneration }),
     useRecyclingState: React.useState, useFoldableExpandedState,
-    buildMessageHierarchyLayout, formatLocalizedDuration, iconSize, iconStroke,
+    buildMessageHierarchyLayout, groupWorkActivityPhases, formatLocalizedDuration, iconSize, iconStroke,
     Bot: () => null, ChevronDown: () => null, ChevronRight: () => null,
     FoldableHeaderButton: Header, logUnhandledRenderItem,
     // 这些协作卡片都不是本机刚发出的消息。

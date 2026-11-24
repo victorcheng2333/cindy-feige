@@ -4775,7 +4775,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       // 鉴权门禁(review P2:goal 模式与普通创建同屏同 agent,同样要拦):goal.set 会吞掉
       // fireTurn 的鉴权失败,用户会被带进一个永远跑不起来的目标会话——比普通路径更需要
       // 提前拦截。判定与 create() 完全同款:缓存判死先现拉确认;ready/unknown 与建链并行重验。
-      if (agentAuthVerdict === 'unauthenticated') {
+      if (agentAuthVerdict === 'unauthenticated' && !goalModeRouted) {
         if ((await confirmAgentUnauthenticated(draft.agentKind, selectedDeviceId)).unauthenticated) {
           if (!isCurrentOwner()) return;
           if (!ensureDeviceAlive()) return;

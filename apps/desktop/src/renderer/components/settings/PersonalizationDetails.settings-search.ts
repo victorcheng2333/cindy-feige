@@ -57,6 +57,7 @@ export const personalizationDetailsSettings = defineSettings({
     titleKey: 'settings.memory.maker.label',
     sectionKey: 'settings.sections.memory',
     descriptionKey: 'settings.memory.maker.description',
+    keywordKeys: ['settings.memory.agent.managedByMakerHint'],
     textValues: (context) => ({
       harnesses: formatHarnessNameList(getMakerMemorySupportedHarnesses(), context?.locale),
     }),

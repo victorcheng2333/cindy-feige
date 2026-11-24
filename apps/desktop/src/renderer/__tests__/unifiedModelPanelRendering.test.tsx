@@ -5223,18 +5223,11 @@ describe('Teammate settings with the real model picker', () => {
     const view = render(<Editor />);
     fireEvent.click(view.container.querySelector('button[aria-haspopup="listbox"]')!);
     await screen.findByRole('listbox');
-    expect(document.querySelector('[data-unified-model-panel]')).toBeNull();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
-    await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-codex')); });
-    const row = within(screen.getByRole('listbox', { name: '模型列表' })).getByText('GPT-5.5').closest('[role="option"]')!;
-    // Keyboard input must target the focused row, after the harness menu closes.
-    // Dispatching a key to an unfocused row races Radix's focus restoration.
-    await act(async () => { (row as HTMLElement).focus(); });
-    await act(async () => { fireEvent.keyDown(row, { key: 'ArrowLeft' }); });
-    const flyout = await screen.findByRole('group', { name: 'GPT-5.5 newChat.modelSelector.options' });
-    await act(async () => { fireEvent.click(within(flyout).getByRole('button', { name: 'Fast Mode' })); });
-    await act(async () => { fireEvent.click(within(flyout).getByRole('option', { name: '低' })); });
-    await act(async () => { fireEvent.click(row); });
+    const flyout = await openRowFlyout('GPT-5.5');
+    const fast = await within(flyout).findByRole('button', { name: 'newChat.modelSelector.unified.fastTip' });
+    await act(async () => { fireEvent.click(fast); });
+    await act(async () => { fireEvent.keyDown(within(flyout).getByRole('slider'), { key: 'ArrowLeft' }); });
+    await act(async () => { fireEvent.click(within(rowFor('GPT-5.5')).getByText('GPT-5.5')); });
     await waitFor(() => expect(change).toHaveBeenCalled());
     expect(change).toHaveBeenLastCalledWith([expect.objectContaining({
       harness: 'codex', providerId: 'xd', model: 'gpt-5.5', effort: 'low', fastMode: true,
@@ -5253,12 +5246,12 @@ it('teammate fallback exposes supported Harness choices and preserves the primar
   const fallbacks = view.getByTestId('bot-model-fallbacks');
   fireEvent.click(fallbacks.querySelector('button[aria-haspopup="listbox"]')!);
   await screen.findByRole('listbox');
-  expect(document.querySelector('[data-unified-model-panel]')).toBeNull();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'newChat.agentSelect.trigger.aria' })); });
-  expect(screen.getByTestId('agent-select-option-codex')).toBeTruthy();
-  await act(async () => { fireEvent.click(screen.getByTestId('agent-select-option-cc')); });
-  const row = within(screen.getByRole('listbox', { name: '模型列表' })).getByText('GPT-5.6').closest('[role="option"]')!;
-  await act(async () => { fireEvent.click(row); });
+  const flyout = await openRowFlyout('GPT-5.6');
+  const cc = flyout.querySelector('[data-engine-capsule="cc"]') as HTMLElement;
+  const codex = flyout.querySelector('[data-engine-capsule="codex"]');
+  expect(cc).toBeTruthy(); expect(codex).toBeTruthy();
+  await act(async () => { fireEvent.click(cc); });
+  await act(async () => { fireEvent.click(within(rowFor('GPT-5.6')).getByText('GPT-5.6')); });
   expect(change).toHaveBeenLastCalledWith([primary, expect.objectContaining({ harness: 'claude', providerId: 'openai', model: 'chatgpt/gpt-5.6' })]);
 });
 

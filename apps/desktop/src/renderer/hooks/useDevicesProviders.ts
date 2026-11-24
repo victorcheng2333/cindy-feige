@@ -37,7 +37,11 @@ export function useDevicesProviders(
   const errorsRef = useRef(new Map<string, string>());
 
   useEffect(() => {
+    if (!retainDisplaySnapshot) displayRef.current.clear();
     const ids = idsKey ? idsKey.split('\n') : [];
+    for (const id of displayRef.current.keys()) {
+      if (!ids.includes(id)) displayRef.current.delete(id);
+    }
     if (!idsKey) return;
     let cancelled = false;
     const bump = () => {
@@ -76,7 +80,7 @@ export function useDevicesProviders(
     for (const deviceId of idsKey.split('\n')) {
       const cached = getCachedDeviceProviders(deviceId);
       if (cached && retainDisplaySnapshot) displayRef.current.set(deviceId, cached);
-      const display = cached ?? (retainDisplaySnapshot ? displayRef.current.get(deviceId) : undefined);
+      const display = cached ?? (retainDisplaySnapshot ? (displayRef.current.get(deviceId) ?? getDeviceProvidersDisplaySnapshot(deviceId)) : undefined);
       const failure = cached ? null : (errorsRef.current.get(deviceId) ?? null);
       // Rows retained through a temporary failure are shown as the bounded snapshot they are, not as
       // a failed source (no red mark, no greyed favorites).

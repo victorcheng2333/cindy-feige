@@ -927,18 +927,6 @@ export function UnifiedModelPickerSheet(
       title: t("models.unified.favorites"),
       rows: favoriteRows,
     });
-  const recommended =
-    all && p.existingSessionRoute && !otherChoiceActive
-      ? filtered
-          .filter((row) => row.selected || row.config.agent === p.agentKind)
-          .sort((a, b) => Number(b.selected) - Number(a.selected))
-      : [];
-  if (recommended.length)
-    groups.push({
-      key: "recommended",
-      title: t("models.unified.recommended"),
-      rows: recommended,
-    });
   if (all || shownFilter !== "favorites")
     for (const provider of p.providers) {
       const group = filtered.filter(

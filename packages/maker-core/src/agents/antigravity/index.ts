@@ -237,26 +237,17 @@ export class AntigravityAgent extends BaseAgent {
       const memoryEnabled = hosted
         ? opts.makerMemoryEnabled === true
         : !!manager && (opts.makerMemoryEnabled ?? this.agyDeps.runtimeConfig.makerMemoryEnabled ?? false);
-      const scopeKey = memoryEnabled && !hosted
-        ? opts.makerMemoryScopeKey ?? await resolveMemoryScopeKey(cwd)
-        : opts.makerMemoryScopeKey;
-      const memory = hosted
-        ? (memoryEnabled && manager && scopeKey
-          ? await loadMemoryContext({
-              manager,
-              scopeKey,
-              snapshot: opts.makerMemoryIndexSnapshot ?? '',
-              projectDirectory: opts.makerMemoryProjectDir,
-            })
-          : undefined)
-        : (scopeKey && manager
-          ? await loadMemoryContext({
-              manager,
-              scopeKey,
-              snapshot: opts.makerMemoryIndexSnapshot,
-              projectDirectory: opts.makerMemoryProjectDir,
-            })
-          : undefined);
+      const scopeKey = memoryEnabled
+        ? (hosted ? opts.makerMemoryScopeKey : opts.makerMemoryScopeKey ?? await resolveMemoryScopeKey(cwd))
+        : undefined;
+      const memory = memoryEnabled && scopeKey && manager
+        ? await loadMemoryContext({
+            manager,
+            scopeKey,
+            snapshot: hosted ? (opts.makerMemoryIndexSnapshot ?? '') : opts.makerMemoryIndexSnapshot,
+            projectDirectory: opts.makerMemoryProjectDir,
+          })
+        : undefined;
       const hostedRoster = hosted ? deviceHostedGhostRoster(hosted, opts.ghostRosterSnapshot, () => '') : '';
       const systemPromptAppend = [
         this.agyDeps.runtimeConfig.systemPrompt,

@@ -1241,9 +1241,14 @@ class Builder {
     return `${Math.round(remaining)}%`;
   }
 
+  private taskMoney(value: number) {
+    const currency = this.input.usage.scopes.local.currency ?? (this.input.moneySymbol === '¥' ? 'CNY' : 'USD');
+    return convertDisplayMoney({ amount: value, currency }, this.input.moneyDisplay ?? DEFAULT_MONEY_DISPLAY);
+  }
+
   private taskMoneySymbol(): string {
-    const currency = this.input.usage.scopes.local.currency;
-    return currency ? (currency === 'CNY' ? '¥' : '$') : this.input.moneySymbol;
+    const money = this.taskMoney(1);
+    return `${money.converted ? '≈ ' : ''}${money.currency === 'CNY' ? '¥' : '$'}`;
   }
 
   private statusTexts(): Record<MenubarStatusTextMode, string | null> {
@@ -1260,7 +1265,7 @@ class Builder {
       icon: null,
       lowest: tightest ? `${Math.round(this.remaining(tightest) ?? 0)}%` : hasSubscriptions ? '0%' : null,
       today: today ? this.money(today.money.reduce((sum, value) => sum + value, 0)) : null,
-      task: running.length ? this.money(running.reduce((sum, task) => sum + task.valueToday, 0), this.taskMoneySymbol()) : null,
+      task: running.length ? this.money(this.taskMoney(running.reduce((sum, task) => sum + task.valueToday, 0)).amount, this.taskMoneySymbol()) : null,
     };
   }
 
@@ -1269,7 +1274,7 @@ class Builder {
     const tasks = this.tasks();
     return {
       locale: this.input.locale,
-      moneySymbol: this.input.moneySymbol,
+      moneySymbol: this.usageSymbol(),
       taskMoneySymbol: this.taskMoneySymbol(),
       strings: this.input.uiStrings,
       statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(),

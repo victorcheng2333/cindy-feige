@@ -76,7 +76,7 @@ export function CompanionModelChain({ deviceId, values, onChange, onPick, disabl
         visibilityOverrides: catalog.modelVisibilityOverrides }).activeSourceId;
       const provider = routeProviders.find(item => item.id === providerId);
       title = (provider && findCatalogModel(provider, route.model, agent)?.name) ?? route.model;
-      detail = [provider ? mobileProviderAccountTitle(provider) : route.providerId, remote?.name,
+      detail = [provider ? mobileProviderAccountTitle(provider, provider.openAiAccount?.identity ?? provider.subscriptionAccount?.identity) : route.providerId, remote?.name,
         route.harness === 'claude' ? 'Claude Code' : route.harness === 'codex' ? 'Codex' : 'Pi',
         effort, route.fastMode ? t(route.fastMode === 'ultrafast' ? 'models.options.speed.ultrafast' : 'models.options.fastMode') : '']
         .filter(Boolean).join(' · ');

@@ -16,20 +16,30 @@ import { pruneSessionContextWindowBudget } from './session-context-budget-store.
 
 import { getDbClient } from '../localDb/client/current.js';
 import { captureDataOwnerBroadcastScope } from '../device-link/broadcast-tap.js';
-import { broadcastSessionPatched } from '../localDb/ipc/sessions.js';
 import { captureNativeHistoryBackupCleanup } from '../remote-agent/controller/nativeHistoryBackup.js';
 import { OwnerSessionStorage } from '../localDb/sessionStorageAdapter.js';
 import { sessions } from '../localDb/schema.js';
 import { DESKTOP_VISIBLE_SESSION_SOURCES } from '../../shared/sessionSource.js';
 
+export interface DesktopSessionStorageHooks {
+  broadcastSessionPatched?: (
+    sessionId: string,
+    patch: Record<string, unknown>,
+    ownerScope?: ReturnType<typeof captureDataOwnerBroadcastScope>,
+  ) => void;
+}
+
 export class DesktopSessionStorage extends OwnerSessionStorage {
-  constructor() {
+  private readonly hooks?: DesktopSessionStorageHooks;
+
+  constructor(hooks?: DesktopSessionStorageHooks) {
     super({
       db: getDbClient,
       pruneSessionContextBudget: (sessionId) => {
         pruneSessionContextWindowBudget(sessionId);
       },
     });
+    this.hooks = hooks;
   }
 
   override async update(id: string, patch: Parameters<OwnerSessionStorage['update']>[1]) {
@@ -37,7 +47,7 @@ export class DesktopSessionStorage extends OwnerSessionStorage {
     const scope = patch.permissionMode !== undefined ? captureDataOwnerBroadcastScope() : undefined;
     const result = await super.update(id, patch);
     cleanup?.();
-    if (scope) broadcastSessionPatched(id, { permissionMode: result.permissionMode }, scope);
+    if (scope) this.hooks?.broadcastSessionPatched?.(id, { permissionMode: result.permissionMode }, scope);
     return result;
   }
 

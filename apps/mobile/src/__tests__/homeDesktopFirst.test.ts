@@ -505,7 +505,7 @@ describe('mobile home desktop-first surface', () => {
     expect(vendorIconSource).toContain("import { MobileAgentMark } from './MobileAgentMark';");
     // vendor → Agent mark 的映射要带上 pi,不能把 π 吞成 Claude 脸。
     expect(vendorIconSource).toContain(
-      "const agentKind: AgentMarkKind = vendor === 'cursor' || vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';",
+      "const agentKind: AgentMarkKind = vendor === 'antigravity' || vendor === 'cursor' || vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';",
     );
     expect(vendorIconSource).toContain('<MobileAgentMark agentKind={agentKind} color={color} size={size} />');
     expect(vendorIconSource).not.toContain('viewBox="136 137 282 158"');
@@ -661,7 +661,6 @@ describe('mobile home desktop-first surface', () => {
     expect(projectRowSource).toContain('<Folder');
     expect(projectRowSource).toContain('project.sessionCount');
     expect(projectRowSource).toContain('home.projectViewAll');
-    expect(projectRowSource).not.toContain('<SquarePen');
     expect(projectRowSource).not.toContain('<Ellipsis');
     expect(projectRowSource).not.toContain('project.pendingInteractionCount');
     // 收起组头汇总对齐桌面 ProjectNode:仅收起时计算,运行态走图标呼吸,右槽只放一颗点。

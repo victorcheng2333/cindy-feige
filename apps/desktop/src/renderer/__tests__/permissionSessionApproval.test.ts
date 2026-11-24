@@ -385,7 +385,7 @@ describe('PermissionPrompt source contract', () => {
   );
 
   it('only renders Always allow for session when session suggestions exist', () => {
-    expect(source).toMatch(/canAlwaysAllowForSession\s*&&/);
+    expect(source).toMatch(/canRemember\s*&&/);
   });
 
   it('uses maker-provided session-scoped suggestions without rewriting vendor payloads', () => {

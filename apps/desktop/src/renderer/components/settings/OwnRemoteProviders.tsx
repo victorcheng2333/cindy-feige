@@ -151,11 +151,16 @@ export function useOwnRemoteProviders(): readonly OwnRemoteProvider[] {
 }
 
 function RemoteProviderIcon({ provider, size }: { provider: ProviderView; size: number }) {
+  const logoKind = provider.logoKind ?? (
+    provider.auth?.native === 'claude' ? 'anthropic'
+      : provider.auth?.native === 'codex' ? 'openai'
+      : undefined
+  );
   return (
     <RemoteSourceMark markSize={size}>
       <CustomProviderIcon svg={provider.customIcon} size={size}>
-        {isProviderLogoKind(provider.logoKind) || hasProviderLogo(provider.id, provider.routing) ? (
-          <ProviderLogoMark providerId={provider.id} routing={provider.routing} logoKind={provider.logoKind} size={size} />
+        {isProviderLogoKind(logoKind) || hasProviderLogo(provider.id, provider.routing) ? (
+          <ProviderLogoMark providerId={provider.id} routing={provider.routing} logoKind={logoKind} size={size} />
         ) : (
           <span className="text-15 font-medium leading-none">{providerMonogram(provider.name)}</span>
         )}

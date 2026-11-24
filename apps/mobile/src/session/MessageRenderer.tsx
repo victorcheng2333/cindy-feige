@@ -5272,8 +5272,8 @@ function MobileWorkPhaseGroup({
       onControlledToggle={toggleExpanded}
       title={title}
       leadingIcon={phase.status === 'running'
-        ? <CompactActivityIndicator color={colors.textTertiary} size={13} />
-        : <Sparkles color={colors.textTertiary} size={13} strokeWidth={iconStroke.regular} />
+        ? <CompactActivityIndicator color={colors.textTertiary} size={iconSize.sm} />
+        : <Sparkles color={colors.textTertiary} size={iconSize.sm} strokeWidth={iconStroke.regular} />
       }
       layout={layout}
       testID="message.workPhaseToggle"

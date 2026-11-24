@@ -193,10 +193,12 @@ import {
 } from './auth-adapters.js';
 import { syncOpenAiMediaAfterCodexAuthChange } from './model-discovery/openai-media.js';
 import {
+  DesktopSessionStorage,
   desktopSessionStorage,
   readCodexHistoryHasProductPrompt,
   writeCodexHistoryHasProductPrompt,
 } from './session-storage.js';
+import { broadcastSessionPatched } from '../localDb/ipc/sessions.js';
 import { desktopMakerLogger } from './logger-adapter.js';
 import { guardedOutboundFetch } from './outbound-fetch.desktop.js';
 import { captureCodexLocalAuthPolicy, resolveConnectedDefaultProviderIdForModel } from './provider-route.js';
@@ -2571,7 +2573,7 @@ export function getMaker(): Maker {
     _maker = new Maker({
       createOneShotUsageRecorder,
       agents: makerAgents,
-      storage: desktopSessionStorage,
+      storage: new DesktopSessionStorage({ broadcastSessionPatched }),
       logger: desktopMakerLogger,
       // Agent 在同账号另一台电脑上运行、任务与文件留在本机(见 remote-agent/)。
       startDeviceAgentSession: createDeviceAgentStarter({

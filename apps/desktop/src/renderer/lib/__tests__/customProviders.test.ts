@@ -816,7 +816,7 @@ describe('appendDiscoveredCustomProviderModels', () => {
     );
     expect(result).toEqual({
       models: [
-        { id: 'new', name: 'New', discoveredMetadata: { name: 'New' }, listedUpstream: true },
+        { id: 'new', name: 'New', defaultEnabled: false, discoveredMetadata: { name: 'New' }, listedUpstream: true },
         { id: 'kept', name: 'Kept', nameExplicit: true, discoveredMetadata: { name: 'New name' } },
       ],
       addedIds: ['new'],
@@ -846,9 +846,9 @@ describe('appendDiscoveredCustomProviderModels', () => {
         discoveredMetadata: { name: 'Big', contextWindow: 1_000_000 },
         listedUpstream: true,
       },
-      { id: 'plain', name: 'Plain', discoveredMetadata: { name: 'Plain' }, listedUpstream: true },
+      { id: 'plain', name: 'Plain', defaultEnabled: false, discoveredMetadata: { name: 'Plain' }, listedUpstream: true },
       // 非法值不落盘,回落保守默认
-      { id: 'bogus', name: 'Bogus', discoveredMetadata: { name: 'Bogus' }, listedUpstream: true },
+      { id: 'bogus', name: 'Bogus', defaultEnabled: false, discoveredMetadata: { name: 'Bogus' }, listedUpstream: true },
     ]);
   });
 });

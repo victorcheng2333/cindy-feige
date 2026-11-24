@@ -65,7 +65,7 @@ function newHarness(text = '/goal target', overrides: (bindings: Record<string, 
     prepareWorktreeCreateIntent: () => ({ applicable: false, enabled: false }), isWorktreeCreateIntentCurrent: () => true,
     setCreating: noop, setGoalBusy: noop, auth: { user: { id: 'test-user' } },
     getMobileAuthOwner, isMobileAuthOwnerCurrent, captureNewSessionOwner,
-    agentAuthVerdict: 'ready', applyRemoteAgentPick: (value: unknown) => value,
+    agentAuthVerdict: 'ready', applyRemoteAgentPick: (value: unknown) => value, newSessionPreferences: {},
     // Built-in drafts only: no plugin engine picked.
     pluginEnginePick: null, pluginEngineWorktreeUnsupported: false, applyPluginEnginePick: (value: unknown) => value,
     createNewSessionId: () => 'new-goal-task', saveNewSessionPreferences: noop,
@@ -131,6 +131,7 @@ function existingHarness(args = 'target') {
     composerAnnotationsRef: { current: null }, setAttachments: noop, setAttachmentError: noop,
     voiceDictionaryLearningTrackerRef: { current: null }, formatRemoteError: String,
     getPendingCompanionReplyQuote: () => null, clearSentCompanionReplyQuote: noop,
+    supportsSameTurnSteer: () => true,
   };
   bindings.setSending = vi.fn((value: boolean) => { bindings.sending = value; });
   bindings.applyComposerDocument = vi.fn((doc: typeof initial) => { bindings.composerDocumentRef.current = doc; });

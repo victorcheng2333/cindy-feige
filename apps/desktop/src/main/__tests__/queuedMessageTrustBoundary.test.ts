@@ -23,6 +23,7 @@ describe('queued IPC host policy boundary', () => {
   it.each([false, true])('strips caller tool policy with device-link=%s', (remote) => {
     const validate = runInNewContext(compiled, {
       isDeviceLinkInvoke: () => remote,
+      requireAgentKind: (value: unknown) => value,
       requireSessionRefs: () => undefined,
       requireTrustedReferenceContexts: () => undefined,
       throwIpcError: (_code: string, message: string) => { throw new Error(message); },

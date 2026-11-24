@@ -65,6 +65,7 @@ function harness() {
     assertSharedTaskInteractionResolveCurrent,
     setSharedTaskInteractionReader,
     isPluginSetupInteractionDecision: () => false,
+    isAcpPermissionDecisionAvailable: () => false,
     assertResolveInteractionOrigin: vi.fn(), isPendingDesktopOnlyConfirmation: () => false,
     issueConfirmBridge: { pendingSnapshots: () => [] },
     pendingInteractionResolvers: entries,

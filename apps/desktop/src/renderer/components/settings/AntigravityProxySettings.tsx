@@ -45,10 +45,25 @@ export function AntigravityProxySettings({ onChanged, ownerId, generation }: { o
         {t('settings.providers.agyProxy.label')}
       </label>
       <div className="flex flex-wrap items-center gap-2">
-        <SettingsTextInput id={inputId} value={draft} onChange={value => { setDraft(value); setMessage(null); }}
-          placeholder="http://127.0.0.1:7890" size="sm" mono autoComplete="off"
-          disabled={saved === null || busy} className="min-w-0 flex-1" />
-        <Button type="submit" variant="secondary" size="sm" disabled={saved === null || busy || draft.trim() === saved}>
+        <SettingsTextInput
+          data-settings-search-action="Enter the Agy network proxy address in the provider settings"
+          id={inputId}
+          value={draft}
+          onChange={value => { setDraft(value); setMessage(null); }}
+          placeholder="http://127.0.0.1:7890"
+          size="sm"
+          mono
+          autoComplete="off"
+          disabled={saved === null || busy}
+          className="min-w-0 flex-1"
+        />
+        <Button
+          data-settings-search-action="Save the Agy network proxy address in the provider settings"
+          type="submit"
+          variant="secondary"
+          size="sm"
+          disabled={saved === null || busy || draft.trim() === saved}
+        >
           {t('settings.providers.agyProxy.save')}
         </Button>
       </div>

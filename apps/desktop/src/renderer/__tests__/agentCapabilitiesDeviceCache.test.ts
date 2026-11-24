@@ -622,23 +622,27 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     stubElectron();
     const claudeListener = vi.fn();
     const codexListener = vi.fn();
-    mod.subscribeDeviceCapabilities('dev-1', 'claude-code', claudeListener);
-    mod.subscribeDeviceCapabilities('dev-1', 'codex', codexListener);
+    const offClaude = mod.subscribeDeviceCapabilities('dev-1', 'claude-code', claudeListener);
+    const offCodex = mod.subscribeDeviceCapabilities('dev-1', 'codex', codexListener);
+    try {
+      await mod.prefetchDeviceCapabilities('dev-1');
 
-    await mod.prefetchDeviceCapabilities('dev-1');
-
-    expect(claudeListener).toHaveBeenCalledWith({
-      status: 'ready',
-      capabilities: expect.objectContaining({
-        availableModels: [expect.objectContaining({ displayName: 'dev-1:claude-code' })],
-      }),
-    });
-    expect(codexListener).toHaveBeenCalledWith({
-      status: 'ready',
-      capabilities: expect.objectContaining({
-        availableModels: [expect.objectContaining({ displayName: 'dev-1:codex' })],
-      }),
-    });
+      expect(claudeListener).toHaveBeenCalledWith({
+        status: 'ready',
+        capabilities: expect.objectContaining({
+          availableModels: [expect.objectContaining({ displayName: 'dev-1:claude-code' })],
+        }),
+      });
+      expect(codexListener).toHaveBeenCalledWith({
+        status: 'ready',
+        capabilities: expect.objectContaining({
+          availableModels: [expect.objectContaining({ displayName: 'dev-1:codex' })],
+        }),
+      });
+    } finally {
+      offClaude();
+      offCodex();
+    }
   });
 
   it('revision 后新能力先完成、旧能力后完成时只通知并保留新快照', async () => {
@@ -650,41 +654,45 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     });
     const claudeListener = vi.fn();
     const codexListener = vi.fn();
-    mod.subscribeDeviceCapabilities('dev-1', 'claude-code', claudeListener);
-    mod.subscribeDeviceCapabilities('dev-1', 'codex', codexListener);
+    const offClaude = mod.subscribeDeviceCapabilities('dev-1', 'claude-code', claudeListener);
+    const offCodex = mod.subscribeDeviceCapabilities('dev-1', 'codex', codexListener);
+    try {
+      const stale = mod.prefetchDeviceCapabilities('dev-1');
+      mod.evictDeviceCapabilities('dev-1');
+      const fresh = mod.prefetchDeviceCapabilities('dev-1');
+      const kinds = ['claude', 'codex', 'pi', 'cursor', 'antigravity'];
+      expect(resolvers).toHaveLength(kinds.length * 2);
+      for (const [index, kind] of kinds.entries())
+        resolvers[index + kinds.length](caps(`fresh:${kind}`));
+      await fresh;
+      for (const [index, kind] of kinds.entries())
+        resolvers[index](caps(`stale:${kind}`));
+      await stale;
 
-    const stale = mod.prefetchDeviceCapabilities('dev-1');
-    mod.evictDeviceCapabilities('dev-1');
-    const fresh = mod.prefetchDeviceCapabilities('dev-1');
-    const kinds = ['claude', 'codex', 'pi', 'cursor', 'antigravity'];
-    expect(resolvers).toHaveLength(kinds.length * 2);
-    for (const [index, kind] of kinds.entries())
-      resolvers[index + kinds.length](caps(`fresh:${kind}`));
-    await fresh;
-    for (const [index, kind] of kinds.entries())
-      resolvers[index](caps(`stale:${kind}`));
-    await stale;
-
-    expect(claudeListener).toHaveBeenNthCalledWith(1, { status: 'loading' });
-    expect(codexListener).toHaveBeenNthCalledWith(1, { status: 'loading' });
-    expect(claudeListener).toHaveBeenNthCalledWith(2, {
-      status: 'ready',
-      capabilities: expect.objectContaining({
-        availableModels: [expect.objectContaining({ displayName: 'fresh:claude' })],
-      }),
-    });
-    expect(codexListener).toHaveBeenNthCalledWith(2, {
-      status: 'ready',
-      capabilities: expect.objectContaining({
-        availableModels: [expect.objectContaining({ displayName: 'fresh:codex' })],
-      }),
-    });
-    expect(mod.getCachedCapabilities('claude-code', 'dev-1')?.availableModels[0].displayName).toBe(
-      'fresh:claude',
-    );
-    expect(mod.getCachedCapabilities('codex', 'dev-1')?.availableModels[0].displayName).toBe(
-      'fresh:codex',
-    );
+      expect(claudeListener).toHaveBeenNthCalledWith(1, { status: 'loading' });
+      expect(codexListener).toHaveBeenNthCalledWith(1, { status: 'loading' });
+      expect(claudeListener).toHaveBeenNthCalledWith(2, {
+        status: 'ready',
+        capabilities: expect.objectContaining({
+          availableModels: [expect.objectContaining({ displayName: 'fresh:claude' })],
+        }),
+      });
+      expect(codexListener).toHaveBeenNthCalledWith(2, {
+        status: 'ready',
+        capabilities: expect.objectContaining({
+          availableModels: [expect.objectContaining({ displayName: 'fresh:codex' })],
+        }),
+      });
+      expect(mod.getCachedCapabilities('claude-code', 'dev-1')?.availableModels[0].displayName).toBe(
+        'fresh:claude',
+      );
+      expect(mod.getCachedCapabilities('codex', 'dev-1')?.availableModels[0].displayName).toBe(
+        'fresh:codex',
+      );
+    } finally {
+      offClaude();
+      offCodex();
+    }
   });
 });
 

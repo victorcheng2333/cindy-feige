@@ -558,7 +558,7 @@ describe('Cross-harness personalization & memory contract', () => {
         reviewMode: true,
       });
       if (kind === 'antigravity') {
-        await expect(review).rejects.toThrow('ordinary local desktop task');
+        await expect(review).rejects.toThrow('Agy requires an ordinary desktop task.');
       } else {
         const delivery = await review;
         expect(delivery.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);
@@ -632,7 +632,7 @@ describe('Cross-harness personalization & memory contract', () => {
         runtimeMakerMemoryEnabled: true,
       });
       if (kind === 'antigravity') {
-        await expect(reviewWithRuntimeFallback).rejects.toThrow('ordinary local desktop task');
+        await expect(reviewWithRuntimeFallback).rejects.toThrow('Agy requires an ordinary desktop task.');
       } else {
         const delivery = await reviewWithRuntimeFallback;
         expect(delivery.deliveredPromptText).not.toContain(USER_PROMPT_CANARY);

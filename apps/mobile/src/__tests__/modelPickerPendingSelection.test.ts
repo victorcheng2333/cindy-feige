@@ -13,9 +13,11 @@ function picker() {
   const js = ts.transpileModule(fn.getText(source).replace('export function', 'function'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
   }).outputText;
-  return new Function('React', 'UnifiedModelPickerSheet', 'LegacyModelPickerSheet',
+  return new Function('React', 'useState', 'UnifiedModelPickerSheet', 'LegacyModelPickerSheet',
     `${js}; return ModelPickerSheet;`)(
-    { createElement: (type: string, props: unknown) => ({ type, props }) }, 'unified', 'legacy',
+    { createElement: (type: string, props: unknown) => ({ type, props }) },
+    (init: unknown) => [typeof init === 'function' ? (init as () => unknown)() : init, () => {}],
+    'unified', 'legacy',
   );
 }
 

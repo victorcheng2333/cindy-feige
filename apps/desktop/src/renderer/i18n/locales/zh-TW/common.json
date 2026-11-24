@@ -3659,13 +3659,13 @@
       "agyProxy": {
         "logoutShared": "登出後，終端機中的 Agy 也會登出。",
         "authFailed": "無法變更 Agy 登入狀態。請檢查網路後再試一次。",
-        "label": "網路代理",
+        "label": "網路 Proxy",
         "save": "儲存",
-        "hint": "僅用於這台 Mac 上的 Agy。留空時使用標準啟動環境變數。正在執行的輪次會繼續使用原代理。",
-        "invalid": "請輸入不含帳號密碼的 HTTP、HTTPS 或 SOCKS5 代理位址。",
-        "saved": "代理已儲存。",
-        "readFailed": "無法讀取代理設定。",
-        "saveFailed": "無法儲存代理設定。"
+        "hint": "僅用於這台 Mac 上的 Agy。留空時使用標準啟動環境變數。正在執行的輪次會繼續使用原 Proxy。",
+        "invalid": "請輸入不含帳號密碼的 HTTP、HTTPS 或 SOCKS5 Proxy 位址。",
+        "saved": "Proxy 已儲存。",
+        "readFailed": "無法讀取 Proxy 設定。",
+        "saveFailed": "無法儲存 Proxy 設定。"
       },
       "llamacpp": {
         "ownedElsewhere": "模型服務正在另一個 Cindy 執行個體中執行。請在那裡下載模型或修改上下文，或先停止該執行個體的服務。",

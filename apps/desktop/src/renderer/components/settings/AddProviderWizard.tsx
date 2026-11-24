@@ -1958,7 +1958,14 @@ export function AddProviderWizard({
                 ))}
                 {/* Fork-managed Claude connections remain explicitly selectable outside the pool. */}
                 {sel.provider.id === 'anthropic' && (
-                  <Button variant="secondary" size="lg" type="button" disabled={loggingIn} onClick={() => void handleAuthorize()}>
+                  <Button
+                    data-settings-search-action="Add an independent Anthropic account in this wizard"
+                    variant="secondary"
+                    size="lg"
+                    type="button"
+                    disabled={loggingIn}
+                    onClick={() => void handleAuthorize()}
+                  >
                     {t('settings.providers.openai.addIndependentAccount')}
                   </Button>
                 )}
@@ -2064,7 +2071,12 @@ export function AddProviderWizard({
               )}
               {sel.preset.id === 'google-vertex' && (
                 <div className="flex flex-col gap-2">
-                  <Button variant="secondary" disabled={vertexSelecting} onClick={chooseVertexFile}>
+                  <Button
+                    data-settings-search-action="Choose a Google Vertex service account file in this wizard"
+                    variant="secondary"
+                    disabled={vertexSelecting}
+                    onClick={chooseVertexFile}
+                  >
                     {t('settings.providers.wizard.vertex.chooseFile')}
                   </Button>
                   {vertexSelection && <>
@@ -2072,13 +2084,17 @@ export function AddProviderWizard({
                     <InfoLine text={t('settings.providers.wizard.vertex.fileNote')} />
                     <label className="flex flex-col gap-1.5">
                       <span className="text-12" style={{ color: 'var(--text-secondary)' }}>{t('settings.providers.wizard.vertex.project')}</span>
-                      <SettingsTextInput value={vertexSelection.project} onChange={project => setVertexSelection({ ...vertexSelection, project })} size="md" mono />
+                      <SettingsTextInput data-settings-search-action="Enter the Google Vertex project ID in this wizard" value={vertexSelection.project} onChange={project => setVertexSelection({ ...vertexSelection, project })} size="md" mono />
                     </label>
                     <label className="flex flex-col gap-1.5">
                       <span className="text-12" style={{ color: 'var(--text-secondary)' }}>{t('settings.providers.wizard.vertex.location')}</span>
-                      <SettingsTextInput value={vertexLocation} onChange={setVertexRegion} size="md" mono />
+                      <SettingsTextInput data-settings-search-action="Enter the Google Vertex location in this wizard" value={vertexLocation} onChange={setVertexRegion} size="md" mono />
                     </label>
-                    <Button variant="secondary" onClick={() => { setVertexSelection(null); setPresetBaseUrls({}); }}>
+                    <Button
+                      data-settings-search-action="Switch from Google Vertex service account file to API key in this wizard"
+                      variant="secondary"
+                      onClick={() => { setVertexSelection(null); setPresetBaseUrls({}); }}
+                    >
                       {t('settings.providers.wizard.vertex.useApiKey')}
                     </Button>
                   </>}

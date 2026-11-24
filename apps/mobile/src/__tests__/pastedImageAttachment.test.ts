@@ -89,7 +89,7 @@ describe('粘贴接线源码断言(防重构掉线)', () => {
       // 粘贴已迁入 useMobileLocalAttachments 乐观管线,页面经 hook 解构别名接线。
       expect(source, page).toContain('addPastedImages: addPastedImageAttachments');
       // 已有任务的页面在粘贴时还会顺带预热 Agent,所以只锁住最终交给 hook 的那一步。
-      expect(source, page).toMatch(/onPasteImages=\{\(uris\) => [\s\S]{0,80}?void addPastedImageAttachments\(uris\)/);
+      expect(source, page).toMatch(/onPasteImages=\{(?:canAttachToDraft \? )?\(uris\) => [\s\S]{0,80}?void addPastedImageAttachments\(uris\)/);
     }
   });
 
@@ -107,8 +107,8 @@ describe('粘贴接线源码断言(防重构掉线)', () => {
       // 已有任务页的实际回调、占位与发送锁已迁到 composerRichInputLifecycle
       // 的挂载编辑器行为测试；不能再要求它无条件直通占位回调。
       if (page === 'app/sessions/new.tsx') {
-        expect(source, page).toContain('onPasteImagesLoading={beginPastePlaceholders}');
-        expect(source, page).toContain('onPasteImagesLoadFailed={failPastePlaceholders}');
+        expect(source, page).toContain('onPasteImagesLoading={canAttachToDraft ? beginPastePlaceholders : undefined}');
+        expect(source, page).toContain('onPasteImagesLoadFailed={canAttachToDraft ? failPastePlaceholders : undefined}');
       }
       expect(source, page).toContain('pastePlaceholderCount={pastePlaceholderCount}');
     }

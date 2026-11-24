@@ -192,16 +192,18 @@ export function appendDiscoveredCustomProviderModels(
   // (nameExplicit) and routed extra-catalog rows are never marked, so they can never
   // be offered as withdrawn later.
   const listed = new Set(discovered.map((model) => model.id));
+  const known = new Set(prior.map((model) => model.id));
   const models = mergeDiscoveredRuntimeModels(prior, discovered).map((model) => {
-    if (!listed.has(model.id)) return model;
+    const next = !known.has(model.id) ? { ...model, defaultEnabled: false } : model;
+    if (!listed.has(next.id)) return next;
     // Listed again: any earlier absence receipt is void.
-    const { missingUpstream: _missing, ...rest } = model;
+    const { missingUpstream: _missing, ...rest } = next;
     return !rest.nameExplicit && !rest.route ? { ...rest, listedUpstream: true as const } : rest;
   });
-  const known = new Set(existing.map((model) => model.id));
+  const existingIds = new Set(existing.map((model) => model.id));
   return {
     models,
-    addedIds: models.filter((model) => !known.has(model.id)).map((model) => model.id),
+    addedIds: models.filter((model) => !existingIds.has(model.id)).map((model) => model.id),
   };
 }
 

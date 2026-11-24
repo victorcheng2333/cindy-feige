@@ -61,7 +61,7 @@ export function SystemSharingDeviceSetting({ deviceId }: { deviceId: string }) {
         if (open.current) refreshRef.current();
       }}
     >
-      <summary className="cursor-pointer py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-ring)]">
+      <summary className="cursor-pointer py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
         {t('remoteDesktop.systemSharing.deviceTitle')}
       </summary>
       <div className="flex flex-col gap-2 pb-1">

@@ -1016,7 +1016,7 @@ describe('provider share catalog identity changes', () => {
       expect(oldHook.result.current.error).toBeNull();
       expect(oldHook.result.current.capabilities?.availableModels[0]?.displayName).toBe('fresh');
       expect(newHook.result.current.error).toBeNull();
-      expect(reads).toBe(6); // Four-engine warmup plus pending and fresh Codex reads.
+      expect(reads).toBe(7); // Five-engine warmup plus pending and fresh Codex reads.
     } finally {
       await act(async () => { evictAllRemoteCapabilities(); });
       vi.useRealTimers();
@@ -1059,17 +1059,17 @@ describe('provider share catalog identity changes', () => {
     let pending!: Promise<void>;
     await act(async () => { pending = refreshRemoteCatalogSnapshot('share:a'); });
     try {
-      expect(routedReads()).toHaveLength(initial + 4);
+      expect(routedReads()).toHaveLength(initial + 6);
       revision = 'latest';
       await act(async () => { remotePush?.({ deviceId: 'host', channel: CONTROLLED_MODEL_CATALOG_CHANGED }); });
       await flushMounted();
       expect(locationHook.result.current).toHaveLength(1);
-      expect(routedReads()).toHaveLength(initial + 4);
+      expect(routedReads()).toHaveLength(initial + 6);
     } finally {
       await act(async () => { finish(); await pending; });
     }
     await flushMounted();
-    expect(routedReads()).toHaveLength(initial + 5);
+    expect(routedReads()).toHaveLength(initial + 7);
     expect(catalogHook.result.current.providers[0]?.id).toBe('latest');
   });
 
@@ -1312,7 +1312,7 @@ describe('received-share model catalog freshness', () => {
     expect(providers.getCachedDeviceProviders('share:a')?.providers[0]?.id).toBe('restored');
     expect(getCachedCapabilities('claude-code', 'share:a')?.availableModels[0]?.id).toBe('restored-model');
     expect(f.providerReads()).toBe(reads + 2);
-    expect(f.capabilityReads()).toBe(8); // Four engines per shared refresh.
+    expect(f.capabilityReads()).toBe(10); // Five engines per shared refresh.
   });
 
   it('does not prefetch unopened shares or reread unchanged offline/paused shares', async () => {

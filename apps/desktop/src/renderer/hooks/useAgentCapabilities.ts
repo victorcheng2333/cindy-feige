@@ -523,6 +523,7 @@ async function fetchCapabilities(
           expiryRereadAt.set(key, now);
           // Retire the expired snapshot now; mounted consumers see `loading`, then the new answer.
           cache.delete(key);
+          stale.delete(key);
           expiry.forget(key);
           inflight.delete(key);
           queueMicrotask(() => {
@@ -769,7 +770,10 @@ export function evictDeviceCapabilities(
     // A retained refresh preserves the mounted display payload, so its host
     // deadline must survive too. Dropping it would let a hung refresh keep the
     // old capabilities past the forwarded trust window.
-    if (!options?.retainDisplaySnapshot) expiry.forget(k);
+    if (!options?.retainDisplaySnapshot) {
+      expiry.forget(k);
+      expiryRereadAt.delete(k);
+    }
   }
   for (const k of [...inflight.keys()]) if (k.startsWith(prefix)) inflight.delete(k);
   // 代际自增:作废该设备所有在途 fetch 的回写(防其 .then 把陈旧能力复活回 cache)。
@@ -798,6 +802,7 @@ export function evictAllRemoteCapabilities(): void {
     if (deviceId !== 'local') devices.add(deviceId);
   }
   for (const deviceId of devices) evictDeviceCapabilities(deviceId);
+  expiryRereadAt.clear();
 }
 
 export type LocalCapabilitiesSnapshot = ReadonlyArray<readonly [AgentKind, AgentCapabilities]>;

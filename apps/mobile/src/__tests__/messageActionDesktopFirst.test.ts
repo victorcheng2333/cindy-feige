@@ -13,6 +13,7 @@ import { summarizeToolRowPresentation, summarizeWorkGroupPresentation } from '@/
 import { projectMobileWorkActivities, projectRecentMobileWorkActivities } from '@/session/workActivityProjection';
 import { buildMessageHierarchyLayout } from '@/session/messageHierarchyLayout';
 import { buildMessageContentLayout } from '@/session/messageContentLayout';
+import { groupWorkActivityPhases, shouldGroupWorkActivityPhases } from '@/session/workActivityProjection';
 import { normalizeRemoteMessages } from '@/session/messageNormalize';
 import { buildMediaPayload } from '@/session/messagePayload';
 import type { RemoteMessage } from '@/session/types';
@@ -34,7 +35,7 @@ const source = ['ToolActionRow', 'WorkToolActivityRow', 'WorkGroupCard', 'mediaL
 const components = executeRenderer<Record<string, React.ComponentType<any>>>(source + '; return { ToolActionRow, WorkGroupCard };', {
   useState: React.useState, useRef: React.useRef, useEffect: React.useEffect, useLayoutEffect: React.useLayoutEffect, useMemo: React.useMemo,
   useTranslation, useFoldableExpandedState, summarizeWorkGroupPresentation, summarizeToolRowPresentation, mobileToolRowWording,
-  mobilePresentationLocalizer, buildMessageHierarchyLayout, buildMessageContentLayout, readToolProcessMedia,
+  mobilePresentationLocalizer, buildMessageHierarchyLayout, buildMessageContentLayout, groupWorkActivityPhases, shouldGroupWorkActivityPhases, readToolProcessMedia,
   buildMediaPayload, MediaPreview: mediaPreview,
   View, Text: View, Pressable: View, useTheme: () => ({ colors: lightColors }),
   useThemedStyles: () => ({}), makeStyles: leaf, iconSize, iconStroke,

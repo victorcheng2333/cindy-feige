@@ -23,6 +23,7 @@ export const PORTS_ONLY_CODEX_READS = {
   disableCodexPluginRuntime: undefined,
   getCodexServerCompactionPreference: undefined,
   getCodexSubagentIdentity: undefined,
+  getCodexThreadHome: undefined,
   getOutboundPathFact: undefined,
   getRemoteCodexTransport: undefined,
   isCodexAccountProvider: undefined,

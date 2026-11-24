@@ -1062,7 +1062,6 @@ function NativeSubscriptionHeader({
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const [pool, setPool] = useState<SubscriptionPoolView>();
-  const [connected, setConnected] = useState(provider?.connected === true);
   const [readUnknown, setReadUnknown] = useState(false);
   const [busy, setBusy] = useState(false);
   const login = useRef<string | null>(null);
@@ -1074,14 +1073,8 @@ function NativeSubscriptionHeader({
       try {
         const view = await window.electronAPI.subscriptionAccounts.command({ action: 'read', providerId });
         if (request !== revision) return;
-        const connected = view.accounts.some(account => account.status === 'ready' || account.status === 'limited');
-        // Accounts that could not be read are unknown, not signed out (2026-11-18): offering
-        // sign-in here made a network problem look like a lost login.
-        const unknown = !connected && view.accounts.some(account => account.status === 'unavailable');
         setPool(view);
-        setConnected(connected);
-        setReadUnknown(unknown);
-        onPoolConnectionChange?.(view.configured && !unknown ? connected : null);
+        setReadUnknown(false);
       } catch {
         if (request === revision) setReadUnknown(true);
       }
@@ -1092,20 +1085,32 @@ function NativeSubscriptionHeader({
     return () => {
       ++revision;
       off();
-      onPoolConnectionChange?.(null);
       if (login.current) void window.electronAPI.subscriptionAccounts.command({ action: 'cancel', providerId, loginKey: login.current }).catch(() => {});
     };
-  }, [providerId, onPoolConnectionChange]);
+  }, [providerId]);
   // The catalog already identifies saved pools. Match that layout while refreshing its accounts.
+  // An invalid default needs recovery even when another account can still serve models.
   const pooled = pool?.configured ?? (provider?.subscriptionAccountPool === providerId);
+  const poolConnected = pool?.accounts.some(account =>
+    !(account.id === 'default' && reconnectRequired) &&
+    (account.status === 'ready' || account.status === 'limited')) ?? (!reconnectRequired && provider?.connected === true);
+  // Accounts that could not be read are unknown, not signed out (2026-11-18): offering
+  // sign-in here made a network problem look like a lost login.
+  const poolUnknown = !poolConnected && !reconnectRequired &&
+    (readUnknown || (pool?.accounts.some(account => account.status === 'unavailable') ?? false));
+  useEffect(() => {
+    onPoolConnectionChange?.(pooled && !poolUnknown ? poolConnected : null);
+    return () => onPoolConnectionChange?.(null);
+  }, [pooled, poolConnected, poolUnknown, onPoolConnectionChange]);
   if (!pooled) return fallback;
-  const poolUnknown = !connected && readUnknown;
+  const connected = poolConnected && !reconnectRequired;
   const accounts = pool?.accounts;
   // Without a default or a single account to reconnect, the user chooses the account in its row.
   const account = accounts?.length === 1 ? accounts[0] : accounts?.find(account => account.id === 'default');
   const signIn = account ? { action: 'login' as const, accountId: account.id }
     : accounts?.length === 0 ? { action: 'add' as const } : undefined;
   const actionLabel = login.current ? 'settings.providers.button.cancel'
+    : reconnectRequired ? 'subscriptionAccounts.loginAgain'
     : connected ? 'settings.providers.button.disconnect'
     : poolUnknown ? 'subscriptionAccounts.signIn.retry'
     : signIn ? 'subscriptionAccounts.login' : undefined;
@@ -1128,6 +1133,7 @@ function NativeSubscriptionHeader({
       else if (signIn) {
         login.current = crypto.randomUUID();
         await window.electronAPI.subscriptionAccounts.command({ ...signIn, providerId, loginKey: login.current });
+        if (signIn.action === 'login' && signIn.accountId === 'default') onDefaultLogin?.();
       }
       onChanged();
     } catch (error) {
@@ -1135,11 +1141,11 @@ function NativeSubscriptionHeader({
       if (key) toast.error(t(key));
     } finally { login.current = null; setBusy(false); }
   };
-  return <DetailHeader provider={provider ? { ...provider, connected } : provider} onDefaultLogin={onDefaultLogin} children={children}
+  return <DetailHeader provider={provider ? { ...provider, connected: poolConnected } : provider} onDefaultLogin={onDefaultLogin} children={children}
     icon={providerId === 'anthropic' ? <AnthropicMark size={18} /> : <OpenAIMark size={18} />}
     title={provider?.name ?? (providerId === 'anthropic' ? 'Anthropic' : 'OpenAI')}
     subtitle={t('subscriptionAccounts.title')}
-    status={{ kind: connected ? 'connected' : 'neutral', label: t(busy ? 'settings.providers.pill.connecting'
+    status={{ kind: reconnectRequired ? 'reconnect-required' : connected ? 'connected' : 'neutral', label: t(busy ? 'settings.providers.pill.connecting'
       : poolUnknown ? 'subscriptionAccounts.unavailable' : pool ? 'settings.providers.pill.disconnected' : 'subscriptionAccounts.signIn.checking') }}
     primaryAction={actionLabel ? { label: t(actionLabel), onClick: () => void act(), disabled: busy && !login.current } : undefined} />;
 }

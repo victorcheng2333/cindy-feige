@@ -136,7 +136,7 @@ describe('multi-device provider rows during real catalog refresh', () => {
     const { done } = await f.start();
     await act(async () => { f.pending.get('a')!.reject(new Error('[DEVICE_LINK_TIMEOUT] timed out')); await done; });
     expect(f.result.current.get('a')?.providers).toHaveLength(2);
-    expect(f.result.current.get('a')?.error).toContain('TIMEOUT');
+    expect(f.result.current.get('a')?.error).toBeNull();
     act(() => { f.mod.evictDeviceProviders('a'); });
     expect(f.result.current.get('a')?.providers).toEqual([]);
   });

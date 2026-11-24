@@ -274,6 +274,8 @@ beforeEach(() => {
     deviceLink: {
       invoke: vi.fn(async () => null),
       onRemotePush: vi.fn(() => () => undefined),
+      onPresenceChanged: vi.fn(() => () => undefined),
+      onStatusChanged: vi.fn(() => () => undefined),
     },
     modelAccess: { getByokStatus: vi.fn(async () => ({ providers: [] })) },
     subscriptionAccounts: {
@@ -290,6 +292,10 @@ beforeEach(() => {
       requestProviderModelsAutoRefresh: requestAutoRefreshSpy,
       setProviderOrder: setProviderOrderSpy,
       onProviderOAuthProgress: vi.fn(() => () => {}),
+      auth: {
+        getState: vi.fn(async () => ({ authenticated: false })),
+        onStateChanged: vi.fn(() => () => undefined),
+      },
     },
   };
 });
@@ -407,7 +413,7 @@ describe('ProvidersSection — 双栏管理', () => {
         <section aria-label="Settings"><ProvidersSection /></section>
         <section aria-label="Picker">
           <ModelSelectorContent modelId="test-model" currentProviderId={value.id} vendorKey="codex"
-            effort="high" remoteAgent={undefined} providersOverride={[value]} onModelChange={() => {}} onEffortChange={() => {}} />
+            effort="high" remoteAgent={undefined} providersOverride={[value]} unifiedPanel onModelChange={() => {}} onEffortChange={() => {}} />
         </section>
       </MemoryRouter>;
     };
@@ -492,7 +498,7 @@ describe('ProvidersSection — 双栏管理', () => {
     expect(saved.runtimes.codex!.models).toContainEqual(config.runtimes.codex!.models.find(m => m.id === 'manual-model'));
     for (const agent of provider.agents) {
       expect(saved.runtimes[agent]!.models.find(m => m.id === 'new-model')).toEqual({
-        id: 'new-model', name: 'New model', discoveredMetadata: { name: 'New model' }, discoveredSource: undefined,
+        id: 'new-model', name: 'New model', defaultEnabled: false, discoveredMetadata: { name: 'New model' },
         listedUpstream: true,
       });
       expect(fetchModels).toHaveBeenCalledWith(expect.objectContaining({

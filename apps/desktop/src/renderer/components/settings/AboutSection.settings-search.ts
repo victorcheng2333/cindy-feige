@@ -48,7 +48,13 @@ export const aboutSettings = defineSettings({
     targetId: 'settings-search-settings-about-harnessShowInPicker',
     titleKey: 'settings.about.harnessShowInPicker',
     descriptionKey: 'settings.about.harnessToggleHint',
-    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', 'Cursor', '引擎', '隐藏 Harness', '模型选择器'],
+    keywordKeys: [
+      'settings.about.harnessLastEnabledHint',
+      'settings.about.agyCli.label',
+      'settings.about.agyCli.description',
+      'settings.about.cursorSdk.updateTitle',
+    ],
+    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', 'Cursor', 'Agy', 'Antigravity', '引擎', '隐藏 Harness', '模型选择器'],
     sectionKey: 'settings.tabs.about',
   },
   debugLogLabel: {

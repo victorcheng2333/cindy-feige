@@ -317,7 +317,8 @@ it('expires only the affected agent kind and keeps healthy in-flight kinds', asy
     expect(capabilities.getCachedCapabilities('codex', 'host')).not.toBeNull();
     expect(capabilities.getCachedCapabilities('pi', 'host')).not.toBeNull();
     expect(capabilities.getCachedCapabilities('cursor', 'host')).not.toBeNull();
-    expect(invoke).toHaveBeenCalledTimes(4);
+    expect(capabilities.getCachedCapabilities('antigravity', 'host')).not.toBeNull();
+    expect(invoke).toHaveBeenCalledTimes(5);
 
     const beforeExpiry = events.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
@@ -325,9 +326,10 @@ it('expires only the affected agent kind and keeps healthy in-flight kinds', asy
     // (2026-11-23, same as provider catalogs and Mobile) instead of a terminal error.
     expect(capabilities.getCachedCapabilities('pi', 'host')).toBeNull();
     expect(capabilities.getCachedCapabilities('cursor', 'host')).toBeNull();
+    expect(capabilities.getCachedCapabilities('antigravity', 'host')).toBeNull();
     expect(events.mock.calls.slice(beforeExpiry).map(([event]) => event.status)).toEqual(['loading', 'ready']);
     expect(capabilities.getCachedCapabilities('codex', 'host')).not.toBeNull();
-    expect(invoke).toHaveBeenCalledTimes(4);
+    expect(invoke).toHaveBeenCalledTimes(6);
   } finally {
     off();
     capabilities.evictAllRemoteCapabilities();

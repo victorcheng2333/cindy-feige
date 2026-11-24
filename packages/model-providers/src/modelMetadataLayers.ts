@@ -534,7 +534,7 @@ export function mergeDiscoveredRuntimeModels(
         id: model.id,
         name: model.name,
         ...accountCapabilities,
-        discoveredSource: model.discoveredSource,
+        ...(model.discoveredSource ? { discoveredSource: model.discoveredSource } : {}),
         ...(model.opaqueModelId ? { opaqueModelId: true as const } : {}),
         ...(model.discoverySnapshotId ? { discoverySnapshotId: model.discoverySnapshotId } : {}),
         discoveredMetadata,
@@ -546,7 +546,7 @@ export function mergeDiscoveredRuntimeModels(
       models[index] = {
         ...existingModel,
         ...accountCapabilities,
-        discoveredSource: model.discoveredSource,
+        ...(model.discoveredSource ? { discoveredSource: model.discoveredSource } : {}),
         ...((model.opaqueModelId || models[index].opaqueModelId) ? { opaqueModelId: true as const } : {}),
         ...(model.discoverySnapshotId ? { discoverySnapshotId: model.discoverySnapshotId } : {}),
         ...(!models[index].discoveredMetadata ? { nameExplicit: true } : {}),

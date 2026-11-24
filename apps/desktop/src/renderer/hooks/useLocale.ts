@@ -96,7 +96,7 @@ export function bootstrapInitialLocale(syncHost = true): SupportedLocale {
 }
 
 export function LocaleProvider({ children, syncHostOnMount, syncHost }: { children: ReactNode; syncHostOnMount?: boolean; syncHost?: boolean }) {
-  const effectiveSyncHostOnMount = syncHostOnMount ?? syncHost ?? false;
+  const effectiveSyncHostOnMount = syncHostOnMount ?? syncHost ?? true;
   const [locale, setLocaleState] = useState<LocalePreference>(readStoredLocale);
   const [effectiveLocale, setEffectiveLocale] = useState<SupportedLocale>(getEffectiveLocale);
   // 文言界面与简体 / 繁體中文界面的文风分开记忆:在文言界面选的唐诗不带进现代中文界面，

@@ -774,6 +774,9 @@ describe('event types the desktop pipeline acts on, classified for the Host', ()
       gaps: ['smaller difference: running=false alone does not write the turn end time'],
     },
     text: { host: 'history.event (sessionEventStreamCore, shared); turn-executor.mjs routeStandaloneTextEvent (sessionEventPreparationSteps.ts, shared)' },
+    thinking: { gaps: ['background turn progress activity indicator (Antigravity background wakeups)'] },
+    tool_result: { host: 'history.event (sessionEventStreamCore, shared)', gaps: ['background turn progress activity indicator'] },
+    tool_use: { host: 'history.event (sessionEventStreamCore, shared)', gaps: ['background turn progress activity indicator'] },
     turn_diff: { host: 'turn-executor.mjs noteTurnDiffEvent, not published' },
   };
 

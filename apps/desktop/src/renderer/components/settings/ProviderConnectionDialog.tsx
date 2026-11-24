@@ -2573,6 +2573,7 @@ export function ProviderConnectionDialog({
           {!simpleAdding && <div className="flex flex-col gap-2">
             <FieldLabel>{t('settings.providers.custom.authMode.label')}</FieldLabel>
             <SegmentedControl
+              data-settings-search-action="Choose the authentication mode of this provider connection draft"
               aria-label={t('settings.providers.custom.authMode.label')}
               value={authMode}
               height={38}

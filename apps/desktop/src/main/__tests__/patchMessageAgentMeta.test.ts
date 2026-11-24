@@ -198,19 +198,22 @@ describe('extractEstimatedSessionValueEntries', () => {
 
   // Unit: daily usage prices the same legacy turn by its local day. Minimal failing input:
   // an Argon turn at 01:00 Shanghai on its 2026-12-01 price change, which is still 11-30 in UTC.
-  it('prices historical Agy turns on the local day used by daily usage', () => {
-    vi.stubEnv('TZ', 'Asia/Shanghai');
+  it('prices historical Agy turns on the local day used by daily usage', async () => {
+    const dailySpend = await import('../localDb/dailySpend.js');
+    const createdAt = Date.parse('2026-11-30T17:00:00Z');
+    const daySpy = vi.spyOn(dailySpend, 'localDayKey').mockReturnValue('2026-12-01');
     try {
       expect(extractEstimatedSessionValueEntries([{
         clientId: 'argon-reply',
-        createdAt: Date.parse('2026-11-30T17:00:00Z'),
+        createdAt,
         agentMeta: JSON.stringify({ turnUsageDetails: {
           providerId: 'antigravity', billingSource: 'subscription', model: 'gemini-4-argon',
           inputTokens: 1_000_000, outputTokens: 0,
         } }),
       }])).toMatchObject([{ money: { amount: expect.closeTo(4, 9), currency: 'USD' } }]);
+      expect(daySpy).toHaveBeenCalledWith(createdAt);
     } finally {
-      vi.unstubAllEnvs();
+      daySpy.mockRestore();
     }
   });
 

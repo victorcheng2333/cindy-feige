@@ -96,7 +96,7 @@ describe('ChatInput session switch focus contract', () => {
   ])('hardware ownership with focus=%s route=%s mode=%s visible=%s is %s',
     (paneFocused, ownsRoute, navigationMode, viewVisible, expected) => {
       const predicate = extractBetween(sessionViewSource,
-        'const ownsHardwareTaskActions =', 'const showComposerControlledBanner');
+        'const ownsHardwareTaskActions =', 'const isMac =');
       expect(runInNewContext(
         '(function () { ' + predicate + '; return ownsHardwareTaskActions; })()',
         { paneFocused, ownsRoute, navigationMode, viewVisible, sessionId: 'companion-chat' },
@@ -489,6 +489,7 @@ it.each([
               ? [special]
               : visible.map((row) => row.id),
         isSecondaryWindow: () => false,
+        boundWorkLouderTaskTitle: (title: string) => title,
         useCallback: (publish: () => void) => publish,
         publishedTaskKeyRef: { current: '' },
         WORKLOUDER_CREATOR_LIT_TASK_KEY_COUNT,

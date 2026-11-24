@@ -1875,8 +1875,15 @@ export function TodaySpendChip({
       );
     }
     if (sessionSegment) chipSegments.push(sessionSegment);
+    else if (isCursorLocalSubscription && hasPositiveSessionTokens(sessionTokens)) {
+      chipSegments.push(
+        t('todaySpend.codex.sessionTokensLine', {
+          tokens: formatCompactTokens(Math.floor(sessionTokens ?? 0)),
+        }),
+      );
+    }
     const codexQuotaTokenFallback =
-      (codexFamilyQuotaForm || isCursorLocalSubscription) &&
+      codexFamilyQuotaForm &&
       chipSegments.length === 0 &&
       hasPositiveSessionTokens(sessionTokens);
     if (codexQuotaTokenFallback) {

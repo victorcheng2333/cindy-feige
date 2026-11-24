@@ -703,7 +703,6 @@ export function createHostAgentGraph(options: HostAgentGraphOptions) {
   );
   const agent = options.binaryPath ? new ClaudeCodeAgent(explicitPorts<AgentDeps>({
     ...PORTS_ONLY_CODEX_READS,
-    getCodexThreadHome: undefined,
     ...PORTS_ONLY_PI_READS,
     resolveLocalMcpDuplicateChoices: options.resolveLocalMcpDuplicateChoices,
     claudeHooks,

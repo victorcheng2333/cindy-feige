@@ -3059,8 +3059,10 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
   const connectedOptionsAnchor = optionsAnchor?.isConnected ? optionsAnchor : null;
   const optionsSide = useMemo(() => {
     if (!connectedOptionsAnchor) return 'left';
+    const viewportWidth = document.documentElement.clientWidth;
+    if (viewportWidth <= 0) return 'left';
     const { left, right } = connectedOptionsAnchor.getBoundingClientRect();
-    const sideSpace = Math.max(left, document.documentElement.clientWidth - right);
+    const sideSpace = Math.max(left, viewportWidth - right);
     return sideSpace < MODEL_OPTIONS_WIDTH + MODEL_OPTIONS_SIDE_OFFSET + MODEL_OPTIONS_COLLISION_PADDING
       ? 'top'
       : 'left';
@@ -3620,7 +3622,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
                 )}
                 <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <span className="min-w-0 truncate text-14 font-medium leading-5 text-[var(--model-item-text)]" title={disabledReason ?? displayName}>
+                    <span className="min-w-0 truncate text-14 font-medium leading-[1.43] text-[var(--model-item-text)]" title={disabledReason ?? displayName}>
                       {displayName}
                     </span>
                     {rowEffort && (

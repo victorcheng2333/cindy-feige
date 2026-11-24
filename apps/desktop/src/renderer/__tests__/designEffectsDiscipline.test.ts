@@ -44,6 +44,7 @@ const GRADIENT_REGISTRY: Record<string, { count: number; reason: string }> = {
   'components/chat/NewMessageIndicator.tsx': { count: 1, reason: '单色叠加悬停，不是视觉渐变' },
   'components/chat/PlanReviewBubble.tsx': { count: 1, reason: '折叠正文的边缘渐隐遮罩' },
   'components/login/LoginControls.tsx': { count: 1, reason: '单色叠加悬停，不是视觉渐变' },
+  'components/settings/UserBubbleSettings.tsx': { count: 1, reason: '自定义气泡色相滑块的色相色谱轨道' },
   'components/settings/WorkLouderCodexKeyboardLayout.tsx': { count: 1, reason: '硬件示意图的旋钮高光' },
   'features/cc-agent/CCAgentSessionView.tsx': { count: 1, reason: '输入框上方的边缘渐隐' },
   'features/cc-agent/CCAgentSidebarUpper.tsx': { count: 2, reason: '侧栏列表的边缘渐隐遮罩' },
