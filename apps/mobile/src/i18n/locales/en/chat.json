@@ -188,7 +188,17 @@
   "workGroup": {
     "working": "Working…",
     "worked": "Worked for {{duration}}",
-    "workDetails": "Work details"
+    "workDetails": "Work details",
+    "phases_one": "{{count}} stage",
+    "phases_other": "{{count}} stages",
+    "phaseKind": {
+      "explore": "Explore & inspect",
+      "edit": "Edit files",
+      "verify": "Verify & test",
+      "execute": "Run commands",
+      "delegate": "Delegate tasks",
+      "tools": "Run tools"
+    }
   },
   "geminiRateLimit": {
     "retried": "Retried automatically after the Gemini rate limit",

@@ -388,6 +388,7 @@ import type { ContinuationInFlightProjectionCapability } from '@/session/types';
 import {
   groupWorkActivityPhases,
   projectMobileWorkActivities,
+  projectOuterMobileWorkStages,
   projectRecentMobileWorkActivities,
   shouldGroupWorkActivityPhases,
   type MobileProjectedToolActivity,
@@ -5244,15 +5245,16 @@ function MobileWorkPhaseGroup({
   layout: MessageHierarchyLayout;
 }) {
   const { colors } = useTheme();
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const styles = useThemedStyles(makeStyles);
   const [expanded, toggleExpanded] = useFoldableExpandedState(`${blockKey}:${phase.key}`, defaultExpanded);
   const toolSummary = useMemo(
     () => formatToolListSummary(phase.tools.map((entry) => entry.message.normalized), mobilePresentationLocalizer),
     [i18n.language, phase.tools],
   );
-  const title = phase.title
-    ? (toolSummary ? `${phase.title} · ${toolSummary}` : phase.title)
+  const phaseLabel = phase.title || t(`chat:workGroup.phaseKind.${phase.kind}`);
+  const title = phaseLabel
+    ? (toolSummary && toolSummary !== phaseLabel ? `${phaseLabel} · ${toolSummary}` : phaseLabel)
     : toolSummary;
 
   if (phase.tools.length === 0 && phase.thinking) {
@@ -5273,7 +5275,7 @@ function MobileWorkPhaseGroup({
       title={title}
       leadingIcon={phase.status === 'running'
         ? <CompactActivityIndicator color={colors.textTertiary} size={iconSize.sm} />
-        : <Sparkles color={colors.textTertiary} size={iconSize.sm} strokeWidth={iconStroke.regular} />
+        : <Check color={colors.textTertiary} size={iconSize.sm} strokeWidth={iconStroke.regular} />
       }
       layout={layout}
       testID="message.workPhaseToggle"
@@ -5282,14 +5284,28 @@ function MobileWorkPhaseGroup({
       {expanded ? (
         <Rail layout={layout}>
           <View style={styles.workActivityStack}>
-            {phase.tools.map((activity) => (
-              <WorkToolActivityRow
-                key={activity.key}
-                actions={toolActions}
-                activity={activity}
-                contentLayout={contentLayout}
-              />
-            ))}
+            {phase.activities.map((activity) => {
+              if (activity.kind === 'thinking') {
+                if (phase.thinkings.length === 1 && activity.rawContent === (phase.title ?? '')) {
+                  return null;
+                }
+                return (
+                  <WorkLineRow
+                    key={activity.key}
+                    line={{ kind: 'thinking', key: activity.key, text: activity.content }}
+                    onPress={toggleExpanded}
+                  />
+                );
+              }
+              return (
+                <WorkToolActivityRow
+                  key={activity.key}
+                  actions={toolActions}
+                  activity={activity}
+                  contentLayout={contentLayout}
+                />
+              );
+            })}
           </View>
         </Rail>
       ) : null}
@@ -5335,23 +5351,30 @@ function WorkGroupCard({
   // but neither repeat its portrait nor indent nested work groups a second time.
   const childActions = useMemo(() => actions.companion && actions.companionAvatar
     ? { ...actions, companionAvatar: undefined } : actions, [actions]);
-  const activityProjection = useMemo(
-    () =>
-      expanded || !isStreaming
-      ? projectMobileWorkActivities(item.children, isStreaming)
-      : null,
-    [expanded, isStreaming, item.children],
-  );
   const hasNonActivityChild = useMemo(
     () => item.children.some((child) => child.type !== 'tool_group' && child.type !== 'thinking'),
     [item.children],
   );
-  const phases = useMemo(
-    () => (expanded && !hasNonActivityChild && activityProjection
-      ? groupWorkActivityPhases(activityProjection.activities)
+  const outerStages = useMemo(
+    () => (!isStreaming && !lineMode && hasNonActivityChild
+      ? projectOuterMobileWorkStages(item.children, false)
       : null),
-    [expanded, hasNonActivityChild, activityProjection],
+    [isStreaming, lineMode, hasNonActivityChild, item.children],
   );
+  const activityProjection = useMemo(
+    () =>
+      (expanded || !isStreaming) && !outerStages
+      ? projectMobileWorkActivities(item.children, isStreaming)
+      : null,
+    [expanded, isStreaming, item.children, outerStages],
+  );
+  const phases = useMemo(() => {
+    if (outerStages) return outerStages;
+    if (!hasNonActivityChild && activityProjection) {
+      return groupWorkActivityPhases(activityProjection.activities);
+    }
+    return null;
+  }, [outerStages, hasNonActivityChild, activityProjection]);
   const usePhaseGroups = Boolean(phases && shouldGroupWorkActivityPhases(phases));
   // Tool detail rows do not consume message action/queue/share busy state.
   // Keep their callbacks and streaming flag stable across those unrelated updates.
@@ -5383,8 +5406,14 @@ function WorkGroupCard({
     }
     return summarizeWorkGroupToolActions(item.children, mobilePresentationLocalizer);
   }, [isStreaming, activityProjection, item.children, t, i18n.language]);
+  const phaseCountSummary = useMemo(() => {
+    if (isStreaming || !usePhaseGroups || !phases) return '';
+    const count = phases.filter((phase) => phase.tools.length > 0).length;
+    return count >= 2 ? t('chat:workGroup.phases', { count }) : '';
+  }, [isStreaming, usePhaseGroups, phases, t]);
   const title = [
     actions.companion && isStreaming && actions.companionWorkingLabel ? actions.companionWorkingLabel : presentation.title,
+    phaseCountSummary,
     actionSummary,
   ].filter(Boolean).join(' · ');
   const onToggle = item.deferred?.setVisible ? toggleExpanded : (item.deferred?.toggle ?? toggleExpanded);

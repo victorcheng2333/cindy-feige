@@ -1,29 +1,36 @@
 /** Desktop type adapter for the framework-agnostic shared activity projection. */
 import {
+  classifyWorkToolPhaseKind,
   extractThinkingPhaseTitle,
+  groupOuterWorkStages,
   groupWorkActivityPhases,
   projectRecentWorkActivities as projectRecentSharedWorkActivities,
   projectWorkActivities as projectSharedWorkActivities,
   shouldGroupWorkActivityPhases,
   type ExplorationActivity,
   type ExplorationActivityKind,
+  type OuterWorkStageChild as SharedOuterWorkStageChild,
   type ProjectableWorkChild,
   type ProjectedThinkingActivity,
   type ProjectedToolActivity as SharedProjectedToolActivity,
   type ProjectedWorkActivity as SharedProjectedWorkActivity,
   type WorkActivityPhase as SharedWorkActivityPhase,
   type WorkActivityProjection as SharedWorkActivityProjection,
+  type WorkPhaseKind,
 } from '@cindy/maker-shared/work-activity-projection';
 
 import type { ChatMessage } from '@/lib/makerChatStore';
 import { createMessageProjectionCache } from '@/components/chat/messageProjectionCache';
 
 export {
+  classifyWorkToolPhaseKind,
   extractThinkingPhaseTitle,
+  groupOuterWorkStages,
   groupWorkActivityPhases,
   shouldGroupWorkActivityPhases,
 };
-export type { ExplorationActivity, ExplorationActivityKind, ProjectedThinkingActivity };
+export type { ExplorationActivity, ExplorationActivityKind, ProjectedThinkingActivity, WorkPhaseKind };
+export type OuterWorkStageChild = SharedOuterWorkStageChild<ChatMessage>;
 export type ProjectedToolActivity = SharedProjectedToolActivity<ChatMessage>;
 export type ProjectedWorkActivity = SharedProjectedWorkActivity<ChatMessage>;
 export type WorkActivityPhase = SharedWorkActivityPhase<ChatMessage>;

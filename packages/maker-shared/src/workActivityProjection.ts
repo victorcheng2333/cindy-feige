@@ -9,8 +9,10 @@ import { formatToolRowText, isToolResultFailureLike, type ToolRowWording } from 
  */
 
 import {
+  commandIntentFromCommand,
   commandIntentsFromActions,
   type CommandIntent,
+  type CommandIntentAction,
 } from './commandIntent';
 import {
   describeToolUse,
@@ -45,6 +47,8 @@ export interface ProjectedToolActivity<
   /** One structured sub-action from the parent Codex command execution. */
   intentOverride?: CommandIntent;
   exploration?: ExplorationActivity;
+  /** Explicit stage focus anchor from tools like `update_focus`; not rendered as a regular tool row. */
+  focusAnchor?: string;
 }
 
 export interface ProjectedThinkingActivity {
@@ -139,7 +143,7 @@ function normalizeReadPath(path: string | undefined, cwd: string | undefined): s
 function resetsReadDeduplication<TMessage extends WorkActivityMessageLike>(
   activity: ProjectedWorkActivity<TMessage>,
 ): boolean {
-  return activity.kind === 'tool' && !activity.exploration;
+  return activity.kind === 'tool' && !activity.exploration && !activity.focusAnchor;
 }
 
 function explorationForDescriptor(
@@ -164,12 +168,37 @@ function explorationForDescriptor(
   return undefined;
 }
 
+function extractFocusAnchor(toolName: string, input: Record<string, unknown> | null): string | undefined {
+  const normalizedName = toolName.replace(/^Run\s+/i, '').trim().toLowerCase();
+  if (normalizedName !== 'update_focus') return undefined;
+  const raw = typeof input?.focus === 'string'
+    ? input.focus
+    : typeof input?.Focus === 'string'
+      ? input.Focus
+      : undefined;
+  const cleaned = raw?.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return undefined;
+  return cleaned.length <= PHASE_TITLE_MAX_CHARS
+    ? cleaned
+    : `${cleaned.slice(0, PHASE_TITLE_MAX_CHARS - 1).trimEnd()}…`;
+}
+
 function projectToolMessage<TMessage extends WorkActivityMessageLike>(
   child: ProjectableWorkChild<TMessage>,
   message: TMessage,
   isStreaming: boolean,
 ): ProjectedToolActivity<TMessage>[] {
   const input = (message.toolInput as Record<string, unknown> | null) ?? null;
+  const focusAnchor = extractFocusAnchor(message.toolName ?? '', input);
+  if (focusAnchor) {
+    return [{
+      kind: 'tool',
+      key: message.clientId,
+      message,
+      status: 'done',
+      focusAnchor,
+    }];
+  }
   const descriptor = describeToolUse(message.toolName ?? '', input);
   const rawActions = input?.commandActions;
   const structured = inspectStructuredCommandActions(rawActions);
@@ -229,6 +258,7 @@ export function projectRecentWorkActivities<TMessage extends WorkActivityMessage
   const seenReadKeys = new Set<string>();
 
   const append = (activity: ProjectedWorkActivity<TMessage>): boolean => {
+    if (activity.kind === 'tool' && activity.focusAnchor) return false;
     if (resetsReadDeduplication(activity)) seenReadKeys.clear();
     if (
       activity.kind === 'tool'
@@ -306,12 +336,13 @@ export function projectWorkActivities<TMessage extends WorkActivityMessageLike>(
   for (const [childKey, childActivities] of rawToolActivitiesByChildKey) {
     toolActivitiesByChildKey.set(
       childKey,
-      childActivities.filter((activity) => keptKeys.has(activity.key)),
+      childActivities.filter((activity) => keptKeys.has(activity.key) && !activity.focusAnchor),
     );
   }
 
   const toolActivities = activities.filter(
-    (activity): activity is ProjectedToolActivity<TMessage> => activity.kind === 'tool',
+    (activity): activity is ProjectedToolActivity<TMessage> =>
+      activity.kind === 'tool' && !activity.focusAnchor,
   );
   const explorationCounts: WorkActivityProjection<TMessage>['explorationCounts'] = {
     read: 0,
@@ -356,6 +387,7 @@ export function summarizeTeammateWork<T extends WorkActivityMessageLike>(
   let runningTool: ToolUseDescriptor | undefined;
   for (const activity of activities) {
     if (activity.kind === 'thinking') { thinking = true; continue; }
+    if (activity.focusAnchor) continue;
     const message = activity.message;
     calls.add(message.clientId);
     running ||= activity.status === 'running';
@@ -425,8 +457,69 @@ export function teammateWorkSummaryText(
 }
 
 const PHASE_TITLE_MAX_CHARS = 88;
+const OUTER_PROGRESS_MAX_CHARS = 240;
 
 const BOILERPLATE_THINKING_OPENING_RE = /^(?:i(?:'m| am)\s+thinking(?:\s+through)?(?:\s+how\s+to\s+approach\s+this|\s+about\s+this)?|let(?:'s|\s+me)\s+think(?:\s+through|\s+about)?(?:\s+this|\s+how\s+to\s+approach\s+this)?|thinking(?:\s+about\s+this)?)\s*[.。!！…]*$/i;
+
+/** Conversational chain-of-thought openers that read as noisy scratchpad rather than stage headings. */
+const CONVERSATIONAL_THINKING_OPENING_RE = /^(?:(?:wait|hmm+|um+|oh|ah|aha|okay|ok|alright|actually|well|so|great|good|nice|sure|interesting|whoa|oops|now\s+let(?:'s|\s+me)|let(?:'s|\s+me)|looks\s+like|i(?:'m| am|'ll| will|'ve| have| need| should| see| think| notice| found| can| want))\b|(?:嗯|哦|哎|啊|好[的吧]?[，,。！!]?|等等|先看看|再看看|让我|我来|我先|看来|似乎|好像|不错))/i;
+
+const EXPLORE_COMMAND_INTENTS: ReadonlySet<CommandIntentAction> = new Set([
+  'read',
+  'list',
+  'search',
+  'inspect',
+  'inspectRepository',
+  'inspectEnvironment',
+  'fetch',
+  'showVersion',
+  'showCurrentDirectory',
+  'showDateTime',
+  'locateCommand',
+  'inspectProcesses',
+  'inspectPorts',
+  'queryDatabase',
+  'parseJson',
+  'count',
+  'gitStatus',
+  'gitDiff',
+  'gitLog',
+  'gitShow',
+  'gitRemote',
+  'gitRevParse',
+  'gitBranch',
+  'gitGrep',
+  'gitMergeBase',
+  'gitLsFiles',
+  'gitRevList',
+  'gitLsRemote',
+  'gitWorktreeList',
+  'ghPrList',
+  'ghPrView',
+  'ghPrChecks',
+  'ghPrStatus',
+  'ghPrDiff',
+  'ghIssueList',
+  'ghIssueView',
+  'ghIssueStatus',
+  'ghRunList',
+  'ghRunView',
+  'ghSearch',
+  'ghRepoList',
+  'ghRepoView',
+  'ghApiQuery',
+  'ghAuthStatus',
+]);
+
+const VERIFY_COMMAND_INTENTS: ReadonlySet<CommandIntentAction> = new Set([
+  'test',
+  'typecheck',
+  'lint',
+  'build',
+  'verify',
+  'checkSyntax',
+  'checkFormatting',
+]);
 
 function splitSentences(line: string): string[] {
   const sentences: string[] = [];
@@ -443,6 +536,13 @@ function splitSentences(line: string): string[] {
   return sentences;
 }
 
+function clampPhaseTitle(text: string): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  if (cleaned.length <= PHASE_TITLE_MAX_CHARS) return cleaned;
+  return `${cleaned.slice(0, PHASE_TITLE_MAX_CHARS - 1).trimEnd()}…`;
+}
+
 /**
  * Extract a concise single-line phase heading from a thinking block.
  * Strips common markdown prefixes, skips generic filler openings, and takes
@@ -456,76 +556,384 @@ export function extractThinkingPhaseTitle(rawContent: string): string {
   const candidates = lines.flatMap(splitSentences).filter(Boolean);
   const meaningful = candidates.find((sentence) => !BOILERPLATE_THINKING_OPENING_RE.test(sentence));
   const candidate = meaningful ?? candidates[0] ?? rawContent.replace(/\s+/g, ' ').trim();
-  if (!candidate) return '';
-  if (candidate.length <= PHASE_TITLE_MAX_CHARS) return candidate;
-  return `${candidate.slice(0, PHASE_TITLE_MAX_CHARS - 1).trimEnd()}…`;
+  return clampPhaseTitle(candidate);
 }
+
+/**
+ * Extract a stage title from a thinking block only when it reads like an actual
+ * heading or clean imperative action — conversational CoT scratchpad returns empty
+ * so the renderer falls back to a crisp localized semantic stage label.
+ */
+function extractStageThinkingTitle(rawContent: string): string {
+  const rawLines = rawContent.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstRaw = rawLines[0] ?? '';
+  const headingMatch = /^#{1,6}\s+(.+)$/.exec(firstRaw) ?? /^\*\*([^*]{2,})\*\*\s*$/.exec(firstRaw);
+  if (headingMatch) {
+    const heading = clampPhaseTitle(headingMatch[1]!.replace(/[*_`]+/g, '').trim());
+    if (heading && !BOILERPLATE_THINKING_OPENING_RE.test(heading)) return heading;
+  }
+  const title = extractThinkingPhaseTitle(rawContent);
+  if (!title || BOILERPLATE_THINKING_OPENING_RE.test(title) || CONVERSATIONAL_THINKING_OPENING_RE.test(title)) {
+    return '';
+  }
+  return title;
+}
+
+export type WorkPhaseKind =
+  | 'explore'
+  | 'edit'
+  | 'verify'
+  | 'execute'
+  | 'delegate'
+  | 'tools';
 
 export interface WorkActivityPhase<
   TMessage extends WorkActivityMessageLike = WorkActivityMessageLike,
 > {
   key: string;
-  /** Single-line heading derived from the phase's thinking block, if present. */
+  /** Semantic stage category for localized fallback titles & grouping. */
+  kind: WorkPhaseKind;
+  /** Single-line heading derived from explicit progress/focus or clean thinking heading. */
   title?: string;
+  /** True when the phase title came from an explicit focus or progress anchor. */
+  explicitAnchor?: boolean;
+  /** First thinking block in the phase (kept for compatibility with single-thought rows). */
   thinking?: ProjectedThinkingActivity;
+  /** All thinking blocks belonging to this phase, in chronological order. */
+  thinkings: ProjectedThinkingActivity[];
+  /** Latest thinking block that arrived after this phase's tools (for live preview). */
+  trailingThinking?: ProjectedThinkingActivity;
   tools: ProjectedToolActivity<TMessage>[];
+  /** Chronological activities (thinking + tools) inside this phase for expanded detail rendering. */
+  activities: ProjectedWorkActivity<TMessage>[];
+  /** Optional wall-clock duration when built from outer progress + inner work groups. */
+  durationMs?: number;
   status: 'running' | 'done';
 }
 
+export function classifyWorkToolPhaseKind<TMessage extends WorkActivityMessageLike>(
+  activity: ProjectedToolActivity<TMessage>,
+): WorkPhaseKind {
+  if (activity.exploration) return 'explore';
+  const descriptor = describeToolUse(activity.message.toolName ?? '', activity.message.toolInput);
+  switch (descriptor.kind) {
+    case 'file':
+      return descriptor.action === 'read' ? 'explore' : 'edit';
+    case 'fileChange':
+      return 'edit';
+    case 'search':
+    case 'web':
+      return 'explore';
+    case 'task':
+    case 'collab':
+      return 'delegate';
+    case 'command': {
+      // Commands with a model description (e.g. Agy toolSummary or Claude Bash description)
+      // skip intent computation in describeToolUse; inspect the command text here so
+      // read-only inspection and test/build verification still cluster accurately.
+      const intent = activity.intentOverride
+        ?? descriptor.intent
+        ?? (descriptor.command ? commandIntentFromCommand(descriptor.command) : undefined);
+      if (intent && VERIFY_COMMAND_INTENTS.has(intent.action)) return 'verify';
+      if (intent && EXPLORE_COMMAND_INTENTS.has(intent.action)) return 'explore';
+      return 'execute';
+    }
+    default:
+      return 'tools';
+  }
+}
+
+const PHASE_KIND_PRIORITY: Record<WorkPhaseKind, number> = {
+  edit: 6,
+  verify: 5,
+  delegate: 4,
+  execute: 3,
+  explore: 2,
+  tools: 1,
+};
+
+function dominantPhaseKind<TMessage extends WorkActivityMessageLike>(
+  tools: readonly ProjectedToolActivity<TMessage>[],
+): WorkPhaseKind {
+  let best: WorkPhaseKind = 'explore';
+  let bestScore = -1;
+  for (const tool of tools) {
+    const kind = classifyWorkToolPhaseKind(tool);
+    const score = PHASE_KIND_PRIORITY[kind];
+    if (score > bestScore) {
+      best = kind;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function firstStageThinkingTitle(thinkings: readonly ProjectedThinkingActivity[]): string {
+  for (const item of thinkings) {
+    const title = extractStageThinkingTitle(item.rawContent);
+    if (title) return title;
+  }
+  return '';
+}
+
+function mergePhases<TMessage extends WorkActivityMessageLike>(
+  base: WorkActivityPhase<TMessage>,
+  ...rest: WorkActivityPhase<TMessage>[]
+): WorkActivityPhase<TMessage> {
+  const thinkings = [...base.thinkings];
+  const tools = [...base.tools];
+  const activities = [...base.activities];
+  let status = base.status;
+  let thinking = base.thinking;
+  let title = base.title;
+  let trailingThinking = base.trailingThinking;
+
+  for (const next of rest) {
+    thinkings.push(...next.thinkings);
+    tools.push(...next.tools);
+    activities.push(...next.activities);
+    if (!thinking && next.thinking) thinking = next.thinking;
+    if (!title && next.title) title = next.title;
+    if (next.status === 'running') status = 'running';
+    trailingThinking = next.trailingThinking;
+  }
+
+  return {
+    ...base,
+    ...(title ? { title } : {}),
+    ...(thinking ? { thinking } : {}),
+    ...(trailingThinking ? { trailingThinking } : {}),
+    thinkings,
+    tools,
+    activities,
+    status,
+  };
+}
+
 /**
- * Group chronological work activities into thought-anchored phases:
- * each thinking block starts a new phase and collects the tool calls that
- * immediately follow it until the next thinking block.
+ * Group chronological work activities into readable stages:
+ * - Explicit `update_focus` anchors always start a titled stage.
+ * - Otherwise consecutive activities with the same semantic intent (`explore`,
+ *   `edit`, `verify`, `execute`, `delegate`, `tools`) are clustered together
+ *   instead of splitting on every model thinking block.
+ * - Tiny 1–2 tool read lookups sandwiched between two `edit` stages are folded
+ *   into the surrounding edit stage to prevent noisy edit/read ping-pong.
  */
 export function groupWorkActivityPhases<TMessage extends WorkActivityMessageLike>(
   activities: readonly ProjectedWorkActivity<TMessage>[],
 ): WorkActivityPhase<TMessage>[] {
-  const phases: WorkActivityPhase<TMessage>[] = [];
+  const rawPhases: WorkActivityPhase<TMessage>[] = [];
   let current: WorkActivityPhase<TMessage> | null = null;
+  let pendingThinkings: ProjectedThinkingActivity[] = [];
+  let pendingFocusTitle: string | undefined;
+  let forceNewPhase = false;
 
   for (const activity of activities) {
     if (activity.kind === 'thinking') {
-      const title = extractThinkingPhaseTitle(activity.rawContent);
-      current = {
-        key: `phase:${activity.key}`,
-        ...(title ? { title } : {}),
-        thinking: activity,
-        tools: [],
-        status: 'done',
-      };
-      phases.push(current);
+      pendingThinkings.push(activity);
       continue;
     }
 
-    if (!current) {
+    if (activity.focusAnchor) {
+      pendingFocusTitle = activity.focusAnchor;
+      forceNewPhase = true;
+      continue;
+    }
+
+    const kind = classifyWorkToolPhaseKind(activity);
+    if (!current || forceNewPhase || current.kind !== kind) {
+      const title = pendingFocusTitle || firstStageThinkingTitle(pendingThinkings);
       current = {
-        key: `phase:${activity.key}`,
-        tools: [],
-        status: 'done',
+        key: `phase:${pendingThinkings[0]?.key ?? activity.key}`,
+        kind,
+        ...(title ? { title } : {}),
+        ...(pendingFocusTitle ? { explicitAnchor: true } : {}),
+        ...(pendingThinkings[0] ? { thinking: pendingThinkings[0] } : {}),
+        thinkings: [...pendingThinkings],
+        tools: [activity],
+        activities: [...pendingThinkings, activity],
+        status: activity.status,
       };
-      phases.push(current);
+      rawPhases.push(current);
+      pendingThinkings = [];
+      pendingFocusTitle = undefined;
+      forceNewPhase = false;
+      continue;
+    }
+
+    if (pendingThinkings.length > 0) {
+      current.thinkings.push(...pendingThinkings);
+      current.activities.push(...pendingThinkings);
+      if (!current.thinking) current.thinking = pendingThinkings[0];
+      if (!current.title) {
+        const title = firstStageThinkingTitle(pendingThinkings);
+        if (title) current.title = title;
+      }
+      pendingThinkings = [];
     }
     current.tools.push(activity);
+    current.activities.push(activity);
     if (activity.status === 'running') current.status = 'running';
+  }
+
+  // Smooth tiny mid-edit exploration lookups (edit → 1–2 reads → edit → one edit phase).
+  const phases: WorkActivityPhase<TMessage>[] = [];
+  for (const phase of rawPhases) {
+    const prev = phases[phases.length - 1];
+    const prevPrev = phases[phases.length - 2];
+    if (
+      prevPrev
+      && prev
+      && prevPrev.kind === 'edit'
+      && prev.kind === 'explore'
+      && phase.kind === 'edit'
+      && prev.tools.length <= 2
+      && !prev.explicitAnchor
+      && !phase.explicitAnchor
+    ) {
+      phases.pop();
+      phases[phases.length - 1] = mergePhases(prevPrev, prev, phase);
+      continue;
+    }
+    phases.push(phase);
+  }
+
+  if (pendingThinkings.length > 0) {
+    const last = phases[phases.length - 1];
+    if (last) {
+      last.thinkings.push(...pendingThinkings);
+      last.activities.push(...pendingThinkings);
+      last.trailingThinking = pendingThinkings[pendingThinkings.length - 1];
+    } else {
+      const title = pendingFocusTitle || firstStageThinkingTitle(pendingThinkings);
+      phases.push({
+        key: `phase:${pendingThinkings[0]!.key}`,
+        kind: 'explore',
+        ...(title ? { title } : {}),
+        ...(pendingFocusTitle ? { explicitAnchor: true } : {}),
+        thinking: pendingThinkings[0],
+        thinkings: [...pendingThinkings],
+        trailingThinking: pendingThinkings[pendingThinkings.length - 1],
+        tools: [],
+        activities: [...pendingThinkings],
+        status: 'done',
+      });
+    }
   }
 
   return phases;
 }
 
 /**
- * Only render phase groups when the activity stream has genuine multi-phase
- * structure (at least 2 thought-anchored phases that each ran tools), so
- * small or single-phase turns stay flat without unnecessary nesting.
+ * Only render phase groups when the activity stream has genuine multi-stage
+ * structure (at least 2 distinct stages that each ran tools), so small or
+ * single-stage turns stay flat without unnecessary nesting.
  */
 export function shouldGroupWorkActivityPhases<TMessage extends WorkActivityMessageLike>(
   phases: readonly WorkActivityPhase<TMessage>[],
 ): boolean {
-  let thoughtToolPhases = 0;
+  let toolPhases = 0;
   for (const phase of phases) {
-    if (phase.thinking && phase.tools.length > 0) {
-      thoughtToolPhases += 1;
-      if (thoughtToolPhases >= 2) return true;
+    if (phase.tools.length > 0) {
+      toolPhases += 1;
+      if (toolPhases >= 2) return true;
     }
   }
   return false;
+}
+
+export interface OuterWorkStageChild<
+  TMessage extends WorkActivityMessageLike = WorkActivityMessageLike,
+> {
+  kind: 'progress' | 'group' | 'other';
+  key: string;
+  progressText?: string;
+  children?: readonly ProjectableWorkChild<TMessage>[];
+  /** True when the inner group has a deferred loader or non-activity children. */
+  opaque?: boolean;
+  durationMs?: number;
+}
+
+function extractShortProgressTitle(rawText: string | undefined): string | null {
+  if (!rawText) return null;
+  const trimmed = rawText.trim();
+  if (!trimmed || trimmed.length > OUTER_PROGRESS_MAX_CHARS) return null;
+  if (trimmed.includes('```') || /\n\s*\n/.test(trimmed) || /^\|.+\|$/m.test(trimmed)) {
+    return null;
+  }
+  const singleLine = trimmed
+    .replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s+)+/, '')
+    .replace(/[*_`]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return singleLine ? clampPhaseTitle(singleLine) : null;
+}
+
+/**
+ * Flatten a completed outer work group composed of short assistant progress
+ * lines interleaved with inner activity groups into a single-level stage list,
+ * eliminating the double-nested "Worked for Xm → text → Worked for Ys" shell.
+ * Returns null if any child is opaque (deferred remote loader, rich prose, or
+ * audit/failed-sampling cards) or if fewer than 2 tool stages exist.
+ */
+export function groupOuterWorkStages<TMessage extends WorkActivityMessageLike>(
+  outerChildren: readonly OuterWorkStageChild<TMessage>[],
+  isStreaming: boolean,
+): WorkActivityPhase<TMessage>[] | null {
+  if (outerChildren.length < 2) return null;
+  const stages: WorkActivityPhase<TMessage>[] = [];
+  let index = 0;
+
+  while (index < outerChildren.length) {
+    const child = outerChildren[index]!;
+    if (child.kind === 'other' || child.opaque) return null;
+
+    if (child.kind === 'progress') {
+      const title = extractShortProgressTitle(child.progressText);
+      const next = outerChildren[index + 1];
+      if (!title || !next || next.kind !== 'group' || next.opaque || !next.children) {
+        return null;
+      }
+      const projection = projectWorkActivities(next.children, isStreaming);
+      const tools = projection.activities.filter(
+        (activity): activity is ProjectedToolActivity<TMessage> =>
+          activity.kind === 'tool' && !activity.focusAnchor,
+      );
+      const thinkings = projection.activities.filter(
+        (activity): activity is ProjectedThinkingActivity => activity.kind === 'thinking',
+      );
+      if (tools.length === 0) return null;
+      stages.push({
+        key: `stage:${child.key}`,
+        kind: dominantPhaseKind(tools),
+        title,
+        explicitAnchor: true,
+        ...(thinkings[0] ? { thinking: thinkings[0] } : {}),
+        thinkings,
+        tools,
+        activities: projection.activities.filter(
+          (activity) => activity.kind === 'thinking' || !activity.focusAnchor,
+        ),
+        ...(next.durationMs !== undefined ? { durationMs: next.durationMs } : {}),
+        status: tools.some((tool) => tool.status === 'running') ? 'running' : 'done',
+      });
+      index += 2;
+      continue;
+    }
+
+    // Leading or standalone inner activity group without preceding progress text.
+    if (!child.children) return null;
+    const projection = projectWorkActivities(child.children, isStreaming);
+    const innerPhases = groupWorkActivityPhases(projection.activities);
+    const toolInnerPhases = innerPhases.filter((phase) => phase.tools.length > 0);
+    if (toolInnerPhases.length === 0) return null;
+    if (toolInnerPhases.length === 1 && child.durationMs !== undefined) {
+      stages.push({ ...toolInnerPhases[0]!, durationMs: child.durationMs });
+    } else {
+      stages.push(...toolInnerPhases);
+    }
+    index += 1;
+  }
+
+  return shouldGroupWorkActivityPhases(stages) ? stages : null;
 }

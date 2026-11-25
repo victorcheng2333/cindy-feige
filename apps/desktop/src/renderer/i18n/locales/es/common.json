@@ -15338,6 +15338,17 @@
         "read_many": "Leyó {{count}} archivos",
         "search_many": "Buscó {{count}} veces",
         "list_many": "Listó archivos {{count}} veces"
+      },
+      "phases_one": "{{count}} fase",
+      "phases_other": "{{count}} fases",
+      "phases_many": "{{count}} fases",
+      "phaseKind": {
+        "explore": "Explorar e inspeccionar",
+        "edit": "Editar archivos",
+        "verify": "Verificar y probar",
+        "execute": "Ejecutar comandos",
+        "delegate": "Delegar tareas",
+        "tools": "Ejecutar herramientas"
       }
     },
     "agentTask": {

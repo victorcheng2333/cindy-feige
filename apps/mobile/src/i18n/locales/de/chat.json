@@ -150,7 +150,17 @@
   "workGroup": {
     "working": "Wird verarbeitet…",
     "worked": "{{duration}} gearbeitet",
-    "workDetails": "Arbeitsdetails"
+    "workDetails": "Arbeitsdetails",
+    "phases_one": "{{count}} Phase",
+    "phases_other": "{{count}} Phasen",
+    "phaseKind": {
+      "explore": "Erkunden & prüfen",
+      "edit": "Dateien bearbeiten",
+      "verify": "Prüfen & testen",
+      "execute": "Befehle ausführen",
+      "delegate": "Aufgaben delegieren",
+      "tools": "Werkzeuge ausführen"
+    }
   },
   "teammateProcess": {
     "retry": "Erneut versuchen",

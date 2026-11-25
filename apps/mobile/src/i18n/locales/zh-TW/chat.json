@@ -188,7 +188,17 @@
   "workGroup": {
     "working": "正在工作…",
     "worked": "已工作 {{duration}}",
-    "workDetails": "工作過程"
+    "workDetails": "工作過程",
+    "phases_one": "{{count}} 個階段",
+    "phases_other": "{{count}} 個階段",
+    "phaseKind": {
+      "explore": "查閱與檢索",
+      "edit": "修改檔案",
+      "verify": "執行驗證",
+      "execute": "執行命令",
+      "delegate": "委派子任務",
+      "tools": "呼叫工具"
+    }
   },
   "geminiRateLimit": {
     "retried": "已按 Gemini 建議的時間自動重試",

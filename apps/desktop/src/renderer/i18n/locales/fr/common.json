@@ -15338,6 +15338,17 @@
         "read_many": "{{count}} fichiers lus",
         "search_many": "{{count}} recherches",
         "list_many": "Fichiers listés {{count}} fois"
+      },
+      "phases_one": "{{count}} étape",
+      "phases_other": "{{count}} étapes",
+      "phases_many": "{{count}} étapes",
+      "phaseKind": {
+        "explore": "Explorer et inspecter",
+        "edit": "Modifier des fichiers",
+        "verify": "Vérifier et tester",
+        "execute": "Exécuter des commandes",
+        "delegate": "Déléguer des tâches",
+        "tools": "Exécuter des outils"
       }
     },
     "agentTask": {

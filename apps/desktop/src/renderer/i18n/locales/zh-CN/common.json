@@ -15189,6 +15189,16 @@
         "search_other": "搜索 {{count}} 次",
         "list_one": "列出目录 {{count}} 次",
         "list_other": "列出目录 {{count}} 次"
+      },
+      "phases_one": "{{count}} 个阶段",
+      "phases_other": "{{count}} 个阶段",
+      "phaseKind": {
+        "explore": "查阅与检索",
+        "edit": "修改文件",
+        "verify": "运行验证",
+        "execute": "执行命令",
+        "delegate": "委派子任务",
+        "tools": "调用工具"
       }
     },
     "agentTask": {

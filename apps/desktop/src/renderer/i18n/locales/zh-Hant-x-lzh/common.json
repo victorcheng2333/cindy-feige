@@ -15180,6 +15180,16 @@
         "search_other": "尋索 {{count}} 次",
         "list_one": "列目錄 {{count}} 次",
         "list_other": "列目錄 {{count}} 次"
+      },
+      "phases_one": "{{count}} 程",
+      "phases_other": "{{count}} 程",
+      "phaseKind": {
+        "explore": "披覽檢索",
+        "edit": "修訂卷帙",
+        "verify": "校驗核實",
+        "execute": "施行敕令",
+        "delegate": "分遣屬務",
+        "tools": "運使器用"
       }
     },
     "agentTask": {

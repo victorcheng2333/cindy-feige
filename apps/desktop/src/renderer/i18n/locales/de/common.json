@@ -15213,6 +15213,16 @@
         "search_other": "{{count}}-mal gesucht",
         "list_one": "Dateien einmal aufgelistet",
         "list_other": "Dateien {{count}}-mal aufgelistet"
+      },
+      "phases_one": "{{count}} Phase",
+      "phases_other": "{{count}} Phasen",
+      "phaseKind": {
+        "explore": "Erkunden & prüfen",
+        "edit": "Dateien bearbeiten",
+        "verify": "Prüfen & testen",
+        "execute": "Befehle ausführen",
+        "delegate": "Aufgaben delegieren",
+        "tools": "Werkzeuge ausführen"
       }
     },
     "agentTask": {

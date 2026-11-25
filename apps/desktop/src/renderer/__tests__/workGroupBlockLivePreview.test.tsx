@@ -892,4 +892,106 @@ describe('WorkGroupBlock — Host-projected running lines', () => {
     expect(screen.getByText('Inspect ACP translator first.')).toBeTruthy();
     expect(screen.getByText('Run tests after patching.')).toBeTruthy();
   });
+
+  // Tier: unit. Production entry: `WorkGroupBlock`.
+  // Gap: (1) while streaming with <=5 total activities across 2+ phases, the header must remain toggleable
+  // because LiveWorkPhasePreview hides completed phase tools; (2) completed outer groups with 2+ progress+group
+  // pairs must flatten into a single-level stage list without double-nested inner "Worked for Xs" headers.
+  // Minimal failing input: 2-phase streaming group with 2 tools, and 2-stage outer completed group.
+  it('keeps multi-phase streaming header toggleable and flattens multi-stage outer progress groups', () => {
+    const streamingChildren: WorkGroupChild[] = [
+      thinking(mkThinking('th-noisy', 'Wait, let me read translator.ts first.')),
+      tools('seg-read', [
+        {
+          clientId: 'r1',
+          role: 'tool_use',
+          content: '',
+          toolUseId: 'tu-r1',
+          toolName: 'Read translator.ts',
+          toolInput: { acpKind: 'read', Path: '/repo/translator.ts' },
+        },
+      ], new Map([['r1', 'ok']]), new Set(['r1'])),
+      tools('seg-edit', [
+        {
+          clientId: 'e1',
+          role: 'tool_use',
+          content: '',
+          toolUseId: 'tu-e1',
+          toolName: 'Edit translator.ts',
+          toolInput: { acpKind: 'edit', Path: '/repo/translator.ts', Target: 'a', Replacement: 'b' },
+        },
+      ]),
+    ];
+
+    render(
+      createElement(WorkGroupBlock, {
+        pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+        blockId: 'work:live-small-phases',
+        isStreaming: true,
+        childItems: streamingChildren,
+      }),
+    );
+
+    const runningButton = screen.getByText('chat.workGroup.working').closest('button');
+    expect(runningButton?.hasAttribute('disabled')).toBe(false);
+    expect(screen.getByText('chat.workGroup.phaseKind.explore')).toBeTruthy();
+    expect(screen.getByText('chat.workGroup.phaseKind.edit')).toBeTruthy();
+    expect(screen.queryByText('Wait, let me read translator.ts first.')).toBeNull();
+
+    cleanup();
+    expandMemory.reset();
+
+    const outerChildren: WorkGroupChild[] = [
+      {
+        kind: 'rendered',
+        key: 'msg-p1',
+        progressText: '排查消息分组逻辑',
+        renderNode: () => createElement('div', { 'data-testid': 'assistant-progress' }, '排查消息分组逻辑'),
+      },
+      group('inner-1', 6_000, [
+        tools('seg-1', [{
+          clientId: 'r1',
+          role: 'tool_use',
+          content: '',
+          toolUseId: 'tu-r1',
+          toolName: 'Read translator.ts',
+          toolInput: { acpKind: 'read', Path: '/repo/translator.ts' },
+        }], new Map([['r1', 'ok']]), new Set(['r1'])),
+      ]),
+      {
+        kind: 'rendered',
+        key: 'msg-p2',
+        progressText: '修改代码并验证',
+        renderNode: () => createElement('div', { 'data-testid': 'assistant-progress' }, '修改代码并验证'),
+      },
+      group('inner-2', 9_000, [
+        tools('seg-2', [{
+          clientId: 'e1',
+          role: 'tool_use',
+          content: '',
+          toolUseId: 'tu-e1',
+          toolName: 'Edit translator.ts',
+          toolInput: { acpKind: 'edit', Path: '/repo/translator.ts', Target: 'a', Replacement: 'b' },
+        }], new Map([['e1', 'ok']]), new Set(['e1'])),
+      ]),
+    ];
+
+    render(
+      createElement(WorkGroupBlock, {
+        pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+        blockId: 'work:summary-stages',
+        durationMs: 15_000,
+        childItems: outerChildren,
+      }),
+    );
+
+    const outerHeader = screen.getByText((content) => content.startsWith('chat.workGroup.worked:15s'));
+    expect(outerHeader.textContent).toContain('chat.workGroup.phases:2');
+    clickGroup('chat.workGroup.worked:15s');
+    expect(document.querySelectorAll('[data-work-phase-group=""]')).toHaveLength(2);
+    expect(screen.getByText('排查消息分组逻辑')).toBeTruthy();
+    expect(screen.getByText('修改代码并验证')).toBeTruthy();
+    // Flattened directly into stage rows: no nested inner "Worked for 6s" disclosure button.
+    expect(screen.queryByText((content) => content.startsWith('chat.workGroup.worked:6s'))).toBeNull();
+  });
 });

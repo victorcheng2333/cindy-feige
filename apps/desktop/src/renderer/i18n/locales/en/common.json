@@ -15250,6 +15250,16 @@
         "search_other": "Searched {{count}} times",
         "list_one": "Listed files once",
         "list_other": "Listed files {{count}} times"
+      },
+      "phases_one": "{{count}} stage",
+      "phases_other": "{{count}} stages",
+      "phaseKind": {
+        "explore": "Explore & inspect",
+        "edit": "Edit files",
+        "verify": "Verify & test",
+        "execute": "Run commands",
+        "delegate": "Delegate tasks",
+        "tools": "Run tools"
       }
     },
     "agentTask": {

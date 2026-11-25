@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractThinkingPhaseTitle,
+  groupOuterWorkStages,
   groupWorkActivityPhases,
   projectWorkActivities,
   shouldGroupWorkActivityPhases,
@@ -231,5 +232,101 @@ describe('projectWorkActivities', () => {
       status: 'running',
     });
     expect(phases[1]?.tools.map((item) => item.key)).toEqual(['c1']);
+  });
+
+  // Tier: unit. Production entry: `projectWorkActivities` + `groupWorkActivityPhases` + `groupOuterWorkStages`.
+  // Gap: consecutive same-intent tool rounds with noisy CoT thinking must merge into cohesive semantic stages
+  // rather than splitting on every thinking block; `update_focus` must anchor stages without polluting tools;
+  // outer progress+group pairs must flatten into a single-level stage list.
+  // Minimal failing input: multi-thought explore->edit->verify stream, update_focus call, and 2 progress+group pairs.
+  it('clusters same-intent rounds, smooths mid-edit reads, handles update_focus, and flattens outer stages', () => {
+    const projection = projectWorkActivities([
+      {
+        kind: 'thinking',
+        key: 'th-e1',
+        message: { clientId: 'th-e1', role: 'thinking', content: 'Wait, let me check git status first.' },
+      },
+      segment('seg-e1', [
+        tool('c-status', 'Git status check', { acpKind: 'execute', CommandLine: 'git status', toolSummary: 'Git status check' }),
+        tool('r-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' }),
+      ]),
+      {
+        kind: 'thinking',
+        key: 'th-e2',
+        message: { clientId: 'th-e2', role: 'thinking', content: 'Okay, now let me read b.ts too.' },
+      },
+      segment('seg-e2', [
+        tool('r-2', 'Read b.ts', { acpKind: 'read', Path: '/repo/b.ts' }),
+      ]),
+      {
+        kind: 'thinking',
+        key: 'th-w1',
+        message: { clientId: 'th-w1', role: 'thinking', content: '**Apply fix to a.ts**\nUpdate logic.' },
+      },
+      segment('seg-w1', [
+        tool('e-1', 'Edit a.ts', { acpKind: 'edit', Path: '/repo/a.ts', Target: 'a', Replacement: 'b' }),
+      ]),
+      segment('seg-mid-read', [
+        tool('r-3', 'Read c.ts', { acpKind: 'read', Path: '/repo/c.ts' }),
+      ]),
+      segment('seg-w2', [
+        tool('e-2', 'Edit c.ts', { acpKind: 'edit', Path: '/repo/c.ts', Target: 'x', Replacement: 'y' }),
+      ]),
+      {
+        kind: 'thinking',
+        key: 'th-v1',
+        message: { clientId: 'th-v1', role: 'thinking', content: 'Run tests to verify.' },
+      },
+      segment('seg-v1', [
+        tool('c-test', 'Run tests', { acpKind: 'execute', CommandLine: 'pnpm test', toolSummary: 'Run unit tests' }),
+      ]),
+    ], false);
+
+    const phases = groupWorkActivityPhases(projection.activities);
+    expect(shouldGroupWorkActivityPhases(phases)).toBe(true);
+    expect(phases).toHaveLength(3);
+    // Explore phase merges both explore rounds and suppresses conversational CoT filler title.
+    expect(phases[0]?.kind).toBe('explore');
+    expect(phases[0]?.title).toBeUndefined();
+    expect(phases[0]?.tools.map((item) => item.key)).toEqual(['c-status', 'r-1', 'r-2']);
+    // Mid-edit single read is folded into the surrounding edit phase; bold heading is extracted.
+    expect(phases[1]).toMatchObject({ kind: 'edit', title: 'Apply fix to a.ts' });
+    expect(phases[1]?.tools.map((item) => item.key)).toEqual(['e-1', 'r-3', 'e-2']);
+    // Verification phase classified via command text even when toolSummary is present.
+    expect(phases[2]).toMatchObject({ kind: 'verify', title: 'Run tests to verify.' });
+    expect(phases[2]?.tools.map((item) => item.key)).toEqual(['c-test']);
+
+    // `update_focus` creates explicit stage boundaries without appearing as a tool row.
+    const focusProjection = projectWorkActivities([
+      segment('seg-f1', [
+        tool('f-1', 'update_focus', { focus: 'Inspecting grouping pipeline' }),
+        tool('rf-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' }),
+      ]),
+      segment('seg-f2', [
+        tool('f-2', 'update_focus', { focus: 'Checking tests' }),
+        tool('rf-2', 'Read b.ts', { acpKind: 'read', Path: '/repo/b.ts' }),
+      ]),
+    ], false);
+    expect(focusProjection.toolActivitiesByChildKey.get('seg-f1')?.map((item) => item.key)).toEqual(['rf-1']);
+    const focusPhases = groupWorkActivityPhases(focusProjection.activities);
+    expect(shouldGroupWorkActivityPhases(focusPhases)).toBe(true);
+    expect(focusPhases.map((p) => p.title)).toEqual(['Inspecting grouping pipeline', 'Checking tests']);
+
+    // Outer progress + inner group flattening produces 2 flat stages; 1 pair stays nested (null).
+    const flattened = groupOuterWorkStages([
+      { kind: 'progress', key: 'p1', progressText: '排查消息分组逻辑' },
+      { kind: 'group', key: 'g1', durationMs: 6_000, children: [segment('s1', [tool('or-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' })])] },
+      { kind: 'progress', key: 'p2', progressText: '修改代码并验证' },
+      { kind: 'group', key: 'g2', durationMs: 9_000, children: [segment('s2', [tool('oe-1', 'Edit a.ts', { acpKind: 'edit', Path: '/repo/a.ts', Target: 'a', Replacement: 'b' })])] },
+    ], false);
+    expect(flattened).toHaveLength(2);
+    expect(flattened?.[0]).toMatchObject({ title: '排查消息分组逻辑', kind: 'explore', durationMs: 6_000 });
+    expect(flattened?.[1]).toMatchObject({ title: '修改代码并验证', kind: 'edit', durationMs: 9_000 });
+
+    const singlePair = groupOuterWorkStages([
+      { kind: 'progress', key: 'p1', progressText: 'Single step' },
+      { kind: 'group', key: 'g1', durationMs: 6_000, children: [segment('s1', [tool('or-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' })])] },
+    ], false);
+    expect(singlePair).toBeNull();
   });
 });

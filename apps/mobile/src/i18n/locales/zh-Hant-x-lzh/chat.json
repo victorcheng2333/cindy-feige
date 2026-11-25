@@ -188,7 +188,17 @@
   "workGroup": {
     "working": "方勞作…",
     "worked": "已勞作 {{duration}}",
-    "workDetails": "勞作之程"
+    "workDetails": "勞作之程",
+    "phases_one": "{{count}} 程",
+    "phases_other": "{{count}} 程",
+    "phaseKind": {
+      "explore": "披覽檢索",
+      "edit": "修訂卷帙",
+      "verify": "校驗核實",
+      "execute": "施行敕令",
+      "delegate": "分遣屬務",
+      "tools": "運使器用"
+    }
   },
   "geminiRateLimit": {
     "retried": "依 Gemini 所請，已自試",

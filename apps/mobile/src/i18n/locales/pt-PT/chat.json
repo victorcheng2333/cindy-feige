@@ -160,7 +160,18 @@
   "workGroup": {
     "working": "A processar…",
     "worked": "Trabalhou durante {{duration}}",
-    "workDetails": "Detalhes do trabalho"
+    "workDetails": "Detalhes do trabalho",
+    "phases_one": "{{count}} etapa",
+    "phases_other": "{{count}} etapas",
+    "phases_many": "{{count}} etapas",
+    "phaseKind": {
+      "explore": "Explorar e inspecionar",
+      "edit": "Editar ficheiros",
+      "verify": "Verificar e testar",
+      "execute": "Executar comandos",
+      "delegate": "Delegar tarefas",
+      "tools": "Executar ferramentas"
+    }
   },
   "teammateProcess": {
     "retry": "Tentar novamente",
