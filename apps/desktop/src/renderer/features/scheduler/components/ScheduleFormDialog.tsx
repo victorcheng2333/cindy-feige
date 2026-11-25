@@ -435,9 +435,12 @@ export function ScheduleFormDialog({
     // 脚本在本机生成。Agent 在另一台电脑或使用 Agy(不支持辅助 HTTP 直连)时,改用本机的
     // 辅助模型兜底链,不把远端或 Agy 来源当成本机辅助模型。
     const remoteAgentLocation = selectedAgentDeviceId;
-    const usesAuxiliaryFallback = Boolean(remoteAgentLocation) || form.agentKind === 'antigravity';
-    const resolveBoundSessionRoute = !usesAuxiliaryFallback && needsBoundSessionGenerationRouteResolution(form);
     const inheritsBoundSessionModel = usesBoundSessionGenerationModel(form);
+    const usesAuxiliaryFallback =
+      Boolean(remoteAgentLocation)
+      || form.agentKind === 'antigravity'
+      || (inheritsBoundSessionModel && boundSessionReference?.agentKind === 'antigravity');
+    const resolveBoundSessionRoute = !usesAuxiliaryFallback && needsBoundSessionGenerationRouteResolution(form);
     const providerId = usesAuxiliaryFallback
       ? undefined
       : resolveBoundSessionRoute
@@ -506,6 +509,7 @@ export function ScheduleFormDialog({
     form.persistentSession,
     form.preRunHookCommand,
     form.executionMode,
+    boundSessionReference?.agentKind,
     setField,
     t,
   ]);

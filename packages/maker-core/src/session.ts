@@ -503,6 +503,11 @@ export class Session {
     }
     return this.negotiatedCapabilitiesCache.value;
   }
+
+  /** ACP-only command names used when sanitizing host-added wire notes. */
+  getPluginEngineCommandNames(): readonly string[] {
+    return this.handle.getPluginEngineCommandNames?.() ?? [];
+  }
   /** 见 SessionOptions.remoteHostId。 */
   readonly remoteHostId: string | null;
   /** 见 SessionOptions.agentDeviceId。 */

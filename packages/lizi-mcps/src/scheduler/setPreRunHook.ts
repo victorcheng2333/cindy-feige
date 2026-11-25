@@ -113,10 +113,16 @@ export function registerScheduleSetPreRunHookTool(
           const remoteAgent = schedule.targetSessionId && hookScript.isSessionAgentOnOtherDevice
             ? await hookScript.isSessionAgentOnOtherDevice(schedule.targetSessionId)
             : !!schedule.agentDeviceId;
+          const effectiveAgentKind = schedule.modelAgentKind ?? schedule.agentKind;
           // 插件引擎与 Agy(antigravity) 不走辅助 HTTP 生成，同样改走本机辅助模型兜底。
-          if (!remoteAgent && schedule.agentKind !== 'acp' && schedule.agentKind !== 'antigravity') {
+          if (
+            !remoteAgent &&
+            effectiveAgentKind !== 'acp' &&
+            effectiveAgentKind !== 'antigravity' &&
+            schedule.providerId !== 'antigravity'
+          ) {
             providerId = schedule.providerId;
-            agentKind = schedule.agentKind;
+            agentKind = effectiveAgentKind;
             model = schedule.model;
           }
         }

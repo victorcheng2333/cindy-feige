@@ -624,10 +624,11 @@ export function registerScheduleHandlers(getMaker?: () => Maker | null): void {
     const targetSessionId = typeof body.targetSessionId === 'string' && body.targetSessionId.trim()
       ? body.targetSessionId.trim()
       : undefined;
-    let providerId = typeof body.providerId === 'string' ? body.providerId : undefined;
-    let agentKind: AgentKind | undefined = requestedAgentKind;
-    let model = typeof body.model === 'string' ? body.model : undefined;
-    if (targetSessionId && shouldResolveBoundSessionGenerationRoute({
+    const isExplicitAgy = body.agentKind === 'antigravity' || body.providerId === 'antigravity';
+    let providerId = !isExplicitAgy && typeof body.providerId === 'string' ? body.providerId : undefined;
+    let agentKind: AgentKind | undefined = isExplicitAgy ? undefined : requestedAgentKind;
+    let model = !isExplicitAgy && typeof body.model === 'string' ? body.model : undefined;
+    if (!isExplicitAgy && targetSessionId && shouldResolveBoundSessionGenerationRoute({
       targetSessionId,
       resolveBoundSessionRoute: body.resolveBoundSessionRoute === true,
     })) {
@@ -638,43 +639,50 @@ export function registerScheduleHandlers(getMaker?: () => Maker | null): void {
         ? requestedAgentKind ? { agentKind: requestedAgentKind, model: model ?? '', agentDeviceId: null } : null
         : await maker.getSessionMeta(targetSessionId).catch(() => null);
       if (session?.agentDeviceId) return unsupportedRemoteGeneration(providerId, model ?? session.model, session.agentKind);
-      // A plugin-engine task has no catalog route for utility generation, and
-      // schedules do not run on plugin engines (docs/plans/acp-plugin-bridge.md).
-      // Fail closed with no candidate instead of guessing a built-in transport.
-      if (session && !runsOnBuiltinEngine(session)) return { ok: false as const, reason: 'no_candidate' as const, attempts: [] };
-      // Bound-session fallback must use the same live connection snapshot as
-      // the provider picker. Never turn an unconnected built-in provider into
-      // a routable candidate just because it exists in the catalog.
-      const { getDesktopProviderService } = await import('../maker-host/createDesktopProviderService.js');
-      const trustedCaller = isDeviceLinkInvoke() || isTrustedAppRendererEvent(event);
-      const providers = await getDesktopProviderService().listProviders({
-        allowSideEffects: trustedCaller,
-        waitForDiscovery: trustedCaller,
-        getCatalog: getActiveCatalog,
-      });
-      const route = resolveBoundSessionGenerationRoute({
-        session,
-        sessionProviderId: explicitLocal ? undefined : getSessionProvider(targetSessionId),
-        requestedProviderId: providerId,
-        requestedModel: model,
-        providers,
-      });
-      if (!route) {
-        return {
-          ok: false as const,
-          reason: 'no_candidate' as const,
-          attempts: [{
-            providerId: explicitLocal ? providerId ?? '' : getSessionProvider(targetSessionId) ?? targetSessionId,
-            model: session?.model?.trim() ?? '',
-            transport: session?.agentKind === 'codex' ? 'codex-responses' as const : 'litellm-chat-completions' as const,
-            status: 'skipped' as const,
-            reason: 'model_unavailable' as const,
-          }],
-        };
+      if (session?.agentKind === 'antigravity') {
+        // Agy does not support direct auxiliary HTTP calls; fall back to local host utility model.
+        providerId = undefined;
+        agentKind = undefined;
+        model = undefined;
+      } else {
+        // A plugin-engine task has no catalog route for utility generation, and
+        // schedules do not run on plugin engines (docs/plans/acp-plugin-bridge.md).
+        // Fail closed with no candidate instead of guessing a built-in transport.
+        if (session && !runsOnBuiltinEngine(session)) return { ok: false as const, reason: 'no_candidate' as const, attempts: [] };
+        // Bound-session fallback must use the same live connection snapshot as
+        // the provider picker. Never turn an unconnected built-in provider into
+        // a routable candidate just because it exists in the catalog.
+        const { getDesktopProviderService } = await import('../maker-host/createDesktopProviderService.js');
+        const trustedCaller = isDeviceLinkInvoke() || isTrustedAppRendererEvent(event);
+        const providers = await getDesktopProviderService().listProviders({
+          allowSideEffects: trustedCaller,
+          waitForDiscovery: trustedCaller,
+          getCatalog: getActiveCatalog,
+        });
+        const route = resolveBoundSessionGenerationRoute({
+          session,
+          sessionProviderId: explicitLocal ? undefined : getSessionProvider(targetSessionId),
+          requestedProviderId: providerId,
+          requestedModel: model,
+          providers,
+        });
+        if (!route) {
+          return {
+            ok: false as const,
+            reason: 'no_candidate' as const,
+            attempts: [{
+              providerId: explicitLocal ? providerId ?? '' : getSessionProvider(targetSessionId) ?? targetSessionId,
+              model: session?.model?.trim() ?? '',
+              transport: session?.agentKind === 'codex' ? 'codex-responses' as const : 'litellm-chat-completions' as const,
+              status: 'skipped' as const,
+              reason: 'model_unavailable' as const,
+            }],
+          };
+        }
+        providerId = route.providerId;
+        agentKind = route.agentKind;
+        model = route.model;
       }
-      providerId = route.providerId;
-      agentKind = route.agentKind;
-      model = route.model;
     }
     try {
       const installed = await installHookScript(
