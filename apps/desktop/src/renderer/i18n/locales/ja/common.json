@@ -3665,7 +3665,10 @@
         "invalid": "認証情報を含まない HTTP、HTTPS、または SOCKS5 の URL を入力してください。",
         "saved": "プロキシを保存しました。",
         "readFailed": "プロキシ設定を読み込めませんでした。",
-        "saveFailed": "プロキシ設定を保存できませんでした。"
+        "saveFailed": "プロキシ設定を保存できませんでした。",
+        "aiCreditsLabel": "Google AI Credits を使用",
+        "aiCreditsHint": "プランの上限に達した後、Google AI Credits を使って Agy を継続できるようにします。現在のターン終了後に反映されます。",
+        "aiCreditsSaveFailed": "AI Credits 設定を保存できませんでした。"
       },
       "llamacpp": {
         "ownedElsewhere": "モデルサービスは別の Cindy インスタンスで実行中です。モデルのダウンロードやコンテキストの変更はそちらで行うか、先にそのサービスを停止してください。",

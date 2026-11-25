@@ -102,6 +102,16 @@ export const providersSettings = defineSettings({
       'settings.providers.agyProxy.hint',
     ],
   },
+  agyAiCredits: {
+    id: 'providers.agyAiCredits',
+    tab: 'providers',
+    targetId: 'settings-provider-agy-ai-credits',
+    fallbackTargetId: 'settings-panel-providers',
+    titleKey: 'settings.providers.agyProxy.aiCreditsLabel',
+    descriptionKey: 'settings.providers.agyProxy.aiCreditsHint',
+    sectionKey: 'settings.tabs.providers',
+    aliases: ['AI Credits', 'Google AI Credits', 'useG1Credits', 'Agy 积分', '额度溢出'],
+  },
   pluginProviders: {
     id: 'providers.pluginProviders',
     tab: 'providers',

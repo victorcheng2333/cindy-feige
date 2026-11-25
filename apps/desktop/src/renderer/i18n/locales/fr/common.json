@@ -3755,7 +3755,10 @@
         "invalid": "Saisissez une URL de proxy HTTP, HTTPS ou SOCKS5 sans identifiants.",
         "saved": "Proxy enregistré.",
         "readFailed": "Impossible de lire le réglage du proxy.",
-        "saveFailed": "Impossible d’enregistrer le réglage du proxy."
+        "saveFailed": "Impossible d’enregistrer le réglage du proxy.",
+        "aiCreditsLabel": "Utiliser les crédits Google AI",
+        "aiCreditsHint": "Autorise Agy à utiliser vos crédits Google AI une fois votre quota épuisé. Prend effet après le tour en cours.",
+        "aiCreditsSaveFailed": "Impossible d’enregistrer le paramètre des crédits AI."
       },
       "llamacpp": {
         "ownedElsewhere": "Le service de modèles s'exécute dans une autre instance de Cindy. Téléchargez les modèles ou modifiez le contexte depuis celle-ci, ou arrêtez d'abord son service.",

@@ -3665,7 +3665,10 @@
         "invalid": "请输入无账号口令之 HTTP、HTTPS 或 SOCKS5 Proxy 址。",
         "saved": "Proxy 已存。",
         "readFailed": "未能读 Proxy 之设。",
-        "saveFailed": "未能存 Proxy 之设。"
+        "saveFailed": "未能存 Proxy 之设。",
+        "aiCreditsLabel": "启用 Google AI Credits",
+        "aiCreditsHint": "常额既罄，准 Agy 借 Google AI Credits 续行。本回合毕乃效。",
+        "aiCreditsSaveFailed": "AI Credits 之设未能存。"
       },
       "llamacpp": {
         "ownedElsewhere": "模型服务方行于他一 Cindy 实例中。请于彼处取下模型或改上下文，或先止该实例之服务。",

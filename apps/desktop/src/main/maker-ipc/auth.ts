@@ -12,7 +12,13 @@
 import type { Maker } from '@cindy/maker-core';
 import { BrowserWindow } from 'electron';
 import { refreshAntigravityProxyRouting } from '../maker-host/antigravity-host.js';
-import { normalizeAntigravityProxy, readAntigravityProxy, writeAntigravityProxy } from '../maker-host/antigravity-proxy-settings-store.js';
+import {
+  normalizeAntigravityProxy,
+  readAntigravityProxy,
+  readAntigravityUseG1Credits,
+  writeAntigravityProxy,
+  writeAntigravityUseG1Credits,
+} from '../maker-host/antigravity-proxy-settings-store.js';
 import { getActiveAppSession, isAppSessionBoundaryPending } from '../appSessionState.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { cancelCursorApiKeyValidation, setCursorApiKey } from '../maker-host/cursor-auth.js';
@@ -73,6 +79,24 @@ export function registerMakerAuthIpc(maker: Maker): void {
     refreshAntigravityProxyRouting();
     await recycleAgyRuntimes();
     return address;
+  });
+  registry.handle(MAKER_INVOKE.AGY_USE_G1_CREDITS_GET, event => {
+    assertProxySettingsAccess(event);
+    return readAntigravityUseG1Credits();
+  });
+  registry.handle(MAKER_INVOKE.AGY_USE_G1_CREDITS_SET, async (event, value: unknown, ownerId: unknown, generation: unknown) => {
+    assertProxySettingsAccess(event);
+    const owner = getActiveAppSession();
+    if (owner.dataOwnerId !== ownerId || owner.generation !== generation) {
+      throwIpcError('PRECONDITION_FAILED', 'The signed-in account changed. Reopen settings and try again.');
+    }
+    if (typeof value !== 'boolean') throwIpcError('INVALID_PARAMS', 'useG1Credits must be a boolean.');
+    const previous = readAntigravityUseG1Credits();
+    writeAntigravityUseG1Credits(value);
+    if (previous === value) return value;
+    refreshAntigravityProxyRouting();
+    await recycleAgyRuntimes();
+    return value;
   });
   // This secret-writing endpoint is intentionally absent from Device Link allowlists.
   registry.handle(MAKER_INVOKE.CURSOR_SET_API_KEY, async (event, apiKey: unknown) => {

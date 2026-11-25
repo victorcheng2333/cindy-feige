@@ -3755,7 +3755,10 @@
         "invalid": "Introduza um URL de proxy HTTP, HTTPS ou SOCKS5 sem credenciais.",
         "saved": "Proxy guardado.",
         "readFailed": "Não foi possível ler a definição do proxy.",
-        "saveFailed": "Não foi possível guardar a definição do proxy."
+        "saveFailed": "Não foi possível guardar a definição do proxy.",
+        "aiCreditsLabel": "Usar créditos do Google AI",
+        "aiCreditsHint": "Permite ao Agy usar os seus créditos do Google AI quando a quota do plano terminar. Aplica-se após o turno atual.",
+        "aiCreditsSaveFailed": "Não foi possível guardar a definição de créditos AI."
       },
       "llamacpp": {
         "ownedElsewhere": "O serviço de modelos está em execução noutra instância do Cindy. Descarregue modelos ou altere o contexto nessa instância, ou pare primeiro o respetivo serviço.",

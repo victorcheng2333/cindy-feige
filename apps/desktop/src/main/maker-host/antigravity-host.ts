@@ -35,6 +35,16 @@ function readConfiguredProxy(): string | undefined {
   }
 }
 
+function readConfiguredUseG1Credits(): boolean {
+  try {
+    return typeof agySettingsStore.readAntigravityUseG1Credits === 'function'
+      ? agySettingsStore.readAntigravityUseG1Credits()
+      : false;
+  } catch {
+    return false;
+  }
+}
+
 function configuredEnvironment() {
   const address = readConfiguredProxy();
   return antigravityEnv(address === undefined ? process.env : { ...process.env, CINDY_AGY_PROXY: address }, {
@@ -301,7 +311,7 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
         // A cold /usage read can take about 20s. Leave shutdown headroom
         // within the existing 30s device-link deadline, including the version check.
         const { stdout } = await exec(bin, [
-          `--gemini_dir=${dir}`, '--settings', '{"useG1Credits":false}',
+          `--gemini_dir=${dir}`, '--settings', JSON.stringify({ useG1Credits: readConfiguredUseG1Credits() }),
           '--output-format', 'json', '--print-timeout', '20s', '--print', '/usage',
         ], {
           cwd: dir, env, timeout: 25_000, maxBuffer: 64 * 1024,
@@ -557,6 +567,7 @@ export function buildAntigravityAgent(
     localSystemPrompt: antigravitySystemPrompt,
     getDiscoveredCapabilities: currentCapabilities,
     getCliVersion: () => readAntigravityCliVersion(executable),
+    getSettings: () => ({ useG1Credits: readConfiguredUseG1Credits() }),
     async prepareAcp(opts, memory) {
       if (!opts.sessionId) throw new Error('Antigravity requires a saved task.');
       const owner = getActiveAppSession().generation;

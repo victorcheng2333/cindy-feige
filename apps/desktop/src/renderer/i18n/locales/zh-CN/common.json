@@ -3665,7 +3665,10 @@
         "invalid": "请输入不含账号密码的 HTTP、HTTPS 或 SOCKS5 Proxy 地址。",
         "saved": "Proxy 已保存。",
         "readFailed": "无法读取 Proxy 设置。",
-        "saveFailed": "无法保存 Proxy 设置。"
+        "saveFailed": "无法保存 Proxy 设置。",
+        "aiCreditsLabel": "使用 Google AI Credits",
+        "aiCreditsHint": "套餐配额用尽后允许 Agy 使用 Google AI Credits 继续运行。当前轮结束后生效。",
+        "aiCreditsSaveFailed": "无法保存 AI Credits 设置。"
       },
       "llamacpp": {
         "ownedElsewhere": "模型服务正在另一个 Cindy 实例中运行。请在那里下载模型或修改上下文，或先在该实例停止服务。",

@@ -7354,6 +7354,8 @@ interface ElectronAPI {
     auth: {
       getAgyProxy: () => Promise<string>;
       setAgyProxy: (address: string, ownerId: string | null, generation: number | null) => Promise<string>;
+      getAgyUseG1Credits: () => Promise<boolean>;
+      setAgyUseG1Credits: (enabled: boolean, ownerId: string | null, generation: number | null) => Promise<boolean>;
       setCursorApiKey: (apiKey: string) => Promise<CodexAuthState>;
       getState: (agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity') => Promise<CodexAuthState>;
       triggerLogin: (
