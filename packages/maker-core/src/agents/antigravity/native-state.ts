@@ -64,6 +64,7 @@ const PENDING_REPLY_TAIL_BYTES = 64 * 1024;
 const TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const HIGH_PRIORITY_MESSAGE = 'MESSAGE_PRIORITY_HIGH';
 const LOW_PRIORITY_MESSAGE = 'MESSAGE_PRIORITY_LOW';
+const SYSTEM_STOP_NOTICE_SUBSTRING = 'All your subagents and background tasks have been stopped';
 const TERMINAL_SUBAGENT_STATES = new Set([
   'KILLED',
   'FAILED',
@@ -447,6 +448,14 @@ export async function watchAntigravityPromptOutcome(options: {
 interface ParsedTranscriptLine {
   type?: string;
   content?: string;
+  createdAtMs?: number;
+  mtimeMs: number;
+}
+
+function parseIsoTimestampMs(value: unknown): number | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function readLastTranscriptLine(
@@ -465,7 +474,9 @@ async function readLastTranscriptLine(
   try {
     handle = await fsp.open(file.path, openFlags);
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.size === 0) return undefined;
+    if (!stat.isFile()) return undefined;
+    const mtimeMs = Math.floor(stat.mtimeMs);
+    if (stat.size === 0) return { mtimeMs };
     for (const cap of [PENDING_REPLY_TAIL_BYTES, TRANSCRIPT_TAIL_BYTES]) {
       const start = Math.max(0, stat.size - cap);
       const buffer = Buffer.alloc(stat.size - start);
@@ -475,7 +486,7 @@ async function readLastTranscriptLine(
         end -= 1;
       }
       if (end === 0) {
-        if (start === 0) return undefined;
+        if (start === 0) return { mtimeMs };
         continue;
       }
       const trimmed = buffer.subarray(0, end);
@@ -483,14 +494,17 @@ async function readLastTranscriptLine(
       if (lastNewline === -1 && start > 0) continue;
       const line = trimmed.toString('utf8', lastNewline + 1);
       const parsed = JSON.parse(line) as unknown;
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { mtimeMs };
       const rec = parsed as Record<string, unknown>;
+      const createdAtMs = parseIsoTimestampMs(rec.created_at);
       return {
         ...(typeof rec.type === 'string' ? { type: rec.type } : {}),
         ...(typeof rec.content === 'string' ? { content: rec.content } : {}),
+        ...(createdAtMs !== undefined ? { createdAtMs } : {}),
+        mtimeMs,
       };
     }
-    return undefined;
+    return { mtimeMs };
   } catch {
     return undefined;
   } finally {
@@ -501,6 +515,7 @@ async function readLastTranscriptLine(
 interface InboxSummary {
   hasUnreadHighPriority: boolean;
   senders: Set<string>;
+  systemStopAtMs?: number;
 }
 
 async function readInboxSummary(
@@ -537,6 +552,7 @@ async function readInboxSummary(
   }
 
   let hasUnreadHighPriority = false;
+  let systemStopAtMs: number | undefined;
   for (const name of messageNames) {
     const file = await resolveAntigravityManagedPath(stateDir, [...dirSegments, name], 'file');
     if (!file || file.info.size > MAX_JSON_FILE_BYTES) continue;
@@ -552,6 +568,16 @@ async function readInboxSummary(
     }
     if (typeof parsed.sender === 'string' && parsed.sender) {
       senders.add(parsed.sender);
+      if (
+        parsed.sender === 'system'
+        && typeof parsed.content === 'string'
+        && parsed.content.includes(SYSTEM_STOP_NOTICE_SUBSTRING)
+      ) {
+        const stopTs = parseIsoTimestampMs(parsed.timestamp) ?? Math.floor(file.info.mtimeMs);
+        if (systemStopAtMs === undefined || stopTs > systemStopAtMs) {
+          systemStopAtMs = stopTs;
+        }
+      }
     }
     const fileId = name.slice(0, -5);
     const messageId = typeof parsed.id === 'string' ? parsed.id : undefined;
@@ -561,7 +587,7 @@ async function readInboxSummary(
     }
   }
 
-  return { hasUnreadHighPriority, senders };
+  return { hasUnreadHighPriority, senders, ...(systemStopAtMs !== undefined ? { systemStopAtMs } : {}) };
 }
 
 export interface AntigravityBackgroundState {
@@ -631,6 +657,22 @@ export async function readAntigravityBackgroundState(
         const convId = typeof record.conversationId === 'string' ? record.conversationId : childId;
         if (inbox.senders.has(convId) || inbox.senders.has(childId) || TERMINAL_SUBAGENT_STATES.has(state)) {
           continue;
+        }
+        // Agy leaves `subagents/<childId>.json` in `SUBAGENT_STATE_ALIVE` after user
+        // force-cancellation or server restart and writes a low-priority `sender: "system"`
+        // stop notice to the parent inbox instead. Ignore children whose last activity is
+        // at or before that notice so stale subagents never pin future turns open.
+        if (inbox.systemStopAtMs !== undefined) {
+          const childTail = NATIVE_SESSION_ID.test(convId)
+            ? await readLastTranscriptLine(stateDir, subdir, convId)
+            : undefined;
+          const lastActivityMs =
+            childTail?.createdAtMs
+            ?? childTail?.mtimeMs
+            ?? Math.floor(recordFile.info.mtimeMs);
+          if (lastActivityMs > 0 && lastActivityMs <= inbox.systemStopAtMs) {
+            continue;
+          }
         }
         anyRunning = true;
         break;

@@ -469,6 +469,36 @@ describe('Antigravity native state inspection', () => {
       // Once planner responds, both are clear.
       await writeFile(path.join(logsDir, 'transcript.jsonl'), `${JSON.stringify({ step_index: 6, type: 'PLANNER_RESPONSE', content: 'Done' })}\n`);
       expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, activeSubagents: false });
+
+      // Stale SUBAGENT_STATE_ALIVE child stopped by a newer system notice does not pin activeSubagents,
+      // while subsequent activity newer than the stop notice marks it active again.
+      const childLogsDir = path.join(dir, 'antigravity-cli', 'brain', 'child-stale', '.system_generated', 'logs');
+      await mkdir(childLogsDir, { recursive: true });
+      await writeFile(
+        path.join(subagentsDir, 'child-stale.json'),
+        JSON.stringify({ conversationId: 'child-stale', state: 'SUBAGENT_STATE_ALIVE' }),
+      );
+      await writeFile(
+        path.join(childLogsDir, 'transcript.jsonl'),
+        `${JSON.stringify({ step_index: 1, type: 'PLANNER_RESPONSE', created_at: '2026-11-25T06:00:00Z' })}\n`,
+      );
+      await writeFile(
+        path.join(messagesDir, 'sys-stop.json'),
+        JSON.stringify({
+          id: 'sys-stop',
+          sender: 'system',
+          priority: 'MESSAGE_PRIORITY_LOW',
+          timestamp: '2026-11-25T06:05:00Z',
+          content: '[Notice] All your subagents and background tasks have been stopped due to server restart.',
+        }),
+      );
+      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, activeSubagents: false });
+
+      await writeFile(
+        path.join(childLogsDir, 'transcript.jsonl'),
+        `${JSON.stringify({ step_index: 2, type: 'SYSTEM_MESSAGE', created_at: '2026-11-25T06:06:00Z', content: 'revived' })}\n`,
+      );
+      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, activeSubagents: true });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
