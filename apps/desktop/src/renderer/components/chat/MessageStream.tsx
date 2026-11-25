@@ -3064,7 +3064,12 @@ export const WorkGroupRenderItemView = memo(function WorkGroupRenderItemView({
       !child.message.failedSamplingAttempt &&
       !child.message.systemCardType &&
       !child.message.images?.length &&
-      !child.message.files?.length
+      !child.message.files?.length &&
+      !child.message.modelMismatch &&
+      !child.message.ghostReplyPending &&
+      !child.message.botLearning &&
+      !child.message.botStarterOptions?.length &&
+      !context.pluginUi.messageBody
     ) {
       return {
         kind: 'rendered',

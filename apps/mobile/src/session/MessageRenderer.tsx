@@ -5252,7 +5252,7 @@ function MobileWorkPhaseGroup({
     () => formatToolListSummary(phase.tools.map((entry) => entry.message.normalized), mobilePresentationLocalizer),
     [i18n.language, phase.tools],
   );
-  const phaseLabel = phase.title || t(`chat:workGroup.phaseKind.${phase.kind}`);
+  const phaseLabel = phase.title || t(`chat.workGroup.phaseKind.${phase.kind}`);
   const title = phaseLabel
     ? (toolSummary && toolSummary !== phaseLabel ? `${phaseLabel} · ${toolSummary}` : phaseLabel)
     : toolSummary;
@@ -5409,7 +5409,7 @@ function WorkGroupCard({
   const phaseCountSummary = useMemo(() => {
     if (isStreaming || !usePhaseGroups || !phases) return '';
     const count = phases.filter((phase) => phase.tools.length > 0).length;
-    return count >= 2 ? t('chat:workGroup.phases', { count }) : '';
+    return count >= 2 ? t('chat.workGroup.phases', { count }) : '';
   }, [isStreaming, usePhaseGroups, phases, t]);
   const title = [
     actions.companion && isStreaming && actions.companionWorkingLabel ? actions.companionWorkingLabel : presentation.title,

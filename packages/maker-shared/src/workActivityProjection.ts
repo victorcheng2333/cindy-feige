@@ -457,7 +457,7 @@ export function teammateWorkSummaryText(
 }
 
 const PHASE_TITLE_MAX_CHARS = 88;
-const OUTER_PROGRESS_MAX_CHARS = 240;
+const MARKDOWN_LINK_OR_URL_RE = /!?\[[^\]]+\]\([^)]+\)|https?:\/\/\S/i;
 
 const BOILERPLATE_THINKING_OPENING_RE = /^(?:i(?:'m| am)\s+thinking(?:\s+through)?(?:\s+how\s+to\s+approach\s+this|\s+about\s+this)?|let(?:'s|\s+me)\s+think(?:\s+through|\s+about)?(?:\s+this|\s+how\s+to\s+approach\s+this)?|thinking(?:\s+about\s+this)?)\s*[.。!！…]*$/i;
 
@@ -857,8 +857,15 @@ export interface OuterWorkStageChild<
 function extractShortProgressTitle(rawText: string | undefined): string | null {
   if (!rawText) return null;
   const trimmed = rawText.trim();
-  if (!trimmed || trimmed.length > OUTER_PROGRESS_MAX_CHARS) return null;
-  if (trimmed.includes('```') || /\n\s*\n/.test(trimmed) || /^\|.+\|$/m.test(trimmed)) {
+  if (!trimmed) return null;
+  // Bail out for multi-line prose, code, tables, markdown links/images, or bare URLs
+  // so rich or clickable assistant messages are never silently stripped when flattening.
+  if (
+    /[\r\n]/.test(trimmed)
+    || trimmed.includes('```')
+    || /^\|.+\|$/.test(trimmed)
+    || MARKDOWN_LINK_OR_URL_RE.test(trimmed)
+  ) {
     return null;
   }
   const singleLine = trimmed
@@ -866,7 +873,9 @@ function extractShortProgressTitle(rawText: string | undefined): string | null {
     .replace(/[*_`]+/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return singleLine ? clampPhaseTitle(singleLine) : null;
+  // Never silently truncate intermediate assistant text past the phase title cap.
+  if (!singleLine || singleLine.length > PHASE_TITLE_MAX_CHARS) return null;
+  return singleLine;
 }
 
 /**

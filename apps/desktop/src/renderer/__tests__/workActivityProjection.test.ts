@@ -328,5 +328,22 @@ describe('projectWorkActivities', () => {
       { kind: 'group', key: 'g1', durationMs: 6_000, children: [segment('s1', [tool('or-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' })])] },
     ], false);
     expect(singlePair).toBeNull();
+
+    // Long (>88 chars) or link-bearing assistant progress must not be silently truncated/stripped.
+    const longProgress = groupOuterWorkStages([
+      { kind: 'progress', key: 'p1', progressText: 'a'.repeat(95) },
+      { kind: 'group', key: 'g1', durationMs: 6_000, children: [segment('s1', [tool('or-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' })])] },
+      { kind: 'progress', key: 'p2', progressText: 'Done' },
+      { kind: 'group', key: 'g2', durationMs: 6_000, children: [segment('s2', [tool('oe-1', 'Edit a.ts', { acpKind: 'edit', Path: '/repo/a.ts', Target: 'a', Replacement: 'b' })])] },
+    ], false);
+    expect(longProgress).toBeNull();
+
+    const linkProgress = groupOuterWorkStages([
+      { kind: 'progress', key: 'p1', progressText: 'Inspect [translator.ts](file:///repo/translator.ts)' },
+      { kind: 'group', key: 'g1', durationMs: 6_000, children: [segment('s1', [tool('or-1', 'Read a.ts', { acpKind: 'read', Path: '/repo/a.ts' })])] },
+      { kind: 'progress', key: 'p2', progressText: 'Done' },
+      { kind: 'group', key: 'g2', durationMs: 6_000, children: [segment('s2', [tool('oe-1', 'Edit a.ts', { acpKind: 'edit', Path: '/repo/a.ts', Target: 'a', Replacement: 'b' })])] },
+    ], false);
+    expect(linkProgress).toBeNull();
   });
 });

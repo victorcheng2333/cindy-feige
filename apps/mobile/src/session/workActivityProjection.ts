@@ -130,6 +130,7 @@ export function projectOuterMobileWorkStages(
       child.type === 'message'
       && child.message.kind === 'assistant'
       && !child.message.failedSamplingAttempt
+      && !child.message.secondaryBody
       && !child.message.media?.length
       && !child.message.files?.length
       && !child.message.cardIds?.length

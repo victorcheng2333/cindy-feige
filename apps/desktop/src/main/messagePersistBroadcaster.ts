@@ -1505,7 +1505,7 @@ export function createMessagePersistence(deps: MessagePersistencePorts) {
       });
     }
     const existingPersistId =
-      !acpTool && isUpdatableToolUse(toolName) && toolUseId
+      isUpdatableToolUse(toolName) && toolUseId
         ? updatableToolUsePersistIdBySession.get(sessionId)?.get(toolUseId)
         : undefined;
     if (existingPersistId) {

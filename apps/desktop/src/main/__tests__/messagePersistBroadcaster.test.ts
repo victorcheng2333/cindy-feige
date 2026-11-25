@@ -793,6 +793,48 @@ describe('update_plan tool_use persistence', () => {
     expect(broadcastMessageRow).toHaveBeenCalledWith(SESSION, updated, ownerScopeState.scope);
   });
 
+  // Tier: unit | Production entry: onToolUseEvent (acpTool=true)
+  // Gap: Antigravity emits repeated `update_plan` snapshots with the same `toolUseId` (without
+  // `acpInputPatch: true`). With `acpTool=true`, it must still reuse the existing `persistId`.
+  // Minimal failing input: two `update_plan` tool_use calls with identical `toolUseId` and `acpTool=true`.
+  it('reuses the existing update_plan row for repeated ACP/Antigravity plan snapshots', async () => {
+    const firstId = onToolUseEvent(
+      SESSION,
+      {
+        toolUseId: 'acp-sess-plan-1',
+        toolName: 'update_plan',
+        input: { plan: [{ step: 'Inspect code', status: 'in_progress' }] },
+      },
+      null,
+      'turn',
+      undefined,
+      undefined,
+      true,
+    );
+    const secondId = onToolUseEvent(
+      SESSION,
+      {
+        toolUseId: 'acp-sess-plan-1',
+        toolName: 'update_plan',
+        input: { plan: [{ step: 'Inspect code', status: 'completed' }] },
+      },
+      null,
+      'turn',
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(secondId).toBe(firstId);
+    await flushWrites();
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(updateMessageContent).toHaveBeenCalledWith(SESSION, firstId, {
+      toolUseId: 'acp-sess-plan-1',
+      toolName: 'update_plan',
+      input: { plan: [{ step: 'Inspect code', status: 'completed' }] },
+    });
+  });
+
   it('updates the existing web_search row when completed carries authoritative input', async () => {
     const firstPersistId = onToolUseEvent(
       SESSION,
