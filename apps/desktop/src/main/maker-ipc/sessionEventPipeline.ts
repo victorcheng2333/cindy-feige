@@ -13,6 +13,7 @@ import {
   type FinishSessionTerminalEventDeps,
 } from './sessionEventTerminal.js';
 import { recordSessionEventSnapshots } from './sessionEventSnapshots.js';
+import { recordSessionAcpTurnUsage } from './sessionAcpTurnUsage.js';
 import {
   recordSessionClaudeTurnUsage,
   type RecordSessionClaudeTurnUsageDeps,
@@ -83,6 +84,7 @@ export function handleSessionEvent(
     void recordSessionNativeSubscriptionTurnUsage(deps, session, event, terminal.turnAssistantPersistId).catch(() => {
       deps.log?.warn?.('Native subscription turn usage persistence failed');
     });
+    recordSessionAcpTurnUsage(session, event);
     deps.recordProviderPartyUsage?.(session, event);
   };
   if (admitUsage === undefined) record();

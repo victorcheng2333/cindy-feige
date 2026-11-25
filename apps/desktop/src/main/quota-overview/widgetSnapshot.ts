@@ -105,8 +105,15 @@ export function buildUsageWidgetSnapshot(
       daily: count > 0 && data ? data.daily.slice(-count).map((day, i) => {
         const models = seriesDaily?.[i];
         const modelTokens = seriesTokens?.[i];
-        // Widget v1 has three fixed harness slots; never relabel Cursor as Claude.
-        return { money: [day.money[0], day.money[1], day.money[2]], paid: day.paid, tokens: [day.tokens[0], day.tokens[1], day.tokens[2]], ...(models && modelTokens ? { models, modelTokens } : {}) };
+        // Widget v1 has three fixed harness slots (0..2); exclude Cursor/Agy (3..4) while preserving trailing auxiliary/ACP token slots (5..).
+        const extraTokens = day.tokens.slice(5);
+        const tokens: [number, number, number, ...number[]] = [
+          day.tokens[0] ?? 0,
+          day.tokens[1] ?? 0,
+          day.tokens[2] ?? 0,
+          ...extraTokens,
+        ];
+        return { money: [day.money[0], day.money[1], day.money[2]], paid: day.paid, tokens, ...(models && modelTokens ? { models, modelTokens } : {}) };
       }) : [],
       ...(seriesDaily ? { models: series!.models.flatMap(model => model.harness === 'cursor' || model.harness === 'antigravity' ? [] : [{ ...model, harness: model.harness }]) } : {}),
     },

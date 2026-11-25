@@ -121,6 +121,7 @@ import {
 import { useApiKey } from '@/hooks/useApiKey';
 import { useConnectedSource } from '@/hooks/useConnectedSource';
 import { useGatewayModelPricing, useReferenceModelPricing } from '@/hooks/useModelPricing';
+import { retryProviderShareCatalog } from '@/lib/remoteCatalogSnapshot';
 import { useModelAccessStatus } from '@/hooks/useModelAccessStatus';
 import { requestPluginEnginesRefresh } from '@/hooks/usePluginEngines';
 import { useProviders } from '@/hooks/useProviders';
@@ -1686,13 +1687,17 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
       : undefined;
   const retryRemoteModels = useCallback(() => {
     if (!catalogDeviceId) return;
+    if (isProviderShareAgentDeviceId(deviceId)) {
+      void retryProviderShareCatalog(catalogDeviceId).catch(() => undefined);
+      return;
+    }
     evictDeviceCapabilities(catalogDeviceId);
     evictDeviceProviders(catalogDeviceId);
     void Promise.allSettled([
       prefetchDeviceCapabilities(catalogDeviceId),
       prefetchDeviceProviders(catalogDeviceId),
     ]);
-  }, [catalogDeviceId]);
+  }, [catalogDeviceId, deviceId]);
 
   const visibilityVersion = useModelVisibilityVersion();
   const [query, setQuery] = useState('');
@@ -5455,7 +5460,7 @@ export function ModelSelector({
         name: pluginEngineSession.engineName,
         engine: pluginEngineSession.engine,
         modelId: pluginEngineSession.modelId,
-        effort: resolvePluginEngineEffort(pluginEngineSession.engine, pluginEngineSession.modelId, pluginEngineSession.effort),
+        effort: resolvePluginEngineEffort(pluginEngineSession.engine, pluginEngineSession.modelId, pluginEngineSession.effort, 'session'),
       }
     : (() => {
         const active = pluginEngines?.active;

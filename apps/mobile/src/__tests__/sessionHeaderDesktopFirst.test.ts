@@ -23,21 +23,8 @@ describe('mobile session header desktop-first surface', () => {
     expect(native).toContain('flexShrink: 1');
   });
 
-  it('shows task tags right after the title in every header branch', () => {
-    const source = readTextLf(resolve(process.cwd(), 'app/sessions/[sessionId].tsx'), 'utf8');
-    const titles = source.split('<SessionHeaderNativeTitle').slice(1)
-      .map((branch) => branch.slice(0, branch.indexOf('/>')));
-    // 竖屏原生标题栏与横屏／折叠屏系统标题栏都要带标签,不能只有一条分支显示。
-    expect(titles).toHaveLength(2);
-    expect(titles[0]).toContain('tags={nativeTags} onTagsPress={stableHeaderHandlers.settings}');
-    expect(source).toContain('const nativeTags = isDeviceAccessRevoked ? undefined : currentSession?.tags;');
-    expect(source).toContain('settings: () => latestHeaderHandlers.current.onOpenSettings()');
-    expect(titles[1]).toContain('tags={isDeviceAccessRevoked ? undefined : currentSession?.tags}');
-    expect(titles[1]).toContain('onTagsPress={onOpenSettings}');
-    const native = readTextLf(resolve(process.cwd(), 'src/session/SessionHeaderNativeControls.ios.tsx'), 'utf8');
-    const titleRow = native.slice(native.indexOf('{label}'), native.indexOf('<QuietSyncIndicator'));
-    expect(titleRow).toContain('<TaskTagDots');
-  });
+  // Tag forwarding/access revocation now runs through both page branches in
+  // sideChatsSheet.test.tsx; SessionStackHeader.test.tsx renders the real iOS title.
 
   it('releases the new-session handoff heavy topic when the session screen unmounts', () => {
     const source = readTextLf(resolve(process.cwd(), 'app/sessions/[sessionId].tsx'), 'utf8');
@@ -135,12 +122,7 @@ describe('mobile session header desktop-first surface', () => {
     expect(source).toContain('setSessionListDrawerOverlayMounted(true);');
     expect(source).toContain('setSessionListDrawerOpen(true);');
     expect(source).toContain('session.sessionListButton');
-    expect(source).toContain('const hasSessionList = !!onOpenSessionList;');
-    expect(source).toContain('hasSessionList ? (');
-    expect(source).toContain('<Stack.Toolbar.View key="session-list" hidesSharedBackground>');
-    expect(source).toContain('onPress={stableHeaderHandlers.sessionList} testID="session.sessionListButton"');
-    expect(source).toContain('sessionList: () => latestHeaderHandlers.current.onOpenSessionList?.()');
-    expect(source).toContain('<Stack.Toolbar placement="left">{systemHeaderLeftItems}</Stack.Toolbar>');
+    // System-toolbar drawer visibility/presses are exercised in SessionStackHeader.test.tsx.
     expect(source).toContain("import { buildWideSessionNavLayout } from '@/session/wideSessionNav';");
     expect(source).toContain("import { useConversationTaskDrawer } from '@/session/useConversationTaskDrawer';");
     expect(source).toContain('switchDrawerSessionInPlace,');
@@ -148,9 +130,8 @@ describe('mobile session header desktop-first surface', () => {
     // 同一宽度计算兼容现有调用参数。
     expect(source).toContain('iosPad: Platform.OS === \'ios\' && Platform.isPad,');
     expect(source).toContain('platform: Platform.OS,');
-    expect(source).toContain('{systemBack ? null : nativeHeader ? (');
+    expect(source).toContain('{systemBack || listOnly ? null : nativeHeader ? (');
     expect(source).toContain('onBack={sessionListDrawerOverlayMounted ? closeSessionListDrawer : goBackToHome}');
-    expect(source).toContain('gestureEnabled: !sessionListDrawerOverlayMounted');
     // 抽屉切任务只替换当前 route params：不压栈，也不派发会创建新 route key 的
     // NativeStack REPLACE（后者正是 Android crash / 白屏仍存的生命周期入口）。
     expect(source).toContain('const handleDrawerSelectSession = useCallback((item: RemoteSessionListItem) => {');
@@ -209,11 +190,9 @@ describe('mobile session header desktop-first surface', () => {
     // 拉出手势在抽屉首次渲染 open 前就被取消(JS 线程忙时 open 与 cancel 同批提交):
     // 抽屉从未挂载,没有 onClosed 来释放父级的遮罩/读屏/返回键占用,必须由父级直接释放。
     expect(source).toContain('if (!sessionListDrawerOpenCommittedRef.current) {');
-    // 悬浮模式下右滑任务页拉出任务栏,不再触发系统返回;拉动期间手势保持启用,否则会被取消。
-    expect(source).toContain('gestureEnabled: !sessionListDrawerOverlayMounted && !sessionListDrawerFloating');
-    expect(source).toContain('<GestureDetector gesture={sessionListDrawerPullGesture}>');
+    // Swipe ownership and the overlay exit fence are exercised in conversationTaskDrawer.test.tsx.
     expect(source).toContain('pullBlocked: voiceHoldRunActive,');
-    expect(source).toContain('enabled: sessionListDrawerFloating && !pullBlocked && (!sessionListDrawerOverlayMounted || sessionListDrawerPulling)');
+    expect(source).toContain('enabled: sessionListDrawerFloating && !pullBlocked && !nativeSwipeBack && (!sessionListDrawerOverlayMounted || sessionListDrawerPulling) && focused,');
     // 选任务失败路径:校验先于关闭动画——先关再弹 Alert 会让焦点归还抢走弹窗焦点。
     expect(source).toContain("Alert.alert(t('devices.list.error.sessionDeviceNotFound'));\n      return;\n    }\n    // 不派发 NativeStack REPLACE");
   });

@@ -87,19 +87,7 @@ function createInitialSlots(): Record<AgentKind, MemorySlotState> {
 export function MemorySection() {
   const settingsRevision = useAppSettingsRevision('memory');
   const { confirm } = useConfirmDialog();
-  const { t, i18n } = useTranslation();
-  const locale = i18n?.language;
-  const supportedMakerHarnesses = formatHarnessNameList(getMakerMemorySupportedHarnesses(), locale);
-  const unsupportedMakerHarnesses = getMakerMemoryUnsupportedHarnesses();
-  const makerHintBase = t(personalizationDetailsSettings.memoryMakerLabel.descriptionKey, {
-    harnesses: supportedMakerHarnesses,
-  });
-  const makerHint =
-    unsupportedMakerHarnesses.length > 0
-      ? `${makerHintBase}${t('settings.memory.maker.unsupportedSuffix', {
-          harnesses: formatHarnessNameList(unsupportedMakerHarnesses, locale),
-        })}`
-      : makerHintBase;
+  const { t } = useTranslation();
   // Maker Memory 启用时，下方 Claude Code / Codex 运行时的原生 toggle 强制 disable + 视觉变灰。
   // (manager.enable() 在 maker-core 层会自动调 setMemory(false), 这里 UI 防止用户
   // 在状态不同步的窗口里点击 toggle 引发误解)。
@@ -249,9 +237,7 @@ export function MemorySection() {
     setMakerResetPending(true);
     try {
       const result = await window.electronAPI.maker.makerMemoryReset();
-      toast.success(
-        t('settings.memory.maker.toast.resetSuccess', { count: result.removedCount }),
-      );
+      toast.success(t('settings.memory.maker.toast.resetSuccess', { count: result.removedCount }));
     } catch (err) {
       log.warn('makerMemoryReset failed', err);
       toast.error(
@@ -299,11 +285,71 @@ export function MemorySection() {
   );
 
   return (
+    <MemorySectionView
+      settingsCustomized={settingsCustomized}
+      makerEnabled={makerEnabled}
+      makerTogglePending={makerTogglePending}
+      makerResetPending={makerResetPending}
+      slots={slots}
+      handleResetSettings={handleResetSettings}
+      handleMakerToggle={handleMakerToggle}
+      handleMakerReset={handleMakerReset}
+      handleToggle={handleToggle}
+      handleReset={handleReset}
+    />
+  );
+}
+
+/** Shared native view. Local and cloud controllers provide the same state/actions. */
+export function MemorySectionView({
+  settingsCustomized,
+  makerEnabled,
+  makerTogglePending,
+  makerResetPending,
+  slots,
+  handleResetSettings,
+  handleMakerToggle,
+  handleMakerReset,
+  handleToggle,
+  handleReset,
+  agentRows = true,
+  headingStatus,
+}: {
+  settingsCustomized: boolean;
+  makerEnabled: boolean;
+  makerTogglePending: boolean;
+  makerResetPending: boolean;
+  slots: Partial<Record<AgentKind, MemorySlotState>>;
+  handleResetSettings: () => Promise<void>;
+  handleMakerToggle: (next: boolean) => Promise<void>;
+  handleMakerReset: (() => Promise<void>) | undefined;
+  handleToggle: (kind: AgentKind, next: boolean, label: string) => Promise<void>;
+  handleReset: ((kind: AgentKind, label: string) => Promise<void>) | undefined;
+  /** The per-agent rows under the Cindy memory switch. Their saved values are unaffected. */
+  agentRows?: boolean;
+  /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
+  headingStatus?: ReactNode;
+}) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n?.language;
+  const supportedMakerHarnesses = formatHarnessNameList(getMakerMemorySupportedHarnesses(), locale);
+  const unsupportedMakerHarnesses = getMakerMemoryUnsupportedHarnesses();
+  const makerHintBase = t(personalizationDetailsSettings.memoryMakerLabel.descriptionKey, {
+    harnesses: supportedMakerHarnesses,
+  });
+  const makerHint =
+    unsupportedMakerHarnesses.length > 0
+      ? `${makerHintBase}${t('settings.memory.maker.unsupportedSuffix', {
+          harnesses: formatHarnessNameList(unsupportedMakerHarnesses, locale),
+        })}`
+      : makerHintBase;
+
+  return (
     <SettingsSection
       title={t('settings.memory.title')}
       description={t('settings.memory.description')}
       action={
-        <DefaultOverrideControls
+        headingStatus ?? <DefaultOverrideControls
           isCustomized={settingsCustomized}
           disabled={makerTogglePending}
           onReset={() => void handleResetSettings()}
@@ -334,26 +380,28 @@ export function MemorySection() {
                 aria-label={t('settings.memory.maker.toggleAria')}
               />
               {/* Clearing memories is irreversible (CONTROLS decision 4): danger icon Button + Tip. */}
-              <Tip text={t('settings.memory.maker.resetAria')}>
-                <Button data-setting-id={personalizationDetailsSettings.memoryMakerLabel.id}
-                  variant="secondary"
-                  tone="danger"
-                  size="sm"
-                  type="button"
-                  className="w-7 px-0"
-                  onClick={() => void handleMakerReset()}
-                  disabled={makerResetPending || makerTogglePending}
-                  aria-label={t('settings.memory.maker.resetAria')}
-                >
-                  <Eraser size={15} aria-hidden />
-                </Button>
-              </Tip>
+              {handleMakerReset && (
+                <Tip text={t('settings.memory.maker.resetAria')}>
+                  <Button data-setting-id={personalizationDetailsSettings.memoryMakerLabel.id}
+                    variant="secondary"
+                    tone="danger"
+                    size="sm"
+                    type="button"
+                    className="w-7 px-0"
+                    onClick={() => void handleMakerReset()}
+                    disabled={makerResetPending || makerTogglePending}
+                    aria-label={t('settings.memory.maker.resetAria')}
+                  >
+                    <Eraser size={15} aria-hidden />
+                  </Button>
+                </Tip>
+              )}
             </div>
           }
         />
 
-        {AGENTS.map((agent) => {
-          const slot = slots[agent.kind];
+        {(agentRows ? AGENTS : []).map((agent) => {
+          const slot = slots[agent.kind] ?? { enabled: null, pending: false };
           const supported = slot.enabled !== null;
           const loading = slot.enabled === undefined;
           const checked = slot.enabled === true;
@@ -391,20 +439,22 @@ export function MemorySection() {
                     onCheckedChange={(v) => void handleToggle(agent.kind, v, label)}
                     aria-label={t('settings.memory.agent.toggleAria', { label })}
                   />
-                  <Tip text={t('settings.memory.agent.resetAria', { label })}>
-                    <Button data-settings-search-action="Restore the selected memory preference"
-                      variant="secondary"
-                      tone="danger"
-                      size="sm"
-                      type="button"
-                      className="w-7 px-0"
-                      onClick={() => void handleReset(agent.kind, label)}
-                      disabled={disabled}
-                      aria-label={t('settings.memory.agent.resetAria', { label })}
-                    >
-                      <Eraser size={15} aria-hidden />
-                    </Button>
-                  </Tip>
+                  {handleReset && (
+                    <Tip text={t('settings.memory.agent.resetAria', { label })}>
+                      <Button data-settings-search-action="Restore the selected memory preference"
+                        variant="secondary"
+                        tone="danger"
+                        size="sm"
+                        type="button"
+                        className="w-7 px-0"
+                        onClick={() => void handleReset(agent.kind, label)}
+                        disabled={disabled}
+                        aria-label={t('settings.memory.agent.resetAria', { label })}
+                      >
+                        <Eraser size={15} aria-hidden />
+                      </Button>
+                    </Tip>
+                  )}
                 </div>
               }
             />

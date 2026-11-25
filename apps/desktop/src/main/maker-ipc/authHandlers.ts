@@ -11,6 +11,7 @@ import { optionalEnum, requireEnum, requireObject, throwIpcError } from '../util
 import { activeOwnerScopeKey, getActiveAppSession, isAppSessionBoundaryPending } from '../appSessionState.js';
 import { createLogger } from '../logger.js';
 import { MAKER_INVOKE, MAKER_PUSH } from './channels.js';
+import { cloudManagementExecution } from '../host-settings/managementCalls.js';
 import type { IpcHandlerRegistry } from './ipcHandlerRegistry.js';
 
 const log = createLogger('maker-ipc:authHandlers');
@@ -82,6 +83,8 @@ type ActiveLoginOperation = {
   hasUnmanagedOwner: boolean;
   latestDeviceCodeProgress?: CodexDeviceCodeProgressPayload;
   cancellation?: Promise<void>;
+  /** Cloud settings page: the device code is shown on the controlling computer. */
+  presentDeviceCode?: (payload: CodexDeviceCodeProgressPayload) => void;
 };
 
 type LoginOwner = {
@@ -326,6 +329,7 @@ export function registerMakerAuthHandlers(
           ...deviceCode,
         };
         operation.latestDeviceCodeProgress = payload;
+        operation.presentDeviceCode?.(payload);
         broadcast(MAKER_PUSH.AUTH_LOGIN_PROGRESS, payload);
       },
     });
@@ -463,9 +467,14 @@ export function registerMakerAuthHandlers(
       const kind = requireAgentKind(agentKind);
       if (kind === 'antigravity') localAgy?.assertAccess(event);
       const { mode, ownerId } = requireLoginOptions(kind, rawOptions);
+      // A cloud settings page can only complete a device-code login; a browser would open
+      // on the cloud desktop instead of the controlling computer.
+      const management = cloudManagementExecution();
+      if (management && (kind !== 'codex' || mode !== 'device-code'))
+        throwIpcError('INVALID_PARAMS', 'cloud login uses the codex device code');
       const sender = readController(event);
       const current = activeLoginOperations.get(kind);
-      if (current?.acceptingOwners && !current.settledFlag && current.mode === mode) {
+      if (!management && current?.acceptingOwners && !current.settledFlag && current.mode === mode) {
         registerLoginOwner(kind, current, sender, ownerId);
         // Device URL/code may have been emitted before this BrowserWindow joined the shared
         // operation. Re-broadcast the retained payload so the late caller can render and finish it.
@@ -489,7 +498,19 @@ export function registerMakerAuthHandlers(
         settledFlag: false,
         ownerIds: new Set(),
         hasUnmanagedOwner: false,
+        ...(management
+          ? {
+              presentDeviceCode: (payload: CodexDeviceCodeProgressPayload) =>
+                management.prompt({
+                  kind: 'device',
+                  url: payload.verificationUrl,
+                  userCode: payload.userCode,
+                  expiresAt: Date.now() + 15 * 60_000,
+                }),
+            }
+          : {}),
       };
+      management?.onCancel(() => void cancelLoginOperation(kind, activeOperation));
       registerLoginOwner(kind, activeOperation, sender, ownerId);
       if (current) current.acceptingOwners = false;
       activeLoginOperations.set(kind, activeOperation);

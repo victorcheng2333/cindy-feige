@@ -463,7 +463,7 @@ import { MobileModelIconMark } from '@/session/MobileProviderMark';
 import { MobileAgentMark } from '@/components/MobileAgentMark';
 import { RemoteSourceMark } from '@/session/RemoteSourceMark';
 import { draftModelMemoryFor, hydrateDraftModelMemory } from '@/session/draftModelMemory';
-import { effortLabelFromRuntime, rowFastEditable } from '@/session/modelPickerRows';
+import { composerModelLabel, effortLabelFromRuntime, rowFastEditable } from '@/session/modelPickerRows';
 import { useRemoteAgentCatalogs, useRemoteAgentCatalogsWithStatus } from '@/session/useRemoteAgentCatalogs';
 import { restoredRemoteAgentUnusable as restoredRemoteAgentUnusableCheck } from '@/session/remoteAgentCatalogs';
 import { isProviderShareAgentDeviceId } from '@/session/providerShareAgentDevice';
@@ -742,7 +742,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     : null, [activePluginEngine]);
   // 模型组(model-groups.md §6.3)：列出被控电脑的模式；选中后发送时由那台按它的规则选来源，草稿里的模型是
   // 沿用时的原模型。单独存、不进持久草稿；换了电脑或那台删了这个模式就不再生效。与插件引擎、另一台电脑的模型互斥；
-  // 开了协同时这次不经模式选路(与电脑上相同)。旧电脑读不到模式时整段不出现。
+  // 开启协同时同样给新建的 Lead 选路。旧电脑读不到模式时整段不出现。
   const [modelGroupChoice, setModelGroupChoice] = useState<{ controlledDeviceId: string; id: string } | null>(null);
   const hostModelGroups = useHostModelGroups(selectedDeviceId, maker, pluginEngineDraftEligible);
   const activeHostModelGroup = useMemo(
@@ -769,6 +769,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     // Worker 默认跟任务(Lead)的 Agent 所在电脑。
     leadAgentDeviceId: remoteAgentPick?.deviceId ?? null,
     agentLocationSelectable: workerAgentLocationSupported,
+    modelGroupSelectable: !!selectedDeviceId && !isSharedTaskPeer(selectedDeviceId) && capabilities?.supportsOrcaWorkerModelGroup === true,
     // 任务还没建：没有可审查、可测试的工作，内置角色不带出自带的首条任务。
     leadHasWork: false,
   });
@@ -1420,10 +1421,12 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     // 每台电脑落定那一刻记一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtimeSettledDeviceId]);
+  const catalogModel = activeSourceProvider ? getModel(activeSourceProvider, draft.model, draft.agentKind) : undefined;
+  const catalogModelName = catalogModel?.name;
   const runtimeSummary = useMemo(
-    () => buildDraftRuntimeSummary(draft, runtimeOptions),
+    () => buildDraftRuntimeSummary(draft, runtimeOptions, catalogModelName),
     // effort / 权限标签按 app 语言解析,切换语言时必须重算,否则停留在上一语言。
-    [draft, runtimeOptions, i18nInstance.language],
+    [draft, runtimeOptions, catalogModelName, i18nInstance.language],
   );
   // 选了另一台电脑的模型:药丸写那台目录里的模型名与档位,读屏一并读出电脑名(与已建任务同口径)。
   const remoteAgentModelName = remoteAgentPick && remoteAgentPillProvider
@@ -1432,10 +1435,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // 选了插件引擎：药丸写引擎的模型(+ 思考深度)，读屏带上引擎名。
   const pluginEnginePillSummary = activePluginEngine
     ? [
-        pluginEngineModelName(activePluginEngine.engine, activePluginEngine.modelId)
-          ?? (activePluginEngine.modelId === PLUGIN_ENGINE_DEFAULT_MODEL
-            ? t('models.pluginEngines.defaultModel')
-            : activePluginEngine.modelId),
+        activePluginEngine.modelId === PLUGIN_ENGINE_DEFAULT_MODEL
+          ? t('models.pluginEngines.defaultModel')
+          : composerModelLabel(activePluginEngine.modelId, pluginEngineModelName(activePluginEngine.engine, activePluginEngine.modelId)),
         activePluginEngine.effort
           ? t(`models.options.effortLevels.${activePluginEngine.effort}`, { defaultValue: activePluginEngine.effort })
           : null,
@@ -1444,7 +1446,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   // 草稿底层模型的名字：模式没选到来源、沿用原模型时，说明里写它。
   const basePillModelSummary = pluginEnginePillSummary ?? (remoteAgentPick
     ? [
-        remoteAgentModelName || remoteAgentPick.model,
+        composerModelLabel(remoteAgentPick.model, remoteAgentModelName),
         effortLabelFromRuntime({ currentModel: null, effortOptions: runtimeOptions.effortOptions }, remoteAgentPick.effort),
       ].filter(Boolean).join(' · ')
     : runtimePending
@@ -3760,30 +3762,38 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     );
   };
 
-  const renderModelPickerButton = (standalone = false) => (
-        <Pressable
-          accessibilityLabel={t('session.new.modelAccessibility', { model: pillAccessibilityModel })}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: modelSheetOpen || undefined }}
-          disabled={creating}
-          hitSlop={10}
-          onPress={toggleModelPicker}
-          style={({ pressed }) => [standalone ? styles.selectorRow : styles.modelPill, standalone && styles.runtimeModelSelector, pressed && styles.pressed]}
-          testID="newSession.modelIndicator"
-        >
-          {remoteAgentPick ? (
-            <RemoteSourceMark size={standalone ? iconSize.lg : iconSize.sm} inset={{ x: 0, y: 0 }}>
-              <MobileAgentMark agentKind={remoteAgentPick.agentKind} color={colors.textSecondary} size={standalone ? iconSize.lg : iconSize.sm} />
-            </RemoteSourceMark>
-          ) : <MobileAgentMark agentKind={draft.agentKind} color={colors.textSecondary} size={standalone ? iconSize.lg : iconSize.sm} />}
-          <Text style={standalone ? styles.selectorText : styles.modelPillText} numberOfLines={1}>{pillSelectionSummary}</Text>
-          {(remoteAgentPick ? remoteAgentPick.fastMode : triggerFastOn)
-            ? (
-            <ModelSpeedIcon mode={(remoteAgentPick ? remoteAgentPick.fastMode : draft.fastMode) ?? false} color={colors.textTertiary} size={standalone ? iconSize.lg : iconSize.sm} />
-          ) : null}
-          <ChevronDown color={colors.textTertiary} size={standalone ? iconSize.lg : iconSize.sm} strokeWidth={iconStroke.regular} />
-        </Pressable>
-  );
+  const renderModelPickerButton = (standalone = false) => {
+    const iconSizeValue = standalone ? iconSize.lg : iconSize.sm;
+    return (
+      <Pressable
+        accessibilityLabel={t('session.new.modelAccessibility', { model: pillAccessibilityModel })}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: modelSheetOpen || undefined }}
+        disabled={creating}
+        hitSlop={10}
+        onPress={toggleModelPicker}
+        style={({ pressed }) => [standalone ? styles.selectorRow : styles.modelPill, standalone && styles.runtimeModelSelector, pressed && styles.pressed]}
+        testID="newSession.modelIndicator"
+      >
+        {activePluginEngine ? (
+          <PluginEngineMark iconDataUrl={activePluginEngine.engine.iconDataUrl} size={iconSizeValue} />
+        ) : activeHostModelGroup ? (
+          // 选着模式：用哪个来源由被控电脑在发送时决定，不画某个来源的标(与电脑上选择器同一个图标)。
+          <Waypoints color={colors.textSecondary} size={iconSizeValue} strokeWidth={iconStroke.regular} />
+        ) : remoteAgentPick ? (
+          <RemoteSourceMark size={iconSizeValue} inset={{ x: 0, y: 0 }}>
+            <MobileAgentMark agentKind={remoteAgentPick.agentKind} color={colors.textSecondary} size={iconSizeValue} />
+          </RemoteSourceMark>
+        ) : <MobileAgentMark agentKind={draft.agentKind} color={colors.textSecondary} size={iconSizeValue} />}
+        <Text style={standalone ? styles.selectorText : styles.modelPillText} numberOfLines={1}>{pillSelectionSummary}</Text>
+        {!activePluginEngine && !activeHostModelGroup && (remoteAgentPick ? remoteAgentPick.fastMode : triggerFastOn)
+          ? (
+          <ModelSpeedIcon mode={(remoteAgentPick ? remoteAgentPick.fastMode : draft.fastMode) ?? false} color={colors.textTertiary} size={iconSizeValue} />
+        ) : null}
+        <ChevronDown color={colors.textTertiary} size={iconSizeValue} strokeWidth={iconStroke.regular} />
+      </Pressable>
+    );
+  };
 
   // 工具条布局:左 = [+][权限][计划 chip][模型];右 = [语音][创建]。
   // 模型放左侧组,不随创建按钮出现而横向跳动。
@@ -4356,7 +4366,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       });
       // 模型组：建任务前请被控电脑按模式选一个现在能用的来源，只用于这次新建(记住的草稿与偏好不变)；
       // 那台没有能用的来源或模式已删除时沿用原来的模型。
-      const modelGroupAtSend = activeHostModelGroup && !collabDraft && !effectiveDraft.pluginEngine ? activeHostModelGroup : null;
+      const modelGroupAtSend = effectiveDraft.pluginEngine ? null : activeHostModelGroup;
       const keptModelNameAtSend = basePillModelSummary;
       let modelGroupResult: HostModelGroupResult | null = null;
       if (modelGroupAtSend) {
@@ -4765,7 +4775,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       if (!isCurrentOwner()) return;
       // 模型组：与普通创建同一流程，先请被控电脑按模式选来源，再按实际要用的来源核对登录；目标文本就是
       // 第一条消息(没有附件)。选到了来源就不按草稿底层模型拦；沿用原模型时照常核对原模型。
-      const goalModelGroup = activeHostModelGroup && !collabDraft && !pluginEnginePick ? activeHostModelGroup : null;
+      const goalModelGroup = pluginEnginePick ? null : activeHostModelGroup;
       const goalKeptModelName = basePillModelSummary;
       const goalModelGroupResult = goalModelGroup
         ? await resolveHostModelGroup(maker, goalModelGroup.id, { hasImages: false })
@@ -6492,6 +6502,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
               return result;
             },
             onSelect: collabForm.modelPicker.select,
+            modelGroups: collabForm.modelPicker.modelGroups,
             // 远程供应商:与任务模型列表同一套，选中 = Worker 的 Agent 在那台运行。
             ...(remoteAgentSupported && collabForm.agentLocationSelectable
               ? {
@@ -6682,8 +6693,9 @@ function readRouteString(value: unknown): string | null {
 function buildDraftRuntimeSummary(
   draft: NewSessionDraft,
   runtime: MobileSessionRuntimeOptions,
+  catalogModelName?: string,
 ): { modelSummary: string; permissionLabel: string } {
-  const modelLabel = runtime.currentModel?.label ?? draft.model;
+  const modelLabel = composerModelLabel(draft.model, catalogModelName, runtime.currentModel?.label);
   const effortLabel = effortLabelFromRuntime(runtime, draft.effort);
   return {
     modelSummary: [modelLabel, effortLabel].filter(Boolean).join(' · '),

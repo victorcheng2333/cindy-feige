@@ -44,6 +44,7 @@ import {
   normalizePermissionOptions,
   normalizeStopReason,
   normalizeToolCallFields,
+  normalizeTurnUsage,
   type AcpAuthMethod,
   type AcpConfigOption,
   type AcpContentBlock,
@@ -129,11 +130,17 @@ export interface OpenAcpSessionOptions {
   /**
    * Host text sent ahead of the first message of a newly created agent session (for example
    * collaboration role instructions; plugin engines get no Cindy system prompt). A resumed or
-   * loaded session already has it in its own history, so it is not repeated.
+   * loaded session already has it in its own history, so it is not repeated. A function receives
+   * the names of the MCP servers the agent accepted, so the text only names tools it really has.
    */
-  briefing?: string;
+  briefing?: string | ((acceptedMcpServers: readonly string[]) => string);
   /** Current companion settings for the first prompt after restoring the native conversation. */
   resumedCompanionBriefing?: string;
+  /**
+   * Rewrites a message whose text starts with `/<name>` (see skill-invocation.ts); null keeps the
+   * text. Called only for such messages, so ordinary messages are sent without waiting on it.
+   */
+  expandSlashInvocation?: (text: string) => Promise<string | null>;
   /** Called once when the session's event stream ends (closed, or the endpoint exited). */
   onEnded?: () => void;
   /** Overrides ACP_OPEN_TOOL_QUIET_CAP_MS (tests). */
@@ -327,6 +334,9 @@ export async function openAcpSession(opts: OpenAcpSessionOptions): Promise<AcpSe
       configOptions: normalizeConfigOptions(result.configOptions),
       resumeOutcome: outcome,
       droppedMcpServers: dropped,
+      briefing: outcome === 'new'
+        ? typeof opts.briefing === 'function' ? opts.briefing(accepted.map((server) => server.name)) : opts.briefing ?? ''
+        : '',
       options: opts,
     });
     router.attach(session, Array.isArray(result.configOptions));
@@ -351,6 +361,8 @@ interface AcpSessionInit {
   configOptions: AcpConfigOption[];
   resumeOutcome: AcpResumeOutcome;
   droppedMcpServers: string[];
+  /** Briefing for a new session, resolved against the accepted MCP servers. */
+  briefing: string;
   options: OpenAcpSessionOptions;
 }
 
@@ -392,6 +404,7 @@ export class AcpSession {
   private readonly connection: AcpConnection;
   private readonly logger: Logger | undefined;
   private readonly readImage: (path: string) => Promise<Uint8Array>;
+  private readonly expandSlashInvocation: ((text: string) => Promise<string | null>) | undefined;
   private readonly cancelGraceMs: number;
   private readonly onEnded: (() => void) | undefined;
   private readonly queue = createAsyncQueue<AgentEvent>();
@@ -439,11 +452,12 @@ export class AcpSession {
     this.capabilitiesSnapshot = this.buildCapabilities();
     this.logger = init.options.logger;
     this.readImage = init.options.readFile ?? ((path) => fsReadFile(path));
+    this.expandSlashInvocation = init.options.expandSlashInvocation;
     this.cancelGraceMs = init.options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS;
     this.onEnded = init.options.onEnded;
     this.now = init.options.now ?? Date.now;
     this.openToolQuietCapMs = init.options.openToolQuietCapMs ?? ACP_OPEN_TOOL_QUIET_CAP_MS;
-    const briefing = init.resumeOutcome === 'new' ? init.options.briefing : init.options.resumedCompanionBriefing;
+    const briefing = init.resumeOutcome === 'new' ? init.briefing : init.options.resumedCompanionBriefing;
     this.pendingBriefing = briefing?.trim() ? briefing : null;
     this.translator = new AcpUpdateTranslator({ blockIdPrefix: `acp-${init.sessionId}` });
     if (init.options.permissionMode) this.applyPermissionMode(init.options.permissionMode);
@@ -764,8 +778,13 @@ export class AcpSession {
     this.turn = turn;
     this.usage = { ...this.usage, tokenUsage: 0 };
     this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+    const usageModel = this.model;
     this.connection.request('session/prompt', { sessionId: this.id, prompt }, { timeoutMs: null }).then(
-      (result) => this.finishTurn(turn.token, { stopReason: normalizeStopReason(result) }),
+      (result) => {
+        // The prompt result is the only per-turn token report; `usage_update` only carries the context size.
+        const usage = normalizeTurnUsage(result);
+        this.finishTurn(turn.token, { stopReason: normalizeStopReason(result), ...(usage ? { usage, usageModel } : {}) });
+      },
       (error: unknown) => this.finishTurn(turn.token, this.errorOutcome(error)),
     );
   }
@@ -959,11 +978,23 @@ export class AcpSession {
 
   private async toPrompt(message: UserMessage): Promise<AcpContentBlock[]> {
     if (typeof message.content === 'string') {
-      return message.content.length > 0 ? [{ type: 'text', text: message.content }] : [];
+      return message.content.length > 0 ? [{ type: 'text', text: await this.expandText(message.content) }] : [];
     }
     const blocks: AcpContentBlock[] = [];
-    for (const block of message.content) blocks.push(await this.toContentBlock(block));
+    // Only the message's opening text can be a slash invocation: its first text block, the same text
+    // the host keeps its notes off (desktop `shouldPrependMobileClientPromptNote`).
+    const opening = message.content.findIndex((block) => block.type === 'text');
+    for (const [index, block] of message.content.entries()) {
+      blocks.push(index === opening && block.type === 'text'
+        ? { type: 'text', text: await this.expandText(block.text) }
+        : await this.toContentBlock(block));
+    }
     return blocks;
+  }
+
+  private async expandText(text: string): Promise<string> {
+    if (!this.expandSlashInvocation || !text.trimStart().startsWith('/')) return text;
+    return (await this.expandSlashInvocation(text)) ?? text;
   }
 
   private async toContentBlock(block: UserContentBlock): Promise<AcpContentBlock> {

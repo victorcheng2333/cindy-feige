@@ -13,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type { ProviderView } from '@cindy/model-providers/registry';
 import type { AgentKind } from '@cindy/model-providers/types';
-import type { MobileSessionAgentKind } from './sessionAgentSwitch';
 import type { OrcaExecutionDeviceView } from '@cindy/device-link';
 import type { MobileModelOption } from '@/session/agentCapabilities';
 import {
@@ -78,6 +77,8 @@ import {
 } from '@/session/remoteSessionStore';
 import { writeGuardFields } from '@/session/swipeRowRegistry';
 import { i18n } from '@/i18n';
+import { useTranslation } from 'react-i18next';
+import { useHostModelGroups, useHostModelGroupPickerOptions } from '@/session/hostModelGroups';
 import type { MobileMakerTransport } from '@/device-link/mobileMakerTransport';
 import type { MobileModelConfiguration } from '@/session/unifiedMobileModels';
 import type { RemoteSession } from '@/session/types';
@@ -313,6 +314,7 @@ export function useOrcaWorkerForm(params: {
    * 模型选择器列出其他电脑与分享的供应商。不支持时不发送，Worker 跟 Lead。
    */
   agentLocationSelectable?: boolean;
+  modelGroupSelectable?: boolean;
   /**
    * Lead 是否已有可查的工作(缺省 true)。新建任务的草稿传 false：「审查」「测试」自带的首条任务
    * 说的是 Lead 已有的工作，这时还没有，不带出。
@@ -320,6 +322,7 @@ export function useOrcaWorkerForm(params: {
   leadHasWork?: boolean;
 }) {
   const { maker, prefsScope, active, setSheetOpen, connectionEpoch, taskHostDeviceId, sshRemote } = params;
+  const { t } = useTranslation();
   const leadAgentDeviceIdRef = useRef(params.leadAgentDeviceId ?? null);
   leadAgentDeviceIdRef.current = params.leadAgentDeviceId ?? null;
   const agentLocationSelectableRef = useRef(params.agentLocationSelectable === true);
@@ -778,6 +781,7 @@ export function useOrcaWorkerForm(params: {
     setForm((current) => ({
       ...current,
       agent,
+      modelGroup: undefined,
       // 自动带出的旧模型仍要按当前目录收敛，不能沿用上一行的显式选择标记。
       modelSelectionExplicit: false,
       // 本机记忆的模型只属于被控电脑的目录；Agent 在另一台电脑时回到「默认」。
@@ -860,6 +864,7 @@ export function useOrcaWorkerForm(params: {
         ...current,
         ...next,
         model: null,
+        modelGroup: undefined,
         modelSelectionExplicit: false,
         remoteDirMode: 'dialogue',
         remoteDir: '',
@@ -897,6 +902,7 @@ export function useOrcaWorkerForm(params: {
     setForm((current) => ({
       ...current,
       agent: config.agent as OrcaWorkerAgentKind,
+      modelGroup: undefined,
       modelSelectionExplicit: true,
       model: {
         id: config.modelId,
@@ -912,7 +918,18 @@ export function useOrcaWorkerForm(params: {
     return true;
   }, []);
 
-  const pickerAgents = useMemo<MobileSessionAgentKind[]>(() => [...agents], [agents]);
+  const modelGroupsAllowed = params.modelGroupSelectable === true && !sshRemote
+    && (!form.executionDeviceId || executionDevices.some(device => device.deviceId === form.executionDeviceId && device.supportsModelGroup === true));
+  const hostGroups = useHostModelGroups(form.executionDeviceId ?? taskHostDeviceId, executionMaker, modelGroupsAllowed && modelPickerOpen);
+  const selectGroup = useCallback((id: string) => {
+    const group = hostGroups?.find((item) => item.id === id);
+    if (!group) return false;
+    touchedRef.current = true;
+    setForm((current) => ({ ...current, modelGroup: { id, name: group.name } }));
+    return true;
+  }, [hostGroups]);
+  const modelGroups = useHostModelGroupPickerOptions(hostGroups, form.modelGroup?.id ?? null, selectGroup, t);
+  const pickerAgents = useMemo<AgentKind[]>(() => [...agents], [agents]);
   const roles = useMemo(
     () => listedOrcaRoles(roleEntries ?? BUILTIN_ORCA_ROLE_ENTRIES, customRoleMode ? null : form.role),
     [customRoleMode, form.role, roleEntries],
@@ -966,6 +983,7 @@ export function useOrcaWorkerForm(params: {
     agents,
     pickerAgents,
     valid: canSubmitOrcaWorkerForm(submission)
+      && (!form.modelGroup || modelGroupsAllowed)
       && (!form.modelSelectionExplicit || workerAgentLocationSelectable
         || form.agentDeviceId === undefined || form.agentDeviceId === (form.executionDeviceId ? null : params.leadAgentDeviceId ?? null))
       && (!form.executionDeviceId || executionDevices.some((device) => device.deviceId === form.executionDeviceId && device.supported)),
@@ -974,7 +992,7 @@ export function useOrcaWorkerForm(params: {
     reset,
     remember,
     directoryPicker,
-    modelPicker: { open: modelPickerOpen, openPicker, close, closed, select, flatModelOptions, selectFlatModel },
+    modelPicker: { open: modelPickerOpen, openPicker, close, closed, select, flatModelOptions, selectFlatModel, modelGroups },
   };
 }
 
@@ -1001,6 +1019,7 @@ export function useSessionOrcaCollab(params: {
   openSession(sessionId: string, target?: { deviceId: string; deviceName?: string | null }): void;
   /** 被控电脑支持给 Worker 单独选 Agent 所在电脑(远程供应商)，见 useOrcaWorkerForm。 */
   workerAgentLocationSelectable?: boolean;
+  workerModelGroupSelectable?: boolean;
 }) {
   const { maker, deviceId, sessionId, session, prefsScope, connectionEpoch, getProviders, enabled, sheetView, sheetOpen, setSheetView, setSheetOpen, openSession } = params;
   // 远端真实任务的团队在另一台电脑，不能走本机团队查询或嵌套开启协同。
@@ -1036,6 +1055,7 @@ export function useSessionOrcaCollab(params: {
     connectionEpoch,
     leadAgentDeviceId: session?.remoteHostId ? null : (session?.agentDeviceId ?? null),
     agentLocationSelectable: eligible && !session?.remoteHostId && params.workerAgentLocationSelectable === true,
+    modelGroupSelectable: eligible && params.workerModelGroupSelectable === true,
   });
 
   const [entryStatus, setEntryStatus] = useState<OrcaCollabEntryStatus>('loading');

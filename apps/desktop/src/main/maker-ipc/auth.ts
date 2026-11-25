@@ -1,3 +1,4 @@
+import { cloudManagementProviderRegistry } from '../host-settings/managementCalls.js';
 /**
  * apps/desktop/src/main/maker-ipc/auth.ts
  *
@@ -105,7 +106,7 @@ export function registerMakerAuthIpc(maker: Maker): void {
   });
 
   registerMakerAuthHandlers(
-    registry,
+    cloudManagementProviderRegistry(registry),
     maker,
     broadcast,
     readClaudeApiKey,

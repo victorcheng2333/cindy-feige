@@ -22,6 +22,7 @@ import type { MobileAgentCapabilities } from "./agentCapabilities";
 import type { ModelPickerSheetProps } from "./ModelPickerSheet";
 import {
   buildPluginEngineGroups,
+  formatPluginEnginePickerQuota,
   type MobilePluginEngine,
   type MobilePluginEngineSelection,
   type PluginEngineEffort,
@@ -323,13 +324,14 @@ export function UnifiedModelPickerSheet(
   p: ModelPickerSheetProps & { unified: UnifiedMobilePickerOptions },
 ) {
   useMoneyDisplayPreferences();
-  const { t } = useTranslation();
-  const { quotas, now, quotaOf } = useMobileModelQuotas(
+  const { t, i18n } = useTranslation();
+  const { quotas, pluginEngineQuotas, now, quotaOf } = useMobileModelQuotas(
     p.unified.scope,
     p.visible,
     p.providers,
     p.unified.remote?.catalogs ?? NO_REMOTE_CATALOGS,
     p.subscriptionTaskId,
+    p.unified.pluginEngines?.engines,
   );
   const prefs = useMobileModelPreferences(p.unified.scope, p.visible, p.unified.preferenceScope === 'request');
   const rememberRemote = p.unified.preferenceScope !== 'request';
@@ -966,6 +968,14 @@ export function UnifiedModelPickerSheet(
         unavailable: (name, hint) => hint
           ? t("models.pluginEngines.unavailableWithHint", { engine: name, hint })
           : t("models.pluginEngines.unavailable", { engine: name }),
+      }).map((group) => {
+        const quota = formatPluginEnginePickerQuota(
+          pluginEngineQuotas?.[group.providerId],
+          now,
+          i18n.language,
+          (resetsAtSeconds, currentNow) => formatQuotaResetCountdown(resetsAtSeconds, currentNow, t, null),
+        );
+        return quota ? { ...group, quota } : group;
       })
     : [];
   // Recommended/favorites can contain the only rows for a source. Keep its

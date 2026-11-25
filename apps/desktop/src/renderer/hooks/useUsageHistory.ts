@@ -36,7 +36,7 @@ import type { Session } from '@/lib/ccAgent.types';
 import { onPatch as onSessionPatch } from '@/lib/sessionsBus';
 
 export interface UsageHistoryModel {
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'media' | 'auxiliary';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp' | 'media' | 'auxiliary';
   model: string;
   money: RegionalMoney;
   estimatedMoney: RegionalMoney | null;
@@ -215,7 +215,7 @@ function finiteNumber(value: unknown, fallback = 0): number {
 
 function isAgentKind(value: unknown): value is UsageHistoryModel['agentKind'] {
   return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor'
-    || value === 'antigravity' || value === 'media' || value === 'auxiliary';
+    || value === 'antigravity' || value === 'acp' || value === 'media' || value === 'auxiliary';
 }
 
 function parseDevices(value: unknown): UsageHistoryDevice[] | undefined {
