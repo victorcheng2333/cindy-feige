@@ -2067,6 +2067,11 @@ export function setLocalHarnessProviderReader(reader: (() => Provider | readonly
 export function notifyLocalHarnessProviderChanged(): void {
   markChanged();
 }
+
+/** Non-recursive read of the active model registry for local harness providers (e.g. Agy). */
+export function getActiveModelRegistry(): Catalog['modelRegistry'] {
+  return (base ?? BUNDLED_CATALOG).modelRegistry;
+}
 export function getActiveCatalog(): Catalog {
   if (!merged) {
     const catalog = computeMerged();

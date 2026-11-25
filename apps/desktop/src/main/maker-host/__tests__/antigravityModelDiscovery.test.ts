@@ -4,7 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ANTIGRAVITY_CAPABILITIES, type AgentDeps } from '@cindy/maker-core';
 import * as agy from '../antigravity-host.js';
 
-const fixture = vi.hoisted(() => ({ exec: vi.fn(), probe: vi.fn(), accountCommand: vi.fn(), owner: 'a' }));
+const fixture = vi.hoisted(() => ({
+  exec: vi.fn(),
+  probe: vi.fn(),
+  accountCommand: vi.fn(),
+  stat: vi.fn<() => Promise<{ mtimeMs: number; size: number; ino: number }>>(),
+  owner: 'a',
+}));
 vi.mock('@cindy/maker-core', async (importOriginal) => ({
   ...await importOriginal<typeof import('@cindy/maker-core')>(),
   probeAntigravityCatalog: fixture.probe,
@@ -22,6 +28,7 @@ vi.mock('node:fs', async (importOriginal) => ({
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...await importOriginal<typeof import('node:fs/promises')>(),
   mkdir: async () => {},
+  stat: (...args: unknown[]) => fixture.stat(...(args as [])),
 }));
 vi.mock('../../appSessionState.js', () => ({
   ownerScopedUserDataPath: (...parts: string[]) => path.resolve('fixture', fixture.owner, ...parts),
@@ -35,6 +42,8 @@ beforeEach(() => {
   fixture.exec.mockReset();
   fixture.probe.mockReset();
   fixture.accountCommand.mockReset();
+  fixture.stat.mockReset();
+  fixture.stat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
   fixture.owner = 'a';
   agy.resetAntigravityCliUpdateCacheForTest();
   vi.stubGlobal('process', Object.create(process, { platform: { value: 'darwin' } }));
@@ -164,4 +173,67 @@ it('checks the Agy CLI updater manifest and keeps the last known version on chec
     checkFailed: true,
     checkedAt: available.checkedAt,
   });
+});
+
+// Tier: unit. Production entries: `readAntigravityConnection`, `antigravityProvider`, `auth.getState`, `readAntigravityCliVersion`, `readAntigravityQuota`.
+// Gap: model catalog contextWindow enrichment (runtime verified vs public baseModels fallback vs unknown),
+// sanitized subscription tier propagation via auth.getState, and stat-keyed --version caching across quota reads.
+it('enriches Agy catalog context windows from runtime and baseModels, exposes tier identity, and caches CLI version by binary stat', async () => {
+  fixture.probe.mockImplementationOnce(async (_bin, _root, _env, opts?: { onMeta?: (meta: { tier?: { name: string; id?: string } }) => void }) => {
+    opts?.onMeta?.({ tier: { name: 'Google AI Ultra', id: 'g1-ultra-tier' } });
+    return {
+      ...ANTIGRAVITY_CAPABILITIES,
+      manualCompact: { supported: true },
+      availableModels: [
+        { id: 'gemini-4-neon', displayName: 'Gemini 4 Neon', contextWindow: 1_048_576, efforts: ['high'], defaultEffort: 'high' },
+        { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', contextWindow: 0, efforts: ['medium', 'high'], defaultEffort: 'medium' },
+        { id: 'custom-unknown-agy-model', displayName: 'Unknown', contextWindow: 0, efforts: [], defaultEffort: null },
+      ],
+    };
+  });
+
+  await expect(agy.readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true, force: true })).resolves.toBe(true);
+  const models = agy.antigravityProvider()?.models.antigravity ?? [];
+  expect(models).toMatchObject([
+    { id: 'gemini-4-neon', contextWindow: 1_048_576, contextWindowVerified: true },
+    { id: 'claude-opus-5-5', contextWindow: 1_000_000, contextWindowVerified: false },
+    { id: 'custom-unknown-agy-model', contextWindow: 0 },
+  ]);
+  expect(models[2]?.contextWindowVerified).toBeUndefined();
+
+  const agent = agy.buildAntigravityAgent({} as AgentDeps['logger'])!;
+  await expect(agent.getAuthState()).resolves.toEqual({ authenticated: true, identity: 'Google AI Ultra' });
+
+  // Owner switch fences tier identity from the previous owner.
+  fixture.owner = 'b';
+  expect(agy.antigravityProvider()?.models.antigravity).toEqual([]);
+  fixture.owner = 'a';
+
+  // Stat-keyed version cache avoids repeated `agy --version` spawns until binary mtime changes,
+  // and readAntigravityQuota reuses the cached version directly.
+  fixture.stat.mockResolvedValue({ mtimeMs: 1000, size: 50_000, ino: 42 });
+  fixture.exec.mockResolvedValueOnce({ stdout: '1.5.16\n', stderr: '' });
+  await expect(agy.readAntigravityCliVersion()).resolves.toBe('1.5.16');
+  await expect(agy.readAntigravityCliVersion()).resolves.toBe('1.5.16');
+  expect(fixture.exec).toHaveBeenCalledTimes(1);
+
+  fixture.exec.mockResolvedValueOnce({
+    stdout: JSON.stringify({
+      status: 'SUCCESS',
+      num_turns: 0,
+      command: { name: 'usage', data: { groups: [{ name: 'Gemini', buckets: [{ window: '5h', remaining_fraction: 0.9 }] }] } },
+    }),
+    stderr: '',
+  });
+  const quotaResult = await agy.readAntigravityQuota();
+  expect(quotaResult?.windows).toHaveLength(1);
+  // Only the /usage command spawned — zero redundant --version call.
+  expect(fixture.exec).toHaveBeenCalledTimes(2);
+  expect(fixture.exec.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(['--print', '/usage']));
+
+  // Changing binary mtime invalidates the version cache.
+  fixture.stat.mockResolvedValue({ mtimeMs: 2000, size: 50_000, ino: 42 });
+  fixture.exec.mockResolvedValueOnce({ stdout: '1.5.17\n', stderr: '' });
+  await expect(agy.readAntigravityCliVersion()).resolves.toBe('1.5.17');
+  expect(fixture.exec).toHaveBeenCalledTimes(3);
 });

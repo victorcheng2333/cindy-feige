@@ -1357,6 +1357,18 @@ function AgyHeader({
   const { t } = useTranslation();
   const { confirm } = useConfirmDialog();
   const [pending, setPending] = useState(false);
+  const [tier, setTier] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setTier('');
+    if (provider.connected) {
+      void window.electronAPI.maker.auth.getState('antigravity').then((state) => {
+        if (active) setTier(state.identity ?? '');
+      }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [provider.connected, dataOwnerId, ownerGeneration]);
 
   async function changeAccount() {
     if (ownerGeneration === null) return;
@@ -1389,7 +1401,7 @@ function AgyHeader({
     }
   }
 
-  return <DetailHeader icon={providerIcon(provider, 18)} title={provider.name} subtitle="" provider={provider}
+  return <DetailHeader icon={providerIcon(provider, 18)} title={provider.name} subtitle={tier} provider={provider}
     status={provider.connected ? { kind: 'connected' } : undefined}
     primaryAction={{
       label: t(pending && !provider.connected ? 'settings.providers.button.cancel'

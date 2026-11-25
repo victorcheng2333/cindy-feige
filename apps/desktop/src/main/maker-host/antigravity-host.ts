@@ -1,15 +1,15 @@
 import { execFile } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
 import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type McpProvider, type AuthAdapter, type Capabilities, type OpenReadonlySqlite } from '@cindy/maker-core';
-import type { Provider, ProviderModelDiscoveryFailure } from '@cindy/model-providers';
+import { BUNDLED_CATALOG, findBaseModel, type Provider, type ProviderModelDiscoveryFailure } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { resolveBetterSqliteNativeBinding } from '../localDb/betterSqliteFactory.js';
-import { readAntigravityProxy } from './antigravity-proxy-settings-store.js';
+import * as agySettingsStore from './antigravity-proxy-settings-store.js';
 import { antigravityStateDir, retainAntigravityTaskState } from './antigravity-state.js';
 import { getPiExtraSpawnConfig } from '../mcp-integrations/piEnvironment.desktop.js';
 import hostSystemPrompt from './host-system-prompt.md?raw';
@@ -19,14 +19,24 @@ import { isBinaryVersionNotOlder, normalizeBinaryVersion, parseBinaryVersionOutp
 import type { AntigravityCliState } from '../../shared/antigravityCli.js';
 import { createOutboundTransport } from './outbound-fetch.js';
 import { createMakerLogger } from './logger-adapter.js';
-import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
+import * as activeCatalog from './active-catalog.js';
 import { parseAntigravityQuota, supportsAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
 import { getRipgrepBinaryPath } from './runtime-configs.js';
 
 const exec = promisify(execFile);
 
+function readConfiguredProxy(): string | undefined {
+  try {
+    return typeof agySettingsStore.readAntigravityProxy === 'function'
+      ? agySettingsStore.readAntigravityProxy()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function configuredEnvironment() {
-  const address = readAntigravityProxy();
+  const address = readConfiguredProxy();
   return antigravityEnv(address === undefined ? process.env : { ...process.env, CINDY_AGY_PROXY: address }, {
     // Agy's terminal sandbox cannot execute anything under Cindy's user data, where the
     // other rg copies live; the app bundle's rg is executable there.
@@ -64,6 +74,10 @@ let executable: string | undefined;
 let snapshot: {
   scope: string;
   capabilities?: Capabilities;
+  /** Runtime-reported context windows (`usage_update.size`) before registry fallback enrichment. */
+  runtimeVerifiedContextModels?: ReadonlySet<string>;
+  /** Sanitized subscription plan label from `_meta.antigravity.tier.name`, e.g. `Google AI Ultra`. */
+  tierName?: string;
   expiresAt: number;
   failure: ProviderModelDiscoveryFailure | null;
 } | undefined;
@@ -85,7 +99,7 @@ const AGY_CLI_UPDATER_ORIGIN = 'https://antigravity-cli-auto-updater-97416903703
 const AGY_CLI_MANIFEST_TIMEOUT_MS = 8_000;
 
 async function resolveAntigravityOutboundProxy(url: string): Promise<string | null | undefined> {
-  const configured = readAntigravityProxy();
+  const configured = readConfiguredProxy();
   if (configured) return configured;
   if (configured === undefined) {
     const envProxy = process.env.CINDY_AGY_PROXY?.trim();
@@ -133,10 +147,18 @@ let cliLatestCache: { latestVersion: string | null; checkedAt: number | null; ch
   checkFailed: false,
 };
 let cliLatestCheck: Promise<void> | undefined;
+let cliVersionCache: {
+  bin: string;
+  mtimeMs: number;
+  size: number;
+  ino: number;
+  version: string;
+} | undefined;
 
 export function resetAntigravityCliUpdateCacheForTest(): void {
   cliLatestCache = { latestVersion: null, checkedAt: null, checkFailed: false };
   cliLatestCheck = undefined;
+  cliVersionCache = undefined;
 }
 
 async function checkLatestAntigravityCliVersion(fetchImpl?: typeof globalThis.fetch): Promise<void> {
@@ -174,12 +196,33 @@ async function checkLatestAntigravityCliVersion(fetchImpl?: typeof globalThis.fe
 
 export async function readAntigravityCliVersion(bin = executable ?? binaryPath()): Promise<string | null> {
   if (!bin) return null;
+  const fileStat = await stat(bin).catch(() => null);
+  const statKey = fileStat
+    && Number.isFinite(fileStat.mtimeMs)
+    && Number.isFinite(fileStat.size)
+    && Number.isFinite(fileStat.ino)
+    ? { mtimeMs: fileStat.mtimeMs, size: fileStat.size, ino: fileStat.ino }
+    : null;
+  if (
+    statKey
+    && cliVersionCache
+    && cliVersionCache.bin === bin
+    && cliVersionCache.mtimeMs === statKey.mtimeMs
+    && cliVersionCache.size === statKey.size
+    && cliVersionCache.ino === statKey.ino
+  ) {
+    return cliVersionCache.version;
+  }
   try {
     const { stdout, stderr } = await exec(bin, ['--version'], {
       env: { ...configuredEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true' },
       timeout: 5_000, maxBuffer: 4096,
     });
-    return parseBinaryVersionOutput(stdout, stderr);
+    const version = parseBinaryVersionOutput(stdout, stderr);
+    if (version && statKey) {
+      cliVersionCache = { bin, ...statKey, version };
+    }
+    return version;
   } catch {
     return null;
   }
@@ -222,6 +265,7 @@ export async function updateAntigravityCli(): Promise<string> {
   if (!bin) throw new Error('agy is not installed');
   cliUpdate = (async () => {
     await exec(bin, ['update'], { env: configuredEnvironment(), timeout: 120_000, maxBuffer: 64 * 1024 });
+    cliVersionCache = undefined;
     const version = await readAntigravityCliVersion(bin);
     if (!version) throw new Error('Updated agy version unavailable');
     refreshAntigravityProxyRouting();
@@ -251,8 +295,8 @@ export async function readAntigravityQuota(): Promise<AntigravityQuotaSnapshot |
       await mkdir(dir, { recursive: true, mode: 0o700 });
       if (!isCurrent()) return null;
       const env = { ...configuredEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true', NO_COLOR: '1', LC_ALL: 'en_US.UTF-8' };
-      const { stdout: version } = await exec(bin, ['--version'], { cwd: dir, env, timeout: 2_000, maxBuffer: 4096 });
-      supported = supportsAntigravityQuota(version);
+      const version = await readAntigravityCliVersion(bin);
+      if (version) supported = supportsAntigravityQuota(version);
       if (supported && isCurrent()) {
         // A cold /usage read can take about 20s. Leave shutdown headroom
         // within the existing 30s device-link deadline, including the version check.
@@ -287,6 +331,42 @@ function currentCapabilities(): Capabilities | undefined {
   return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.capabilities : undefined;
 }
 
+function currentTierName(): string | undefined {
+  return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.tierName : undefined;
+}
+
+function readActiveModelRegistry() {
+  try {
+    return typeof activeCatalog.getActiveModelRegistry === 'function'
+      ? activeCatalog.getActiveModelRegistry()
+      : BUNDLED_CATALOG.modelRegistry;
+  } catch {
+    return BUNDLED_CATALOG.modelRegistry;
+  }
+}
+
+function enrichAntigravityCapabilities(capabilities: Capabilities): {
+  capabilities: Capabilities;
+  runtimeVerifiedContextModels: ReadonlySet<string>;
+} {
+  const runtimeVerifiedContextModels = new Set<string>();
+  const registry = readActiveModelRegistry();
+  const availableModels = capabilities.availableModels.map(model => {
+    if (model.contextWindow > 0) {
+      runtimeVerifiedContextModels.add(model.id);
+      return model;
+    }
+    const baseWindow = findBaseModel(registry, model.id)?.defaults.contextWindow;
+    return baseWindow && Number.isSafeInteger(baseWindow) && baseWindow > 0
+      ? { ...model, contextWindow: baseWindow }
+      : model;
+  });
+  return {
+    capabilities: { ...capabilities, availableModels },
+    runtimeVerifiedContextModels,
+  };
+}
+
 export function antigravityModelDiscoveryFailure(): ProviderModelDiscoveryFailure | null {
   return snapshot?.scope === ownerScopedUserDataPath('antigravity') ? snapshot.failure : null;
 }
@@ -318,13 +398,20 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   const token = Symbol();
   const promise = (async () => {
     let capabilities: Capabilities | undefined;
+    let runtimeVerifiedContextModels: ReadonlySet<string> | undefined;
+    let discoveredTier: string | undefined;
     let failureKind: ProviderModelDiscoveryFailure['kind'] | null = null;
     try {
       const probe = path.join(scope, 'discovery');
       await mkdir(probe, { recursive: true, mode: 0o700 });
       // Discovery must not trigger a background CLI self-update mid-probe.
       const env = { ...configuredEnvironment(), AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
-      capabilities = await probeAntigravityCatalog(bin, probe, env);
+      const rawCapabilities = await probeAntigravityCatalog(bin, probe, env, {
+        onMeta: ({ tier }) => { discoveredTier = tier?.name; },
+      });
+      const enriched = enrichAntigravityCapabilities(rawCapabilities);
+      capabilities = enriched.capabilities;
+      runtimeVerifiedContextModels = enriched.runtimeVerifiedContextModels;
       if (!capabilities.availableModels.length) {
         // An empty ACP catalog has no reason attached. Only then ask the CLI for
         // the sign-in or network diagnostic; the model list and controls use ACP.
@@ -342,15 +429,24 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     const failure = failureKind ? { kind: failureKind, at: new Date(now).toISOString() } : null;
     // Last known models remain useful after a failed manual refresh, except when
     // the CLI explicitly reports that it cannot use the saved sign-in.
-    const retainedCapabilities = failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope
-      ? snapshot.capabilities : failure ? undefined : capabilities;
+    const retainPrevious = !!(failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope);
+    const retainedCapabilities = retainPrevious ? snapshot?.capabilities : failure ? undefined : capabilities;
+    const retainedVerified = retainPrevious ? snapshot?.runtimeVerifiedContextModels : failure ? undefined : runtimeVerifiedContextModels;
+    const retainedTier = retainPrevious ? snapshot?.tierName : failure ? undefined : discoveredTier;
     const failures = failure ? (discoveryFailures?.scope === scope ? discoveryFailures.count : 0) + 1 : 0;
     discoveryFailures = failures ? { scope, count: failures } : undefined;
     const ttl = failure
       ? Math.min(DISCOVERY_FAILURE_TTL_MS * 2 ** (failures - 1), DISCOVERY_FAILURE_MAX_TTL_MS)
       : DISCOVERY_SUCCESS_TTL_MS;
-    snapshot = { scope, capabilities: retainedCapabilities, failure, expiresAt: now + ttl };
-    notifyLocalHarnessProviderChanged();
+    snapshot = {
+      scope,
+      capabilities: retainedCapabilities,
+      runtimeVerifiedContextModels: retainedVerified,
+      tierName: retainedTier,
+      expiresAt: now + ttl,
+      failure,
+    };
+    activeCatalog.notifyLocalHarnessProviderChanged();
     return !failure && !!capabilities?.availableModels.length;
   })();
   discovery = { scope, token, retainOnFailure: options.force === true, promise };
@@ -360,6 +456,8 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
 
 export function antigravityProvider(): Provider | undefined {
   if (!executable) return undefined;
+  const scope = ownerScopedUserDataPath('antigravity');
+  const verifiedModels = snapshot?.scope === scope ? snapshot.runtimeVerifiedContextModels : undefined;
   return {
     id: 'antigravity',
     name: 'Agy',
@@ -368,7 +466,9 @@ export function antigravityProvider(): Provider | undefined {
     auth: { method: 'oauth' },
     routing: { antigravity: { upstream: 'https://antigravity.google', authStrategy: 'none' } },
     models: { antigravity: currentModels().map(({ id, displayName, contextWindow, efforts, defaultEffort, defaultEnabled, effortsUnknown }) => ({
-      id, name: displayName, contextWindow, efforts: [...(efforts ?? [])], defaultEffort,
+      id, name: displayName, contextWindow,
+      ...(contextWindow > 0 ? { contextWindowVerified: verifiedModels?.has(id) === true } : {}),
+      efforts: [...(efforts ?? [])], defaultEffort,
       ...(effortsUnknown ? { effortsUnknown } : {}),
       ...(defaultEnabled === undefined ? {} : { defaultEnabled }),
     })) },
@@ -393,9 +493,12 @@ async function changeAgyAccount(action: 'authenticate' | 'logout', signal?: Abor
 const auth: AuthAdapter = {
   async getState() {
     const authenticated = await readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true });
-    return authenticated ? { authenticated } : {
-      authenticated, errorReason: 'Run agy in your terminal to sign in and check CINDY_AGY_PROXY if needed.',
-    };
+    const identity = authenticated ? currentTierName() : undefined;
+    return authenticated
+      ? { authenticated, ...(identity ? { identity } : {}) }
+      : {
+          authenticated, errorReason: 'Run agy in your terminal to sign in and check CINDY_AGY_PROXY if needed.',
+        };
   },
   async triggerLogin() {
     activeLogin?.abort();
