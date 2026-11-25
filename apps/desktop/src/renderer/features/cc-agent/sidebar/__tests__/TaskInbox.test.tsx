@@ -141,8 +141,10 @@ it.each([false, true])('settles an already-read open task without another data u
   if (hovered) fireEvent.mouseOver(screen.getByRole('button', { name: 'complete:b' }));
   expect(rows(0)).toEqual(['a', 'b']);
   fireEvent.click(screen.getByRole('button', { name: 'complete:a' }));
-  await waitFor(() => expect(rows(0)).toEqual(['b']));
-  expect(rows(1)).toEqual(['a']);
+  await waitFor(() => {
+    expect(rows(0)).toEqual(['b']);
+    expect(rows(1)).toEqual(['a']);
+  });
   expect(onAction).toHaveBeenCalledWith('a', 'complete');
   if (hovered) {
     // A new question is a background change, not another explicit completion.

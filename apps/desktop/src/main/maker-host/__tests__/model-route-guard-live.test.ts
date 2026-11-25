@@ -9,21 +9,26 @@ const h = vi.hoisted(() => ({
 }));
 
 
-vi.mock('@cindy/model-providers', async (importOriginal) => ({
-  findCatalogModel: (await importOriginal<typeof import('@cindy/model-providers')>()).findCatalogModel,
-  connectedProvidersForAgent: (await importOriginal<typeof import('@cindy/model-providers')>()).connectedProvidersForAgent,
-  actualSourceIdForModel: (await importOriginal<typeof import('@cindy/model-providers')>()).actualSourceIdForModel,
-  effectiveSourceIdForModel: h.effectiveSourceIdForModel,
-  getModel: vi.fn(() => null),
-  isExclusiveXaiModelId: (model: string | null | undefined) =>
-    typeof model === 'string'
-    && (model.startsWith('grok') || model.startsWith('xai/grok')),
-  isModelDisabled: vi.fn(() => false),
-  isModelSelectableForNewRoute: vi.fn(() => true),
-  isProviderDisabled: vi.fn(() => false),
-  modelSupportsFastMode: vi.fn(() => false),
-  nativeDefaultSourceId: vi.fn(() => null),
-  sourcesForModel: vi.fn(() => []),
+vi.mock('@cindy/model-providers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@cindy/model-providers')>();
+  return {
+    ...actual,
+    effectiveSourceIdForModel: h.effectiveSourceIdForModel,
+    getModel: vi.fn(() => null),
+    isExclusiveXaiModelId: (model: string | null | undefined) =>
+      typeof model === 'string'
+      && (model.startsWith('grok') || model.startsWith('xai/grok')),
+    isModelDisabled: vi.fn(() => false),
+    isModelSelectableForNewRoute: vi.fn(() => true),
+    isProviderDisabled: vi.fn(() => false),
+    modelSupportsFastMode: vi.fn(() => false),
+    nativeDefaultSourceId: vi.fn(() => null),
+    sourcesForModel: vi.fn(() => []),
+  };
+});
+
+vi.mock('../antigravity-host.js', () => ({
+  readAntigravityConnection: vi.fn(async () => ({ connected: false })),
 }));
 
 vi.mock('../createDesktopProviderService.js', () => ({
