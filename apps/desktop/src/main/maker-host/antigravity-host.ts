@@ -15,7 +15,10 @@ import { getPiExtraSpawnConfig } from '../mcp-integrations/piEnvironment.desktop
 import hostSystemPrompt from './host-system-prompt.md?raw';
 import antigravitySystemPrompt from './antigravity-system-prompt.md?raw';
 import { readUserPrompt } from './user-prompt-settings-store.js';
-import { parseBinaryVersionOutput } from '../agent-binaries/binary-version-probe.js';
+import { isBinaryVersionNotOlder, normalizeBinaryVersion, parseBinaryVersionOutput } from '../agent-binaries/binary-version-probe.js';
+import type { AntigravityCliState } from '../../shared/antigravityCli.js';
+import { createOutboundTransport } from './outbound-fetch.js';
+import { createMakerLogger } from './logger-adapter.js';
 import { notifyLocalHarnessProviderChanged } from './active-catalog.js';
 import { parseAntigravityQuota, supportsAntigravityQuota, type AntigravityQuotaSnapshot } from './antigravity-quota.js';
 import { getRipgrepBinaryPath } from './runtime-configs.js';
@@ -78,6 +81,97 @@ export function antigravityQuotaAvailable(): boolean {
   return quota?.scope === quotaScope() && quota.connected;
 }
 
+const AGY_CLI_UPDATER_ORIGIN = 'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app';
+const AGY_CLI_MANIFEST_TIMEOUT_MS = 8_000;
+
+async function resolveAntigravityOutboundProxy(url: string): Promise<string | null | undefined> {
+  const configured = readAntigravityProxy();
+  if (configured) return configured;
+  if (configured === undefined) {
+    const envProxy = process.env.CINDY_AGY_PROXY?.trim();
+    if (envProxy) return envProxy;
+  }
+  const { resolveDesktopOutboundProxy } = await import('./outbound-proxy-resolver.js');
+  return resolveDesktopOutboundProxy(url);
+}
+
+let agyOutboundFetch: typeof globalThis.fetch | undefined;
+function getAgyOutboundFetch(): typeof globalThis.fetch {
+  agyOutboundFetch ??= createOutboundTransport(
+    resolveAntigravityOutboundProxy,
+    createMakerLogger('antigravity-cli-update'),
+  ).outboundFetch;
+  return agyOutboundFetch;
+}
+
+export function antigravityCliManifestUrl(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): string | null {
+  if (platform !== 'darwin') return null;
+  const goArch = arch === 'arm64' ? 'arm64' : arch === 'x64' ? 'amd64' : null;
+  if (!goArch) return null;
+  return `${AGY_CLI_UPDATER_ORIGIN}/manifests/${platform}_${goArch}.json`;
+}
+
+export function parseAntigravityCliManifest(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const version = (raw as { version?: unknown }).version;
+  return typeof version === 'string' ? normalizeBinaryVersion(version) : null;
+}
+
+function isAntigravityCliUpdateAvailable(current: string | null, latest: string | null): boolean {
+  if (!current || !latest) return false;
+  const normalizedCurrent = normalizeBinaryVersion(current);
+  const normalizedLatest = normalizeBinaryVersion(latest);
+  return !!normalizedCurrent && !!normalizedLatest && !isBinaryVersionNotOlder(normalizedCurrent, normalizedLatest);
+}
+
+let cliLatestCache: { latestVersion: string | null; checkedAt: number | null; checkFailed: boolean } = {
+  latestVersion: null,
+  checkedAt: null,
+  checkFailed: false,
+};
+let cliLatestCheck: Promise<void> | undefined;
+
+export function resetAntigravityCliUpdateCacheForTest(): void {
+  cliLatestCache = { latestVersion: null, checkedAt: null, checkFailed: false };
+  cliLatestCheck = undefined;
+}
+
+async function checkLatestAntigravityCliVersion(fetchImpl?: typeof globalThis.fetch): Promise<void> {
+  if (cliLatestCheck && !fetchImpl) return cliLatestCheck;
+  const url = antigravityCliManifestUrl();
+  if (!url) {
+    cliLatestCache = { ...cliLatestCache, checkFailed: true };
+    return;
+  }
+  const run = (async () => {
+    try {
+      const fetcher = fetchImpl ?? getAgyOutboundFetch();
+      const response = await fetcher(url, {
+        signal: AbortSignal.timeout(AGY_CLI_MANIFEST_TIMEOUT_MS),
+        redirect: 'error',
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const latestVersion = parseAntigravityCliManifest(await response.json());
+      if (!latestVersion) throw new Error('Invalid Agy CLI manifest');
+      cliLatestCache = { latestVersion, checkedAt: Date.now(), checkFailed: false };
+    } catch {
+      // Keep the last known version and check time so the menu still shows what
+      // we last saw, while checkFailed disables update until a check succeeds.
+      cliLatestCache = { ...cliLatestCache, checkFailed: true };
+    }
+  })();
+  if (fetchImpl) {
+    await run;
+    return;
+  }
+  cliLatestCheck = run;
+  try { await run; }
+  finally { if (cliLatestCheck === run) cliLatestCheck = undefined; }
+}
+
 export async function readAntigravityCliVersion(bin = executable ?? binaryPath()): Promise<string | null> {
   if (!bin) return null;
   try {
@@ -89,6 +183,36 @@ export async function readAntigravityCliVersion(bin = executable ?? binaryPath()
   } catch {
     return null;
   }
+}
+
+export async function readAntigravityCliState(
+  options: { checkLatest?: boolean; fetchImpl?: typeof globalThis.fetch } = {},
+): Promise<AntigravityCliState> {
+  const bin = executable ?? binaryPath();
+  if (!bin) {
+    return { version: null, latestVersion: null, updateAvailable: false, checkedAt: null, checkFailed: false };
+  }
+  if (!options.checkLatest) {
+    const version = await readAntigravityCliVersion(bin);
+    return {
+      version,
+      latestVersion: cliLatestCache.latestVersion,
+      updateAvailable: !cliLatestCache.checkFailed && isAntigravityCliUpdateAvailable(version, cliLatestCache.latestVersion),
+      checkedAt: cliLatestCache.checkedAt,
+      checkFailed: cliLatestCache.checkFailed,
+    };
+  }
+  const [version] = await Promise.all([
+    readAntigravityCliVersion(bin),
+    checkLatestAntigravityCliVersion(options.fetchImpl),
+  ]);
+  return {
+    version,
+    latestVersion: cliLatestCache.latestVersion,
+    updateAvailable: !cliLatestCache.checkFailed && isAntigravityCliUpdateAvailable(version, cliLatestCache.latestVersion),
+    checkedAt: cliLatestCache.checkedAt,
+    checkFailed: cliLatestCache.checkFailed,
+  };
 }
 
 let cliUpdate: Promise<string> | undefined;

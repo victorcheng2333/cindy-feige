@@ -7385,6 +7385,7 @@ interface ElectronAPI {
 
     antigravityCli: {
       getVersion(): Promise<string | null>;
+      getState(checkLatest?: boolean): Promise<import('../shared/antigravityCli').AntigravityCliState>;
       update(): Promise<{ status: 'updated'; version: string } | { status: 'busy' | 'failed' }>;
     };
 

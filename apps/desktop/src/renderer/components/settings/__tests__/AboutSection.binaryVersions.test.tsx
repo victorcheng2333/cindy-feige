@@ -18,10 +18,12 @@ const getBinaryVersion = vi.fn();
 const getState = vi.fn();
 const getCursorState = vi.fn();
 const getAgyVersion = vi.fn();
+const getAgyState = vi.fn();
 const updateAgy = vi.fn();
 const setHarnessEnabled = vi.fn();
 const installCursor = vi.fn();
 const cursorState = { currentVersion: '1.3.1', bundledVersion: '1.3.1', source: 'bundled', latestVersion: null, checkedAt: null, checkFailed: false, updateAvailable: false, operation: null };
+const agyState = { version: '1.5.13', latestVersion: '1.5.13', updateAvailable: false, checkedAt: 1700000000000, checkFailed: false };
 const relaunchForHarnessUpdate = vi.fn();
 const prepareHarnessUpdate = vi.fn();
 const anyActivityBlockingRelaunch = vi.fn();
@@ -64,6 +66,7 @@ describe('AboutSection agent binary versions', () => {
     getCursorState.mockReset().mockResolvedValue(cursorState);
     installCursor.mockReset();
     getAgyVersion.mockReset().mockResolvedValue('1.5.13');
+    getAgyState.mockReset().mockResolvedValue(agyState);
     updateAgy.mockReset().mockResolvedValue({ status: 'updated', version: '1.6.0' });
     setHarnessEnabled.mockReset().mockResolvedValue({ harnesses: [{ kind: 'antigravity', registered: true, enabled: false }] });
     anyActivityBlockingRelaunch.mockResolvedValue(false);
@@ -73,7 +76,7 @@ describe('AboutSection agent binary versions', () => {
       prepareHarnessUpdate,
       anyActivityBlockingRelaunch,
       maker: {
-        antigravityCli: { getVersion: getAgyVersion, update: updateAgy },
+        antigravityCli: { getVersion: getAgyVersion, getState: getAgyState, update: updateAgy },
         getHarnessPreferences: async () => ({ harnesses: [
           { kind: 'codex', registered: true, enabled: true },
           { kind: 'antigravity', registered: true, enabled: true },
@@ -151,21 +154,42 @@ describe('AboutSection agent binary versions', () => {
     expect(relaunchForHarnessUpdate).not.toHaveBeenCalled();
   });
 
-  // Unit: the About menu must expose agy through the same preference API,
-  // and invoke the local CLI update only after the confirmation.
-  it('shows the agy CLI version, update action, and model picker switch', async () => {
+  // Unit: the About menu must check for Agy CLI updates, surface the update hint,
+  // expose the preference toggle, and invoke the local CLI update only after confirmation.
+  it('shows the agy CLI version, update hint, update action, and model picker switch', async () => {
     mockOnline({});
+    const available = { ...agyState, latestVersion: '1.6.0', updateAvailable: true };
+    getAgyState.mockImplementation(async (check = false) => (check ? available : { ...agyState, latestVersion: null, checkedAt: null }));
+    updateAgy.mockImplementation(async () => {
+      getAgyState.mockResolvedValue({ ...available, version: '1.6.0', updateAvailable: false });
+      return { status: 'updated', version: '1.6.0' };
+    });
     renderRows();
     await screen.findByText('1.5.13');
+    await screen.findByText('settings.about.harnessUpdateAvailable');
     await openMenu('Agy CLI');
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.about.agyCli.update' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /settings\.about\.agyCli\.update.*1\.6\.0/ }));
     expect(updateAgy).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'settings.about.piKernel.updateConfirm' }));
     await screen.findByText('1.6.0');
     expect(updateAgy).toHaveBeenCalledOnce();
+    expect(screen.queryByText('settings.about.harnessUpdateAvailable')).toBeNull();
     await openMenu('Agy CLI');
     fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'settings.about.harnessShowInPicker' }));
     await waitFor(() => expect(setHarnessEnabled).toHaveBeenCalledWith('antigravity', false));
+  });
+
+  it('disables agy CLI update when already up to date and supports manual re-check', async () => {
+    mockOnline({});
+    renderRows();
+    await screen.findByText('1.5.13');
+    await openMenu('Agy CLI');
+    expect(screen.getByRole('menuitem', { name: /settings\.about\.agyCli\.update.*1\.5\.13/ }).getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByText('settings.about.harnessCheckedAt')).toBeTruthy();
+
+    getAgyState.mockResolvedValueOnce({ ...agyState, latestVersion: '1.6.0', updateAvailable: true });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'settings.about.harnessCheck' }));
+    await screen.findByText('settings.about.harnessUpdateAvailable');
   });
 
   it('shows the existing not-ready state when Pi is unavailable', async () => {

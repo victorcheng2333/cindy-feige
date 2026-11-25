@@ -8721,6 +8721,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     antigravityCli: {
       getVersion: (): Promise<string | null> => ipcRenderer.invoke('maker:agent:antigravity-cli-version'),
+      getState: (checkLatest = false): Promise<import('../shared/antigravityCli').AntigravityCliState> =>
+        ipcRenderer.invoke('maker:agent:antigravity-cli-state', checkLatest),
       update: (): Promise<{ status: 'updated'; version: string } | { status: 'busy' | 'failed' }> =>
         ipcRenderer.invoke('maker:agent:antigravity-cli-update'),
     },

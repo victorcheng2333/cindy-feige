@@ -394,6 +394,7 @@ export const MAKER_INVOKE = {
   AGENT_BINARY_VERSION: 'maker:agent:binary-version',
   PI_KERNEL_STATE: 'maker:agent:pi-kernel-state',
   ANTIGRAVITY_CLI_VERSION: 'maker:agent:antigravity-cli-version',
+  ANTIGRAVITY_CLI_STATE: 'maker:agent:antigravity-cli-state',
   ANTIGRAVITY_CLI_UPDATE: 'maker:agent:antigravity-cli-update',
   CURSOR_SDK_STATE: 'maker:agent:cursor-sdk-state',
   CURSOR_SDK_INSTALL: 'maker:agent:cursor-sdk-install',

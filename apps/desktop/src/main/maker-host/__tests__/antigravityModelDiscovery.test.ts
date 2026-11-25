@@ -36,6 +36,7 @@ beforeEach(() => {
   fixture.probe.mockReset();
   fixture.accountCommand.mockReset();
   fixture.owner = 'a';
+  agy.resetAntigravityCliUpdateCacheForTest();
   vi.stubGlobal('process', Object.create(process, { platform: { value: 'darwin' } }));
   vi.stubEnv('CINDY_AGY_BIN', path.resolve('fixture', 'agy'));
   vi.stubEnv('CINDY_AGY_PROXY', '');
@@ -103,4 +104,64 @@ it('cancels a superseded sign-in and publishes the newer sign-in result', async 
   await expect(superseded).resolves.toEqual({ authenticated: false, errorReason: 'login_cancelled' });
   await expect(latest).resolves.toEqual({ authenticated: true });
   expect(fixture.accountCommand.mock.calls[0]?.[0].signal.aborted).toBe(true);
+});
+
+// Unit: About needs an update indicator for Agy CLI against the official updater manifest.
+// Covers newer version detection, up-to-date suppression, and fail-closed behavior on network error.
+it('checks the Agy CLI updater manifest and keeps the last known version on check failure', async () => {
+  expect(agy.antigravityCliManifestUrl('darwin', 'arm64')).toBe(
+    'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/darwin_arm64.json',
+  );
+  expect(agy.antigravityCliManifestUrl('darwin', 'x64')).toBe(
+    'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/darwin_amd64.json',
+  );
+  expect(agy.antigravityCliManifestUrl('linux', 'arm64')).toBeNull();
+
+  fixture.exec.mockResolvedValue({ stdout: '1.5.13\n', stderr: '' });
+  const localOnly = await agy.readAntigravityCliState({ checkLatest: false });
+  expect(localOnly).toEqual({
+    version: '1.5.13',
+    latestVersion: null,
+    updateAvailable: false,
+    checkedAt: null,
+    checkFailed: false,
+  });
+
+  const fetchNewer = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+    new Response(JSON.stringify({ version: '1.5.16' }), { status: 200 }),
+  );
+  const available = await agy.readAntigravityCliState({ checkLatest: true, fetchImpl: fetchNewer });
+  expect(fetchNewer).toHaveBeenCalledWith(
+    expect.stringContaining('/manifests/darwin_'),
+    expect.objectContaining({ redirect: 'error' }),
+  );
+  expect(available).toMatchObject({
+    version: '1.5.13',
+    latestVersion: '1.5.16',
+    updateAvailable: true,
+    checkFailed: false,
+  });
+  expect(available.checkedAt).toEqual(expect.any(Number));
+
+  // Local version equal to manifest clears updateAvailable without another network call.
+  fixture.exec.mockResolvedValue({ stdout: '1.5.16\n', stderr: '' });
+  const upToDate = await agy.readAntigravityCliState({ checkLatest: false });
+  expect(upToDate).toMatchObject({
+    version: '1.5.16',
+    latestVersion: '1.5.16',
+    updateAvailable: false,
+    checkFailed: false,
+  });
+
+  // A subsequent network failure preserves latestVersion/checkedAt but disables updateAvailable.
+  fixture.exec.mockResolvedValue({ stdout: '1.5.13\n', stderr: '' });
+  const fetchFailed = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new Error('offline'));
+  const failed = await agy.readAntigravityCliState({ checkLatest: true, fetchImpl: fetchFailed });
+  expect(failed).toMatchObject({
+    version: '1.5.13',
+    latestVersion: '1.5.16',
+    updateAvailable: false,
+    checkFailed: true,
+    checkedAt: available.checkedAt,
+  });
 });

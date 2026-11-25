@@ -1,5 +1,5 @@
 import { removeAntigravityTaskState } from '../maker-host/antigravity-state.js';
-import { antigravityModelDiscoveryFailure, readAntigravityConnection, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
+import { antigravityModelDiscoveryFailure, readAntigravityConnection, readAntigravityCliState, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
 import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { assertSessionTreeOwner, navigateAndRehydrateSessionTree } from './sessionTreeNavigation.js';
@@ -6863,6 +6863,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
   ipcMain.handle(MAKER_INVOKE.ANTIGRAVITY_CLI_VERSION, (event) => {
     assertTrustedAppRendererEvent(event);
     return readAntigravityCliVersion();
+  });
+  ipcMain.handle(MAKER_INVOKE.ANTIGRAVITY_CLI_STATE, (event, checkLatest: unknown = false) => {
+    assertTrustedAppRendererEvent(event);
+    if (typeof checkLatest !== 'boolean') throwIpcError('INVALID_PARAMS', 'checkLatest must be boolean');
+    return readAntigravityCliState({ checkLatest });
   });
   ipcMain.handle(MAKER_INVOKE.ANTIGRAVITY_CLI_UPDATE, async (event) => {
     assertTrustedAppRendererEvent(event);
