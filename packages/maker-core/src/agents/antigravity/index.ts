@@ -30,7 +30,7 @@ import type { ReviewableAction } from '../shared/auto-review.js';
 import { deviceHostedGhostRoster } from '../shared/device-hosted.js';
 import { normalizeAcpToolForAutoReview } from '../agy-acp/auto-review-policy.js';
 import { openAcpSession, type AcpSession } from '../agy-acp/session.js';
-import { asRecord, type AcpMcpServer } from '../agy-acp/protocol.js';
+import { asRecord, type AcpAntigravityTier, type AcpMcpServer } from '../agy-acp/protocol.js';
 import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
 import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
 import {
@@ -98,6 +98,8 @@ export interface AntigravityAgentDeps extends AgentDeps {
   localSystemPrompt?: string;
   getDiscoveredCapabilities(): Capabilities | undefined;
   getCliVersion?(): Promise<string | null>;
+  /** Optional host-injected Agy launch settings (e.g. `useG1Credits` AI Credits overflow). */
+  getSettings?(): { useG1Credits?: boolean };
   /** Optional host-injected read-only SQLite opener for native trajectory inspection. */
   openReadonlySqlite?: OpenReadonlySqlite;
 }
@@ -133,8 +135,20 @@ function antigravityCapabilities(session: AcpSession, options?: { includeCindyAu
   };
 }
 
+export interface ProbeAntigravityCatalogOptions {
+  /** Optional callback receiving sanitized session metadata such as the subscription tier. */
+  onMeta?: (meta: { tier?: AcpAntigravityTier }) => void;
+  /** Max wait (ms) for post-handshake `available_commands_update` / `usage_update` notifications. */
+  initialUpdateSettleMs?: number;
+}
+
 /** The same ACP handshake used by a task, with no prompt or registered tools. */
-export async function probeAntigravityCatalog(binary: string, root: string, env: NodeJS.ProcessEnv): Promise<Capabilities> {
+export async function probeAntigravityCatalog(
+  binary: string,
+  root: string,
+  env: NodeJS.ProcessEnv,
+  options?: ProbeAntigravityCatalogOptions,
+): Promise<Capabilities> {
   const directory = await mkdtemp(path.join(root, 'catalog-'));
   let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
   try {
@@ -143,8 +157,11 @@ export async function probeAntigravityCatalog(binary: string, root: string, env:
     const session = await openAcpSession({
       agentKind: 'antigravity', transport: endpoint.transport, cwd: directory,
       clientInfo: { name: 'cindy', version: '1.0.0' }, requestTimeoutMs: 15_000,
+      nativeCompactCommand: true,
     });
     try {
+      await session.waitForInitialUpdates(options?.initialUpdateSettleMs ?? 150);
+      options?.onMeta?.({ tier: session.antigravityTier });
       return antigravityCapabilities(session);
     } finally {
       await session.close();
@@ -272,8 +289,9 @@ export class AntigravityAgent extends BaseAgent {
         opts.userPrompt ?? (hosted ? undefined : this.agyDeps.runtimeConfig.userPrompt),
       ].map(part => part?.trim()).filter(Boolean).join('\n\n');
 
-      // Writable folders join Agy's own workspace; read-only folders stay outside it and are
-      // only trusted by Cindy Auto-review, so adding a reference folder never grants writes.
+      // Writable folders join Agy's workspace via ACP `additionalDirectories`; read-only folders
+      // stay outside `additionalDirectories` and are mounted read-only into Agy's Seatbelt
+      // sandbox via `--settings` `read_file(...)` rules (local tasks only) plus Cindy Auto-review.
       let extraDirs = [...(opts.extraDirs ?? [])];
       let writableDirs = [...(opts.writableDirs ?? [])];
       let sessionRef: AcpSession | undefined;
@@ -348,13 +366,22 @@ export class AntigravityAgent extends BaseAgent {
       const launchCwd = remoteWorkspace ? remoteWorkspace.dir : cwd;
       const remoteGuard = hostedMcp ? createAntigravityRemoteWorkspaceGuard(hostedMcp.serverNames) : undefined;
       const priorAcpLogs = hosted ? await listAntigravityAcpLogs(stateDir) : undefined;
+      let readOnlySandboxDirs: string[] | undefined;
+      if (!hosted && extraDirs.length > 0) {
+        const canonicalizeDir = async (dir: string) => realpath(dir).catch(() => path.resolve(dir));
+        const resolvedWritable = await Promise.all(writableDirs.map(canonicalizeDir));
+        const writableRootSet = new Set([cwd, ...resolvedWritable]);
+        const resolvedExtra = await Promise.all(extraDirs.map(canonicalizeDir));
+        readOnlySandboxDirs = resolvedExtra.filter(dir => !writableRootSet.has(dir));
+      }
+      const useG1Credits = this.agyDeps.getSettings?.().useG1Credits === true;
       const launchedAt = Date.now();
       endpoint = startAgyAcpProcess(
         this.deps.binaryPath,
         launchCwd,
         stateDir,
         this.agyDeps.getEnv(),
-        hosted ? { agent: ANTIGRAVITY_REMOTE_AGENT_NAME } : undefined,
+        hosted ? { agent: ANTIGRAVITY_REMOTE_AGENT_NAME, useG1Credits } : { readOnlyDirs: readOnlySandboxDirs, useG1Credits },
       );
       const cleanupWorkspace = remoteWorkspace;
       void endpoint.whenStopped.then(async () => {
@@ -379,6 +406,8 @@ export class AntigravityAgent extends BaseAgent {
           sdkError: 'rate_limit',
         }),
         additionalDirectories: hosted ? undefined : writableDirs,
+        nativeCompactCommand: true,
+        embedTextAttachments: !hosted,
         steerByPrompt: true,
         continueWhileToolsPending: true,
         promptInactivityTimeoutMs: AGY_PROMPT_INACTIVITY_TIMEOUT_MS,
@@ -470,6 +499,7 @@ export class AntigravityAgent extends BaseAgent {
         isTurnRunning: () => session.isTurnRunning(),
         abort: () => session.abort(),
         close: () => session.close(),
+        compactSession: instructions => session.compact(instructions),
         setModel: async (model, settings) => {
           if (settings?.providerId && settings.providerId !== this.kind) throw new Error('Agy requires its own model source.');
           await setModel(model, settings?.effort);

@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createConsoleLogger } from '../../interfaces/logger.js';
 import type { AgentEvent } from '../../types/events.js';
 import type { StartSessionOptions, AgentSessionHandle } from '../base-agent.js';
-import { AntigravityAgent } from './index.js';
-import { runAntigravityAccountCommand } from './acp-process.js';
+import { AntigravityAgent, probeAntigravityCatalog } from './index.js';
+import { buildAgySettingsJson, classifyAgyProcessExit, runAntigravityAccountCommand } from './acp-process.js';
 import {
   AGY_INVALID_THINKING_SIGNATURE_REASON,
   readAntigravityBackgroundState,
@@ -239,12 +239,19 @@ describe('Agy ACP-only sessions', () => {
 
   // Regression (2026-11-21): Agy refused any task with extra folders, so work in a sibling
   // worktree counted as outside the workspace and Auto kept asking.
-  it('opens writable folders in Agy and keeps read-only folders out of its workspace', async () => {
+  it('opens writable folders in Agy, mounts read-only folders via --settings read_file, and keeps read-only folders out of additionalDirectories', async () => {
     await withAgy(async start => {
       const child = new AgyProcess('with-folders');
-      const handle = await start({ extraDirs: ['/refs/docs'], writableDirs: ['/work/sibling'] });
+      const handle = await start({ extraDirs: ['/refs/docs', '/work/sibling'], writableDirs: ['/work/sibling'] });
       const created = child.requests.find(request => request.method === 'session/new');
       expect((created?.params as { additionalDirectories?: string[] }).additionalDirectories).toEqual(['/work/sibling']);
+      const spawnArgs = spawnMock.mock.calls[0]?.[1] as string[];
+      const settingsIdx = spawnArgs.indexOf('--settings');
+      expect(settingsIdx).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(spawnArgs[settingsIdx + 1]!)).toEqual({
+        useG1Credits: false,
+        permissions: { allow: ['read_file(/refs/docs)'] },
+      });
       expect(handle.negotiatedCapabilities).toMatchObject({ extraDirs: { supported: true }, writableDirs: { supported: true }, sameTurnSteer: { supported: true } });
     });
   });
@@ -304,6 +311,35 @@ it.each(['authenticate', 'logout'] as const)('sends the explicit account action 
   expect(child.requests.map(request => request.method)).toEqual(['initialize', action]);
   expect(child.requests[1]?.params).toEqual(action === 'authenticate' ? { methodId: 'oauth-personal' } : {});
   expect(child.stdin.writableEnded).toBe(true);
+});
+
+it('supports explicit oauth-business authentication when advertised', async () => {
+  const child = new AgyProcess('business-auth');
+  const origHandle = (child as unknown as { handleRequest: (req: Request) => void }).handleRequest.bind(child);
+  (child as unknown as { handleRequest: (req: Request) => void }).handleRequest = (req: Request) => {
+    if (req.method === 'initialize') {
+      child.requests.push(req);
+      child.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: req.id,
+        result: {
+          protocolVersion: 1,
+          agentCapabilities: { auth: { logout: {} } },
+          authMethods: [{ id: 'oauth-personal', name: 'Personal' }, { id: 'oauth-business', name: 'Business' }],
+        },
+      }) + '\n');
+      return;
+    }
+    origHandle(req);
+  };
+  await runAntigravityAccountCommand({
+    binary: '/test/agy',
+    directory: '/test',
+    env: {},
+    action: 'authenticate',
+    authMethod: 'oauth-business',
+  });
+  expect(child.requests[1]?.params).toEqual({ methodId: 'oauth-business' });
 });
 
 
@@ -468,6 +504,106 @@ describe('Antigravity native state inspection', () => {
       await handle.close();
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Tier: unit. Production entries: `buildAgySettingsJson`, `classifyAgyProcessExit`, `probeAntigravityCatalog`.
+// Gap: --settings read_file sanitization (root/glob/paren rejection), stderr-based crash classification
+// without leaking secrets/URLs, and discovery capture of tier/contextWindow/manualCompact.
+describe('Agy settings, crash diagnostics, and catalog discovery metadata', () => {
+  beforeEach(() => spawnMock.mockReset());
+
+  it('sanitizes read-only sandbox paths in --settings, supports useG1Credits, and rejects root or rule-syntax injection', () => {
+    expect(JSON.parse(buildAgySettingsJson([]))).toEqual({ useG1Credits: false });
+    expect(JSON.parse(buildAgySettingsJson({ useG1Credits: true, readOnlyDirs: ['/safe/dir'] }))).toEqual({
+      useG1Credits: true,
+      permissions: { allow: ['read_file(/safe/dir)'] },
+    });
+    expect(JSON.parse(buildAgySettingsJson([
+      '/',
+      'relative/path',
+      '/safe/dir/',
+      '/safe/dir',
+      '/bad/(inject)',
+      '/bad/glob*',
+      '/bad/newline\npath',
+    ]))).toEqual({
+      useG1Credits: false,
+      permissions: { allow: ['read_file(/safe/dir)'] },
+    });
+  });
+
+  it('classifies unexpected Agy exits into fixed categories without leaking raw stderr', () => {
+    const proxy = classifyAgyProcessExit({
+      code: 1,
+      signal: null,
+      stderr: 'proxyconnect tcp: dial tcp 127.0.0.1:7897 user:secret@proxy.corp: connection refused',
+    });
+    expect(proxy).toEqual({
+      detail: 'network-or-proxy',
+      userMessage: expect.stringContaining('proxy'),
+    });
+    expect(JSON.stringify(proxy)).not.toContain('secret');
+    expect(JSON.stringify(proxy)).not.toContain('7897');
+
+    expect(classifyAgyProcessExit({
+      code: 1,
+      signal: null,
+      stderr: 'FAILED_PRECONDITION: User location is not supported for the API use.',
+    })).toMatchObject({ detail: 'region-blocked', errorReason: 'agy-region-blocked' });
+
+    expect(classifyAgyProcessExit({
+      code: 1,
+      signal: null,
+      stderr: 'Error: Please sign in to view available models',
+    })).toMatchObject({ detail: 'auth-required', errorReason: 'acp-auth-required' });
+
+    expect(classifyAgyProcessExit({
+      code: null,
+      signal: 'SIGKILL',
+      stderr: '',
+    })).toEqual({ detail: 'signal SIGKILL' });
+
+    expect(classifyAgyProcessExit({
+      code: 137,
+      signal: null,
+      stderr: 'internal panic with token=abcd',
+    })).toEqual({ detail: 'exit code 137' });
+  });
+
+  it('captures tier, usage_update contextWindow, and manualCompact during probeAntigravityCatalog', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-probe-'));
+    try {
+      const child = new AgyProcess('probe-1');
+      // Patch session/new response by sending post-handshake notifications right after session/new.
+      child.on('request', (request: Request) => {
+        if (request.method === 'session/new') {
+          queueMicrotask(() => {
+            child.stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'session/update',
+              params: {
+                sessionId: 'probe-1',
+                update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact' }] },
+              },
+            }) + '\n');
+            child.stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'session/update',
+              params: {
+                sessionId: 'probe-1',
+                update: { sessionUpdate: 'usage_update', used: 0, size: 1_048_576 },
+              },
+            }) + '\n');
+          });
+        }
+      });
+      const caps = await probeAntigravityCatalog('/test/agy', root, {}, { initialUpdateSettleMs: 500 });
+      expect(caps.manualCompact).toEqual({ supported: true });
+      expect(caps.availableModels.find(m => m.id === 'gemini-4-neon')?.contextWindow).toBe(1_048_576);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

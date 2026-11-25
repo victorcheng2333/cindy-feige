@@ -328,6 +328,7 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
         workingDir: h.dir,
         model: 'gemini-4-neon',
         permissionMode: 'default',
+        extraDirs: ['/virtual/ro'],
         writableDirs: ['/virtual/extra'],
         deviceHosted: sampleHosted(),
       } as StartSessionOptions);
@@ -335,6 +336,9 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
       const spawnArgs = spawnMock.mock.calls[0]?.[1] as string[];
       const spawnOpts = spawnMock.mock.calls[0]?.[2] as { cwd: string };
       expect(spawnArgs).toEqual(expect.arrayContaining(['acp', '--process-per-session', '--agent', ANTIGRAVITY_REMOTE_AGENT_NAME]));
+      const settingsIdx = spawnArgs.indexOf('--settings');
+      expect(settingsIdx).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(spawnArgs[settingsIdx + 1]!)).toEqual({ useG1Credits: false });
       const agentFile = path.join(spawnOpts.cwd, '.agents', 'agents', `${ANTIGRAVITY_REMOTE_AGENT_NAME}.md`);
       expect(existsSync(agentFile)).toBe(true);
       const agentMd = await readFile(agentFile, 'utf8');

@@ -40,4 +40,28 @@ describe('Antigravity child environment', () => {
       'CINDY_AGY_PROXY must be an HTTP or SOCKS5 proxy URL.',
     );
   });
+
+  // Tier: unit. Production entry: `antigravityEnv`.
+  // Gap: GCP ADC variables must pass through only when `AGY_ADC_AUTH=true` is explicitly set.
+  it('passes through GCP ADC environment variables only when AGY_ADC_AUTH=true', () => {
+    const base = {
+      GOOGLE_CLOUD_PROJECT: 'proj-1',
+      GOOGLE_CLOUD_LOCATION: 'us-central1',
+      GOOGLE_APPLICATION_CREDENTIALS: '/tmp/adc.json',
+      OPENAI_API_KEY: 'sk-secret',
+    };
+    const withoutFlag = antigravityEnv(base);
+    expect(withoutFlag.GOOGLE_CLOUD_PROJECT).toBeUndefined();
+    expect(withoutFlag.GOOGLE_APPLICATION_CREDENTIALS).toBeUndefined();
+    expect(withoutFlag.OPENAI_API_KEY).toBeUndefined();
+
+    const withFlag = antigravityEnv({ ...base, AGY_ADC_AUTH: 'true' });
+    expect(withFlag).toMatchObject({
+      AGY_ADC_AUTH: 'true',
+      GOOGLE_CLOUD_PROJECT: 'proj-1',
+      GOOGLE_CLOUD_LOCATION: 'us-central1',
+      GOOGLE_APPLICATION_CREDENTIALS: '/tmp/adc.json',
+    });
+    expect(withFlag.OPENAI_API_KEY).toBeUndefined();
+  });
 });

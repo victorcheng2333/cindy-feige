@@ -1,6 +1,14 @@
 import path from 'node:path';
 
 const proxyKeys = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'] as const;
+const gcpAdcKeys = [
+  'AGY_ADC_AUTH',
+  'GOOGLE_CLOUD_PROJECT',
+  'GOOGLE_CLOUD_QUOTA_PROJECT',
+  'GOOGLE_CLOUD_LOCATION',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'CLOUDSDK_CONFIG',
+] as const;
 
 export function antigravityEnv(
   inherited: NodeJS.ProcessEnv = process.env,
@@ -9,6 +17,13 @@ export function antigravityEnv(
   const env = Object.fromEntries(Object.entries(inherited).filter(([key]) =>
     /^(HOME|USER|LOGNAME|PATH|SHELL|TMPDIR|LANG|LC_\w+|SSL_CERT_FILE|SSL_CERT_DIR)$/.test(key),
   ));
+  // Pass through GCP Application Default Credentials settings only when the user explicitly
+  // opted into ADC auth (`AGY_ADC_AUTH=true`), keeping unrelated host secrets isolated.
+  if (inherited.AGY_ADC_AUTH?.trim().toLowerCase() === 'true') {
+    for (const key of gcpAdcKeys) {
+      if (inherited[key]) env[key] = inherited[key];
+    }
+  }
   const prepends = (options.pathPrepends ?? []).filter(dir => path.isAbsolute(dir));
   if (prepends.length) env.PATH = [...prepends, env.PATH].filter(Boolean).join(path.delimiter);
   const proxy = inherited.CINDY_AGY_PROXY?.trim();
