@@ -14,6 +14,9 @@ describe('ACP tool normalization for Auto-review', () => {
     [{ toolCallId: 'd', kind: 'edit', rawInput: { Path: '/repo/a.ts', Target: 'x', Replacement: 'y' } }, { kind: 'file-write', path: '/repo/a.ts' }],
     [{ toolCallId: 'e', rawInput: { Path: '/repo/a.ts', Target: 'x', Replacement: 'y' } }, { kind: 'file-write', path: '/repo/a.ts' }],
     [{ toolCallId: 'f', kind: 'search', locations: [{ path: '/repo' }], rawInput: { query: 'agy' } }, { kind: 'read', path: '/repo', scope: 'tree' }],
+    [{ toolCallId: 'f2', kind: 'search', rawInput: { SearchPath: '/refs/docs', Query: 'token' } }, { kind: 'read', path: '/refs/docs', scope: 'tree' }],
+    [{ toolCallId: 'f3', rawInput: { DirectoryPath: '/refs/docs' } }, { kind: 'read', path: '/refs/docs', scope: 'tree' }],
+    [{ toolCallId: 'b2', rawInput: { Path: '/repo/a.ts', StartLine: 1, toolSummary: 'Read a.ts' } }, { kind: 'read', path: '/repo/a.ts', scope: 'file' }],
     [{ toolCallId: 'g', rawInput: { query: 'agy changelog' } }, { kind: 'network', target: 'agy changelog' }],
   ])('normalizes %j', (toolCall, expected) => {
     expect(normalizeAcpToolForAutoReview(toolCall)).toEqual(expected);

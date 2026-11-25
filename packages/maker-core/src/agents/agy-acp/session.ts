@@ -13,7 +13,7 @@ import { basename, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Logger } from '../../interfaces/logger.js';
 import type { SendOptions } from '../base-agent.js';
-import { NotSupportedError, type Capabilities } from '../../types/capabilities.js';
+import { NotSupportedError, type Capabilities, type ManualCompactResult } from '../../types/capabilities.js';
 import type { AgentKind, Effort, PermissionMode, UserContentBlock, UserMessage } from '../../types/common.js';
 import type { AgentEvent, InteractionRequest, InteractionResolver, UsageSnapshot } from '../../types/events.js';
 import { createAsyncQueue } from '../shared/async-queue.js';
@@ -36,14 +36,18 @@ import {
   asRecord,
   extractAcpUserInputQuestion,
   isAcpUserInputInteraction,
+  normalizeAvailableCommands,
   normalizeConfigOptions,
   normalizeInitializeResult,
   normalizePermissionOptions,
   normalizeStopReason,
   readAcpPromptUsage,
+  readAntigravityTier,
   normalizeToolCallFields,
   resolveAcpUserInputOptionId,
+  type AcpAntigravityTier,
   type AcpAuthMethod,
+  type AcpAvailableCommand,
   type AcpConfigOption,
   type AcpContentBlock,
   type AcpInitializeResult,
@@ -67,6 +71,9 @@ const DEFAULT_BG_AFTER_TEXT_MS = 3_000;
 const DEFAULT_BG_POLL_MS = 2_000;
 /** Keep base64-encoded inline images safely below ACP's 32 MiB line cap; larger files fall back to resource_link. */
 const MAX_INLINE_IMAGE_BYTES = 16 * 1024 * 1024;
+/** Inline small local text/code attachments via ACP `embeddedContext` (`type: 'resource'`) to avoid an extra read round-trip. */
+const MAX_EMBEDDED_FILE_BYTES = 64 * 1024;
+const MAX_EMBEDDED_PROMPT_BYTES = 256 * 1024;
 
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
@@ -75,6 +82,84 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
 };
+
+const TEXT_MIME_BY_EXTENSION: Record<string, string> = {
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.mdx': 'text/markdown',
+  '.json': 'application/json',
+  '.jsonl': 'application/x-ndjson',
+  '.ts': 'text/typescript',
+  '.tsx': 'text/typescript',
+  '.mts': 'text/typescript',
+  '.cts': 'text/typescript',
+  '.js': 'text/javascript',
+  '.jsx': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.cjs': 'text/javascript',
+  '.py': 'text/x-python',
+  '.go': 'text/x-go',
+  '.rs': 'text/x-rust',
+  '.java': 'text/x-java-source',
+  '.kt': 'text/x-kotlin',
+  '.swift': 'text/x-swift',
+  '.c': 'text/x-c',
+  '.cc': 'text/x-c++',
+  '.cpp': 'text/x-c++',
+  '.h': 'text/x-c',
+  '.hpp': 'text/x-c++',
+  '.css': 'text/css',
+  '.scss': 'text/x-scss',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.xml': 'application/xml',
+  '.svg': 'image/svg+xml',
+  '.yaml': 'application/yaml',
+  '.yml': 'application/yaml',
+  '.toml': 'application/toml',
+  '.ini': 'text/plain',
+  '.conf': 'text/plain',
+  '.sh': 'text/x-shellscript',
+  '.zsh': 'text/x-shellscript',
+  '.bash': 'text/x-shellscript',
+  '.sql': 'text/x-sql',
+  '.graphql': 'application/graphql',
+  '.gql': 'application/graphql',
+  '.csv': 'text/csv',
+  '.log': 'text/plain',
+  '.diff': 'text/x-diff',
+  '.patch': 'text/x-diff',
+};
+
+const EMBEDDABLE_APPLICATION_MIMES: ReadonlySet<string> = new Set([
+  'application/json',
+  'application/x-ndjson',
+  'application/xml',
+  'application/yaml',
+  'application/x-yaml',
+  'application/toml',
+  'application/javascript',
+  'application/typescript',
+  'application/graphql',
+  'image/svg+xml',
+]);
+
+function isEmbeddableTextMime(mimeType: string | undefined): mimeType is string {
+  if (!mimeType) return false;
+  const normalized = mimeType.split(';', 1)[0]!.trim().toLowerCase();
+  return normalized.startsWith('text/') || EMBEDDABLE_APPLICATION_MIMES.has(normalized);
+}
+
+const UTF8_FATAL_DECODER = new TextDecoder('utf-8', { fatal: true });
+
+function decodeEmbeddedUtf8Text(bytes: Uint8Array): string | null {
+  if (bytes.byteLength === 0 || bytes.includes(0)) return null;
+  try {
+    return UTF8_FATAL_DECODER.decode(bytes);
+  } catch {
+    return null;
+  }
+}
 
 /** `session/update` kinds that describe session state rather than conversation content. */
 const STATE_UPDATES: ReadonlySet<unknown> = new Set([
@@ -193,6 +278,17 @@ export interface OpenAcpSessionOptions {
     | { action: 'pass' }
     | { action: 'rewrite'; toolCall: AcpToolCallFields; autoApproveOnce?: boolean }
     | { action: 'block'; reason: string };
+  /**
+   * Allow native `/compact` via `session/prompt` when the agent advertises a `compact`
+   * command in `available_commands_update`.
+   */
+  nativeCompactCommand?: boolean;
+  /**
+   * Inline small local text/code file attachments and `@file` mentions using ACP
+   * `embeddedContext` (`type: 'resource'`) when advertised. Must stay disabled for
+   * remote/device-hosted tasks whose file paths belong to another machine.
+   */
+  embedTextAttachments?: boolean;
 }
 
 export type AcpResumeOutcome = 'new' | 'resumed' | 'loaded';
@@ -303,23 +399,35 @@ export async function openAcpSession(opts: OpenAcpSessionOptions): Promise<AcpSe
     let outcome: AcpResumeOutcome;
     let result: AcpRecord;
     if (opts.resumeSessionId) {
-      const method = init.agentCapabilities.sessionCapabilities.resume
-        ? 'session/resume'
-        : init.agentCapabilities.loadSession ? 'session/load' : null;
-      if (!method) throw new AcpResumeUnavailableError(opts.resumeSessionId, 'unsupported');
-      try {
-        result = await connection.request(method, { ...parameters, sessionId: opts.resumeSessionId });
-        const returnedId = asNonEmptyString(result.sessionId);
-        if (returnedId && returnedId !== opts.resumeSessionId) {
-          throw new Error('ACP returned a different conversation for resume');
+      const methods: Array<{ method: 'session/resume' | 'session/load'; outcome: 'resumed' | 'loaded' }> = [];
+      if (init.agentCapabilities.sessionCapabilities.resume) methods.push({ method: 'session/resume', outcome: 'resumed' });
+      if (init.agentCapabilities.loadSession) methods.push({ method: 'session/load', outcome: 'loaded' });
+      if (methods.length === 0) throw new AcpResumeUnavailableError(opts.resumeSessionId, 'unsupported');
+      let lastError: unknown;
+      let restored: { result: AcpRecord; outcome: 'resumed' | 'loaded' } | undefined;
+      for (let i = 0; i < methods.length; i += 1) {
+        const { method, outcome: candidateOutcome } = methods[i]!;
+        try {
+          const candidateResult = await connection.request(method, { ...parameters, sessionId: opts.resumeSessionId });
+          const returnedId = asNonEmptyString(candidateResult.sessionId);
+          if (returnedId && returnedId !== opts.resumeSessionId) {
+            throw new Error('ACP returned a different conversation for resume');
+          }
+          restored = { result: candidateResult, outcome: candidateOutcome };
+          break;
+        } catch (error) {
+          const mapped = authAware(error, init);
+          if (mapped instanceof AcpAuthRequiredError || error instanceof AcpConnectionClosedError) throw mapped;
+          lastError = error;
+          if (i + 1 < methods.length) {
+            opts.logger?.debug('acp: session/resume failed; falling back to session/load', { error: String(error) });
+          }
         }
-      } catch (error) {
-        const mapped = authAware(error, init);
-        if (mapped instanceof AcpAuthRequiredError || error instanceof AcpConnectionClosedError) throw mapped;
-        throw new AcpResumeUnavailableError(opts.resumeSessionId, 'failed', error);
       }
+      if (!restored) throw new AcpResumeUnavailableError(opts.resumeSessionId, 'failed', lastError);
+      result = restored.result;
       sessionId = opts.resumeSessionId;
-      outcome = method === 'session/resume' ? 'resumed' : 'loaded';
+      outcome = restored.outcome;
     } else {
       try {
         result = await connection.request('session/new', parameters);
@@ -338,6 +446,7 @@ export async function openAcpSession(opts: OpenAcpSessionOptions): Promise<AcpSe
       sessionId,
       configOptions: normalizeConfigOptions(result.configOptions),
       modelVariantIds: readModelVariantIds(asRecord(result.models).availableModels),
+      antigravityTier: readAntigravityTier(result._meta),
       resumeOutcome: outcome,
       droppedMcpServers: dropped,
       options: opts,
@@ -409,10 +518,20 @@ interface AcpSessionInit {
   sessionId: string;
   configOptions: AcpConfigOption[];
   modelVariantIds: readonly string[];
+  antigravityTier?: AcpAntigravityTier;
   resumeOutcome: AcpResumeOutcome;
   droppedMcpServers: string[];
   options: OpenAcpSessionOptions;
 }
+
+interface ActiveCompaction {
+  aborted: boolean;
+  text: string;
+  cancelTimer: ReturnType<typeof setTimeout> | null;
+  cancelReject: ((error: Error) => void) | null;
+}
+
+const MAX_COMPACT_TEXT_CHARS = 8_192;
 
 function readModelVariantIds(value: unknown): string[] {
   return Array.isArray(value)
@@ -450,6 +569,7 @@ function firstOfKind(options: readonly AcpPermissionOption[], kinds: readonly st
 export class AcpSession {
   readonly agentKind: AgentKind;
   readonly modelVariantIds: readonly string[];
+  readonly antigravityTier: AcpAntigravityTier | undefined;
   readonly nativeId: string;
   private identityPublished = false;
   get id(): string { return this.identityPublished ? this.nativeId : '<pending>'; }
@@ -465,6 +585,11 @@ export class AcpSession {
   private readonly onEnded: (() => void) | undefined;
   private readonly reviewPermission: OpenAcpSessionOptions['reviewPermission'];
   private readonly interceptToolCall: OpenAcpSessionOptions['interceptToolCall'];
+  private readonly classifyWarning: OpenAcpSessionOptions['classifyWarning'];
+  private readonly classifyRefusal: OpenAcpSessionOptions['classifyRefusal'];
+  private readonly enableNativeCompact: boolean;
+  private readonly embedTextAttachments: boolean;
+  private readonly hasCustomReadFile: boolean;
   private readonly steerByPrompt: boolean;
   private readonly continueWhileToolsPending: boolean;
   private readonly bgAfterToolSettledMs: number;
@@ -488,6 +613,11 @@ export class AcpSession {
   private readonly questionControllers = new Set<AbortController>();
   private readonly capabilityListeners = new Set<(capabilities: Capabilities) => void>();
   private configOptions: AcpConfigOption[];
+  private availableCommandsList: AcpAvailableCommand[] = [];
+  private readonly modelContextWindows = new Map<string, number>();
+  private sawCommandsUpdate = false;
+  private sawUsageUpdate = false;
+  private readonly initialUpdateWaiters = new Set<() => void>();
   private capabilitiesSnapshot: Capabilities;
   private permissionMode: 'ask' | 'bypassPermissions' = 'ask';
   /** The Cindy product mode behind `permissionMode`; Auto routes requests through Cindy review. */
@@ -497,6 +627,8 @@ export class AcpSession {
   private explicitPermissionChanges = 0;
   private resolver: InteractionResolver | null = null;
   private turn: ActiveTurn | null = null;
+  private compacting: ActiveCompaction | null = null;
+  private lastTransportClose: AcpTransportClosed | undefined;
   private turnSeq = 0;
   private permissionSeq = 0;
   private usage: UsageSnapshot = { tokenUsage: 0, contextTokens: 0, contextWindow: 0, costUsd: 0 };
@@ -508,6 +640,7 @@ export class AcpSession {
   constructor(init: AcpSessionInit) {
     this.agentKind = init.options.agentKind;
     this.modelVariantIds = init.modelVariantIds;
+    this.antigravityTier = init.antigravityTier;
     this.connection = init.connection;
     this.initializeResult = init.init;
     this.nativeId = init.sessionId;
@@ -515,7 +648,15 @@ export class AcpSession {
     this.resumeOutcome = init.resumeOutcome;
     this.droppedMcpServers = init.droppedMcpServers;
     this.configOptions = init.configOptions;
-    this.capabilitiesSnapshot = buildAcpCapabilities(init.init, init.configOptions);
+    this.enableNativeCompact = init.options.nativeCompactCommand === true;
+    this.embedTextAttachments = init.options.embedTextAttachments === true;
+    this.hasCustomReadFile = init.options.readFile !== undefined;
+    this.classifyWarning = init.options.classifyWarning;
+    this.classifyRefusal = init.options.classifyRefusal;
+    this.capabilitiesSnapshot = buildAcpCapabilities(init.init, init.configOptions, {
+      manualCompactSupported: false,
+      modelContextWindows: this.modelContextWindows,
+    });
     this.logger = init.options.logger;
     this.readImage = init.options.readFile ?? ((path, signal) => fsReadFile(path, { signal }));
     this.cancelGraceMs = init.options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS;
@@ -564,6 +705,44 @@ export class AcpSession {
     return this.title;
   }
 
+  /** Slash commands the agent published through `available_commands_update`. */
+  get availableCommands(): readonly AcpAvailableCommand[] {
+    return this.availableCommandsList;
+  }
+
+  /**
+   * Waits briefly for the agent's post-handshake `available_commands_update` and
+   * `usage_update` notifications so discovery captures `manualCompact` and the active
+   * model's live context window. Resolves immediately once both arrive or on close.
+   */
+  waitForInitialUpdates(timeoutMs = 150): Promise<void> {
+    if ((this.sawCommandsUpdate && this.sawUsageUpdate) || this.ended || this.connection.closed || timeoutMs <= 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.initialUpdateWaiters.delete(finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      (timer as unknown as { unref?: () => void }).unref?.();
+      this.initialUpdateWaiters.add(finish);
+    });
+  }
+
+  private notifyInitialUpdateWaiters(force = false): void {
+    if (!force && !(this.sawCommandsUpdate && this.sawUsageUpdate)) return;
+    for (const waiter of [...this.initialUpdateWaiters]) waiter();
+  }
+
+  private isManualCompactSupported(): boolean {
+    return this.enableNativeCompact && this.availableCommandsList.some(cmd => cmd.name === 'compact');
+  }
+
   onCapabilitiesChange(listener: (capabilities: Capabilities) => void): () => void {
     this.capabilityListeners.add(listener);
     return () => this.capabilityListeners.delete(listener);
@@ -587,7 +766,7 @@ export class AcpSession {
   }
 
   isTurnRunning(): boolean {
-    return this.turn !== null || this.preparation.pending > 0;
+    return this.turn !== null || this.compacting !== null || this.preparation.pending > 0;
   }
 
   setInteractionResolver(resolver: InteractionResolver): void {
@@ -598,6 +777,7 @@ export class AcpSession {
   async send(message: UserMessage, options: SendOptions = {}): Promise<void> {
     options.signal?.throwIfAborted();
     if (this.ended || this.closing) throw new Error('ACP session is closed');
+    if (this.compacting) throw new Error('Cannot send while compacting context');
     // Attachments are read asynchronously; chain conversions so turns keep the order they were sent in.
     const preparation = this.preparation;
     const stopped = preparation.controller.signal;
@@ -631,6 +811,7 @@ export class AcpSession {
    * next turn. Throws when no turn is running so the host can queue the input instead.
    */
   async steer(message: UserMessage, options: SendOptions = {}): Promise<void> {
+    if (this.compacting) throw new Error('Cannot steer while compacting context');
     if (!this.steerByPrompt) { await this.send(message, options); return; }
     if (this.ended || this.closing) throw new Error('ACP session is closed');
     const turn = this.turn;
@@ -653,11 +834,127 @@ export class AcpSession {
     this.requestPrompt(turn, prompt);
   }
 
+  /** Runs the agent's native `/compact` command without injecting a visible chat turn. */
+  async compact(instructions?: string): Promise<ManualCompactResult> {
+    if (this.ended || this.closing) throw new Error('ACP session is closed');
+    if (!this.capabilitiesSnapshot.manualCompact?.supported) {
+      throw new NotSupportedError('manualCompact', this.capabilitiesSnapshot.manualCompact ?? { supported: false, reason: 'sdk-missing' });
+    }
+    if (this.compacting) throw new Error('Context compaction is already in progress');
+    if (this.isTurnRunning() || this.pendingPrompts.length > 0) {
+      throw new Error('Wait for the current turn to finish before compacting');
+    }
+    // A brand-new 0-turn session has no trajectory to compact; agy 1.5.x treats `/compact`
+    // on an empty session as a normal user prompt instead of creating a checkpoint.
+    if (!this.identityPublished && this.resumeOutcome === 'new' && this.usage.contextTokens === 0) {
+      return { noop: true };
+    }
+    const tokensBefore = this.usage.contextTokens > 0 ? this.usage.contextTokens : undefined;
+    const trimmed = instructions?.trim();
+    const promptText = trimmed ? `/compact ${trimmed}` : '/compact';
+    const state: ActiveCompaction = {
+      aborted: false,
+      text: '',
+      cancelTimer: null,
+      cancelReject: null,
+    };
+    this.compacting = state;
+    this.emit(this.translator.flushPending());
+    const watcher = this.watchPromptOutcome
+      ? await this.watchPromptOutcome(this.nativeId).catch(() => undefined)
+      : undefined;
+    try {
+      if (state.aborted || this.ended || this.closing) {
+        throw new Error('Context compaction was cancelled.');
+      }
+      const rpcPromise = this.connection.request(
+        'session/prompt',
+        { sessionId: this.nativeId, prompt: [{ type: 'text', text: promptText }] },
+        { timeoutMs: null },
+      );
+      void rpcPromise.catch(() => {});
+      const cancelPromise = new Promise<never>((_resolve, reject) => {
+        state.cancelReject = reject;
+      });
+      const result = await Promise.race([rpcPromise, cancelPromise]);
+      if (state.aborted) throw new Error('Context compaction was cancelled.');
+      const stopReason = normalizeStopReason(result);
+      if (stopReason === 'cancelled') throw new Error('Context compaction was cancelled.');
+      const warningFailure = this.classifyWarning?.(state.text);
+      if (warningFailure) throw new Error(warningFailure.error);
+      if (watcher && (stopReason === 'end_turn' || stopReason === 'refusal')) {
+        const inspected = await watcher(stopReason, { hasResponseText: state.text.trim().length > 0 }).catch(() => undefined);
+        if (inspected && 'error' in inspected) {
+          if (inspected.brokenSession) {
+            this.usage = { ...this.usage, needsRollover: true };
+            void Promise.resolve(this.onSessionBroken?.(this.nativeId)).catch(() => {});
+          }
+          throw new Error(inspected.error);
+        }
+      }
+      if (stopReason !== 'end_turn') {
+        const refusal = stopReason === 'refusal' ? this.classifyRefusal?.() : undefined;
+        throw new Error(refusal?.error ?? 'Context compaction could not be completed.');
+      }
+      const estimatedTokensAfter = this.usage.contextTokens > 0 ? this.usage.contextTokens : undefined;
+      if (this.usage.contextTokens > 0 || this.usage.contextWindow > 0) {
+        this.queue.push({
+          type: 'status',
+          source: this.agentKind,
+          data: { status: 'Done', ...this.usage, isRunning: false },
+        });
+      }
+      this.queue.push({
+        type: 'compact_boundary',
+        source: this.agentKind,
+        data: {
+          trigger: 'manual',
+          ...(tokensBefore !== undefined ? { preTokens: tokensBefore } : {}),
+          ...(estimatedTokensAfter !== undefined ? { postTokens: estimatedTokensAfter } : {}),
+        },
+      });
+      return {
+        ...(tokensBefore !== undefined ? { tokensBefore } : {}),
+        ...(estimatedTokensAfter !== undefined ? { estimatedTokensAfter } : {}),
+      };
+    } catch (error) {
+      if (error instanceof AcpConnectionClosedError) {
+        const outcome = this.errorOutcome(error);
+        throw new Error('error' in outcome ? outcome.error : 'The agent process ended unexpectedly.');
+      }
+      throw error;
+    } finally {
+      if (state.cancelTimer) {
+        clearTimeout(state.cancelTimer);
+        state.cancelTimer = null;
+      }
+      if (this.compacting === state) this.compacting = null;
+    }
+  }
+
   async abort(): Promise<void> {
     const cancelledPreparation = this.preparation.pending > 0;
     this.preparation.controller.abort();
     this.preparation = { controller: new AbortController(), pending: 0, tail: Promise.resolve() };
     this.pendingPrompts.length = 0;
+    const compact = this.compacting;
+    if (compact) {
+      if (!compact.aborted) {
+        compact.aborted = true;
+        this.cancelAllInteractions();
+        if (!this.connection.closed) {
+          try { this.connection.notify('session/cancel', { sessionId: this.nativeId }); } catch { /* closing */ }
+        }
+        compact.cancelTimer = setTimeout(() => {
+          compact.cancelTimer = null;
+          if (this.compacting !== compact) return;
+          this.logger?.warn('acp: agent did not settle a cancelled compaction in time', { graceMs: this.cancelGraceMs });
+          this.retireEndpoint();
+          compact.cancelReject?.(new Error('Context compaction was cancelled.'));
+        }, this.cancelGraceMs);
+      }
+      return;
+    }
     const turn = this.turn;
     if (!turn) {
       if (cancelledPreparation) {
@@ -802,6 +1099,12 @@ export class AcpSession {
         if (option && value && option.currentValue !== value) this.updateConfigValue(option.id, value, true);
         return;
       }
+      case 'available_commands_update':
+        this.availableCommandsList = normalizeAvailableCommands(update.availableCommands);
+        this.sawCommandsUpdate = true;
+        this.refreshCapabilities();
+        this.notifyInitialUpdateWaiters();
+        return;
       case 'usage_update':
         this.applyUsage(update);
         return;
@@ -812,7 +1115,7 @@ export class AcpSession {
       }
       case 'tool_call':
       case 'tool_call_update': {
-        if (this.violationTerminated) return;
+        if (this.violationTerminated || this.compacting) return;
         const fields = normalizeToolCallFields(update);
         if (fields && this.shouldOpenAutonomousTurnForTool(fields)) this.beginAutonomousTurn();
         if (fields && this.interceptToolCall) {
@@ -835,6 +1138,15 @@ export class AcpSession {
       }
       default:
         if (STATE_UPDATES.has(update.sessionUpdate)) return;
+        if (this.compacting) {
+          if (update.sessionUpdate === 'agent_message_chunk') {
+            const block = asRecord(update.content);
+            if (block.type === 'text' && typeof block.text === 'string' && this.compacting.text.length < MAX_COMPACT_TEXT_CHARS) {
+              this.compacting.text += block.text.slice(0, MAX_COMPACT_TEXT_CHARS - this.compacting.text.length);
+            }
+          }
+          return;
+        }
         if (this.shouldOpenAutonomousTurnForContent(update)) this.beginAutonomousTurn();
         this.emit(this.translator.handleUpdate(update));
         this.refreshPromptInactivityTimer(this.turn);
@@ -1380,7 +1692,10 @@ export class AcpSession {
 
   private errorOutcome(error: unknown): AcpTurnOutcome {
     if (error instanceof AcpConnectionClosedError) {
-      return { error: 'The agent process ended unexpectedly.', reason: 'acp-agent-exited' };
+      return {
+        error: this.lastTransportClose?.userMessage ?? 'The agent process ended unexpectedly.',
+        reason: this.lastTransportClose?.errorReason ?? 'acp-agent-exited',
+      };
     }
     if (error instanceof AcpRpcError && error.code === ACP_ERROR_AUTH_REQUIRED) {
       return { error: 'The agent needs you to sign in again.', reason: 'acp-auth-required' };
@@ -1397,6 +1712,7 @@ export class AcpSession {
     const used = typeof update.used === 'number' && update.used >= 0 ? update.used : null;
     const size = typeof update.size === 'number' && update.size >= 0 ? update.size : null;
     if (used === null || size === null) return;
+    this.sawUsageUpdate = true;
     const cost = asRecord(update.cost);
     this.usage = {
       ...this.usage,
@@ -1404,6 +1720,12 @@ export class AcpSession {
       contextWindow: size,
       ...(cost.currency === 'USD' && typeof cost.amount === 'number' ? { costUsd: cost.amount } : {}),
     };
+    const activeModel = this.model;
+    if (size > 0 && activeModel && this.modelContextWindows.get(activeModel) !== size) {
+      this.modelContextWindows.set(activeModel, size);
+      this.refreshCapabilities();
+    }
+    this.notifyInitialUpdateWaiters();
     const turn = this.turn;
     if (turn) {
       this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
@@ -1497,7 +1819,7 @@ export class AcpSession {
   }
 
   private async decidePermission(params: AcpRecord, signal: AbortSignal): Promise<AcpPermissionOutcome> {
-    if (signal.aborted || this.closing || this.violationTerminated || this.turn?.cancelTimer) return { outcome: 'cancelled' };
+    if (signal.aborted || this.closing || this.violationTerminated || this.compacting || this.turn?.cancelTimer) return { outcome: 'cancelled' };
     const options = normalizePermissionOptions(params.options);
     let toolCall = normalizeToolCallFields(params.toolCall) ?? { toolCallId: `acp-permission-${this.permissionSeq + 1}` };
     // Native fixed-choice questions (`interaction_*`) must always be answered by the user,
@@ -1667,6 +1989,9 @@ export class AcpSession {
   }
 
   private async setConfigValue(configId: string, value: string): Promise<void> {
+    if (this.compacting) {
+      throw new Error('Wait for context compaction to finish before changing settings.');
+    }
     if (this.turn && configId !== findModeOption(this.configOptions)?.id) {
       throw new Error('Wait for the current turn to finish before changing the model or effort.');
     }
@@ -1719,7 +2044,10 @@ export class AcpSession {
   }
 
   private refreshCapabilities(): void {
-    this.capabilitiesSnapshot = buildAcpCapabilities(this.initializeResult, this.configOptions);
+    this.capabilitiesSnapshot = buildAcpCapabilities(this.initializeResult, this.configOptions, {
+      manualCompactSupported: this.isManualCompactSupported(),
+      modelContextWindows: this.modelContextWindows,
+    });
     for (const listener of this.capabilityListeners) {
       try {
         listener(this.capabilitiesSnapshot);
@@ -1734,14 +2062,55 @@ export class AcpSession {
       return message.content.length > 0 ? [{ type: 'text', text: message.content }] : [];
     }
     const blocks: AcpContentBlock[] = [];
+    const embedBudget = { remainingBytes: MAX_EMBEDDED_PROMPT_BYTES };
     for (const block of message.content) {
       signal.throwIfAborted();
-      blocks.push(await this.toContentBlock(block, signal));
+      blocks.push(await this.toContentBlock(block, signal, embedBudget));
     }
     return blocks;
   }
 
-  private async toContentBlock(block: UserContentBlock, signal: AbortSignal): Promise<AcpContentBlock> {
+  private async tryEmbedTextResource(
+    filePath: string,
+    explicitMime: string | undefined,
+    signal: AbortSignal,
+    embedBudget: { remainingBytes: number },
+  ): Promise<AcpContentBlock | undefined> {
+    if (!this.embedTextAttachments || !this.initializeResult.agentCapabilities.promptCapabilities.embeddedContext) {
+      return undefined;
+    }
+    if (embedBudget.remainingBytes <= 0) return undefined;
+    const mimeType = explicitMime ?? TEXT_MIME_BY_EXTENSION[extname(filePath).toLowerCase()];
+    if (!isEmbeddableTextMime(mimeType)) return undefined;
+    const maxBytes = Math.min(MAX_EMBEDDED_FILE_BYTES, embedBudget.remainingBytes);
+    const info = await fsStat(filePath).catch(() => undefined);
+    if (info) {
+      if (!info.isFile() || info.size <= 0 || info.size > maxBytes) return undefined;
+    } else if (!this.hasCustomReadFile) {
+      return undefined;
+    }
+    try {
+      const bytes = await this.readImage(filePath, signal);
+      signal.throwIfAborted();
+      if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) return undefined;
+      const text = decodeEmbeddedUtf8Text(bytes);
+      if (text === null) return undefined;
+      embedBudget.remainingBytes -= bytes.byteLength;
+      return {
+        type: 'resource',
+        resource: { uri: pathToFileURL(filePath).href, text, mimeType },
+      };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      return undefined;
+    }
+  }
+
+  private async toContentBlock(
+    block: UserContentBlock,
+    signal: AbortSignal,
+    embedBudget: { remainingBytes: number },
+  ): Promise<AcpContentBlock> {
     switch (block.type) {
       case 'text':
         return { type: 'text', text: block.text };
@@ -1760,15 +2129,25 @@ export class AcpSession {
         }
         return { type: 'resource_link', uri: pathToFileURL(block.path).href, name: basename(block.path), ...(mimeType ? { mimeType } : {}) };
       }
-      case 'file':
+      case 'file': {
+        const embedded = await this.tryEmbedTextResource(block.path, block.mimeType, signal, embedBudget);
+        if (embedded) return embedded;
         return { type: 'resource_link', uri: pathToFileURL(block.path).href, name: basename(block.path), ...(block.mimeType ? { mimeType: block.mimeType } : {}) };
-      case 'mention':
+      }
+      case 'mention': {
         if (block.kind === 'agent') return { type: 'text', text: `@${block.name}` };
+        if (block.kind === 'file') {
+          const embedded = await this.tryEmbedTextResource(block.path, undefined, signal, embedBudget);
+          if (embedded) return embedded;
+        }
         return { type: 'resource_link', uri: pathToFileURL(block.path).href, name: block.name };
+      }
     }
   }
 
   private handleConnectionClosed(info: AcpTransportClosed): void {
+    this.lastTransportClose = info;
+    this.notifyInitialUpdateWaiters(true);
     if (info.reason !== 'closed-by-client') {
       this.logger?.warn('acp: agent connection ended', { reason: info.reason, ...(info.detail ? { detail: info.detail } : {}) });
     }
@@ -1777,7 +2156,10 @@ export class AcpSession {
     if (turn) {
       this.finishTurn(turn.token, info.reason === 'closed-by-client'
         ? { stopReason: 'cancelled' }
-        : { error: 'The agent process ended unexpectedly.', reason: 'acp-agent-exited' });
+        : {
+            error: info.userMessage ?? 'The agent process ended unexpectedly.',
+            reason: info.errorReason ?? 'acp-agent-exited',
+          });
     }
     if (info.reason === 'protocol-error') this.retireEndpoint();
   }
@@ -1834,6 +2216,7 @@ export class AcpSession {
   private endEvents(): void {
     if (this.ended) return;
     this.ended = true;
+    this.notifyInitialUpdateWaiters(true);
     this.detachTransportClose?.();
     this.queue.end();
     try {

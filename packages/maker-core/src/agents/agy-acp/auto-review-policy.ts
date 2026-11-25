@@ -20,25 +20,35 @@ function text(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-const WRITE_BODY_KEYS = ['Replacement', 'Target', 'Content', 'CodeContent', 'ReplacementChunks', 'Instruction', 'content', 'new_string', 'old_string'];
+const WRITE_BODY_KEYS = ['Replacement', 'Target', 'Content', 'NewContent', 'CodeContent', 'ReplacementChunks', 'Instruction', 'Overwrite', 'Append', 'content', 'new_string', 'old_string'];
+const SEARCH_PATH_KEYS = ['SearchPath', 'SearchDirectory', 'DirectoryPath', 'directory'] as const;
 
 export function normalizeAcpToolForAutoReview(toolCall: AcpToolCallFields): ReviewableAction {
   const input = record(toolCall.rawInput);
   const locations = toolCall.locations ?? [];
-  const path = text(input.Path, input.path, input.AbsolutePath, input.TargetFile, input.file_path, input.filePath)
-    ?? (locations.length === 1 ? locations[0]!.path : undefined);
+  const filePath = text(input.Path, input.path, input.AbsolutePath, input.TargetFile, input.file_path, input.filePath);
+  const searchPath = text(...SEARCH_PATH_KEYS.map(key => input[key]));
+  const path = filePath ?? searchPath ?? (locations.length === 1 ? locations[0]!.path : undefined);
   const command = text(input.CommandLine, input.command, input.cmd);
   if (command) {
     return { kind: 'exec', command, ...(text(input.Cwd, input.cwd) ? { cwd: text(input.Cwd, input.cwd)! } : {}) };
   }
   const isWrite = toolCall.kind === 'edit' || toolCall.kind === 'delete'
-    || (!toolCall.kind && !!path && WRITE_BODY_KEYS.some(key => key in input));
+    || (!toolCall.kind && !!filePath && WRITE_BODY_KEYS.some(key => key in input));
   // A write must name exactly one destination; a move or multi-file edit goes to review.
-  if (isWrite) return locations.length > 1 ? other(toolCall) : { kind: 'file-write', path };
-  if (toolCall.kind === 'read' || (!toolCall.kind && path && Object.keys(input).every(key => /^(Path|path|StartLine|EndLine|ByteOffset)$/.test(key)))) {
+  if (isWrite) return locations.length > 1 ? other(toolCall) : { kind: 'file-write', path: filePath ?? (locations.length === 1 ? locations[0]!.path : undefined) };
+  if (
+    toolCall.kind === 'read'
+    || (!toolCall.kind && filePath && Object.keys(input).every(key => /^(Path|path|AbsolutePath|file_path|filePath|StartLine|EndLine|ByteOffset|toolSummary)$/.test(key)))
+  ) {
     return { kind: 'read', ...(path ? { path } : {}), scope: 'file' };
   }
-  if (toolCall.kind === 'search') return { kind: 'read', ...(path ? { path } : {}), scope: 'tree' };
+  if (
+    toolCall.kind === 'search'
+    || (!toolCall.kind && searchPath && !WRITE_BODY_KEYS.some(key => key in input))
+  ) {
+    return { kind: 'read', ...(path ? { path } : {}), scope: 'tree' };
+  }
   if (toolCall.kind === 'fetch' || text(input.url, input.Url, input.query, input.domain)) {
     const target = text(input.url, input.Url, input.domain, input.query);
     return { kind: 'network', ...(target ? { target } : {}) };

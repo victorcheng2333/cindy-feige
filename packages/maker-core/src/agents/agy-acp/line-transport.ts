@@ -15,8 +15,12 @@ export interface AcpTransportClosed {
    * `protocol-error`: the stream could not be used anymore (write failure, oversized line).
    */
   reason: 'peer-exited' | 'closed-by-client' | 'protocol-error';
-  /** Short host-provided diagnostic (exit code, signal). Never contains stdout payloads. */
+  /** Short host-provided diagnostic (exit code, signal, category). Never contains raw stdout/stderr payloads. */
   detail?: string;
+  /** Optional safe, host-classified user-facing error message (never raw stderr). */
+  userMessage?: string;
+  /** Optional stable host-classified error reason (e.g. `agy-region-blocked`, `acp-auth-required`). */
+  errorReason?: string;
 }
 
 export interface AcpLineTransport {

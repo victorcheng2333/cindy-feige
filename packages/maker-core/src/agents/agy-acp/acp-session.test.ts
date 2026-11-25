@@ -1527,3 +1527,222 @@ describe('AcpSession background tool continuation', () => {
     await session.close();
   });
 });
+
+// Tier: unit. Production entry: `openAcpSession` / `AcpSession.compact` / `available_commands_update`.
+// Gap: Agy 1.5.x advertises `compact` via `available_commands_update`, sends `usage_update.size`
+// and `_meta.antigravity.tier` at session open, and emits brief confirmation text on `/compact <instructions>`.
+// Minimal failing inputs: 0-turn fresh session compact, `/compact <instructions>` with confirmation text
+// and concurrent send/permission, warning/abort failure, and classified transport crash exit.
+describe('AcpSession native compact, metadata, and classified exit diagnostics', () => {
+  it('enables manualCompact from available_commands_update, returns noop on 0-turn fresh sessions, and compacts cleanly after a turn', async () => {
+    const configOptions = [
+      { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gemini-4-neon', options: [
+        { value: 'gemini-4-neon', name: 'Gemini 4 Neon' },
+        { value: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
+      ] },
+    ];
+    const agent = createFakeAgent({
+      configOptions,
+      handlers: {
+        'session/new': () => ({
+          sessionId: 'sess-1',
+          configOptions,
+          _meta: {
+            antigravity: {
+              tier: { name: 'Google AI Ultra\u0000\n', id: 'g1-ultra-tier', upgradeUri: 'https://example.invalid/upgrade' },
+            },
+          },
+        }),
+      },
+    });
+    const { session, events } = await open(agent, {
+      nativeCompactCommand: true,
+      classifyWarning: (text) => text.startsWith('⚠') ? { error: 'Rate limited', reason: 'agy-rate-limited' } : undefined,
+    });
+    expect(session.antigravityTier).toEqual({ name: 'Google AI Ultra', id: 'g1-ultra-tier' });
+    expect(session.capabilities.manualCompact?.supported).toBe(false);
+
+    // Post-handshake notifications populate manualCompact and active model contextWindow.
+    const waited = session.waitForInitialUpdates(1_000);
+    agent.update({
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [{ name: 'compact', description: 'Compact conversation', input: { hint: 'optional focus' } }],
+    });
+    agent.update({ sessionUpdate: 'usage_update', used: 0, size: 1_048_576 });
+    await waited;
+
+    expect(session.capabilities.manualCompact?.supported).toBe(true);
+    expect(session.capabilities.availableModels).toMatchObject([
+      { id: 'gemini-4-neon', contextWindow: 1_048_576 },
+      { id: 'claude-opus-5-5', contextWindow: 0 },
+    ]);
+
+    // 0-turn fresh session returns benign noop without dispatching session/prompt.
+    await expect(session.compact()).resolves.toEqual({ noop: true });
+    expect(agent.prompts).toHaveLength(0);
+
+    // Complete Turn 1 so the session has trajectory history.
+    await session.send({ type: 'user', content: 'Remember ALPHA_999' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OK' } });
+    agent.update({ sessionUpdate: 'usage_update', used: 16_000, size: 1_048_576 });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    const countBeforeCompact = events.length;
+
+    // Compact with focus instructions: must block concurrent send/setModel, cancel tools,
+    // suppress assistant confirmation text, and emit status + compact_boundary.
+    const compactPromise = session.compact('Keep ALPHA_999');
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    expect(agent.prompts[1]!.params).toEqual({
+      sessionId: 'sess-1',
+      prompt: [{ type: 'text', text: '/compact Keep ALPHA_999' }],
+    });
+    expect(session.isTurnRunning()).toBe(true);
+    await expect(session.send({ type: 'user', content: 'concurrent' })).rejects.toThrow(/compacting/i);
+    await expect(session.setModel('claude-opus-5-5')).rejects.toThrow(/compaction/i);
+    await expect(agent.requestPermission({
+      toolCall: { toolCallId: 'tool-during-compact', title: 'Should cancel' },
+      options: PERMISSION_OPTIONS,
+    })).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Context compacted.' } });
+    agent.update({ sessionUpdate: 'usage_update', used: 12_500, size: 1_048_576 });
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+
+    await expect(compactPromise).resolves.toEqual({ tokensBefore: 16_000, estimatedTokensAfter: 12_500 });
+    expect(session.isTurnRunning()).toBe(false);
+    const compactEvents = events.slice(countBeforeCompact);
+    expect(compactEvents.some(e => e.type === 'text')).toBe(false);
+    expect(compactEvents).toContainEqual(expect.objectContaining({
+      type: 'status',
+      data: expect.objectContaining({ status: 'Done', isRunning: false, contextTokens: 12_500, contextWindow: 1_048_576 }),
+    }));
+    expect(compactEvents).toContainEqual(expect.objectContaining({
+      type: 'compact_boundary',
+      data: { trigger: 'manual', preTokens: 16_000, postTokens: 12_500 },
+    }));
+
+    // Warning failure during compaction rejects without emitting compact_boundary.
+    const beforeFail = events.length;
+    const failedCompact = session.compact();
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(3));
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '⚠ RESOURCE_EXHAUSTED' } });
+    agent.prompts[2]!.settle.resolve({ stopReason: 'end_turn' });
+    await expect(failedCompact).rejects.toThrow('Rate limited');
+    expect(events.slice(beforeFail).some(e => e.type === 'compact_boundary')).toBe(false);
+
+    // Abort during compaction sends session/cancel and rejects cleanly.
+    const abortedCompact = session.compact();
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(4));
+    await session.abort();
+    expect(agent.methods()).toContain('session/cancel');
+    agent.prompts[3]!.settle.resolve({ stopReason: 'cancelled' });
+    await expect(abortedCompact).rejects.toThrow(/cancelled/i);
+    await session.close();
+  });
+
+  it('surfaces host-classified exit diagnostics when the endpoint exits unexpectedly mid-turn', async () => {
+    const closeListeners = new Set<(info: AcpTransportClosed) => void>();
+    const agent = createFakeAgent();
+    const wrappedTransport: AcpLineTransport = {
+      ...agent.transport,
+      onClose(listener) {
+        closeListeners.add(listener);
+        const detach = agent.transport.onClose(listener);
+        return () => { closeListeners.delete(listener); detach(); };
+      },
+    };
+    const { session, events, ended } = await open(agent, { transport: wrappedTransport });
+    await session.send({ type: 'user', content: 'run' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    for (const listener of [...closeListeners]) {
+      listener({
+        reason: 'peer-exited',
+        detail: 'network-or-proxy',
+        userMessage: 'Agy exited due to a network or proxy connection error. Check the Agy proxy and retry.',
+      });
+    }
+    await ended;
+    expect(events.at(-1)).toMatchObject({
+      type: 'error',
+      data: {
+        isTerminal: true,
+        reason: 'acp-agent-exited',
+        message: 'Agy exited due to a network or proxy connection error. Check the Agy proxy and retry.',
+      },
+    });
+  });
+
+  // Tier: unit. Production entry: `openAcpSession` (`session/resume` -> `session/load` fallback, `embeddedContext`).
+  // Gap: Agy 1.5.16 advertises `sessionCapabilities.load` (not top-level `loadSession`) and `promptCapabilities.embeddedContext`.
+  // Minimal failing inputs: resume RPC failure with `sessionCapabilities.load: {}`, small UTF-8 file + binary file + remote disabled.
+  it('recognizes sessionCapabilities.load and falls back to session/load when session/resume fails', async () => {
+    const agent = createFakeAgent({
+      agentCapabilities: { sessionCapabilities: { resume: {}, load: {} } },
+      handlers: {
+        'session/resume': () => { throw Object.assign(new Error('not in memory'), { code: -32002 }); },
+        'session/load': () => {
+          agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'replayed history' } }, 'old-2');
+          return {};
+        },
+      },
+    });
+    const { session, events } = await open(agent, { resumeSessionId: 'old-2' });
+    expect(agent.methods()).toEqual(['initialize', 'session/resume', 'session/load']);
+    expect(session.resumeOutcome).toBe('loaded');
+    expect(session.nativeId).toBe('old-2');
+    await Promise.resolve();
+    expect(events).toEqual([]);
+    await session.close();
+  });
+
+  it('inlines small UTF-8 text attachments via embeddedContext and falls back to resource_link for binary, oversized, or remote files', async () => {
+    const agent = createFakeAgent({ agentCapabilities: { promptCapabilities: { embeddedContext: true } } });
+    const BIN = resolve('attachments', 'binary.txt');
+    const HUGE = resolve('attachments', 'huge.ts');
+    const PDF = resolve('attachments', 'doc.pdf');
+    const files: Record<string, Uint8Array> = {
+      [NOTES]: new TextEncoder().encode('# Spec\nhello'),
+      [BIN]: new Uint8Array([0x61, 0x00, 0x62]),
+      [HUGE]: new Uint8Array(70_000).fill(0x61),
+    };
+    const readFile = vi.fn(async (filePath: string) => {
+      const content = files[filePath];
+      if (!content) throw new Error('ENOENT');
+      return content;
+    });
+    const { session } = await open(agent, { embedTextAttachments: true, readFile });
+    await session.send({
+      type: 'user',
+      content: [
+        { type: 'file', path: NOTES },
+        { type: 'mention', kind: 'file', name: 'notes.md', path: NOTES },
+        { type: 'file', path: BIN },
+        { type: 'file', path: HUGE },
+        { type: 'file', path: PDF },
+      ],
+    });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    expect(agent.prompts[0]!.params.prompt).toEqual([
+      { type: 'resource', resource: { uri: pathToFileURL(NOTES).href, text: '# Spec\nhello', mimeType: 'text/markdown' } },
+      { type: 'resource', resource: { uri: pathToFileURL(NOTES).href, text: '# Spec\nhello', mimeType: 'text/markdown' } },
+      { type: 'resource_link', uri: pathToFileURL(BIN).href, name: 'binary.txt' },
+      { type: 'resource_link', uri: pathToFileURL(HUGE).href, name: 'huge.ts' },
+      { type: 'resource_link', uri: pathToFileURL(PDF).href, name: 'doc.pdf' },
+    ]);
+    await session.close();
+
+    // When embedTextAttachments is false (e.g. device-hosted remote workspace), never read local files.
+    const remoteAgent = createFakeAgent({ agentCapabilities: { promptCapabilities: { embeddedContext: true } } });
+    const remoteRead = vi.fn(async () => new TextEncoder().encode('should not read'));
+    const { session: remoteSession } = await open(remoteAgent, { embedTextAttachments: false, readFile: remoteRead });
+    await remoteSession.send({ type: 'user', content: [{ type: 'file', path: NOTES }] });
+    await vi.waitFor(() => expect(remoteAgent.prompts).toHaveLength(1));
+    expect(remoteRead).not.toHaveBeenCalled();
+    expect(remoteAgent.prompts[0]!.params.prompt).toEqual([
+      { type: 'resource_link', uri: pathToFileURL(NOTES).href, name: 'notes.md' },
+    ]);
+    await remoteSession.close();
+  });
+});

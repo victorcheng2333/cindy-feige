@@ -22,6 +22,7 @@ export type AcpRecord = Record<string, unknown>;
 export type AcpContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string; uri?: string }
+  | { type: 'resource'; resource: { uri: string; text: string; mimeType?: string } }
   | { type: 'resource_link'; uri: string; name: string; mimeType?: string };
 
 export interface AcpHttpHeader { name: string; value: string }
@@ -104,6 +105,17 @@ export interface AcpPlanEntry {
   status: string;
 }
 
+export interface AcpAvailableCommand {
+  name: string;
+  description?: string;
+  inputHint?: string;
+}
+
+export interface AcpAntigravityTier {
+  id?: string;
+  name: string;
+}
+
 export function asRecord(value: unknown): AcpRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as AcpRecord : {};
 }
@@ -133,7 +145,7 @@ export function normalizeInitializeResult(raw: unknown): AcpInitializeResult {
   return {
     protocolVersion: typeof result.protocolVersion === 'number' ? result.protocolVersion : -1,
     agentCapabilities: {
-      loadSession: asBoolean(caps.loadSession),
+      loadSession: asBoolean(caps.loadSession) || capabilityPresent(session.load),
       promptCapabilities: {
         image: asBoolean(prompt.image),
         audio: asBoolean(prompt.audio),
@@ -362,4 +374,34 @@ export function readAcpPromptUsage(raw: unknown): AcpPromptUsage | undefined {
     cacheWriteTokens: count(usage.cachedWriteTokens),
   };
   return Object.values(result).some(Boolean) ? result : undefined;
+}
+
+/** Normalizes ACP `available_commands_update` entries into sanitized slash command descriptors. */
+export function normalizeAvailableCommands(raw: unknown): AcpAvailableCommand[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: AcpAvailableCommand[] = [];
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    const name = sanitizeShortText(record.name, 128);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const description = sanitizeShortText(record.description, 512);
+    const inputHint = sanitizeShortText(asRecord(record.input).hint, 256);
+    out.push({
+      name,
+      ...(description ? { description } : {}),
+      ...(inputHint ? { inputHint } : {}),
+    });
+  }
+  return out;
+}
+
+/** Reads `_meta.antigravity.tier` from `session/new` / `session/resume`, dropping control chars and external URLs. */
+export function readAntigravityTier(rawMeta: unknown): AcpAntigravityTier | undefined {
+  const tier = asRecord(asRecord(asRecord(rawMeta).antigravity).tier);
+  const name = sanitizeShortText(tier.name, 80);
+  if (!name || !/[\p{L}\p{N}]/u.test(name)) return undefined;
+  const id = sanitizeShortText(tier.id, 64);
+  return { name, ...(id ? { id } : {}) };
 }

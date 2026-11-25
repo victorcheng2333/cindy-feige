@@ -120,7 +120,10 @@ export function currentEffort(option: AcpConfigOption | undefined): Effort | nul
  * known for the currently selected model (agents republish the thought option
  * per model), so other models are marked `effortsUnknown`.
  */
-export function describeAcpModels(options: readonly AcpConfigOption[]): ModelDescriptor[] {
+export function describeAcpModels(
+  options: readonly AcpConfigOption[],
+  modelContextWindows?: ReadonlyMap<string, number>,
+): ModelDescriptor[] {
   const modelOption = findModelOption(options);
   if (!modelOption) return [];
   const effortMappings = mapEffortValues(findEffortOption(options));
@@ -128,13 +131,14 @@ export function describeAcpModels(options: readonly AcpConfigOption[]): ModelDes
   return modelOption.options.map((entry) => {
     const isSelected = entry.value === selected;
     const efforts = isSelected ? effortMappings.map((mapped) => mapped.effort) : [];
+    const knownWindow = modelContextWindows?.get(entry.value);
     return {
       id: entry.value,
       displayName: entry.name,
       ...(entry.description ? { description: entry.description } : {}),
       ...(entry.group ? { group: entry.group } : {}),
-      // ACP does not publish context windows; 0 means unknown everywhere in Cindy.
-      contextWindow: 0,
+      // ACP session/new omits context windows; populate runtime-reported usage_update.size when known.
+      contextWindow: knownWindow && knownWindow > 0 ? knownWindow : 0,
       efforts,
       defaultEffort: isSelected ? currentEffort(findEffortOption(options)) : null,
       ...(isSelected ? {} : { effortsUnknown: true }),
@@ -143,7 +147,16 @@ export function describeAcpModels(options: readonly AcpConfigOption[]): ModelDes
   });
 }
 
-export function buildAcpCapabilities(init: AcpInitializeResult, options: readonly AcpConfigOption[]): Capabilities {
+export interface AcpCapabilitiesContext {
+  manualCompactSupported?: boolean;
+  modelContextWindows?: ReadonlyMap<string, number>;
+}
+
+export function buildAcpCapabilities(
+  init: AcpInitializeResult,
+  options: readonly AcpConfigOption[],
+  context?: AcpCapabilitiesContext,
+): Capabilities {
   const modelOption = findModelOption(options);
   const permissionModes = acpPermissionModes(options);
   const effortLevels: EffortDescriptor[] = mapEffortValues(findEffortOption(options))
@@ -151,7 +164,7 @@ export function buildAcpCapabilities(init: AcpInitializeResult, options: readonl
   const { promptCapabilities } = init.agentCapabilities;
   return {
     switchModel: modelOption && modelOption.options.length > 0 ? SUPPORTED : SDK_MISSING,
-    availableModels: describeAcpModels(options),
+    availableModels: describeAcpModels(options, context?.modelContextWindows),
     hasFastMode: false,
     effort: effortLevels.length > 0 ? SUPPORTED : SDK_MISSING,
     effortLevels,
@@ -176,6 +189,6 @@ export function buildAcpCapabilities(init: AcpInitializeResult, options: readonl
     extraDirs: NOT_IMPLEMENTED,
     writableDirs: NOT_IMPLEMENTED,
     sessionHtmlExport: SDK_MISSING,
-    manualCompact: SDK_MISSING,
+    manualCompact: context?.manualCompactSupported ? SUPPORTED : SDK_MISSING,
   };
 }
