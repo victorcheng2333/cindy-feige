@@ -1,0 +1,56 @@
+name: personal-ci
+
+# 个人 fork 的精简检查：只保留类型检查（Desktop + Mobile），平台无关，一台 Linux runner 即可。
+# 单测与静态检查在本地用 `pnpm test:unit:related` 完成；上游的 client-ci 等 workflow 已在
+# GitHub 上停用（不改上游文件，避免同步上游时冲突）。需要时可在 Actions 页面手动触发。
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  XDT_SKIP_AGENT_BIN_INSTALL: '1'
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+  ELECTRON_OVERRIDE_DIST_PATH: '${{ github.workspace }}/.electron-stub-dist'
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Desktop tsc 峰值内存超过 4GB，沿用上游 ci.yml 的 6GB 堆设置。
+      - name: Typecheck desktop
+        env:
+          NODE_OPTIONS: '--max-old-space-size=6144'
+        run: pnpm --filter desktop typecheck
+
+      - name: Typecheck mobile
+        env:
+          NODE_OPTIONS: '--max-old-space-size=6144'
+        run: pnpm --filter mobile typecheck
