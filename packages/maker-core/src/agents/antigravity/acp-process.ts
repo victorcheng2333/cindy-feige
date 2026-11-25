@@ -54,7 +54,7 @@ export function buildAgySettingsJson(options?: readonly string[] | AgySettingsOp
   const seen = new Set<string>();
   for (const raw of readOnlyDirs ?? []) {
     if (typeof raw !== 'string' || !path.isAbsolute(raw) || UNSAFE_PERMISSION_PATH_CHARS.test(raw)) continue;
-    const normalized = raw.replace(/\/+$/, '');
+    const normalized = raw.replace(/[\\/]+$/, '');
     if (!normalized || normalized === path.parse(normalized).root || seen.has(normalized)) continue;
     seen.add(normalized);
     allow.push(`read_file(${normalized})`);

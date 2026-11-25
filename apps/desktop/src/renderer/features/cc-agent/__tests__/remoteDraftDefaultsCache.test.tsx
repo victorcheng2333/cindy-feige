@@ -190,9 +190,9 @@ it.each([
 });
 
 it.each([
-  { deviceId: 'host', after: 'chosen' },
+  { deviceId: 'host', after: 'manual' },
   { deviceId: CLOUD_DEVICE, after: 'manual' },
-])('a changed provider catalog recalibrates only a managed cloud instance: $deviceId', ({ deviceId, after }) => {
+])('a changed provider catalog recalibrates the draft when the host exposes a catalog: $deviceId', ({ deviceId, after }) => {
   rememberRemoteDraftDefaults(deviceId, 'codex', defaults('chosen'));
   const page = mount(deviceId, 'codex', { providers: codexCatalog('chosen', 'manual') });
   expect(page.state.dlSel?.model).toBe('chosen');

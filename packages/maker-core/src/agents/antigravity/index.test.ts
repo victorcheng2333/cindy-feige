@@ -242,15 +242,17 @@ describe('Agy ACP-only sessions', () => {
   it('opens writable folders in Agy, mounts read-only folders via --settings read_file, and keeps read-only folders out of additionalDirectories', async () => {
     await withAgy(async start => {
       const child = new AgyProcess('with-folders');
-      const handle = await start({ extraDirs: ['/refs/docs', '/work/sibling'], writableDirs: ['/work/sibling'] });
+      const docsDir = path.resolve('/refs/docs');
+      const siblingDir = path.resolve('/work/sibling');
+      const handle = await start({ extraDirs: [docsDir, siblingDir], writableDirs: [siblingDir] });
       const created = child.requests.find(request => request.method === 'session/new');
-      expect((created?.params as { additionalDirectories?: string[] }).additionalDirectories).toEqual(['/work/sibling']);
+      expect((created?.params as { additionalDirectories?: string[] }).additionalDirectories).toEqual([siblingDir]);
       const spawnArgs = spawnMock.mock.calls[0]?.[1] as string[];
       const settingsIdx = spawnArgs.indexOf('--settings');
       expect(settingsIdx).toBeGreaterThanOrEqual(0);
       expect(JSON.parse(spawnArgs[settingsIdx + 1]!)).toEqual({
         useG1Credits: false,
-        permissions: { allow: ['read_file(/refs/docs)'] },
+        permissions: { allow: [`read_file(${docsDir})`] },
       });
       expect(handle.negotiatedCapabilities).toMatchObject({ extraDirs: { supported: true }, writableDirs: { supported: true }, sameTurnSteer: { supported: true } });
     });

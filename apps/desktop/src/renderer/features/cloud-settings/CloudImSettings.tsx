@@ -287,8 +287,9 @@ export function CloudImSettings({
                 onUnifiedSelect={({ engine, modelId, providerId, effort }) => {
                   const nextAgent = engine === 'cc' ? 'claude-code' : engine;
                   if (nextAgent === 'claude-code' || nextAgent === 'codex' || nextAgent === 'pi') {
-                    select(nextAgent, modelId, providerId, effort);
+                    return select(nextAgent, modelId, providerId, effort);
                   }
+                  return false;
                 }}
               />
             }

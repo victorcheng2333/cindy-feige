@@ -171,7 +171,10 @@ export function useRemoteDraftSelection({
   const {
     dlSeedKeyRef, dlSeedCapabilitiesRef, dlSeedDefaultsRef, dlRuntimeTouchedRef, dlExplicitChoiceRef, setDlSel,
   } = remoteDefaults;
-  const catalog = deviceProvidersUnsupported ? undefined : agentCatalogProviders;
+  // 非云电脑在 provider:list 读失败时回退到 capabilities，不把空列表误当成「目标端没有任何模型」。
+  const catalog = deviceProvidersUnsupported || (!isCloudDeviceId(catalogDeviceId) && !!deviceProvidersError)
+    ? undefined
+    : agentCatalogProviders;
   const previousCatalog = useRef(catalog);
   const dlSeedProvidersRef = useRef<ProviderView[] | null>(null);
   useEffect(() => {

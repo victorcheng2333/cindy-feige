@@ -26,6 +26,7 @@ vi.mock('../../appSessionState.js', () => ({
   ownerScopedUserDataPath: state.forbidden,
   activeOwnerScopeKey: state.forbidden,
   isAppSessionBoundaryPending: state.forbidden,
+  onAppSessionInvalidated: () => () => {},
   dataOwnerStorageKey: (owner: string) => `test-${owner}`,
 }));
 // Native stores ask the injected owner context for the ambient owner; pure inspection

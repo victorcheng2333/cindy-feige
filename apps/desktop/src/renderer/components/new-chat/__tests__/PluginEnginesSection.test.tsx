@@ -976,6 +976,7 @@ describe('a task running on a plugin engine', () => {
       remoteAgent: undefined,
       actualRoute: true,
       ...(unifiedMenu ? {
+        unifiedPanel: true,
         pluginEngines: {
           engines: pendingSwitch ? [engine, nextEngine] : [engine],
           active: pendingSwitch ? pendingSelection : selection,

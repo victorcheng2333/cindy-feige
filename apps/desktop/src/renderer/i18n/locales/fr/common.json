@@ -2643,7 +2643,7 @@
       },
       "lockedUse": {
         "label": "Laisser l'IA utiliser ce Mac même verrouillé",
-        "hint": "Quand ce Mac est verrouillé et qu'une tâche en cours a besoin de l'écran, Cindy le couvre d'abord avec l'écran de confidentialité, puis le déverrouille avec le mot de passe de session que vous avez enregistré. Il se reverrouille quand la tâche est terminée ou que quelqu'un touche le Mac. Le mot de passe est chiffré et stocké uniquement sur ce Mac.",
+        "hint": "Quand ce Mac est verrouillé et qu'une tâche en cours d'exécution a besoin de l'écran, Cindy le couvre d'abord avec l'écran de confidentialité, puis le déverrouille avec le mot de passe de session que vous avez enregistré. Il se reverrouille quand la tâche est terminée ou que quelqu'un touche le Mac. Le mot de passe est chiffré et stocké uniquement sur ce Mac.",
         "settingUp": "Saisissez le mot de passe de session de ce Mac dans la fenêtre qui s’affiche.",
         "permission": "Autorisez cindy-macos-remote-credentials dans Réglages Système > Confidentialité et sécurité > Accessibilité pour qu'il puisse saisir le mot de passe sur l'écran de verrouillage. D'ici là, rien n'est déverrouillé automatiquement.",
         "paused": "Quelqu'un a touché le Mac : le déverrouillage automatique est en pause. Il reprend après que vous l'avez déverrouillé vous-même une fois.",
@@ -3151,7 +3151,7 @@
       },
       "harnessShowInPicker": "Afficher dans le sélecteur de modèles",
       "harnessHiddenStatus": "Masqué dans le sélecteur de modèles",
-      "harnessToggleHint": "Une fois désactivé, il n’apparaît plus pour les nouveaux choix. Les tâches en cours ne sont pas affectées.",
+      "harnessToggleHint": "Une fois désactivé, il n’apparaît plus pour les nouveaux choix. Les tâches en cours d'exécution ne sont pas affectées.",
       "harnessLastEnabledHint": "Gardez au moins un harness activé.",
       "harnessToggleFailed": "Impossible de mettre à jour le réglage du harness. Réessayez.",
       "agyCli": {
@@ -3176,7 +3176,7 @@
         "description": "Les mises à jour publiées par Cursor peuvent présenter des incompatibilités. Vous pouvez restaurer la version intégrée à tout moment. Les sessions d’Agent existantes conservent leur version.",
         "installed": "Le SDK Cursor est prêt. La prochaine session d’Agent utilisera la version choisie.",
         "installFailed": "La mise à jour a échoué. La version précédente est inchangée. Vérifiez les mises à jour et réessayez.",
-        "scope": "Prend effet à la prochaine session d’Agent, sans affecter les tâches en cours.",
+        "scope": "Prend effet à la prochaine session d’Agent, sans affecter les tâches en cours d'exécution.",
         "checkedAt": "Dernière vérification : {{time}}"
       }
     },
@@ -4920,7 +4920,7 @@
         "connect": "Connecter Cursor",
         "disconnect": "Déconnecter Cursor",
         "waiting": "Terminez la connexion dans votre navigateur. Cela peut prendre cinq minutes.",
-        "stopWarning": "Les tâches Cursor en cours seront arrêtées. Leur historique sera conservé.",
+        "stopWarning": "Les tâches Cursor en cours d'exécution seront arrêtées. Leur historique sera conservé.",
         "loginFailed": "La connexion à Cursor n’a pas abouti. Vérifiez le navigateur et votre connexion.",
         "legacyPermission": "Cursor ne prend pas en charge le mode de permissions avec confirmation. Cette tâche s’exécute en mode automatique : les commandes s’exécutent sans vérification.",
         "historyReset": "L’historique Cursor de cette tâche est indisponible dans le compte actuel. L’ancienne référence a été supprimée. Un nouvel envoi utilisera un nouveau contexte ; les messages de la tâche sont conservés.",
