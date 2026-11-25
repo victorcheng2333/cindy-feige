@@ -109,6 +109,12 @@ export interface BuildHandoffOptions {
    * 找不到时可以不带 session_ids 再搜一次,但命中只能当未经核实的历史、先向用户确认。
    */
   companionSessionIdsTruncated?: boolean;
+  /**
+   * Optional UTF-8 byte ceiling for engines whose CLI truncates oversized single-turn
+   * `USER_INPUT` prompts (e.g. Agy CLI truncates around ~190 KiB, which otherwise slices
+   * off the trailing user message after a prepended handoff).
+   */
+  maxUtf8Bytes?: number;
 }
 
 const HANDOFF_CONTEXT_FRACTION = 0.30;
@@ -119,6 +125,12 @@ const ASCII_TOKEN_UNITS = 4; // 2.5 chars/token reserves more than the usual 3�
 const NON_ASCII_TOKEN_UNITS = TOKEN_UNITS; // Count UTF-16 units, including both halves of emoji.
 const HANDOFF_MAX_TOKENS = 100_000;
 const HANDOFF_MAX_CHARS = 250_000; // 100K tokens of all-ASCII text.
+/**
+ * Agy CLI hard-truncates the tail of a single `USER_INPUT` prompt at ~190 KiB UTF-8,
+ * which silently drops the user's new message when a 200+ KB prepended handoff precedes it.
+ * Keep Agy handoffs <= 64 KB UTF-8 so >125 KB remains for the user message, notes, and attachments.
+ */
+export const AGY_HANDOFF_MAX_UTF8_BYTES = 64_000;
 const HANDOFF_UNKNOWN_WINDOW_CHARS = 16_000;
 const IDLE_GAP_MAX_CHARS = 16_000;
 const HANDOFF_BUDGET_RETRIES = 2;
@@ -868,6 +880,19 @@ export function buildHandoff(
   messages: HandoffSourceMessage[],
   opts: BuildHandoffOptions,
 ): { handoff: string; handoffCoverage: HandoffCoverage } {
+  const maxUtf8Bytes = opts.maxUtf8Bytes ?? (opts.toLabel === 'Agy' ? AGY_HANDOFF_MAX_UTF8_BYTES : undefined);
+  const effectiveMaxChars = maxUtf8Bytes !== undefined
+    ? Math.min(HANDOFF_MAX_CHARS, maxUtf8Bytes)
+    : HANDOFF_MAX_CHARS;
+  const finalize = (result: { handoff: string; handoffCoverage: HandoffCoverage }) => {
+    if (maxUtf8Bytes === undefined || Buffer.byteLength(result.handoff, 'utf8') <= maxUtf8Bytes) {
+      return result;
+    }
+    return {
+      handoff: trimHandoffToUtf8ByteBudget(result.handoff, maxUtf8Bytes),
+      handoffCoverage: 'condensed' as const,
+    };
+  };
   const tokens = handoffTokenBudget(opts);
   const framing = assembleHandoffSections(messages, opts);
   const heading = opts.mode === 'delta'
@@ -883,9 +908,9 @@ export function buildHandoff(
 
   const build = (budget: number, completeOnly = false) =>
     buildHandoffWithinChars(entries, opts, framing, heading, budget, tokens, completeOnly);
-  if (tokens === null) return build(HANDOFF_UNKNOWN_WINDOW_CHARS);
+  if (tokens === null) return finalize(build(Math.min(HANDOFF_UNKNOWN_WINDOW_CHARS, effectiveMaxChars)));
   if (opts.reason === 'idle-gap') {
-    return buildAtConservativeBudget(build, Math.min(IDLE_GAP_MAX_CHARS, tokens), tokens, opts);
+    return finalize(buildAtConservativeBudget(build, Math.min(IDLE_GAP_MAX_CHARS, tokens, effectiveMaxChars), tokens, opts));
   }
 
   const frame = [...framing.before, heading, REPLAY_CONTEXT, ...framing.after].join('\n');
@@ -904,10 +929,10 @@ export function buildHandoff(
       markerUnits += tokenUnits(record.marker) + ASCII_TOKEN_UNITS;
     }
   }
-  const charBudget = (chars: number, units: number) => Math.min(HANDOFF_MAX_CHARS, Math.floor(tokens * TOKEN_UNITS * chars / units));
+  const charBudget = (chars: number, units: number) => Math.min(effectiveMaxChars, Math.floor(tokens * TOKEN_UNITS * chars / units));
   if (markerChars > 0) {
     const full = build(charBudget(chars + markerChars, units + markerUnits), true);
-    if (full.handoffCoverage === 'complete') return full;
+    if (full.handoffCoverage === 'complete') return finalize(full);
   }
   // Optional markers must not change the budget used to select user text.
   let budget = charBudget(chars, units);
@@ -916,10 +941,10 @@ export function buildHandoff(
   for (let attempt = 0; attempt <= HANDOFF_BUDGET_RETRIES && budget > tokens; attempt++) {
     const result = build(budget);
     const estimated = estimateHandoffTokens(result.handoff);
-    if (estimated <= tokens) return result;
+    if (estimated <= tokens) return finalize(result);
     budget = Math.min(budget - 1, Math.floor(budget * tokens / estimated));
   }
-  return buildAtConservativeBudget(build, Math.min(budget, tokens), tokens, opts);
+  return finalize(buildAtConservativeBudget(build, Math.min(budget, tokens, effectiveMaxChars), tokens, opts));
 }
 
 function buildAtConservativeBudget(
@@ -1358,6 +1383,50 @@ export function prependNoteToWireUserMessage(
     return { ...message, content: `${note}\n\n${message.content}` };
   }
   return { ...message, content: [{ type: 'text', text: note }, ...message.content] };
+}
+
+/**
+ * Trims an existing handoff string to fit within a UTF-8 byte ceiling while preserving
+ * the mandatory history retrieval instructions and explicit end-of-handoff terminator.
+ * Used both at build time (`toLabel === 'Agy'`) and at send time for already-persisted
+ * handoffs so an engine with a smaller single-prompt byte cap never slices off the user's message.
+ */
+export function trimHandoffToUtf8ByteBudget(handoff: string, maxUtf8Bytes: number): string {
+  if (maxUtf8Bytes <= 0 || Buffer.byteLength(handoff, 'utf8') <= maxUtf8Bytes) return handoff;
+  const { body, tail } = splitMandatoryHandoffTail(handoff, '');
+  const separator = '\n\n';
+  if (tail) {
+    if (Buffer.byteLength(tail, 'utf8') > maxUtf8Bytes) {
+      const [, terminator] = splitTrailingTerminator(handoff);
+      if (terminator && Buffer.byteLength(terminator, 'utf8') <= maxUtf8Bytes) {
+        return terminator;
+      }
+      return '';
+    }
+    const render = (cap: number) => (cap > 0 ? `${excerpt(body, cap).trimEnd()}${separator}${tail}` : tail);
+    let lo = 0;
+    let hi = body.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (Buffer.byteLength(render(mid), 'utf8') <= maxUtf8Bytes) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return render(lo);
+  }
+  let lo = 0;
+  let hi = handoff.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (Buffer.byteLength(excerpt(handoff, mid), 'utf8') <= maxUtf8Bytes) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return excerpt(handoff, lo);
 }
 
 /** 把交接文本前置到发给 agent 的 wire 消息上(不影响落库/显示内容)。 */

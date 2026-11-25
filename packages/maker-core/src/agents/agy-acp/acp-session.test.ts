@@ -1699,11 +1699,16 @@ describe('AcpSession native compact, metadata, and classified exit diagnostics',
 
   it('inlines small UTF-8 text attachments via embeddedContext and falls back to resource_link for binary, oversized, or remote files', async () => {
     const agent = createFakeAgent({ agentCapabilities: { promptCapabilities: { embeddedContext: true } } });
+    const WORKSPACE = resolve('workspace');
     const BIN = resolve('attachments', 'binary.txt');
     const HUGE = resolve('attachments', 'huge.ts');
     const PDF = resolve('attachments', 'doc.pdf');
+    const REL_IN_WORKSPACE = resolve(WORKSPACE, 'src', 'app.ts');
+    const OUTSIDE_TRAVERSAL = resolve('secret.ts');
     const files: Record<string, Uint8Array> = {
       [NOTES]: new TextEncoder().encode('# Spec\nhello'),
+      [REL_IN_WORKSPACE]: new TextEncoder().encode('export const ok = 1;'),
+      [OUTSIDE_TRAVERSAL]: new TextEncoder().encode('TOP_SECRET'),
       [BIN]: new Uint8Array([0x61, 0x00, 0x62]),
       [HUGE]: new Uint8Array(70_000).fill(0x61),
     };
@@ -1712,21 +1717,26 @@ describe('AcpSession native compact, metadata, and classified exit diagnostics',
       if (!content) throw new Error('ENOENT');
       return content;
     });
-    const { session } = await open(agent, { embedTextAttachments: true, readFile });
+    const { session } = await open(agent, { cwd: WORKSPACE, embedTextAttachments: true, readFile });
     await session.send({
       type: 'user',
       content: [
         { type: 'file', path: NOTES },
-        { type: 'mention', kind: 'file', name: 'notes.md', path: NOTES },
+        { type: 'mention', kind: 'file', name: 'app.ts', path: 'src/app.ts' },
+        { type: 'mention', kind: 'file', name: 'secret.ts', path: '../secret.ts' },
+        { type: 'mention', kind: 'file', name: 'Demo App', path: 'app://demo-app' },
         { type: 'file', path: BIN },
         { type: 'file', path: HUGE },
         { type: 'file', path: PDF },
       ],
     });
     await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    expect(readFile).not.toHaveBeenCalledWith(OUTSIDE_TRAVERSAL, expect.anything());
     expect(agent.prompts[0]!.params.prompt).toEqual([
       { type: 'resource', resource: { uri: pathToFileURL(NOTES).href, text: '# Spec\nhello', mimeType: 'text/markdown' } },
-      { type: 'resource', resource: { uri: pathToFileURL(NOTES).href, text: '# Spec\nhello', mimeType: 'text/markdown' } },
+      { type: 'resource', resource: { uri: pathToFileURL(REL_IN_WORKSPACE).href, text: 'export const ok = 1;', mimeType: 'text/typescript' } },
+      { type: 'resource_link', uri: pathToFileURL(OUTSIDE_TRAVERSAL).href, name: 'secret.ts' },
+      { type: 'resource_link', uri: 'app://demo-app', name: 'Demo App' },
       { type: 'resource_link', uri: pathToFileURL(BIN).href, name: 'binary.txt' },
       { type: 'resource_link', uri: pathToFileURL(HUGE).href, name: 'huge.ts' },
       { type: 'resource_link', uri: pathToFileURL(PDF).href, name: 'doc.pdf' },

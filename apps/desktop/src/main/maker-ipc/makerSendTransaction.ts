@@ -43,9 +43,11 @@ import { ProviderGroupUsageLimitError } from '../provider-group/failurePolicy.js
 import { routinePermissionSnapshot } from '../maker-host/routinePermission.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import {
+  AGY_HANDOFF_MAX_UTF8_BYTES,
   extractPlainText,
   prependHandoffToUserMessage,
   prependNoteToWireUserMessage,
+  trimHandoffToUtf8ByteBudget,
   type HandoffWireMessage,
 } from './agentHandoff.js';
 import type { MessageSourceDevice, MessageSourceHostDevice } from '@cindy/maker-shared/message-source';
@@ -1550,8 +1552,11 @@ export function createMakerSendTransaction(deps: MakerSendTransactionDeps): Make
       const pendingHandoff = shouldPrependMobileClientPromptNote(normalized, sess.agentKind)
         ? (await deps.peekPendingHandoff?.(sessionId)) ?? null
         : null;
-      const withHandoff = pendingHandoff
-        ? prependHandoffToUserMessage(withRecoveryNote as HandoffWireMessage, pendingHandoff)
+      const effectivePendingHandoff = pendingHandoff && sess.agentKind === 'antigravity'
+        ? trimHandoffToUtf8ByteBudget(pendingHandoff, AGY_HANDOFF_MAX_UTF8_BYTES)
+        : pendingHandoff;
+      const withHandoff = effectivePendingHandoff
+        ? prependHandoffToUserMessage(withRecoveryNote as HandoffWireMessage, effectivePendingHandoff)
         : withRecoveryNote;
       // 计划对账:旧的未收口计划让 agent 顺手交代(更新/修订/清掉)。位置在交接段
       // 之前——两段各自带"以下是用户的新消息"式结束标记,对账在外层不破坏交接正文。

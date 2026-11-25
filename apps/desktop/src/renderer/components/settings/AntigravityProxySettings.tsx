@@ -26,7 +26,7 @@ export function AntigravityProxySettings({ onChanged, ownerId, generation }: { o
     }).catch(() => { if (current) setMessage('readFailed'); });
     void window.electronAPI.maker.auth.getAgyUseG1Credits?.().then(enabled => {
       if (current) setUseG1Credits(enabled === true);
-    }).catch(() => { if (current) setUseG1Credits(false); });
+    }).catch(() => {});
     return () => { current = false; };
   }, []);
 
@@ -100,7 +100,7 @@ export function AntigravityProxySettings({ onChanged, ownerId, generation }: { o
       </form>
       <div
         id={providersSettings.agyAiCredits.targetId}
-        className="flex items-start justify-between gap-3 border-t border-[var(--border-subtle)] pt-3"
+        className="flex items-start justify-between gap-3 border-t border-[var(--border-default)] pt-3"
       >
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-14 font-medium text-[var(--text-primary)]">

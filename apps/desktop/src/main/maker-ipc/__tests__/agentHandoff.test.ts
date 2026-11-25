@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  AGY_HANDOFF_MAX_UTF8_BYTES,
   buildForkOriginHandoff,
   composeForkOriginHandoff,
   buildHandoff,
@@ -11,6 +12,7 @@ import {
   extractAgentIslandPromptText,
   extractPlainText,
   prependHandoffToUserMessage,
+  trimHandoffToUtf8ByteBudget,
   type HandoffSourceMessage,
   formatIdleGapForHandoff,
 } from '../agentHandoff';
@@ -1466,5 +1468,45 @@ describe('idle-gap rebuild framing', () => {
     expect(text).toContain("do not continue, revisit, or follow up on earlier threads unless the user refers to them");
     expect(text).toContain('Booked 7pm.');
     expect(text.trimEnd().endsWith("== End of rebuild note; the user's new message follows ==")).toBe(true);
+  });
+});
+
+// Tier: unit. Production entries: `buildHandoff`, `trimHandoffToUtf8ByteBudget`.
+// Regression (2026-11-25): exposing Agy's real 1M contextWindow let side-chat handoffs grow
+// to ~245 KB; Agy CLI hard-truncates USER_INPUT around ~190 KiB UTF-8, chopping off the
+// end-of-handoff marker and the user's actual side-chat question.
+describe('Agy UTF-8 byte ceiling for handoff prompts', () => {
+  it('caps 1M-window Agy handoffs to AGY_HANDOFF_MAX_UTF8_BYTES while preserving retrieval guide and terminator', () => {
+    const messages: HandoffSourceMessage[] = [];
+    for (let i = 0; i < 60; i++) {
+      messages.push(msg('user', `第 ${i} 轮问题：` + '主对话上下文内容。'.repeat(120), i * 2 + 1));
+      messages.push(msg('assistant', `第 ${i} 轮回复：` + '详细排查日志与输出细节。'.repeat(200), i * 2 + 2));
+    }
+    const { handoff, handoffCoverage } = buildHandoff(messages, {
+      fromLabel: 'Agy',
+      toLabel: 'Agy',
+      targetContextWindow: 1_048_576,
+      sessionId: 'side-chat-1',
+      reason: 'native-session-recovery',
+    });
+    expect(handoffCoverage).toBe('condensed');
+    expect(Buffer.byteLength(handoff, 'utf8')).toBeLessThanOrEqual(AGY_HANDOFF_MAX_UTF8_BYTES);
+    expect(handoff).toContain('== Retrieving earlier verbatim history (use when needed) ==');
+    expect(handoff).toContain('"session_ids":["side-chat-1"]');
+    expect(handoff.trimEnd().endsWith("== End of rebuild note; the user's new message follows ==")).toBe(true);
+  });
+
+  it('trims pre-existing oversized handoffs to UTF-8 byte budget without dropping mandatory tail', () => {
+    const oversized =
+      '[Session context rebuild · internal context]\n\n' +
+      '中文历史内容片段。'.repeat(12_000) +
+      '\n\n== Retrieving earlier verbatim history (use when needed) ==\nSession id: s-old\n' +
+      "== End of rebuild note; the user's new message follows ==";
+    expect(Buffer.byteLength(oversized, 'utf8')).toBeGreaterThan(AGY_HANDOFF_MAX_UTF8_BYTES);
+    const trimmed = trimHandoffToUtf8ByteBudget(oversized, AGY_HANDOFF_MAX_UTF8_BYTES);
+    expect(Buffer.byteLength(trimmed, 'utf8')).toBeLessThanOrEqual(AGY_HANDOFF_MAX_UTF8_BYTES);
+    expect(trimmed).toContain('== Retrieving earlier verbatim history (use when needed) ==');
+    expect(trimmed).toContain('Session id: s-old');
+    expect(trimmed.trimEnd().endsWith("== End of rebuild note; the user's new message follows ==")).toBe(true);
   });
 });

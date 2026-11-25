@@ -440,6 +440,9 @@ export class AntigravityAgent extends BaseAgent {
       if (session.droppedMcpServers.length > 0) throw new Error('Agy did not advertise support for the Cindy MCP bridge. Update Agy and try again.');
       if (hosted && await antigravityRemoteAgentFellBack(stateDir, launchedAt, priorAcpLogs)) throw new AntigravityRemoteAgentUnavailableError();
       if (!session.model) throw new Error('Agy did not return a model catalog. Check Agy sign-in and the configured proxy.');
+      // Let post-handshake `available_commands_update` (for `/compact`) and `usage_update`
+      // settle so immediate cold-session `/compact` does not race ahead of discovery.
+      await session.waitForInitialUpdates(150);
       const capOptions = { includeCindyAuto: !hosted };
       if (!antigravityCapabilities(session, capOptions).permissionModes.some(option => option.id === mode)) {
         mode = 'default';

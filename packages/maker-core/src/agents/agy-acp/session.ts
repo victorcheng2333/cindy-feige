@@ -8,8 +8,8 @@
  * Maker / Desktop is a separate step; this module has no host dependencies.
  */
 
-import { readFile as fsReadFile, stat as fsStat } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
+import { readFile as fsReadFile, realpath as fsRealpath, stat as fsStat } from 'node:fs/promises';
+import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Logger } from '../../interfaces/logger.js';
 import type { SendOptions } from '../base-agent.js';
@@ -71,9 +71,21 @@ const DEFAULT_BG_AFTER_TEXT_MS = 3_000;
 const DEFAULT_BG_POLL_MS = 2_000;
 /** Keep base64-encoded inline images safely below ACP's 32 MiB line cap; larger files fall back to resource_link. */
 const MAX_INLINE_IMAGE_BYTES = 16 * 1024 * 1024;
-/** Inline small local text/code attachments via ACP `embeddedContext` (`type: 'resource'`) to avoid an extra read round-trip. */
-const MAX_EMBEDDED_FILE_BYTES = 64 * 1024;
-const MAX_EMBEDDED_PROMPT_BYTES = 256 * 1024;
+/** Inline small local text/code attachments via ACP `embeddedContext` (`type: 'resource'`) to avoid an extra read round-trip.
+ * Keep total embedded bytes well below Agy CLI's ~190 KiB single-turn USER_INPUT truncation cap. */
+const MAX_EMBEDDED_FILE_BYTES = 48 * 1024;
+const MAX_EMBEDDED_PROMPT_BYTES = 96 * 1024;
+
+function isNonFileUriScheme(value: string): boolean {
+  // Match RFC 3986 schemes like `app://`, `plugin://`, `clipboard://`, `https://`,
+  // while excluding Windows drive prefixes (`C:\` or `C:/`).
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value);
+}
+
+function isPathWithinDir(targetPath: string, rootDir: string): boolean {
+  const rel = relative(rootDir, targetPath);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !rel.startsWith('../') && !isAbsolute(rel);
+}
 
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   '.png': 'image/png',
@@ -579,6 +591,7 @@ export class AcpSession {
   readonly initializeResult: AcpInitializeResult;
 
   private readonly connection: AcpConnection;
+  private readonly cwd: string;
   private readonly logger: Logger | undefined;
   private readonly readImage: NonNullable<OpenAcpSessionOptions['readFile']>;
   private readonly cancelGraceMs: number;
@@ -647,6 +660,7 @@ export class AcpSession {
     this.identityPublished = init.resumeOutcome !== 'new';
     this.resumeOutcome = init.resumeOutcome;
     this.droppedMcpServers = init.droppedMcpServers;
+    this.cwd = init.options.cwd;
     this.configOptions = init.configOptions;
     this.enableNativeCompact = init.options.nativeCompactCommand === true;
     this.embedTextAttachments = init.options.embedTextAttachments === true;
@@ -2071,7 +2085,7 @@ export class AcpSession {
   }
 
   private async tryEmbedTextResource(
-    filePath: string,
+    rawPath: string,
     explicitMime: string | undefined,
     signal: AbortSignal,
     embedBudget: { remainingBytes: number },
@@ -2079,18 +2093,28 @@ export class AcpSession {
     if (!this.embedTextAttachments || !this.initializeResult.agentCapabilities.promptCapabilities.embeddedContext) {
       return undefined;
     }
-    if (embedBudget.remainingBytes <= 0) return undefined;
-    const mimeType = explicitMime ?? TEXT_MIME_BY_EXTENSION[extname(filePath).toLowerCase()];
+    if (embedBudget.remainingBytes <= 0 || !rawPath || isNonFileUriScheme(rawPath)) return undefined;
+    const isRel = !isAbsolute(rawPath);
+    const resolvedPath = isRel ? resolve(this.cwd, rawPath) : rawPath;
+    if (isRel && !isPathWithinDir(resolvedPath, this.cwd)) return undefined;
+    const mimeType = explicitMime ?? TEXT_MIME_BY_EXTENSION[extname(resolvedPath).toLowerCase()];
     if (!isEmbeddableTextMime(mimeType)) return undefined;
     const maxBytes = Math.min(MAX_EMBEDDED_FILE_BYTES, embedBudget.remainingBytes);
-    const info = await fsStat(filePath).catch(() => undefined);
+    const info = await fsStat(resolvedPath).catch(() => undefined);
     if (info) {
       if (!info.isFile() || info.size <= 0 || info.size > maxBytes) return undefined;
+      if (isRel && !this.hasCustomReadFile) {
+        const [realTarget, realCwd] = await Promise.all([
+          fsRealpath(resolvedPath).catch(() => undefined),
+          fsRealpath(this.cwd).catch(() => undefined),
+        ]);
+        if (!realTarget || !realCwd || !isPathWithinDir(realTarget, realCwd)) return undefined;
+      }
     } else if (!this.hasCustomReadFile) {
       return undefined;
     }
     try {
-      const bytes = await this.readImage(filePath, signal);
+      const bytes = await this.readImage(resolvedPath, signal);
       signal.throwIfAborted();
       if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) return undefined;
       const text = decodeEmbeddedUtf8Text(bytes);
@@ -2098,7 +2122,7 @@ export class AcpSession {
       embedBudget.remainingBytes -= bytes.byteLength;
       return {
         type: 'resource',
-        resource: { uri: pathToFileURL(filePath).href, text, mimeType },
+        resource: { uri: pathToFileURL(resolvedPath).href, text, mimeType },
       };
     } catch (error) {
       if (signal.aborted) throw error;
@@ -2132,7 +2156,13 @@ export class AcpSession {
       case 'file': {
         const embedded = await this.tryEmbedTextResource(block.path, block.mimeType, signal, embedBudget);
         if (embedded) return embedded;
-        return { type: 'resource_link', uri: pathToFileURL(block.path).href, name: basename(block.path), ...(block.mimeType ? { mimeType: block.mimeType } : {}) };
+        const linkPath = !isNonFileUriScheme(block.path) && !isAbsolute(block.path) ? resolve(this.cwd, block.path) : block.path;
+        return {
+          type: 'resource_link',
+          uri: isNonFileUriScheme(linkPath) ? linkPath : pathToFileURL(linkPath).href,
+          name: basename(block.path),
+          ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+        };
       }
       case 'mention': {
         if (block.kind === 'agent') return { type: 'text', text: `@${block.name}` };
@@ -2140,7 +2170,11 @@ export class AcpSession {
           const embedded = await this.tryEmbedTextResource(block.path, undefined, signal, embedBudget);
           if (embedded) return embedded;
         }
-        return { type: 'resource_link', uri: pathToFileURL(block.path).href, name: block.name };
+        if (isNonFileUriScheme(block.path)) {
+          return { type: 'resource_link', uri: block.path, name: block.name };
+        }
+        const linkPath = isAbsolute(block.path) ? block.path : resolve(this.cwd, block.path);
+        return { type: 'resource_link', uri: pathToFileURL(linkPath).href, name: block.name };
       }
     }
   }
