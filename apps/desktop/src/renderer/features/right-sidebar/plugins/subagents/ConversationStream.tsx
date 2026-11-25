@@ -62,7 +62,7 @@ function SubagentThinkingRow({ content }: { content: string }) {
             aria-hidden="true"
             className="shrink-0 text-[var(--msg-tool-card-chevron)]"
           />
-          <span className="min-w-0 flex-1 truncate text-12 leading-4 text-[var(--msg-tool-card-chevron)]">
+          <span className="min-w-0 flex-1 truncate text-12 leading-[1.333] text-[var(--msg-tool-card-chevron)]">
             {preview}
           </span>
           <ChevronRight
@@ -76,7 +76,7 @@ function SubagentThinkingRow({ content }: { content: string }) {
         </button>
         <Collapse open={expanded}>
           <div className="mt-1 border-l-2 border-[var(--agent-actions-rail)] py-1 pl-3">
-            <p className="select-text whitespace-pre-wrap text-13 italic leading-5 text-[var(--thinking-body-text)]">
+            <p className="select-text whitespace-pre-wrap text-13 italic leading-[1.54] text-[var(--thinking-body-text)]">
               {content}
             </p>
           </div>

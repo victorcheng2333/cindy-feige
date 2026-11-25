@@ -244,6 +244,7 @@ export class AntigravityAgent extends BaseAgent {
     let bridge: Awaited<ReturnType<AntigravityAgentDeps['prepareAcp']>> | undefined;
     let remoteWorkspace: Awaited<ReturnType<typeof prepareAntigravityRemoteWorkspaceDir>> | undefined;
     let endpoint: ReturnType<typeof startAgyAcpProcess> | undefined;
+    let releaseStoppedResources: Promise<void> | undefined;
     let mode: PermissionMode = opts.permissionMode === 'plan' ? 'default' : opts.permissionMode ?? 'auto';
     try {
       const hosted = opts.deviceHosted;
@@ -386,7 +387,7 @@ export class AntigravityAgent extends BaseAgent {
       );
       const subagentReader = createAntigravitySubagentRunsReader(stateDir);
       const cleanupWorkspace = remoteWorkspace;
-      void endpoint.whenStopped.then(async () => {
+      releaseStoppedResources = endpoint.whenStopped.then(async () => {
         subagentReader.clearCache();
         await cleanupWorkspace?.cleanup();
         taskBridge.dispose();
@@ -544,6 +545,7 @@ export class AntigravityAgent extends BaseAgent {
             cause: error, whenStopped: endpoint.whenStopped, retryCleanup: endpoint.transport.close,
           });
         }
+        await releaseStoppedResources;
       } else {
         await remoteWorkspace?.cleanup();
         bridge?.dispose();

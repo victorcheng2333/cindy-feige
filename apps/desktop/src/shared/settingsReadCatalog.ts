@@ -330,6 +330,8 @@ export const SETTINGS_READ_EXTERNAL_CATALOG = [
   { id: 'general.newChatDefaultPermission', tab: 'general', control: 'NewChatDefaultPermissionSection', kind: 'external', entry: 'newTask' },
   // The default new-task folder is renderer-local per data owner; not a v2 snapshot field.
   { id: 'general.defaultNewTaskWorkingDir', tab: 'general', control: 'DefaultNewTaskWorkingDirSection', kind: 'external', entry: 'newTask' },
+  // Cost display currency/exchange rate is renderer-local and not part of the deployed v2 snapshot.
+  { id: 'general.moneyDisplay', tab: 'general', control: 'MoneyDisplaySection', kind: 'external', entry: 'general' },
   // Setup migration from another computer is an action on that computer's own window, not a v2 snapshot field.
   { id: 'general.setupMigration', tab: 'general', control: 'SetupMigrationSection', kind: 'action', entry: 'setupMigration' },
   // The get-started guide is reopened on the window itself; it holds no setting.

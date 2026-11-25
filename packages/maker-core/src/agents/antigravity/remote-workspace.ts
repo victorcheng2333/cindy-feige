@@ -186,7 +186,7 @@ async function pruneStaleLaunchDirs(stateDir: string, now = Date.now()): Promise
         const target = path.join(stateDir, name);
         const info = await stat(target).catch(() => null);
         if (info?.isDirectory() && now - info.mtimeMs > STALE_LAUNCH_DIR_MS) {
-          await rm(target, { recursive: true, force: true }).catch(() => {});
+          await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }).catch(() => {});
         }
       }),
   );
@@ -219,7 +219,7 @@ export async function prepareAntigravityRemoteWorkspaceDir(
     async cleanup() {
       if (cleaned) return;
       cleaned = true;
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }).catch(() => {});
     },
   };
 }

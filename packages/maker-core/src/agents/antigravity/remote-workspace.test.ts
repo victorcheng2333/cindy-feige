@@ -268,7 +268,7 @@ describe('AntigravityAgent device-hosted remote workspace', () => {
       getDiscoveredCapabilities: () => undefined,
       getCliVersion: async () => cliVersion,
     });
-    return { dir, stateDir, agent, prepareAcp, cleanup: () => rm(dir, { recursive: true, force: true }) };
+    return { dir, stateDir, agent, prepareAcp, cleanup: () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }) };
   }
 
   it('rejects guest sessions and agy versions older than 1.5.13 before spawning', async () => {
