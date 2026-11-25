@@ -188,7 +188,17 @@
   "workGroup": {
     "working": "作業中…",
     "worked": "{{duration}} 作業しました",
-    "workDetails": "作業内容"
+    "workDetails": "作業内容",
+    "phases_one": "{{count}} 段階",
+    "phases_other": "{{count}} 段階",
+    "phaseKind": {
+      "explore": "調査・確認",
+      "edit": "ファイルを編集",
+      "verify": "検証・テスト",
+      "execute": "コマンドを実行",
+      "delegate": "サブタスクを委譲",
+      "tools": "ツールを実行"
+    }
   },
   "geminiRateLimit": {
     "retried": "Gemini の指定時間後に自動で再試行しました",

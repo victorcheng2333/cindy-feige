@@ -10,10 +10,15 @@ import { mobilePresentationLocalizer } from '@/i18n/presentationLocalizer';
 import { mobileToolRowWording } from '@/i18n/toolWording';
 import { useFoldableExpandedState, __test_internals } from '@/session/expandedBlockMemory';
 import { summarizeToolRowPresentation, summarizeWorkGroupPresentation } from '@/session/messagePresentation';
-import { projectMobileWorkActivities, projectRecentMobileWorkActivities } from '@/session/workActivityProjection';
+import {
+  groupWorkActivityPhases,
+  projectMobileWorkActivities,
+  projectOuterMobileWorkStages,
+  projectRecentMobileWorkActivities,
+  shouldGroupWorkActivityPhases,
+} from '@/session/workActivityProjection';
 import { buildMessageHierarchyLayout } from '@/session/messageHierarchyLayout';
 import { buildMessageContentLayout } from '@/session/messageContentLayout';
-import { groupWorkActivityPhases, shouldGroupWorkActivityPhases } from '@/session/workActivityProjection';
 import { normalizeRemoteMessages } from '@/session/messageNormalize';
 import { buildMediaPayload } from '@/session/messagePayload';
 import type { RemoteMessage } from '@/session/types';
@@ -43,7 +48,7 @@ const components = executeRenderer<Record<string, React.ComponentType<any>>>(sou
   CompactActivityIndicator: leaf, WorkGroupElapsed: leaf, PluginInvocationHeader: leaf,
   Rail: View, RenderItemView: child, ExpandedWorkThinkingRow: child,
   MessageContentOpenButton: View,
-  projectMobileWorkActivities, projectRecentMobileWorkActivities,
+  projectMobileWorkActivities, projectOuterMobileWorkStages, projectRecentMobileWorkActivities,
   FoldablePanel: ({ children, collapsedBody, controlledExpanded, onControlledToggle, testID }: any) =>
     React.createElement('div', null,
       React.createElement('button', { 'data-testid': testID, onClick: onControlledToggle }, 'toggle'),

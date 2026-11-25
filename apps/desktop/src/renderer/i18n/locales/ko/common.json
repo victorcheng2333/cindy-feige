@@ -15192,6 +15192,16 @@
         "search_other": "{{count}}회 검색",
         "list_one": "{{count}}회 파일 목록 확인",
         "list_other": "{{count}}회 파일 목록 확인"
+      },
+      "phases_one": "{{count}}단계",
+      "phases_other": "{{count}}단계",
+      "phaseKind": {
+        "explore": "탐색 및 확인",
+        "edit": "파일 수정",
+        "verify": "검증 및 테스트",
+        "execute": "명령 실행",
+        "delegate": "하위 작업 위임",
+        "tools": "도구 실행"
       }
     },
     "agentTask": {

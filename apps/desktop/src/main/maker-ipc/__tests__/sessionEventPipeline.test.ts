@@ -4113,3 +4113,90 @@ describe('background event activity wiring', () => {
     }
   });
 });
+
+// Tier: unit | Production entry: handleSessionEvent -> persistSessionStreamEventCore
+// Gap: Antigravity runs over ACP with agentKind='antigravity' (not 'acp'). Tool input patches
+// (`acpInputPatch: true`) must pass `acpTool=true` to persistence and stay `persistedOnly`
+// instead of broadcasting duplicate live tool_use rows; final background text must flush.
+// Minimal failing input: Antigravity session emits tool_use with `acpInputPatch: true`.
+describe('antigravity ACP stream persistence', () => {
+  it('keeps acpInputPatch updates persisted-only and flushes final background text', async () => {
+    const h = harness();
+    const agySession = new Session({
+      id: 'agy-task',
+      agentKind: 'antigravity',
+      workDir: '/unused',
+      handle: {
+        id: 'agy-provider',
+        agentKind: 'antigravity',
+        model: 'gemini-3-pro',
+        send: vi.fn(async () => {}),
+        close: vi.fn(async () => {}),
+        setInteractionResolver: vi.fn(),
+        async *events() {
+          yield* [] as AgentEvent[];
+        },
+      } as unknown as AgentSessionHandle,
+      capabilities: {} as never,
+      logger: h.deps.log,
+      turnStallMs: 0,
+    });
+    const onToolUse = effects.fn('onToolUseEvent');
+    const flushAssistant = effects.fn('flushAssistantBlock');
+    const broadcast = effects.fn('broadcast');
+    onToolUse.mockClear();
+    flushAssistant.mockClear();
+    broadcast.mockClear();
+    const pipelineDeps = h.deps as unknown as SessionEventDependencies;
+    try {
+      handleSessionEvent(pipelineDeps, agySession, {
+        type: 'tool_use',
+        source: 'antigravity',
+        data: { toolUseId: 'call-1', toolName: 'Read file', input: { acpKind: 'read' } },
+      } as AgentEvent);
+      expect(onToolUse).toHaveBeenLastCalledWith(
+        'agy-task',
+        expect.objectContaining({ toolUseId: 'call-1' }),
+        null,
+        'turn',
+        undefined,
+        undefined,
+        true,
+      );
+      const broadcastsAfterInitial = broadcast.mock.calls.length;
+
+      handleSessionEvent(pipelineDeps, agySession, {
+        type: 'tool_use',
+        source: 'antigravity',
+        data: {
+          toolUseId: 'call-1',
+          toolName: 'Read translator.ts',
+          input: { acpKind: 'read', Path: '/repo/translator.ts' },
+          acpInputPatch: true,
+        },
+      } as AgentEvent);
+      expect(onToolUse).toHaveBeenLastCalledWith(
+        'agy-task',
+        expect.objectContaining({ toolUseId: 'call-1', acpInputPatch: true }),
+        null,
+        'turn',
+        undefined,
+        undefined,
+        true,
+      );
+      expect(broadcast.mock.calls.length).toBe(broadcastsAfterInitial);
+
+      flushAssistant.mockClear();
+      handleSessionEvent(pipelineDeps, agySession, {
+        type: 'text',
+        source: 'antigravity',
+        turnScope: 'background',
+        data: { text: '后台任务已完成', isFinal: true, isFullText: true },
+      } as AgentEvent);
+      expect(flushAssistant).toHaveBeenCalledWith('agy-task', null);
+    } finally {
+      await agySession.close();
+      await h.session.close();
+    }
+  });
+});

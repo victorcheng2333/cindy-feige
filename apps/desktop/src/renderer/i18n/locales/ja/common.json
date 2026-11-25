@@ -15192,6 +15192,16 @@
         "search_other": "{{count}} 回検索",
         "list_one": "{{count}} 回ファイルを一覧表示",
         "list_other": "{{count}} 回ファイルを一覧表示"
+      },
+      "phases_one": "{{count}} 段階",
+      "phases_other": "{{count}} 段階",
+      "phaseKind": {
+        "explore": "調査・確認",
+        "edit": "ファイルを編集",
+        "verify": "検証・テスト",
+        "execute": "コマンドを実行",
+        "delegate": "サブタスクを委譲",
+        "tools": "ツールを実行"
       }
     },
     "agentTask": {

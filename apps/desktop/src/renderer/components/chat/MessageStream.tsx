@@ -3058,6 +3058,21 @@ export const WorkGroupRenderItemView = memo(function WorkGroupRenderItemView({
     if (child.type === 'message' && child.message.role === 'thinking') {
       return { kind: 'thinking', key: child.key, message: child.message };
     }
+    if (
+      child.type === 'message' &&
+      child.message.role === 'assistant' &&
+      !child.message.failedSamplingAttempt &&
+      !child.message.systemCardType &&
+      !child.message.images?.length &&
+      !child.message.files?.length
+    ) {
+      return {
+        kind: 'rendered',
+        key: child.key,
+        progressText: child.message.content,
+        renderNode: () => renderWorkGroupChild(child, context),
+      };
+    }
     return {
       kind: 'rendered',
       key: child.key,

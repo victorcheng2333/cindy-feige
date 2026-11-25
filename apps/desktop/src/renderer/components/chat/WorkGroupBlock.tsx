@@ -55,14 +55,17 @@ import { AgentActionRow } from './AgentActionRow';
 import { ThinkingCard, formatDuration } from './ThinkingCard';
 import { ThinkingText } from './ThinkingText';
 import {
+  groupOuterWorkStages,
   groupWorkActivityPhases,
   projectRecentWorkActivities,
   projectWorkActivities,
   shouldGroupWorkActivityPhases,
+  type OuterWorkStageChild,
   type ProjectedThinkingActivity,
   type ProjectedToolActivity,
   type ProjectedWorkActivity,
   type WorkActivityPhase,
+  type WorkPhaseKind,
 } from '@/lib/agent-actions/workActivityProjection';
 
 /** work_group 子项的窄类型 — 与 MessageStream 的 RenderItem 解耦,由调用方映射。 */
@@ -85,7 +88,13 @@ export type WorkGroupChild =
       childItems: WorkGroupChild[];
       deferred?: import('@cindy/maker-shared/message-window').DeferredHistoryWork;
     }
-  | { kind: 'rendered'; key: string; renderNode: () => ReactNode };
+  | {
+      kind: 'rendered';
+      key: string;
+      /** Plain short assistant progress text when eligible for flat stage timeline projection. */
+      progressText?: string;
+      renderNode: () => ReactNode;
+    };
 
 export type LiveWorkActivity = ProjectedWorkActivity;
 
@@ -470,11 +479,25 @@ export function TeammateWorkSegment({ blockId, childItems, active = false, onIns
   </div>;
 }
 
+function isFocusAnchorTool(message: ChatMessage): boolean {
+  const normalized = (message.toolName ?? '').replace(/^Run\s+/i, '').trim().toLowerCase();
+  if (normalized !== 'update_focus') return false;
+  const input = message.toolInput as Record<string, unknown> | null | undefined;
+  const focus = typeof input?.focus === 'string'
+    ? input.focus
+    : typeof input?.Focus === 'string'
+      ? input.Focus
+      : '';
+  return focus.trim().length > 0;
+}
+
 function collectWorkGroupToolCalls(childItems: readonly WorkGroupChild[]): ChatMessage[] {
   const tools: ChatMessage[] = [];
   for (const child of childItems) {
     if (child.kind === 'tools') {
-      tools.push(...child.toolCalls);
+      for (const call of child.toolCalls) {
+        if (!isFocusAnchorTool(call)) tools.push(call);
+      }
     } else if (child.kind === 'group') {
       tools.push(...collectWorkGroupToolCalls(child.childItems));
     }
@@ -482,7 +505,16 @@ function collectWorkGroupToolCalls(childItems: readonly WorkGroupChild[]): ChatM
   return tools;
 }
 
-/** L2: A thought-anchored phase group inside WorkGroupBlock. */
+const PHASE_KIND_I18N_KEY: Record<WorkPhaseKind, string> = {
+  explore: 'chat.workGroup.phaseKind.explore',
+  edit: 'chat.workGroup.phaseKind.edit',
+  verify: 'chat.workGroup.phaseKind.verify',
+  execute: 'chat.workGroup.phaseKind.execute',
+  delegate: 'chat.workGroup.phaseKind.delegate',
+  tools: 'chat.workGroup.phaseKind.tools',
+};
+
+/** L2: A semantic or progress-anchored stage group inside WorkGroupBlock. */
 function WorkPhaseGroupRow({
   blockId,
   phase,
@@ -502,16 +534,23 @@ function WorkPhaseGroupRow({
     if (phase.tools.length === 0) return '';
     return formatSummary(aggregateVerbs(phase.tools.map((item) => item.message)), t);
   }, [phase.tools, t]);
-  const hasDetail = phase.tools.length > 0
-    || Boolean(phase.thinking && phase.thinking.rawContent !== (phase.title ?? ''));
-  const titleText = phase.title || toolSummary;
+  const titleText = phase.title || t(PHASE_KIND_I18N_KEY[phase.kind]);
+  const visibleActivities = useMemo(
+    () =>
+      phase.activities.filter((activity) => {
+        if (activity.kind !== 'thinking') return true;
+        return !(phase.thinkings.length === 1 && activity.rawContent === (phase.title ?? ''));
+      }),
+    [phase.activities, phase.thinkings.length, phase.title],
+  );
+  const hasDetail = visibleActivities.length > 0;
 
   if (!hasDetail && phase.thinking) {
     return <ThinkingActivityRow activity={phase.thinking} />;
   }
 
   return (
-    <div data-work-phase-group="" className="min-w-0">
+    <div data-work-phase-group="" data-work-phase-kind={phase.kind} className="min-w-0">
       <button
         type="button"
         data-scroll-disclosure-header=""
@@ -532,14 +571,19 @@ function WorkPhaseGroupRow({
           aria-hidden="true"
           className="inline-flex h-[18px] w-4 shrink-0 items-center justify-center text-[var(--msg-tool-card-chevron)]"
         >
-          {phase.status === 'running' ? <Spinner size={13} /> : <Sparkles size={13} />}
+          {phase.status === 'running' ? <Spinner size={13} /> : <Check size={13} />}
         </span>
         <span className="min-w-0 flex-1 truncate text-14 text-[var(--text-secondary)]" title={titleText}>
           {titleText}
         </span>
-        {toolSummary && phase.title && (
+        {toolSummary && toolSummary !== titleText && (
           <span className="shrink-0 text-12 text-[var(--msg-tool-card-chevron)]">
             {toolSummary}
+          </span>
+        )}
+        {phase.durationMs !== undefined && (
+          <span className="shrink-0 font-mono text-12 text-[var(--msg-tool-card-chevron)]">
+            {formatDuration(phase.durationMs, t)}
           </span>
         )}
         <span aria-hidden="true" className={ACTIVITY_ROW_CHEVRON_SLOT_CLASS}>
@@ -551,19 +595,20 @@ function WorkPhaseGroupRow({
       </button>
       <Collapse open={expanded}>
         <div className="mt-1 ml-3 flex min-w-0 flex-col gap-0.5 border-l-2 border-[var(--agent-actions-rail)] py-[2px] pl-3">
-          {phase.thinking && phase.thinking.rawContent !== (phase.title ?? '') && (
-            <ThinkingActivityRow activity={phase.thinking} />
+          {visibleActivities.map((activity) =>
+            activity.kind === 'thinking' ? (
+              <ThinkingActivityRow key={activity.key} activity={activity} />
+            ) : (
+              <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
+            ),
           )}
-          {phase.tools.map((activity) => (
-            <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
-          ))}
         </div>
       </Collapse>
     </div>
   );
 }
 
-/** Compact live phase outline shown while streaming a multi-phase run. */
+/** Compact live stage outline shown while streaming a multi-stage run. */
 function LiveWorkPhasePreview({
   phases,
   pluginUi,
@@ -574,9 +619,17 @@ function LiveWorkPhasePreview({
   onOpenFull?: () => void;
 }) {
   const { t } = useTranslation();
-  const completed = phases.slice(0, -1).slice(-3);
-  const active = phases[phases.length - 1];
-  const activeTools = active.tools.slice(-3);
+  const toolPhases = phases.filter((phase) => phase.tools.length > 0);
+  const last = toolPhases[toolPhases.length - 1] ?? phases[phases.length - 1];
+  const lastDoneWithTrailingThought =
+    Boolean(last && last.status === 'done' && last.trailingThinking && last.tools.length > 0);
+  const completed = lastDoneWithTrailingThought
+    ? toolPhases.slice(-4)
+    : toolPhases.slice(0, -1).slice(-4);
+  const active = lastDoneWithTrailingThought ? null : last;
+  const activeTitle = active ? (active.title || t(PHASE_KIND_I18N_KEY[active.kind])) : '';
+  const activeLatestThinking = active?.thinkings[active.thinkings.length - 1];
+  const activeTools = active ? active.tools.slice(-3) : [];
 
   return (
     <div data-live-work-phases="true" className="flex min-w-0 flex-col gap-0.5">
@@ -584,7 +637,7 @@ function LiveWorkPhasePreview({
         const summary = phase.tools.length > 0
           ? formatSummary(aggregateVerbs(phase.tools.map((item) => item.message)), t)
           : '';
-        const label = phase.title || summary;
+        const label = phase.title || t(PHASE_KIND_I18N_KEY[phase.kind]);
         return (
           <button
             key={phase.key}
@@ -610,7 +663,7 @@ function LiveWorkPhasePreview({
             <span className="min-w-0 flex-1 truncate text-14 text-[var(--text-secondary)]" title={label}>
               {label}
             </span>
-            {summary && phase.title && (
+            {summary && summary !== label && (
               <span className="shrink-0 text-12 text-[var(--msg-tool-card-chevron)]">
                 {summary}
               </span>
@@ -618,10 +671,32 @@ function LiveWorkPhasePreview({
           </button>
         );
       })}
-      {active.thinking && <ThinkingActivityRow activity={active.thinking} />}
-      {activeTools.map((activity) => (
-        <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
-      ))}
+      {lastDoneWithTrailingThought && last?.trailingThinking && (
+        <ThinkingActivityRow activity={last.trailingThinking} />
+      )}
+      {active && (
+        <>
+          {activeTitle && (
+            <div className="flex w-full min-w-0 items-center gap-1.5 px-2 py-[3px]">
+              <span
+                aria-hidden="true"
+                className="inline-flex h-[18px] w-4 shrink-0 items-center justify-center text-[var(--msg-tool-card-chevron)]"
+              >
+                {active.status === 'running' ? <Spinner size={13} /> : <Check size={13} />}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-14 text-[var(--text-secondary)]" title={activeTitle}>
+                {activeTitle}
+              </span>
+            </div>
+          )}
+          {activeLatestThinking && activeLatestThinking.rawContent !== (active.title ?? '') && (
+            <ThinkingActivityRow activity={activeLatestThinking} />
+          )}
+          {activeTools.map((activity) => (
+            <ToolActivityRow key={activity.key} activity={activity} pluginUi={pluginUi} />
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -691,13 +766,61 @@ function ActivityWorkGroupBlock({
       ),
     [childItems],
   );
+  // 完成态外层组若由简短进度文案与内层动作组交替组成，展平为一级阶段清单；
+  // 含 deferred 远端加载、失败采样或富文本正文时保持原有嵌套结构。
+  const outerStages = useMemo(() => {
+    if (compact || isStreaming || lineMode || !hasBeyondPreviewChild) return null;
+    const mapped: OuterWorkStageChild[] = childItems.map((child) => {
+      if (child.kind === 'rendered' && child.progressText !== undefined) {
+        return { kind: 'progress', key: child.key, progressText: child.progressText };
+      }
+      if (child.kind === 'group') {
+        const opaque =
+          Boolean(child.deferred)
+          || child.childItems.some(
+            (item) =>
+              item.kind !== 'tools'
+              && (item.kind !== 'thinking' || item.message.thinkingRedacted === true),
+          );
+        return {
+          kind: 'group',
+          key: child.key,
+          children: child.childItems,
+          opaque,
+          durationMs: child.durationMs,
+        };
+      }
+      return { kind: 'other', key: child.key };
+    });
+    return groupOuterWorkStages(mapped, false);
+  }, [compact, isStreaming, lineMode, hasBeyondPreviewChild, childItems]);
+
+  const activityProjection = useMemo(
+    () =>
+      expanded
+      || (!compact && !isStreaming && !outerStages)
+      || (!compact && isStreaming && !lineMode && !hasBeyondPreviewChild)
+        ? projectWorkActivities(childItems, isStreaming)
+        : null,
+    [childItems, expanded, isStreaming, compact, lineMode, hasBeyondPreviewChild, outerStages],
+  );
+  const phases = useMemo(() => {
+    if (outerStages) return outerStages;
+    if (!hasBeyondPreviewChild && activityProjection) {
+      return groupWorkActivityPhases(activityProjection.activities);
+    }
+    return null;
+  }, [outerStages, hasBeyondPreviewChild, activityProjection]);
+  const usePhaseGroups = Boolean(phases && shouldGroupWorkActivityPhases(phases));
   // 运行中预览已经等于全部内容时，折叠/展开是视觉空操作 — 组头不提供交互。
+  // 多阶段预览折叠了已完成阶段的工具明细，此时即使总活动 ≤ 5 条也必须可展开。
   const canToggle =
     compact ||
     lineMode ||
     (!!deferred && !deferred.previewComplete) ||
     !isStreaming ||
     hasBeyondPreviewChild ||
+    usePhaseGroups ||
     recentActivities.length > MAX_LIVE_WORK_ACTIVITIES;
   const effectiveExpanded = expanded && canToggle;
   // Expanding keeps the running lines on screen until the detail read has rows to replace them.
@@ -706,33 +829,6 @@ function ActivityWorkGroupBlock({
   const isLivePreviewVisible =
     !compact && isStreaming && (!effectiveExpanded || holdLines)
     && (workLines ? workLines.length > 0 : liveActivities.length > 0);
-  // 完成态只计算一次完整摘要；运行态保持折叠时走上面的反向 latest-five
-  // 热路径，用户主动展开后或需要判断是否多阶段分组时投影全部历史。
-  const hasMultipleThinkings = useMemo(() => {
-    let count = 0;
-    for (const child of childItems) {
-      if (child.kind === 'thinking' && !child.message.thinkingRedacted && child.message.content.trim()) {
-        count += 1;
-        if (count >= 2) return true;
-      }
-    }
-    return false;
-  }, [childItems]);
-  const activityProjection = useMemo(
-    () =>
-      effectiveExpanded || (!compact && !isStreaming) || (!compact && isStreaming && !lineMode && hasMultipleThinkings)
-        ? projectWorkActivities(childItems, isStreaming)
-        : null,
-    [childItems, effectiveExpanded, isStreaming, compact, lineMode, hasMultipleThinkings],
-  );
-  const phases = useMemo(
-    () =>
-      !hasBeyondPreviewChild && activityProjection
-        ? groupWorkActivityPhases(activityProjection.activities)
-        : null,
-    [hasBeyondPreviewChild, activityProjection],
-  );
-  const usePhaseGroups = Boolean(phases && shouldGroupWorkActivityPhases(phases));
   const actionSummary = useMemo(() => {
     if (compact || isStreaming) return '';
     if (activityProjection?.isPureExploration) {
@@ -760,6 +856,11 @@ function ActivityWorkGroupBlock({
     if (allTools.length === 0) return '';
     return formatSummary(aggregateVerbs(allTools), t);
   }, [compact, isStreaming, activityProjection, childItems, t]);
+  const phaseCountSummary = useMemo(() => {
+    if (compact || isStreaming || !usePhaseGroups || !phases) return '';
+    const count = phases.filter((phase) => phase.tools.length > 0).length;
+    return count >= 2 ? t('chat.workGroup.phases', { count }) : '';
+  }, [compact, isStreaming, usePhaseGroups, phases, t]);
 
   // 外层完成态组展开成文字 + 内层动作组;内层动作组与运行态组复用本组件,
   // 展开后直接渲染 thinking /工具行,不再多套一层子卡摘要。
@@ -782,9 +883,9 @@ function ActivityWorkGroupBlock({
       : durationMs !== undefined
         ? t('chat.workGroup.worked', { duration: formatDuration(durationMs, t) })
         : t('chat.workGroup.workDetails');
-  const summaryText = actionSummary
-    ? `${baseSummaryText} · ${actionSummary}`
-    : baseSummaryText;
+  const summaryText = [baseSummaryText, phaseCountSummary, actionSummary]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="flex w-full min-w-0 justify-start">

@@ -1,10 +1,13 @@
 /** Mobile adapter for the shared desktop/mobile work activity projection. */
 import {
+  classifyWorkToolPhaseKind,
   extractThinkingPhaseTitle,
+  groupOuterWorkStages,
   groupWorkActivityPhases,
   projectRecentWorkActivities,
   projectWorkActivities,
   shouldGroupWorkActivityPhases,
+  type OuterWorkStageChild,
   type ProjectableWorkChild,
   type ProjectedThinkingActivity,
   type ProjectedToolActivity,
@@ -12,16 +15,20 @@ import {
   type WorkActivityMessageLike,
   type WorkActivityPhase,
   type WorkActivityProjection,
+  type WorkPhaseKind,
 } from '@cindy/maker-shared/work-activity-projection';
 
 import type { NormalizedRemoteMessage } from '@/session/messageNormalize';
 import type { MobileWorkChildItem } from '@/session/messageRenderModel';
 
 export {
+  classifyWorkToolPhaseKind,
   extractThinkingPhaseTitle,
+  groupOuterWorkStages,
   groupWorkActivityPhases,
   shouldGroupWorkActivityPhases,
 };
+export type { WorkPhaseKind };
 export interface MobileWorkActivityMessage extends WorkActivityMessageLike {
   normalized: NormalizedRemoteMessage;
 }
@@ -112,4 +119,38 @@ export function projectMobileWorkActivities(
   preserveRepeatedReads = false,
 ): MobileWorkActivityProjection {
   return projectWorkActivities(children.map(projectableChild), isStreaming, preserveRepeatedReads);
+}
+
+export function projectOuterMobileWorkStages(
+  children: readonly MobileWorkChildItem[],
+  isStreaming: boolean,
+): MobileWorkActivityPhase[] | null {
+  const mapped: OuterWorkStageChild<MobileWorkActivityMessage>[] = children.map((child) => {
+    if (
+      child.type === 'message'
+      && child.message.kind === 'assistant'
+      && !child.message.failedSamplingAttempt
+      && !child.message.media?.length
+      && !child.message.files?.length
+      && !child.message.cardIds?.length
+    ) {
+      return { kind: 'progress', key: child.key, progressText: child.message.body };
+    }
+    if (child.type === 'work_group') {
+      const opaque =
+        Boolean(child.deferred)
+        || child.children.some(
+          (item) => item.type !== 'tool_group' && (item.type !== 'thinking' || item.redacted === true),
+        );
+      return {
+        kind: 'group',
+        key: child.key,
+        children: child.children.map(projectableChild),
+        opaque,
+        durationMs: child.durationMs,
+      };
+    }
+    return { kind: 'other', key: child.key };
+  });
+  return groupOuterWorkStages(mapped, isStreaming);
 }
