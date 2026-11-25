@@ -242,11 +242,12 @@ export function ContextCapacityRing({
     </div>
   );
 
-  if (sessionId && !reportedOnly && vendorKey !== 'antigravity') {
+  if (sessionId && !reportedOnly) {
     return (
       <ContextWindowBudgetChip
         sessionId={sessionId}
         contextTokens={contextTokens}
+        displayContextWindow={contextWindow}
         model={model}
         providerId={providerId}
         agentKind={vendorKey}

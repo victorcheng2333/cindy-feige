@@ -384,6 +384,41 @@ describe('ContextWindowBudgetChip', () => {
     await waitFor(() => expect(screen.queryByRole('radiogroup')).toBeNull());
   });
 
+  // Unit regression (Agy context ring): Antigravity tasks previously skipped
+  // ContextWindowBudgetChip entirely, leaving only a plain tooltip with no visible
+  // manual-compact button. Minimal failing input: vendorKey="antigravity" + sessionId +
+  // sdkContextWindow=1_048_576 + onCompact. Gap: no existing test exercised vendorKey="antigravity".
+  it('opens the details card with the manual compact button for antigravity without budget options or IPC', async () => {
+    const compact = vi.fn();
+    const getBounds = vi.mocked(window.electronAPI.maker.getSessionContextWindowBounds);
+    render(<ContextCapacityRing
+      sessionId={SESSION_ID}
+      contextTokens={326_700}
+      sdkContextWindow={1_048_576}
+      model="gemini-4-neon"
+      providerId="antigravity"
+      vendorKey="antigravity"
+      onCompact={compact}
+    />);
+    const trigger = document.querySelector('[data-context-window-budget-chip]');
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toBe('31%');
+    expect(triggerLabel(trigger)).toContain('1.05M');
+    expect(getBounds).not.toHaveBeenCalled();
+    expect(mockModelContextLimitTarget).toHaveBeenLastCalledWith(null);
+
+    fireEvent.click(trigger!);
+    expect((await screen.findByRole('progressbar')).getAttribute('aria-valuenow')).toBe('31');
+    expect(document.querySelector('[data-context-window-options]')).toBeNull();
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(compact).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ccAgent.contextRingPanel.compact' }));
+    expect(compact).toHaveBeenCalledOnce();
+    expect(getBounds).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull());
+  });
+
   it('keeps the card open when the trigger is clicked after hover opened it', async () => {
     // 与底栏用量 chip（TodaySpendChip）一致：展开/收起只由 hover、焦点与 outside-click
     // 驱动，点击不当作开关。用户实测：左边卡片悬浮展开后点击不会收起，本卡却会 —— 两张

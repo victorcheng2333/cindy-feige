@@ -73,11 +73,11 @@ mountPage({
         <ContextCapacityRing
           reportedOnly={Boolean(ctx.data.usage)}
           sessionId="fixture-session"
-          providerId="xd"
-          model={ctx.data.unknown ? 'unknown' : 'fixture-model'}
-          vendorKey={ctx.data.codex ? 'codex' : 'cc'}
-          contextTokens={ctx.data.high ? 250_240 : 32_640}
-          sdkContextWindow={ctx.data.usage === 'missing' ? 0 : 272_000}
+          providerId={ctx.data.antigravity ? 'antigravity' : 'xd'}
+          model={ctx.data.unknown ? 'unknown' : ctx.data.antigravity ? 'gemini-4-neon' : 'fixture-model'}
+          vendorKey={ctx.data.antigravity ? 'antigravity' : ctx.data.codex ? 'codex' : 'cc'}
+          contextTokens={ctx.data.high ? 250_240 : ctx.data.antigravity ? 326_700 : 32_640}
+          sdkContextWindow={ctx.data.usage === 'missing' ? 0 : ctx.data.antigravity ? 1_048_576 : 272_000}
           disabled={ctx.data.readOnly === true}
           onCompact={!ctx.data.usage && !ctx.data.codex && !ctx.data.readOnly ? forbid('compact') : undefined}
         />

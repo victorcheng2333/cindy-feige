@@ -45,7 +45,7 @@ import {
   normalizeSessionContextWindowBounds,
   type SessionContextWindowBounds,
 } from '../../../shared/sessionContextWindowBounds';
-import type { MakerAgentKindWire } from '../../../shared/agentKindConversion';
+import type { DbAgentKind, MakerAgentKindWire } from '../../../shared/agentKindConversion';
 import { getModelPriceQuote } from '../../../shared/modelPriceQuote';
 import type { Catalog } from '@cindy/model-providers';
 import type { ModelPriceQuote } from '../../../shared/regionalMoney';
@@ -59,10 +59,12 @@ export interface ContextWindowBudgetChipProps {
   sessionId: string;
   /** 运行期上下文占用，用于「换小档位会立刻触发压缩」的提示。 */
   contextTokens: number;
+  /** 圆环已解析的展示窗口；不支持调档的引擎（如 Agy）用来填触发器 aria-label。 */
+  displayContextWindow?: number;
   model: string;
   /** 路由来源；用来查实际报价（网关实价优先，其余用参考价）。 */
   providerId?: string | null;
-  agentKind: 'cc' | 'codex' | 'pi' | 'cursor';
+  agentKind: DbAgentKind;
   /**
    * 该任务实际路由的一份目录（renderer 侧的 `providers`）：
    * 默认窗口与「上限档」都按**路由**解析，不用 availableModels 扁平表
@@ -112,6 +114,7 @@ export function ContextWindowBudgetChip({
   onCompact,
   sessionId,
   contextTokens,
+  displayContextWindow,
   model,
   providerId,
   agentKind,
@@ -226,16 +229,19 @@ export function ContextWindowBudgetChip({
   // 而不是拿兜底数字造一个用户点不到真值的控件。上限缺省 = 只能收紧（老目录形态）。
   // 路由级解析优先（唯一候选 + 实际 providerId，Pi/Codex 一视同仁），扁平表只做默认值的
   // 降级来源；远程任务（deviceId）不用本地目录，只用被控端能力缓存里的默认值。
+  const supportsBudget = agentKind !== 'antigravity';
   const makerAgent = agentKind === 'cc' ? 'claude-code' : agentKind;
   const modelEntry = useMemo(
-    () => getModelsForVendor(agentKind, deviceId).find((entry) => entry.id === model),
-    [agentKind, deviceId, model],
+    () => (supportsBudget
+      ? getModelsForVendor(agentKind, deviceId).find((entry) => entry.id === model)
+      : undefined),
+    [supportsBudget, agentKind, deviceId, model],
   );
   const localRouteBounds = useMemo(
-    () => (providers && !deviceId
+    () => (supportsBudget && providers && !deviceId
       ? resolveRouteContextWindowBounds(providers, makerAgent, providerId ?? null, model)
       : null),
-    [providers, deviceId, makerAgent, providerId, model],
+    [supportsBudget, providers, deviceId, makerAgent, providerId, model],
   );
   // **权威边界**：本地由 main 按会话实际路由解析（与运行期收敛同源），远程向被控端拉同一份
   // 口径的只读查询。拿不到（老被控端/失败）就退回「只允许收紧」+ 下方 renderer 自解析的兜底，
@@ -245,7 +251,14 @@ export function ContextWindowBudgetChip({
     boundsFetchedAt,
     refresh: refreshBounds,
     refreshIfStale: refreshBoundsIfStale,
-  } = useSessionContextWindowBounds(deviceId, sessionId, model, makerAgent, providerId ?? null);
+  } = useSessionContextWindowBounds(
+    deviceId,
+    sessionId,
+    model,
+    makerAgent,
+    providerId ?? null,
+    supportsBudget,
+  );
   // P2-1：把过期刷新交给 ref（openCard 在本 hook 之前定义，直接引用会 TDZ）。
   useEffect(() => {
     refreshIfStaleRef.current = refreshBoundsIfStale;
@@ -269,7 +282,7 @@ export function ContextWindowBudgetChip({
     ?? localRouteBounds?.providerId
     ?? (deviceId ? null : providerId ?? null);
   const modelLimitView = useModelContextLimit(
-    model && limitProviderId && !deviceId
+    supportsBudget && model && limitProviderId && !deviceId
       ? { agent: makerAgent, providerId: limitProviderId, modelId: model }
       : null,
   );
@@ -415,8 +428,12 @@ export function ContextWindowBudgetChip({
     if (checkedIndex >= 0) setTierTabStopIndex(checkedIndex);
   }, [options, selectedTokens]);
 
-  // 目录尚未就绪时仍保留圆环和运行期详情，只隐藏没有可靠边界的档位。
-  const hasOptions = effectiveDefaultWindow !== null && options.length > 0 && selectedTokens !== null;
+  // 目录尚未就绪或当前引擎不支持任务窗口调档（如 Agy）时，仍保留圆环、运行期详情与手动压缩，
+  // 只隐藏窗口档位区。
+  const hasOptions = supportsBudget && effectiveDefaultWindow !== null && options.length > 0 && selectedTokens !== null;
+  const triggerWindow = supportsBudget
+    ? selectedTokens
+    : (typeof displayContextWindow === 'number' && displayContextWindow > 0 ? displayContextWindow : null);
 
   const agent = agentKind === 'cc' ? 'claude-code' : agentKind;
   // 远程任务不显示价带：两份报价（gateway 服务端报价 + 本地参考价/用户覆盖）都来自
@@ -564,7 +581,7 @@ export function ContextWindowBudgetChip({
           }}
           // 底栏只显示上下文占用，当前窗口容量仍放在可访问名里。
           aria-label={t('ccAgent.contextWindowBudget.triggerLabel', {
-            window: selectedTokens === null ? '—' : formatTokenCount(selectedTokens),
+            window: triggerWindow === null ? '—' : formatTokenCount(triggerWindow),
           })}
           className={cn(
             // 保留用量圆环的外观，24px 热区与键盘焦点包住圆环和占用百分比。
@@ -966,6 +983,7 @@ export function useSessionContextWindowBounds(
   model: string,
   agentKind: MakerAgentKindWire,
   providerId?: string | null,
+  enabled = true,
 ): {
   bounds: SessionContextWindowBounds | null;
   /** 当前键那份权威回答的落盘时刻（0 = 还没拿到过）；调用方用它判断回答是否晚于自己的提交。 */
@@ -979,24 +997,30 @@ export function useSessionContextWindowBounds(
     value: SessionContextWindowBounds | null;
     fetchedAt: number;
   }>(() => {
+    if (!enabled) return { key, value: null, fetchedAt: 0 };
     const cached = boundsCache.get(key);
     return { key, value: cached?.value ?? null, fetchedAt: cached?.fetchedAt ?? 0 };
   });
   // 会话/模型切换时**渲染期**就换锚（缓存命中直接派生，不必等 effect），避免闪现上一个
   // 会话的上限；in-flight 结果按 key 丢弃。fetchedAt 一并暴露：调用方（chip 的乐观记账）
   // 要判断「这次权威回答是不是发生在我提交之后」，否则拿旧回答清掉刚写的新值。
-  const bounds = boundsState.key === key
-    ? boundsState.value
-    : (boundsCache.get(key)?.value ?? null);
-  const boundsFetchedAt = boundsState.key === key
-    ? boundsState.fetchedAt
-    : (boundsCache.get(key)?.fetchedAt ?? 0);
+  const bounds = !enabled
+    ? null
+    : boundsState.key === key
+      ? boundsState.value
+      : (boundsCache.get(key)?.value ?? null);
+  const boundsFetchedAt = !enabled
+    ? 0
+    : boundsState.key === key
+      ? boundsState.fetchedAt
+      : (boundsCache.get(key)?.fetchedAt ?? 0);
   // 渲染期只读，写入放在 effect 里（并发渲染/StrictMode 重放时渲染期写 ref 是反模式）。
   const activeKeyRef = useRef(key);
   const [reloadToken, setReloadToken] = useState(0);
   // 本 hook 实例的 id：提交实例自己已经重拉，跨实例通知时跳过它。
   const instanceIdRef = useRef(++boundsReloadListenerSeq);
   useEffect(() => {
+    if (!enabled) return;
     const listener = {
       id: instanceIdRef.current,
       key,
@@ -1006,25 +1030,25 @@ export function useSessionContextWindowBounds(
     return () => {
       boundsReloadListeners.delete(listener);
     };
-  }, [key]);
+  }, [enabled, key]);
 
   // 目录/模型级上限变化（用户改了「上下文上限」）→ 权威边界必须重查：缓存的
   // authoritativeBounds 会继续给出旧上限与旧档位表，保存后 main 却按新上限收敛，
   // 菜单与实际生效不一致（Greptile P2，2026-10-24）。远程边界来自被控端，本机
   // 目录变化与它无关，不订阅。
   useEffect(() => {
-    if (deviceId || !key) return;
+    if (!enabled || deviceId || !key) return;
     const unsubscribe = window.electronAPI?.maker?.onProvidersChanged?.(() => {
       boundsCache.delete(key);
       setReloadToken((token) => token + 1);
     });
     return () => unsubscribe?.();
-  }, [deviceId, key]);
+  }, [enabled, deviceId, key]);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
     activeKeyRef.current = key;
-    if (!model || !sessionId) {
+    if (!enabled || !model || !sessionId) {
       setBoundsState({ key, value: null, fetchedAt: 0 });
       return;
     }
@@ -1062,18 +1086,20 @@ export function useSessionContextWindowBounds(
     return () => {
       cancelled = true;
     };
-  }, [deviceId, key, sessionId, model, agentKind, providerId, reloadToken]);
+  }, [enabled, deviceId, key, sessionId, model, agentKind, providerId, reloadToken]);
 
   const refresh = useCallback(() => {
+    if (!enabled) return;
     boundsCache.delete(key);
     setReloadToken((token) => token + 1);
     // 其它实例（同会话同路由的分屏 / 双窗口卡片）也要重读权威值。
     notifyBoundsReload(instanceIdRef.current, key);
-  }, [key]);
+  }, [enabled, key]);
   // 开菜单时只在「没缓存 / TTL 过期」才重拉：否则每次开合菜单都是一次隧道 invoke（弱网可感知）。
   const refreshIfStale = useCallback(() => {
+    if (!enabled) return;
     if (!isBoundsCacheEntryStale(boundsCache.get(key), Date.now())) return;
     setReloadToken((token) => token + 1);
-  }, [key]);
+  }, [enabled, key]);
   return { bounds, boundsFetchedAt, refresh, refreshIfStale };
 }

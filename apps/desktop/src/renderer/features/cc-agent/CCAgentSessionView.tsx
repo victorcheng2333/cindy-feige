@@ -2305,45 +2305,6 @@ function CCAgentSessionContent({
   const refreshPluginEngineCatalogue = pluginEngineDeviceId ? remotePluginCatalogue.refresh : undefined;
   const pluginEngines = remotePluginCatalogue.engines ?? localPluginEngines;
   // 任务自己的引擎(pluginEngine)在下面 selectableDevices 之后解析：引擎可能在自己的另一台电脑上。
-  // 手动压缩通道判定(#1927/#1933 review):真实 Claude Code → maker:input:compact;
-  // 其余 agent 声明 manualCompact.supported(Pi / Codex)→ maker:compact-session;其余无入口。
-  // 能力取**真实 agent**(displayAgentKind 在 pending switch 期间可能乐观指向目标 agent,
-  // 用它判定会与 realAgentKind 分流不一致);remoteDeviceId 让远程 pi 取被控端能力。
-  // 插件引擎不支持手动压缩：不读内置能力，也就没有入口。
-  const { capabilities: realSessionCaps } = useAgentCapabilities(
-    pluginEngineTask ? null : realAgentKind,
-    remoteDeviceId,
-  );
-  // Agy reports steering only after its ACP handshake, so a borrowed Agy follows the
-  // computer it runs on (this one may be signed out). Other engines declare steering
-  // statically; reuse the task computer's entry instead of reading another device.
-  const { capabilities: steerCaps } = useAgentCapabilities(
-    pluginEngineTask ? null : realAgentKind,
-    realAgentKind === 'antigravity' ? remoteDeviceId ?? session?.agentDeviceId ?? undefined : remoteDeviceId,
-  );
-  const canSteer = steerCaps?.sameTurnSteer?.supported ?? realAgentKind !== 'antigravity';
-  const compactChannel = useMemo(
-    () => (pluginEngineTask ? null : resolveManualCompactChannel(realAgentKind, realSessionCaps)),
-    [pluginEngineTask, realAgentKind, realSessionCaps],
-  );
-  // 最新 channel 的可变镜像:useCallback 闭包在创建后固定捕获 compactChannel,确认框
-  // await 期间同会话切换 agent(跨窗口/远程,sessionId 不变)会产生新 render 但旧 async
-  // 闭包还在跑——从闭包读到的还是旧 channel(greptile review)。ref 每次 render 同步,
-  // 异步执行中读 ref.current 才能拿到切换后的最新通道,且无需重建回调。
-  const compactChannelRef = useRef(compactChannel);
-  compactChannelRef.current = compactChannel;
-  // 最新 session 快照的可变镜像(与 compactChannelRef 同款):确认框 await 期间同会话
-  // 切换 agent 后,model/effort/permissionMode/workingDir 全部可能变化——claude-input
-  // 分支必须用切换后的快照,否则会用旧 Pi 的模型/权限去执行 Claude 的 /compact
-  // (greptile P1 / codex P2 review)。compact-session 分支只依赖 sessionId,无需此快照。
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  // 最新 running 状态的可变镜像(与 compactChannelRef / sessionRef 同款):render 闭包
-  // 固定捕获 agentStatus.isRunning——确认框 await 期间 turn 可能已从其它窗口 / 远程
-  // 启动,旧 async 闭包读不到;ref 每次 render 同步,确认后重读才能拦住「活跃 turn
-  // 仍调 compact-session → pi 拒绝 → confirm 后吃 rejection toast」(codex P2)。
-  const isRunningRef = useRef(agentStatus.isRunning);
-  isRunningRef.current = agentStatus.isRunning;
   // 任务空闲时预先问好要不要换号，发送时不再多等一次往返(provider-groups.md §6.2「任务进行中换号」)。
   useSessionRebalancePrefetch(sessionId, remoteDeviceId, !awaitingCreation && !agentStatus.isRunning && !readOnly);
   // live 供应商目录(含内置 + 自定义,按 agent 挂模型)—— vendor↔model 一致性校验的真源,
@@ -2405,6 +2366,54 @@ function CCAgentSessionContent({
     pendingAgentDeviceId,
     sshRemote: !!session?.remoteHostId,
   });
+  // 手动压缩通道判定(#1927/#1933 review):真实 Claude Code → maker:input:compact;
+  // 其余 agent 声明 manualCompact.supported(Pi / Codex / Agy)→ maker:compact-session;其余无入口。
+  // 能力取**真实 agent**(displayAgentKind 在 pending switch 期间可能乐观指向目标 agent,
+  // 用它判定会与 realAgentKind 分流不一致);remoteDeviceId 让远程会话取被控端能力。
+  // Agy reports steering and manualCompact only after its ACP handshake, so a borrowed Agy
+  // follows the computer it runs on (this one or the task computer may be signed out).
+  // Shared-task guests stay on remoteDeviceId; when the borrowed Agy runs on this computer
+  // (session.agentDeviceId === selfDeviceId), read local capabilities directly.
+  // 插件引擎不支持手动压缩：不读内置能力，也就没有入口。
+  const realSessionCapDeviceId = realAgentKind === 'antigravity'
+    ? (remoteDeviceId && isSharedTaskPeer(remoteDeviceId)
+        ? remoteDeviceId
+        : session?.agentDeviceId
+          ? (session.agentDeviceId === selfDeviceId
+              ? undefined
+              : controlledModelRoute.catalogHostDeviceId
+                ? modelCatalogKey(session.agentDeviceId, controlledModelRoute.catalogHostDeviceId)
+                : session.agentDeviceId)
+          : remoteDeviceId)
+    : remoteDeviceId;
+  const { capabilities: realSessionCaps } = useAgentCapabilities(
+    pluginEngineTask ? null : realAgentKind,
+    realSessionCapDeviceId,
+  );
+  const steerCaps = realSessionCaps;
+  const canSteer = steerCaps?.sameTurnSteer?.supported ?? realAgentKind !== 'antigravity';
+  const compactChannel = useMemo(
+    () => (pluginEngineTask ? null : resolveManualCompactChannel(realAgentKind, realSessionCaps)),
+    [pluginEngineTask, realAgentKind, realSessionCaps],
+  );
+  // 最新 channel 的可变镜像:useCallback 闭包在创建后固定捕获 compactChannel,确认框
+  // await 期间同会话切换 agent(跨窗口/远程,sessionId 不变)会产生新 render 但旧 async
+  // 闭包还在跑——从闭包读到的还是旧 channel(greptile review)。ref 每次 render 同步,
+  // 异步执行中读 ref.current 才能拿到切换后的最新通道,且无需重建回调。
+  const compactChannelRef = useRef(compactChannel);
+  compactChannelRef.current = compactChannel;
+  // 最新 session 快照的可变镜像(与 compactChannelRef 同款):确认框 await 期间同会话
+  // 切换 agent 后,model/effort/permissionMode/workingDir 全部可能变化——claude-input
+  // 分支必须用切换后的快照,否则会用旧 Pi 的模型/权限去执行 Claude 的 /compact
+  // (greptile P1 / codex P2 review)。compact-session 分支只依赖 sessionId,无需此快照。
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  // 最新 running 状态的可变镜像(与 compactChannelRef / sessionRef 同款):render 闭包
+  // 固定捕获 agentStatus.isRunning——确认框 await 期间 turn 可能已从其它窗口 / 远程
+  // 启动,旧 async 闭包读不到;ref 每次 render 同步,确认后重读才能拦住「活跃 turn
+  // 仍调 compact-session → pi 拒绝 → confirm 后吃 rejection toast」(codex P2)。
+  const isRunningRef = useRef(agentStatus.isRunning);
+  isRunningRef.current = agentStatus.isRunning;
   // Keep the direct catalogue for reachable sources on older task computers.
   const activePluginEngineCatalogueHost = pluginEngineAgentDeviceId
     && isProviderShareAgentDeviceId(pluginEngineAgentDeviceId)
@@ -5248,21 +5257,24 @@ function CCAgentSessionContent({
       const contextWindow = resolveDisplayContextWindow({
         sdkContextWindow: agentStatus.contextWindow,
         verifiedContextWindow: resolveSessionContextWindow({ providers }, sourceSession),
+        allowDefaultWindow: sourceSession.agentKind !== 'cursor' && sourceSession.agentKind !== 'antigravity',
         modelContextWindow: getModelContextWindow(
           sourceSession.model,
           sourceSession.agentKind ?? 'cc',
-          remoteDeviceId,
+          sourceSession.agentKind === 'antigravity' ? realSessionCapDeviceId : remoteDeviceId,
         ),
       });
       const used = Math.min(agentStatus.contextTokens, contextWindow || Infinity);
       const pct = contextWindow > 0 ? Math.round((used / contextWindow) * 100) : 0;
       const ok = await confirmDialog({
         title: t('ccAgent.layout.contextRing.confirmTitle'),
-        description: t('ccAgent.layout.contextRing.confirmDescription', {
-          used: formatTokenCount(used),
-          total: formatTokenCount(contextWindow),
-          pct,
-        }),
+        description: contextWindow > 0
+          ? t('ccAgent.layout.contextRing.confirmDescription', {
+              used: formatTokenCount(used),
+              total: formatTokenCount(contextWindow),
+              pct,
+            })
+          : t('ccAgent.contextRingPanel.compactHelp'),
         confirmText: t('ccAgent.layout.contextRing.confirmAction'),
         cancelText: t('ccAgent.layout.contextRing.confirmCancel'),
       });
@@ -5334,6 +5346,7 @@ function CCAgentSessionContent({
     compactSession,
     confirmDialog,
     providers,
+    realSessionCapDeviceId,
     remoteDeviceId,
     session,
     t,

@@ -14,6 +14,7 @@ export default {
     'plugin-balance': { about: 'Zero available balance', data: { usage: 'balance' } },
     'plugin-missing': { about: 'Engine provides neither account nor context data', data: { usage: 'missing' } },
     default: { about: 'One ring opens usage, manual compaction and window choices' },
+    antigravity: { about: 'Agy ring opens usage details and manual compaction without window choices', data: { antigravity: true } },
     high: { about: 'Context nearly full', data: { high: true } },
     codex: { about: 'Native Codex details above window choices', data: { codex: true } },
     narrow: {
@@ -64,7 +65,7 @@ export default {
       return;
     }
     const ring = page.locator('[data-context-window-budget-chip]');
-    assert.equal(await ring.textContent(), ui.data.high ? '92%' : '12%');
+    assert.equal(await ring.textContent(), ui.data.high ? '92%' : ui.data.antigravity ? '31%' : '12%');
     assert.equal(await page.getByRole('radiogroup').count(), 0);
     await ui.capture('entry', { locator: page.locator('[data-testid="context-footer"]') });
     // Hover must allow moving into the same card to reach its options.
@@ -79,8 +80,12 @@ export default {
       await ui.capture('native-details', { locator: card });
       await technical.click();
     }
-    if (ui.case === 'unknown') {
+    if (ui.case === 'unknown' || ui.case === 'antigravity') {
       assert.equal(await page.getByRole('radiogroup').count(), 0);
+      if (ui.case === 'antigravity') {
+        assert.equal(await page.locator('[data-context-window-options]').count(), 0);
+        assert.equal(await card.getByRole('button').count(), 1);
+      }
     } else {
       await page.locator('[data-context-window-options] > summary').click();
       const rows = page.getByRole('radio');
