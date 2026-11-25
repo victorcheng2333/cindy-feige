@@ -12,6 +12,7 @@
  */
 
 import {
+  findCatalogModel,
   getModel,
   effectiveSourceIdForModel,
   modelSupportsFastMode,
@@ -23,6 +24,7 @@ import { resolveNewTaskDefaultRoute } from '../../shared/draftModelCalibration.j
 import { checkDeviceRoute } from '../remote-agent/controller/deviceRouteCheck.js';
 import { activeOwnerScopeKey, getActiveAppSession } from '../appSessionState.js';
 import { resolveScheduledModelSelection, resolveScheduledModelSelectionWithRefresh, type ScheduledModelSelection } from '../maker-ipc/scheduledModelSelection';
+import { readAntigravityConnection } from './antigravity-host.js';
 import { getDesktopProviderService } from './createDesktopProviderService.js';
 import { refreshSubscriptionPoolCodexModels } from '../subscription-accounts/runtime.js';
 import { getActiveCatalog } from './active-catalog.js';
@@ -179,6 +181,20 @@ export async function resolveScheduledModelSelectionLive(
     return resolveScheduledModelSelection(selection, views);
   }
   const generation = getActiveAppSession().generation;
+  if (selection.agentKind === 'antigravity') {
+    const initial = await getDesktopProviderService().listProviders({
+      allowSideEffects: false, getCatalog: getActiveCatalog,
+    });
+    const agyProvider = initial.find((provider) => provider.id === 'antigravity');
+    if (!agyProvider?.connected || !findCatalogModel(agyProvider, selection.model, 'antigravity', { exact: true })) {
+      try {
+        await readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true });
+      } catch {
+        // Let resolveScheduledModelSelection classify the resulting state.
+      }
+      if (getActiveAppSession().generation !== generation) throw new Error('Owner changed during model discovery');
+    }
+  }
   return resolveScheduledModelSelectionWithRefresh(selection, {
     readProviders: () => getDesktopProviderService().listProviders({
       allowSideEffects: false, getCatalog: getActiveCatalog,

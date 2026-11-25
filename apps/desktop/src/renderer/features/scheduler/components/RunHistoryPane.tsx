@@ -102,8 +102,10 @@ export function RunHistoryPane({
   const sessionAgentMap = useMemo(() => {
     const m = new Map<string, ScheduleAgentKind>();
     for (const sess of allSessions) {
-      if (sess.agentKind === 'antigravity' || sess.agentKind === 'cursor') continue;
-      m.set(sess.id, sess.agentKind === 'cc' ? 'claude-code' : sess.agentKind === 'pi' ? 'pi'
+      if (sess.agentKind === 'cursor') continue;
+      m.set(sess.id, sess.agentKind === 'cc' ? 'claude-code'
+        : sess.agentKind === 'pi' ? 'pi'
+        : sess.agentKind === 'antigravity' ? 'antigravity'
         : (sess.agentKind as string) === 'acp' ? 'acp' : 'codex');
     }
     return m;
@@ -112,7 +114,7 @@ export function RunHistoryPane({
     (run: ScheduleRun): ScheduleAgentKind => {
       if (!run.sessionId) return s.agentKind;
       const linkedAgent = sessionReferences.get(run.sessionId)?.agentKind;
-      const referenceAgent = linkedAgent === 'antigravity' || linkedAgent === 'cursor' ? undefined : linkedAgent;
+      const referenceAgent = linkedAgent === 'cursor' ? undefined : linkedAgent;
       return (
         sessionAgentMap.get(run.sessionId) ||
         (referenceAgent === 'cc' ? 'claude-code' : referenceAgent) ||

@@ -22,7 +22,7 @@ export function parseScheduledModelBaseline(value: unknown): ScheduledModelBasel
     // Older session rows used an empty string for models without adjustable effort.
     const effort = parsed?.effort === '' ? null : parsed?.effort;
     if (!parsed || typeof parsed.scopeId !== 'string' ||
-      !['claude-code', 'codex', 'pi', 'cursor'].includes(parsed.agentKind) ||
+      !['claude-code', 'codex', 'pi', 'cursor', 'antigravity'].includes(parsed.agentKind) ||
       (parsed.agentDeviceId !== undefined && parsed.agentDeviceId !== null && typeof parsed.agentDeviceId !== 'string') ||
       typeof parsed.model !== 'string' || !parsed.model ||
       (parsed.providerId !== null && typeof parsed.providerId !== 'string') ||

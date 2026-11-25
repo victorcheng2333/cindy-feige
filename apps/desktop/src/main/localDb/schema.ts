@@ -1525,9 +1525,9 @@ export const schedules = sqliteTable(
      */
     intervalMs: integer('interval_ms'),
     // 'acp' = plugin engine (docs/plans/acp-plugin-bridge.md); TS-only enum, no CHECK constraint.
-    agentKind: text('agent_kind', { enum: ['claude-code', 'codex', 'pi', 'cursor', 'acp'] }).notNull(),
+    agentKind: text('agent_kind', { enum: ['claude-code', 'codex', 'pi', 'cursor', 'antigravity', 'acp'] }).notNull(),
     /** NULL preserves legacy bound-task Harness inheritance. */
-    modelAgentKind: text('model_agent_kind', { enum: ['claude-code', 'codex', 'pi', 'acp'] }),
+    modelAgentKind: text('model_agent_kind', { enum: ['claude-code', 'codex', 'pi', 'antigravity', 'acp'] }),
     /** NULL inherits a bound task; empty string explicitly selects the automation host. */
     modelAgentDeviceId: text('model_agent_device_id'),
     inheritedProjectDir: text('inherited_project_dir'),

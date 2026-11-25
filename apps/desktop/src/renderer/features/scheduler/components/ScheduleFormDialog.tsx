@@ -432,12 +432,13 @@ export function ScheduleFormDialog({
     const description = hookGenDesc.trim();
     if (!description || hookGenerating) return;
     const hasSessionTarget = hasRealBinding(form);
-    // 脚本在本机生成。Agent 在另一台电脑时它的模型与来源只在那台可用,改用本机的
-    // 辅助模型兜底链,不把那台的来源 id 当成本机来源。
+    // 脚本在本机生成。Agent 在另一台电脑或使用 Agy(不支持辅助 HTTP 直连)时,改用本机的
+    // 辅助模型兜底链,不把远端或 Agy 来源当成本机辅助模型。
     const remoteAgentLocation = selectedAgentDeviceId;
-    const resolveBoundSessionRoute = !remoteAgentLocation && needsBoundSessionGenerationRouteResolution(form);
+    const usesAuxiliaryFallback = Boolean(remoteAgentLocation) || form.agentKind === 'antigravity';
+    const resolveBoundSessionRoute = !usesAuxiliaryFallback && needsBoundSessionGenerationRouteResolution(form);
     const inheritsBoundSessionModel = usesBoundSessionGenerationModel(form);
-    const providerId = remoteAgentLocation
+    const providerId = usesAuxiliaryFallback
       ? undefined
       : resolveBoundSessionRoute
       ? form.providerId.trim() || undefined
@@ -447,7 +448,7 @@ export function ScheduleFormDialog({
         model: form.model,
         agentKind: form.agentKind,
       });
-    if (!remoteAgentLocation && !resolveBoundSessionRoute && !providerId) {
+    if (!usesAuxiliaryFallback && !resolveBoundSessionRoute && !providerId) {
       toast.warning(t('scheduler.editor.validation.modelUnavailable', { model: form.model }));
       return;
     }
@@ -459,13 +460,13 @@ export function ScheduleFormDialog({
         description,
         scheduleName: form.name.trim() || undefined,
         providerId: providerId ?? undefined,
-        // Remote selections use the existing local utility-model fallback above.
-        modelAgentDeviceId: remoteAgentLocation ? undefined : form.modelAgentDeviceId,
+        // Remote and Agy selections use the existing local utility-model fallback above.
+        modelAgentDeviceId: usesAuxiliaryFallback ? undefined : form.modelAgentDeviceId,
         // bound 任务的缺省模型/来源维度由 main 按绑定会话补齐；provider/model 的显式
         // 覆盖仍原样透传。persistent 任务即使已回写 targetSessionId，也按任务级选择生成。
-        agentKind: remoteAgentLocation || (resolveBoundSessionRoute && form.modelAgentDeviceId !== '')
+        agentKind: usesAuxiliaryFallback || (resolveBoundSessionRoute && form.modelAgentDeviceId !== '')
           ? undefined : form.agentKind,
-        model: inheritsBoundSessionModel || remoteAgentLocation ? undefined : form.model.trim() || undefined,
+        model: inheritsBoundSessionModel || usesAuxiliaryFallback ? undefined : form.model.trim() || undefined,
         // 绑定会话任务:workingDir 不发(表单残留值可能是改绑前的过期项目目录,
         // 显式值会压过会话解析),真实 cwd 由 main 按会话 meta.workDir 解析 ——
         // 落盘目录/自测环境与生产运行一致
@@ -654,7 +655,7 @@ export function ScheduleFormDialog({
     ?? (selectedTemplate?.providerId?.trim() ? selectedTemplate.agentKind : undefined);
   const preferredDefaultAgent = selectedTemplate?.agentKind ?? form.agentKind;
   const defaultAgents = useMemo(() => (requiredDefaultAgent ? [requiredDefaultAgent]
-    : [preferredDefaultAgent, ...(['claude-code', 'codex', 'pi'] as const).filter((agent) => agent !== preferredDefaultAgent)])
+    : [preferredDefaultAgent, ...(['claude-code', 'codex', 'pi', 'antigravity'] as const).filter((agent) => agent !== preferredDefaultAgent)])
     .filter((agent) => !agentsLoaded || availableVendors.has(agent === 'claude-code' ? 'cc' : agent)),
   [requiredDefaultAgent, preferredDefaultAgent, agentsLoaded, availableVendors]);
   const claudeDefaultCaps = useAgentCapabilities(resolvesImplicitDefault && form.agentKind !== 'claude-code'
@@ -663,8 +664,10 @@ export function ScheduleFormDialog({
     && defaultAgents.includes('codex') ? 'codex' : null);
   const piDefaultCaps = useAgentCapabilities(resolvesImplicitDefault && form.agentKind !== 'pi'
     && defaultAgents.includes('pi') ? 'pi' : null);
+  const antigravityDefaultCaps = useAgentCapabilities(resolvesImplicitDefault && form.agentKind !== 'antigravity'
+    && defaultAgents.includes('antigravity') ? 'antigravity' : null);
   const defaultCapabilitiesLoading = resolvesImplicitDefault && (caps.loading
-    || claudeDefaultCaps.loading || codexDefaultCaps.loading || piDefaultCaps.loading);
+    || claudeDefaultCaps.loading || codexDefaultCaps.loading || piDefaultCaps.loading || antigravityDefaultCaps.loading);
 
   useEffect(() => {
     if (!resolvesImplicitDefault || defaultCapabilitiesLoading || providersLoading || (!agentsLoaded && agentsLoading)) return;
@@ -678,7 +681,8 @@ export function ScheduleFormDialog({
       // Keep catalog validation and let the host enforce runtime availability.
       const capability = agent === form.agentKind ? caps.capabilities
         : agent === 'claude-code' ? claudeDefaultCaps.capabilities
-          : agent === 'codex' ? codexDefaultCaps.capabilities : piDefaultCaps.capabilities;
+          : agent === 'codex' ? codexDefaultCaps.capabilities
+            : agent === 'pi' ? piDefaultCaps.capabilities : antigravityDefaultCaps.capabilities;
       // Filter before resolving history AND recommendation fallback; rejecting
       // only the first result would strand a usable second model in the catalog.
       const candidates = providers.map((provider) => ({ ...provider,
@@ -699,7 +703,7 @@ export function ScheduleFormDialog({
     if (form.effort) setField('effort', '');
   }, [resolvesImplicitDefault, defaultCapabilitiesLoading, defaultAgents, selectedTemplate, initialValues,
     providersLoading, agentsLoaded, agentsLoading, providers, modelVisibilityVersion,
-    caps.capabilities, claudeDefaultCaps.capabilities, codexDefaultCaps.capabilities, piDefaultCaps.capabilities,
+    caps.capabilities, claudeDefaultCaps.capabilities, codexDefaultCaps.capabilities, piDefaultCaps.capabilities, antigravityDefaultCaps.capabilities,
     form.agentKind, form.model, form.providerId, form.effort, setField]);
 
   // 选着插件引擎时内置模型字段只是切回内置时的初值，不参与可用性判断(插件引擎另判，见下)。
@@ -1074,6 +1078,7 @@ export function ScheduleFormDialog({
                                     },
                                   } : undefined}
                                   hostOnly={!!form.primaryHostKey}
+                                  allowAntigravity={initial?.source !== 'bot'}
                                   onSelect={({
                                     engine,
                                     modelId,
@@ -1082,7 +1087,7 @@ export function ScheduleFormDialog({
                                     fast,
                                     agentDevice,
                                   }) =>
-                                    engine !== 'antigravity' && selectModelConfiguration({
+                                    selectModelConfiguration({
                                       agentKind: engine === 'cc' ? 'claude-code' : engine,
                                       model: modelId,
                                       providerId,
@@ -1096,7 +1101,7 @@ export function ScheduleFormDialog({
                                       null,
                                       boundSessionReference?.agentKind === 'cc'
                                         ? 'claude-code'
-                                        : boundSessionReference?.agentKind === 'antigravity' ? undefined : boundSessionReference?.agentKind,
+                                        : boundSessionReference?.agentKind,
                                     )
                                   }
                                   agentKind={form.agentKind}

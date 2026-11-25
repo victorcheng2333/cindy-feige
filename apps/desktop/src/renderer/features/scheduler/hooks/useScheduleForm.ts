@@ -112,6 +112,7 @@ function defaultScheduleFormPrefs(): ScheduleFormPrefs {
       codex: EMPTY_AGENT_PREFS,
       pi: EMPTY_AGENT_PREFS,
       cursor: EMPTY_AGENT_PREFS,
+      antigravity: EMPTY_AGENT_PREFS,
     },
   };
 }
@@ -122,7 +123,13 @@ function loadScheduleFormPrefs(): ScheduleFormPrefs {
     const raw = window.localStorage.getItem(SCHEDULE_FORM_PREFS_KEY);
     if (!raw) return defaultScheduleFormPrefs();
     const parsed = JSON.parse(raw) as Partial<ScheduleFormPrefs>;
-    const agentKind = parsed.agentKind === 'codex' ? 'codex' : parsed.agentKind === 'pi' ? 'pi' : 'claude-code';
+    const agentKind = parsed.agentKind === 'codex'
+      ? 'codex'
+      : parsed.agentKind === 'pi'
+        ? 'pi'
+        : parsed.agentKind === 'antigravity'
+          ? 'antigravity'
+          : 'claude-code';
     const workingDir = typeof parsed.workingDir === 'string' ? parsed.workingDir : '';
     const workspaceKind = normalizePrefsWorkspaceKind(parsed.workspaceKind, workingDir);
     return {
@@ -135,6 +142,7 @@ function loadScheduleFormPrefs(): ScheduleFormPrefs {
         codex: sanitizeAgentPrefs(parsed.lastByAgent?.codex),
         pi: sanitizeAgentPrefs(parsed.lastByAgent?.pi),
         cursor: sanitizeAgentPrefs(parsed.lastByAgent?.cursor),
+        antigravity: sanitizeAgentPrefs(parsed.lastByAgent?.antigravity),
       },
     };
   } catch {
@@ -215,7 +223,13 @@ export function getScheduleDefaultRoute(
   const prefs = getScheduleAgentPrefs(agentKind);
   const scheduleRoute = rememberedRoute(prefs.model, prefs.providerId || null);
   if (scheduleRoute) return scheduleRoute;
-  const vendor = agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
+  const vendor = agentKind === 'codex'
+    ? 'codex'
+    : agentKind === 'pi'
+      ? 'pi'
+      : agentKind === 'antigravity'
+        ? 'antigravity'
+        : 'cc';
   const draft = getDraft();
   const chatLast = getPersistedVendorModel(vendor);
   const chatRoute = rememberedRoute(chatLast, draft.lastByVendor[vendor]?.providerId || null);
@@ -516,7 +530,6 @@ export function useScheduleForm(initial: Schedule | null = null): UseScheduleFor
         // remembered 保留旧快照 —— 用户切走再切回还能还原上一个真实绑定。
         return { ...f, targetSessionId: PENDING_SESSION_ID };
       }
-      if (session.agentKind === 'antigravity') return f;
       const next: ScheduleFormState = {
         ...f,
         targetSessionId: session.id,

@@ -113,8 +113,8 @@ export function registerScheduleSetPreRunHookTool(
           const remoteAgent = schedule.targetSessionId && hookScript.isSessionAgentOnOtherDevice
             ? await hookScript.isSessionAgentOnOtherDevice(schedule.targetSessionId)
             : !!schedule.agentDeviceId;
-          // 插件引擎的模型只在它自己的引擎里可用，同样改走辅助模型。
-          if (!remoteAgent && schedule.agentKind !== 'acp') {
+          // 插件引擎与 Agy(antigravity) 不走辅助 HTTP 生成，同样改走本机辅助模型兜底。
+          if (!remoteAgent && schedule.agentKind !== 'acp' && schedule.agentKind !== 'antigravity') {
             providerId = schedule.providerId;
             agentKind = schedule.agentKind;
             model = schedule.model;

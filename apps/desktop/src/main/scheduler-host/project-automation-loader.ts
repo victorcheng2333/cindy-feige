@@ -49,9 +49,9 @@ export interface ProjectScheduleConfig {
   manual?: boolean;
   intervalMs?: number;
   expireAt?: number;
-  agentKind?: 'claude-code' | 'codex' | 'pi';
+  agentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   /** 显式模型选择的 Harness；省略时保留旧配置的跟随绑定任务语义。 */
-  modelAgentKind?: 'claude-code' | 'codex' | 'pi';
+  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   modelAgentDeviceId?: string;
   /** Bot project model inheritance; new supplied tasks opt in, explicit models take precedence. Stored in the project file only. */
   followTeammateModel?: boolean;
@@ -778,7 +778,7 @@ function optionalNumber(value: unknown): boolean {
 }
 
 function optionalAgentKind(value: unknown): boolean {
-  return value === undefined || value === 'claude-code' || value === 'codex' || value === 'pi';
+  return value === undefined || value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'antigravity';
 }
 
 function optionalNotify(value: unknown): boolean {

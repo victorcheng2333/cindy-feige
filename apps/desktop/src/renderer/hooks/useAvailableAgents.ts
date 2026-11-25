@@ -353,11 +353,18 @@ export function __resetAvailableAgentsCacheForTest(): void {
 }
 
 /** Model pickers keep the current Harness visible while excluding unregistered runtimes. */
-export function useModelPickerAgents(current: RuntimeAgentKind, deviceId?: string | null): readonly RuntimeAgentKind[] | undefined {
+export function useModelPickerAgents(
+  current: RuntimeAgentKind,
+  deviceId?: string | null,
+  options?: { includeAntigravity?: boolean },
+): readonly RuntimeAgentKind[] | undefined {
   const { availableVendors, loaded } = useAvailableAgents(deviceId);
   if (!loaded) return undefined;
   // Secondary pickers feed scheduler, IM, Orca and plugin tasks.
-  return (['claude-code', 'codex', 'pi', 'cursor'] as const).filter(
+  const candidates: readonly RuntimeAgentKind[] = options?.includeAntigravity
+    ? ['claude-code', 'codex', 'pi', 'cursor', 'antigravity']
+    : ['claude-code', 'codex', 'pi', 'cursor'];
+  return candidates.filter(
     (agent) => agent === current || availableVendors.has(toVendor(agent)),
   );
 }

@@ -696,7 +696,7 @@ export function createDesktopMcpProviders(deps: DesktopMcpProvidersDeps): LiziMc
       // 运行位置与模型:与协同 Worker 的 list_available_models 同一份 host 实现。
       // 本机还列出用户的模型组(模式)，定时任务的 modelGroup 传其 id(model-groups.md §6.3)。
       listModels: wrap(async (s, params) => {
-        const result = await s.listAvailableModels(params);
+        const result = await s.listAvailableModels({ ...params, includeAntigravity: true });
         if (!result.ok || params.agentDeviceId) return result;
         const modelGroups = readModelGroupsConfig().routes.map((route) => ({
           id: route.id,

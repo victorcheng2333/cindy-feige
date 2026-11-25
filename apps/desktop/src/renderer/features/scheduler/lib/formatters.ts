@@ -251,6 +251,8 @@ export function humanizeAgentKind(k: AgentKind | 'cursor'): string {
       return 'Codex';
     case 'pi':
       return 'Pi';
+    case 'antigravity':
+      return 'Agy';
     case 'cursor':
       return 'Cursor';
     default: {

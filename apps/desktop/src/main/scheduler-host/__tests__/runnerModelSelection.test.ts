@@ -2751,4 +2751,65 @@ describe('Bot project schedule model inheritance', () => {
   });
 });
 
+// Agy scheduled-task compatibility / unit: runner must allow antigravity fresh and bound
+// schedules (instead of throwing the cursor guard) and normalize unsupported 'ask' fallback to 'default'.
+describe('Antigravity (Agy) scheduled runs', () => {
+  it('runs a fresh antigravity schedule with bypassPermissions and exact model/provider', async () => {
+    const h = createSessionHarness();
+    const harness = createRunnerHarness(h, null, {
+      resolveModelSelection: async (choice) => choice,
+    });
+    await fireToCompletion(
+      harness,
+      h,
+      baseSchedule({
+        agentKind: 'antigravity',
+        modelAgentKind: 'antigravity',
+        model: 'gemini-3-pro',
+        providerId: 'antigravity',
+      }),
+    );
+    expect(harness.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentKind: 'antigravity',
+      model: 'gemini-3-pro',
+      providerId: 'antigravity',
+      permissionMode: 'bypassPermissions',
+    }));
+  });
+
+  it('normalizes ask permissionMode to default for a bound antigravity heartbeat session', async () => {
+    mocks.getSessionRowSnapshot.mockResolvedValue({
+      status: 'active',
+      providerId: 'antigravity',
+      permissionMode: 'ask',
+      planMode: false,
+    });
+    const h = createSessionHarness();
+    const acquire = vi.fn(async (_id, _signal, selection) => ({ selection, release: vi.fn() }));
+    const harness = createRunnerHarness(
+      h,
+      { model: 'gemini-3-pro', workDir: '/work', agentKind: 'antigravity' },
+      {
+        acquirePendingAgentSwitch: acquire,
+        resolveModelSelection: async (choice) => choice,
+      },
+    );
+    await fireToCompletion(
+      harness,
+      h,
+      baseSchedule({
+        targetSessionId: 'agy-session-1',
+        agentKind: 'antigravity',
+        modelAgentKind: 'antigravity',
+        model: 'gemini-3-pro',
+        providerId: 'antigravity',
+      }),
+    );
+    expect(harness.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentKind: 'antigravity',
+      permissionMode: 'default',
+    }));
+  });
+});
+
 });

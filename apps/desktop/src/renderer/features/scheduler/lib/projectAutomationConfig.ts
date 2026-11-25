@@ -16,9 +16,9 @@ export interface ProjectScheduleConfig {
   manual?: boolean;
   intervalMs?: number;
   expireAt?: number;
-  agentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  agentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'cursor';
   /** 显式模型选择的 Harness；省略时保留旧配置的跟随绑定任务语义。 */
-  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'cursor';
   modelAgentDeviceId?: string;
   followTeammateModel?: boolean;
   model?: string;

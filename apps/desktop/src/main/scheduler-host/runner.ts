@@ -229,7 +229,7 @@ function legacyCrossHarnessModelAgentKind(
   // Bound schedules never use a plugin engine (refused on save); refuse rather than reinterpret one.
   if (currentAgentKind === schedule.agentKind) return undefined;
   const kind = scheduledBuiltinAgentKind(schedule.agentKind);
-  return kind === 'antigravity' || kind === 'cursor' ? undefined : kind;
+  return kind === 'cursor' ? undefined : kind;
 }
 
 /**
@@ -1425,7 +1425,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         // (e.g. a Bot routine) before the task's engine feeds any routing below.
         if (meta?.agentKind === 'acp') throw new PluginEngineUnsupportedError(SCHEDULED_TASKS_FEATURE);
         if (resolvedSelection) {
-          if (resolvedSelection.agentKind === 'cursor' || resolvedSelection.agentKind === 'antigravity') throw new Error('Cursor does not support scheduled tasks');
+          if (resolvedSelection.agentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
           schedule = {
             ...schedule,
             agentKind: resolvedSelection.agentKind,
@@ -1543,7 +1543,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
           }
           if (reacquired) {
             resolvedSelection = reacquired;
-            if (resolvedSelection.agentKind === 'cursor' || resolvedSelection.agentKind === 'antigravity') {
+            if (resolvedSelection.agentKind === 'cursor') {
               throw new Error('Cursor does not support scheduled tasks');
             }
             schedule = {
@@ -1589,7 +1589,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
         heartbeatPermissions = routinePermissionSnapshot(undefined, {
           permissionMode: row.permissionMode,
           planModeEnabled: row.planModeEnabled,
-        }) ?? { permissionMode: 'ask', planMode: false };
+        }) ?? { permissionMode: row.agentKind === 'antigravity' ? 'default' : 'ask', planMode: false };
       }
     }
 
@@ -1774,7 +1774,7 @@ export class MakerScheduleRunner implements ScheduleRunner {
       resolvedSelection = freshAgentDeviceId
         ? await this.deps.resolveModelSelection(selection, { agentDeviceId: freshAgentDeviceId })
         : await this.deps.resolveModelSelection(selection);
-      if (resolvedSelection.agentKind === 'cursor' || resolvedSelection.agentKind === 'antigravity') throw new Error('Cursor does not support scheduled tasks');
+      if (resolvedSelection.agentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
       createProviderId = resolvedSelection.providerId;
       fastMode = resolvedSelection.fastMode;
       schedule = {
@@ -1992,6 +1992,10 @@ export class MakerScheduleRunner implements ScheduleRunner {
       ? { workspaceKind: 'dialogue' as const, projectDir: null }
       : await projectForScheduledTask(schedule, this.deps.projectForNewTask);
     throwIfFireAborted(ctx.signal, 'session creation');
+    const resolvedPermissionMode =
+      routinePermissions?.permissionMode ??
+      heartbeatPermissions?.permissionMode ??
+      defaultPermissionModeForSchedule();
     const createSessionOpts = {
       ...membership,
       id: sessionId,
@@ -2002,9 +2006,9 @@ export class MakerScheduleRunner implements ScheduleRunner {
       effort: reconciledEffort,
       fastMode,
       permissionMode:
-        routinePermissions?.permissionMode ??
-        heartbeatPermissions?.permissionMode ??
-        defaultPermissionModeForSchedule(),
+        effectiveAgentKind === 'antigravity' && resolvedPermissionMode === 'ask'
+          ? 'default'
+          : resolvedPermissionMode,
       ...((routinePermissions ?? heartbeatPermissions)
         ? { planMode: (routinePermissions ?? heartbeatPermissions)!.planMode }
         : {}),

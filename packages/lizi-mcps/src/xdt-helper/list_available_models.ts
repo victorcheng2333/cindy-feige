@@ -87,11 +87,13 @@ export interface ListAvailableModelsDeps {
   /** 调用方任务(可选)：它的 Agent 在另一台电脑运行时，按那台的模型目录列出。 */
   getSessionContext?: () => { sessionId?: string };
   listAvailableModels: (params: {
-    agent?: 'claude-code' | 'codex' | 'pi' | 'cursor';
+    agent?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
     callerSessionId?: string;
     executionDeviceId?: string;
     /** 列哪里的模型：省略 = Lead 所在位置；null = 任务所在电脑；string = 那台电脑或分享。 */
     agentDeviceId?: string | null;
+    /** 定时任务目录包含 Agy；协同 Worker 等调用方不传。 */
+    includeAntigravity?: boolean;
   }) => Promise<ControlResult<{
     /** 本次列出的位置(null = 任务所在电脑)；旧 host 不带。 */
     agentDeviceId?: string | null;
@@ -100,6 +102,7 @@ export interface ListAvailableModelsDeps {
     codex?: ModelDescriptor[];
     claude_code?: ModelDescriptor[];
     pi?: ModelDescriptor[];
+    antigravity?: ModelDescriptor[];
     /** Plugin engines on the task computer; listed only when no `agent` filter is given. */
     pluginEngines?: PluginEngineDescriptor[];
   }, string>>;

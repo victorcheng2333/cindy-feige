@@ -33,7 +33,7 @@ export function isCindyProviderCodexRemoteCompactionRoute(input: {
 export function resolveAgentCredentialMode(
   options: ResolveAgentCredentialModeOptions,
 ): AgentCredentialMode | undefined {
-  if (options.agentKind === 'cursor') return 'provider-oauth';
+  if (options.agentKind === 'cursor' || options.agentKind === 'antigravity') return 'provider-oauth';
   const providerId = options.providerId?.trim() || null;
   if (providerId === 'xd') return 'gateway-key';
   if (options.agentKind === 'claude-code' && providerId === 'anthropic') return 'oauth-bearer';

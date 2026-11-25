@@ -3227,6 +3227,8 @@ interface OrcaCollabService {
     executionDeviceId?: string;
     /** 列哪里的模型：缺省 = Lead 所在位置；null = 任务所在电脑；string = 那台电脑或分享。 */
     agentDeviceId?: string | null;
+    /** 为定时任务模型目录一并包含本机/远端 Agy(antigravity)；协同 Worker 默认不包含。 */
+    includeAntigravity?: boolean;
   }) => Promise<
     | {
         ok: true;
@@ -3247,6 +3249,12 @@ interface OrcaCollabService {
           defaultProviderId?: string | null;
         }>;
         pi?: Array<{
+          id: string;
+          label: string;
+          providers?: Array<{ id: string; name: string }>;
+          defaultProviderId?: string | null;
+        }>;
+        antigravity?: Array<{
           id: string;
           label: string;
           providers?: Array<{ id: string; name: string }>;
@@ -18593,7 +18601,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         };
       }
     },
-    listAvailableModels: async ({ agent, callerSessionId, executionDeviceId, agentDeviceId: requestedAgentDeviceId }) => {
+    listAvailableModels: async ({ agent, callerSessionId, executionDeviceId, agentDeviceId: requestedAgentDeviceId, includeAntigravity }) => {
       try {
         if (executionDeviceId === 'local' || executionDeviceId === getSelfDeviceId()) {
           executionDeviceId = undefined;
@@ -18607,7 +18615,13 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           });
           return { ok: true, ...result };
         }
-        const agents: AgentKind[] = agent ? [agent] : ['codex', 'claude-code', 'pi'];
+        const modelResultKey = (a: AgentKind) =>
+          a === 'codex' ? 'codex' : a === 'pi' ? 'pi' : a === 'antigravity' ? 'antigravity' : 'claude_code';
+        const agents: AgentKind[] = agent
+          ? [agent]
+          : includeAntigravity
+            ? ['codex', 'claude-code', 'pi', 'antigravity']
+            : ['codex', 'claude-code', 'pi'];
         // SSH Lead 的 Worker 在 SSH 主机上运行 Agent，不能放到别的电脑：不列可选位置。
         const sshLead = callerSessionId ? Boolean(await readSessionRemoteHostIdCached(callerSessionId)) : false;
         // 不指定位置时列 Lead 所在位置(Lead 的 Agent 在另一台电脑运行就列那台；Lead 归在供应商组里就列组那一项
@@ -18631,17 +18645,21 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           } catch (err) {
             return agentDeviceCatalogFailure(err);
           }
+          const remoteAgents = !agent && isProviderShareAgentDeviceId(agentDeviceId)
+            ? agents.filter((a) => a !== 'antigravity')
+            : agents;
           return {
             ok: true,
             agentDeviceId,
             ...(locations ? { locations } : {}),
-            ...Object.fromEntries(agents.map((a) => [
-              a === 'codex' ? 'codex' : a === 'pi' ? 'pi' : 'claude_code',
+            ...Object.fromEntries(remoteAgents.map((a) => [
+              modelResultKey(a),
               deviceAvailableModels(views, a),
             ])),
           };
         }
         const providerRouting = await getProviderRoutingContext();
+        const registered = new Set(maker.listAvailableAgents());
         const result: Record<
           string,
           Array<{
@@ -18652,10 +18670,14 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
           }>
         > = {};
         // 本机且未指定引擎时,不列用户在这台电脑上关掉的 Harness;Lead 显式指定 agent 时照常列出。
-        for (const a of agent ? agents : selectableHarnesses(agents)) {
+        for (const a of agent ? agents : selectableHarnesses(agents).filter((k) => registered.has(k))) {
+          const key = modelResultKey(a);
+          if (!registered.has(a)) {
+            result[key] = [];
+            continue;
+          }
           const caps = maker.getCapabilities(a);
-          // key 必须区分 pi,否则 pi 模型会被塞进 claude_code 键与 CC 模型混淆。
-          const key = a === 'codex' ? 'codex' : a === 'pi' ? 'pi' : 'claude_code';
+          // key 必须区分 pi / antigravity,否则模型会被塞进 claude_code 键与 CC 模型混淆。
           result[key] = localAvailableModels(
             caps.availableModels,
             providerRouting.availability[a] ?? [],

@@ -22,10 +22,11 @@ describe('scheduler formatters', () => {
   });
 
   // issue 4418: 详情摘要的 Agent 名称必须与保存的 agentKind 一致；此前只区分 codex，
-  // pi 被错误回落成 Claude。
+  // pi 被错误回落成 Claude；新增 antigravity 后必须展示为 Agy。
   it('humanizes every AgentKind by its own brand instead of falling back to Claude', () => {
     expect(humanizeAgentKind('claude-code')).toBe('Claude');
     expect(humanizeAgentKind('codex')).toBe('Codex');
     expect(humanizeAgentKind('pi')).toBe('Pi');
+    expect(humanizeAgentKind('antigravity')).toBe('Agy');
   });
 });

@@ -9,7 +9,7 @@
  *   runner.ts 已经做白名单校验，MCP 这一层提前在 zod schema 里拦更友好
  *   （非白名单值直接变 INVALID_ARGS，不会进入 runner）。
  */
-export const AGENT_KIND = ['claude-code', 'codex', 'pi'] as const;
+export const AGENT_KIND = ['claude-code', 'codex', 'pi', 'antigravity'] as const;
 /** Engines a schedule can run on: built-in Harnesses plus `acp` = a plugin engine on this computer. */
 export const SCHEDULE_AGENT_KIND = [...AGENT_KIND, 'acp'] as const;
 export const EFFORT = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;

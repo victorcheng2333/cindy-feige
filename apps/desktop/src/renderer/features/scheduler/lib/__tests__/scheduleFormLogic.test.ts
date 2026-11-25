@@ -766,6 +766,31 @@ describe('hasRealBinding / agentKind 映射', () => {
   it('sessionAgentKindToScheduleAgentKind 映射', () => {
     expect(sessionAgentKindToScheduleAgentKind('cc')).toBe('claude-code');
     expect(sessionAgentKindToScheduleAgentKind('codex')).toBe('codex');
+    expect(sessionAgentKindToScheduleAgentKind('pi')).toBe('pi');
+    expect(sessionAgentKindToScheduleAgentKind('antigravity')).toBe('antigravity');
+  });
+
+  // Agy scheduled-task compatibility / unit: buildScheduleInput and formToProjectConfig must
+  // accept antigravity selections (previously blocked alongside cursor) while keeping cursor blocked.
+  it('serializes antigravity selections in normal and project automation forms', () => {
+    const agyForm = makeForm({
+      agentKind: 'antigravity',
+      modelAgentKind: 'antigravity',
+      model: 'gemini-3-pro',
+      providerId: 'antigravity',
+    });
+    expect(buildScheduleInput(agyForm)).toMatchObject({
+      agentKind: 'antigravity',
+      modelAgentKind: 'antigravity',
+      model: 'gemini-3-pro',
+      providerId: 'antigravity',
+    });
+    expect(formToProjectConfig(agyForm, 'agy-auto')).toMatchObject({
+      agentKind: 'antigravity',
+      modelAgentKind: 'antigravity',
+      model: 'gemini-3-pro',
+      providerId: 'antigravity',
+    });
   });
 });
 

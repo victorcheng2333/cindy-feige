@@ -974,7 +974,7 @@ export async function performSessionAgentSwitch(
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity tasks do not support provider groups');
     }
     const changesHarness = row.agentKind !== targetAgentKind;
-    if (changesHarness && (row.orcaRemoteLead || (row.source && row.source !== 'desktop'))) {
+    if (changesHarness && (row.orcaRemoteLead || (row.source && row.source !== 'desktop' && row.source !== 'scheduler'))) {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Antigravity handoff supports ordinary tasks only');
     }
     if (targetAgentKind === 'antigravity' && normalizedProviderId && normalizedProviderId !== 'antigravity') {

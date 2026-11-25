@@ -393,7 +393,7 @@ export function PluginScheduleDraft({
               }
             : undefined,
           scope: JSON.stringify([owner.accountKey, deviceId]),
-          agents: ["claude-code", "codex", "pi"],
+          agents: ["claude-code", "codex", "pi", "antigravity"],
           loadCapabilities: async (kind) => {
             const caps = normalizeMobileAgentCapabilities(
               await maker.getCapabilities(kind),
@@ -403,7 +403,7 @@ export function PluginScheduleDraft({
           },
           onSelect: async (value, source) => {
             const agent = value.agent;
-            if (agent === "cursor" || agent === "antigravity") return false;
+            if (agent === "cursor") return false;
             assertCurrent();
             setDraft((d) => ({
               ...d,
