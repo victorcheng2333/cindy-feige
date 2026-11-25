@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AGY_SUBAGENT_TOOL_NAME,
   applyAgentTaskUpdateEvent,
   buildAgentTaskCardModel,
   buildSubagentRunStatusIndex,
   deriveAgentTaskStatus,
+  extractAgySubagentConversationId,
   findAgentTaskUpdate,
+  isAgySubagentToolName,
   isAgentTaskToolName,
   isClaudeSubagentToolName,
   isSubagentResultError,
@@ -810,6 +813,70 @@ describe('isClaudeSubagentToolName', () => {
     expect(isClaudeSubagentToolName('collab:spawn')).toBe(false);
     expect(isClaudeSubagentToolName('collab:spawnAgent')).toBe(false);
     expect(isClaudeSubagentToolName('Workflow')).toBe(false);
+    expect(isClaudeSubagentToolName(AGY_SUBAGENT_TOOL_NAME)).toBe(false);
     expect(isClaudeSubagentToolName(undefined)).toBe(false);
+  });
+});
+
+// Tier: unit. Production entries: `isAgentTaskToolName`, `extractAgySubagentConversationId`,
+// `subagentSpawnResultIndicatesRunning`, `normalizeAgentTaskUpdate`, `buildAgentTaskCardModel`.
+// Gap: Antigravity ACP emits `Run invoke_subagent` / `invoke_subagent` with a `{ conversationId }`
+// receipt and uppercase `Role`/`Prompt` inputs.
+describe('Antigravity invoke_subagent card model and launch receipt', () => {
+  it('recognizes invoke_subagent tool names and validates launch receipts', () => {
+    expect(isAgySubagentToolName('invoke_subagent')).toBe(true);
+    expect(isAgySubagentToolName('Run invoke_subagent')).toBe(true);
+    expect(isAgySubagentToolName('manage_subagents')).toBe(false);
+    expect(isAgentTaskToolName('Run invoke_subagent')).toBe(true);
+
+    const receipt = 'Created the following subagent:\n{\n  "conversationId": "006cb860-9998-497e-a2c3-d673ccf60f07"\n}';
+    expect(extractAgySubagentConversationId(receipt)).toBe('006cb860-9998-497e-a2c3-d673ccf60f07');
+    expect(extractAgySubagentConversationId('{"conversationId":"../bad"}')).toBeUndefined();
+    expect(subagentSpawnResultIndicatesRunning('Run invoke_subagent', receipt)).toBe(true);
+    expect(subagentSpawnResultIndicatesRunning('Run invoke_subagent', 'Error launching subagent')).toBe(false);
+  });
+
+  it('keeps Antigravity cards running on launch receipts, extracts Role/Prompt, and hides raw receipt JSON', () => {
+    const receipt = 'Created the following subagent:\n{"conversationId":"child-1"}';
+    const live = normalizeAgentTaskUpdate(
+      {
+        provider: 'antigravity',
+        taskId: 'child-1',
+        parentToolUseId: 'call-1',
+        status: 'running',
+        summary: 'Reviewing session.ts',
+        lastToolName: 'read_file',
+        usage: { totalTokens: 8400, toolUses: 2 },
+      },
+      'antigravity',
+    )!;
+    expect(live.provider).toBe('antigravity');
+
+    const model = buildAgentTaskCardModel({
+      toolName: 'Run invoke_subagent',
+      toolInput: { TypeName: 'research', Role: 'Independent Diff Reviewer', Prompt: 'Audit diff' },
+      result: receipt,
+      update: live,
+    });
+    expect(model).toMatchObject({
+      provider: 'antigravity',
+      status: 'running',
+      title: 'Independent Diff Reviewer',
+      description: 'Audit diff',
+      summary: 'Reviewing session.ts',
+      lastToolName: 'read_file',
+      totalTokens: 8400,
+      toolUses: 2,
+    });
+
+    // Without live update (history reload), raw launch JSON still must not leak into summary.
+    const historyModel = buildAgentTaskCardModel({
+      toolName: 'Run invoke_subagent',
+      toolInput: { Role: 'Independent Diff Reviewer', Prompt: 'Audit diff' },
+      result: receipt,
+      persistedStatus: 'completed',
+    });
+    expect(historyModel.status).toBe('completed');
+    expect(historyModel.summary).toBeUndefined();
   });
 });

@@ -39,6 +39,7 @@ import {
   watchAntigravityPromptOutcome,
   type OpenReadonlySqlite,
 } from './native-state.js';
+import { createAntigravitySubagentRunsReader } from './subagent-runs.js';
 import {
   ANTIGRAVITY_REMOTE_AGENT_NAME,
   ANTIGRAVITY_REMOTE_AGENT_START_ATTEMPTS,
@@ -383,8 +384,10 @@ export class AntigravityAgent extends BaseAgent {
         this.agyDeps.getEnv(),
         hosted ? { agent: ANTIGRAVITY_REMOTE_AGENT_NAME, useG1Credits } : { readOnlyDirs: readOnlySandboxDirs, useG1Credits },
       );
+      const subagentReader = createAntigravitySubagentRunsReader(stateDir);
       const cleanupWorkspace = remoteWorkspace;
       void endpoint.whenStopped.then(async () => {
+        subagentReader.clearCache();
         await cleanupWorkspace?.cleanup();
         taskBridge.dispose();
       }).catch(() => {
@@ -419,6 +422,8 @@ export class AntigravityAgent extends BaseAgent {
           openSqlite: this.agyDeps.openReadonlySqlite,
         }),
         checkBackgroundActivity: (sessionId) => readAntigravityBackgroundState(stateDir, sessionId),
+        pollSubagentRuns: (sessionId, extraChildIds) =>
+          subagentReader.readRuns(sessionId, { extraChildIds }),
         onSessionBroken: async () => {
           // Retire the broken native session marker so even a cold restart will not resume it.
           await rm(marker, { force: true }).catch(() => {});

@@ -1449,6 +1449,18 @@ const subagentReads = createSubagentReadService({
   enqueueSessionWrite: (sessionId, label, write) => inputQueue.enqueueDurableWrite(sessionId, label, write),
   // Reading stored work must not advertise an unwired control operation.
   isParentPiSessionLive: () => false,
+  resolveAntigravityStateDir: (sessionId, workingDir) => {
+    const owner = runtime.owner;
+    if (!owner) return null;
+    return ownerScopedPath(
+      resolveHostDataDir(),
+      owner,
+      'antigravity',
+      'acp',
+      createHash('sha256').update(sessionId).digest('hex'),
+      createHash('sha256').update(workingDir).digest('hex'),
+    );
+  },
 });
 
 const apiToken = readOrCreateApiToken(resolveHostDataDir());

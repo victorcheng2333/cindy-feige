@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,6 +23,8 @@ const h = vi.hoisted(() => {
     ipcHandlers: new Map<string, (event: unknown, payload: unknown) => unknown>(),
     getSubagentRunDetail: vi.fn(),
     listSubagentRuns: vi.fn(),
+    readAntigravitySessionLocator: vi.fn(),
+    findParentToolUseIdsForAgyChildren: vi.fn(),
     readPiSubagentTranscriptPage: vi.fn(),
     listPiSubagentRunDiagnostics: vi.fn(),
     listPiSubagentRuns: vi.fn(),
@@ -76,6 +80,8 @@ vi.mock('../../subagentRuns.js', () => ({
   getSubagentRunDetail: h.getSubagentRunDetail,
   listSubagentRuns: h.listSubagentRuns,
   persistSubagentTaskUpdate: h.persistSubagentTaskUpdate,
+  readAntigravitySessionLocator: h.readAntigravitySessionLocator,
+  findParentToolUseIdsForAgyChildren: h.findParentToolUseIdsForAgyChildren,
 }));
 
 import { SUBAGENT_RUNS_CHANGED_CHANNEL, type SubagentRunDetailResponse } from '@cindy/maker-shared/subagent-workspace';
@@ -92,6 +98,8 @@ describe('Subagent runs broadcast boundary', () => {
     h.ipcHandlers.clear();
     h.getSubagentRunDetail.mockResolvedValue(null);
     h.listSubagentRuns.mockResolvedValue({ runs: [] });
+    h.readAntigravitySessionLocator.mockResolvedValue(null);
+    h.findParentToolUseIdsForAgyChildren.mockResolvedValue(new Map());
     h.readPiSubagentTranscriptPage.mockResolvedValue({ supported: true, entries: [] });
     h.listPiSubagentRunDiagnostics.mockResolvedValue([]);
     h.listPiSubagentRuns.mockResolvedValue([]);
@@ -986,7 +994,7 @@ describe('Subagent runs broadcast boundary', () => {
     );
   });
 
-  it('limits device-link reads to PI before querying durable records', async () => {
+  it('limits device-link reads to sidebar transcript providers before querying durable records', async () => {
     h.deviceLinkInvoke = true;
     registerSubagentRunsIpc();
     const list = h.ipcHandlers.get('local-db:subagent-runs:list');
@@ -998,7 +1006,7 @@ describe('Subagent runs broadcast boundary', () => {
     expect(h.listSubagentRuns).toHaveBeenCalledWith('session-1', {
       cursor: undefined,
       limit: undefined,
-      provider: 'pi',
+      providers: ['pi', 'antigravity'],
     });
     await expect(detail({}, {
       sessionId: 'session-1', provider: 'codex', runIdOrAlias: 'native-id',
@@ -1046,5 +1054,106 @@ describe('Subagent runs broadcast boundary', () => {
         runIdOrAlias: 'shared-native-id',
       }),
     ).rejects.toThrow(/provider/);
+  });
+
+  // Tier: unit. Production entries: `registerSubagentRunsIpc` / `createSubagentReadService` (`list`, `transcript`).
+  // Gap: Antigravity subagents write native transcripts under `--gemini_dir` and must reconcile on read
+  // and serve paginated transcripts both locally and over device-link.
+  it('reconciles Antigravity subagent runs and serves paginated transcripts', async () => {
+    const stateDir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-ipc-'));
+    try {
+      const parentNativeId = 'parent-native-1';
+      const childId = 'child-native-1';
+      await writeFile(path.join(stateDir, 'cindy-acp-session-id'), parentNativeId);
+      const subagentsDir = path.join(stateDir, 'antigravity-cli', 'brain', parentNativeId, '.system_generated', 'subagents');
+      const childLogsDir = path.join(stateDir, 'antigravity-cli', 'brain', childId, '.system_generated', 'logs');
+      await mkdir(subagentsDir, { recursive: true });
+      await mkdir(childLogsDir, { recursive: true });
+      await writeFile(
+        path.join(subagentsDir, `${childId}.json`),
+        JSON.stringify({
+          conversationId: childId,
+          subagentDescriptor: { typeName: 'research', role: 'Diff Auditor' },
+          state: 'SUBAGENT_STATE_COMPLETED',
+        }),
+      );
+      await writeFile(
+        path.join(childLogsDir, 'transcript.jsonl'),
+        [
+          JSON.stringify({
+            step_index: 0,
+            type: 'SYSTEM_MESSAGE',
+            created_at: '2026-11-25T06:00:00Z',
+            content: '<SYSTEM_MESSAGE>\n[Message] sender=parent-native-1 content=Inspect changes\n</SYSTEM_MESSAGE>',
+          }),
+          JSON.stringify({
+            step_index: 1,
+            type: 'PLANNER_RESPONSE',
+            created_at: '2026-11-25T06:00:05Z',
+            model: 'gemini-4-neon-xhigh',
+            thinking: 'Reading changed files.',
+            content: 'Looks clean.',
+          }),
+        ].join('\n') + '\n',
+      );
+
+      h.readAntigravitySessionLocator.mockResolvedValue({
+        workingDir: '/repo',
+        nativeSessionId: parentNativeId,
+        agentKind: 'antigravity',
+        remoteHostId: null,
+      });
+      h.findParentToolUseIdsForAgyChildren.mockResolvedValue(new Map([[childId, 'tool-call-1']]));
+      h.persistSubagentTaskUpdate.mockResolvedValue({
+        runId: 'row-agy-1',
+        created: true,
+        firstForSession: true,
+      });
+
+      registerSubagentRunsIpc({
+        resolveAntigravityStateDir: () => stateDir,
+      });
+      const list = h.ipcHandlers.get('local-db:subagent-runs:list')!;
+      const transcript = h.ipcHandlers.get('local-db:subagent-runs:transcript')!;
+
+      await list({}, { sessionId: 'session-agy' });
+      expect(h.persistSubagentTaskUpdate).toHaveBeenCalledWith(
+        'session-agy',
+        expect.objectContaining({
+          provider: 'antigravity',
+          taskId: childId,
+          parentToolUseId: 'tool-call-1',
+          status: 'completed',
+          title: 'Diff Auditor',
+          model: 'gemini-4-neon-xhigh',
+          returnedResult: 'Looks clean.',
+        }),
+        'antigravity',
+        expect.any(Number),
+      );
+
+      h.deviceLinkInvoke = true;
+      h.getSubagentRunDetail.mockResolvedValue({
+        id: 'row-agy-1',
+        provider: 'antigravity',
+        logicalAgentId: childId,
+        providerRunIds: [childId],
+        capabilities: { viewFullTranscript: true },
+      });
+      const page = await transcript({}, {
+        sessionId: 'session-agy',
+        provider: 'antigravity',
+        runIdOrAlias: 'row-agy-1',
+      }) as { supported: boolean; entries: Array<{ role: string; content: string }>; tailCursor?: string };
+      expect(page.supported).toBe(true);
+      expect(page.tailCursor).toBeTruthy();
+      expect(page.entries.map((entry) => [entry.role, entry.content])).toEqual([
+        ['parent', 'Inspect changes'],
+        ['thinking', 'Reading changed files.'],
+        ['subagent', 'Looks clean.'],
+      ]);
+    } finally {
+      await rm(stateDir, { recursive: true, force: true });
+    }
   });
 });

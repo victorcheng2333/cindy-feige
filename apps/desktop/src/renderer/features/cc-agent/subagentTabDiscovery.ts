@@ -25,7 +25,10 @@
  *    poll takes over the moment it does.
  */
 
-import type { SubagentRunsListResponse } from '@cindy/maker-shared/subagent-workspace';
+import {
+  isSubagentSidebarProvider,
+  type SubagentRunsListResponse,
+} from '@cindy/maker-shared/subagent-workspace';
 
 /** Remote discovery cadence without a change push. Coarse on purpose — see the file docblock. */
 export const REMOTE_SUBAGENT_DISCOVERY_POLL_MS = 5_000;
@@ -144,7 +147,7 @@ export function startSubagentTabDiscovery(options: SubagentTabDiscoveryOptions):
     // switched to Pi but only has Claude Code / Codex history in the store. The
     // remote read is already narrowed to Pi on the Main side; this is the local
     // path catching up, filtered here so the IPC contract stays unchanged.
-    const present = response.supported && response.runs.some((run) => run.provider === 'pi');
+    const present = response.supported && response.runs.some((run) => isSubagentSidebarProvider(run.provider));
     onPresenceChange?.(present);
     if (!present || registered) return;
     await registerTab();

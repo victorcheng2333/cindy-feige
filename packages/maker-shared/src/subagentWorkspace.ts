@@ -8,7 +8,14 @@
  * may add opaque `providerRunIds` without changing the product model.
  */
 
-export type SubagentProvider = 'claude-code' | 'codex' | 'pi' | 'cursor';
+export type SubagentProvider = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+
+/** Providers surfaced in the right-sidebar Subagents workspace panel. */
+export const SUBAGENT_SIDEBAR_PROVIDERS = ['pi', 'antigravity'] as const satisfies readonly SubagentProvider[];
+
+export function isSubagentSidebarProvider(provider: unknown): provider is 'pi' | 'antigravity' {
+  return provider === 'pi' || provider === 'antigravity';
+}
 
 export type SubagentRunStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
@@ -111,7 +118,7 @@ export interface SubagentRun {
   endedAt?: number;
 }
 
-export type SubagentTranscriptRole = 'parent' | 'subagent' | 'tool' | 'system';
+export type SubagentTranscriptRole = 'parent' | 'subagent' | 'tool' | 'system' | 'thinking';
 
 /** Lifecycle half of a `role: 'tool'` entry, used to pair one tool card. */
 export type SubagentToolPhase = 'start' | 'end';
@@ -267,4 +274,21 @@ export const PI_DURABLE_SUBAGENT_CAPABILITIES: Readonly<SubagentCapabilities> =
     steer: true,
     stop: true,
     parentContext: 'unknown',
+  });
+
+/**
+ * Antigravity detached subagents write their live trajectory under the task's
+ * native `--gemini_dir` (`brain/<childId>/.system_generated/logs/transcript.jsonl`).
+ * Cindy observes their progress and full transcript read-only; lifecycle control
+ * stays with Agy's own parent session (`send_message` / `manage_subagents`).
+ */
+export const AGY_SUBAGENT_CAPABILITIES: Readonly<SubagentCapabilities> =
+  Object.freeze({
+    viewActivity: true,
+    viewReturnedResult: true,
+    viewFullTranscript: true,
+    resume: false,
+    steer: false,
+    stop: false,
+    parentContext: 'none',
   });

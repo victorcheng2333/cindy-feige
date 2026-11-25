@@ -2107,4 +2107,82 @@ describe('SubagentsBody', () => {
       expect(list).toHaveBeenCalledTimes(2);
     });
   });
+
+  // Tier: unit. Production entry: `SubagentsBody` with an Antigravity durable transcript run.
+  // Gap: Right-sidebar Subagents panel previously filtered exclusively to `provider === 'pi'`.
+  // Minimal failing input: Antigravity run with `viewFullTranscript: true` and a `thinking` + `tool` transcript.
+  it('renders Antigravity subagents with thinking and tool transcript entries without Pi control inputs', async () => {
+    const agyDetail: SubagentRunDetail = {
+      ...detail('NO P0/P1 FINDINGS'),
+      id: 'agy-run-1',
+      provider: 'antigravity',
+      logicalAgentId: 'child-conv-1',
+      parentToolUseId: 'call-sub-1',
+      providerRunIds: ['child-conv-1'],
+      status: 'completed',
+      title: 'Independent Diff Reviewer',
+      model: 'gemini-4-neon-xhigh',
+      capabilities: {
+        viewActivity: true,
+        viewReturnedResult: true,
+        viewFullTranscript: true,
+        resume: false,
+        steer: false,
+        stop: false,
+        parentContext: 'none',
+      },
+      returnedResult: 'NO P0/P1 FINDINGS',
+    };
+    currentDetail = agyDetail;
+    const readTranscript = vi.fn(async (): Promise<SubagentTranscriptPageResponse> => ({
+      supported: true,
+      entries: [
+        entry({ id: 'p-1', role: 'parent', content: 'Review the diff' }),
+        entry({ id: 'th-1', role: 'thinking', content: 'Checking session.ts for races\nSecond line details' }),
+        entry({
+          id: 't-1',
+          role: 'tool',
+          toolPhase: 'start',
+          toolName: 'read_file',
+          toolCallId: 'agy-s1-0',
+          content: 'read_file(/repo/session.ts)',
+        }),
+        entry({
+          id: 't-2',
+          role: 'tool',
+          toolPhase: 'end',
+          toolName: 'read_file',
+          toolCallId: 'agy-s1-0',
+          content: 'export class AcpSession {}',
+          isError: false,
+        }),
+        entry({ id: 'a-1', role: 'subagent', content: 'NO P0/P1 FINDINGS' }),
+      ],
+    }));
+    window.electronAPI.localDb.subagentRuns.transcript = readTranscript;
+
+    const { container } = render(
+      <SubagentsBody
+        state={{ selectedRunId: 'agy-run-1', selectedProvider: 'antigravity' }}
+        ctx={{
+          tabId: 'tab-1',
+          sessionId: 'session-1',
+          workdir: '/workspace',
+          remoteHostId: null,
+          deviceLinkDeviceId: null,
+          patchState: vi.fn(),
+          onVisibilityChange: vi.fn(),
+          setCloseInterceptor: vi.fn(() => () => undefined),
+        }}
+      />,
+    );
+
+    await screen.findByText('Independent Diff Reviewer');
+    await screen.findByText('read_file(/repo/session.ts)');
+    expect(container.querySelector('[data-subagent-thinking-row="true"]')).toBeTruthy();
+    expect(screen.getByText('Checking session.ts for races')).toBeTruthy();
+    expect(screen.getByText('NO P0/P1 FINDINGS')).toBeTruthy();
+    expect(screen.queryByLabelText('rightSidebar.subagents.sendDirection')).toBeNull();
+    expect(screen.queryByLabelText('chat.agentTask.stop')).toBeNull();
+  });
 });

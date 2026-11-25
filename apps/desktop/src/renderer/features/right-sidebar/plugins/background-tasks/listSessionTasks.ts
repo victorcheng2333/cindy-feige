@@ -18,14 +18,13 @@
 
 import {
   deriveAgentTaskStatus,
+  extractAgySubagentConversationId,
   isAgentTaskToolName,
-
+  isAgySubagentToolName,
   isClaudeSubagentToolName,
   isSubagentResultError,
-
   lookupSubagentRunStatus,
   normalizeAgentTaskTerminalStatus,
-
   subagentSpawnReceiptName,
   subagentSpawnResultIndicatesRunning,
   type SubagentRunStatusIndex,
@@ -42,7 +41,7 @@ export interface SessionTaskItem {
   /** 标题链取不到任何来源时为 ''(UI 层负责 i18n 兜底)。 */
   title: string;
   status: AgentTaskStatus;
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   update?: AgentTaskUpdate;
   toolCallClientId?: string;
   toolUseId?: string;
@@ -69,6 +68,7 @@ const KNOWN_TASK_TYPE_KIND: Readonly<Record<string, SessionTaskItem['kind']>> = 
   local_workflow: 'workflow',
   local_agent: 'agent',
   local_bash: 'bash',
+  agy_subagent: 'agent',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -172,8 +172,8 @@ function deriveTitle(
   return (
     compactText(
       update?.title ??
-        readInputString(toolInput, ['description', 'task', 'name']) ??
-        readInputString(toolInput, ['prompt']),
+        readInputString(toolInput, ['description', 'task', 'name', 'Role', 'role', 'TypeName']) ??
+        readInputString(toolInput, ['prompt', 'Prompt']),
       TITLE_MAX,
     ) ?? ''
   );
@@ -328,8 +328,13 @@ export function listSessionTasks(input: {
     // 历史 workflow(重载后 update 清空)兜底:从结果文本提取 CLI 任务 id,
     // 详情视图据此仍能读 wf 记录文件。adjacency 命中的无 toolUseId 旧形态同样
     // 参与提取 —— settled 判定支持的形态,taskId 恢复必须同口径支持。
-    const derivedTaskId =
-      isWorkflowTool && !update?.taskId ? extractWorkflowTaskId(resultContent) : undefined;
+    const derivedTaskId = !update?.taskId
+      ? (isWorkflowTool
+          ? extractWorkflowTaskId(resultContent)
+          : isAgySubagentToolName(toolName) && typeof resultContent === 'string'
+            ? extractAgySubagentConversationId(resultContent)
+            : undefined)
+      : undefined;
 
     const aliasKeys = [toolUseId, update?.taskId, update?.parentToolUseId, derivedTaskId].filter(
       (k): k is string => typeof k === 'string' && k.length > 0,
@@ -380,7 +385,12 @@ export function listSessionTasks(input: {
               })
             : (persistedStatus ?? (isSessionStreaming ? 'running' : 'stopped')));
     const provider: SessionTaskItem['provider'] =
-      update?.provider ?? (toolName.startsWith('collab:') ? 'codex' : 'claude-code');
+      update?.provider
+      ?? (toolName.startsWith('collab:')
+        ? 'codex'
+        : isAgySubagentToolName(toolName)
+          ? 'antigravity'
+          : 'claude-code');
 
     const taskId = update?.taskId ?? derivedTaskId;
     const resultPreview = kind === 'workflow' ? clipResultText(resultContent) : undefined;

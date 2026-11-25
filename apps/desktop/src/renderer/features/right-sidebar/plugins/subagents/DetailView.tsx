@@ -26,10 +26,11 @@ import { Button } from '@/components/ui/button';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, LoaderCircle, SendHorizontal, Square } from 'lucide-react';
-import type {
-  SubagentChildRun,
-  SubagentRunDetail,
-  SubagentTranscriptEntry,
+import {
+  isSubagentSidebarProvider,
+  type SubagentChildRun,
+  type SubagentRunDetail,
+  type SubagentTranscriptEntry,
 } from '@cindy/maker-shared/subagent-workspace';
 
 import { AssistantMessage } from '@/components/chat/AssistantMessage';
@@ -566,6 +567,7 @@ function PiDurableDetailView({
               workdir={workdir}
               allowPrivilegedLinks={allowPrivilegedLinks}
               actionBarItemId={actionBarItemId}
+              agentKind={detail.provider === 'antigravity' ? 'antigravity' : 'pi'}
             />
           ) : null}
 
@@ -579,7 +581,7 @@ function PiDurableDetailView({
               allowPrivilegedLinks={allowPrivilegedLinks}
               content={visibleResult}
               createdAt={new Date(detail.updatedAt).toISOString()}
-              agentKind="pi"
+              agentKind={detail.provider === 'antigravity' ? 'antigravity' : 'pi'}
               showActionBar
             />
           ) : null}
@@ -749,9 +751,9 @@ function PiDurableDetailView({
 }
 
 export function DetailView(props: SubagentDetailViewProps) {
-  const isPiDurableDetail = props.detail?.provider === 'pi'
+  const isConversationDetail = isSubagentSidebarProvider(props.detail?.provider)
     && props.detail.capabilities.viewFullTranscript;
-  return isPiDurableDetail
+  return isConversationDetail
     ? <PiDurableDetailView key={props.detail?.id} {...props} />
     : <LegacyDetailView {...props} />;
 }

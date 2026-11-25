@@ -17,6 +17,7 @@ import {
 } from '../../security/trustedAppRenderer.js';
 import {
   createSubagentReadService,
+  type AntigravityStateDirResolver,
   type DurableWriteEnqueue,
   type ParentPiSessionLivePredicate,
 } from './subagentReadService.js';
@@ -71,6 +72,7 @@ export function registerSubagentRunsIpc(
   options: {
     enqueueDurableWrite?: DurableWriteEnqueue;
     isParentPiSessionLive?: ParentPiSessionLivePredicate;
+    resolveAntigravityStateDir?: AntigravityStateDirResolver;
   } = {},
 ): void {
   service = createSubagentReadService({

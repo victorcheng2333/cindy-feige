@@ -125,7 +125,11 @@ export async function resolveAntigravityManagedPath(
   return canonical === current ? { path: current, info } : undefined;
 }
 
-async function resolveDataSubdir(stateDir: string): Promise<string | undefined> {
+export function isValidAntigravitySessionId(sessionId: string): boolean {
+  return NATIVE_SESSION_ID.test(sessionId);
+}
+
+export async function resolveAntigravityDataSubdir(stateDir: string): Promise<string | undefined> {
   for (const subdir of DATA_SUBDIRS) {
     if (await resolveAntigravityManagedPath(stateDir, [subdir], 'directory')) {
       return subdir;
@@ -133,6 +137,8 @@ async function resolveDataSubdir(stateDir: string): Promise<string | undefined> 
   }
   return undefined;
 }
+
+const resolveDataSubdir = resolveAntigravityDataSubdir;
 
 /** Parses `quotaResetTimeStamp`, `quotaResetDelay`, or `retryDelay` into a unix ms timestamp. */
 export function parseAntigravityResetAtMs(text: string, nowMs = Date.now()): number | undefined {

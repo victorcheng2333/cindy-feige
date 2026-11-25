@@ -804,7 +804,7 @@ export interface ChatMessage {
 export type AgentTaskStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
 export interface AgentTaskUpdate {
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   taskId: string;
   parentToolUseId?: string;
   status: AgentTaskStatus;
@@ -5819,13 +5819,21 @@ function normalizeAgentTaskUpdate(
       ? rawStatus
       : 'running';
   const provider =
-    raw.provider === 'cursor' || raw.provider === 'codex' || raw.provider === 'claude-code' || raw.provider === 'pi'
+    raw.provider === 'cursor'
+    || raw.provider === 'codex'
+    || raw.provider === 'claude-code'
+    || raw.provider === 'pi'
+    || raw.provider === 'antigravity'
       ? raw.provider
-      : source === 'cursor' ? 'cursor' : source === 'codex'
-        ? 'codex'
-        : source === 'pi'
-          ? 'pi'
-          : 'claude-code';
+      : source === 'cursor'
+        ? 'cursor'
+        : source === 'codex'
+          ? 'codex'
+          : source === 'pi'
+            ? 'pi'
+            : source === 'antigravity'
+              ? 'antigravity'
+              : 'claude-code';
   const usageRaw =
     raw.usage && typeof raw.usage === 'object' ? (raw.usage as Record<string, unknown>) : null;
   const usage = usageRaw

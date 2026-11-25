@@ -30,14 +30,15 @@ import { Button } from '@/components/ui/button';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Bot, LoaderCircle, RefreshCw } from 'lucide-react';
-import type {
-  SubagentProvider,
-  SubagentRun,
-  SubagentRunDetail,
-  SubagentRunDetailResponse,
-  SubagentRunsListResponse,
-  SubagentTranscriptEntry,
-  SubagentTranscriptPageResponse,
+import {
+  isSubagentSidebarProvider,
+  type SubagentProvider,
+  type SubagentRun,
+  type SubagentRunDetail,
+  type SubagentRunDetailResponse,
+  type SubagentRunsListResponse,
+  type SubagentTranscriptEntry,
+  type SubagentTranscriptPageResponse,
 } from '@cindy/maker-shared/subagent-workspace';
 
 import { getDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
@@ -154,15 +155,20 @@ function ScopedSubagentsBody({
    */
   const detailReadsInFlightRef = useRef(0);
   const transcriptReadsInFlightRef = useRef(0);
-  const selectedProviderHint = state.selectedProvider === 'pi' ? 'pi' : null;
-  const selectedRunAlias = state.selectedProvider && state.selectedProvider !== 'pi'
-    ? null
-    : (state.selectedRunId ?? null);
+  const selectedProviderHint: SubagentProvider | null =
+    isSubagentSidebarProvider(state.selectedProvider) ? state.selectedProvider : null;
+  const selectedRunAlias =
+    state.selectedProvider && !isSubagentSidebarProvider(state.selectedProvider)
+      ? null
+      : (state.selectedRunId ?? null);
   const remoteDevice = ctx.deviceLinkDeviceId !== null;
 
-  // Product surface is Pi-only. Claude Code/Codex collection remains an
-  // internal compatibility layer and never participates in UI selection.
-  const selectedProvider: SubagentProvider | null = selectedRunAlias ? 'pi' : null;
+  // Product surface supports durable transcript providers (Pi & Antigravity).
+  // Claude Code/Codex collection remains an internal compatibility layer and
+  // never participates in UI selection.
+  const selectedProvider: SubagentProvider | null = selectedRunAlias
+    ? (selectedProviderHint ?? 'pi')
+    : null;
   const selectedDetail = detail && runMatchesSelection(detail, selectedProvider, selectedRunAlias)
     ? detail
     : null;
@@ -189,7 +195,7 @@ function ScopedSubagentsBody({
           setLoadState('unsupported');
           return;
         }
-        const visibleRuns = response.runs.filter((run) => run.provider === 'pi');
+        const visibleRuns = response.runs.filter((run) => isSubagentSidebarProvider(run.provider));
         setRuns((current) => {
           if (!append) return visibleRuns;
           const byId = new Map(current.map((run) => [run.id, run]));

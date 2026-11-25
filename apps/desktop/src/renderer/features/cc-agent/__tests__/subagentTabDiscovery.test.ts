@@ -719,4 +719,31 @@ describe('startSubagentTabDiscovery', () => {
     await settle();
     expect(h.listRemote).toHaveBeenCalledTimes(callsAtDispose);
   });
+
+  // Tier: unit. Production entry: `startSubagentTabDiscovery`.
+  // Gap: Discovery previously admitted only `provider === 'pi'`, hiding Antigravity subagents.
+  it('registers the Subagents tab when an Antigravity subagent run is present', async () => {
+    const h = harness();
+    h.listLocal.mockResolvedValue({
+      supported: true,
+      runs: [{ id: 'agy-run-1', provider: 'antigravity' }],
+    } as unknown as SubagentRunsListResponse);
+    const onPresenceChange = vi.fn();
+
+    const dispose = startSubagentTabDiscovery({
+      sessionId: 's-agy',
+      deviceId: null,
+      listLocal: h.listLocal,
+      listRemote: h.listRemote,
+      subscribeLocalChanges: h.subscribeLocalChanges,
+      registerTab: h.registerTab,
+      isRequestOwnerCurrent: () => true,
+      onPresenceChange,
+    });
+    await settle();
+
+    expect(h.registerTab).toHaveBeenCalledOnce();
+    expect(onPresenceChange).toHaveBeenCalledWith(true);
+    dispose();
+  });
 });

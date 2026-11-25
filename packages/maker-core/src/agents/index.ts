@@ -212,9 +212,19 @@ export { buildAgySettingsJson, classifyAgyProcessExit, runAntigravityAccountComm
 export type { AcpAntigravityTier, AcpAvailableCommand } from './agy-acp/protocol.js';
 export {
   AGY_INVALID_THINKING_SIGNATURE_REASON,
+  isValidAntigravitySessionId,
+  resolveAntigravityDataSubdir,
   type OpenReadonlySqlite,
   type ReadonlySqliteDatabase,
 } from './antigravity/native-state.js';
+export {
+  createAntigravitySubagentRunsReader,
+  listAntigravitySubagentRuns,
+  readAntigravitySubagentTranscriptPage,
+  type AntigravitySubagentRunSnapshot,
+  type AntigravitySubagentRunsReader,
+  type ReadAntigravitySubagentRunsOptions,
+} from './antigravity/subagent-runs.js';
 export {
   AntigravityAgent,
   ANTIGRAVITY_CAPABILITIES,

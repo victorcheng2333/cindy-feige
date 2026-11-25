@@ -1,8 +1,13 @@
 /** Read-only renderer IPC for Cindy-owned durable Subagent records. */
 
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import {
+  listAntigravitySubagentRuns,
+  readAntigravitySubagentTranscriptPage,
+} from '@cindy/maker-core/antigravity-subagent-runs';
 import {
   isPiSubagentTerminal,
   listPiSubagentRunDiagnostics,
@@ -11,6 +16,8 @@ import {
   readPiSubagentTranscriptPage,
 } from '@cindy/maker-core/pi-subagent-runs';
 import {
+  SUBAGENT_SIDEBAR_PROVIDERS,
+  isSubagentSidebarProvider,
   type SubagentCapabilities,
   type SubagentProvider,
   type SubagentRunDetailResponse,
@@ -32,13 +39,16 @@ import {
   requireString,
 } from '../../utils/ipcValidate.js';
 import {
+  findParentToolUseIdsForAgyChildren,
   getSubagentRunDetail,
   listSubagentRuns,
   persistSubagentTaskUpdate,
+  readAntigravitySessionLocator,
 } from '../subagentRuns.js';
 
 export type DurableWriteEnqueue = <T>(label: string, fn: () => Promise<T> | T) => Promise<T>;
 export type ParentPiSessionLivePredicate = (sessionId: string) => boolean;
+export type AntigravityStateDirResolver = (sessionId: string, workingDir: string) => string | null;
 export interface SubagentReadServicePorts {
   getUserDataDir(): string;
   activeOwnerScopeKey(): string;
@@ -46,6 +56,7 @@ export interface SubagentReadServicePorts {
   enqueueDurableWrite?: DurableWriteEnqueue;
   enqueueSessionWrite?<T>(sessionId: string, label: string, fn: () => Promise<T> | T): Promise<T>;
   isParentPiSessionLive?: ParentPiSessionLivePredicate;
+  resolveAntigravityStateDir?: AntigravityStateDirResolver;
 }
 
 /** Shared reads/reconciliation; launchers supply paths, ownership and the write FIFO. */
@@ -88,6 +99,8 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
   /** The two projections of one task; a write under either invalidates the other. */
   const RUN_FINGERPRINT_PREFIX = 'run:';
   const DIAGNOSTIC_FINGERPRINT_PREFIX = 'diagnostic:';
+  const AGY_FINGERPRINT_PREFIX = 'agy:';
+  const AGY_SESSION_ID_RE = /^[A-Za-z0-9-]{1,128}$/;
 
   function reconcileFingerprintsFor(sessionId: string, ownerKey: string): Map<string, string> {
     if (reconcileFingerprintOwnerKey !== ownerKey) {
@@ -367,10 +380,113 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
     return newestDiagnosticUpdatedAt;
   }
 
+  async function resolveAntigravitySessionDir(
+    sessionId: string,
+    assertCurrent: () => void,
+  ): Promise<{ stateDir: string; nativeSessionId: string | null } | null> {
+    if (!ports.resolveAntigravityStateDir || typeof readAntigravitySessionLocator !== 'function') {
+      return null;
+    }
+    assertCurrent();
+    const locator = await readAntigravitySessionLocator(sessionId);
+    assertCurrent();
+    if (!locator || locator.remoteHostId !== null) return null;
+    const stateDir = ports.resolveAntigravityStateDir(sessionId, locator.workingDir);
+    if (!stateDir) return null;
+    const marker = await readFile(path.join(stateDir, 'cindy-acp-session-id'), 'utf8')
+      .then((value) => value.trim())
+      .catch(() => '');
+    assertCurrent();
+    const nativeSessionId = AGY_SESSION_ID_RE.test(marker)
+      ? marker
+      : locator.agentKind === 'antigravity'
+          && locator.nativeSessionId
+          && AGY_SESSION_ID_RE.test(locator.nativeSessionId)
+        ? locator.nativeSessionId
+        : null;
+    return { stateDir, nativeSessionId };
+  }
+
+  async function reconcileAntigravitySubagentRuns(
+    sessionId: string,
+    assertCurrent: () => void,
+  ): Promise<void> {
+    const resolved = await resolveAntigravitySessionDir(sessionId, assertCurrent);
+    if (!resolved?.nativeSessionId) return;
+    const snapshots = await listAntigravitySubagentRuns(resolved.stateDir, resolved.nativeSessionId);
+    assertCurrent();
+    if (snapshots.length === 0) return;
+
+    const fingerprints = reconcileFingerprintsFor(sessionId, ports.activeOwnerScopeKey());
+    const uncachedChildIds = snapshots
+      .map((snapshot) => snapshot.childId)
+      .filter((childId) => !fingerprints.has(`${AGY_FINGERPRINT_PREFIX}${childId}`));
+    const parentToolUseByChild =
+      uncachedChildIds.length > 0 && typeof findParentToolUseIdsForAgyChildren === 'function'
+        ? await findParentToolUseIdsForAgyChildren(sessionId, uncachedChildIds)
+        : new Map<string, string>();
+    assertCurrent();
+
+    const enqueue: DurableWriteEnqueue = ports.enqueueSessionWrite
+      ? (label, fn) => ports.enqueueSessionWrite!(sessionId, label, fn)
+      : enqueueProjectionWrite;
+
+    for (const snapshot of snapshots) {
+      const parentToolUseId = parentToolUseByChild.get(snapshot.childId);
+      const isTerminal = snapshot.status !== 'running';
+      const durationMs = Math.max(0, (snapshot.endedAt ?? snapshot.updatedAt) - snapshot.startedAt);
+      const aliases = parentToolUseId ? [parentToolUseId, snapshot.childId] : [snapshot.childId];
+      const update: Record<string, unknown> = {
+        provider: 'antigravity',
+        taskId: snapshot.childId,
+        ...(parentToolUseId ? { parentToolUseId } : {}),
+        status: snapshot.status,
+        taskType: 'agy_subagent',
+        subagentParentContext: 'none',
+        ...(snapshot.role ? { title: snapshot.role } : {}),
+        ...(snapshot.prompt ? { description: snapshot.prompt } : {}),
+        ...(snapshot.summary ? { summary: snapshot.summary } : {}),
+        ...(isTerminal && snapshot.returnedResult
+          ? { returnedResult: snapshot.returnedResult }
+          : isTerminal
+            ? { returnedResultEmpty: true }
+            : {}),
+        ...(snapshot.returnedResultTruncated ? { returnedResultTruncated: true } : {}),
+        ...(snapshot.model ? { model: snapshot.model } : {}),
+        ...(snapshot.lastToolName ? { lastToolName: snapshot.lastToolName } : {}),
+        usage: {
+          ...(typeof snapshot.totalTokens === 'number' ? { totalTokens: snapshot.totalTokens } : {}),
+          ...(typeof snapshot.toolUses === 'number' ? { toolUses: snapshot.toolUses } : {}),
+          durationMs,
+        },
+        createdAt: new Date(snapshot.startedAt).toISOString(),
+        updatedAt: new Date(snapshot.updatedAt).toISOString(),
+        subagentObservation: {
+          kind: 'spawn',
+          logicalSubagentId: snapshot.childId,
+          ...(parentToolUseId ? { parentToolUseId } : {}),
+          identityAliases: aliases,
+          providerRunIds: [snapshot.childId],
+        },
+      };
+      const key = `${AGY_FINGERPRINT_PREFIX}${snapshot.childId}`;
+      const fingerprint = reconcileFingerprint(update, snapshot.updatedAt);
+      if (fingerprints.get(key) === fingerprint) continue;
+      assertCurrent();
+      const written = await enqueue(`subagent_reconcile:${sessionId}:${key}`, () => {
+        assertCurrent();
+        return persistSubagentTaskUpdate(sessionId, update, 'antigravity', snapshot.updatedAt);
+      });
+      assertCurrent();
+      if (written !== null) fingerprints.set(key, fingerprint);
+    }
+  }
+
   const SUBAGENT_PROVIDERS = [
     'claude-code',
     'codex',
     'pi',
+    'antigravity',
   ] as const satisfies readonly SubagentProvider[];
 
   /**
@@ -411,11 +527,12 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
     const cursor = body.cursor === undefined ? undefined : requireString(body.cursor, 'cursor');
     const limit = body.limit === undefined ? undefined : requireNonNegativeInt(body.limit, 'limit');
     await reconcilePiDurableRuns(sessionId, assertCurrent);
+    await reconcileAntigravitySubagentRuns(sessionId, assertCurrent);
     assertCurrent();
     const page = await listSubagentRuns(sessionId, {
       cursor,
       limit,
-      ...(isDeviceLinkInvoke() ? { provider: 'pi' as const } : {}),
+      ...(isDeviceLinkInvoke() ? { providers: SUBAGENT_SIDEBAR_PROVIDERS } : {}),
     });
     assertCurrent();
     return {
@@ -434,7 +551,7 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
     const body = requireObject(input, 'subagent run detail input');
     const sessionId = requireString(body.sessionId, 'sessionId');
     const provider = requireEnum(body.provider, SUBAGENT_PROVIDERS, 'provider');
-    if (isDeviceLinkInvoke() && provider !== 'pi') {
+    if (isDeviceLinkInvoke() && !isSubagentSidebarProvider(provider)) {
       return { supported: false, run: null } satisfies SubagentRunDetailResponse;
     }
     const runIdOrAlias = requireString(body.runIdOrAlias, 'runIdOrAlias');
@@ -443,6 +560,9 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
     // scan that could disagree with it.
     const newestDiagnosticUpdatedAt =
       provider === 'pi' ? await reconcilePiDurableRuns(sessionId, assertCurrent) : new Map<string, number>();
+    if (provider === 'antigravity') {
+      await reconcileAntigravitySubagentRuns(sessionId, assertCurrent);
+    }
     assertCurrent();
     const run = await getSubagentRunDetail(sessionId, provider, runIdOrAlias);
     assertCurrent();
@@ -552,7 +672,7 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
     const body = requireObject(input, 'subagent transcript input');
     const sessionId = requireString(body.sessionId, 'sessionId');
     const provider = requireEnum(body.provider, SUBAGENT_PROVIDERS, 'provider');
-    if (isDeviceLinkInvoke() && provider !== 'pi') {
+    if (isDeviceLinkInvoke() && !isSubagentSidebarProvider(provider)) {
       return { supported: false, entries: [] } satisfies SubagentTranscriptPageResponse;
     }
     const runIdOrAlias = requireString(body.runIdOrAlias, 'runIdOrAlias');
@@ -563,8 +683,22 @@ export function createSubagentReadService(ports: SubagentReadServicePorts) {
     assertCurrent();
     const run = await getSubagentRunDetail(sessionId, provider, runIdOrAlias);
     assertCurrent();
-    if (!run || provider !== 'pi' || !run.capabilities.viewFullTranscript) {
+    if (!run || !isSubagentSidebarProvider(provider) || !run.capabilities.viewFullTranscript) {
       return { supported: false, entries: [] } satisfies SubagentTranscriptPageResponse;
+    }
+    if (provider === 'antigravity') {
+      const childId = run.providerRunIds.at(-1) ?? run.logicalAgentId;
+      if (!childId || !AGY_SESSION_ID_RE.test(childId)) {
+        return { supported: false, entries: [] } satisfies SubagentTranscriptPageResponse;
+      }
+      const resolved = await resolveAntigravitySessionDir(sessionId, assertCurrent);
+      if (!resolved) return { supported: false, entries: [] } satisfies SubagentTranscriptPageResponse;
+      const response = await readAntigravitySubagentTranscriptPage(resolved.stateDir, childId, {
+        cursor,
+        limit,
+      });
+      assertCurrent();
+      return response;
     }
     // `providerRunIds` is oldest-first (the rolling window in
     // `localDb/subagentRuns.ts` evicts from the front), so this is the run's

@@ -124,4 +124,47 @@ describe('AgentTaskCard codex subagent live state', () => {
     expect(text).toContain('chat.agentTask.status.completed');
     expect(text).not.toContain('chat.agentTask.status.running');
   });
+
+  // Tier: unit. Production entry: `AgentTaskCard` with Antigravity `Run invoke_subagent`.
+  // Gap: Agy `invoke_subagent` immediately settles with a `{ conversationId }` launch receipt;
+  // the card must stay running, extract `Role` as title, suppress raw JSON receipt, and surface live usage.
+  it('renders Antigravity invoke_subagent launch receipts as running live cards without leaking raw receipt JSON', () => {
+    const agyToolCall = {
+      clientId: 'c-agy',
+      role: 'tool_use',
+      content: '',
+      toolUseId: 'call-agy-1',
+      toolName: 'Run invoke_subagent',
+      toolInput: { TypeName: 'research', Role: 'Independent Diff Reviewer', Prompt: 'Review changes' },
+    } as unknown as ChatMessage;
+    const receipt = 'Created the following subagent:\n{"conversationId":"sub-conv-42"}';
+    const liveAgyUpdate: AgentTaskUpdate = {
+      provider: 'antigravity',
+      taskId: 'sub-conv-42',
+      parentToolUseId: 'call-agy-1',
+      status: 'running',
+      title: 'Independent Diff Reviewer',
+      model: 'gemini-4-neon-xhigh',
+      lastToolName: 'read_file',
+      summary: 'Inspecting session.ts',
+      usage: { totalTokens: 48_200, toolUses: 9 },
+    };
+    const { container } = render(
+      <AgentTaskCard
+        toolCall={agyToolCall}
+        result={receipt}
+        update={liveAgyUpdate}
+        sessionId="s-agy"
+        sessionAgentKind="antigravity"
+      />,
+    );
+    const text = container.textContent ?? '';
+    expect(text).toContain('Antigravity');
+    expect(text).toContain('Independent Diff Reviewer');
+    expect(text).toContain('chat.agentTask.status.running');
+    expect(text).toContain('gemini-4-neon-xhigh');
+    expect(text).toContain('Inspecting session.ts');
+    expect(text).not.toContain('Created the following subagent');
+    expect(text).not.toContain('sub-conv-42');
+  });
 });

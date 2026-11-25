@@ -2,6 +2,7 @@
 
 import { createId } from '@paralleldrive/cuid2';
 import {
+  AGY_SUBAGENT_CAPABILITIES,
   PI_DURABLE_SUBAGENT_CAPABILITIES,
   SUBAGENT_PR1_CAPABILITIES,
   type SubagentActivityEntry,
@@ -13,6 +14,7 @@ import {
 } from '@cindy/maker-shared/subagent-workspace';
 import { normalizeSubagentObservation } from '@cindy/maker-shared/subagent-observation';
 import {
+  extractAgySubagentConversationId,
   normalizeAgentTaskUpdate,
   subagentSpawnResultIndicatesRunning,
   type AgentTaskUpdate,
@@ -312,9 +314,13 @@ function rewindBoundary(): SQL[] {
 }
 
 function initialCapabilities(update: AgentTaskUpdate): Readonly<SubagentCapabilities> {
-  return update.provider === 'pi' && update.taskType === 'pi_subagent'
-    ? PI_DURABLE_SUBAGENT_CAPABILITIES
-    : SUBAGENT_PR1_CAPABILITIES;
+  if (update.provider === 'pi' && update.taskType === 'pi_subagent') {
+    return PI_DURABLE_SUBAGENT_CAPABILITIES;
+  }
+  if (update.provider === 'antigravity') {
+    return AGY_SUBAGENT_CAPABILITIES;
+  }
+  return SUBAGENT_PR1_CAPABILITIES;
 }
 
 /**
@@ -363,8 +369,8 @@ function mergeStatus(
   if (!previous || resume || authoritative) return next;
   if (previous === 'failed' || previous === 'stopped') return previous;
   // Codex can discover a running descendant after the direct child appeared
-  // complete; that is aggregate expansion, not resurrection of a failed run.
-  if (previous === 'completed' && next === 'running' && provider !== 'codex') return previous;
+  // complete, and Antigravity can revive an idle subagent via `send_message`.
+  if (previous === 'completed' && next === 'running' && provider !== 'codex' && provider !== 'antigravity') return previous;
   return next;
 }
 
@@ -395,7 +401,7 @@ function appendActivity(
   const previous = current.at(-1);
   if (
     previous
-    && update.provider === 'pi'
+    && (update.provider === 'pi' || update.provider === 'antigravity')
     && previous.kind === kind
     && previous.status === status
   ) {
@@ -734,7 +740,7 @@ export async function persistSubagentTaskUpdate(
       : existing?.costUsd ?? null,
     capabilities: JSON.stringify(capabilitiesForUpdate(update, data, existing)),
     activity: JSON.stringify(activity),
-    ...(isPiDurable
+    ...(isPiDurable || update.provider === 'antigravity'
       ? returnedResultValues(data, terminal(status), existing, resumed)
       : returnedResultValues(undefined, false, existing)),
     startedAt,
@@ -939,7 +945,12 @@ function decodeCursor(raw: string | undefined): SubagentListCursor | null {
 
 export async function listSubagentRuns(
   sessionId: string,
-  options: { cursor?: string; limit?: number; provider?: SubagentProvider } = {},
+  options: {
+    cursor?: string;
+    limit?: number;
+    provider?: SubagentProvider;
+    providers?: readonly SubagentProvider[];
+  } = {},
 ): Promise<{ runs: SubagentRun[]; nextCursor?: string } | null> {
   const session = await readableSession(sessionId);
   if (!session) return null;
@@ -955,6 +966,9 @@ export async function listSubagentRuns(
     ...rewindBoundary(),
     isNull(subagentRuns.deletedAt),
     ...(options.provider ? [eq(subagentRuns.provider, options.provider)] : []),
+    ...(options.providers && options.providers.length > 0
+      ? [inArray(subagentRuns.provider, [...options.providers])]
+      : []),
   ];
   baseConditions.push(...clearBoundary(session.clearedAt));
   const visibleRows: SubagentRunRow[] = [];
@@ -1080,7 +1094,7 @@ export async function getSubagentRunDetail(
   let returnedResult: string | undefined;
   let returnedResultTruncated = false;
   if (
-    row.provider === 'pi' &&
+    (row.provider === 'pi' || row.provider === 'antigravity') &&
     run.capabilities.viewReturnedResult &&
     terminal(row.status) &&
     (row.returnedResult !== null || row.returnedResultEmpty === 1)
@@ -1092,7 +1106,7 @@ export async function getSubagentRunDetail(
     }
   } else if (
     run.capabilities.viewReturnedResult &&
-    row.provider === 'codex' &&
+    (row.provider === 'codex' || row.provider === 'antigravity') &&
     row.status === 'completed' &&
     row.summary
   ) {
@@ -1140,4 +1154,78 @@ export async function getSubagentRunDetail(
     ...(returnedResult ? { returnedResult } : {}),
     ...(returnedResultTruncated ? { returnedResultTruncated: true } : {}),
   };
+}
+
+export interface AntigravitySessionLocator {
+  workingDir: string;
+  nativeSessionId: string | null;
+  agentKind: string;
+  remoteHostId: string | null;
+}
+
+/**
+ * Minimal session metadata needed to locate an Antigravity task's native `--gemini_dir`
+ * state directory for read-only subagent reconciliation and transcript paging.
+ */
+export async function readAntigravitySessionLocator(
+  sessionId: string,
+): Promise<AntigravitySessionLocator | null> {
+  const [session] = await getDbClient()
+    .drizzle.select({
+      workingDir: sessions.workingDir,
+      sdkSessionId: sessions.sdkSessionId,
+      agentKind: sessions.agentKind,
+      remoteHostId: sessions.remoteHostId,
+    })
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), ne(sessions.status, 'deleted')))
+    .limit(1);
+  if (!session || !session.workingDir) return null;
+  return {
+    workingDir: session.workingDir,
+    nativeSessionId: session.sdkSessionId ?? null,
+    agentKind: session.agentKind,
+    remoteHostId: session.remoteHostId ?? null,
+  };
+}
+
+/**
+ * Best-effort lookup mapping Antigravity child conversation ids back to the parent
+ * `invoke_subagent` tool call id when reconciling historical sessions written before
+ * live `agent_task_update` tracking existed.
+ */
+export async function findParentToolUseIdsForAgyChildren(
+  sessionId: string,
+  childIds: readonly string[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (childIds.length === 0) return result;
+  const session = await readableSession(sessionId);
+  if (!session) return result;
+  const target = new Set(childIds);
+  const rows = await getDbClient()
+    .drizzle.select({
+      toolUseId: messages.toolUseId,
+      content: messages.content,
+    })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.sessionId, sessionId),
+        eq(messages.role, 'tool_result'),
+        isNull(messages.rewindAt),
+        ...(session.clearedAt !== null ? [gt(messages.createdAt, session.clearedAt)] : []),
+      ),
+    )
+    .orderBy(desc(messages.createdAt));
+  for (const row of rows) {
+    if (!row.toolUseId) continue;
+    const text = parseMessageText(row.content);
+    const childId = extractAgySubagentConversationId(text);
+    if (childId && target.has(childId) && !result.has(childId)) {
+      result.set(childId, row.toolUseId);
+      if (result.size >= target.size) break;
+    }
+  }
+  return result;
 }

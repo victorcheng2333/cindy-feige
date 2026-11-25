@@ -1023,7 +1023,7 @@ export const subagentRuns = sqliteTable(
     sessionId: text('session_id')
       .notNull()
       .references((): AnySQLiteColumn => sessions.id, { onDelete: 'cascade' }),
-    provider: text('provider', { enum: ['claude-code', 'codex', 'pi', 'cursor'] }).notNull(),
+    provider: text('provider', { enum: ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] }).notNull(),
     logicalAgentId: text('logical_agent_id').notNull(),
     parentToolUseId: text('parent_tool_use_id'),
     /** JSON string[] containing task/tool aliases observed for this logical child. */
@@ -1093,7 +1093,7 @@ export const subagentRunAliases = sqliteTable(
     sessionId: text('session_id')
       .notNull()
       .references((): AnySQLiteColumn => sessions.id, { onDelete: 'cascade' }),
-    provider: text('provider', { enum: ['claude-code', 'codex', 'pi', 'cursor'] }).notNull(),
+    provider: text('provider', { enum: ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] }).notNull(),
     alias: text('alias').notNull(),
     runId: text('run_id')
       .notNull()

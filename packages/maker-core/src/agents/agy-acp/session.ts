@@ -61,7 +61,13 @@ import {
   type AcpUserInputQuestionSpec,
 } from './protocol.js';
 import { annotatePermissionRequestForAutoReview, type AutoReviewDecision } from '../shared/auto-review-decision.js';
-import { acpToolDisplayName, AcpUpdateTranslator, type AcpTurnOutcome, type AcpWarningClassification } from './translator.js';
+import {
+  acpToolDisplayName,
+  AcpUpdateTranslator,
+  type AcpLaunchedSubagent,
+  type AcpTurnOutcome,
+  type AcpWarningClassification,
+} from './translator.js';
 
 const DEFAULT_CANCEL_GRACE_MS = 15_000;
 const SESSION_CLOSE_TIMEOUT_MS = 2_000;
@@ -182,6 +188,24 @@ const STATE_UPDATES: ReadonlySet<unknown> = new Set([
   'current_mode_update',
 ]);
 
+export interface AcpSubagentRunSnapshot {
+  childId: string;
+  role?: string;
+  typeName?: string;
+  prompt?: string;
+  status: 'running' | 'completed' | 'failed' | 'stopped';
+  model?: string;
+  totalTokens?: number;
+  toolUses?: number;
+  lastToolName?: string;
+  summary?: string;
+  returnedResult?: string;
+  returnedResultTruncated?: boolean;
+  startedAt: number;
+  updatedAt: number;
+  endedAt?: number;
+}
+
 export interface AcpClientInfo {
   name: string;
   title?: string;
@@ -277,6 +301,15 @@ export interface OpenAcpSessionOptions {
   checkBackgroundActivity?: (
     sessionId: string,
   ) => Promise<{ pendingReply: boolean; activeSubagents: boolean | null }>;
+  /**
+   * Optional read-only snapshot reader for detached subagents (e.g. Antigravity's native
+   * `brain/<childId>/.system_generated/logs/transcript.jsonl`) used to emit live
+   * `agent_task_update` progress and terminal events.
+   */
+  pollSubagentRuns?: (
+    sessionId: string,
+    trackedChildIds: readonly string[],
+  ) => Promise<readonly AcpSubagentRunSnapshot[]>;
   /** Called when a turn fails with `brokenSession: true` so the adapter can retire native resume state. */
   onSessionBroken?: (sessionId: string) => void | Promise<void>;
   /**
@@ -543,6 +576,18 @@ interface ActiveCompaction {
   cancelReject: ((error: Error) => void) | null;
 }
 
+interface TrackedAcpSubagent {
+  childId: string;
+  parentToolUseId?: string;
+  title?: string;
+  description?: string;
+  spawnedAt: number;
+  lastStatus: 'running' | 'completed' | 'failed' | 'stopped';
+  spawnEmitted: boolean;
+  revivePollPending: boolean;
+  lastEmittedFingerprint?: string;
+}
+
 const MAX_COMPACT_TEXT_CHARS = 8_192;
 
 function readModelVariantIds(value: unknown): string[] {
@@ -614,7 +659,13 @@ export class AcpSession {
   private readonly replyEndsWithUsageUpdate: boolean;
   private readonly watchPromptOutcome: OpenAcpSessionOptions['watchPromptOutcome'];
   private readonly checkBackgroundActivity: OpenAcpSessionOptions['checkBackgroundActivity'];
+  private readonly pollSubagentRuns: OpenAcpSessionOptions['pollSubagentRuns'];
   private readonly onSessionBroken: OpenAcpSessionOptions['onSessionBroken'];
+  private readonly trackedSubagents = new Map<string, TrackedAcpSubagent>();
+  private readonly deferredSubagentEvents: AgentEvent[] = [];
+  private subagentPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private subagentPollInFlight = false;
+  private recheckSubagentsAfterFlight = false;
   private violationTerminated = false;
   private readonly queue = createAsyncQueue<AgentEvent>();
   private readonly translator: AcpUpdateTranslator;
@@ -688,10 +739,15 @@ export class AcpSession {
     this.replyEndsWithUsageUpdate = init.options.replyEndsWithUsageUpdate === true;
     this.watchPromptOutcome = init.options.watchPromptOutcome;
     this.checkBackgroundActivity = init.options.checkBackgroundActivity;
+    this.pollSubagentRuns = init.options.pollSubagentRuns;
     this.onSessionBroken = init.options.onSessionBroken;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
     this.translator = new AcpUpdateTranslator({
       blockIdPrefix: `acp-${init.sessionId}`,
+      emitAgySubagentTasks: init.options.agentKind === 'antigravity',
+      onSubagentLaunched: (launch) => this.handleSubagentLaunched(launch),
+      onSubagentsKilled: (targets) => this.handleSubagentsKilled(targets),
+      onSubagentMessaged: (childId) => this.handleSubagentMessaged(childId),
       classifyWarning: init.options.classifyWarning,
       classifyRefusal: init.options.classifyRefusal,
     });
@@ -1140,12 +1196,14 @@ export class AcpSession {
           }
           if (verdict.action === 'rewrite') {
             this.emit(this.translator.noteToolCall(verdict.toolCall));
+            this.flushDeferredSubagentEvents();
             this.refreshPromptInactivityTimer(this.turn);
             this.afterBackgroundContentUpdate(update);
             return;
           }
         }
         this.emit(this.translator.handleUpdate(update));
+        this.flushDeferredSubagentEvents();
         this.refreshPromptInactivityTimer(this.turn);
         this.afterBackgroundContentUpdate(update);
         return;
@@ -1388,6 +1446,9 @@ export class AcpSession {
         outputTokens,
       };
     }
+    if ('stopReason' in finalOutcome && finalOutcome.stopReason === 'cancelled') {
+      this.emitStoppedForActiveSubagents();
+    }
     this.publishTurnEnd(finalOutcome);
     this.pump();
   }
@@ -1492,6 +1553,245 @@ export class AcpSession {
     (turn.backgroundHoldTimer as unknown as { unref?: () => void }).unref?.();
   }
 
+  private handleSubagentLaunched(launch: AcpLaunchedSubagent): void {
+    this.trackedSubagents.set(launch.childId, {
+      childId: launch.childId,
+      parentToolUseId: launch.parentToolUseId,
+      ...(launch.title ? { title: launch.title } : {}),
+      ...(launch.description ? { description: launch.description } : {}),
+      spawnedAt: launch.spawnedAt,
+      lastStatus: 'running',
+      spawnEmitted: true,
+      revivePollPending: false,
+    });
+    this.scheduleSubagentPoll();
+  }
+
+  private handleSubagentsKilled(targets: readonly string[] | 'all'): void {
+    const nowIso = new Date().toISOString();
+    const targetSet = targets === 'all' ? null : new Set(targets);
+    for (const tracked of this.trackedSubagents.values()) {
+      if (tracked.lastStatus !== 'running') continue;
+      if (targetSet && !targetSet.has(tracked.childId)) continue;
+      tracked.lastStatus = 'stopped';
+      tracked.revivePollPending = false;
+      tracked.lastEmittedFingerprint = `killed:${tracked.childId}`;
+      this.deferredSubagentEvents.push({
+        type: 'agent_task_update',
+        data: {
+          provider: 'antigravity',
+          taskId: tracked.childId,
+          ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+          status: 'stopped',
+          taskType: 'agy_subagent',
+          subagentParentContext: 'none',
+          ...(tracked.title ? { title: tracked.title } : {}),
+          ...(tracked.description ? { description: tracked.description } : {}),
+          createdAt: new Date(tracked.spawnedAt).toISOString(),
+          updatedAt: nowIso,
+          subagentObservation: {
+            kind: 'terminal',
+            logicalSubagentId: tracked.childId,
+            ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+            identityAliases: tracked.parentToolUseId
+              ? [tracked.parentToolUseId, tracked.childId]
+              : [tracked.childId],
+          },
+        },
+      });
+    }
+    if (!this.hasTrackedSubagentsNeedingPoll()) this.clearSubagentPollTimer();
+  }
+
+  private handleSubagentMessaged(childId: string): void {
+    const tracked = this.trackedSubagents.get(childId);
+    if (!tracked) return;
+    tracked.revivePollPending = true;
+    this.scheduleSubagentPoll();
+  }
+
+  private flushDeferredSubagentEvents(): void {
+    if (this.deferredSubagentEvents.length === 0) return;
+    const events = this.deferredSubagentEvents.splice(0);
+    this.emit(events);
+  }
+
+  private emitStoppedForActiveSubagents(): void {
+    const nowIso = new Date().toISOString();
+    const events: AgentEvent[] = [];
+    for (const tracked of this.trackedSubagents.values()) {
+      if (tracked.lastStatus !== 'running') continue;
+      tracked.lastStatus = 'stopped';
+      tracked.revivePollPending = false;
+      tracked.lastEmittedFingerprint = `cancelled:${tracked.childId}`;
+      events.push({
+        type: 'agent_task_update',
+        data: {
+          provider: 'antigravity',
+          taskId: tracked.childId,
+          ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+          status: 'stopped',
+          taskType: 'agy_subagent',
+          subagentParentContext: 'none',
+          ...(tracked.title ? { title: tracked.title } : {}),
+          ...(tracked.description ? { description: tracked.description } : {}),
+          createdAt: new Date(tracked.spawnedAt).toISOString(),
+          updatedAt: nowIso,
+          subagentObservation: {
+            kind: 'terminal',
+            logicalSubagentId: tracked.childId,
+            ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+            identityAliases: tracked.parentToolUseId
+              ? [tracked.parentToolUseId, tracked.childId]
+              : [tracked.childId],
+          },
+        },
+      });
+    }
+    if (events.length > 0) this.emit(events);
+    this.clearSubagentPollTimer();
+  }
+
+  private hasTrackedSubagentsNeedingPoll(): boolean {
+    for (const tracked of this.trackedSubagents.values()) {
+      if (tracked.lastStatus === 'running' || tracked.revivePollPending) return true;
+    }
+    return false;
+  }
+
+  private clearSubagentPollTimer(): void {
+    if (!this.subagentPollTimer) return;
+    clearTimeout(this.subagentPollTimer);
+    this.subagentPollTimer = null;
+  }
+
+  private scheduleSubagentPoll(): void {
+    if (!this.pollSubagentRuns || this.ended || this.closing || this.subagentPollTimer) return;
+    if (!this.hasTrackedSubagentsNeedingPoll()) return;
+    this.subagentPollTimer = setTimeout(() => {
+      this.subagentPollTimer = null;
+      void this.syncSubagentSnapshots();
+    }, this.bgPollMs);
+    (this.subagentPollTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private async syncSubagentSnapshots(): Promise<void> {
+    if (!this.pollSubagentRuns || this.ended || this.closing) return;
+    if (this.subagentPollInFlight) {
+      this.recheckSubagentsAfterFlight = true;
+      return;
+    }
+    this.subagentPollInFlight = true;
+    this.recheckSubagentsAfterFlight = false;
+    try {
+      const trackedIds = [...this.trackedSubagents.keys()];
+      const snapshots = await this.pollSubagentRuns(this.nativeId, trackedIds);
+      if (this.ended || this.closing) return;
+      const events: AgentEvent[] = [];
+      for (const snapshot of snapshots) {
+        let tracked = this.trackedSubagents.get(snapshot.childId);
+        if (!tracked) {
+          // Only adopt previously unseen disk subagents onto the live event stream
+          // while they are actively running (e.g. swarm workers or resumed live children).
+          if (snapshot.status !== 'running') continue;
+          tracked = {
+            childId: snapshot.childId,
+            ...(snapshot.role ? { title: snapshot.role } : {}),
+            ...(snapshot.prompt ? { description: snapshot.prompt } : {}),
+            spawnedAt: snapshot.startedAt,
+            lastStatus: 'running',
+            spawnEmitted: false,
+            revivePollPending: false,
+          };
+          this.trackedSubagents.set(snapshot.childId, tracked);
+        }
+        const status = snapshot.status;
+        if (tracked.lastStatus === 'stopped' && !tracked.revivePollPending && status === 'running') {
+          continue;
+        }
+        const isTerminal = status !== 'running';
+        const observationKind = !tracked.spawnEmitted
+          ? 'spawn'
+          : isTerminal
+            ? 'terminal'
+            : 'progress';
+        const startedAt = Math.min(tracked.spawnedAt, snapshot.startedAt);
+        const durationMs = Math.max(0, (snapshot.endedAt ?? snapshot.updatedAt) - startedAt);
+        const title = snapshot.role ?? tracked.title;
+        const description = snapshot.prompt ?? tracked.description;
+        if (title) tracked.title = title;
+        if (description) tracked.description = description;
+        const fingerprint = JSON.stringify([
+          status,
+          observationKind,
+          title ?? '',
+          snapshot.model ?? '',
+          snapshot.totalTokens ?? -1,
+          snapshot.toolUses ?? -1,
+          snapshot.lastToolName ?? '',
+          snapshot.summary ?? '',
+          snapshot.returnedResult?.length ?? -1,
+        ]);
+        tracked.revivePollPending = false;
+        if (fingerprint === tracked.lastEmittedFingerprint) {
+          tracked.lastStatus = status;
+          continue;
+        }
+        tracked.lastEmittedFingerprint = fingerprint;
+        tracked.lastStatus = status;
+        tracked.spawnEmitted = true;
+        const aliases = tracked.parentToolUseId
+          ? [tracked.parentToolUseId, snapshot.childId]
+          : [snapshot.childId];
+        const usage = {
+          ...(typeof snapshot.totalTokens === 'number' ? { totalTokens: snapshot.totalTokens } : {}),
+          ...(typeof snapshot.toolUses === 'number' ? { toolUses: snapshot.toolUses } : {}),
+          ...(durationMs > 0 || isTerminal ? { durationMs } : {}),
+        };
+        events.push({
+          type: 'agent_task_update',
+          data: {
+            provider: 'antigravity',
+            taskId: snapshot.childId,
+            ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+            status,
+            taskType: 'agy_subagent',
+            subagentParentContext: 'none',
+            ...(title ? { title } : {}),
+            ...(description ? { description } : {}),
+            ...(snapshot.summary ? { summary: snapshot.summary } : {}),
+            ...(isTerminal && snapshot.returnedResult ? { returnedResult: snapshot.returnedResult } : {}),
+            ...(isTerminal && !snapshot.returnedResult ? { returnedResultEmpty: true } : {}),
+            ...(snapshot.returnedResultTruncated ? { returnedResultTruncated: true } : {}),
+            ...(snapshot.model ? { model: snapshot.model } : {}),
+            ...(snapshot.lastToolName ? { lastToolName: snapshot.lastToolName } : {}),
+            ...(Object.keys(usage).length > 0 ? { usage } : {}),
+            createdAt: new Date(startedAt).toISOString(),
+            updatedAt: new Date(snapshot.updatedAt).toISOString(),
+            subagentObservation: {
+              kind: observationKind,
+              logicalSubagentId: snapshot.childId,
+              ...(tracked.parentToolUseId ? { parentToolUseId: tracked.parentToolUseId } : {}),
+              identityAliases: aliases,
+              ...(observationKind === 'spawn' ? { providerRunIds: [snapshot.childId] } : {}),
+            },
+          },
+        });
+      }
+      if (events.length > 0) this.emit(events);
+    } catch {
+      // Best-effort read-only subagent tracking never disrupts the parent ACP session.
+    } finally {
+      this.subagentPollInFlight = false;
+      if (this.recheckSubagentsAfterFlight && !this.ended && !this.closing) {
+        this.recheckSubagentsAfterFlight = false;
+        void this.syncSubagentSnapshots();
+      } else if (this.hasTrackedSubagentsNeedingPoll()) {
+        this.scheduleSubagentPoll();
+      }
+    }
+  }
+
   private async probeBackgroundActivity(): Promise<{ pendingReply: boolean; activeSubagents: boolean | null }> {
     if (!this.checkBackgroundActivity) {
       return { pendingReply: false, activeSubagents: null };
@@ -1539,7 +1839,10 @@ export class AcpSession {
     turn.backgroundCheckInFlight = true;
     turn.recheckBackgroundAfterFlight = false;
     try {
-      const state = await this.probeBackgroundActivity();
+      const [state] = await Promise.all([
+        this.probeBackgroundActivity(),
+        this.syncSubagentSnapshots(),
+      ]);
       if (
         turn.settled
         || this.turn !== turn
@@ -1673,6 +1976,9 @@ export class AcpSession {
       turn.awaitingAsyncWakeup = false;
       turn.awaitingSubagentWakeup = false;
       turn.observedActiveSubagents = false;
+      if (this.hasTrackedSubagentsNeedingPoll()) {
+        void this.syncSubagentSnapshots();
+      }
     }
     if (kind === 'agent_message_chunk') {
       const block = asRecord(update?.content);
@@ -2250,6 +2556,7 @@ export class AcpSession {
   private endEvents(): void {
     if (this.ended) return;
     this.ended = true;
+    this.clearSubagentPollTimer();
     this.notifyInitialUpdateWaiters(true);
     this.detachTransportClose?.();
     this.queue.end();

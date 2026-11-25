@@ -20,6 +20,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import { createTwoFilesPatch } from 'diff';
+import { extractAgySubagentConversationId } from '@cindy/maker-shared/agent-task';
 import { parseMessageToolUse } from '@cindy/maker-shared/message-normalize';
 import type { AgentEvent } from '../../types/events.js';
 import {
@@ -52,10 +53,23 @@ export interface AcpWarningClassification {
   brokenSession?: boolean;
 }
 
+export interface AcpLaunchedSubagent {
+  childId: string;
+  parentToolUseId: string;
+  title?: string;
+  description?: string;
+  spawnedAt: number;
+}
+
 export interface AcpUpdateTranslatorOptions {
   /** Unique per session; keeps thinking block ids distinct. */
   blockIdPrefix: string;
   now?: () => number;
+  /** Enables Antigravity `invoke_subagent` → `agent_task_update` lifecycle events. */
+  emitAgySubagentTasks?: boolean;
+  onSubagentLaunched?: (launch: AcpLaunchedSubagent) => void;
+  onSubagentsKilled?: (childIds: readonly string[] | 'all') => void;
+  onSubagentMessaged?: (childId: string) => void;
   classifyWarning?: (text: string) => AcpWarningClassification | undefined;
   /** Optional classifier for a bare `refusal` stopReason (no assistant reply text). */
   classifyRefusal?: () => AcpWarningClassification | undefined;
@@ -162,14 +176,38 @@ function classifyAsyncBackgroundLauncher(
   return null;
 }
 
-function isAsyncBackgroundCanceller(tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>): boolean {
+function readToolInputString(rawInput: unknown, keys: readonly string[]): string | undefined {
+  if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return undefined;
+  const record = rawInput as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function readKilledSubagentTargets(
+  tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>,
+): readonly string[] | 'all' | null {
   const base = normalizeAcpToolBaseName(tool);
   const input = tool.rawInput && typeof tool.rawInput === 'object' && !Array.isArray(tool.rawInput)
     ? tool.rawInput as Record<string, unknown>
     : null;
-  if (base === 'manage_subagents') return input?.Action === 'kill' || input?.Action === 'kill_all';
-  if (base === 'swarm') return input?.action === 'kill';
-  return false;
+  if (base === 'manage_subagents') {
+    if (input?.Action === 'kill_all') return 'all';
+    if (input?.Action === 'kill') {
+      const ids = Array.isArray(input.ConversationIds)
+        ? input.ConversationIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : [];
+      return ids.length > 0 ? ids : 'all';
+    }
+  }
+  if (base === 'swarm' && input?.action === 'kill') return 'all';
+  return null;
+}
+
+function isAsyncBackgroundCanceller(tool: Pick<AcpToolCallFields, 'name' | 'title' | 'rawInput'>): boolean {
+  return readKilledSubagentTargets(tool) !== null;
 }
 
 export class AcpUpdateTranslator {
@@ -460,6 +498,75 @@ export class AcpUpdateTranslator {
     const fullText = result === 'interrupted' && !rendered ? 'Interrupted before the tool finished.' : rendered;
     events.push({ type: 'tool_result_full', data: { toolUseId: tool.toolCallId, fullText, isError } });
     events.push({ type: 'tool_result', data: { summary: isError ? 'failed' : 'done', toolUseIds: [tool.toolCallId] } });
+    if (this.options.emitAgySubagentTasks) {
+      const base = normalizeAcpToolBaseName(tool);
+      if (base === 'invoke_subagent') {
+        const now = this.now();
+        const isoNow = new Date(now).toISOString();
+        const title = readToolInputString(tool.rawInput, ['Role', 'role', 'TypeName', 'typeName']);
+        const description = readToolInputString(tool.rawInput, ['Prompt', 'prompt']);
+        if (!isError) {
+          const childId = extractAgySubagentConversationId(fullText);
+          if (childId) {
+            events.push({
+              type: 'agent_task_update',
+              data: {
+                provider: 'antigravity',
+                taskId: childId,
+                parentToolUseId: tool.toolCallId,
+                status: 'running',
+                taskType: 'agy_subagent',
+                subagentParentContext: 'none',
+                ...(title ? { title } : {}),
+                ...(description ? { description } : {}),
+                createdAt: isoNow,
+                updatedAt: isoNow,
+                subagentObservation: {
+                  kind: 'spawn',
+                  logicalSubagentId: childId,
+                  parentToolUseId: tool.toolCallId,
+                  identityAliases: [tool.toolCallId, childId],
+                  providerRunIds: [childId],
+                },
+              },
+            });
+            this.options.onSubagentLaunched?.({
+              childId,
+              parentToolUseId: tool.toolCallId,
+              ...(title ? { title } : {}),
+              ...(description ? { description } : {}),
+              spawnedAt: now,
+            });
+          }
+        } else {
+          const failedSummary = fullText.trim();
+          events.push({
+            type: 'agent_task_update',
+            data: {
+              provider: 'antigravity',
+              taskId: tool.toolCallId,
+              parentToolUseId: tool.toolCallId,
+              status: result === 'interrupted' ? 'stopped' : 'failed',
+              taskType: 'agy_subagent',
+              subagentParentContext: 'none',
+              ...(title ? { title } : {}),
+              ...(description ? { description } : {}),
+              ...(failedSummary ? { summary: failedSummary.slice(0, 2_000) } : {}),
+              createdAt: isoNow,
+              updatedAt: isoNow,
+            },
+          });
+        }
+      } else if (!isError) {
+        const killed = readKilledSubagentTargets(tool);
+        if (killed !== null) {
+          this.options.onSubagentsKilled?.(killed);
+        } else if (base === 'send_message') {
+          const recipient = readToolInputString(tool.rawInput, ['Recipient', 'recipient']);
+          if (recipient) this.options.onSubagentMessaged?.(recipient);
+        }
+      }
+    }
   }
 
   private flushText(events: AgentEvent[]): void {

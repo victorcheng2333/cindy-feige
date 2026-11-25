@@ -1756,3 +1756,188 @@ describe('AcpSession native compact, metadata, and classified exit diagnostics',
     await remoteSession.close();
   });
 });
+
+// Tier: unit. Production entry: `openAcpSession` (with `agentKind: 'antigravity'` and `pollSubagentRuns`).
+// Gap: Agy `invoke_subagent` completes immediately on ACP with a `{ conversationId }` receipt while the
+// child works asynchronously; Cindy must emit spawn, incremental progress, and terminal `agent_task_update`
+// events (including `manage_subagents` kill).
+describe('AcpSession Antigravity live subagent task updates', () => {
+  it('emits spawn, deduplicated progress, and terminal completion updates from pollSubagentRuns', async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = createFakeAgent();
+      let phase: 'running-1' | 'running-2' | 'completed' = 'running-1';
+      const pollSubagentRuns = vi.fn(async () => {
+        if (phase === 'running-1' || phase === 'running-2') {
+          return [{
+            childId: 'sub-conv-1',
+            role: 'Independent Diff Reviewer',
+            prompt: 'Review diff',
+            status: 'running' as const,
+            model: 'gemini-4-neon-xhigh',
+            totalTokens: 12_000,
+            toolUses: 3,
+            lastToolName: 'read_file',
+            summary: 'Checking session.ts',
+            startedAt: 1_000,
+            updatedAt: 5_000,
+          }];
+        }
+        return [{
+          childId: 'sub-conv-1',
+          role: 'Independent Diff Reviewer',
+          prompt: 'Review diff',
+          status: 'completed' as const,
+          model: 'gemini-4-neon-xhigh',
+          totalTokens: 25_000,
+          toolUses: 7,
+          lastToolName: 'run_command',
+          summary: 'NO P0/P1 FINDINGS',
+          returnedResult: 'NO P0/P1 FINDINGS',
+          startedAt: 1_000,
+          updatedAt: 12_000,
+          endedAt: 12_000,
+        }];
+      });
+
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        continueWhileToolsPending: true,
+        backgroundContinuationDelaysMs: { afterToolSettledMs: 25, afterThinkingMs: 40, afterTextMs: 15, pollMs: 20 },
+        checkBackgroundActivity: async () => ({
+          pendingReply: false,
+          activeSubagents: phase !== 'completed',
+        }),
+        pollSubagentRuns,
+      });
+      await session.send({ type: 'user', content: 'review' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'call-sub-1',
+        title: 'Run invoke_subagent',
+        status: 'in_progress',
+        rawInput: { TypeName: 'research', Role: 'Independent Diff Reviewer', Prompt: 'Review diff' },
+      });
+      agent.update({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call-sub-1',
+        status: 'completed',
+        rawOutput: 'Created the following subagent:\n{"conversationId":"sub-conv-1"}',
+      });
+
+      const taskUpdates = () => events.filter((e) => e.type === 'agent_task_update');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(taskUpdates()).toHaveLength(1);
+      expect(taskUpdates()[0]?.data).toMatchObject({
+        provider: 'antigravity',
+        taskId: 'sub-conv-1',
+        parentToolUseId: 'call-sub-1',
+        status: 'running',
+        title: 'Independent Diff Reviewer',
+        subagentObservation: {
+          kind: 'spawn',
+          logicalSubagentId: 'sub-conv-1',
+          parentToolUseId: 'call-sub-1',
+          providerRunIds: ['sub-conv-1'],
+        },
+      });
+
+      // Parent ends its turn while the child continues running in the background.
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Poll tick 1 emits progress while holding the turn open.
+      await vi.advanceTimersByTimeAsync(25);
+      expect(taskUpdates()).toHaveLength(2);
+      expect(taskUpdates()[1]?.data).toMatchObject({
+        status: 'running',
+        model: 'gemini-4-neon-xhigh',
+        lastToolName: 'read_file',
+        summary: 'Checking session.ts',
+        usage: { totalTokens: 12_000, toolUses: 3 },
+        subagentObservation: { kind: 'progress', logicalSubagentId: 'sub-conv-1' },
+      });
+
+      // Poll tick 2 with identical snapshot emits no duplicate update.
+      phase = 'running-2';
+      await vi.advanceTimersByTimeAsync(25);
+      expect(taskUpdates()).toHaveLength(2);
+
+      // Poll tick 3 observes completion, emits terminal update with returnedResult,
+      // and lets the background continuation settle the turn.
+      phase = 'completed';
+      await vi.advanceTimersByTimeAsync(50);
+      expect(taskUpdates()).toHaveLength(3);
+      expect(taskUpdates()[2]?.data).toMatchObject({
+        status: 'completed',
+        summary: 'NO P0/P1 FINDINGS',
+        returnedResult: 'NO P0/P1 FINDINGS',
+        usage: { totalTokens: 25_000, toolUses: 7 },
+        subagentObservation: { kind: 'terminal', logicalSubagentId: 'sub-conv-1' },
+      });
+
+      expect(events.at(-1)?.type).toBe('done');
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('emits terminal stopped when manage_subagents kills a tracked child and ignores stale running snapshots', async () => {
+    vi.useFakeTimers();
+    try {
+      const agent = createFakeAgent();
+      const pollSubagentRuns = vi.fn(async () => [{
+        childId: 'sub-kill-1',
+        status: 'running' as const,
+        startedAt: 1_000,
+        updatedAt: 2_000,
+      }]);
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        backgroundContinuationDelaysMs: { pollMs: 20 },
+        pollSubagentRuns,
+      });
+      await session.send({ type: 'user', content: 'kill subagent' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'call-sub-kill',
+        title: 'Run invoke_subagent',
+        status: 'completed',
+        rawInput: { Role: 'Worker', Prompt: 'Work' },
+        rawOutput: '{"conversationId":"sub-kill-1"}',
+      });
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'call-kill',
+        title: 'Run manage_subagents',
+        status: 'completed',
+        rawInput: { Action: 'kill', ConversationIds: ['sub-kill-1'] },
+      });
+
+      const taskUpdates = () => events.filter((e) => e.type === 'agent_task_update');
+      await vi.waitFor(() => expect(taskUpdates()).toHaveLength(2));
+      expect(taskUpdates().map((e) => (e.data as { status?: string }).status)).toEqual(['running', 'stopped']);
+      expect(taskUpdates()[1]?.data).toMatchObject({
+        provider: 'antigravity',
+        taskId: 'sub-kill-1',
+        parentToolUseId: 'call-sub-kill',
+        status: 'stopped',
+        subagentObservation: { kind: 'terminal', logicalSubagentId: 'sub-kill-1' },
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      expect(taskUpdates()).toHaveLength(2);
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

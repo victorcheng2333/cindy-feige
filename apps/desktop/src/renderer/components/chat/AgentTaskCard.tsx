@@ -49,7 +49,9 @@ import { formatCompactTokens } from '@/lib/usageFormat';
 import { CODEX_SUBAGENT_EFFORTS } from '../../../shared/subagentModelSettings';
 import {
   PI_SUBAGENT_TOOL_NAME,
+  extractAgySubagentConversationId,
   formatAgentTaskTitle,
+  isAgySubagentToolName,
   isClaudeSubagentToolName,
   isSubagentResultError,
   subagentSpawnReceiptName,
@@ -255,7 +257,12 @@ export function AgentTaskCard({
   const provider = update?.provider
     ?? (toolCall?.toolName?.startsWith('collab:')
       ? 'codex'
-      : toolCall?.toolName === PI_SUBAGENT_TOOL_NAME ? 'pi' : 'claude-code');
+      : toolCall?.toolName === PI_SUBAGENT_TOOL_NAME
+        ? 'pi'
+        : isAgySubagentToolName(toolCall?.toolName)
+          ? 'antigravity'
+          : 'claude-code');
+  const isAgySubagent = isSubagent && provider === 'antigravity';
   // `<tool_use_error>` 是 Claude SDK 协议级标记,只对 Claude 子任务(Agent/Task)的
   // 结果有意义。后台 Bash、PI subagent 与 Codex `collab:*` 的成功产物可能合法地以
   // 该前缀开头,无条件判定会把成功任务误标成 failed。工具名已知时按工具名收窄,
@@ -285,13 +292,13 @@ export function AgentTaskCard({
   const title = compactText(
     formatAgentTaskTitle(provider, (isWorkflow ? update?.workflowName : undefined) ??
       update?.title ??
-      readInputString(toolCall?.toolInput, ['description', 'task', 'name']) ??
-      readInputString(toolCall?.toolInput, ['prompt'])),
+      readInputString(toolCall?.toolInput, ['Role', 'role', 'description', 'task', 'name']) ??
+      readInputString(toolCall?.toolInput, ['Prompt', 'prompt'])),
     96,
   ) ?? t(isWorkflow ? 'chat.agentTask.provider.workflow' : 'chat.agentTask.emptyTitle');
   const description = compactText(
     update?.description ??
-      readInputString(toolCall?.toolInput, ['prompt', 'description', 'task']),
+      readInputString(toolCall?.toolInput, ['Prompt', 'prompt', 'description', 'task']),
   );
   // codex spawn 启动卡:translator 的 tool_result_full 只放结构化数据(agentPath
   // 原文),用户可见句子在这里按 locale 组装。判据与 mobile 卡模型共用
@@ -299,26 +306,26 @@ export function AgentTaskCard({
   const spawnReceiptName = subagentSpawnReceiptName(toolCall?.toolName, toolCall?.toolInput, result);
   const resultIsPiLaunchReceipt = isPiDurableSubagent
     && subagentSpawnResultIndicatesRunning(toolCall?.toolName, result);
-  // Claude's async receipt is internal metadata addressed to the model (agentId,
-  // output file); it is never the task's summary.
-  const resultIsClaudeLaunchReceipt = !isPiDurableSubagent
-    && provider === 'claude-code'
+  // Claude/Antigravity async receipts are internal metadata addressed to the model
+  // (agentId / conversationId / log path); never present them as the task's summary.
+  const resultIsHiddenLaunchReceipt = !isPiDurableSubagent
+    && (provider === 'claude-code' || provider === 'antigravity')
     && subagentSpawnResultIndicatesRunning(toolCall?.toolName, result);
   // 判据与抑制规则同 maker-shared 的 buildAgentTaskCardModel:有 live update 时不显示
   // 「已启动」句子(title + 状态已表达),否则 codex 卡会比 Claude 卡多一行冗余文案。
-  // PI/Claude detached tool_result 也是启动回执；终态卡必须优先显示后续 durable
-  // update.summary，不能把「已启动」错当最终答案。
+  // PI/Claude/Antigravity detached tool_result 也是启动回执；终态卡必须优先显示后续
+  // durable update.summary，不能把「已启动」错当最终答案。
   const summary = spawnReceiptName
     ? (update
         ? detailText(update.summary)
         : t('chat.agentTask.subagentStarted', { name: formatAgentTaskTitle(provider, spawnReceiptName) }))
     : resultIsPiLaunchReceipt
       ? detailText(update?.summary, result)
-      : resultIsClaudeLaunchReceipt
+      : resultIsHiddenLaunchReceipt
         ? detailText(update?.summary)
         : detailText(result, update?.summary);
   const piResultNeedsCollapse = Boolean(
-    isPiDurableSubagent
+    (isPiDurableSubagent || isAgySubagent)
       && summary
       && (summary.length > 320 || summary.split(/\r?\n/).length > 4),
   );
@@ -349,11 +356,13 @@ export function AgentTaskCard({
     ? t('chat.agentTask.provider.workflow')
     : isBash
       ? t('chat.agentTask.provider.shell')
-      : provider === 'cursor' ? 'Cursor' : provider === 'codex'
-        ? t('chat.agentTask.provider.codex')
-        : provider === 'pi'
-          ? t('chat.agentTask.provider.pi')
-          : t('chat.agentTask.provider.claude');
+      : provider === 'antigravity'
+        ? 'Antigravity'
+        : provider === 'cursor' ? 'Cursor' : provider === 'codex'
+          ? t('chat.agentTask.provider.codex')
+          : provider === 'pi'
+            ? t('chat.agentTask.provider.pi')
+            : t('chat.agentTask.provider.claude');
 
   // 停止按钮:Claude 后台任务沿用 SDK stopTask；PI 只开放 Cindy durable runner
   // 明确标成 taskType=pi_subagent 的异步任务。普通 PI 前台委派没有 durable 控制面，
@@ -390,10 +399,13 @@ export function AgentTaskCard({
   // 不到 —— 那里必须退回展开区,否则卡片既点不动、又因面板入口化丢掉了展开区。
   const panelReachable = useSidebarPanelReachable(sessionId);
   const canOpenInPanel = Boolean(sessionId) && Boolean(workflowTaskId) && panelReachable;
-  const subagentFocusId = update?.taskId ?? toolCall?.toolUseId;
+  const subagentFocusId =
+    update?.taskId
+    ?? (isAgySubagent ? extractAgySubagentConversationId(result) : undefined)
+    ?? toolCall?.toolUseId;
   const canOpenSubagentInPanel =
-    isPiDurableSubagent &&
-    sessionAgentKind === 'pi' &&
+    ((isPiDurableSubagent && sessionAgentKind === 'pi')
+      || (isAgySubagent && sessionAgentKind === 'antigravity')) &&
     Boolean(sessionId) &&
     Boolean(subagentFocusId) &&
     panelReachable;
@@ -616,7 +628,7 @@ export function AgentTaskCard({
               {summary && (
                 <>
                   <p
-                    data-agent-task-result-preview={isPiDurableSubagent ? 'true' : undefined}
+                    data-agent-task-result-preview={isPiDurableSubagent || isAgySubagent ? 'true' : undefined}
                     className={cn(
                       'mb-1 whitespace-pre-wrap',
                       piResultNeedsCollapse && !piResultExpanded && 'line-clamp-4',

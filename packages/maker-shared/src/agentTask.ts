@@ -138,7 +138,7 @@ export function normalizeWorkflowProgressEntries(
 }
 
 export interface AgentTaskUpdate {
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   taskId: string;
   parentToolUseId?: string;
   status: AgentTaskStatus;
@@ -306,6 +306,7 @@ export function isSubagentSpawnToolName(toolName: string): boolean {
   return toolName === 'Agent'
     || toolName === 'Task'
     || toolName === PI_SUBAGENT_TOOL_NAME
+    || isAgySubagentToolName(toolName)
     // Codex collab 的 spawn 工具名按版本变化(`collab:spawn` / `collab:spawnAgent`),
     // 与 translator 的 spawn 判据同口径(前缀),升级后新名字不会静默退化成普通工具行。
     || COLLAB_SPAWN_TOOL_RE.test(toolName);
@@ -338,13 +339,46 @@ export function isClaudeSubagentToolName(toolName: string | undefined): boolean 
 /** PI 子代理工具名 —— maker-core 的 pi 扩展注册端与本文件的卡片判据共用,不各写字面量。 */
 export const PI_SUBAGENT_TOOL_NAME = 'subagent';
 
+/** Antigravity ACP subagent launch tool name (wire title may be prefixed with `Run `). */
+export const AGY_SUBAGENT_TOOL_NAME = 'invoke_subagent';
+
+const AGY_CONVERSATION_ID_RE = /^[A-Za-z0-9-]{1,128}$/;
+
+export function isAgySubagentToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return toolName.trim().replace(/^Run\s+/i, '').trim().toLowerCase() === AGY_SUBAGENT_TOOL_NAME;
+}
+
+/**
+ * Extracts the spawned child `conversationId` from Antigravity's `invoke_subagent`
+ * launch receipt (e.g. `Created the following subagent:\n{"conversationId":"..."}`).
+ */
+export function extractAgySubagentConversationId(result: string | null | undefined): string | undefined {
+  if (typeof result !== 'string') return undefined;
+  const trimmed = result.trim();
+  if (!trimmed || !trimmed.includes('conversationId')) return undefined;
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) return undefined;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const conversationId = (parsed as Record<string, unknown>).conversationId;
+    return typeof conversationId === 'string' && AGY_CONVERSATION_ID_RE.test(conversationId)
+      ? conversationId
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Validate + shape a raw `agent_task_update` event payload into an `AgentTaskUpdate`.
  * Returns null when neither a taskId nor a parentToolUseId is present (un-linkable).
  */
 export function normalizeAgentTaskUpdate(
   data: unknown,
-  source?: 'claude-code' | 'codex' | 'pi' | 'cursor',
+  source?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
 ): AgentTaskUpdate | null {
   if (!data || typeof data !== 'object') return null;
   const raw = data as Record<string, unknown>;
@@ -359,11 +393,16 @@ export function normalizeAgentTaskUpdate(
     rawStatus === 'completed' || rawStatus === 'failed' || rawStatus === 'stopped'
       ? rawStatus
       : 'running';
-  const provider = raw.provider === 'cursor' || raw.provider === 'codex' || raw.provider === 'claude-code' || raw.provider === 'pi'
-    ? raw.provider
-    : source === 'cursor' || source === 'codex' || source === 'pi'
-      ? source
-      : 'claude-code';
+  const provider =
+    raw.provider === 'cursor'
+    || raw.provider === 'codex'
+    || raw.provider === 'claude-code'
+    || raw.provider === 'pi'
+    || raw.provider === 'antigravity'
+      ? raw.provider
+      : source === 'cursor' || source === 'codex' || source === 'pi' || source === 'antigravity'
+        ? source
+        : 'claude-code';
   const usageRaw = raw.usage && typeof raw.usage === 'object' ? raw.usage as Record<string, unknown> : null;
   const usage: AgentTaskUsage | undefined = usageRaw
     ? {
@@ -496,7 +535,7 @@ export function findAgentTaskUpdate(
  */
 export interface AgentTaskCardModel {
   status: AgentTaskStatus;
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
   /** Best title, or null when nothing usable was found (caller supplies its own fallback). */
   title: string | null;
   description?: string;
@@ -551,6 +590,9 @@ export function subagentSpawnResultIndicatesRunning(
     && trimmed === 'Cindy subagent launched. The agent is working in the background.') {
     return true;
   }
+  if (isAgySubagentToolName(toolName) && extractAgySubagentConversationId(trimmed) !== undefined) {
+    return true;
+  }
   // Claude Code 2.1.280 appends a notice to the first line (`Async agent
   // launched successfully. (This tool result is internal metadata …)`) and to
   // the agentId line, so match the lines by prefix instead of exact text.
@@ -599,13 +641,15 @@ export function buildAgentTaskCardModel(input: {
   // callers (AgentTaskCard / listSessionTasks). With no tool name (history
   // replay of a legacy update card) fall back to the provider heuristic below,
   // matching AgentTaskCard's claudeProtocolResult.
-  const providerFallback: 'claude-code' | 'codex' | 'pi' | 'cursor' =
+  const providerFallback: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' =
     update?.provider
     ?? (toolName?.startsWith('collab:')
       ? 'codex'
       : toolName === PI_SUBAGENT_TOOL_NAME
         ? 'pi'
-        : 'claude-code');
+        : isAgySubagentToolName(toolName)
+          ? 'antigravity'
+          : 'claude-code');
   const claudeProtocolResult = toolName !== undefined
     ? isClaudeSubagentToolName(toolName)
     : providerFallback === 'claude-code';
@@ -620,12 +664,12 @@ export function buildAgentTaskCardModel(input: {
   const provider = providerFallback;
   const title = compactText(
     formatAgentTaskTitle(provider, update?.title
-      ?? readInputString(toolInput, ['description', 'task', 'name'])
-      ?? readInputString(toolInput, ['prompt'])),
+      ?? readInputString(toolInput, ['Role', 'role', 'description', 'task', 'name'])
+      ?? readInputString(toolInput, ['Prompt', 'prompt'])),
     96,
   );
   const description = compactText(
-    update?.description ?? readInputString(toolInput, ['prompt', 'description', 'task']),
+    update?.description ?? readInputString(toolInput, ['Prompt', 'prompt', 'description', 'task']),
   );
   const spawnReceiptName = subagentSpawnReceiptName(toolName, toolInput, result);
   // 有实时 update(子线程送来的 tokens / 工具调用数 / 终态)时不再暴露启动回执:
@@ -635,10 +679,11 @@ export function buildAgentTaskCardModel(input: {
   const spawnedAgentName = update ? undefined : formatAgentTaskTitle(provider, spawnReceiptName);
   // 启动回执命中时 summary 不携带裸路径(路径已在 spawnedAgentName / title 中),
   // 否则手机端会把 agentPath 原样当摘要展示。
-  // Claude 异步 Agent 的启动回执是写给模型的内部元数据(agentId / output 文件),不当摘要展示。
-  const claudeLaunchReceipt = (toolName === 'Agent' || toolName === 'Task')
+  // Claude/Antigravity 异步 Agent 的启动回执是写给模型的内部元数据(agentId/conversationId),不当摘要展示。
+  const launchReceiptHidden =
+    ((toolName === 'Agent' || toolName === 'Task') || isAgySubagentToolName(toolName))
     && subagentSpawnResultIndicatesRunning(toolName, result);
-  const summary = spawnReceiptName || claudeLaunchReceipt
+  const summary = spawnReceiptName || launchReceiptHidden
     ? detailText(update?.summary)
     : detailText(result, update?.summary);
   return {

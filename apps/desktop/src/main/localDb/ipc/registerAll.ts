@@ -32,6 +32,7 @@ import { registerRecentWorkdirsIpc } from './recentWorkdirs';
 import { registerProjectAliasesIpc } from './projectAliases';
 import { registerRightSidebarTabsIpc } from './rightSidebarTabs.desktop';
 import { registerSubagentRunsIpc } from './subagentRuns';
+import { antigravityStateDir } from '../../maker-host/antigravity-state.js';
 import { enqueueDurableWrite } from '../../messagePersistBroadcaster.desktop';
 import { registerDevSqliteVecIpc } from './dev/sqliteVec';
 import { registerSearchIpc } from './search.desktop';
@@ -256,6 +257,8 @@ export function registerLocalDbIpc(opts: RegisterLocalDbIpcOpts = {}): void {
     // handler needs the parent task loaded as a live PI session. Supplied from
     // the composition root so this layer never imports the Maker.
     ...(opts.isParentPiSessionLive ? { isParentPiSessionLive: opts.isParentPiSessionLive } : {}),
+    resolveAntigravityStateDir: (sessionId, workingDir) =>
+      antigravityStateDir(sessionId, workingDir),
   });
   registerSearchIpc();
   registerDevSqliteVecIpc();

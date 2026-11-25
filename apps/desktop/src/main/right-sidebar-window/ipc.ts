@@ -36,6 +36,7 @@ const SUBAGENT_PROVIDERS = [
   'claude-code',
   'codex',
   'pi',
+  'antigravity',
 ] as const satisfies readonly SubagentProvider[];
 
 const MAX_CONTEXT_SESSION_ID_LENGTH = 128;

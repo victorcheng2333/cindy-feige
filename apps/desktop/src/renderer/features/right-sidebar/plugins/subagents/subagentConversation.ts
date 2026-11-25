@@ -30,6 +30,13 @@ export interface SubagentMessageItem {
   controlAction?: SubagentControlAction;
 }
 
+export interface SubagentThinkingItem {
+  kind: 'thinking';
+  id: string;
+  content: string;
+  occurredAt: number;
+}
+
 export interface SubagentToolItem {
   kind: 'tool';
   id: string;
@@ -44,7 +51,7 @@ export interface SubagentToolItem {
   occurredAt: number;
 }
 
-export type SubagentConversationItem = SubagentMessageItem | SubagentToolItem;
+export type SubagentConversationItem = SubagentMessageItem | SubagentThinkingItem | SubagentToolItem;
 
 export interface SubagentConversation {
   /** Reading flow, in transcript order. */
@@ -67,6 +74,15 @@ export function buildSubagentConversation(
   for (const entry of entries) {
     if (entry.role === 'system') {
       system.push(entry);
+      continue;
+    }
+    if (entry.role === 'thinking') {
+      items.push({
+        kind: 'thinking',
+        id: entry.id,
+        content: entry.content,
+        occurredAt: entry.occurredAt,
+      });
       continue;
     }
     if (entry.role !== 'tool') {
