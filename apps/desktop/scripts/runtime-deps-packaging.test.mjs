@@ -111,3 +111,27 @@ it('removes only generated snapshots from the packaged migration metadata', () =
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Regression (2026-11-26): an outer single-item `{...}` brace in asar.unpack is
+// treated as literal braces by minimatch, preventing sharp-libvips, node-pty and
+// sherpa-onnx dynamic libraries from unpacking and crashing packaged startup.
+// Minimal failing input: asar.unpack pattern matched via @electron/asar's minimatch; tier: unit.
+it('matches required native dynamic libraries and helpers in forge.config.ts asar.unpack', () => {
+  const config = fs.readFileSync(path.resolve('forge.config.ts'), 'utf8');
+  const unpack = config.match(/asar:\s*\{\s*unpack:\s*'([^']+)'/)?.[1];
+  expect(unpack).toBeTruthy();
+  const rootRequire = createRequire(path.resolve('package.json'));
+  const asarRequire = createRequire(rootRequire.resolve('@electron/asar/package.json'));
+  const minimatch = asarRequire('minimatch');
+  const required = [
+    '/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.3.dylib',
+    '/node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64.node',
+    '/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper',
+    '/node_modules/sherpa-onnx-darwin-arm64/libonnxruntime.dylib',
+    '/node_modules/loudness/build/Release/loudness',
+    '/node_modules/native/sqlite-vec/vec0.dylib',
+  ];
+  for (const entry of required) {
+    expect(minimatch(entry, unpack, { matchBase: true }), `expected ${entry} to match ${unpack}`).toBe(true);
+  }
+});
