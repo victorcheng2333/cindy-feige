@@ -592,7 +592,13 @@ export function buildAntigravityAgent(
           vendorOptions: opts.vendorOptions,
           memoryEnabled: memory.enabled,
           memoryScopeKey: memory.scopeKey,
-          allowedServerNames: memory.enabled ? ['cindy_helper', 'cindy', 'cindy_memory'] : ['cindy_helper', 'cindy'],
+          // cindy_computer: without it a local Agy task can only drive the desktop through the
+          // raw cua-driver CLI, which skips Cindy's Computer Use switch, guards and Locked use
+          // (docs/product-rules/locked-use.md). Every call still passes Cindy's Computer Use
+          // switch; device-hosted tasks return above and never get this computer's tools.
+          allowedServerNames: memory.enabled
+            ? ['cindy_helper', 'cindy', 'cindy_computer', 'cindy_memory']
+            : ['cindy_helper', 'cindy', 'cindy_computer'],
           mcpCallerKind: 'unknown',
           mcpCallerAttested: false,
         });

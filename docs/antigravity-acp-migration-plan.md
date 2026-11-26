@@ -139,7 +139,8 @@ agy acp --process-per-session（front）→ worker → 工具子进程
 
 ### 3.7 Cindy MCP 与记忆
 
-连接前挂载 `cindy_helper` 和 `cindy`，启用共享记忆且使用 MCP 存储时挂载
+连接前挂载 `cindy_helper`、`cindy` 和 `cindy_computer`（2026-11-26 补上，见
+`antigravity-agent-harness-plan.md` §4.4），启用共享记忆且使用 MCP 存储时挂载
 `cindy_memory`。沿用现有任务身份、回环 HTTP、任务级 Bearer 和桥接释放规则。
 项目 Markdown 记忆沿用现有文件工具路径。自配外部 MCP 的认证信息保留在 Cindy 的设置中。
 

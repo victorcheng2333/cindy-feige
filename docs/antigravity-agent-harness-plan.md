@@ -221,9 +221,13 @@ antigravity-cli/…           # agy 自己的会话历史、缓存（由 agy 写
 ### 4.4 Cindy 工具（MCP）
 
 复用 Cursor 的做法：`getPiExtraSpawnConfig(providers, …, { agentKind: 'antigravity', allowedServerNames })`
-拿到 Cindy MCP HTTP bridge 的端点与 token，写成 `mcp_config.json` 的 `{ url, headers }`。服务器集合与
-Cursor 一致：`cindy_helper`、`cindy`，开启记忆时加 `cindy_memory`。MCP 集合在会话开始时固定，不中途增删
+拿到 Cindy MCP HTTP bridge 的端点与 token，写成 `mcp_config.json` 的 `{ url, headers }`。服务器集合：
+`cindy_helper`、`cindy`、`cindy_computer`，开启记忆时加 `cindy_memory`。MCP 集合在会话开始时固定，不中途增删
 （保护前缀缓存，见 `maker-core-and-agent-behavior.md` §3.1）。
+
+2026-11-26，主人要求给本机 Agy 任务补上 `cindy_computer`（Cursor 不变）：没有它时 Agy 只能用 `cua-driver`
+命令行操作桌面，绕过 Cindy 的电脑使用开关、目标窗口与安全守卫，也触发不了[锁屏后继续使用](product-rules/locked-use.md)。
+在别的电脑上运行文件的任务（device-hosted）仍不挂本机任何 MCP。
 
 ### 4.5 产品提示词（需要维护者确认）
 
