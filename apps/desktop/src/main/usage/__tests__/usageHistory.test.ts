@@ -950,9 +950,9 @@ describe('readUsageHistoryWith', () => {
 });
 
 describe('production cache and empty payload', () => {
-  // 单测：v5 曾把旧 USD 缓存为 0，升级必须重算；v6 则继续走原有磁盘复用路径。
+  // 单测：v5 曾把旧 USD 缓存为 0，升级必须重算；v9 则继续走原有磁盘复用路径。
   // 真实 readUsageHistory 读取临时磁盘文件；旧覆盖只检查写出的版本号，不能发现误复用。
-  it.each([5, 6, 7, 8])('recomputes old caches and reuses v8 cache (version %i)', async (version) => {
+  it.each([5, 6, 7, 8, 9])('recomputes old caches and reuses v9 cache (version %i)', async (version) => {
     setActiveLedgerCurrency('CNY');
     const usd: RegionalMoney = { amount: 10, currency: 'USD', approximate: false, kind: 'actual-cost' };
     const cached = emptyUsageHistoryPayload();
@@ -964,8 +964,8 @@ describe('production cache and empty payload', () => {
     await writeFile(file, JSON.stringify({ version, optsKey: 'user=user-a|days=30', payload: cached }));
     vi.mocked(getAllSpendDays).mockResolvedValue([{ day: TODAY, monies: [usd] }]);
     const result = await readUsageHistory({ days: 30 });
-    expect(result.totals.today.amount).toBe(version === 8 ? 67 : 10);
-    expect(result.stale).toBe(version === 8);
+    expect(result.totals.today.amount).toBe(version === 9 ? 67 : 10);
+    expect(result.stale).toBe(version === 9);
     // 等待既有后台刷新完成，避免清理临时目录时还有写入。
     await readUsageHistory({ days: 30, forceRefresh: true });
   });
@@ -1039,8 +1039,8 @@ describe('production cache and empty payload', () => {
         ),
       );
       expect(raw).toMatchObject({
-        // v6 作废曾丢弃旧 USD 的展示缓存。
-        version: 8,
+        // v9 失效仅保留单币种或未前置估算 legacy Agy 行的旧磁盘缓存。
+        version: 9,
         optsKey: 'user=user-a|days=30',
         payload: {
           totals: {
@@ -1459,4 +1459,50 @@ it('ignores retired cursor rows instead of attributing them to claude-code', asy
   expect(result.totals.todayTokens).toBe(100);
   expect(result.models).toEqual([expect.objectContaining({ agentKind: 'codex', model: 'gpt-5.5', inputTokens: 100 })]);
   expect(result.modelDaily.map(r => r.agentKind)).toEqual(['codex']);
+});
+
+// - Production entry: readUsageHistoryWith
+// - Bug basis: untagged legacy Agy rows ran estimateAntigravity after keepCompatibleMoney, leaking raw USD
+//   into CNY payloads, while preserving native currencies is needed for mixed CNY/USD menu bar conversion.
+// - Coverage gap: existing CNY tests omitted legacy untagged zero-cost Agy rows and preserveAllCurrencies mode.
+// - Minimal failing input: CNY gateway spend day + untagged 0 CNY antigravity row + tagged USD antigravity row.
+// - Tier: unit
+it('prices legacy antigravity rows before currency filtering and preserves mixed currencies only when requested', async () => {
+  setActiveLedgerCurrency('CNY');
+  const day = '2026-11-26';
+  const cnyPaid: RegionalMoney = { amount: 67, currency: 'CNY', approximate: false, kind: 'actual-cost' };
+  const cnyZero: RegionalMoney = { amount: 0, currency: 'CNY', approximate: false, kind: 'actual-cost' };
+  const agyUsd: RegionalMoney = { amount: 10, currency: 'USD', approximate: true, kind: 'value-estimate', estimateReasons: ['subscription-value'] };
+  const deps = makeDeps({
+    todayKey: () => day,
+    getAllSpendDays: async () => [{ day, monies: [cnyPaid] }],
+    getModelUsageSince: async () => [
+      modelRow(day, 'claude-code', 'claude-opus-5-5', cnyPaid, { outputTokens: 10 }),
+      modelRow(day, 'antigravity', 'claude-opus-5-5', cnyZero, { inputTokens: 1_000_000 }),
+      modelRow(day, 'antigravity', 'gemini-4-neon#billing=subscription', agyUsd, { inputTokens: 100 }),
+    ],
+  });
+
+  // Strict single-currency read never leaks USD into a CNY payload, while reporting USD in currencies.
+  const strict = await readUsageHistoryWith(deps);
+  expect(strict.currencies).toEqual(['CNY', 'USD']);
+  expect(strict.totals.today).toEqual(cnyPaid);
+  expect(strict.modelDaily.every(row => row.money.currency === 'CNY')).toBe(true);
+  expect(strict.modelDaily.find(row => row.agentKind === 'antigravity' && row.model === 'claude-opus-5-5')?.money.amount).toBe(0);
+
+  // Explicit currency override ignores preserveAllCurrencies and still filters strictly.
+  const forcedCny = await readUsageHistoryWith(deps, { currency: 'CNY', preserveAllCurrencies: true });
+  expect(forcedCny.modelDaily.every(row => row.money.currency === 'CNY')).toBe(true);
+  expect(forcedCny.modelDaily.find(row => row.agentKind === 'antigravity')?.money.amount).toBe(0);
+
+  // Menu bar auto-currency read keeps both native CNY and native USD rows intact in modelDaily.
+  const mixed = await readUsageHistoryWith(deps, { preserveAllCurrencies: true });
+  expect(mixed.totals.today).toEqual(cnyPaid);
+  expect(mixed.modelDaily.find(row => row.agentKind === 'claude-code')?.money).toEqual(cnyPaid);
+  expect(mixed.modelDaily.find(row => row.agentKind === 'antigravity' && row.model === 'claude-opus-5-5')?.money).toMatchObject({
+    currency: 'USD',
+    kind: 'value-estimate',
+    amount: expect.closeTo(4),
+  });
+  expect(mixed.modelDaily.find(row => row.agentKind === 'antigravity' && row.model === 'gemini-4-neon')?.money).toEqual(agyUsd);
 });

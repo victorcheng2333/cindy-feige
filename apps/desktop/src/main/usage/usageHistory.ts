@@ -88,8 +88,9 @@ const MODEL_WINDOW_DAYS = 30;
 // v5:日账改为按币种分行后折叠口径变了；v4 快照是用「按区域猜出来的账本币种」折叠出来
 //    的聚合值，直接沿用会让升级后的首页继续显示按错币种算出的历史。整份作废重算。
 // v4:恢复 CN usage 的 CNY 账本口径，并让订阅 USD 估值按 6.7 投影到 CNY。
+// v9：前置旧无后缀 antigravity 估算（消除 USD 泄漏进 CNY），并支持菜单栏保留 modelDaily 多币种原文。
 // v6：重算每日展示投影，避免迁移前的 USD 历史继续沿用已归零的旧缓存。
-const DISK_CACHE_VERSION = 8;
+const DISK_CACHE_VERSION = 9;
 const DISK_CACHE_FILE = 'usage-history.json';
 /** 后台刷新完成后, renderer 的短轮询能拿到 fresh payload, 避免 stale 状态自循环。 */
 const MEMORY_FRESH_MS = 10_000;
@@ -440,7 +441,8 @@ function optsKey(opts?: UsageHistoryReadOptions): string {
   // 'local' 沿用旧 key, 升级后首页与已有磁盘快照照常命中。
   const deviceSuffix = device === 'local' ? '' : `|device=${encodeURIComponent(device)}`;
   const taskSuffix = opts?.includeTasks ? '|tasks=1' : '';
-  return `user=${encodeURIComponent(userId)}|days=${days}${modelSuffix}${deviceSuffix}${taskSuffix}${opts?.currency ? '|currency=' + opts.currency : ''}`;
+  const allCurrenciesSuffix = opts?.preserveAllCurrencies && !opts?.currency ? '|allCurrencies=1' : '';
+  return `user=${encodeURIComponent(userId)}|days=${days}${modelSuffix}${deviceSuffix}${taskSuffix}${opts?.currency ? '|currency=' + opts.currency : ''}${allCurrenciesSuffix}`;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -577,6 +579,11 @@ function isLatestRefreshGeneration(expectedOptsKey: string, generation: number):
 
 export interface UsageHistoryReadOptions {
   currency?: MoneyCurrency;
+  /**
+   * 仅在未指定 currency 时生效：modelDaily 保留各行原始正金额币种（CNY/USD），
+   * 供菜单栏按展示币种统一折算；totals / days / models 仍保持单一 ledgerCurrency。
+   */
+  preserveAllCurrencies?: boolean;
   days?: number | 'all';
   /** Model/table aggregation window. `all` is used by Settings → Usage History. */
   modelDays?: number | 'all';
@@ -668,6 +675,7 @@ export async function readUsageHistoryWith(
     (row) => row.agentKind !== 'cursor',
   );
   const priceOverrides = deps.getModelPriceOverridesSnapshot();
+  const estimateAntigravity = createAntigravityValueEstimator(priceOverrides);
   const available = new Set<MoneyCurrency>();
   for (const row of spendDayRows) {
     if (heatmapCutoff && row.day < heatmapCutoff && modelCutoff && row.day < modelCutoff) continue;
@@ -675,7 +683,9 @@ export async function readUsageHistoryWith(
   }
   const pricedModels = rawModels.map(row => {
     let money = row.money;
-    if (row.agentKind !== 'acp' && (!modelCutoff || row.day >= modelCutoff) && isSubscriptionUsageModel(row.model) && money.kind !== 'value-estimate' && money.amount === 0) {
+    if (row.agentKind === 'antigravity' && (!modelCutoff || row.day >= modelCutoff) && money.kind !== 'value-estimate' && money.amount === 0) {
+      money = estimateAntigravity(displayModelName(row.model), row, row.day) ?? money;
+    } else if (row.agentKind !== 'acp' && (!modelCutoff || row.day >= modelCutoff) && isSubscriptionUsageModel(row.model) && money.kind !== 'value-estimate' && money.amount === 0) {
       const quote = getSubscriptionValuePriceFor(usageAgentKind(row.agentKind), displayModelName(row.model), pricing, row.day, priceOverrides);
       money = computePriceQuoteTurnMoney(row, quote) ?? money;
     }
@@ -684,6 +694,7 @@ export async function readUsageHistoryWith(
   });
   const currencies = [...available].sort();
   const ledgerCurrency = opts?.currency ?? (currencies.length === 1 ? currencies[0] : currentLedgerCurrency());
+  const preserveAllCurrencies = Boolean(opts?.preserveAllCurrencies && !opts?.currency);
   const zeroActual = (): RegionalMoney => ({
     amount: 0,
     currency: ledgerCurrency,
@@ -698,6 +709,7 @@ export async function readUsageHistoryWith(
     estimateReasons: ['subscription-value'],
   });
   const keepCompatibleMoney = (money: RegionalMoney): RegionalMoney => {
+    if (preserveAllCurrencies && money.amount > 0) return money;
     return money.currency === ledgerCurrency ? money : { ...money, amount: 0, currency: ledgerCurrency };
   };
   const addOrZero = (
@@ -774,7 +786,6 @@ export async function readUsageHistoryWith(
   const byKey = new Map<string, UsageHistoryModel>();
   const subscriptionEstimatesByKey = new Map<string, RegionalMoney[]>();
   const subscriptionEstimatesByRow = new Map<DailyModelUsageRow, RegionalMoney>();
-  const estimateAntigravity = createAntigravityValueEstimator(priceOverrides);
   let todayTokens = 0;
   let last30DaysTokens = 0;
   for (const row of modelRows) {
@@ -803,7 +814,7 @@ export async function readUsageHistoryWith(
       };
       byKey.set(key, agg);
     }
-    if (row.money.amount > 0 && row.money.kind === 'actual-cost') {
+    if (row.money.amount > 0 && row.money.kind === 'actual-cost' && row.money.currency === ledgerCurrency) {
       agg.money =
         agg.money.amount > 0
           ? (addCompatibleRegionalMoney([agg.money, row.money], ledgerCurrency) ?? row.money)
@@ -814,18 +825,14 @@ export async function readUsageHistoryWith(
     agg.cacheReadTokens += row.cacheReadTokens;
     agg.cacheCreateTokens += row.cacheCreateTokens;
     const taggedSubscription = isSubscriptionUsageModel(row.model);
-    const estimate = taggedSubscription && row.money.kind === 'value-estimate'
+    const estimate = (taggedSubscription || agentKind === 'antigravity') && row.money.kind === 'value-estimate'
       ? row.money
-      : agentKind === 'antigravity' && !taggedSubscription && row.money.amount === 0
-        // Legacy Agy rows were written before the subscription key and estimate
-        // existed. Keep them separate from the new, already priced rows on read.
-        ? estimateAntigravity(model, row, row.day)
-        : taggedSubscription
-          ? computePriceQuoteTurnMoney(
-              row,
-              getSubscriptionValuePriceFor(agentKind, model, pricing, row.day, priceOverrides),
-            )
-          : null;
+      : taggedSubscription
+        ? computePriceQuoteTurnMoney(
+            row,
+            getSubscriptionValuePriceFor(agentKind, model, pricing, row.day, priceOverrides),
+          )
+        : null;
     if (estimate?.amount) {
       subscriptionEstimatesByRow.set(row, estimate);
       if (row.money.kind !== 'actual-cost' || row.money.amount === 0) {
@@ -837,9 +844,9 @@ export async function readUsageHistoryWith(
   }
   for (const [key, m] of byKey) {
     if (m.money.amount === 0) {
-      const estimates = subscriptionEstimatesByKey.get(key);
-      if (estimates?.length) {
-        m.estimatedMoney = addCompatibleRegionalMoney(estimates, ledgerCurrency);
+      const compatible = subscriptionEstimatesByKey.get(key)?.filter((estimate) => estimate.currency === ledgerCurrency);
+      if (compatible?.length) {
+        m.estimatedMoney = addCompatibleRegionalMoney(compatible, ledgerCurrency);
       }
     }
   }

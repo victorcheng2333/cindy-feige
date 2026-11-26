@@ -38,8 +38,8 @@ const log = createLogger('peerUsageSync');
 const USAGE_DEVICE_ROWS_CHANNEL = MAKER_INVOKE.USAGE_DEVICE_ROWS;
 const SYNC_MIN_INTERVAL_MS = 60_000;
 const PEER_FANOUT = 3;
-// v2:缓存行追加每日 × 任务用量;v1 缓存没有这部分,整份作废后全量重拉。
-const CACHE_VERSION = 2;
+// v3: 放行 antigravity 模型行; v2 缓存此前静默丢弃了对方 Agy 行, 整份作废后全量重拉。
+const CACHE_VERSION = 3;
 const MOBILE_PLATFORMS = new Set(['ios', 'android']);
 
 export type UsageDeviceStatus =

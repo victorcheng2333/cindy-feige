@@ -160,6 +160,33 @@ export interface MenubarPaygInput {
 
 export type MenubarSourceInput = MenubarSubscriptionInput | MenubarBalanceInput | MenubarPaygInput;
 
+export interface MenubarCurrencyAmount {
+  USD: number;
+  CNY: number;
+}
+
+export interface MenubarMixedCurrencyDay {
+  moneyUSD: number[];
+  moneyCNY: number[];
+  paidUSD: number;
+  paidCNY: number;
+}
+
+export interface MenubarMixedCurrencyModel {
+  name: string;
+  harness: MenubarHarness;
+  moneyUSD: number;
+  moneyCNY: number;
+  tokens: number;
+}
+
+export interface MenubarMixedCurrencyScope {
+  daily: MenubarMixedCurrencyDay[];
+  models: Record<keyof MenubarUsageScopeData['models'], MenubarMixedCurrencyModel[]>;
+  hasUSD: boolean;
+  hasCNY: boolean;
+}
+
 export interface MenubarTaskInput {
   sessionId: string;
   title: string;
@@ -168,6 +195,8 @@ export interface MenubarTaskInput {
   model: string;
   tokensToday: number;
   valueToday: number;
+  /** 本机任务按原币种分桶的今日估值（仅当任务涉及异币种或混合币种时提供）。 */
+  valueTodayByCurrency?: MenubarCurrencyAmount;
   contextPercent: number | null;
   running: boolean;
   startedAtMs: number | null;
@@ -190,6 +219,8 @@ export interface MenubarUsageScopeInput {
   daily: MenubarUsageScopeData['daily'];
   models: MenubarUsageScopeData['models'];
   devices: MenubarUsageDeviceInput[];
+  /** 混合/异币种账本按原币种拆分后的每日与模型桶，供面板按展示偏好一次性折算。 */
+  mixedCurrency?: MenubarMixedCurrencyScope;
   /** Daily value split by model for the iPhone widgets; not sent to the menu bar helper. */
   modelSeries?: MenubarModelSeries;
 }
@@ -403,12 +434,46 @@ class Builder {
 
   // ── Formatting ────────────────────────────────────────────────────────────
 
+  private moneyDisplayPrefs(): MoneyDisplayPreferences {
+    return this.input.moneyDisplay ?? DEFAULT_MONEY_DISPLAY;
+  }
+
+  private baseUsageCurrency(): 'USD' | 'CNY' {
+    return this.input.moneySymbol === '¥' ? 'CNY' : 'USD';
+  }
+
+  private targetDisplayCurrency(fallbackCurrency: 'USD' | 'CNY'): 'USD' | 'CNY' {
+    const currency = this.moneyDisplayPrefs().currency;
+    return currency === 'original' ? fallbackCurrency : currency;
+  }
+
+  private combineMixedMoney(usd: number, cny: number, fallbackCurrency: 'USD' | 'CNY') {
+    const target = this.targetDisplayCurrency(fallbackCurrency);
+    const prefs: MoneyDisplayPreferences = { ...this.moneyDisplayPrefs(), currency: target };
+    const fromUsd = usd > 0
+      ? convertDisplayMoney({ amount: usd, currency: 'USD' }, prefs)
+      : { amount: 0, currency: target, converted: false };
+    const fromCny = cny > 0
+      ? convertDisplayMoney({ amount: cny, currency: 'CNY' }, prefs)
+      : { amount: 0, currency: target, converted: false };
+    return {
+      amount: fromUsd.amount + fromCny.amount,
+      currency: target,
+      converted: fromUsd.converted || fromCny.converted,
+    };
+  }
+
   private usageMoney(value: number) {
-    return convertDisplayMoney({ amount: value, currency: this.input.moneySymbol === '¥' ? 'CNY' : 'USD' },
-      this.input.moneyDisplay ?? DEFAULT_MONEY_DISPLAY);
+    return convertDisplayMoney({ amount: value, currency: this.baseUsageCurrency() }, this.moneyDisplayPrefs());
   }
 
   private usageSymbol(): string {
+    const activeScope = this.input.usage.scopes[this.input.settings.scope];
+    if (activeScope?.mixedCurrency) {
+      const target = this.targetDisplayCurrency(activeScope.currency ?? this.baseUsageCurrency());
+      const converted = target === 'USD' ? activeScope.mixedCurrency.hasCNY : activeScope.mixedCurrency.hasUSD;
+      return `${converted ? '≈ ' : ''}${target === 'CNY' ? '¥' : '$'}`;
+    }
     const money = this.usageMoney(1);
     return `${money.converted ? '≈ ' : ''}${money.currency === 'CNY' ? '¥' : '$'}`;
   }
@@ -1202,7 +1267,7 @@ class Builder {
   // ── Tasks ─────────────────────────────────────────────────────────────────
 
   private tasks(): { summary: string; tasks: MenubarTask[] } {
-    const sorted = [...this.input.tasks].sort((a, b) => b.valueToday - a.valueToday || b.tokensToday - a.tokensToday);
+    const sorted = [...this.input.tasks].sort((a, b) => this.taskValue(b) - this.taskValue(a) || b.tokensToday - a.tokensToday);
     const running = sorted.filter((task) => task.running).length;
     const count = sorted.length;
     const base = this.t('tasks.today', { count, n: count });
@@ -1217,7 +1282,7 @@ class Builder {
           title: this.input.settings.privacy ? this.t('tasks.private', { harness: this.harnessName(task.harness) }) : task.title,
           harness: task.harness,
           logoSvg: task.logoSvg ?? (isAntigravityProviderId(task.providerId) ? ANTIGRAVITY_LOGO : this.input.harnessLogos[task.harness]),
-          value: this.usageMoney(task.valueToday).amount,
+          value: this.taskValue(task),
           tokens: task.tokensToday,
           running: task.running,
           startedAtMs: task.running ? task.startedAtMs ?? task.lastActiveAtMs : null,
@@ -1238,20 +1303,61 @@ class Builder {
 
   private usage(): MenubarUsage {
     const scopes = {} as Record<MenubarUsageScope, MenubarUsageScopeData>;
+    const fallbackCurrency = this.baseUsageCurrency();
     for (const scope of ['local', 'all'] as const) {
       const data = this.input.usage.scopes[scope];
-      scopes[scope] = {
-        daily: data.daily.map(day => ({ ...day,
-          money: day.money.map(value => this.usageMoney(value).amount) as typeof day.money,
-          paid: this.usageMoney(day.paid).amount,
-        })),
-        models: {
-          '7': data.models['7'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
-          '30': data.models['30'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
-          '90': data.models['90'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
-        },
-        note: this.usageNote(scope, data.devices),
-      };
+      const mixed = data.mixedCurrency;
+      if (mixed) {
+        const scopeFallback = data.currency ?? fallbackCurrency;
+        const combineDayMoney = (usdArr: readonly number[], cnyArr: readonly number[]) => {
+          const len = Math.max(usdArr.length, cnyArr.length, 3);
+          return Array.from({ length: len }, (_, i) =>
+            this.combineMixedMoney(usdArr[i] ?? 0, cnyArr[i] ?? 0, scopeFallback).amount,
+          ) as [number, number, number, ...number[]];
+        };
+        const combineModels = (rows: readonly MenubarMixedCurrencyModel[]) =>
+          topModels(
+            rows.map((row) => ({
+              name: row.name,
+              harness: row.harness,
+              money: this.combineMixedMoney(row.moneyUSD, row.moneyCNY, scopeFallback).amount,
+              tokens: row.tokens,
+            })),
+          );
+        scopes[scope] = {
+          daily: data.daily.map((day, index) => {
+            const mDay = mixed.daily[index];
+            return {
+              ...day,
+              money: mDay
+                ? combineDayMoney(mDay.moneyUSD, mDay.moneyCNY)
+                : (day.money.map(value => this.usageMoney(value).amount) as typeof day.money),
+              paid: mDay
+                ? this.combineMixedMoney(mDay.paidUSD, mDay.paidCNY, scopeFallback).amount
+                : this.usageMoney(day.paid).amount,
+            };
+          }),
+          models: {
+            '7': combineModels(mixed.models['7']),
+            '30': combineModels(mixed.models['30']),
+            '90': combineModels(mixed.models['90']),
+          },
+          note: this.usageNote(scope, data.devices),
+        };
+      } else {
+        scopes[scope] = {
+          daily: data.daily.map(day => ({ ...day,
+            money: day.money.map(value => this.usageMoney(value).amount) as typeof day.money,
+            paid: this.usageMoney(day.paid).amount,
+          })),
+          models: {
+            '7': data.models['7'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
+            '30': data.models['30'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
+            '90': data.models['90'].map(row => ({ ...row, money: this.usageMoney(row.money).amount })),
+          },
+          note: this.usageNote(scope, data.devices),
+        };
+      }
     }
     return { days: this.input.usage.days, scopes };
   }
@@ -1314,21 +1420,46 @@ class Builder {
     return `${Math.round(remaining)}%`;
   }
 
+  private taskCurrency(): 'USD' | 'CNY' {
+    return this.input.usage.scopes.local.currency ?? this.baseUsageCurrency();
+  }
+
   private taskMoney(value: number) {
-    const currency = this.input.usage.scopes.local.currency ?? (this.input.moneySymbol === '¥' ? 'CNY' : 'USD');
-    return convertDisplayMoney({ amount: value, currency }, this.input.moneyDisplay ?? DEFAULT_MONEY_DISPLAY);
+    return convertDisplayMoney({ amount: value, currency: this.taskCurrency() }, this.moneyDisplayPrefs());
+  }
+
+  private taskValue(task: MenubarTaskInput): number {
+    if (task.valueTodayByCurrency) {
+      return this.combineMixedMoney(task.valueTodayByCurrency.USD, task.valueTodayByCurrency.CNY, this.taskCurrency()).amount;
+    }
+    return this.taskMoney(task.valueToday).amount;
   }
 
   private taskMoneySymbol(): string {
+    if (this.input.tasks.some((task) => task.valueTodayByCurrency !== undefined)) {
+      const fallback = this.taskCurrency();
+      const target = this.targetDisplayCurrency(fallback);
+      const hasUSD = this.input.tasks.some((task) =>
+        task.valueTodayByCurrency ? task.valueTodayByCurrency.USD > 0 : fallback === 'USD' && task.valueToday > 0,
+      );
+      const hasCNY = this.input.tasks.some((task) =>
+        task.valueTodayByCurrency ? task.valueTodayByCurrency.CNY > 0 : fallback === 'CNY' && task.valueToday > 0,
+      );
+      const converted = target === 'USD' ? hasCNY : hasUSD;
+      return `${converted ? '≈ ' : ''}${target === 'CNY' ? '¥' : '$'}`;
+    }
     const money = this.taskMoney(1);
     return `${money.converted ? '≈ ' : ''}${money.currency === 'CNY' ? '¥' : '$'}`;
   }
 
-  private statusTexts(): Record<MenubarStatusTextMode, string | null> {
+  private statusTexts(builtUsage: MenubarUsage): Record<MenubarStatusTextMode, string | null> {
     const tightest = this.tightest();
     const hasSubscriptions = this.visibleSubscriptions().some((source) => this.usableRemaining(source) !== null);
     const scope = this.input.usage.scopes[this.input.settings.scope];
     const today = scope.daily[scope.daily.length - 1];
+    const mixedTodaySum = scope.mixedCurrency
+      ? (builtUsage.scopes[this.input.settings.scope].daily.at(-1)?.money.reduce((sum, value) => sum + value, 0) ?? null)
+      : null;
     const running = this.input.tasks.filter((task) => task.running);
     const pinned = this.visibleSubscriptions().find(source => source.id === this.input.settings.pinnedSourceId);
     const week = pinned?.windows.find(window => window.kind === 'week' &&
@@ -1337,20 +1468,25 @@ class Builder {
       account: pinned ? `${Array.from(this.who(pinned)).slice(0, 10).join('')}${Array.from(this.who(pinned)).length > 10 ? '…' : ''} ${week ? `${Math.round(100 - week.usedPercent)}%` : '—'}` : '—',
       icon: null,
       lowest: tightest ? `${Math.round(this.remaining(tightest) ?? 0)}%` : hasSubscriptions ? '0%' : null,
-      today: today ? this.money(today.money.reduce((sum, value) => sum + value, 0)) : null,
-      task: running.length ? this.money(this.taskMoney(running.reduce((sum, task) => sum + task.valueToday, 0)).amount, this.taskMoneySymbol()) : null,
+      today: mixedTodaySum !== null
+        ? this.money(mixedTodaySum, this.usageSymbol())
+        : today
+          ? this.money(today.money.reduce((sum, value) => sum + value, 0))
+          : null,
+      task: running.length ? this.money(running.reduce((sum, task) => sum + this.taskValue(task), 0), this.taskMoneySymbol()) : null,
     };
   }
 
   build(): MenubarView {
     const headline = this.headline();
     const tasks = this.tasks();
+    const usage = this.usage();
     return {
       locale: this.input.locale,
       moneySymbol: this.usageSymbol(),
       taskMoneySymbol: this.taskMoneySymbol(),
       strings: this.input.uiStrings,
-      statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(),
+      statusTextByMode: this.input.gate ? { icon: null, lowest: null, today: null, task: null, account: null } : this.statusTexts(usage),
       updatedAtMs: this.input.updatedAtMs,
       headlinePrimary: headline.primary,
       headlineSecondary: headline.secondary,
@@ -1359,7 +1495,7 @@ class Builder {
       details: this.details(),
       taskSummary: tasks.summary,
       tasks: tasks.tasks,
-      usage: this.usage(),
+      usage,
       manage: this.manage(),
       settings: this.input.settings,
       ...(this.input.gate ? { gate: this.input.gate } : {}),

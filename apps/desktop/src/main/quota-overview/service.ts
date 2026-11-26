@@ -626,6 +626,7 @@ export class QuotaOverviewService {
     const read = this.usageChain.then(() =>
       readUsageHistory({
         currency,
+        ...(currency === undefined ? { preserveAllCurrencies: true } : {}),
         days: MENUBAR_USAGE_DAYS,
         modelDays: MENUBAR_USAGE_DAYS,
         device: scope,

@@ -257,7 +257,7 @@ describe('usage device rows wire format', () => {
     const h = harness({
       readCache: async () =>
         JSON.stringify({
-          version: 2,
+          version: 3,
           peers: {
             laptop: {
               name: 'L',
@@ -632,7 +632,7 @@ describe('createPeerUsageSync', () => {
     });
     const h = harness();
     const oldCache = JSON.stringify({
-      version: 2,
+      version: 3,
       peers: {
         laptop: {
           name: 'Old account laptop',
@@ -798,5 +798,69 @@ describe('incremental task metadata delta sync', () => {
     expect(retainedGen4.tasksToken).toBe(scopeTokens[4]);
     expect(retainedGen4.tasks).toEqual([]);
     expect(retainedGen4.tasksDelta).toEqual({ removedTaskIds: [] });
+  });
+});
+
+// - Production entry: readUsageDeviceRows / decodeUsageDeviceRowsResponse / createPeerUsageSync
+// - Bug basis: isAgentKind() omitted 'antigravity', silently dropping peer Agy rows while v2 caches missed earlier days
+// - Coverage gap: existing wire-format and cache-upgrade tests only exercised codex/claude-code/pi/acp/media/auxiliary
+// - Minimal failing input: one peer antigravity modelRow plus a pre-existing v2 disk cache
+// - Tier: unit
+describe('antigravity cross-device sync and v2 cache invalidation', () => {
+  it('retains antigravity modelRows through wire round-trip and invalidates v2 caches to backfill sinceDay=null', async () => {
+    const agyRow = {
+      day: '2026-11-21',
+      agentKind: 'antigravity' as const,
+      model: 'gemini-4-neon#billing=subscription',
+      money: { ...usd(4.5), approximate: true, kind: 'value-estimate' as const, estimateReasons: ['subscription-value' as const] },
+      inputTokens: 1_000_000,
+      outputTokens: 50_000,
+      cacheReadTokens: 0,
+      cacheCreateTokens: 0,
+    };
+    const rows: UsageDeviceRows = {
+      spendDays: [],
+      modelRows: [agyRow],
+      sessionRows: [],
+      tasks: [],
+    };
+    const decoded = await decodeUsageDeviceRowsResponse(await hostResponse(rows, '2026-11-26', null));
+    expect(decoded?.kind).toBe('rows');
+    if (decoded?.kind !== 'rows') throw new Error('expected rows');
+    expect(decoded.rows.modelRows).toEqual([agyRow]);
+
+    const seenRequests: unknown[] = [];
+    const invoke = vi.fn(async (_deviceId: string, _channel: string, args: unknown[]) => {
+      seenRequests.push(args[0]);
+      return {
+        ok: true as const,
+        result: await hostResponse(rows, '2026-11-26', null),
+      };
+    });
+    const staleV2Cache = JSON.stringify({
+      version: 2,
+      peers: {
+        'm5-mac': {
+          name: 'M5-Mac',
+          platform: 'darwin',
+          syncedAt: 900_000,
+          todayKey: '2026-11-26',
+          rows: { spendDays: [], modelRows: [], sessionRows: [], tasks: [] },
+        },
+      },
+    });
+    const h = harness({
+      listDevices: async () => ({
+        devices: [device({ deviceId: 'self', isSelf: true }), device({ deviceId: 'm5-mac', name: 'M5-Mac' })],
+      }),
+      invoke,
+      readCache: async (id) => (id === 'user-a' ? staleV2Cache : null),
+    });
+    const sync = createPeerUsageSync(h.deps);
+    await sync.sync();
+    expect(seenRequests[0]).not.toHaveProperty('sinceDay');
+    const snap = await sync.snapshot();
+    expect(snap.peerRows.get('m5-mac')?.modelRows).toEqual([agyRow]);
+    expect(JSON.parse(h.written.get('user-a')!).version).toBe(3);
   });
 });

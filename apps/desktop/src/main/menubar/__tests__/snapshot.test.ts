@@ -643,3 +643,64 @@ describe('plugin engine menubar and widget projection', () => {
     expect(isLowOnEverything(input([depleted]))).toBe(true);
   });
 });
+
+// - Production entry: buildMenubarView
+// - Bug basis: usageSymbol / taskMoneySymbol emitted '≈' even when all amounts in a CNY ledger's
+//   active 90d window were native USD, and statusTextByMode.today risked double-converting mixedCurrency.
+// - Coverage gap: existing moneyDisplay test omitted pure-USD mixedCurrency scope and valueTodayByCurrency tasks.
+// - Minimal failing input: CNY ledger shell with only USD amounts in mixedCurrency + running USD-only task.
+// - Tier: unit
+it('omits the approximation prefix when all active amounts are already in USD and converts mixedCurrency once', () => {
+  const source = input([], { settings: { scope: 'all' } });
+  source.moneySymbol = '¥';
+  source.moneyDisplay = { currency: 'USD', usdToCny: 6.67 };
+  source.usage.scopes.local = { ...source.usage.scopes.local, currency: 'CNY' };
+  const daily = source.usage.scopes.all.daily.map(() => ({
+    moneyUSD: [0, 0, 0, 0],
+    moneyCNY: [0, 0, 0, 0],
+    paidUSD: 0,
+    paidCNY: 0,
+  }));
+  daily[daily.length - 1] = {
+    moneyUSD: [0, 0, 0, 12.5],
+    moneyCNY: [0, 0, 0, 0],
+    paidUSD: 0,
+    paidCNY: 0,
+  };
+  source.usage.scopes.all = {
+    ...source.usage.scopes.all,
+    currency: 'CNY',
+    mixedCurrency: {
+      daily,
+      models: {
+        '7': [{ name: 'gemini-4-neon', harness: 'antigravity', moneyUSD: 12.5, moneyCNY: 0, tokens: 1000 }],
+        '30': [{ name: 'gemini-4-neon', harness: 'antigravity', moneyUSD: 12.5, moneyCNY: 0, tokens: 1000 }],
+        '90': [{ name: 'gemini-4-neon', harness: 'antigravity', moneyUSD: 12.5, moneyCNY: 0, tokens: 1000 }],
+      },
+      hasUSD: true,
+      hasCNY: false,
+    },
+  };
+  source.tasks = [
+    {
+      sessionId: 'agy-1',
+      title: 'Agy run',
+      harness: 'antigravity',
+      model: 'gemini-4-neon',
+      tokensToday: 1000,
+      valueToday: 12.5 * 6.7,
+      valueTodayByCurrency: { USD: 12.5, CNY: 0 },
+      contextPercent: null,
+      running: true,
+      startedAtMs: NOW,
+      lastActiveAtMs: NOW,
+    },
+  ];
+  const view = buildMenubarView(source);
+  expect(view.moneySymbol).toBe('$');
+  expect(view.taskMoneySymbol).toBe('$');
+  expect(view.usage.scopes.all.daily.at(-1)?.money[3]).toBe(12.5);
+  expect(view.tasks[0].value).toBe(12.5);
+  expect(view.statusTextByMode.today).toBe('$12.50');
+  expect(view.statusTextByMode.task).toBe('$12.50');
+});

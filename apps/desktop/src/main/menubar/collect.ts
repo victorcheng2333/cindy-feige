@@ -30,6 +30,7 @@ import { isPluginEngineKind, type PluginEngineView } from '../../shared/pluginEn
 import { providerWeeklyQuotaSource } from '../../shared/providerQuotaSource.js';
 import { isSubscriptionProvider, isUnusedDefaultAccount, type SubscriptionAccountUsage, type SubscriptionPoolView } from '../../shared/subscriptionAccounts.js';
 import { formatModelShort } from '../../shared/usageModelLabel.js';
+import { USD_TO_CNY_FIXED_RATE } from '../../shared/regionalMoney.js';
 import type { CodexAccountUsagePayload, RateLimitSnapshot, RateLimitWindow } from '../usageBroadcaster.js';
 import type { UsageHistoryPayload } from '../usage/usageHistory.js';
 import { ANTIGRAVITY_LOGO, familyLogo, MENUBAR_CINDY_LOGO, MENUBAR_HARNESS_LOGOS, monogramLogo, providerLogo } from './logos.js';
@@ -37,6 +38,8 @@ import {
   topModels,
   type MenubarBalanceInput,
   type MenubarHarness,
+  type MenubarMixedCurrencyDay,
+  type MenubarMixedCurrencyModel,
   type MenubarPaygInput,
   type MenubarQuotaPeriod,
   type MenubarResetCredits,
@@ -701,6 +704,17 @@ export function modelDisplayNames(providers: readonly ProviderView[]): Map<strin
   return names;
 }
 
+function amountInCurrency(
+  money: { amount?: unknown; currency?: unknown } | null | undefined,
+  target: 'USD' | 'CNY',
+): number {
+  const amount = finite(money?.amount);
+  if (amount <= 0) return 0;
+  const currency = money?.currency === 'CNY' ? 'CNY' : money?.currency === 'USD' ? 'USD' : target;
+  if (currency === target) return amount;
+  return target === 'CNY' ? amount * USD_TO_CNY_FIXED_RATE : amount / USD_TO_CNY_FIXED_RATE;
+}
+
 export function usageScope(
   payload: UsageHistoryPayload | null,
   days: readonly string[],
@@ -711,9 +725,26 @@ export function usageScope(
   const scope = emptyScope(days, devices);
   scope.currency = payload?.totals?.today?.currency;
   if (!payload) return scope;
+  const scopeCurrency: 'USD' | 'CNY' = scope.currency ?? 'USD';
   const indexOfDay = new Map(days.map((day, index) => [day, index]));
   const windows: Array<keyof MenubarUsageScopeData['models']> = ['7', '30', '90'];
   const modelRows: Record<string, MenubarModelUsage[]> = { '7': [], '30': [], '90': [] };
+  const mixedDaily: MenubarMixedCurrencyDay[] = days.map(() => ({
+    moneyUSD: [0, 0, 0],
+    moneyCNY: [0, 0, 0],
+    paidUSD: 0,
+    paidCNY: 0,
+  }));
+  const mixedModelBuckets: Record<
+    keyof MenubarUsageScopeData['models'],
+    Map<string, MenubarMixedCurrencyModel>
+  > = {
+    '7': new Map(),
+    '30': new Map(),
+    '90': new Map(),
+  };
+  let hasUSD = false;
+  let hasCNY = false;
   for (const row of payload.modelDaily) {
     const index = indexOfDay.get(row.day);
     if (index === undefined) continue;
@@ -726,7 +757,17 @@ export function usageScope(
       continue;
     }
     const harness = harnessOf(row.agentKind);
-    const money = finite(row.money?.amount);
+    const rawAmount = finite(row.money?.amount);
+    const rowCurrency: 'USD' | 'CNY' = row.money?.currency === 'CNY' ? 'CNY' : row.money?.currency === 'USD' ? 'USD' : scopeCurrency;
+    const money = amountInCurrency(row.money, scopeCurrency);
+    const rawApiAmount = finite(row.apiMoney?.amount);
+    const apiCurrency: 'USD' | 'CNY' = row.apiMoney?.currency === 'CNY' ? 'CNY' : row.apiMoney?.currency === 'USD' ? 'USD' : scopeCurrency;
+    const apiAmount = amountInCurrency(row.apiMoney, scopeCurrency);
+    if (rawAmount > 0) {
+      if (rowCurrency === 'CNY') hasCNY = true;
+      else hasUSD = true;
+    }
+    const mixedDay = mixedDaily[index];
     if (harness === 'acp') {
       // Append ACP tokens after the built-in harness slots and auxiliary slot.
       const slot = HARNESSES.length + 1;
@@ -736,19 +777,57 @@ export function usageScope(
       const slot = HARNESSES.indexOf(harness);
       while (daily.money.length <= slot) daily.money.push(0);
       while (daily.tokens.length <= slot) daily.tokens.push(0);
+      while (mixedDay.moneyUSD.length <= slot) mixedDay.moneyUSD.push(0);
+      while (mixedDay.moneyCNY.length <= slot) mixedDay.moneyCNY.push(0);
       daily.money[slot] += money;
       daily.tokens[slot] += finite(row.tokens);
-      daily.paid += finite(row.apiMoney?.amount);
+      daily.paid += apiAmount;
+      if (rowCurrency === 'CNY') mixedDay.moneyCNY[slot] += rawAmount;
+      else mixedDay.moneyUSD[slot] += rawAmount;
+      if (rawApiAmount > 0) {
+        if (apiCurrency === 'CNY') {
+          hasCNY = true;
+          mixedDay.paidCNY += rawApiAmount;
+        } else {
+          hasUSD = true;
+          mixedDay.paidUSD += rawApiAmount;
+        }
+      }
     }
     const age = days.length - 1 - index;
+    const name = label(row.model);
+    const modelBucketKey = `${harness}:${name}`;
     for (const window of windows) {
       if (age < Number(window)) {
-        modelRows[window].push({ name: label(row.model), harness, money, tokens: finite(row.tokens) });
+        modelRows[window].push({ name, harness, money, tokens: finite(row.tokens) });
+        const bucket = mixedModelBuckets[window].get(modelBucketKey) ?? {
+          name,
+          harness,
+          moneyUSD: 0,
+          moneyCNY: 0,
+          tokens: 0,
+        };
+        if (rowCurrency === 'CNY') bucket.moneyCNY += rawAmount;
+        else bucket.moneyUSD += rawAmount;
+        bucket.tokens += finite(row.tokens);
+        mixedModelBuckets[window].set(modelBucketKey, bucket);
       }
     }
   }
   for (const window of windows) scope.models[window] = topModels(modelRows[window]);
-  scope.modelSeries = modelSeries(payload, indexOfDay, days.length, label);
+  if ((hasUSD && hasCNY) || (scopeCurrency === 'CNY' && hasUSD) || (scopeCurrency === 'USD' && hasCNY)) {
+    scope.mixedCurrency = {
+      daily: mixedDaily,
+      models: {
+        '7': [...mixedModelBuckets['7'].values()],
+        '30': [...mixedModelBuckets['30'].values()],
+        '90': [...mixedModelBuckets['90'].values()],
+      },
+      hasUSD,
+      hasCNY,
+    };
+  }
+  scope.modelSeries = modelSeries(payload, indexOfDay, days.length, label, scopeCurrency);
   return scope;
 }
 
@@ -761,6 +840,7 @@ function modelSeries(
   indexOfDay: Map<string, number>,
   dayCount: number,
   label: (model: string) => string,
+  scopeCurrency: 'USD' | 'CNY',
 ): MenubarModelSeries {
   type Entry = { harness: MenubarHarness | 'auxiliary'; money: number[]; tokens: number[]; recent: number };
   const byModel = new Map<string, Entry & { name: string }>();
@@ -772,7 +852,7 @@ function modelSeries(
     const entry = byModel.get(key)
       ?? { name, harness: row.agentKind === 'auxiliary' ? 'auxiliary' : harnessOf(row.agentKind), money: new Array<number>(dayCount).fill(0), tokens: new Array<number>(dayCount).fill(0), recent: 0 };
     const tokens = finite(row.tokens);
-    entry.money[index] += finite(row.money?.amount);
+    entry.money[index] += amountInCurrency(row.money, scopeCurrency);
     entry.tokens[index] += tokens;
     if (dayCount - 1 - index < SERIES_DAYS) entry.recent += tokens;
     byModel.set(key, entry);
@@ -832,12 +912,17 @@ async function collectTasks(
       + Math.max(0, finite(row.tokens) - finite(row.auxiliaryTokens)));
   }
   const meta = new Map((usage?.tasks ?? []).filter((task) => task.deviceId === 'local').map((task) => [task.sessionId, task]));
-  const rates = new Map<string, { money: number; tokens: number; harness: MenubarHarness }>();
+  const localCurrency: 'USD' | 'CNY' = usage?.totals?.today?.currency ?? 'USD';
+  const rates = new Map<string, { money: number; moneyUSD: number; moneyCNY: number; tokens: number; harness: MenubarHarness }>();
   for (const row of usage?.modelDaily ?? []) {
     if (row.agentKind === 'auxiliary' || row.agentKind === 'acp') continue;
     if (row.day !== today) continue;
-    const rate = rates.get(row.model) ?? { money: 0, tokens: 0, harness: harnessOf(row.agentKind) };
-    rate.money += finite(row.money?.amount);
+    const rate = rates.get(row.model) ?? { money: 0, moneyUSD: 0, moneyCNY: 0, tokens: 0, harness: harnessOf(row.agentKind) };
+    const rowAmount = finite(row.money?.amount);
+    const rowCurrency: 'USD' | 'CNY' = row.money?.currency === 'CNY' ? 'CNY' : row.money?.currency === 'USD' ? 'USD' : localCurrency;
+    rate.money += amountInCurrency(row.money, localCurrency);
+    if (rowCurrency === 'CNY') rate.moneyCNY += rowAmount;
+    else rate.moneyUSD += rowAmount;
     rate.tokens += finite(row.tokens);
     rates.set(row.model, rate);
   }
@@ -870,13 +955,28 @@ async function collectTasks(
         const rate = rates.get(model);
         const harness = harnessOf(row?.agentKind ?? rate?.harness);
         const running = activity ? isSessionActivityRunning(activity) : false;
+        const convTokens = conversationTokensBySession.get(sessionId) ?? 0;
+        const hasMixedOrForeignRate = Boolean(
+          harness !== 'acp' &&
+          rate &&
+          rate.tokens > 0 &&
+          ((localCurrency === 'CNY' && rate.moneyUSD > 0) || (localCurrency === 'USD' && rate.moneyCNY > 0)),
+        );
         return {
           sessionId,
           title,
           harness,
           model: model ? formatModelShort(model) : '',
           tokensToday: tokens,
-          valueToday: harness !== 'acp' && rate && rate.tokens > 0 ? ((conversationTokensBySession.get(sessionId) ?? 0) * rate.money) / rate.tokens : 0,
+          valueToday: harness !== 'acp' && rate && rate.tokens > 0 ? (convTokens * rate.money) / rate.tokens : 0,
+          ...(hasMixedOrForeignRate && rate
+            ? {
+                valueTodayByCurrency: {
+                  USD: (convTokens * rate.moneyUSD) / rate.tokens,
+                  CNY: (convTokens * rate.moneyCNY) / rate.tokens,
+                },
+              }
+            : {}),
           contextPercent: info && info.contextWindow > 0 ? clampPercent((info.contextTokens / info.contextWindow) * 100) : null,
           running,
           startedAtMs: running ? (activity?.startedAtMs ?? null) : null,

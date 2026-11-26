@@ -235,6 +235,7 @@ function isAgentKind(value: unknown): value is DailyModelUsageRow['agentKind'] {
     value === 'claude-code' ||
     value === 'codex' ||
     value === 'pi' ||
+    value === 'antigravity' ||
     value === 'acp' ||
     value === 'media' ||
     value === 'auxiliary'

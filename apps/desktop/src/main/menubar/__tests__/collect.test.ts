@@ -1051,3 +1051,127 @@ describe('plugin engine quota collection', () => {
     expect(retainRemoteSubscriptions(previousSeen, unsupported, NOW + 120_000).sources).toEqual([]);
   });
 });
+
+// - Production entry: usageScope / collectMenubarInputs / buildMenubarView
+// - Bug basis: mixed CNY gateway spend + USD subscription estimates caused raw addition in usageScope
+//   and 6.67x shrinkage in buildMenubarView when displaying USD.
+// - Coverage gap: existing usageScope and collectTasks tests only used uniform single-currency rows.
+// - Minimal failing input: CNY ledger with CNY 67 API spend + USD 10 Agy estimate + USD 5 Codex estimate.
+// - Tier: unit
+describe('mixed currency usageScope, collectTasks and menubar projection', () => {
+  it('separates USD and CNY buckets and converts foreign amounts exactly once without 6.67x shrinkage', async () => {
+    const todayKey = '2026-11-26';
+    const yesterdayKey = '2026-11-25';
+    const days = [yesterdayKey, todayKey];
+    const cnyActual = (amount: number) => ({ amount, currency: 'CNY' as const, approximate: false, kind: 'actual-cost' as const });
+    const cnyZero = cnyActual(0);
+    const usdEst = (amount: number) => ({
+      amount,
+      currency: 'USD' as const,
+      approximate: true,
+      kind: 'value-estimate' as const,
+      estimateReasons: ['subscription-value' as const],
+    });
+    const payload = {
+      todayKey,
+      currencies: ['CNY', 'USD'],
+      modelDaily: [
+        {
+          day: todayKey, agentKind: 'claude-code', model: 'claude-opus-5-5',
+          money: cnyActual(67), apiMoney: cnyActual(67), subscriptionEstimateMoney: cnyZero,
+          tokens: 1_000, inputTokens: 1_000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
+        },
+        {
+          day: todayKey, agentKind: 'antigravity', model: 'gemini-4-neon',
+          money: usdEst(10), apiMoney: cnyZero, subscriptionEstimateMoney: usdEst(10),
+          tokens: 5_000, inputTokens: 5_000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
+        },
+        {
+          day: yesterdayKey, agentKind: 'codex', model: 'gpt-5.5',
+          money: usdEst(5), apiMoney: cnyZero, subscriptionEstimateMoney: usdEst(5),
+          tokens: 2_000, inputTokens: 2_000, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
+        },
+      ],
+      taskDaily: [
+        { day: todayKey, taskKey: 'local:t-agy', tokens: 2_500 },
+        { day: todayKey, taskKey: 'local:t-cny', tokens: 1_000 },
+      ],
+      tasks: [
+        { taskKey: 'local:t-agy', deviceId: 'local', sessionId: 't-agy', title: 'Agy Task', model: 'gemini-4-neon', providerId: 'antigravity', contextTokens: 0, contextWindow: 0, lastActiveAt: NOW },
+        { taskKey: 'local:t-cny', deviceId: 'local', sessionId: 't-cny', title: 'CNY Task', model: 'claude-opus-5-5', providerId: 'xd', contextTokens: 0, contextWindow: 0, lastActiveAt: NOW },
+      ],
+      totals: { today: cnyActual(67) },
+      devices: [{ deviceId: 'local', name: 'M1Max', platform: 'darwin', isSelf: true, syncedAt: null, status: 'ok' as const }],
+    } as unknown as UsageHistoryPayload;
+
+    const collected = await collectMenubarInputs({
+      nowMs: NOW,
+      listProviders: async () => [],
+      readCodex: async () => null,
+      readClaude: async () => null,
+      readXai: async () => null,
+      readBalance: async () => null,
+      readUsage: async () => payload,
+      activities: () => [{ sessionId: 't-agy', phase: 'running' } as never],
+      sessionRow: async (id) =>
+        id === 't-agy'
+          ? { title: 'Agy Task', model: 'gemini-4-neon', agentKind: 'antigravity', providerId: 'antigravity' }
+          : { title: 'CNY Task', model: 'claude-opus-5-5', agentKind: 'claude-code', providerId: 'xd' },
+      selfDeviceName: 'M1Max',
+    });
+
+    const scopeAll = usageScope(payload, days, [{ name: 'M1Max', isSelf: true, syncedAtMs: null }]);
+    expect(scopeAll.currency).toBe('CNY');
+    expect(scopeAll.mixedCurrency?.hasUSD).toBe(true);
+    expect(scopeAll.mixedCurrency?.hasCNY).toBe(true);
+    // Yesterday USD 5 under 6.7 fallback becomes CNY 33.5 in modelSeries; never mixed raw.
+    const codexSeriesIdx = scopeAll.modelSeries!.models.findIndex(m => m.harness === 'codex');
+    expect(scopeAll.modelSeries?.daily[0]?.[codexSeriesIdx]).toBeCloseTo(33.5);
+
+    const locale = 'zh-CN';
+    const raw = (key: string) => rawMainString(key, locale);
+    const makeView = (moneyDisplay: { currency: 'original' | 'USD' | 'CNY'; usdToCny: number }) =>
+      buildMenubarView({
+        nowMs: NOW,
+        locale,
+        moneySymbol: '¥',
+        moneyDisplay,
+        settings: { ...DEFAULT_MENUBAR_SETTINGS, scope: 'all' },
+        sources: [],
+        tasks: collected.tasks,
+        usage: collected.usage,
+        updatedAtMs: NOW,
+        harnessLogos: MENUBAR_HARNESS_LOGOS,
+        uiStrings: buildMenubarUiStrings(mainStringKeysUnder('menubar.ui'), raw, locale),
+        t: createMenubarTranslate(locale, raw),
+      });
+
+    // Display USD at custom rate 6.67: USD rows stay exact (10, 5), CNY 67 divides once (~10.04498).
+    const usdView = makeView({ currency: 'USD', usdToCny: 6.67 });
+    expect(usdView.moneySymbol).toBe('≈ $');
+    expect(usdView.usage.scopes.all.daily.at(-2)?.money[1]).toBe(5);
+    expect(usdView.usage.scopes.all.daily.at(-1)?.money[0]).toBeCloseTo(67 / 6.67, 6);
+    expect(usdView.usage.scopes.all.daily.at(-1)?.money[3]).toBe(10);
+    expect(usdView.usage.scopes.all.daily.at(-1)?.paid).toBeCloseTo(67 / 6.67, 6);
+    expect(usdView.usage.scopes.all.models['30'].find(m => m.harness === 'antigravity')?.money).toBe(10);
+    expect(usdView.tasks.find(t => t.sessionId === 't-agy')?.value).toBe(5);
+    expect(usdView.tasks.find(t => t.sessionId === 't-cny')?.value).toBeCloseTo(67 / 6.67, 6);
+    expect(usdView.taskMoneySymbol).toBe('≈ $');
+    expect(usdView.statusTextByMode.today).toBe('≈ $20.04');
+    expect(usdView.statusTextByMode.task).toBe('≈ $5.00');
+
+    // Display CNY at 6.7: CNY stays exact 67, USD 10 becomes 67, yesterday USD 5 becomes 33.5.
+    const cnyView = makeView({ currency: 'CNY', usdToCny: 6.7 });
+    expect(cnyView.moneySymbol).toBe('≈ ¥');
+    expect(cnyView.usage.scopes.all.daily.at(-2)?.money[1]).toBe(33.5);
+    expect(cnyView.usage.scopes.all.daily.at(-1)?.money[0]).toBe(67);
+    expect(cnyView.usage.scopes.all.daily.at(-1)?.money[3]).toBe(67);
+    expect(cnyView.tasks.find(t => t.sessionId === 't-agy')?.value).toBe(33.5);
+    expect(cnyView.tasks.find(t => t.sessionId === 't-cny')?.value).toBe(67);
+
+    // Original currency on a CNY ledger converts foreign USD rows without zeroing them out.
+    const origView = makeView({ currency: 'original', usdToCny: 6.7 });
+    expect(origView.moneySymbol).toBe('≈ ¥');
+    expect(origView.usage.scopes.all.daily.at(-1)?.money[3]).toBe(67);
+  });
+});
