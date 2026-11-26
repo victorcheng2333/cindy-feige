@@ -41,6 +41,8 @@ export interface UsageCardWindow {
   detail?: string;
   /** Composition of this window, not independently enforceable quota windows. */
   breakdown?: ReadonlyArray<{ label: string; value: string }>;
+  /** Only providers that report sub-percent precision opt in; the default stays whole percent. */
+  percentFractionDigits?: 0 | 1;
 }
 
 export interface UsageCardAccount {
@@ -302,6 +304,8 @@ export function buildAntigravityUsageCard(
     key: `${row.group}:${row.minutes}`,
     title: `${row.group} · ${quotaWindowLabel(row.minutes, t)}`,
     showRemaining: true,
+    // Agy reports remaining_fraction finely enough for one decimal to move every turn.
+    percentFractionDigits: 1,
     window: {
       utilization: 100 - row.remaining,
       resetsAt: row.resetsAtMs == null ? null : row.resetsAtMs / 1000,

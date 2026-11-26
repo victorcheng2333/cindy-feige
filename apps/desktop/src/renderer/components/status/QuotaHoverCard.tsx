@@ -89,6 +89,15 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
+/** 保留小数时，部分用量不显示成 100.0%，尚未用完也不显示成 0.0%。 */
+function displayPercent(value: number, fractionDigits: 0 | 1): number {
+  if (fractionDigits === 0) return Math.round(value);
+  const step = 10 ** fractionDigits;
+  const rounded = Math.round(value * step) / step;
+  if (value <= 0 || value >= 100) return rounded;
+  return Math.min(100 - 1 / step, Math.max(1 / step, rounded));
+}
+
 /** 本地阈值与上游 severity 取较重者（共用 `@cindy/maker-shared/quota-level`）。 */
 function effectiveQuotaSeverity(window: UsageCardWindow['window']): QuotaSeverity {
   return strongerQuotaLevel(
@@ -120,6 +129,7 @@ function WindowBlock({
   paceWindowMinutes,
   detail,
   breakdown,
+  percentFractionDigits = 0,
   showAbsoluteReset = false,
   compact = false,
   action,
@@ -134,6 +144,7 @@ function WindowBlock({
   paceWindowMinutes?: number;
   detail?: string;
   breakdown?: UsageCardWindow['breakdown'];
+  percentFractionDigits?: UsageCardWindow['percentFractionDigits'];
   showAbsoluteReset?: boolean;
   compact?: boolean;
   action?: React.ReactNode;
@@ -144,8 +155,14 @@ function WindowBlock({
 }) {
   const titleId = React.useId();
   const usedPercent = clampPercent(window.utilization);
+  const shownPercent = displayPercent(showRemaining ? 100 - usedPercent : usedPercent, percentFractionDigits);
   const percentText = t(showRemaining ? 'quotaCard.remainingPercent' : 'quotaCard.usedPercent', {
-    percent: Math.round(showRemaining ? 100 - usedPercent : usedPercent),
+    percent: percentFractionDigits === 0
+      ? shownPercent
+      : new Intl.NumberFormat(locale, {
+          minimumFractionDigits: percentFractionDigits,
+          maximumFractionDigits: percentFractionDigits,
+        }).format(shownPercent),
   });
   const severity = effectiveQuotaSeverity(window);
   const severityAnnouncement =
@@ -205,8 +222,9 @@ function WindowBlock({
     // 可见行省略重复的「剩余」「后重置」;进度条和重置说明的读屏文案仍保留完整语义。
     const percentValue = new Intl.NumberFormat(locale, {
       style: 'percent',
-      maximumFractionDigits: 0,
-    }).format(Math.round(showRemaining ? 100 - usedPercent : usedPercent) / 100);
+      minimumFractionDigits: percentFractionDigits,
+      maximumFractionDigits: percentFractionDigits,
+    }).format(shownPercent / 100);
     const resetDuration = formatQuotaResetDuration(window.resetsAt, nowMs, t);
     return (
       <section

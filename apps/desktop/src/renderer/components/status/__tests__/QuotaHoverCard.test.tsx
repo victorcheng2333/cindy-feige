@@ -56,7 +56,7 @@ vi.mock('react-i18next', () => ({
 
 import { useTranslation } from 'react-i18next';
 import { QuotaHoverCard as UsageCard, type QuotaHoverCardProps } from '../QuotaHoverCard';
-import { buildClaudeUsageCard, buildKimiUsageCard } from '../usageCardModel';
+import { buildAntigravityUsageCard, buildClaudeUsageCard, buildKimiUsageCard } from '../usageCardModel';
 
 // Exercise the Claude adapter and the shared card together, retaining all existing edge cases.
 function QuotaHoverCard({
@@ -427,6 +427,29 @@ describe('QuotaHoverCard', () => {
     expect(bar.getAttribute('aria-valuenow')).toBe('0');
     expect((bar.firstElementChild as HTMLElement | null)?.style.width).toBe('0%');
     expect(screen.getByText('剩余 0%')).toBeTruthy();
+  });
+
+  // Agy 剩余比例精确到 0.0001%，卡片保留 1 位小数；四舍五入不得把未满／未用完显示成 100.0%／0.0%。
+  // 其他渠道仍是整数，由上方 Claude 用例覆盖；此前没有用例覆盖小数位分支。
+  // 最小失败输入：remaining 99.96 曾显示为 100%。tier：unit（jsdom 组件渲染，无外部资源）。
+  it.each([
+    { remaining: 87.1234, text: '87.1' },
+    { remaining: 71, text: '71.0' },
+    { remaining: 99.96, text: '99.9' },
+    { remaining: 0.04, text: '0.1' },
+    { remaining: 100, text: '100.0' },
+    { remaining: 0, text: '0.0' },
+  ])('shows Agy remaining $remaining as $text% in popover and embedded cards', ({ remaining, text }) => {
+    const { t } = useTranslation();
+    const account = buildAntigravityUsageCard({
+      windows: [{ group: 'Gemini Models', minutes: 300, remaining, resetsAtMs: null }],
+      fetchedAtMs: NOW_MS,
+    }, t, false);
+    const { rerender } = render(<UsageCard nowMs={NOW_MS} account={account} />);
+    expect(screen.getByText(`剩余 ${text}%`)).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe(`剩余 ${text}%`);
+    rerender(<UsageCard variant="embedded" nowMs={NOW_MS} account={account} />);
+    expect(screen.getByText(`${text}%`).getAttribute('title')).toBe(`剩余 ${text}%`);
   });
 
   it.each([
