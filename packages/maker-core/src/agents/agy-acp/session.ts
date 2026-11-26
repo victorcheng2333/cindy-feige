@@ -305,7 +305,12 @@ export interface OpenAcpSessionOptions {
    */
   checkBackgroundActivity?: (
     sessionId: string,
-  ) => Promise<{ pendingReply: boolean; activeSubagents: boolean | null }>;
+  ) => Promise<{
+    pendingReply: boolean;
+    hasPendingTranscriptStep?: boolean;
+    activeSubagents: boolean | null;
+    hasIdleAliveSubagents?: boolean;
+  }>;
   /**
    * Optional read-only snapshot reader for detached subagents (e.g. Antigravity's native
    * `brain/<childId>/.system_generated/logs/transcript.jsonl`) used to emit live
@@ -1849,14 +1854,19 @@ export class AcpSession {
     }
   }
 
-  private async probeBackgroundActivity(): Promise<{ pendingReply: boolean; activeSubagents: boolean | null }> {
+  private async probeBackgroundActivity(): Promise<{
+    pendingReply: boolean;
+    hasPendingTranscriptStep?: boolean;
+    activeSubagents: boolean | null;
+    hasIdleAliveSubagents?: boolean;
+  }> {
     if (!this.checkBackgroundActivity) {
-      return { pendingReply: false, activeSubagents: null };
+      return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
     }
     try {
       return await this.checkBackgroundActivity(this.nativeId);
     } catch {
-      return { pendingReply: false, activeSubagents: null };
+      return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
     }
   }
 
@@ -2084,7 +2094,7 @@ export class AcpSession {
       // Only settle an in-flight `session/prompt` when native subagent records exist and
       // every detached subagent has already reported back or terminated (Agy holds
       // `session/prompt` open while an idle `SUBAGENT_STATE_ALIVE` child has not been killed).
-      if (state.pendingReply || state.activeSubagents !== false) {
+      if (state.pendingReply || state.hasPendingTranscriptStep || state.activeSubagents !== false || state.hasIdleAliveSubagents === false) {
         return;
       }
       if (this.pollSubagentRuns && this.hasTrackedSubagentsNeedingPoll()) {

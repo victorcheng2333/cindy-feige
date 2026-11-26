@@ -22,6 +22,12 @@ function text(...values: unknown[]): string | undefined {
 
 const WRITE_BODY_KEYS = ['Replacement', 'Target', 'Content', 'NewContent', 'CodeContent', 'ReplacementChunks', 'Instruction', 'Overwrite', 'Append', 'content', 'new_string', 'old_string'];
 const SEARCH_PATH_KEYS = ['SearchPath', 'SearchDirectory', 'DirectoryPath', 'directory'] as const;
+const SESSION_STATE_TOOLS = new Set(['exit_plan_mode', 'update_steps', 'update_focus']);
+
+function normalizeAcpToolBaseName(toolCall: Pick<AcpToolCallFields, 'name' | 'title'>): string {
+  const raw = (toolCall.name ?? toolCall.title ?? '').trim();
+  return raw.replace(/^Run\s+/i, '').trim().toLowerCase();
+}
 
 export function normalizeAcpToolForAutoReview(toolCall: AcpToolCallFields): ReviewableAction {
   const input = record(toolCall.rawInput);
@@ -53,7 +59,19 @@ export function normalizeAcpToolForAutoReview(toolCall: AcpToolCallFields): Revi
     const target = text(input.url, input.Url, input.domain, input.query);
     return { kind: 'network', ...(target ? { target } : {}) };
   }
-  if (toolCall.kind === 'think') return { kind: 'session-state' };
+  if (
+    toolCall.kind === 'think'
+    || (
+      SESSION_STATE_TOOLS.has(normalizeAcpToolBaseName(toolCall))
+      && (!toolCall.kind || toolCall.kind === 'other')
+      && locations.length === 0
+      && !filePath
+      && !searchPath
+      && !WRITE_BODY_KEYS.some(key => key in input)
+    )
+  ) {
+    return { kind: 'session-state' };
+  }
   return other(toolCall);
 }
 

@@ -272,6 +272,7 @@ export function acpKindToToolVerb(input: unknown, toolName?: string): AcpToolSum
   const inp = readRecord(input);
   const kind = readNonEmptyString(inp?.acpKind);
   if (!kind) return undefined;
+  if (toolName && toolName.replace(/^Run\s+/i, '').trim().toLowerCase() === 'update_steps') return 'updated';
   if (kind === 'edit' && isAcpCreateFileInput(inp)) return 'created';
   if (kind === 'search' && isAcpWebSearch(toolName, inp)) return 'fetched';
   return ACP_KIND_TO_VERB[kind];
@@ -460,6 +461,13 @@ function describeAcpToolUse(
   toolName: string,
   inp: Record<string, unknown> | null,
 ): ToolUseDescriptor {
+  const normalizedBase = toolName.replace(/^Run\s+/i, '').trim().toLowerCase();
+  if (normalizedBase === 'update_steps') {
+    return { kind: 'todo', toolName: 'update_steps' };
+  }
+  if (normalizedBase === 'exit_plan_mode') {
+    return genericDescriptor('exit_plan_mode', inp);
+  }
   if (toolName === 'invoke_subagent' || (readNonEmptyString(inp?.TypeName) && readNonEmptyString(inp?.Prompt))) {
     const description = readNonEmptyString(inp?.Role)
       ?? readNonEmptyString(inp?.description)

@@ -752,4 +752,27 @@ describe('describeToolUse — ACP acpKind mapping', () => {
     });
     expect(acpKindToToolVerb({ acpKind: 'search', query: 'GTA 6' }, '"GTA 6" on Web')).toBe('fetched');
   });
+
+  // 测试价值
+  // - 生产入口与可观察结果：describeToolUse；
+  //   验证 Agy Orchestrator 带 `"Run "` 前缀的 `Run exit_plan_mode` 与 `Run update_steps` 能去除重复动词前缀并归类正确。
+  // - Bug／规则依据：Agy ACP 会把工具 title 格式化为 `"Run <tool>"`，导致未识别工具名显示冗余 `"Run "` 或退化为普通名称。
+  // - 现有覆盖缺口：此前无 `Run exit_plan_mode` / `Run update_steps` 的 descriptor 回归断言。
+  // - 最小失败输入：`describeToolUse('Run exit_plan_mode', { acpKind: 'other', plan: '...' })`。
+  // - tier：unit（纯函数断言）。
+  it('strips the Agy "Run " prefix for exit_plan_mode and update_steps', () => {
+    expect(
+      describeToolUse('Run exit_plan_mode', { acpKind: 'other', plan: '1. Inspect code' }),
+    ).toMatchObject({
+      kind: 'generic',
+      toolName: 'exit_plan_mode',
+    });
+    expect(
+      describeToolUse('Run update_steps', { acpKind: 'other', steps: [{ title: 'Step 1', status: 'in_progress' }] }),
+    ).toEqual({
+      kind: 'todo',
+      toolName: 'update_steps',
+    });
+    expect(acpKindToToolVerb({ acpKind: 'other', steps: [] }, 'Run update_steps')).toBe('updated');
+  });
 });

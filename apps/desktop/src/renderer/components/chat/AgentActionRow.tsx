@@ -553,6 +553,28 @@ function commandDisplayText(inp: Record<string, unknown>): string {
 
 function formatInlineInput(toolName: string, inp: Record<string, unknown> | null): string {
   if (!inp) return '';
+  const normalizedTool = toolName.replace(/^Run\s+/i, '').trim().toLowerCase();
+  if (normalizedTool === 'exit_plan_mode' && typeof inp.plan === 'string' && inp.plan.trim()) {
+    return inp.plan.trim();
+  }
+  if (normalizedTool === 'update_steps' && Array.isArray(inp.steps)) {
+    const lines = inp.steps
+      .map((step) => {
+        if (!step || typeof step !== 'object' || Array.isArray(step)) return '';
+        const rec = step as Record<string, unknown>;
+        const rawTitle = rec.title ?? rec.content ?? rec.step;
+        const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+        if (!title) return '';
+        const marker = rec.status === 'done' || rec.status === 'completed' || rec.status === 'skipped'
+          ? '[x]'
+          : rec.status === 'in_progress' || rec.status === 'inProgress' || rec.status === 'running'
+            ? '[~]'
+            : '[ ]';
+        return `${marker} ${title}`;
+      })
+      .filter(Boolean);
+    if (lines.length > 0) return lines.join('\n');
+  }
   switch (toolName) {
     case 'Bash':
     case 'bash':

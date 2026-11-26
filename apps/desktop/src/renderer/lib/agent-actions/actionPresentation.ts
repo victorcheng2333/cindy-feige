@@ -65,7 +65,7 @@ export function extractDisplayParam(
     case 'web':
       return { text: descriptor.target };
     case 'todo':
-      return null;
+      return { text: descriptor.toolName };
     case 'task':
       return descriptor.description ? { text: descriptor.description } : null;
     case 'mcp':

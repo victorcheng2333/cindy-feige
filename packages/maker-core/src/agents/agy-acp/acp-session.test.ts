@@ -2098,4 +2098,137 @@ describe('AcpSession Antigravity live subagent task updates', () => {
       vi.useRealTimers();
     }
   });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send → session/update(tool_call / tool_call_update) → events；
+  //   验证 Agy Orchestrator 发射的 `Run update_steps` 被转换为去重后的 `update_plan` 卡片快照，且不再泄露原始 `tool_use` / `tool_result`。
+  // - Bug／规则依据：Agy 1.5.18 Orchestrator 使用工具调用 `update_steps` 而非原生 `sessionUpdate: 'plan'`。
+  // - 现有覆盖缺口：仅测试过 `sessionUpdate: 'plan'`，未测试 `Run update_steps` 翻译、状态映射与重复抑制。
+  // - 最小失败输入：`tool_call` title `'Run update_steps'` 附带 `rawInput.steps`。
+  // - tier：unit（fake ACP transport）。
+  it('translates Orchestrator update_steps tool calls into deduplicated update_plan snapshots', async () => {
+    const agent = createFakeAgent();
+    const { session, events, ended } = await open(agent);
+    await session.send({ type: 'user', content: 'Orchestrate task' });
+
+    const stepsV1 = [
+      { title: 'Draft implementation plan', status: 'in_progress' },
+      { title: 'Edit target file', status: 'pending' },
+    ];
+    agent.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'steps-1',
+      title: 'Run update_steps',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: { steps: stepsV1 },
+    });
+    // Completing the same tool call with unchanged steps must not duplicate the plan snapshot.
+    agent.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'steps-1',
+      status: 'completed',
+      rawInput: { steps: stepsV1 },
+    });
+    // Late title-less trailing update on an already-completed update_steps call must stay suppressed.
+    agent.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'steps-1',
+      status: 'completed',
+      rawOutput: { ok: true },
+    });
+    agent.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'steps-2',
+      title: 'Run update_steps',
+      kind: 'other',
+      status: 'completed',
+      rawInput: {
+        steps: [
+          { title: 'Draft implementation plan', status: 'done' },
+          { title: 'Edit target file', status: 'in_progress' },
+        ],
+      },
+    });
+
+    await session.close();
+    await ended;
+
+    const toolUses = events.filter(e => e.type === 'tool_use').map(e => e.data as AcpRecord);
+    const toolResults = events.filter(e => e.type === 'tool_result');
+    expect(toolUses).toMatchObject([
+      {
+        toolName: 'update_plan',
+        input: {
+          plan: [
+            { step: 'Draft implementation plan', status: 'in_progress' },
+            { step: 'Edit target file', status: 'pending' },
+          ],
+        },
+      },
+      {
+        toolName: 'update_plan',
+        input: {
+          plan: [
+            { step: 'Draft implementation plan', status: 'completed' },
+            { step: 'Edit target file', status: 'in_progress' },
+          ],
+        },
+      },
+    ]);
+    expect(toolUses[0]?.toolUseId).toBe(toolUses[1]?.toolUseId);
+    expect(toolResults).toHaveLength(0);
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send → probeBackgroundActivity → AcpSession.isTurnRunning；
+  //   验证存在已结束子代理但 `hasIdleAliveSubagents: false` 时不会误触发在途空闲结算，仅当存在存活空闲子代理且回包就绪时才提前结算。
+  // - Bug／规则依据：Orchestrator 或同会话早期子代理结束后，残留终态记录不应截断后续 Planner/Executor 阶段过渡。
+  // - 现有覆盖缺口：`hasIdleAliveSubagents` 新增字段尚未在 AcpSession 层验证。
+  // - 最小失败输入：`{ pendingReply: false, activeSubagents: false, hasIdleAliveSubagents: false }`。
+  // - tier：unit（fake ACP transport + fake timers）。
+  it('requires hasIdleAliveSubagents !== false and clear transcript step before settling an in-flight prompt early without blocking explicit end_turn', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: {
+        pendingReply: boolean;
+        hasPendingTranscriptStep: boolean;
+        activeSubagents: boolean | null;
+        hasIdleAliveSubagents: boolean;
+      } = { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: false };
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundContinuationDelaysMs: { afterTextMs: 100, pollMs: 40 },
+        checkBackgroundActivity: async () => state,
+      });
+
+      await session.send({ type: 'user', content: 'orchestrated prompt' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Phase 1 transition.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 200, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      // An idle alive child alone is still blocked when transcript tail is mid-step.
+      state = { pendingReply: false, hasPendingTranscriptStep: true, activeSubagents: false, hasIdleAliveSubagents: true };
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Waiting for next step.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 300, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      // Explicit end_turn settles immediately even while hasPendingTranscriptStep is true.
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(1));
+      expect(session.isTurnRunning()).toBe(false);
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

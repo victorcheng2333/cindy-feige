@@ -210,6 +210,31 @@ function isAsyncBackgroundCanceller(tool: Pick<AcpToolCallFields, 'name' | 'titl
   return readKilledSubagentTargets(tool) !== null;
 }
 
+type PlanSnapshotStatus = 'pending' | 'in_progress' | 'completed';
+type PlanSnapshotEntry = { step: string; status: PlanSnapshotStatus };
+
+function mapUpdateStepStatus(status: unknown): PlanSnapshotStatus {
+  if (status === 'done' || status === 'completed' || status === 'skipped') return 'completed';
+  if (status === 'in_progress' || status === 'inProgress' || status === 'running') return 'in_progress';
+  return 'pending';
+}
+
+function extractUpdateStepsPlan(rawInput: unknown): PlanSnapshotEntry[] | undefined {
+  if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return undefined;
+  const steps = (rawInput as Record<string, unknown>).steps;
+  if (!Array.isArray(steps)) return undefined;
+  const plan: PlanSnapshotEntry[] = [];
+  for (const item of steps) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const rawTitle = record.title ?? record.content ?? record.step;
+    const step = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+    if (!step) continue;
+    plan.push({ step, status: mapUpdateStepStatus(record.status) });
+  }
+  return plan;
+}
+
 export class AcpUpdateTranslator {
   private segmentText = '';
   private segmentMessageId: string | undefined;
@@ -218,9 +243,11 @@ export class AcpUpdateTranslator {
   private thinking: ThinkingBlock | null = null;
   private thinkingSeq = 0;
   private readonly tools = new Map<string, ToolState>();
+  private readonly suppressedPlanToolIds = new Set<string>();
   private awaitingSubagentLaunch = false;
   private awaitingOtherAsyncLaunch = false;
   private planId: string | undefined;
+  private lastPlanSignature: string | undefined;
   private planSeq = 0;
   private readonly now: () => number;
 
@@ -267,17 +294,13 @@ export class AcpUpdateTranslator {
       }
       case 'plan': {
         const entries = Array.isArray(update.entries) ? update.entries : [];
-        const plan = entries.flatMap((entry) => {
+        const plan: PlanSnapshotEntry[] = entries.flatMap((entry) => {
           const record = asRecord(entry);
           const step = asNonEmptyString(record.content);
-          const status = record.status === 'in_progress' || record.status === 'completed' ? record.status : 'pending';
+          const status: PlanSnapshotStatus = record.status === 'in_progress' || record.status === 'completed' ? record.status : 'pending';
           return step ? [{ step, status }] : [];
         });
-        this.planId ??= `${this.options.blockIdPrefix}-plan-${++this.planSeq}`;
-        // The existing plan card consumes native checklist snapshots from every harness.
-        events.push({ type: 'tool_use', data: {
-          toolUseId: this.planId, toolName: 'update_plan', runtimeActivity: 'snapshot', input: { plan },
-        } });
+        this.emitPlanSnapshot(plan, events);
         return events;
       }
       default:
@@ -386,9 +409,11 @@ export class AcpUpdateTranslator {
       this.settleTool(tool, events, interrupted ? 'interrupted' : 'done');
     }
     this.tools.clear();
+    this.suppressedPlanToolIds.clear();
     this.awaitingSubagentLaunch = false;
     this.awaitingOtherAsyncLaunch = false;
     this.planId = undefined;
+    this.lastPlanSignature = undefined;
     const result = this.lastText;
     this.lastText = '';
     if ('error' in outcome) {
@@ -420,9 +445,33 @@ export class AcpUpdateTranslator {
     return events;
   }
 
+  private emitPlanSnapshot(plan: PlanSnapshotEntry[], events: AgentEvent[]): void {
+    const signature = JSON.stringify(plan);
+    if (signature === this.lastPlanSignature) return;
+    this.lastPlanSignature = signature;
+    this.planId ??= `${this.options.blockIdPrefix}-plan-${++this.planSeq}`;
+    // The existing plan card consumes native checklist snapshots from every harness.
+    events.push({ type: 'tool_use', data: {
+      toolUseId: this.planId, toolName: 'update_plan', runtimeActivity: 'snapshot', input: { plan },
+    } });
+  }
+
   private upsertTool(fields: AcpToolCallFields, events: AgentEvent[]): void {
     this.flushText(events);
     this.closeThinking(events);
+    const isUpdateSteps =
+      this.suppressedPlanToolIds.has(fields.toolCallId)
+      || normalizeAcpToolBaseName(fields) === 'update_steps';
+    if (isUpdateSteps) {
+      this.suppressedPlanToolIds.add(fields.toolCallId);
+      if (fields.status !== 'failed') {
+        const plan = extractUpdateStepsPlan(fields.rawInput);
+        if (plan !== undefined && (plan.length > 0 || this.planId !== undefined)) {
+          this.emitPlanSnapshot(plan, events);
+        }
+      }
+      return;
+    }
     let tool = this.tools.get(fields.toolCallId);
     if (!tool) {
       tool = { ...fields, settled: false };

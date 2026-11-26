@@ -448,6 +448,7 @@ export async function watchAntigravityPromptOutcome(options: {
 interface ParsedTranscriptLine {
   type?: string;
   content?: string;
+  hasToolCalls?: boolean;
   createdAtMs?: number;
   mtimeMs: number;
 }
@@ -500,6 +501,7 @@ async function readLastTranscriptLine(
       return {
         ...(typeof rec.type === 'string' ? { type: rec.type } : {}),
         ...(typeof rec.content === 'string' ? { content: rec.content } : {}),
+        ...(Array.isArray(rec.tool_calls) && rec.tool_calls.length > 0 ? { hasToolCalls: true } : {}),
         ...(createdAtMs !== undefined ? { createdAtMs } : {}),
         mtimeMs,
       };
@@ -661,12 +663,19 @@ async function readInboxSummary(
 export interface AntigravityBackgroundState {
   /** True when Agy has an unread high-priority wake or dequeued SYSTEM_MESSAGE awaiting a planner reply. */
   pendingReply: boolean;
+  /** True when transcript tail stops on an intermediate `GENERIC` or tool-calling `PLANNER_RESPONSE` step. */
+  hasPendingTranscriptStep: boolean;
   /**
    * True when at least one detached subagent recorded under `.system_generated/subagents/` has
    * neither reported back to the parent inbox nor entered a terminal state; false when subagent
    * records exist and all of them have finished; null when no native subagent records are present.
    */
   activeSubagents: boolean | null;
+  /**
+   * True when at least one detached subagent record remains non-terminal (`SUBAGENT_STATE_ALIVE`
+   * etc.) after reporting back without being cancelled by a system stop notice.
+   */
+  hasIdleAliveSubagents: boolean;
 }
 
 /**
@@ -678,15 +687,16 @@ export async function readAntigravityBackgroundState(
   sessionId: string,
 ): Promise<AntigravityBackgroundState> {
   if (!NATIVE_SESSION_ID.test(sessionId)) {
-    return { pendingReply: false, activeSubagents: null };
+    return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
   }
   const subdir = await resolveDataSubdir(stateDir);
   if (!subdir) {
-    return { pendingReply: false, activeSubagents: null };
+    return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
   }
 
   const inbox = await readInboxSummary(stateDir, subdir, sessionId);
   let pendingReply = inbox.hasUnreadHighPriority;
+  let hasPendingTranscriptStep = false;
   if (!pendingReply) {
     const lastLine = await readLastTranscriptLine(stateDir, subdir, sessionId);
     if (lastLine?.type === 'SYSTEM_MESSAGE') {
@@ -694,12 +704,18 @@ export async function readAntigravityBackgroundState(
       pendingReply = content === undefined
         || content.includes(`priority=${HIGH_PRIORITY_MESSAGE}`)
         || !content.includes(`priority=${LOW_PRIORITY_MESSAGE}`);
+    } else if (
+      lastLine?.type === 'GENERIC'
+      || (lastLine?.type === 'PLANNER_RESPONSE' && lastLine.hasToolCalls === true)
+    ) {
+      hasPendingTranscriptStep = true;
     }
   }
 
   const subagentDirSegments = [subdir, 'brain', sessionId, '.system_generated', 'subagents'];
   const subagentsDir = await resolveAntigravityManagedPath(stateDir, subagentDirSegments, 'directory');
   let activeSubagents: boolean | null = null;
+  let hasIdleAliveSubagents = false;
   if (subagentsDir) {
     const entries = await fsp.readdir(subagentsDir.path).catch(() => undefined);
     const childFiles = entries?.filter(name => name.endsWith('.json') && NATIVE_SESSION_ID.test(name.slice(0, -5))) ?? [];
@@ -752,6 +768,20 @@ export async function readAntigravityBackgroundState(
             }
           }
           if (!revived) {
+            let stoppedBySystem = false;
+            if (inbox.systemStopAtMs !== undefined) {
+              const childTail = NATIVE_SESSION_ID.test(convId)
+                ? await readLastTranscriptLine(stateDir, subdir, convId)
+                : undefined;
+              const lastActivityMs =
+                childTail?.createdAtMs
+                ?? childTail?.mtimeMs
+                ?? Math.floor(recordFile.info.mtimeMs);
+              if (lastActivityMs > 0 && lastActivityMs <= inbox.systemStopAtMs) {
+                stoppedBySystem = true;
+              }
+            }
+            if (!stoppedBySystem) hasIdleAliveSubagents = true;
             continue;
           }
         }
@@ -778,5 +808,5 @@ export async function readAntigravityBackgroundState(
     }
   }
 
-  return { pendingReply, activeSubagents };
+  return { pendingReply, hasPendingTranscriptStep, activeSubagents, hasIdleAliveSubagents };
 }

@@ -604,3 +604,56 @@ it.each(['local', 'device'] as const)('retries image delivery through the %s tas
     }
   } finally { window.electronAPI = previous; }
 });
+
+// 测试价值
+// - 生产入口与可观察结果：AgentActionRow DOM 渲染与点击展开；
+//   验证 Agy Orchestrator 的 `Run exit_plan_mode` 行剥离重复 `"Run "` 前缀，且点击展开后显示计划正文而非原始 JSON。
+// - Bug／规则依据：未专门格式化前，工具行显示 `"Run exit_plan_mode"` 且展开内容为 `{"plan":"..."}`。
+// - 现有覆盖缺口：此前无 `exit_plan_mode` 行渲染与展开断言。
+// - 最小失败输入：`mkTool('exit-plan', 'Run exit_plan_mode', { acpKind: 'other', plan: 'Step 1: Verify flow' })`。
+// - tier：unit（jsdom + @testing-library/react）。
+it('renders Run exit_plan_mode cleanly and expands the plan text instead of raw JSON', () => {
+  render(createElement(AgentActionRow, {
+    pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+    message: mkTool('exit-plan', 'Run exit_plan_mode', {
+      acpKind: 'other',
+      plan: 'Step 1: Inspect translator\nStep 2: Run unit tests',
+    }),
+  }));
+  const row = screen.getByRole('button');
+  expect(row.textContent).toContain('exit_plan_mode');
+  expect(row.textContent).not.toContain('Run exit_plan_mode');
+  expect(row.textContent).not.toContain('{"plan"');
+
+  fireEvent.click(row);
+  expect(document.body.textContent).toContain('Step 1: Inspect translator');
+  expect(document.body.textContent).not.toContain('"acpKind"');
+});
+
+// 测试价值
+// - 生产入口与可观察结果：AgentActionRow + extractDisplayParam + verbForTool DOM 渲染；
+//   验证历史 `Run update_steps` 行不再退化为光杆动词，而是渲染 `updated` + `update_steps`，展开显示清单。
+// - Bug／规则依据：Review P1 #4 修复，保证持久化会话里的历史 `update_steps` 行不丢失对象文本。
+// - 现有覆盖缺口：此前仅测试了 `Run exit_plan_mode`，未覆盖 legacy `Run update_steps` DOM 渲染。
+// - 最小失败输入：`mkTool('legacy-steps', 'Run update_steps', { acpKind: 'other', steps: [...] })`。
+// - tier：unit（jsdom + @testing-library/react）。
+it('renders legacy Run update_steps with updated verb, tool name, and formatted checklist', () => {
+  render(createElement(AgentActionRow, {
+    pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+    message: mkTool('legacy-steps', 'Run update_steps', {
+      acpKind: 'other',
+      steps: [
+        { title: 'Plan work', status: 'done' },
+        { title: 'Edit file', status: 'in_progress' },
+      ],
+    }),
+  }));
+  const row = screen.getByRole('button');
+  expect(row.textContent).toContain('chat.agentActionRow.verb.updated');
+  expect(row.textContent).toContain('update_steps');
+  expect(row.textContent).not.toContain('chat.agentActionRow.verb.used');
+
+  fireEvent.click(row);
+  expect(document.body.textContent).toContain('[x] Plan work');
+  expect(document.body.textContent).toContain('[~] Edit file');
+});
