@@ -1,18 +1,18 @@
 [
  {
   "glob": "apps/desktop/src/renderer/styles/globals.css",
-  "reason": "D hljs 整改段 [data-theme=cindy-dark] .hljs-section 提亮值 #2573ec + 注释引用 default/CINDY 色",
+  "reason": "D hljs 整改段 [data-skin=cindy-dark] .hljs-section 提亮值 #2573ec + 注释引用 default/CINDY 色",
   "owner": "D",
   "matches": [
    {
     "value": "#2573ec",
     "before": "color:\\s*",
-    "selector": "[data-theme=\"cindy-dark\"] .hljs-section"
+    "selector": "[data-skin=\"cindy-dark\"] .hljs-section"
    },
    {
     "value": "#c9d1d9",
     "before": "color:\\s*",
-    "selector": "[data-theme=\"cindy-dark\"] .hljs-punctuation,\n[data-theme=\"cindy-dark\"] .hljs-tag"
+    "selector": "[data-skin=\"cindy-dark\"] .hljs-punctuation,\n[data-skin=\"cindy-dark\"] .hljs-tag"
    }
   ],
   "reviewDate": "2027-04-30",

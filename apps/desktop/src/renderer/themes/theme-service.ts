@@ -64,6 +64,7 @@ export class ThemeService {
 
     const root = document.documentElement;
     root.dataset.theme = theme.id;
+    root.dataset.skin = theme.skin ?? theme.id;
     root.classList.toggle('dark', theme.type === 'dark');
     // Keep Chromium's native form controls (including number-input spinners)
     // on the same color scheme as the active application theme.

@@ -9,6 +9,7 @@ import { oneDarkPro } from './builtin/one-dark-pro';
 import { solarizedLight } from './builtin/solarized-light';
 import { cindyDark } from './builtin/cindy-dark';
 import { cindyLight } from './builtin/cindy-light';
+import { cindyGrayDark, cindyGrayLight } from './derived/cindy-gray';
 import { LOCAL_THEME_SUFFIX } from '../../shared/local-themes';
 import { getLocalThemes } from './local-themes';
 import type { Theme, ThemeType } from './types';
@@ -36,6 +37,7 @@ const BUILTIN_FAMILIES: ThemeFamily[] = [
     light: cindyLight,
     dark: cindyDark,
   },
+  { id: 'cindy-gray', name: 'Cindy Gray', light: cindyGrayLight, dark: cindyGrayDark },
   { id: 'default', name: 'Classic', light: defaultLight, dark: defaultDark },
   { id: 'atom-one', name: 'Atom One', light: atomOneLight, dark: oneDarkPro },
   { id: 'solarized-light', name: 'Solarized Light', light: solarizedLight, dark: null },

@@ -17,6 +17,8 @@
 
 ## 2026-11
 
+- **11-26 新增内置主题 Cindy Gray**——用户反馈 Cindy 主题里选中对话的近白胶囊太抢眼，Classic 的灰色更舒服。新增与 Cindy 完全相同的内置主题族 `cindy-gray`（Cindy Gray Light / Dark），只覆盖「选中对话」底色 `--sidebar-item-active`：Light `0 0% 85%`（#D9D9D9，Classic 的 `0 0% 90%` 贴在 Cindy 更深的侧栏上对比不足，实机反馈后加深一档）、Dark `60 2% 17%`（#2C2C2A，同 Classic Dark）。选中文字沿用 Cindy 前景色（≥4.5:1）。取舍：Cindy 为保住运行橙图标 ≥3:1（#7838）才用近白选中底，灰底下浅色运行橙×选中底约 2.25:1，用户知情接受，测试锁住该下限不再降低，深色仍 ≥3:1。实现不复制 Cindy 色板：主题取自 `cindyLight` / `cindyDark` 仅覆盖这一项，Cindy 以后调值自动跟随；新增主题字段 `skin`，渲染为 `<html data-skin>`，毛玻璃侧栏、墨水图标合成、浮层模糊等 Cindy 专属样式的选择器由 `data-theme='cindy-*'` 改为 `data-skin='cindy-*'`，macOS／Windows 原生材质对 `cindy-gray` 家族同样启用。未改动任何 Cindy 自身的值；冻结快照随新增两套主题更新。落点：`themes/derived/cindy-gray.ts`、`families.ts`、`shared/themeFamilies.ts`、`cindyGray.test.ts`。
+
 - **11-24 提问导航条只在悬停预览里区分本人消息**——找自己问过的那一轮时，任务、插件和 IM 来信也有刻度，原有预览看不出谁发的。保留所有刻度，只给本人的问题加用户气泡同色的圆角底框；其余沿用聊天来源，正文降一档。未读圆点、已读状态和「N 条提问已回答」会给人催促感；长短刻度已有悬停和当前阅读位置的含义，再加来源需要学图例；只画本人提问会丢掉其他轮次的跳转入口。时间轴与滚动条重复，补载时位置会跳；目录面板、⌥↑／⌥↓ 快捷键和新设置超出本次需要。落点：DESIGN.md §4「Desktop message nav rail preview」、MessageNavRail 与 messageNavRailModel 的预览测试。
 
 - **11-22 速度浮窗的图只画本轮，最近速度不再过期，状态栏只写数值**——用户截图指出浮窗里「推理占比 0%」与图上明显的推理笔画矛盾、「最近速度」显示「—」、状态栏写成「最近 98 tok/s」。原因：速度图沿用早期「新一轮接着上一轮画」的做法，最多保留 60 个速度点、240 次请求，而下方四项统计只算当前一轮；当前一轮没有推理时，图上仍是前几轮的长笔画。最近速度采样后 60 秒即被清空，一轮结束或长时间执行工具后浮窗只剩「—」。现行：新一轮开始时图从空白重画，图与本轮平均、累计输出、峰值、推理占比同属一轮；浮窗一直显示本轮最后一次读数，新一轮开始才清空；状态栏仍只在采样后 60 秒内显示速度，且只写「98 tok/s」，读数的类别由浮窗标签说明。Desktop 与 Mobile 同步：Mobile 浮窗同样保留本轮最后一次读数，状态条只显示 60 秒内的读数；Mobile 原先还会因旧计数的可靠标记（Claude 有子代理输出时为 false）或状态条收起而丢掉读数、打不开浮窗，一并改为以主机测速为准。落点：`recordTokenSpeed`、`useRunningTokenRateHistory`、`RunningStatusBar`。

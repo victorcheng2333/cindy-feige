@@ -9,6 +9,7 @@ import { oneDarkPro } from './builtin/one-dark-pro';
 import { solarizedLight } from './builtin/solarized-light';
 import { cindyDark } from './builtin/cindy-dark';
 import { cindyLight } from './builtin/cindy-light';
+import { cindyGrayDark, cindyGrayLight } from './derived/cindy-gray';
 import { getLocalThemes } from './local-themes';
 import {
   ATOM_ONE_LIGHT_ID,
@@ -22,6 +23,8 @@ import {
   THEME_LIGHT_ID,
   CINDY_LIGHT_ID,
   CINDY_DARK_ID,
+  CINDY_GRAY_LIGHT_ID,
+  CINDY_GRAY_DARK_ID,
 } from './theme-ids';
 import type { Theme, ThemeType } from './types';
 
@@ -31,6 +34,8 @@ export const builtinThemes: Record<string, Theme> = {
   [solarizedLight.id]: solarizedLight,
   [cindyLight.id]: cindyLight,
   [cindyDark.id]: cindyDark,
+  [cindyGrayLight.id]: cindyGrayLight,
+  [cindyGrayDark.id]: cindyGrayDark,
   [defaultDark.id]: defaultDark,
   [eclipse.id]: eclipse,
   [oneDarkPro.id]: oneDarkPro,
@@ -82,4 +87,6 @@ export {
   THEME_LIGHT_ID,
   CINDY_LIGHT_ID,
   CINDY_DARK_ID,
+  CINDY_GRAY_LIGHT_ID,
+  CINDY_GRAY_DARK_ID,
 };

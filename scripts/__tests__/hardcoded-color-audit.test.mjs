@@ -149,7 +149,7 @@ test('old approved hljs and asset values are narrow, not file bypasses; retired 
   const cases = [
     // The Toast exemption was withdrawn on 2026-11-11 (A-15): VARIANT_MAP consumes status tokens.
     ['components/ui/toast/Toast.tsx', "export const VARIANT_MAP = { info: { color: '#417CDD' } };", 'block'],
-    ['styles/globals.css', '[data-theme="cindy-dark"] .hljs-section { color: #2573ec; }', 'allowed'],
+    ['styles/globals.css', '[data-skin="cindy-dark"] .hljs-section { color: #2573ec; }', 'allowed'],
     ['styles/globals.css', '.new-control { color: #2573ec; }', 'block'],
     // The composer fallback exemption expired on 2026-09-17 (“集成收口删”); the fallbacks were removed 2026-11-11 (A-07).
     ['components/new-chat/ChatInput.tsx', "'var(--composer-pill-bg, #FCFCFC)'", 'block'],

@@ -1,7 +1,7 @@
 /**
  * 无壁纸时采用用户的桌面模糊数值；以下为没有桌面覆盖状态的主题默认值。
  * E4D 毛玻璃 vibrancy 配置(R1 audit,用户裁决透壁纸 2026-07-17)。
- * 仅 CINDY family 启用 macOS vibrancy + 透明底(透出桌面壁纸);其他 family 恢复
+ * 仅 CINDY 皮肤族（Cindy、Cindy Gray）启用 macOS vibrancy + 透明底(透出桌面壁纸);其他 family 恢复
  * 不透明。Windows 11 22H2+ CINDY family 启用 Electron backgroundMaterial;Windows 10、
  * 较早 Windows 11 与 Linux 回退不透明。
  */
@@ -12,6 +12,7 @@ import {
   isWindowsBackdropMaterial,
   type WindowsBackdropMaterial,
 } from '../shared/windowBackdrop.js';
+import { isCindySkinFamily } from '../shared/themeFamilies.js';
 
 export type { WindowsBackdropMaterial } from '../shared/windowBackdrop.js';
 
@@ -161,7 +162,7 @@ export function resolveVibrancyConfig(
       vibrancy: platform === 'darwin' && options.desktopBlur ? 'under-window' : null,
       backgroundColor: '#00000000',
       ...(platform === 'darwin' ? { desktopBlurRadius: options.desktopBlur } : {}),
-      ...(platform === 'darwin' && familyId === 'cindy'
+      ...(platform === 'darwin' && isCindySkinFamily(familyId)
         ? { sidebarMaterial: isDark ? 'dark' as const : 'light' as const } : {}),
       ...(platform === 'win32' ? {
         backgroundMaterial: options.desktopBlur && supportsWindowsSystemBackdrop(options)
@@ -169,7 +170,7 @@ export function resolveVibrancyConfig(
       } : {}),
     };
   }
-  const isCindy = familyId === 'cindy' && !options?.wallpaperCovered;
+  const isCindy = isCindySkinFamily(familyId) && !options?.wallpaperCovered;
   const opaqueBg = isDark ? '#1f1f1e' : '#f8f8f6';
   if (platform === 'darwin') {
     // 材质 A/B 旋钮(dev 调参用):XDT_VIBRANCY_MATERIAL=sidebar|hud|under-window|fullscreen-ui|

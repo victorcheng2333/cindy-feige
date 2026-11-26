@@ -37,6 +37,11 @@ export interface Theme {
    * dark 会在设置里合并成一个可跟随模式切换的主题；缺省则各自成家族。
    */
   family?: string;
+  /**
+   * 样式皮肤 id：缺省取自身 id。派生主题（如 Cindy Gray）用它沿用另一套主题的专属样式，
+   * 渲染为 `<html data-skin>`；`data-theme` 仍是主题自身 id，切换时照常变化。
+   */
+  skin?: string;
   colors: Partial<Record<ColorIdentifier, ColorValue>>;
   /** 新建对话页的方形 icon + 横向 logo；两项缺省时分别回退打包默认素材。 */
   brand?: ThemeBrand;

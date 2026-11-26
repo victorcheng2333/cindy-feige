@@ -417,12 +417,14 @@ describe('CINDY · ⑥ family(cindy 默认且置顶 / Classic 文案 / 9 主题�
     expect(getThemeFamilies().find((f) => f.id === 'default')?.name).toBe('Classic');
   });
 
-  it('既有 9 主题 keys 快照不变(不增减 builtin 主题)', () => {
+  it('内置主题 keys 快照(新增 Cindy Gray 派生主题 2026-11-26,其余不变)', () => {
     const ids = Object.keys(builtinThemes).sort();
     expect(ids).toEqual(
       [
         'atom-one-light',
         'cindy-dark',
+        'cindy-gray-dark',
+        'cindy-gray-light',
         'cindy-light',
         'default-dark',
         'default-light',

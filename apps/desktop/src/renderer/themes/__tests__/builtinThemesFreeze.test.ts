@@ -56,7 +56,7 @@ describe('DS-2b · 内置主题冻结', () => {
     );
   });
 
-  it('11 套主题清单本身与快照一致（增删主题必须显式更新快照）', () => {
+  it('13 套主题清单本身与快照一致（增删主题必须显式更新快照）', () => {
     expect(live.themeIds, themeFreezeMismatch('内置主题清单', FIXTURE)).toEqual(snapshot.themeIds);
   });
 

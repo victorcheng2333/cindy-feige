@@ -424,7 +424,7 @@ describe('shared dropdown menu glide highlight', () => {
       '.bg-\\[var\\(--cmd-palette-bg\\)\\] {\n  background: var(--surface-translucent-overlay);',
     );
     const win = globals.indexOf(
-      "[data-platform='win32'][data-theme='cindy-dark'] .bg-\\[var\\(--cmd-palette-bg\\)\\] {",
+      "[data-platform='win32'][data-skin='cindy-dark'] .bg-\\[var\\(--cmd-palette-bg\\)\\] {",
     );
     expect(glass).toBeGreaterThan(0);
     // The Windows exception comes after (and is more specific than) the glass rule.
@@ -433,7 +433,7 @@ describe('shared dropdown menu glide highlight', () => {
       /background: var\(--cmd-palette-bg\);\s*backdrop-filter: none;\s*-webkit-backdrop-filter: none;/,
     );
     expect(globals).toContain(
-      "[data-platform='win32'][data-theme='cindy-light'] .bg-\\[var\\(--cmd-palette-bg\\)\\],",
+      "[data-platform='win32'][data-skin='cindy-light'] .bg-\\[var\\(--cmd-palette-bg\\)\\],",
     );
   });
 

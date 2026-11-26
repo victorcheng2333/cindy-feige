@@ -71,10 +71,10 @@ describe('Windows Acrylic resize backing contract', () => {
 
   it('lets only the ordinary Acrylic sidebar show the creation-time backing', () => {
     expect(globalsSource).toContain(
-      "[data-platform='win32'][data-window-backdrop-material='acrylic'][data-theme='cindy-light']",
+      "[data-platform='win32'][data-window-backdrop-material='acrylic'][data-skin='cindy-light']",
     );
     expect(globalsSource).toContain(
-      "[data-platform='win32'][data-window-backdrop-material='acrylic'][data-theme='cindy-dark']",
+      "[data-platform='win32'][data-window-backdrop-material='acrylic'][data-skin='cindy-dark']",
     );
     expect(globalsSource).toContain('aside.bg-sidebar:not([data-sidebar-peek-drawer])');
     expect(globalsSource).toMatch(
