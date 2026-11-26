@@ -333,6 +333,8 @@ describe('shouldPrependMobileClientPromptNote(内置命令旁路)', () => {
   // 覆盖缺口：maker-core 测试直接调 handle.send，不经过这道说明判定。最小失败输入：acp 的 '/pr'（unit）。
   it('插件引擎的 slash 输入同 Pi 一样不带说明，普通消息照常带', () => {
     expect(shouldPrependMobileClientPromptNote('/pr fix the build', 'acp')).toBe(false);
+    expect(shouldPrependMobileClientPromptNote('/opencli check homepage', 'antigravity')).toBe(false);
+    expect(shouldPrependMobileClientPromptNote('/tmp/build.log 为什么失败', 'antigravity')).toBe(true);
     expect(shouldPrependMobileClientPromptNote(
       { type: 'user', content: [{ type: 'image', path: '/tmp/a.png' }, { type: 'text', text: ' /pr' }] },
       'acp',

@@ -118,9 +118,10 @@ export function shouldPrependMobileClientPromptNote(
     const firstText = parts.find((part) => part?.type === 'text' && typeof part.text === 'string')?.text;
     return !(text ?? firstText ?? '').trimStart().startsWith('/');
   }
-  // Plugin ACP engines execute leading `/command` inputs natively; keep them at
-  // the start of the prompt, while still allowing multi-segment paths (`/tmp/...`).
-  if (agentKind === 'acp') {
+  // ACP engines (plugin engines and built-in Antigravity) expand leading `/<skill>`
+  // and execute leading `/command` inputs natively; keep them at the start of the
+  // prompt, while still allowing multi-segment paths (`/tmp/...`).
+  if (agentKind === 'acp' || agentKind === 'antigravity') {
     const content = message && typeof message === 'object'
       ? (message as { content?: unknown }).content : null;
     const parts = Array.isArray(content) ? content : [];

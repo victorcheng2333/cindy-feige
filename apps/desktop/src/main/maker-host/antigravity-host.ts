@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
-import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type McpProvider, type AuthAdapter, type Capabilities, type OpenReadonlySqlite } from '@cindy/maker-core';
+import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type AntigravityAgentDeps, type McpProvider, type AuthAdapter, type Capabilities, type OpenReadonlySqlite } from '@cindy/maker-core';
 import { BUNDLED_CATALOG, findBaseModel, type Provider, type ProviderModelDiscoveryFailure } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { resolveBetterSqliteNativeBinding } from '../localDb/betterSqliteFactory.js';
@@ -548,6 +548,8 @@ export function buildAntigravityAgent(
   logger: AgentDeps['logger'], providers: McpProvider[] = [], makerMemory?: AgentDeps['makerMemory'],
   /** Cindy Auto-review for permission requests Agy escalates while the task is in Auto. */
   reviewAutoPermissionAction?: AgentDeps['reviewAutoPermissionAction'],
+  /** Shared/project/managed Skill list matching Pi's discovery and Cindy's enable switches. */
+  listSessionSkills?: AntigravityAgentDeps['listSessionSkills'],
 ) {
   executable = binaryPath();
   if (!executable) return null;
@@ -557,6 +559,7 @@ export function buildAntigravityAgent(
     logger,
     makerMemory,
     reviewAutoPermissionAction,
+    ...(listSessionSkills ? { listSessionSkills } : {}),
     openReadonlySqlite: openReadonlyAgySqlite,
     runtimeConfig: {
       systemPrompt: hostSystemPrompt,

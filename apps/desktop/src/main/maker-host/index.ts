@@ -2479,9 +2479,20 @@ export function getMaker(): Maker {
         return getRemoteAgentProxyEnv(remoteHost);
       },
     });
+    const sessionSkillLister = createPluginEngineSkillLister({
+      listManagedSkills: listCindyManagedSkills,
+      scanCustomizations: scanLocalCustomizations,
+      readDisabledSkillPaths: () => readDisabledSkillPaths(),
+    });
     const piAgent = buildPiAgentForDesktop();
     if (piAgent) makerAgents.pi = withSubscriptionAccounts(piAgent);
-    const antigravity = buildAntigravityAgent(desktopMakerLogger, piMcpProviders, makerMemoryManager, reviewAutoPermissionAction);
+    const antigravity = buildAntigravityAgent(
+      desktopMakerLogger,
+      piMcpProviders,
+      makerMemoryManager,
+      reviewAutoPermissionAction,
+      sessionSkillLister,
+    );
     if (antigravity) makerAgents.antigravity = antigravity;
     const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger, makerMemoryManager);
     if (cursorAgent) {
@@ -2940,11 +2951,7 @@ export function getMaker(): Maker {
       getGhostRosterPrompt,
       // Same Skill scope as the built-in Pi engine (Cindy-managed and plugin Skills, Pi's discovery
       // directories, the user's enable switches), discovered in the isolated scan process.
-      listSessionSkills: createPluginEngineSkillLister({
-        listManagedSkills: listCindyManagedSkills,
-        scanCustomizations: scanLocalCustomizations,
-        readDisabledSkillPaths: () => readDisabledSkillPaths(),
-      }),
+      listSessionSkills: sessionSkillLister,
     });
     botRuntimeResourcePreflight = async (opts) => {
       const preflightOpts = { ...opts };

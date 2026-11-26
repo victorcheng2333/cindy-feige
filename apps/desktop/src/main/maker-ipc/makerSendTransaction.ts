@@ -1778,7 +1778,7 @@ export function createMakerSendTransaction(deps: MakerSendTransactionDeps): Make
           return toCompatibleMakerSendResult(createHostSendFailure(code, 'The selected runtime plugin stopped this reply.'));
         }
       }
-      if (sess.agentKind === 'acp') {
+      if (sess.agentKind === 'acp' || sess.agentKind === 'antigravity') {
         outgoing = defusePluginEngineWireEnvelope(
           outgoing as HandoffWireMessage,
           normalized as HandoffWireMessage,

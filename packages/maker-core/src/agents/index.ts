@@ -230,6 +230,7 @@ export {
   ANTIGRAVITY_CAPABILITIES,
   isAntigravityPermissionMode,
   probeAntigravityCatalog,
+  type AntigravityAgentDeps,
   type ProbeAntigravityCatalogOptions,
 } from './antigravity/index.js';
 export { CursorAgent, CURSOR_CAPABILITIES } from './cursor/index.js';

@@ -237,7 +237,7 @@ export function createMakerSteerTransaction(deps: MakerSteerTransactionDeps) {
     if (appContext?.text) {
       steerPayload = prependNoteToWireUserMessage(steerPayload as HandoffWireMessage, appContext.text);
     }
-    if (sess.agentKind === 'acp') {
+    if (sess.agentKind === 'acp' || sess.agentKind === 'antigravity') {
       steerPayload = defusePluginEngineWireEnvelope(
         steerPayload as HandoffWireMessage,
         normalized as HandoffWireMessage,

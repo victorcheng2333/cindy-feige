@@ -28,6 +28,7 @@ import {
   mapEffortValues,
 } from './capabilities.js';
 import { AcpConnection, AcpConnectionClosedError, AcpRpcError, methodNotFound } from './connection.js';
+import { defusePluginEngineSlashMentions, isLeadingSlashCommand } from '../acp/briefing.js';
 import type { AcpLineTransport, AcpTransportClosed } from './line-transport.js';
 import {
   ACP_ERROR_AUTH_REQUIRED,
@@ -240,6 +241,10 @@ export interface OpenAcpSessionOptions {
    * loaded session already has it in its own history, so it is not repeated.
    */
   briefing?: string;
+  /** Lowercase Skill names discovered for this session, so host briefings defuse `/skill` mentions. */
+  skillCommandNames?: readonly string[];
+  /** Expands a user message starting with `/<skill>` into its Skill instructions before sending. */
+  expandSlashInvocation?: (text: string) => Promise<string | null>;
   /** Called once when the session's event stream ends (closed, or the endpoint exited). */
   onEnded?: () => void;
   /**
@@ -672,6 +677,9 @@ export class AcpSession {
   private readonly pendingPrompts: AcpContentBlock[][] = [];
   /** Sent once, ahead of the first prompt of a new session. */
   private pendingBriefing: string | null;
+  private readonly expandSlashInvocation: ((text: string) => Promise<string | null>) | undefined;
+  /** Command names advertised by the agent or discovered Skills, defused in host briefings. */
+  private readonly commandNames = new Set<string>();
   private preparation = { controller: new AbortController(), pending: 0, tail: Promise.resolve() };
   private readonly permissionControllers = new Set<AbortController>();
   private readonly questionControllers = new Set<AbortController>();
@@ -741,7 +749,12 @@ export class AcpSession {
     this.checkBackgroundActivity = init.options.checkBackgroundActivity;
     this.pollSubagentRuns = init.options.pollSubagentRuns;
     this.onSessionBroken = init.options.onSessionBroken;
+    this.expandSlashInvocation = init.options.expandSlashInvocation;
     this.pendingBriefing = init.resumeOutcome === 'new' && init.options.briefing?.trim() ? init.options.briefing : null;
+    for (const name of init.options.skillCommandNames ?? []) {
+      const trimmed = name.trim().replace(/^\/+/, '').toLowerCase();
+      if (trimmed) this.commandNames.add(trimmed);
+    }
     this.translator = new AcpUpdateTranslator({
       blockIdPrefix: `acp-${init.sessionId}`,
       emitAgySubagentTasks: init.options.agentKind === 'antigravity',
@@ -764,6 +777,11 @@ export class AcpSession {
   get model(): string {
     const option = findModelOption(this.configOptions);
     return typeof option?.currentValue === 'string' ? option.currentValue : '';
+  }
+
+  /** Names the ACP endpoint advertised or discovered Skills, defused in host wire notes. */
+  getPluginEngineCommandNames(): readonly string[] {
+    return [...this.commandNames];
   }
 
   get capabilities(): Capabilities {
@@ -862,8 +880,9 @@ export class AcpSession {
       if (prompt === ABORTED) return;
       if (prompt.length === 0) throw new Error('Cannot send an empty message');
       if (this.ended || this.closing) throw new Error('ACP session is closed');
-      if (this.pendingBriefing) {
-        prompt.unshift({ type: 'text', text: this.pendingBriefing });
+      const firstText = prompt.find((block): block is Extract<AcpContentBlock, { type: 'text' }> => block.type === 'text')?.text ?? '';
+      if (this.pendingBriefing && !isLeadingSlashCommand(firstText)) {
+        prompt.unshift({ type: 'text', text: defusePluginEngineSlashMentions(this.pendingBriefing, this.commandNames) });
         this.pendingBriefing = null;
       }
       this.pendingPrompts.push(prompt);
@@ -1171,6 +1190,10 @@ export class AcpSession {
       }
       case 'available_commands_update':
         this.availableCommandsList = normalizeAvailableCommands(update.availableCommands);
+        for (const cmd of this.availableCommandsList) {
+          const trimmed = cmd.name.trim().replace(/^\/+/, '').toLowerCase();
+          if (trimmed) this.commandNames.add(trimmed);
+        }
         this.sawCommandsUpdate = true;
         this.refreshCapabilities();
         this.notifyInitialUpdateWaiters();
@@ -2379,15 +2402,23 @@ export class AcpSession {
 
   private async toPrompt(message: UserMessage, signal: AbortSignal): Promise<AcpContentBlock[]> {
     if (typeof message.content === 'string') {
-      return message.content.length > 0 ? [{ type: 'text', text: message.content }] : [];
+      return message.content.length > 0 ? [{ type: 'text', text: await this.expandText(message.content) }] : [];
     }
     const blocks: AcpContentBlock[] = [];
     const embedBudget = { remainingBytes: MAX_EMBEDDED_PROMPT_BYTES };
-    for (const block of message.content) {
+    const opening = message.content.findIndex((block) => block.type === 'text');
+    for (const [index, block] of message.content.entries()) {
       signal.throwIfAborted();
-      blocks.push(await this.toContentBlock(block, signal, embedBudget));
+      blocks.push(index === opening && block.type === 'text'
+        ? { type: 'text', text: await this.expandText(block.text) }
+        : await this.toContentBlock(block, signal, embedBudget));
     }
     return blocks;
+  }
+
+  private async expandText(text: string): Promise<string> {
+    if (!this.expandSlashInvocation || !text.trimStart().startsWith('/')) return text;
+    return (await this.expandSlashInvocation(text)) ?? text;
   }
 
   private async tryEmbedTextResource(

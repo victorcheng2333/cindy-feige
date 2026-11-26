@@ -15,6 +15,13 @@ import {
 import type { Capabilities } from '../../types/capabilities.js';
 import type { Effort, PermissionMode } from '../../types/common.js';
 import type { AgentEvent } from '../../types/events.js';
+import type { ListAgentSkillsOptions, ListAgentSkillsResult } from '../../types/palette.js';
+import {
+  collectPluginEngineSkillNames,
+  formatPluginEngineSkillList,
+  type PluginEngineBriefingSkill,
+} from '../acp/briefing.js';
+import { expandPluginEngineSkillInvocation } from '../acp/skill-invocation.js';
 import {
   appendAutoReviewUserIntent,
   createAutoReviewActionContext,
@@ -103,6 +110,8 @@ export interface AntigravityAgentDeps extends AgentDeps {
   getSettings?(): { useG1Credits?: boolean };
   /** Optional host-injected read-only SQLite opener for native trajectory inspection. */
   openReadonlySqlite?: OpenReadonlySqlite;
+  /** Skills available in this task (shared ~/.agents/skills, project .agents/skills, managed/plugin Skills). */
+  listSessionSkills?: (ctx: { workingDir?: string }) => Promise<readonly PluginEngineBriefingSkill[]>;
 }
 
 function antigravityPermissionModes(
@@ -195,6 +204,37 @@ export class AntigravityAgent extends BaseAgent {
 
   constructor(private readonly agyDeps: AntigravityAgentDeps) {
     super(agyDeps);
+  }
+
+  /**
+   * The `/` menu of an Antigravity task: the same enabled Skill list injected into the first-turn
+   * briefing and expanded on `/<skill>` invocations. SSH workspaces are not offered to Agy.
+   */
+  override async listAgentSkills(opts: ListAgentSkillsOptions): Promise<ListAgentSkillsResult> {
+    if (opts.remoteHostId || !this.agyDeps.listSessionSkills) return { skills: [] };
+    const skills = await this.agyDeps.listSessionSkills({ workingDir: opts.workingDir });
+    return {
+      skills: skills.flatMap((skill) => skill.path ? [{
+        kind: 'agent-skill' as const,
+        name: skill.name,
+        ...(skill.description ? { description: skill.description } : {}),
+        source: 'skill' as const,
+        path: skill.path,
+        scope: skill.scope ?? 'user',
+        enabled: true,
+      }] : []),
+    };
+  }
+
+  private async readSessionSkills(workingDir: string, logger: AgentDeps['logger']): Promise<readonly PluginEngineBriefingSkill[]> {
+    try {
+      return await this.agyDeps.listSessionSkills?.({ workingDir }) ?? [];
+    } catch (error) {
+      logger.warn('antigravity: Skill list unavailable; starting without it', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
   }
 
   private builtCapabilities?: { source: Capabilities; additions: unknown; built: Capabilities };
@@ -360,6 +400,21 @@ export class AntigravityAgent extends BaseAgent {
       // Only identities written by ACP can enter session/resume.
       const saved = opts.resumeSessionId ? await readAcpIdentity(marker) : undefined;
       const resumeSessionId = saved === opts.resumeSessionId ? saved : undefined;
+      // Local tasks receive the same Skill scope as Pi (~/.agents/skills, project .agents/skills,
+      // managed/plugin Skills, filtered by Cindy's enable switches). Device-hosted tasks belong to
+      // another computer and must never receive this computer's Skills.
+      const sessionSkills = !hosted && !resumeSessionId
+        ? await this.readSessionSkills(cwd, this.agyDeps.logger)
+        : [];
+      const skillBriefing = formatPluginEngineSkillList(sessionSkills);
+      const skillCommandNames = collectPluginEngineSkillNames(sessionSkills);
+      const expandSlashInvocation = hosted || !this.agyDeps.listSessionSkills
+        ? undefined
+        : (text: string) => expandPluginEngineSkillInvocation(
+            text,
+            () => this.readSessionSkills(cwd, this.agyDeps.logger),
+            (message) => this.agyDeps.logger.warn('antigravity: Skill invocation left unexpanded', { message }),
+          );
       await seedAgyStateDir(stateDir);
       const hostedMcp = hosted ? buildAntigravityHostedMcpServers(hosted) : undefined;
       if (hosted && hostedMcp) {
@@ -412,6 +467,9 @@ export class AntigravityAgent extends BaseAgent {
         additionalDirectories: hosted ? undefined : writableDirs,
         nativeCompactCommand: true,
         embedTextAttachments: !hosted,
+        ...(skillBriefing ? { briefing: skillBriefing } : {}),
+        ...(skillCommandNames.length > 0 ? { skillCommandNames } : {}),
+        ...(expandSlashInvocation ? { expandSlashInvocation } : {}),
         steerByPrompt: true,
         continueWhileToolsPending: true,
         promptInactivityTimeoutMs: AGY_PROMPT_INACTIVITY_TIMEOUT_MS,
@@ -535,6 +593,7 @@ export class AntigravityAgent extends BaseAgent {
         setExtraDirs: async (dirs) => { extraDirs = [...dirs]; decisionCache.clear(); },
         setWritableDirs: async (dirs) => { writableDirs = [...dirs]; decisionCache.clear(); },
         getUsageSnapshot: () => session.getUsageSnapshot(),
+        getPluginEngineCommandNames: () => session.getPluginEngineCommandNames(),
         setInteractionResolver: resolver => session.setInteractionResolver(resolver),
       };
     } catch (error) {

@@ -2736,6 +2736,51 @@ describe('Maker Pi runtime skill status', () => {
     expect(wrongProject.skills.every((skill) => skill.runtimeStatus === 'discovered')).toBe(true);
   });
 
+  // 测试价值
+  // - 生产入口与可观察结果：Maker.listAgentSkills('antigravity', { sessionId })；远端设备托管会话不暴露本机 Skill
+  //   （避免把不可展开的本地 Skill 塞进 `/` 并挤掉桌面 `/learn`），本机会话正常返回。
+  // - Bug／规则依据：直推 main 独立 review 发现的 P1——device-hosted Antigravity 不注入也不展开本地 Skill，
+  //   此前 listAgentSkills 未按 sessionMeta.agentDeviceId 抑制。
+  // - 现有覆盖缺口：既有 listAgentSkills 测试仅覆盖 pi，未覆盖 antigravity + agentDeviceId 分支。
+  // - 最小失败输入：带 agentDeviceId 的 antigravity 会话调用 Maker.listAgentSkills('antigravity', { workingDir, sessionId })。
+  // - tier：unit（内存 storage 与 fake agent，无外部进程）。
+  it('suppresses local Skills for device-hosted antigravity sessions while keeping local ones', async () => {
+    const agyAgent = createAgent(async () => createHandle({ id: 'agy-1', agentKind: 'antigravity' }), 'antigravity');
+    agyAgent.listAgentSkills = vi.fn(async () => ({
+      skills: [{
+        kind: 'agent-skill' as const,
+        name: 'learn',
+        source: 'skill' as const,
+        path: '/home/.agents/skills/learn/SKILL.md',
+        scope: 'user' as const,
+        enabled: true,
+      }],
+    }));
+    const storage = createStorage();
+    await storage.create({
+      id: 'hosted-agy',
+      agentKind: 'antigravity',
+      workDir: '/repo',
+      title: 'Hosted Agy',
+      model: 'gemini-4-neon',
+      agentDeviceId: 'dev-remote-1',
+    });
+    await storage.create({
+      id: 'local-agy',
+      agentKind: 'antigravity',
+      workDir: '/repo',
+      title: 'Local Agy',
+      model: 'gemini-4-neon',
+    });
+    const maker = new Maker({ agents: { antigravity: agyAgent }, storage, logger: createLogger() });
+
+    expect(await maker.listAgentSkills('antigravity', { workingDir: '/repo', sessionId: 'hosted-agy' })).toEqual({ skills: [] });
+    expect(agyAgent.listAgentSkills).not.toHaveBeenCalled();
+
+    const local = await maker.listAgentSkills('antigravity', { workingDir: '/repo', sessionId: 'local-agy' });
+    expect(local.skills.map((skill) => skill.name)).toEqual(['learn']);
+  });
+
   it('marks Windows project-scope --skill loaded when frontmatter name differs from the folder', async () => {
     const agent = createAgent(async (opts) => {
       const handle = createHandle({ id: `pi-${opts.sessionId}`, agentKind: 'pi' });

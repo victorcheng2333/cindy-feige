@@ -4831,6 +4831,8 @@ export function ChatInput({
     : !sessionId ? pluginEngines?.active?.deviceId : undefined;
   const pluginEngineSkillsListed = pluginEngineActive
     && (!pluginEngineDeviceId || pluginEngineDeviceId === deviceLinkDeviceId);
+  // Antigravity 在另一台电脑运行时不带本机技能清单，也不在远端展开 `/<skill>`，与插件引擎同口径不列本机技能。
+  const antigravityDeviceHosted = !pluginEngineActive && paletteAgentKind === 'antigravity' && !!effectiveAgentDeviceId;
   const slashCommandContextKey = JSON.stringify([
     slashWorkingDir ?? null,
     slashContextReady,
@@ -4840,6 +4842,7 @@ export function ChatInput({
     deviceLinkDeviceId ?? null,
     // 插件引擎不列内置 Harness 的命令(见下方 skipAgentCommands)；内置引擎时数组与之前逐项相同。
     ...(pluginEngineActive ? ['plugin-engine', pluginEngineSkillsListed] : []),
+    ...(antigravityDeviceHosted ? ['antigravity-device-hosted'] : []),
   ]);
   const [slashCommandLoadState, setSlashCommandLoadState] = useState<SlashCommandRosterState>({
     contextKey: '',
@@ -4887,8 +4890,8 @@ export function ChatInput({
         {
           ...opts,
           contextReady: slashContextReady,
-          // 插件引擎不认内置 Harness 的命令；技能按引擎能展开的范围列出(见 pluginEngineSkillsListed)。
-          skipAgentSkills: isRemoteSession || (pluginEngineActive && !pluginEngineSkillsListed),
+          // 插件引擎不认内置 Harness 的命令；技能按引擎能展开的范围列出(见 pluginEngineSkillsListed / antigravityDeviceHosted)。
+          skipAgentSkills: isRemoteSession || (pluginEngineActive && !pluginEngineSkillsListed) || antigravityDeviceHosted,
           ...(pluginEngineActive ? { skipAgentCommands: true, pluginEngineSkills: true } : {}),
           sessionId,
           allowManagedPiPackagePreview: !isRemoteSession,
@@ -4925,6 +4928,7 @@ export function ChatInput({
       slashCommandContextKey,
       pluginEngineActive,
       pluginEngineSkillsListed,
+      antigravityDeviceHosted,
     ],
   );
   useEffect(() => {

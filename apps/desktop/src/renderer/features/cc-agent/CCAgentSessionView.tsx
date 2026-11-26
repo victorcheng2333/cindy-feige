@@ -1864,14 +1864,15 @@ function CCAgentSessionContent({
     // 会把被控端 skill/builtin 影子掉的 /clear、/help 等误判成 desktop 命令、在控制端执行。
     // 本机会话 remoteDeviceId=undefined → 行为不变。desktop 命令始终本地(见 loadAllCommands)。
     if (awaitingCreation) return;
-    // 插件引擎任务认 Cindy 的桌面命令与引擎能展开的技能；其余 `/…` 原样交给引擎(与输入框的命令列表同源)。
+    // 插件引擎与 Antigravity 在另一台电脑运行时没有跨电脑技能源、也不展开 `/<skill>`，不列本机技能（保留桌面 `/learn`）。
     const pluginEngineCommands = isPluginEngineKind(session?.agentKind);
+    const deviceHostedAcpSkillsUnavailable = (pluginEngineCommands || agentKind === 'antigravity') && !!session?.agentDeviceId;
     loadAllCommands(
       agentKind,
       wd,
       {
         contextReady: !!session,
-        skipAgentSkills: isRemoteSession || (pluginEngineCommands && !!session?.agentDeviceId),
+        skipAgentSkills: isRemoteSession || deviceHostedAcpSkillsUnavailable,
         ...(pluginEngineCommands ? { skipAgentCommands: true, pluginEngineSkills: true } : {}),
         sessionId: session?.id,
       },
@@ -3354,13 +3355,14 @@ function CCAgentSessionContent({
     if (cached.length > 0) return cached;
     const agentKind = dbToMakerAgentKind(session?.agentKind);
     const pluginEngineCommands = isPluginEngineKind(session?.agentKind);
+    const deviceHostedAcpSkillsUnavailable = (pluginEngineCommands || agentKind === 'antigravity') && !!session?.agentDeviceId;
     try {
       // device-link 远程会话同源:传 remoteDeviceId,fallback 快照也从被控端读(见上方 cache effect 说明)。
       return await loadAllCommands(
         agentKind,
         session?.workingDir,
         {
-          skipAgentSkills: isRemoteSession || (pluginEngineCommands && !!session?.agentDeviceId),
+          skipAgentSkills: isRemoteSession || deviceHostedAcpSkillsUnavailable,
           ...(pluginEngineCommands ? { skipAgentCommands: true, pluginEngineSkills: true } : {}),
           sessionId: session?.id,
         },

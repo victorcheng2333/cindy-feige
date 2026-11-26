@@ -638,4 +638,89 @@ describe('Agy settings, crash diagnostics, and catalog discovery metadata', () =
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AntigravityAgent.listAgentSkills 与 AntigravityAgent.startSession → handle.send；
+  //   验证 `/` 菜单可见、新会话首轮注入 `<cindy-skills>`（且脱敏描述中的 `/命令` 防 agy 误触发）、
+  //   `/<skill>` 在新会话与恢复会话中内联展开为 `<skill>` 正文、以及恢复会话不重复注入清单。
+  // - Bug／规则依据：内置 AntigravityAgent 此前未接入 listSessionSkills，导致 `~/.agents/skills` 与项目/托管 Skill 均不可见。
+  // - 现有覆盖缺口：index.test.ts 原用例未传入 listSessionSkills，未覆盖技能清单注入与斜杠展开链路。
+  // - 最小失败输入：配置了含 `/learn` 描述的技能的 AntigravityAgent 实例执行 listAgentSkills、新会话首轮发送与 `/<skill>` 调用。
+  // - tier：unit（进程内 fake AgyProcess 与临时 SKILL.md，无真实网络或外部 CLI）。
+  it('lists enabled Skills, briefs new sessions with defused slash mentions, and expands /<skill> across resumes', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-skills-test-'));
+    try {
+      const skillFile = path.join(dir, 'opencli', 'SKILL.md');
+      await mkdir(path.dirname(skillFile), { recursive: true });
+      await writeFile(skillFile, '---\nname: opencli\ndescription: Run /learn or browser tasks\n---\nUse opencli to inspect pages.\n');
+      const listSessionSkills = vi.fn(async () => [
+        { name: 'opencli', description: 'Run /learn or browser tasks', path: skillFile, scope: 'user' as const },
+      ]);
+      const agent = new AntigravityAgent({
+        binaryPath: '/test/agy',
+        logger: createConsoleLogger('agy-skills-test'),
+        auth: {
+          getState: async () => ({ authenticated: true }),
+          triggerLogin: async () => ({ authenticated: true }),
+          logout: async () => {},
+          getAuthEnv: async () => ({}),
+        },
+        runtimeConfig: { systemPrompt: 'Fixture instructions' },
+        prepareAcp: async () => ({ stateDir: dir, servers: [], dispose() {} }),
+        getEnv: () => ({}),
+        getDiscoveredCapabilities: () => undefined,
+        listSessionSkills,
+      });
+
+      expect(await agent.listAgentSkills({ workingDir: dir })).toEqual({
+        skills: [{
+          kind: 'agent-skill',
+          name: 'opencli',
+          description: 'Run /learn or browser tasks',
+          source: 'skill',
+          path: skillFile,
+          scope: 'user',
+          enabled: true,
+        }],
+      });
+      expect(await agent.listAgentSkills({ workingDir: dir, remoteHostId: 'ssh-1' })).toEqual({ skills: [] });
+
+      // New session: first non-slash message carries <cindy-skills> with `/learn` defused.
+      const fresh = new AgyProcess('acp-skills-1');
+      const handle = await agent.startSession({ workingDir: dir, model: 'gemini-4-neon' });
+      try {
+        await sendTurn(handle);
+        const promptReq = fresh.requests.find((req) => req.method === 'session/prompt');
+        const promptBlocks = promptReq?.params.prompt as Array<{ type: string; text?: string }>;
+        expect(promptBlocks).toHaveLength(2);
+        expect(promptBlocks[0]?.text).toContain('<cindy-skills>');
+        expect(promptBlocks[0]?.text).toContain(JSON.stringify(skillFile));
+        expect(promptBlocks[0]?.text).not.toContain('/learn');
+        expect(promptBlocks[1]?.text).toBe('Reply to this test.');
+      } finally {
+        await handle.close();
+      }
+
+      // Resumed session: no duplicate <cindy-skills>, and `/<skill>` still expands inline.
+      const resumedProc = new AgyProcess('acp-skills-1');
+      const resumed = await agent.startSession({ workingDir: dir, model: 'gemini-4-neon', resumeSessionId: 'acp-skills-1' });
+      try {
+        await resumed.send({ type: 'user', content: '/opencli check homepage' });
+        for await (const event of resumed.events()) {
+          if (event.type === 'done' || event.type === 'error') break;
+        }
+        const promptReq = resumedProc.requests.find((req) => req.method === 'session/prompt');
+        const promptBlocks = promptReq?.params.prompt as Array<{ type: string; text?: string }>;
+        expect(promptBlocks).toHaveLength(1);
+        expect(promptBlocks[0]?.text).not.toContain('<cindy-skills>');
+        expect(promptBlocks[0]?.text).toContain('<skill name="opencli"');
+        expect(promptBlocks[0]?.text).toContain('Use opencli to inspect pages.');
+        expect(promptBlocks[0]?.text).toContain('check homepage');
+      } finally {
+        await resumed.close();
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

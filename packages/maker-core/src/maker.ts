@@ -1840,6 +1840,11 @@ export class Maker {
   ): Promise<ListAgentSkillsResult> {
     const { sessionId, ...agentOpts } = opts;
     const sessionMeta = sessionId ? await this.storage.get(sessionId) : null;
+    // Device-hosted ACP / Antigravity tasks run on another computer without a cross-computer
+    // Skill source and never expand `/<skill>` on the remote host, so do not expose local Skills.
+    if ((agentKind === 'antigravity' || agentKind === 'acp') && sessionMeta?.agentDeviceId) {
+      return { skills: [] };
+    }
     const includeManagedPiPackages = agentKind === 'pi'
       && (!sessionId || (
         sessionMeta?.agentKind === 'pi'
