@@ -184,7 +184,7 @@ export interface ParkedEngineSession {
  */
 export async function findParkedEngineSession(
   sessionId: string,
-  targetDbKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  targetDbKind: 'cc' | 'codex' | 'pi' | 'antigravity',
   fromAgentDeviceId?: string | null,
 ): Promise<ParkedEngineSession | null> {
   const db = getDbClient().drizzle;

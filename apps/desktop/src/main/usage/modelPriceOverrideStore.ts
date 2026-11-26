@@ -58,7 +58,7 @@ interface ModelPriceOverridePrefs {
 const DEFAULTS: ModelPriceOverridePrefs = { version: STORE_VERSION, entries: {} };
 
 function isAgent(value: unknown): value is AgentKind {
-  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity';
+  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'antigravity';
 }
 
 function isCurrency(value: unknown): value is MoneyCurrency {
@@ -479,7 +479,7 @@ function currentConnectionReference(
     })
     : providerReferencePriceQuote(providerId, modelId, registry, { agent });
   if (remote) return remote;
-  if (providerId === 'cursor' || (providerId === 'antigravity' && agent === 'antigravity')) {
+  if (providerId === 'antigravity' && agent === 'antigravity') {
     const nativeQuote = nativeSubscriptionReferenceQuote(registry ?? undefined, providerId, modelId);
     if (nativeQuote) return nativeQuote;
   }

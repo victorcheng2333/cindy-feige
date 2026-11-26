@@ -195,7 +195,7 @@ export function buildQueuedTextMessage(
   const persistedFileRefs = buildAttachmentPersistFileRefs(attachments);
   const workingDir = session.workingDir || '';
   const effort = session.effort || '';
-  const agentKind = session.agentKind === 'antigravity' || session.agentKind === 'cursor' || session.agentKind === 'codex' || session.agentKind === 'pi'
+  const agentKind = session.agentKind === 'antigravity' || session.agentKind === 'codex' || session.agentKind === 'pi'
     ? session.agentKind
     : 'claude-code';
   const permissionMode = permissionModeOrAsk(session.permissionMode ?? (agentKind === 'antigravity' ? 'auto' : null));

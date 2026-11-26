@@ -405,14 +405,13 @@ function isExternalDispatchOwner(agentMeta: Record<string, unknown> | null | und
   return typeof kind === 'string' && kind.length > 0;
 }
 
-function normalizeOverflowDbAgentKind(value: string): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
-  if (value === 'cursor' || value === 'codex' || value === 'pi' || value === 'antigravity') return value;
+function normalizeOverflowDbAgentKind(value: string): 'cc' | 'codex' | 'pi' | 'antigravity' {
+  if (value === 'codex' || value === 'pi' || value === 'antigravity') return value;
   return 'cc';
 }
 
 export function engineLabelForOverflow(agentKind: string): string {
   if (agentKind === 'antigravity') return 'Agy';
-  if (agentKind === 'cursor') return 'Cursor';
   if (agentKind === 'codex') return 'Codex';
   if (agentKind === 'pi') return 'Pi';
   // A plugin engine task handed to another account of its engine (plugin engine accounts, 2026-11-23).
@@ -537,7 +536,7 @@ export interface ContextOverflowRolloverDeps {
       reason: ContextRebuildReason;
       handoffCoverage?: HandoffCoverage;
       sourceUserClientId: string | null;
-      sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+      sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'antigravity';
       sourceModel?: string | null;
       sourceProviderId?: string | null;
       expectedClearedAt?: number | null;
@@ -1227,11 +1226,8 @@ export function createContextOverflowRollover(deps: ContextOverflowRolloverDeps)
     const window = effectiveContextWindow(sessionRow.model, reportedWindow, verified);
     // Native compaction owns healthy contexts. Keep the existing full-window
     // recovery guard shared with ordinary Sessions (Codex manages its own limit).
-    // Cursor summarizes natively and reports native checkpoint usage without
-    // host-controlled rollover discarding its native history.
     const pressure =
       sessionRow.agentKind !== 'codex' &&
-      sessionRow.agentKind !== 'cursor' &&
       shouldRebuildForContextPressure(usedTokens, window);
     const compactFailed = liveUsage?.needsRollover === true;
     const agyBrokenHistory = sessionRow.agentKind === 'antigravity' && isAgyInvalidThinkingSignatureErrorData(lastError);

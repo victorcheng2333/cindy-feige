@@ -600,14 +600,13 @@ async fn logout_discards_in_flight_quota_response() {
     assert!(svc.snapshot().await.devices.is_empty());
 }
 
-struct CursorMockLink {
-    channel_not_allowed: AtomicBool,
+struct AntigravityMockLink {
     transport_error: AtomicBool,
     calls: StdMutex<Vec<(String, Vec<Value>)>>,
 }
 
 #[async_trait]
-impl DeviceLinkSession for CursorMockLink {
+impl DeviceLinkSession for AntigravityMockLink {
     async fn wait_until_online(&self, _timeout: Duration) -> Result<(), String> {
         Ok(())
     }
@@ -632,33 +631,6 @@ impl DeviceLinkSession for CursorMockLink {
                     { "id": "openai", "name": "OpenAI", "connected": true, "auth": { "method": "oauth", "native": "codex" } },
                     { "id": "anthropic", "name": "Claude", "connected": true, "auth": { "method": "oauth", "native": "claude" } }
                 ]
-            })));
-        }
-        if channel == "maker:usage:cursor-subscription" {
-            if self.channel_not_allowed.load(Ordering::SeqCst) {
-                return Ok(InvokeOutcome::Err {
-                    code: "CHANNEL_NOT_ALLOWED".to_string(),
-                    message: "old host".to_string(),
-                });
-            }
-            if self.transport_error.load(Ordering::SeqCst) {
-                return Ok(InvokeOutcome::Err {
-                    code: "IPC_ERROR".to_string(),
-                    message: "link reset".to_string(),
-                });
-            }
-            return Ok(InvokeOutcome::Ok(json!({
-                "providerId": "cursor",
-                "connected": true,
-                "status": "ready",
-                "snapshot": {
-                    "pools": [
-                        { "id": "auto", "usedPercent": 0.262 },
-                        { "id": "api", "usedPercent": 100.0 }
-                    ],
-                    "fetchedAtMs": 1_793_750_400_000.0,
-                    "resetsAtMs": 4_102_444_800_000.0
-                }
             })));
         }
         if channel == "maker:usage:antigravity-subscription" {
@@ -696,27 +668,7 @@ impl DeviceLinkSession for CursorMockLink {
 }
 
 #[tokio::test]
-async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
-    let cursor_provider = serde_json::from_value::<serde_json::Map<String, Value>>(json!({
-        "id": "cursor",
-        "name": "Cursor"
-    }))
-    .unwrap();
-    let unavailable = parse_account(
-        &cursor_provider,
-        &json!({ "providerId": "cursor", "status": "unavailable", "snapshot": null }),
-        1_700_000_000_000.0,
-    )
-    .unwrap();
-    assert!(unavailable.failed);
-    assert!(unavailable.windows.is_empty());
-    assert!(parse_account(
-        &cursor_provider,
-        &json!({ "providerId": "other", "status": "ready" }),
-        1_700_000_000_000.0,
-    )
-    .is_err());
-
+async fn service_discovers_antigravity_and_keeps_stale_quota_on_error() {
     let store = Arc::new(MockStore {
         tokens: StdMutex::new(Some(fake_tokens("fake-member"))),
         view: StdMutex::new(None),
@@ -730,8 +682,7 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
         offline_once: AtomicBool::new(false),
         revoked: AtomicBool::new(false),
     });
-    let link = Arc::new(CursorMockLink {
-        channel_not_allowed: AtomicBool::new(false),
+    let link = Arc::new(AntigravityMockLink {
         transport_error: AtomicBool::new(false),
         calls: StdMutex::new(Vec::new()),
     });
@@ -755,18 +706,10 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
             .iter()
             .map(|a| a.service)
             .collect::<Vec<_>>(),
-        vec![ServiceKind::Claude, ServiceKind::ChatGPT, ServiceKind::Cursor, ServiceKind::Antigravity]
+        vec![ServiceKind::Claude, ServiceKind::ChatGPT, ServiceKind::Antigravity]
     );
-    let cursor_acc = &snap.devices[0].accounts[2];
-    assert!(!cursor_acc.failed);
-    assert_eq!(cursor_acc.windows.len(), 2);
-    assert_eq!(cursor_acc.windows[0].label.as_deref(), Some("Cursor 模型"));
-    assert!((cursor_acc.windows[0].remaining - 99.738).abs() < 1e-6);
-    assert_eq!(cursor_acc.windows[0].resets_at, Some(4_102_444_800.0));
-    assert_eq!(cursor_acc.windows[1].label.as_deref(), Some("其他模型"));
-    assert_eq!(cursor_acc.windows[1].remaining, 0.0);
     // Model groups and periods are independent. A missing window is not 0%.
-    let agy = &snap.devices[0].accounts[3];
+    let agy = &snap.devices[0].accounts[2];
     assert_eq!(agy.windows.len(), 3);
     assert_eq!(agy.windows[0].minutes, Some(300));
     assert_eq!(agy.windows[0].remaining, 92.5);
@@ -777,37 +720,12 @@ async fn service_discovers_cursor_pools_and_flags_unsupported_hosts() {
     assert_eq!(agy.windows[2].remaining, 0.0);
     assert!(link.calls.lock().unwrap().iter().any(|(channel, args)|
         channel == "maker:usage:antigravity-subscription" && args.is_empty()));
-    assert_eq!(snap.devices[0].cursor_unsupported, None);
 
-    link.channel_not_allowed.store(true, Ordering::SeqCst);
-    svc.refresh().await;
-    let snap2 = svc.snapshot().await;
-    assert_eq!(snap2.devices[0].cursor_unsupported, Some(true));
-    assert_eq!(snap2.devices[0].error, None);
-
-    // 测试价值
-    // - 生产入口与可观察结果：UsageService.refresh 在 Cursor 专用读取因链路失败时仍画出 Cursor 卡
-    // - Bug／规则依据：M5 本机已连接 Cursor，猫猫失败时曾静默省略卡片
-    // - 现有覆盖缺口：只覆盖 CHANNEL_NOT_ALLOWED 的「更新 Cindy」提示
-    // - 最小失败输入：cursor-subscription 返回 IPC_ERROR
-    // - tier：unit
-    link.channel_not_allowed.store(false, Ordering::SeqCst);
     link.transport_error.store(true, Ordering::SeqCst);
     svc.refresh().await;
-    let snap3 = svc.snapshot().await;
-    assert_eq!(snap3.devices[0].cursor_unsupported, None);
-    assert_eq!(snap3.devices[0].error, None);
-    let cursor_failed = snap3.devices[0]
-        .accounts
-        .iter()
-        .find(|a| a.service == ServiceKind::Cursor)
-        .expect("failed Cursor card remains visible");
-    assert!(cursor_failed.failed);
-    assert_eq!(
-        cursor_failed.error.as_deref(),
-        Some("暂时读不到 Cursor 额度，请稍后刷新。")
-    );
-    let agy_stale = snap3.devices[0].accounts.iter()
+    let snap2 = svc.snapshot().await;
+    assert_eq!(snap2.devices[0].error, None);
+    let agy_stale = snap2.devices[0].accounts.iter()
         .find(|a| a.service == ServiceKind::Antigravity)
         .expect("last successfully read agy quota remains visible");
     assert!(!agy_stale.failed);

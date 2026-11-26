@@ -1,6 +1,6 @@
 import type { AuthState, Maker } from '@cindy/maker-core';
 import { describe, expect, it, vi } from 'vitest';
-import { connectCursorApiKey, parseCodexDeviceCodeProgress, registerMakerAuthHandlers } from '../authHandlers';
+import { parseCodexDeviceCodeProgress, registerMakerAuthHandlers } from '../authHandlers';
 import { MAKER_INVOKE, MAKER_PUSH } from '../channels';
 import { registerMakerStatusHandlers } from '../statusHandlers';
 import { registerMakerUsageHandlers, toLegacyUsdModelPricing } from '../usageHandlers';
@@ -14,29 +14,6 @@ function createMakerStub(methods: Partial<Maker>): Maker {
 }
 
 describe('maker auth IPC handlers', () => {
-  // New local key mutation must use IPC errors and never push failed candidates.
-  it('publishes a validated Cursor key connection and rejects invalid candidates privately', async () => {
-    const broadcast = vi.fn();
-    const setter = vi.fn(async () => ({ authenticated: true, authSource: 'api-key' as const }));
-    await expect(connectCursorApiKey(' fixture-key ', setter, broadcast)).resolves.toMatchObject({ authenticated: true });
-    expect(setter).toHaveBeenCalledWith('fixture-key');
-    expect(broadcast).toHaveBeenCalledWith(MAKER_PUSH.AUTH_STATE_CHANGED, { agentKind: 'cursor', authenticated: true, authSource: 'api-key' });
-    broadcast.mockClear();
-    await expect(connectCursorApiKey('', setter, broadcast)).rejects.toThrow('[INVALID_PARAMS]');
-    await expect(connectCursorApiKey('fixture', async () => { throw new Error('private-key-value'); }, broadcast)).rejects.toThrow('[PRECONDITION_FAILED]');
-    await expect(connectCursorApiKey('fixture', async () => ({ authenticated: false }), broadcast)).rejects.toThrow('[PRECONDITION_FAILED]');
-    expect(broadcast).not.toHaveBeenCalled();
-  });
-
-  it('routes Cursor key validation cancellation when no browser login is active', async () => {
-    const harness = new IpcHarness();
-    const cancel = vi.fn();
-    registerMakerAuthHandlers(harness, createMakerStub({}), vi.fn(), () => null, undefined, cancel);
-    await harness.invoke(MAKER_INVOKE.AUTH_CANCEL_LOGIN, 'cursor');
-    expect(cancel).toHaveBeenCalledOnce();
-    await harness.invoke(MAKER_INVOKE.AUTH_CANCEL_LOGIN, 'codex');
-    expect(cancel).toHaveBeenCalledOnce();
-  });
   it.each(['logout', 'auth-change'])('does not broadcast an old owner logout after %s yields', async (phase) => {
     const owner = vi.spyOn(appSessionState, 'activeOwnerScopeKey').mockReturnValue('owner-a:1');
     try {
@@ -1256,12 +1233,6 @@ describe('maker usage IPC handlers', () => {
       readAntigravitySubscriptionUsage: vi.fn().mockResolvedValue({
         providerId: 'antigravity', connected: false, status: 'unavailable', snapshot: null,
       }),
-      readCursorSubscriptionUsage: vi.fn().mockResolvedValue({
-        providerId: 'cursor',
-        connected: false,
-        status: 'unavailable',
-        snapshot: null,
-      }),
       readClaudeAccountUsageSnapshot: vi.fn(),
       triggerClaudeAccountUsageRefresh: vi.fn(),
       readModelPricing: vi.fn(),
@@ -1285,49 +1256,6 @@ describe('maker usage IPC handlers', () => {
       totalTokens: 42,
     });
     expect(readAgentTodayUsage).toHaveBeenCalledWith('codex');
-  });
-
-  it('returns Cursor plan pools for a trusted sender and hides them from an untrusted one', async () => {
-    const snapshot = {
-      pools: [
-        { id: 'auto' as const, usedPercent: 20 },
-        { id: 'api' as const, usedPercent: 40 },
-      ],
-      resetsAtMs: 1,
-      fetchedAtMs: 2,
-    };
-    const readCursorSubscriptionUsage = vi.fn().mockResolvedValue({
-      providerId: 'cursor',
-      connected: true,
-      status: 'ready',
-      snapshot,
-    });
-    const trusted = new IpcHarness();
-    const assertTrustedSender = vi.fn();
-    registerMakerUsageHandlers(
-      trusted,
-      makeUsageDeps({ readCursorSubscriptionUsage, assertTrustedSender }),
-    );
-    await expect(trusted.invoke(MAKER_INVOKE.USAGE_CURSOR_SUBSCRIPTION)).resolves.toEqual({
-      providerId: 'cursor',
-      connected: true,
-      status: 'ready',
-      snapshot,
-    });
-    expect(assertTrustedSender).toHaveBeenCalledOnce();
-
-    const untrusted = new IpcHarness();
-    const denied = vi.fn(() => {
-      throw new Error('[PERMISSION_DENIED] untrusted');
-    });
-    registerMakerUsageHandlers(
-      untrusted,
-      makeUsageDeps({ readCursorSubscriptionUsage, assertTrustedSender: denied }),
-    );
-    await expect(untrusted.invoke(MAKER_INVOKE.USAGE_CURSOR_SUBSCRIPTION)).rejects.toThrow(
-      /PERMISSION_DENIED/,
-    );
-    expect(readCursorSubscriptionUsage).toHaveBeenCalledOnce();
   });
 
   // Unit: the Agy task card's local read is only available to trusted renderers.

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { useRemoteMobileFavorites } from './useRemoteMobileFavorites';
 import type { MobileModelPreferences, MobileModelFavorite } from './unifiedMobileModels';
-const agents = new Set(['claude-code', 'codex', 'pi', 'cursor', 'antigravity']);
+const agents = new Set(['claude-code', 'codex', 'pi', 'antigravity']);
 export function sanitizeModelPreferences(value: unknown): MobileModelPreferences {
   const result: MobileModelPreferences = { favorites: [], engines: {} };
   if (!value || typeof value !== 'object') return result;

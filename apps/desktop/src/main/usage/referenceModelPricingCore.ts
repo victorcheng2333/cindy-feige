@@ -150,7 +150,7 @@ export function getReferenceModelPricing(
       }
     }
   }
-  for (const providerId of ['cursor', 'antigravity'] as const) {
+  for (const providerId of ['antigravity'] as const) {
     const provider = (options.providers ?? catalog.providers).find(entry => entry.id === providerId);
     for (const model of provider?.models[providerId] ?? []) {
       const quote = nativeSubscriptionReferenceQuote(registry, providerId, model.id, at);

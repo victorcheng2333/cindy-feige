@@ -470,7 +470,6 @@ export function UnifiedModelPickerSheet(
           : selectedDeviceId === null
             ? keepModel
             : undefined,
-        p.unified.agents.includes('cursor'),
       ),
     [
       p.providers,
@@ -1567,9 +1566,7 @@ export function UnifiedModelPickerSheet(
         row
           ? {
               row,
-              agents: row.entry.candidates.filter((agent): agent is AgentKind => p.unified.agents.includes(agent) &&
-                (agent !== "cursor" || !row.remoteDevice),
-              ),
+              agents: row.entry.candidates.filter((agent): agent is AgentKind => p.unified.agents.includes(agent)),
               fastCapable:
                 !!cap?.supportsFastMode && (!!row.remoteDevice || fastCapable(row.config.agent)),
               onChange: change,

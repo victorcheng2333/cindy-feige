@@ -233,7 +233,3 @@ export {
   type AntigravityAgentDeps,
   type ProbeAntigravityCatalogOptions,
 } from './antigravity/index.js';
-export { CursorAgent, CURSOR_CAPABILITIES } from './cursor/index.js';
-export type { CursorAgentDeps, CursorMcpServerContext } from './cursor/index.js';
-export { CursorRpcClient } from './cursor/rpc-client.js';
-export { cursorModelDescriptor } from './cursor/model-config.js';

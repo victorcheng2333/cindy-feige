@@ -1,5 +1,4 @@
 import type { AntigravityQuotaSnapshot } from '../../shared/antigravityQuota.js';
-import type { CursorQuotaSnapshot } from './cursorUsage.js';
 import { isAntigravityEngine } from '@cindy/maker-shared/branding';
 import { isZhipuCodingPlanRoute, type ProviderAccountUsageResult } from '../../shared/providerAccountUsage.js';
 import { formatClaudeSubscriptionPlanLabel, formatCodexPlanLabel } from '@cindy/maker-shared/subscription-usage';
@@ -57,7 +56,7 @@ const WEEK_MINUTES = 10_080;
 const FIVE_HOUR_MINUTES = 300;
 /** Tasks beyond this are summarized as "N more"; the list stays cheap to build. */
 const MAX_TASK_ROWS = 30;
-const HARNESSES: readonly MenubarHarness[] = ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'];
+const HARNESSES: readonly MenubarHarness[] = ['claude-code', 'codex', 'pi', 'antigravity'];
 
 export interface MenubarBalanceReading {
   available: number;
@@ -85,7 +84,6 @@ export interface MenubarCollectDeps {
   now?: () => number;
   nowMs: number;
   listProviders(): Promise<ProviderView[]>;
-  readCursor?(): Promise<CursorQuotaSnapshot | null>;
   readAntigravity?(): Promise<AntigravityQuotaSnapshot | null>;
   /** Null means the provider still uses the original single-account reader. */
   readSubscriptionPool?(providerId: string): Promise<SubscriptionPoolView | null>;
@@ -144,7 +142,6 @@ export async function collectMenubarInputs(deps: MenubarCollectDeps): Promise<Me
   if (balance) sources.push(balanceSource(balance));
   const subscriptionReads = providers.map(async (provider): Promise<MenubarSourceInput | MenubarSourceInput[] | null> => {
     if (!provider.connected || provider.suspended || provider.removed) return null;
-    if (provider.id === 'cursor') return cursorSource(provider, await safe('cursor', async () => await deps.readCursor?.() ?? null, null), deps.nowMs);
     if (provider.id === 'antigravity') return antigravitySource(provider, await safe('antigravity', async () => await deps.readAntigravity?.() ?? null, null), deps.nowMs);
     // Migrated routes remain addressable for old tasks, but are now displayed by the pool.
     if (provider.subscriptionPoolAlias && deps.readSubscriptionPool) return null;
@@ -722,7 +719,7 @@ export function usageScope(
     if (index === undefined) continue;
     const daily = scope.daily[index];
     if (row.agentKind === 'auxiliary') {
-      // Append auxiliary tokens after the harness slots, without creating a hole for Cursor.
+      // Append auxiliary tokens after the built-in harness slots.
       const slot = HARNESSES.length;
       while (daily.tokens.length <= slot) daily.tokens.push(0);
       daily.tokens[slot] += finite(row.tokens);
@@ -920,17 +917,6 @@ export function opencodeGoSource(provider: ProviderView, result: ProviderAccount
       windowMinutes: opencodeGoUsageWindowMinutes(w.id) ?? 0,
     })) ?? [],
     credits: null, creditsUnlimited: false, prepaidUsd: null, updatedAtMs: snapshot?.fetchedAt ?? null,
-  };
-}
-
-export function cursorSource(provider: ProviderView, snapshot: CursorQuotaSnapshot | null, nowMs: number): MenubarSubscriptionInput {
-  const current = snapshot && (snapshot.resetsAtMs === null || snapshot.resetsAtMs > nowMs) ? snapshot : null;
-  return {
-    kind: 'subscription', id: provider.id, providerId: provider.id, family: 'cursor',
-    logoSvg: MENUBAR_HARNESS_LOGOS.cursor, brand: 'Cursor', account: null, plan: null,
-    // Independent pools do not constrain one another. No invented monthly duration or pace.
-    windows: current?.pools.map(pool => ({ kind: 'scoped', label: pool.id, usedPercent: pool.usedPercent, resetsAtMs: current.resetsAtMs, windowMinutes: 0 })) ?? [],
-    credits: null, creditsUnlimited: false, prepaidUsd: null, updatedAtMs: current?.fetchedAtMs ?? null,
   };
 }
 

@@ -5,7 +5,7 @@
  * 故意保持兼容以便 desktop adapter 层零代码翻译。
  */
 
-export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 
 /**
  * Engines a local task can run on: the built-in harnesses plus the
@@ -15,7 +15,7 @@ export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity
  */
 export type EngineKind = AgentKind | 'acp';
 
-const BUILTIN_AGENT_KINDS: ReadonlySet<string> = new Set<AgentKind>(['claude-code', 'codex', 'pi', 'cursor', 'antigravity']);
+const BUILTIN_AGENT_KINDS: ReadonlySet<string> = new Set<AgentKind>(['claude-code', 'codex', 'pi', 'antigravity']);
 
 export function isBuiltinAgentKind(kind: unknown): kind is AgentKind {
   return typeof kind === 'string' && BUILTIN_AGENT_KINDS.has(kind);

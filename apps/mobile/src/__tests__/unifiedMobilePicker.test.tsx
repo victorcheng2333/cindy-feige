@@ -70,46 +70,6 @@ async function mount(onSelect=vi.fn(async()=>true),extra={}) {
   } as any)));
   return {onSelect,onClose};
 }
-// Unit: exercise the existing-task picker, not just catalog projection. A Cursor
-// row formerly threw before render; prior component fixtures only used cc/codex/Pi.
-it('selects a model for an existing Cursor task with its full tuning', async () => {
-  test.entries = [{ providerId: 'account', modelId: 'next', displayName: 'Next',
-    candidates: ['cursor'], recommended: 'cursor', nativeAgent: 'cursor', capabilities: {
-      cursor: { wireModelId: 'next', efforts: ['low', 'high'], defaultEffort: 'low', supportsFastMode: true, contextWindow: 200000 },
-    } }];
-  const onSelect = vi.fn(async () => true);
-  const { onClose } = await mount(onSelect, { agentKind: 'cursor', activeModelId: 'old',
-    unified: { scope: 'cursor-task', agents: ['cursor'], loadCapabilities: async () => ({ hasFastMode: true }), onSelect } });
-  await act(async () => test.view.onSelect(test.view.groups[0].rows[0]));
-  expect(onSelect).toHaveBeenCalledWith({ providerId: 'account', modelId: 'next', agent: 'cursor', effort: 'low', fast: false }, { deviceId: null });
-  expect(onClose).toHaveBeenCalledOnce();
-});
-// Unit regression: old tasks omitted the Cursor handoff confirmation. Exercise the
-// real sheet's browse and select handlers; existing Cursor coverage only tuned Cursor tasks.
-it('confirms an old task handoff to Cursor before selecting its local model', async () => {
-  platform.OS = 'ios';
-  test.entries = [{ providerId: 'cursor', modelId: 'next', displayName: 'Cursor model',
-    candidates: ['cursor'], recommended: 'cursor', nativeAgent: 'cursor', capabilities: {
-      cursor: { wireModelId: 'next', efforts: ['low'], defaultEffort: 'low', supportsFastMode: false, contextWindow: 200000 },
-    } }];
-  const onBrowseAgent = vi.fn(async () => false);
-  const onSelect = vi.fn(async () => true);
-  const { onClose } = await mount(onSelect, {
-    providers: [{ id: 'account', name: 'Provider', connected: true, models: {} },
-      { id: 'cursor', name: 'Cursor', connected: true, models: {} }],
-    agentSwitch: { currentAgentKind: 'codex', browsingAgentKind: 'codex', onBrowseAgent },
-    unified: { scope: 'old-task', agents: ['codex', 'cursor'], loadCapabilities: async () => ({ hasFastMode: false }), onSelect },
-  });
-  await act(async () => test.view.onBrowseAgent('cursor'));
-  expect(onBrowseAgent).toHaveBeenCalledWith('cursor');
-  expect(test.view.browsingAgent).toBe('codex');
-  onBrowseAgent.mockResolvedValue(true);
-  await act(async () => test.view.onBrowseAgent('cursor'));
-  expect(test.view.browsingAgent).toBe('cursor');
-  await act(async () => test.view.onSelect(test.view.groups[0].rows[0]));
-  expect(onSelect).toHaveBeenCalledWith({ providerId: 'cursor', modelId: 'next', agent: 'cursor', effort: 'low', fast: false }, { deviceId: null });
-  expect(onClose).toHaveBeenCalledOnce();
-});
 // Review 2026-11-04: adjusting a non-current model only remembered its parameters and
 // gave no way to use them from the detail page. Unit, real sheet with captured view.
 it('uses the adjusted configuration directly from a non-current model detail page', async () => {

@@ -230,13 +230,13 @@ test('Host event history updates and retracts the original rows without duplicat
   assert.equal(sqlite.prepare('SELECT count(*) AS n FROM messages').get().n, 4);
 });
 
-// Unit with real SQL: an upstream-only engine mapping would turn saved Cursor
-// and Antigravity tasks into Claude. Exercise the shared storage read/write path.
+// Unit with real SQL: an upstream-only engine mapping would turn saved Antigravity
+// and plugin engine tasks into Claude. Exercise the shared storage read/write path.
 test('session storage preserves fork and plugin engine identities', async t => {
   const { sqlite, db } = sessionListDb(t);
   const storage = new OwnerSessionStorage({ db: () => ({ drizzle: db }) });
   const insert = sqlite.prepare('INSERT INTO sessions (id, title, agent_kind, status, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0)');
-  for (const agentKind of ['cursor', 'antigravity', 'acp']) {
+  for (const agentKind of ['antigravity', 'acp']) {
     const oldId = `existing-${agentKind}`;
     insert.run(oldId, oldId, agentKind, 'active');
     assert.equal((await storage.get(oldId)).agentKind, agentKind);

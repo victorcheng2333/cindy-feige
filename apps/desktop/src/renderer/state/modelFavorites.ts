@@ -25,7 +25,7 @@ import {
  *   认不出,反之亦然)。这里只收 EFFORT_VALUES 里的 canonical key,非法值**丢字段**
  *   (不是丢整条),调用层看到 effort === undefined 就回落该 (模型, 引擎) 的推荐档。
  *
- * 为什么 agent 用 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity':与 modelEnginePrefs 同一理由(下游是选择器 →
+ * 为什么 agent 用 'cc' | 'codex' | 'pi' | 'antigravity':与 modelEnginePrefs 同一理由(下游是选择器 →
  * newMakerDraft 的 vendor 口径,规格 §2.4),详见那个文件的文件头。
  *
  * 只存用户显式动作的产物(configuration-and-overrides §2),唯一例外是**种子收藏**
@@ -698,7 +698,7 @@ export function accessHostModelFavorites(
   };
   const base = readDurable();
   if (!mutation) return base.items.filter(isRemoteModelFavorite);
-  const op = parseModelFavoriteMutation(mutation, LOCAL_FAVORITE_PROVIDER_ID_MAX_LENGTH, true);
+  const op = parseModelFavoriteMutation(mutation, LOCAL_FAVORITE_PROVIDER_ID_MAX_LENGTH);
   if (op.kind !== 'add') {
     const current = base.items.find(item => item.uid === op.expected.uid);
     if (!current || !isRemoteModelFavorite(current) || !sameModelFavorite(current, op.expected)) throw new Error('Favorite changed; refresh before retrying');

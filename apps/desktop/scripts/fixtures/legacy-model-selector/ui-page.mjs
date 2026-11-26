@@ -9,16 +9,12 @@ export default {
   cases: {
     speed: { about: 'Codex speed follows the model capability and preserves the Ultrafast selection' },
     'speed-narrow': { about: 'Codex speed options fit a narrow viewport', viewport: { width: 390, height: 640 } },
-    'compact-draft-height': { about: 'Codex and Cursor keep the same draft panel height' },
+    'compact-draft-height': { about: 'Codex and Agy keep the same draft panel height' },
     'compact-draft-height-short': { about: 'Stable draft height fits a short viewport', viewport: { width: 390, height: 320 } },
     'compact-draft-antigravity': { about: 'Select an Antigravity model from the local CLI account' },
     'compact-draft-antigravity-narrow': { about: 'Select Antigravity at 390px', viewport: { width: 390, height: 640 } },
     'compact-draft': { about: 'Draft restores the remembered model when changing Harness' },
     'compact-draft-narrow': { about: 'Draft engine tabs at narrow width', viewport: { width: 390, height: 640 } },
-    'cursor-local': { about: 'Local Cursor ignores unavailable remote model catalogs' },
-    'cursor-local-narrow': { about: 'Local Cursor with unavailable remote catalogs at phone width', viewport: { width: 390, height: 640 } },
-    cursor: { about: 'Existing task switches to Cursor while Pi is disabled' },
-    'cursor-narrow': { about: 'Four-harness picker with Pi disabled on a narrow screen', viewport: { width: 390, height: 640 } },
     'compact-motion': { about: 'Content width stays stable across animated opening' },
     'compact-short': { about: 'Only model rows scroll when height is constrained', viewport: { width: 760, height: 320 } },
     'compact-selected': { about: 'Opening focuses the selected remote model instead of the first local row' },
@@ -82,17 +78,17 @@ export default {
       return;
     }
     if (ui.case.startsWith('compact-draft-height')) {
-      // Regression: Codex includes remote groups, Cursor has one local model.
+      // Regression: Codex includes remote groups, Agy has one local model.
       // Measure the real popup after animations, including the footer and tabs.
       const panel = page.locator('[data-morph-side][data-state="open"]');
       const heights = [];
-      for (const engine of ['Codex', 'Cursor', 'Codex']) {
+      for (const engine of ['Codex', 'Agy', 'Codex']) {
         await page.getByRole('tab', { name: engine, exact: true }).click();
-        await page.getByRole('option', { name: engine === 'Cursor' ? /Cursor fixture/ : /GPT fixture/ }).first().waitFor();
+        await page.getByRole('option', { name: engine === 'Agy' ? /Antigravity fixture/ : /GPT fixture/ }).first().waitFor();
         await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
         const box = await panel.boundingBox();
         assert.ok(box && box.y >= 0 && box.y + box.height <= await page.evaluate(() => innerHeight));
-        assert.equal(await page.getByRole('option', { name: engine === 'Cursor' ? /Cursor fixture/ : /GPT fixture/ }).first().getAttribute('aria-selected'), 'true');
+        assert.equal(await page.getByRole('option', { name: engine === 'Agy' ? /Antigravity fixture/ : /GPT fixture/ }).first().getAttribute('aria-selected'), 'true');
         heights.push(box.height);
         await ui.capture(`height-${engine}-${heights.length}`);
       }
@@ -157,11 +153,10 @@ export default {
     }
     if (ui.case.startsWith('compact-draft-antigravity')) {
       const tabs = page.getByRole('tablist', { name: 'Vendor switcher' });
-      assert.equal(await tabs.getByRole('tab').count(), 5);
+      assert.equal(await tabs.getByRole('tab').count(), 4);
       const box = await tabs.boundingBox();
       const viewport = await page.evaluate(() => innerWidth);
       assert.ok(box && box.x >= 0 && box.x + box.width <= viewport);
-      if (viewport >= 480) assert.ok(box.width >= 370, `Five tabs only have ${box.width}px`);
       await page.getByRole('tab', { name: 'Agy', exact: true }).click();
       const model = page.getByRole('option', { name: /Antigravity fixture/ });
       await model.waitFor();
@@ -181,7 +176,6 @@ export default {
       return;
     }
     if (ui.case.startsWith('compact-draft')) {
-      assert.equal(await page.getByRole('tab', { name: 'Cursor', exact: true }).count(), 0);
       await ui.capture('draft-open');
       await page.getByRole('tab', { name: 'Codex', exact: true }).click();
       assert.equal(await page.evaluate(() => window.__modelPickerSelection), undefined);
@@ -193,38 +187,6 @@ export default {
       await page.getByRole('group', { name: 'TapSVC', exact: true }).getByRole('option').click();
       await page.waitForFunction(() => window.__modelPickerSelection?.engine === 'codex');
       await page.getByRole('listbox').waitFor({ state: 'hidden' });
-      return;
-    }
-    if (ui.case.startsWith('cursor')) {
-      assert.equal(await page.getByRole('tab', { name: 'Pi', exact: true }).count(), 0);
-      // Regression: a local Cursor picker with an unavailable remote source used to
-      // read that source and show an unrelated failure. Existing cases only switch engines.
-      if (ui.case.startsWith('cursor-local')) {
-        await page.getByRole('option', { name: /Cursor fixture/ }).waitFor();
-        assert.equal(await page.evaluate(() => window.__remoteModelReads), 0);
-        assert.equal(await page.getByRole('alert').count(), 0);
-        await ui.capture('local-cursor');
-        await page.getByRole('tab', { name: 'Codex', exact: true }).click();
-        await page.getByRole('alert').first().waitFor();
-        assert.ok(await page.evaluate(() => window.__remoteModelReads) > 0, 'other engines still load remote catalogs');
-      }
-      await page.getByRole('tab', { name: 'Cursor', exact: true }).click();
-      await page.getByRole('option', { name: /Cursor fixture/ }).waitFor();
-      if (ui.case.startsWith('cursor-local')) assert.equal(await page.getByRole('alert').count(), 0);
-      await page.getByRole('option', { name: /Cursor fixture/ }).scrollIntoViewIfNeeded();
-      await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))));
-      await ui.capture('cursor-models');
-      await page.getByRole('option', { name: /Cursor fixture/ }).click();
-      if (ui.case.startsWith('cursor-local')) {
-        await page.getByRole('listbox').waitFor({ state: 'hidden' });
-        return;
-      }
-      assert.deepEqual(await page.evaluate(() => {
-        const { agent, modelId, providerId, agentDevice } = window.__modelPickerRelocation;
-        return { agent, modelId, providerId, agentDevice };
-      }), {
-        agent: 'cursor', modelId: 'cursor-fixture', providerId: 'cursor', agentDevice: null,
-      });
       return;
     }
     if (ui.case === 'compact-motion' || ui.case === 'compact-short') {

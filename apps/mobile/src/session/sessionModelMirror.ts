@@ -106,7 +106,7 @@ export function applySessionModelPrefPush(payload: unknown): void {
     fast?: unknown;
   };
   if (typeof p.sessionId !== 'string' || !p.sessionId) return;
-  if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' &&
+  if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' &&
       p.agent !== 'antigravity') return;
   if (typeof p.providerId !== 'string' || !p.providerId) return;
   if (typeof p.model !== 'string' || !p.model) return;
@@ -178,7 +178,7 @@ export function refreshSessionModelMirror(
       const split = key.indexOf(':');
       const agent = key.slice(0, split);
       const provider = key.slice(split + 1);
-      if (!provider || !['claude-code', 'codex', 'pi', 'cursor', 'antigravity'].includes(agent)) continue;
+      if (!provider || !['claude-code', 'codex', 'pi', 'antigravity'].includes(agent)) continue;
       const raw = Object.hasOwn(snapshot, key) && record(snapshot[key]) ? snapshot[key] : {};
       const slot = getSlot(sessionId, agent as AgentKind, provider, true)!;
       for (const field of ['effortByModel', 'fastByModel'] as const) {

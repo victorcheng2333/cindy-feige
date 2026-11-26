@@ -1530,7 +1530,7 @@ export function CreateWorkerPopover({
                 unifiedAgents={pickerAgents}
                 modelGroups={workerModelGroups}
                 onUnifiedSelect={deviceId && remoteProviders.unsupported ? undefined : (selection) => {
-                  if (selection.engine === 'cursor' || selection.engine === 'antigravity') return;
+                  if (selection.engine === 'antigravity') return;
                   if (selection.agentDevice !== undefined && executionDeviceId && !agentLocationSelectable) return;
                   setPluginEngine(null);
                   setModelGroup(null);

@@ -13,7 +13,6 @@ import type {
 } from '@cindy/maker-shared/device-link-contract';
 import type { ClaudeSubscriptionUsageSnapshot } from '../../shared/claudeSubscriptionUsage.js';
 import type { AntigravitySubscriptionUsageRead } from '../../shared/antigravityQuota.js';
-import type { CursorSubscriptionUsageRead } from '../../shared/cursorQuota.js';
 import type { XaiSubscriptionUsageSnapshot } from '../../shared/xaiSubscriptionUsage.js';
 import type { ClaudeAccountUsageSnapshot } from '../usage/claudeAccountUsage.js';
 import type { ModelPricingMap } from '../usage/modelPricing.js';
@@ -83,7 +82,6 @@ export interface MakerUsageHandlerDeps {
   readClaudeSubscriptionUsageSnapshot(providerId?: string): Promise<ClaudeSubscriptionUsageSnapshot | null>;
   readXaiSubscriptionUsageSnapshot(providerId?: string): Promise<XaiSubscriptionUsageSnapshot | null>;
   readAntigravitySubscriptionUsage(): Promise<AntigravitySubscriptionUsageRead>;
-  readCursorSubscriptionUsage(): Promise<CursorSubscriptionUsageRead>;
   /**
    * 用量历史会读取完整的 sessions 表，必须在任何参数解析或 DB 查询前确认
    * 请求来自受信任的主页面 renderer。
@@ -179,11 +177,6 @@ export function registerMakerUsageHandlers(
     deps.assertTrustedSender(event);
     if (args.length) throwIpcError('INVALID_PARAMS', 'Agy quota takes no arguments');
     return await deps.readAntigravitySubscriptionUsage();
-  });
-
-  registry.handle(MAKER_INVOKE.USAGE_CURSOR_SUBSCRIPTION, async (event) => {
-    deps.assertTrustedSender?.(event);
-    return await deps.readCursorSubscriptionUsage();
   });
 
   // device-link v1:保留旧扁平 USD 形状，不能把 CNY 伪装成 *Usd。

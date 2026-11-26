@@ -1179,9 +1179,9 @@ describe('session runtime control wiring', () => {
     expect(
       defer.split('{ thinking: atomicSelection.thinking }').length - 1,
     ).toBeGreaterThanOrEqual(2);
-    // 只有 Pi 与 Cursor 的 set_model 消费 thinkingEnabled。
+    // 只有 Pi 的 set_model 消费 thinkingEnabled。
     expect(registerWithRuntimeSelectionSource).toContain(
-      "(runtimeAgentKind === 'pi' || runtimeAgentKind === 'cursor') && atomicSelection?.thinking !== undefined",
+      "runtimeAgentKind === 'pi' && atomicSelection?.thinking !== undefined",
     );
     // 提交写入镜像后同步本机 renderer 记忆：renderer 的全量快照才会带上该选择，
     // 镜像里的钉子得以撤销（否则会长期压住被控端后来的显式改动）。

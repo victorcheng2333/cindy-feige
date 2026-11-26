@@ -1432,11 +1432,6 @@
     "SSH_HOST_KEY_MISMATCH": "SSH 主機金鑰已易",
     "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy 不能讀來源附件，訊未遣。請將檔案另存至「下載」或他可存取之卷匣，移除原附件，再以附件按鈕納其副本而後遣之。",
     "UNSUPPORTED_CAPABILITY": "今差事或境未支此舉。",
-    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "未能易至 Cursor：Cursor 不支已掛唯讀參錄之差事。",
-    "CURSOR_HANDOFF_UNSUPPORTED": "未能易至 Cursor：惟常設桌面差事可易至 Cursor。",
-    "CURSOR_LOCAL_EXECUTION_REQUIRED": "未能易至 Cursor：Cursor 惟行於本差事所在電腦。",
-    "CURSOR_CONNECTION_REQUIRED": "未能易至 Cursor：請擇 Cursor 連結下之模型。",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "未能易至 Cursor：請先將權柄之式易為「自動」「完全存取」或「謀定模式」。",
     "REVIEW_SETTINGS_FIXED": "審查差事之設隨原差事而定，不可更改。",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "已歸檔之差事不可易 Harness。",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共享差事之客不可將 Agent 移至他機運行。"
@@ -1556,19 +1551,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "分池",
-      "auto": "Cursor 模型",
-      "api": "其他模型",
-      "total": "方案額度",
-      "remaining": "各池剩餘",
-      "separate": "Cursor 的額度池獨立計算。",
-      "explanation": "一個池用完，不代表其他池也用完；各池百分比不能相加。",
-      "resetUnknown": "重設時間未知",
-      "extra": "額外消費",
-      "notRead": "尚未讀取",
-      "extraHint": "在 Cursor 帳單查看"
-    },
     "shared": {
       "label": "共用",
       "note": "此乃名籍共用之額度，非專分予君者。",
@@ -2842,6 +2824,7 @@
       "harnessChecking": "方察…",
       "harnessCheckFailed": "未能察更新，啟選單再試",
       "harnessUpdateAvailable": "有新版",
+      "harnessInstalling": "安裝中…",
       "harnessCheck": "察更新",
       "harnessCheckedAt": "前察：{{time}}",
       "logsDirLabel": "日誌目錄",
@@ -3092,24 +3075,6 @@
         "description": "於本機行 Agy 官方更新之令。Cindy 與終端同用之 Agy CLI 將並更。",
         "busy": "俟 Agy 今務畢而後更。",
         "failed": "Agy CLI 更新未成。"
-      },
-      "cursorSdk": {
-        "label": "Cursor SDK 版本號",
-        "manage": "管理 Cursor SDK",
-        "check": "檢查更新",
-        "checking": "檢查中…",
-        "checkFailed": "檢查失敗",
-        "available": "有更新",
-        "installing": "安裝中…",
-        "update": "更新 SDK",
-        "restore": "恢復內建版本",
-        "updateTitle": "升級至 Cursor SDK {{version}}？",
-        "restoreTitle": "恢復內建 Cursor SDK？",
-        "description": "更新版由 Cursor 官方發布，可能存在相容性問題，可隨時恢復內建版本。目前已啟動的 Cursor 引擎繼續使用原版本。",
-        "installed": "Cursor SDK 已就緒，下次啟動 Cursor 引擎時使用所選版本。",
-        "installFailed": "Cursor SDK 更新失敗，原版本未變更。請重新檢查版本後重試。",
-        "scope": "下次啟動 Cursor 引擎時生效，目前執行不受影響。",
-        "checkedAt": "上次檢查：{{time}}"
       }
     },
     "apiKey": {
@@ -4815,18 +4780,7 @@
         "aiCreditsHint": "常額既罄，准 Agy 借 Google AI Credits 續行。本回合畢乃效。",
         "aiCreditsSaveFailed": "AI Credits 之設未能存。"
       },
-      "claudeCleanupPending": "連線已刪，然 Claude Code 尚未盡退獨立帳號目錄。Cindy 將於下次啟動再試，任務歷史仍存。",
-      "cursor": {
-        "description": "以 Cursor 帳號行本機差事，由 Cursor 計費。可自動、全權、謀劃；詢問、回退、分叉尚未備。",
-        "connect": "連接 Cursor",
-        "disconnect": "斷開 Cursor",
-        "waiting": "請於瀏覽器登入，至多候五分鐘。",
-        "stopWarning": "Cursor 方行之差事將止，舊錄仍存。",
-        "loginFailed": "Cursor 登入未成，請察瀏覽器與網絡。",
-        "legacyPermission": "Cursor 無詢問權限之式，此任務依自動之權行之，命令不經審閱而徑行。",
-        "historyReset": "目前帳號下未見此差事之 Cursor 歷史，舊參照已清除。再次傳送將用新上下文，差事訊仍保留。",
-        "historyUnavailable": "目前帳號無法還原此差事之 Cursor 歷史。請確認帳號及差事狀態後重試。"
-      }
+      "claudeCleanupPending": "連線已刪，然 Claude Code 尚未盡退獨立帳號目錄。Cindy 將於下次啟動再試，任務歷史仍存。"
     },
     "experimental": {
       "title": "試行之術",
@@ -14678,18 +14632,6 @@
           "bypassPermissions": {
             "label": "完全存取",
             "description": "略過 Agy 權限檢查，工具可徑行。"
-          }
-        },
-        "cursor": {
-          "auto": {
-            "label": "自動",
-            "description": "Cursor 指令直接執行，無需審批，也無沙箱隔離"
-          },
-          "bypassPermissions": {
-            "label": "完全存取"
-          },
-          "plan": {
-            "label": "謀定模式"
           }
         },
         "claude-code": {

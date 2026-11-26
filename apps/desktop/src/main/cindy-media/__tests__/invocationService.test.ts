@@ -448,20 +448,6 @@ describe('Cindy Core media invocation state and security boundary', () => {
     return { model, connection, value };
   }
 
-  // Cursor's chat login has no HTTP media credential. Exercise prepare with an
-  // implicitly selected Cursor source; existing Guide cases cover valid sources.
-  // Tier: unit. Previously this reached the HTTP/Guide path with an invalid binding.
-  it('rejects a Cursor media source before reading HTTP credentials or a Guide', async () => {
-    const { model } = setupGuideDriven();
-    model.sourceAgent = 'cursor';
-    model.sourceAgents = ['cursor'];
-    expect(await callCindyMedia({ action: 'prepare', providerId: model.providerId,
-      modelId: model.id, capability: 'image.generate' }))
-      .toMatchObject({ ok: false, errorCode: 'CAPABILITY_NOT_SUPPORTED' });
-    expect(mocks.httpConnection).not.toHaveBeenCalled();
-    expect(mocks.resolvedGuide).not.toHaveBeenCalled();
-  });
-
   function recoveryVideoOperation(taskIdPath = ['job'], statusPath = ['phase'], mediaPath = ['movie']) {
     const response = { mode: 'async', taskIdPath, poll: { method: 'GET', path: '/jobs/{taskId}',
       statusPath, successValues: ['ready'], failureValues: ['error'], recommendedIntervalMs: 1000,

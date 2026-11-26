@@ -115,7 +115,7 @@ function normalizePositiveInt(value: unknown): number {
 
 const messageRowid = sql<number>`rowid`;
 
-type DbAgentKind = 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+type DbAgentKind = 'cc' | 'codex' | 'pi' | 'antigravity';
 
 interface MessagePosition {
   createdAt: number;
@@ -237,9 +237,8 @@ async function seedForkHandoffAfterSameEngineRebuild(opts: {
   const label =
     opts.agentKind === 'codex' ? 'Codex'
       : opts.agentKind === 'pi' ? 'Pi'
-        : opts.agentKind === 'cursor' ? 'Cursor'
-          : opts.agentKind === 'antigravity' ? 'Agy'
-            : 'Claude Code';
+        : opts.agentKind === 'antigravity' ? 'Agy'
+          : 'Claude Code';
   const { handoff, handoffCoverage } = buildHandoff(handoffMessages, {
     targetContextWindow: opts.targetContextWindow,
     fromLabel: label,
@@ -295,7 +294,6 @@ function parseContextRebuildBoundary(content: string): ParsedContextRebuildBound
       ...(parsed.sourceAgentKind === 'cc' ||
       parsed.sourceAgentKind === 'codex' ||
       parsed.sourceAgentKind === 'pi' ||
-      parsed.sourceAgentKind === 'cursor' ||
       parsed.sourceAgentKind === 'antigravity'
         ? { sourceAgentKind: parsed.sourceAgentKind }
         : {}),
@@ -325,13 +323,12 @@ function parseAgentSwitchBoundary(content: string): ParsedAgentSwitchBoundary | 
       parsed.fromAgentKind !== 'cc' &&
       parsed.fromAgentKind !== 'codex' &&
       parsed.fromAgentKind !== 'pi' &&
-      parsed.fromAgentKind !== 'cursor' &&
       parsed.fromAgentKind !== 'antigravity'
     )
       return null;
     const toAgentKind =
       parsed.toAgentKind === 'cc' || parsed.toAgentKind === 'codex' ||
-      parsed.toAgentKind === 'pi' || parsed.toAgentKind === 'cursor' ||
+      parsed.toAgentKind === 'pi' ||
       parsed.toAgentKind === 'antigravity'
         ? parsed.toAgentKind
         : undefined;
@@ -1025,9 +1022,9 @@ export async function forkSessionAtMessage(
   // Codex: 从当前时间线倒扫 agent_switch，把 copy boundary 之后、确实写入所选
   // 原生 thread 的 user turn 计为 rollback 数；其它引擎片段不能混算。
   const isCodex = forkSource.agentKind === 'codex';
-  // Cursor and Antigravity have no native transcript fork. Copy the visible
+  // Antigravity has no native transcript fork. Copy the visible
   // history and hand the new conversation that context on its first message.
-  const usesHandoffFork = forkSource.agentKind === 'cursor' || forkSource.agentKind === 'antigravity';
+  const usesHandoffFork = forkSource.agentKind === 'antigravity';
   // pi 复用 codex 的粗粒度 tail-turn fork:countCodexTailTurns 只按 sdkSessionId
   // 数边界后的 user turn(引擎无关),pi 的 forkSdkSession 按 tailTurnsToDrop rewind
   // 到目标 user 消息。只有 Claude(cc)走 message-uuid 锚点路径。
@@ -1106,8 +1103,8 @@ export async function forkSessionAtMessage(
       remoteHostId: source.remoteHostId ?? null,
     };
     const forkRemote = async () => {
-      if (agentKind === 'cursor' || agentKind === 'antigravity') {
-        throw new Error(agentKind === 'antigravity' ? 'Agy does not support fork' : 'Cursor does not support fork');
+      if (agentKind === 'antigravity') {
+        throw new Error('Agy does not support fork');
       }
       const ownerRoute = forkSource.agentDeviceId!;
       const location = await authorizeSharedTaskHistory(ownerRoute, sourceSessionId, agentKind, forkSource.model);

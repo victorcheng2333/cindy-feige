@@ -1445,11 +1445,6 @@
     "SSH_HOST_KEY_MISMATCH": "SSH Host Key Changed",
     "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy cannot read the source attachment; the message was not sent. Save a copy to Downloads or another accessible folder, remove the original attachment, and add the copy using the attachment button before sending again.",
     "UNSUPPORTED_CAPABILITY": "This operation is not supported in the current task or environment.",
-    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Cannot switch to Cursor: Cursor does not support read-only reference directories attached to this task.",
-    "CURSOR_HANDOFF_UNSUPPORTED": "Cannot switch to Cursor: only ordinary desktop tasks can switch to Cursor.",
-    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Cannot switch to Cursor: Cursor can only run on this task’s computer.",
-    "CURSOR_CONNECTION_REQUIRED": "Cannot switch to Cursor: select a model from the Cursor connection.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Cannot switch to Cursor: switch permission mode to Auto, Full access, or Plan mode first.",
     "REVIEW_SETTINGS_FIXED": "Review task settings are fixed to the source task and cannot be changed.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Archived tasks cannot switch Harness.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Shared task guests cannot move the Agent to another computer."
@@ -1569,19 +1564,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "Pools",
-      "auto": "Cursor models",
-      "api": "Other models",
-      "total": "Included usage",
-      "remaining": "Remaining by pool",
-      "separate": "Cursor usage pools are separate.",
-      "explanation": "One pool can run out while another still has usage. Percentages are not added together.",
-      "resetUnknown": "Reset time unavailable",
-      "extra": "Additional spending",
-      "notRead": "Not available",
-      "extraHint": "See Cursor billing"
-    },
     "shared": {
       "label": "Shared",
       "note": "This allowance is shared by the account, not reserved for you.",
@@ -2872,6 +2854,7 @@
       "harnessChecking": "Checking…",
       "harnessCheckFailed": "Couldn't check for updates. Open the menu to try again.",
       "harnessUpdateAvailable": "Update available",
+      "harnessInstalling": "Installing…",
       "harnessCheck": "Check for updates",
       "harnessCheckedAt": "Last checked: {{time}}",
       "logsDirLabel": "Logs directory",
@@ -3122,24 +3105,6 @@
         "description": "Run the official Agy updater on this computer. This updates the CLI used by Cindy and your terminal.",
         "busy": "Wait for the current Agy task to finish before updating.",
         "failed": "Could not update Agy CLI."
-      },
-      "cursorSdk": {
-        "label": "Cursor SDK version",
-        "manage": "Manage Cursor SDK",
-        "check": "Check for updates",
-        "checking": "Checking…",
-        "checkFailed": "Check failed",
-        "available": "Update available",
-        "installing": "Installing…",
-        "update": "Update SDK",
-        "restore": "Restore bundled version",
-        "updateTitle": "Update to Cursor SDK {{version}}?",
-        "restoreTitle": "Restore bundled Cursor SDK?",
-        "description": "Updates are published by Cursor and may have compatibility issues. You can restore the bundled version at any time. Running Cursor engines keep their current version.",
-        "installed": "Cursor SDK is ready. The selected version takes effect the next time the Cursor engine starts.",
-        "installFailed": "Cursor SDK update failed. The previous version is unchanged. Check for updates and try again.",
-        "scope": "Takes effect the next time the Cursor engine starts. Current work is unaffected.",
-        "checkedAt": "Last checked: {{time}}"
       }
     },
     "apiKey": {
@@ -4858,18 +4823,7 @@
         "aiCreditsHint": "Allow Agy to use your Google AI Credits after your plan quota runs out. Takes effect after the current turn.",
         "aiCreditsSaveFailed": "Could not save the AI Credits setting."
       },
-      "claudeCleanupPending": "The connection was deleted, but Claude Code could not finish signing out of one or more private account folders. Cindy will retry at the next startup. Task history is kept.",
-      "cursor": {
-        "description": "Run local tasks with your Cursor account. Cursor billing applies. Auto, Full access and Plan are supported; Ask, rewind and fork are unavailable.",
-        "connect": "Connect Cursor",
-        "disconnect": "Disconnect Cursor",
-        "waiting": "Finish signing in in your browser. This may take up to five minutes.",
-        "stopWarning": "Running Cursor tasks will stop. Their history will be kept.",
-        "loginFailed": "Cursor sign-in did not complete. Check the browser and your connection.",
-        "legacyPermission": "Cursor does not support Ask permission mode. This task runs in Auto, where commands run without review.",
-        "historyReset": "This task’s Cursor history is unavailable under the current account. The old reference was cleared. Sending again will use fresh context; task messages are retained.",
-        "historyUnavailable": "This account cannot restore the task’s Cursor history. Check the account and task status, then retry."
-      }
+      "claudeCleanupPending": "The connection was deleted, but Claude Code could not finish signing out of one or more private account folders. Cindy will retry at the next startup. Task history is kept."
     },
     "experimental": {
       "title": "Experimental",
@@ -14732,18 +14686,6 @@
           "bypassPermissions": {
             "label": "Full access",
             "description": "Skips Agy permission checks. Tools can run without confirmation."
-          }
-        },
-        "cursor": {
-          "auto": {
-            "label": "Auto",
-            "description": "Cursor runs commands without approval or a sandbox."
-          },
-          "bypassPermissions": {
-            "label": "Full access"
-          },
-          "plan": {
-            "label": "Plan mode"
           }
         },
         "claude-code": {

@@ -115,7 +115,7 @@ export interface AgentTaskUsage {
 }
 
 export interface AgentTaskUpdateEventData {
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  provider: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   /** Provider task id when available; falls back to the parent tool call id. */
   taskId: string;
   /** The tool_use id that launched or controls this subagent task. */

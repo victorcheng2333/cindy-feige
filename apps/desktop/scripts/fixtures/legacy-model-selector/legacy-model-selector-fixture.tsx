@@ -12,20 +12,16 @@ const providers = [{
     efforts: ['low', 'medium', 'high'], defaultEffort: 'high',
   }] },
 }, {
-  id: 'cursor', name: 'Cursor', source: 'custom', agents: ['cursor'],
-  auth: { method: 'api-key' }, routing: { cursor: {} }, connected: true,
-  models: { cursor: [{ id: 'cursor-fixture', name: 'Cursor fixture', contextWindow: 200000, efforts: [] }] },
-}, {
   id: 'antigravity', name: 'Antigravity', source: 'builtin', agents: ['antigravity'],
   auth: { method: 'oauth' }, routing: { antigravity: {} }, connected: true,
   models: { antigravity: [{ id: 'agy-fixture', name: 'Antigravity fixture', contextWindow: 0, efforts: ['low', 'medium', 'high'], defaultEffort: 'high' }] },
 }] as unknown as ProviderView[];
 // The parent owns per-Harness draft memory, as NewMakerDraftRoute does.
 function DraftModelSelector(props: ComponentProps<typeof ModelSelector>) {
-  const [vendor, setVendor] = useState<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>('cc');
-  const rememberedModels = { cc: modelId, codex: 'gpt-fixture', pi: 'pi-fixture', cursor: 'cursor-fixture', antigravity: 'agy-fixture' };
+  const [vendor, setVendor] = useState<'cc' | 'codex' | 'pi' | 'antigravity'>('cc');
+  const rememberedModels = { cc: modelId, codex: 'gpt-fixture', pi: 'pi-fixture', antigravity: 'agy-fixture' };
   return <ModelSelector {...props} vendorKey={vendor} modelId={rememberedModels[vendor]}
-    currentProviderId={vendor === 'cursor' || vendor === 'antigravity' ? vendor : 'tapsvc'}
+    currentProviderId={vendor === 'antigravity' ? vendor : 'tapsvc'}
     agentIdentity={{ vendorKey: vendor, state: 'current' }} onDraftVendorChange={setVendor} />;
 }
 
@@ -37,7 +33,7 @@ function TaskAgyModelSelector(props: ComponentProps<typeof ModelSelector>) {
     return () => { restoreAgyFixtureModels = undefined; };
   }, []);
   const catalog = recovered ? props.providersOverride?.map(provider =>
-    provider.id === 'antigravity' ? providers[2] : provider,
+    provider.id === 'antigravity' ? providers[1] : provider,
   ) : props.providersOverride;
   return <ModelSelector {...props} providersOverride={catalog} />;
 }
@@ -75,7 +71,6 @@ function SpeedModelSelector() {
   );
 }
 
-let cursorLocal = false;
 let remoteReads = 0;
 
 void mountPage({
@@ -93,7 +88,6 @@ void mountPage({
   }, deviceLink: {
     invoke: async (_deviceId: string, channel: string) => {
       (window as unknown as { __remoteModelReads: number }).__remoteModelReads = ++remoteReads;
-      if (cursorLocal) throw new Error('DEVICE_LINK_UNREACHABLE');
       if (channel === 'maker:provider:list') return { providers: [{ ...providers[0], id: 'shared-anthropic', name: _deviceId === 'device-fixture' ? 'Anthropic-6' : 'Anthtopic-6', remoteInvocationEnabled: true,
         models: { codex: [{ id: 'gpt-fixture', name: 'GPT fixture', contextWindow: 200000, efforts: [] }], pi: [{ id: 'pi-fixture', name: 'Pi fixture', contextWindow: 200000, efforts: [] }], 'claude-code': [{ id: 'claude-opus-5-5', name: 'Opus 5.5', contextWindow: 1000000, efforts: ['low', 'high'], defaultEffort: 'high' }] },
       }] };
@@ -119,27 +113,24 @@ void mountPage({
             modelDiscoveryFailure: { kind: 'unauthorized' as const, at: '2026-11-20T00:00:00.000Z' } }
           : provider,
     ) : undefined;
-    cursorLocal = ctx.case.startsWith('cursor-local');
-    const currentVendor = cursorLocal ? 'cursor' : taskHeight ? 'codex' : 'cc';
+    const currentVendor = taskHeight ? 'codex' : 'cc';
     (window as unknown as { __remoteModelReads: number }).__remoteModelReads = remoteReads;
     return (
     <main className="flex h-screen items-end justify-end p-6">
-      <Picker modelId={cursorLocal ? 'cursor-fixture' : taskHeight ? 'gpt-fixture' : ctx.case === 'compact-selected' ? 'claude-opus-5-5' : modelId} effort="high" vendorKey={currentVendor}
+      <Picker modelId={taskHeight ? 'gpt-fixture' : ctx.case === 'compact-selected' ? 'claude-opus-5-5' : modelId} effort="high" vendorKey={currentVendor}
         agentIdentity={{ vendorKey: currentVendor, state: ctx.case.startsWith('compact-draft') ? 'current' : 'pending' }}
-        currentProviderId={cursorLocal ? 'cursor' : ctx.case === 'compact-selected' ? 'shared-anthropic' : 'tapsvc'} providersOverride={taskHeightProviders ?? (ctx.case === 'compact-selected' ? [{ ...providers[0], models: { codex: [{ id: 'gpt-fixture', name: 'GPT fixture', contextWindow: 200000, efforts: [] }], pi: [{ id: 'pi-fixture', name: 'Pi fixture', contextWindow: 200000, efforts: [] }], 'claude-code': [{ ...providers[0].models['claude-code']![0], id: 'claude-opus-5-5', name: 'Opus 5.5' }] } }] : providers)}
+        currentProviderId={ctx.case === 'compact-selected' ? 'shared-anthropic' : 'tapsvc'} providersOverride={taskHeightProviders ?? (ctx.case === 'compact-selected' ? [{ ...providers[0], models: { codex: [{ id: 'gpt-fixture', name: 'GPT fixture', contextWindow: 200000, efforts: [] }], pi: [{ id: 'pi-fixture', name: 'Pi fixture', contextWindow: 200000, efforts: [] }], 'claude-code': [{ ...providers[0].models['claude-code']![0], id: 'claude-opus-5-5', name: 'Opus 5.5' }] } }] : providers)}
         providersOverrideState={{ status: 'ready', refresh: () => {} }}
         onModelChange={() => {}} onEffortChange={() => {}}
         draftEngineTabs={ctx.case.startsWith('compact-draft')}
-        unifiedAgents={taskHeight || ctx.case.startsWith('compact-draft-antigravity') ? ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'] : ctx.case.startsWith('compact-draft-height') ? ['claude-code', 'codex', 'cursor'] : ctx.case.startsWith('compact-draft') ? ['claude-code', 'codex'] : ctx.case.startsWith('cursor') ? ['claude-code', 'codex', 'cursor'] : undefined}
-        {...(ctx.case.startsWith('cursor') ? { onProviderChange: () => {} } : {})}
-        {...((ctx.case === 'shared' || ctx.case.startsWith('compact') || ctx.case.startsWith('cursor')) ? {
+        unifiedAgents={taskHeight || ctx.case.startsWith('compact-draft-antigravity') ? ['claude-code', 'codex', 'pi', 'antigravity'] : ctx.case.startsWith('compact-draft-height') ? ['claude-code', 'codex', 'antigravity'] : ctx.case.startsWith('compact-draft') ? ['claude-code', 'codex'] : undefined}
+        {...((ctx.case === 'shared' || ctx.case.startsWith('compact')) ? {
           onProviderChange: () => {},
-          remoteAgent: { devices: [...(ctx.case.startsWith('compact') || ctx.case.startsWith('cursor') ? [{ deviceId: 'device-fixture', name: 'M5-Mac' }] : []), { deviceId: 'share:fixture', name: '来自测试用户的分享' }], selectedDeviceId: ctx.case === 'compact-selected' || (ctx.case.startsWith('cursor') && !cursorLocal) ? 'device-fixture' : null, onRelocate: async (selection) => {
+          remoteAgent: { devices: [...(ctx.case.startsWith('compact') ? [{ deviceId: 'device-fixture', name: 'M5-Mac' }] : []), { deviceId: 'share:fixture', name: '来自测试用户的分享' }], selectedDeviceId: ctx.case === 'compact-selected' ? 'device-fixture' : null, onRelocate: async (selection) => {
             (window as unknown as { __modelPickerRelocation: unknown }).__modelPickerRelocation = selection;
             return true;
           } },
         } : {})}
-        {...(ctx.case.startsWith('cursor') ? { compactProviderList: true } : {})}
         {...(ctx.case.startsWith('compact') ? {
           compactProviderList: true,
           onNavigateToProviders: () => {},

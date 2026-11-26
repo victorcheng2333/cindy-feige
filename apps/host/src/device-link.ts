@@ -134,10 +134,8 @@ export const HOST_DISPATCH_PORTS_WHILE_HELD = Object.freeze({
   projectInteractionDismissedForRemote: 'read',
   projectInteractionRequestForRemote: 'read',
   remoteWorkingDirRejectionToIpcError: 'read',
-  readCursorQuota: 'unbound',
   antigravityQuotaAvailable: 'unbound',
   readAntigravityQuota: 'unbound',
-  cursorConnected: 'unbound',
   registerJPushPeer: 'unbound',
 } as const satisfies Record<keyof InboundDispatchPorts, 'read' | 'service-gate' | 'refused-at-entry' | 'unbound'>);
 type UnboundDispatchPort = { [K in keyof typeof HOST_DISPATCH_PORTS_WHILE_HELD]:

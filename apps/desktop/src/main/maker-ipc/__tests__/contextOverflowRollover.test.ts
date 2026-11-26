@@ -2041,10 +2041,8 @@ describe('createContextOverflowRollover', () => {
     expect(deps.replayUserMessage).not.toHaveBeenCalled();
   });
 
-  // Cursor regression 2026-11-04: an estimated occupancy (from per-run aggregate usage)
-  // forced a rebuild that discarded Cursor's native history on a ~75k context.
-  it('lets Codex and Cursor handle full-window pressure natively without forced pre-rebuild', async () => {
-    for (const agentKind of ['codex', 'cursor'] as const) {
+  it('lets Codex handle full-window pressure natively without forced pre-rebuild', async () => {
+    for (const agentKind of ['codex'] as const) {
       const deps = makeDeps([msg('user', '继续', 'u1'), msg('assistant', '好', 'a1')]);
       deps.getSessionRow.mockResolvedValue({
         status: 'active',

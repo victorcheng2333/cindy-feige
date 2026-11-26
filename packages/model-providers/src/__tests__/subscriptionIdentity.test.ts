@@ -126,15 +126,13 @@ describe('listedSourceFolds', () => {
     const others = [{ deviceId: 'rog', providers: [source('openai')] }];
     expect(hidden(listedSourceFolds({ base: [source('openai')], others, baseExempt: id => id === 'openai' }))).toEqual([]);
   });
-  it('never folds local and remote Agy or Cursor entries across computers', () => {
+  it('never folds local and remote Agy entries across computers', () => {
     const agy = (extra: Partial<ProviderView> = {}) => ({
       id: 'antigravity', name: 'Agy', connected: true, agents: ['antigravity'],
       models: { antigravity: [model] }, ...extra,
     } as ProviderView);
-    const cursor = { id: 'cursor', name: 'Cursor', connected: true, agents: ['cursor'], models: { cursor: [model] } } as ProviderView;
     expect(sameRunLocationProvider(agy(), agy())).toBe(false);
     expect(sameRunLocationProvider(agy({ connected: false }), agy())).toBe(false);
-    expect(sameRunLocationProvider(cursor, cursor)).toBe(false);
     const both = listedSourceFolds({
       base: [agy()],
       others: [{ deviceId: 'm5', providers: [agy()] }, { deviceId: 'm3', providers: [agy()] }],

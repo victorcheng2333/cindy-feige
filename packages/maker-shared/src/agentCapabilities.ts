@@ -10,7 +10,7 @@ export interface MobileModelOption {
   /** Host-advertised catalog window when available; omitted by older Desktop versions. */
   contextWindow?: number;
   /** 区域门控后的新任务默认标记。 */
-  newSessionDefault?: ('claude-code' | 'codex' | 'pi' | 'cursor')[];
+  newSessionDefault?: ('claude-code' | 'codex' | 'pi')[];
 }
 
 export interface MobileChoiceOption {
@@ -30,8 +30,6 @@ export interface MobileAgentCapabilities {
   supportsSameTurnSteer?: boolean;
   /** desktop host 是否支持同一会话 Claude Code / Codex pending-intent 切换；旧 host 缺省 false。 */
   supportsSessionAgentSwitch?: boolean;
-  /** Same-account controller may create Cursor tasks on the controlled host. */
-  supportsControlledCursorCreation?: boolean;
   supportsControlledAntigravityCreation?: boolean;
   supportsAntigravitySessionSwitch?: boolean;
   supportsControlledAntigravityDraftPrewarm?: boolean;
@@ -199,7 +197,6 @@ export function normalizeMobileAgentCapabilities(value: unknown): MobileAgentCap
       supportsSameTurnSteer: value.sameTurnSteer.supported,
     } : {}),
     supportsSessionAgentSwitch: value.supportsSessionAgentSwitch === true,
-    supportsControlledCursorCreation: value.supportsControlledCursorCreation === true,
     supportsControlledAntigravityCreation: value.supportsControlledAntigravityCreation === true,
     supportsAntigravitySessionSwitch: value.supportsAntigravitySessionSwitch === true,
     supportsControlledAntigravityDraftPrewarm: value.supportsControlledAntigravityDraftPrewarm === true,
@@ -404,7 +401,7 @@ function normalizeModelOption(value: unknown): MobileModelOption | null {
       : undefined;
   const newSessionDefault = Array.isArray(value.newSessionDefault)
     ? [...new Set(value.newSessionDefault.filter(
-      (item): item is 'claude-code' | 'codex' | 'pi' | 'cursor' =>
+      (item): item is 'claude-code' | 'codex' | 'pi' =>
         item === 'claude-code' || item === 'codex' || item === 'pi',
     ))]
     : [];

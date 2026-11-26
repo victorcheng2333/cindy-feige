@@ -113,14 +113,14 @@ const Context = createContext<ContextValue | null>(null);
  * 旧 Codex 空来源可显式开启任务绑定探测，消费端仍须确认订阅形态，不能据此推断默认账号。
  */
 export function sessionSubscriptionPoolProvider(
-  agent: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  agent: 'cc' | 'codex' | 'pi' | 'antigravity',
   providerId: string | null | undefined,
   remoteHostId?: string | null,
   provider?: ProviderView,
   probeImplicitCodex = false,
   implicitRoute?: { modelId?: string | null; providers: ProviderView[]; catalogReady: boolean },
 ): SubscriptionProvider | null {
-  if (remoteHostId || agent === 'cursor') return null;
+  if (remoteHostId) return null;
   // Old Codex tasks may retain a null display route after the executor bound an account.
   // This only enables a task-scoped query, not an OpenAI/default-account classification.
   if (probeImplicitCodex && agent === 'codex' && providerId == null) {

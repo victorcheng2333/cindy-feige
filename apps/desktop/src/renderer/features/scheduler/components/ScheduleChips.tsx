@@ -66,7 +66,7 @@ import type { SessionReference } from '../../../../shared/sessionReference';
 import { isReviewSessionSource } from '../../../../shared/sessionSource';
 
 export type Destination = 'local' | 'worktree' | 'thread';
-export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+export type AgentKind = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 
 interface ChipButtonProps {
   icon?: React.ReactNode;
@@ -1148,9 +1148,7 @@ export function ModelEffortChip({
   const modelLabel = catalogModel?.name || current?.displayName || effectiveId || t('scheduler.chips.model.default');
   const agentLabel = agentKind === 'antigravity'
     ? 'Agy'
-    : agentKind === 'cursor'
-      ? 'Cursor'
-      : t(`newChat.modelSelector.trigger.agent.${agentKind === 'claude-code' ? 'claudeCode' : agentKind}`);
+    : t(`newChat.modelSelector.trigger.agent.${agentKind === 'claude-code' ? 'claudeCode' : agentKind}`);
   const effortLabel = (e: EffortValue) => t(`effortLevels.${e}`);
   const display = followModel?.active ? followModel.label : followsSessionModel
     ? [
@@ -1366,7 +1364,7 @@ export function ThreadPickerInline({ value, onSelect, onOpen, reference }: {
             )}
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.title} · {s.agentKind === 'cc' ? 'Claude Code' : s.agentKind === 'pi' ? 'Pi' : s.agentKind === 'antigravity' ? 'Agy' : s.agentKind === 'cursor' ? 'Cursor' : 'Codex'}
+                {s.title} · {s.agentKind === 'cc' ? 'Claude Code' : s.agentKind === 'pi' ? 'Pi' : s.agentKind === 'antigravity' ? 'Agy' : 'Codex'}
               </option>
             ))}
           </select>

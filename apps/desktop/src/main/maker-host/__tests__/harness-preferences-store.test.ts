@@ -76,8 +76,8 @@ describe('harness preferences', () => {
   });
 
   it('keeps unknown future ids from a hand-edited file and never leaves the computer with no choice', () => {
-    fs.writeFileSync(file, JSON.stringify({ disabled: ['claude-code', 'codex', 'cursor', 'Bad Id', 42] }));
-    expect([...readDisabledHarnesses()]).toEqual(['claude-code', 'codex', 'cursor']);
+    fs.writeFileSync(file, JSON.stringify({ disabled: ['claude-code', 'codex', 'future-harness', 'Bad Id', 42] }));
+    expect([...readDisabledHarnesses()]).toEqual(['claude-code', 'codex', 'future-harness']);
     // 手改关掉了全部已注册引擎:可选清单退回全部已注册,而不是空。
     expect(selectableHarnesses(registered)).toEqual(['claude-code', 'codex']);
   });

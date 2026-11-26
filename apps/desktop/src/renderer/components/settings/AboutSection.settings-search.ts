@@ -52,9 +52,8 @@ export const aboutSettings = defineSettings({
       'settings.about.harnessLastEnabledHint',
       'settings.about.agyCli.label',
       'settings.about.agyCli.description',
-      'settings.about.cursorSdk.updateTitle',
     ],
-    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', 'Cursor', 'Agy', 'Antigravity', '引擎', '隐藏 Harness', '模型选择器'],
+    aliases: ['Harness', 'Claude Code', 'Codex', 'Pi', 'Agy', 'Antigravity', '引擎', '隐藏 Harness', '模型选择器'],
     sectionKey: 'settings.tabs.about',
   },
   debugLogLabel: {

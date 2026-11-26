@@ -35,18 +35,8 @@ const XD_GATEWAY: TurnPricingContext = {
   region: 'global',
 };
 
-// Unit regression: the installed Cursor adapter produced token rows but no API
-// value when its server bill was unavailable. Exercise manufacturer tariffs using
-// the two observed token-only runs, and refuse ambiguous identities/price bands.
-describe('Cursor API equivalent without a native bill', () => {
+describe('Native subscription API equivalent without a native bill', () => {
   const tokens = { inputTokens: 21592, outputTokens: 79, cacheReadTokens: 1536, cacheCreateTokens: 0 };
-  it.each([
-    [tokens, 0.044426],
-    [{ inputTokens: 21738, outputTokens: 36, cacheReadTokens: 21504, cacheCreateTokens: 0 }, 0.054444],
-  ])('prices observed cache buckets independently', (usage, amount) => {
-    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, '2026-11-04'))
-      .toMatchObject({ amount: expect.closeTo(amount, 8), currency: 'USD', kind: 'value-estimate' });
-  });
   it('returns the native USD reference estimate for Agy models regardless of ledger currency', () => {
     const usage = { inputTokens: 8_908, outputTokens: 1_623, cacheReadTokens: 167_384, cacheCreateTokens: 0 };
     expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'antigravity', 'gemini-4-neon', usage, '2026-11-23'))
@@ -54,27 +44,24 @@ describe('Cursor API equivalent without a native bill', () => {
   });
   it('does not treat aggregate run tokens as one long-context request or invent a cache-write price', () => {
     for (const usage of [{ ...tokens, inputTokens: 210000 }, { ...tokens, cacheCreateTokens: 1 }]) {
-      expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', usage, '2026-11-04')).toBeNull();
+      expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'antigravity', 'grok-4.6', usage, '2026-11-04')).toBeNull();
     }
   });
   it('rejects unknown and ambiguous base identities', () => {
-    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'cursor', 'unlisted-cursor-model', tokens)).toBeNull();
+    expect(nativeSubscriptionApiValue(BUNDLED_CATALOG.modelRegistry, 'antigravity', 'unlisted-model', tokens)).toBeNull();
     const registry = BUNDLED_CATALOG.modelRegistry!;
     const base = registry.baseModels!.find(m => m.id === 'xai/grok-4.6')!;
-    expect(nativeSubscriptionApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'cursor', 'grok-4.6', tokens)).toBeNull();
+    expect(nativeSubscriptionApiValue({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/grok-4.6' }] }, 'antigravity', 'grok-4.6', tokens)).toBeNull();
   });
-  it('quotes unique official manufacturer prices for Cursor catalog ids', () => {
+  it('quotes unique official manufacturer prices for Agy catalog ids', () => {
     const at = '2026-11-13';
-    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'cursor', 'gemini-4-hydrogen', at))
-      .toMatchObject({ providerId: 'cursor', modelId: 'gemini-4-hydrogen', currency: 'USD',
-        source: 'provider-reference', approximate: true, inputPerMtok: 1.5, outputPerMtok: 7.5, cacheReadPerMtok: 0.075 });
-    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'cursor', 'grok-4.6', at))
-      .toMatchObject({ providerId: 'cursor', modelId: 'grok-4.6', currency: 'USD',
-        inputPerMtok: 2, outputPerMtok: 6, cacheReadPerMtok: 0.5 });
-    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'cursor', 'composer-2.5', at)).toBeUndefined();
+    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'antigravity', 'gemini-4-hydrogen', at))
+      .toMatchObject({ providerId: 'antigravity', modelId: 'gemini-4-hydrogen', currency: 'USD',
+        source: 'subscription-reference', approximate: true, inputPerMtok: 1.5, outputPerMtok: 7.5, cacheReadPerMtok: 0.075 });
+    expect(nativeSubscriptionReferenceQuote(BUNDLED_CATALOG.modelRegistry, 'antigravity', 'unlisted-model', at)).toBeUndefined();
     const registry = BUNDLED_CATALOG.modelRegistry!;
     const base = registry.baseModels!.find(m => m.id === 'google/gemini-4-hydrogen')!;
-    expect(nativeSubscriptionReferenceQuote({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/gemini-4-hydrogen' }] }, 'cursor', 'gemini-4-hydrogen', at)).toBeUndefined();
+    expect(nativeSubscriptionReferenceQuote({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/gemini-4-hydrogen' }] }, 'antigravity', 'gemini-4-hydrogen', at)).toBeUndefined();
   });
 });
 const XD_GATEWAY_CN: TurnPricingContext = {

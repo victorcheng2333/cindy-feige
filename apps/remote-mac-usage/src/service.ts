@@ -135,37 +135,23 @@ export class UsageService {
                 return result.result;
               };
               const providers = subscriptionProviders(await read('maker:provider:list'));
-              // Cursor runtime remains local-only in the provider catalog. Discover quota
-              // through its dedicated read instead of exposing runnable Cursor models remotely.
-              let cursorResult: unknown;
               const antigravityRead = read('maker:usage:antigravity-subscription').catch(() => null);
-              device.cursorUnsupported = false;
-              try {
-                cursorResult = await read('maker:usage:cursor-subscription');
-                if (record(cursorResult).connected === true && !providers.some(p => p.id === 'cursor'))
-                  providers.push({ id: 'cursor', name: 'Cursor' });
-              } catch (error) {
-                device.cursorUnsupported = !!error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED';
-                if (!device.cursorUnsupported && !providers.some(p => p.id === 'cursor'))
-                  providers.push({ id: 'cursor', name: 'Cursor' });
-              }
               const accounts = await Promise.all(providers.map(async p => {
                 const a = emptyAccount(p), builtin = a.service === 'Claude' ? 'anthropic' : 'openai';
                 const args = a.id !== builtin ? [a.id] : a.service === 'Claude'
                   ? [a.id, false, DEFAULT_ACCOUNT_USAGE_SCOPE] : [a.id, DEFAULT_ACCOUNT_USAGE_SCOPE];
                 try {
-                  if (a.service === 'Cursor') return parseAccount(p, cursorResult ?? await read('maker:usage:cursor-subscription'));
                   return parseAccount(p, await read(a.service === 'Claude' ? 'maker:usage:claude-subscription' : 'maker:usage:codex-rate-limits',
                     args));
                 }
-                catch (error) { return { ...a, failed: true, ...(a.service === 'Cursor' ? { error: error && typeof error === 'object' && 'code' in error && error.code === 'CHANNEL_NOT_ALLOWED' ? '请更新这台电脑上的 Cindy，以读取 Cursor 额度。' : '暂时读不到 Cursor 额度，请稍后刷新。' } : {}) }; }
+                catch { return { ...a, failed: true }; }
               }));
               const antigravity = record(await antigravityRead);
               if (antigravity.connected === true && antigravity.providerId === 'antigravity') {
                 accounts.push(parseAccount({ id: 'antigravity' }, antigravity));
               }
               this.check(epoch);
-              const serviceOrder = { Claude: 0, ChatGPT: 1, Cursor: 2, Antigravity: 3 };
+              const serviceOrder = { Claude: 0, ChatGPT: 1, Antigravity: 2 };
               device.accounts = accounts.sort((a, b) => serviceOrder[a.service] - serviceOrder[b.service]);
               device.checkedAt = Date.now(); device.error = null;
             } catch (e) {

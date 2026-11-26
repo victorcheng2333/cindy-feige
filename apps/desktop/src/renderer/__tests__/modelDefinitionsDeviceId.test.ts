@@ -18,11 +18,9 @@ function stubElectron() {
     availableModels:
       k === 'antigravity'
         ? [model('agy-shared', 500)]
-        : k === 'cursor'
-          ? [model('cursor-shared', 400)]
-          : k === 'claude-code'
-            ? [model('m', 100)]
-            : [],
+        : k === 'claude-code'
+          ? [model('m', 100)]
+          : [],
     hasFastMode: false,
     effortLevels: [],
     permissionModes: [],
@@ -32,11 +30,9 @@ function stubElectron() {
     availableModels:
       args[0] === 'antigravity'
         ? [model('agy-shared', 950), model('agy-host-only', 1000)]
-        : args[0] === 'cursor'
-          ? [model('cursor-shared', 800), model('cursor-host-only', 900)]
-          : args[0] === 'claude-code'
-            ? [model('m', 200), model('host-only', 300)]
-            : [],
+        : args[0] === 'claude-code'
+          ? [model('m', 200), model('host-only', 300)]
+          : [],
     hasFastMode: false,
     effortLevels: [],
     permissionModes: [],
@@ -69,21 +65,6 @@ describe('modelDefinitions deviceId threading', () => {
     expect(md.getEffortsForModel('host-only', 'dev-1')).toEqual(['high']);
     expect(md.getEffortsForModel('host-only')).toEqual([]); // 本地没有
   });
-});
-
-// Unit regression: remote Cursor models were excluded from synchronous lookups.
-// Existing coverage only queried Claude. The same ID on both devices must retain
-// the target's context window, and target-only models must remain selectable.
-it('resolves Cursor metadata from the controlled computer', async () => {
-  stubElectron();
-  await capsMod.preloadAllCapabilities();
-  await capsMod.prefetchDeviceCapabilities('dev-1');
-  expect(md.getModelsForVendor('cursor', 'dev-1').map(m => m.id))
-    .toEqual(['cursor-shared', 'cursor-host-only']);
-  expect(md.getModelById('cursor-shared', 'dev-1')?.contextWindow).toBe(800);
-  expect(md.getModelById('cursor-shared')?.contextWindow).toBe(400);
-  expect(md.getEffortsForModel('cursor-host-only', 'dev-1')).toEqual(['high']);
-  expect(md.getModelById('cursor-host-only')).toBeUndefined();
 });
 
 it('resolves Antigravity metadata from the controlled computer', async () => {

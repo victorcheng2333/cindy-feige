@@ -8,20 +8,13 @@ import type { MobileAgentCapabilities } from './agentCapabilities';
 import { normalizePluginEngineSwitchIntent } from './pluginEngines';
 import type { RemoteSession, RemoteSessionAgentSwitchIntent } from './types';
 
-export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+export type MobileSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 
-/** Match the host's ordinary-task handoff scope; execution still checks host authority.
+/** Agy is task-computer-only and requires a host that supports the handoff.
  * Task location only: a borrowed Agent runtime device (`agentDeviceId`) never blocks a
  * task-computer-only engine (docs/dev-rules/agent-placement.md). */
-export function canSwitchSessionToCursor(
-  session: Pick<RemoteSession, 'remoteHostId' | 'agentDeviceId' | 'orcaRole' | 'orcaRemoteLead' | 'source'>,
-): boolean {
-  return canHandOffToTaskComputerOnlyEngine(session);
-}
-
-/** Agy, like Cursor, is task-computer-only; it also needs a host that supports the handoff. */
 export function canSwitchSessionToAntigravity(
-  session: Parameters<typeof canSwitchSessionToCursor>[0],
+  session: Pick<RemoteSession, 'remoteHostId' | 'agentDeviceId' | 'orcaRole' | 'orcaRemoteLead' | 'source'>,
   capabilities: MobileAgentCapabilities | null,
 ): boolean {
   return capabilities?.supportsAntigravitySessionSwitch === true && canHandOffToTaskComputerOnlyEngine(session);
@@ -54,7 +47,6 @@ export function normalizeSessionAgentSwitchIntent(
     item.targetAgentKind !== 'claude-code'
     && item.targetAgentKind !== 'codex'
     && item.targetAgentKind !== 'pi'
-    && item.targetAgentKind !== 'cursor'
     && item.targetAgentKind !== 'antigravity'
   ) return null;
   if (typeof item.model !== 'string' || item.model.length === 0) return null;
@@ -87,7 +79,7 @@ export function normalizeSessionAgentSwitchIntent(
 
 /** DB 会话行的 cc/codex 映射到 maker agent kind。 */
 export function sessionAgentKind(session: Pick<RemoteSession, 'agentKind'>): MobileSessionAgentKind {
-  return session.agentKind === 'antigravity' || session.agentKind === 'cursor' || session.agentKind === 'codex' || session.agentKind === 'pi'
+  return session.agentKind === 'antigravity' || session.agentKind === 'codex' || session.agentKind === 'pi'
     ? session.agentKind
     : 'claude-code';
 }
@@ -102,7 +94,7 @@ export function supportsMobileSessionAgentSwitch(
 }
 
 export function mobileAgentLabel(agentKind: MobileSessionAgentKind): string {
-  return agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
+  return agentKind === 'antigravity' ? 'Agy' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
 /**
@@ -117,10 +109,10 @@ export function mobileAgentLabelFromUnknown(
   if (agentKind === 'acp') {
     return typeof engineName === 'string' && engineName.trim() ? engineName.trim() : pluginEngineFallback;
   }
-  return agentKind === 'antigravity' ? 'Agy' : agentKind === 'cursor' ? 'Cursor' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
+  return agentKind === 'antigravity' ? 'Agy' : agentKind === 'codex' ? 'Codex' : agentKind === 'pi' ? 'Pi' : 'Claude Code';
 }
 
-export function mobileAgentVendor(agentKind: MobileSessionAgentKind): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
+export function mobileAgentVendor(agentKind: MobileSessionAgentKind): 'cc' | 'codex' | 'pi' | 'antigravity' {
   return agentKind === 'claude-code' ? 'cc' : agentKind;
 }
 

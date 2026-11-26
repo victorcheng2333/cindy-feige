@@ -40,11 +40,11 @@ export function sameSubscriptionAccounts(a: ProviderView, b: ProviderView): bool
 
 /** Match an owner's provider across computers. Unknown built-in logins may still be borrowed;
  * known different subscriptions are never folded just because both are called OpenAI.
- * Local CLI harnesses (Agy, Cursor) keep one entry per computer: each computer has its own
+ * Local CLI harnesses (Agy) keep one entry per computer: each computer has its own
  * account, proxy, quota and permission defaults, so folding them hides which computer will run.
  */
 export function sameRunLocationProvider(local: ProviderView, remote: ProviderView): boolean {
-  if (local.id === 'antigravity' || remote.id === 'antigravity' || local.id === 'cursor' || remote.id === 'cursor')
+  if (local.id === 'antigravity' || remote.id === 'antigravity')
     return false;
   if (local.subscriptionAccountKeys?.length && remote.subscriptionAccountKeys?.length)
     return sameSubscriptionAccounts(local, remote);

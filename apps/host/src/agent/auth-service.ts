@@ -18,7 +18,7 @@ export function createHostAgentAuth(options: {
   };
   registerMakerAuthHandlers({ handle: (channel, handler) => handlers.set(channel, handler) }, options.maker,
     (channel, payload) => { if (!closed && owner === activeOwnerScopeKey() && !isAppSessionBoundaryPending()) options.publish(channel, payload); },
-    options.readApiKey, undefined, undefined,
+    options.readApiKey, undefined,
     event => typeof event === 'string' ? controllers.get(event) ?? null : null);
   return {
     async invoke(channel: string, args: unknown[], caller: string) {

@@ -1,6 +1,6 @@
 # 猫猫 Mac
 
-独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / Cursor / agy 订阅额度。当前版本 0.2.0（Rust / Tauri 2 + `WKWebView` 原生构建）。
+独立的 macOS 菜单栏应用，直接查看同一 Cindy 账号下各台电脑的 Claude / ChatGPT / agy 订阅额度。当前版本 0.2.0（Rust / Tauri 2 + `WKWebView` 原生构建）。
 当前 Mac 不需要运行 Cindy；提供额度的电脑需要运行 Cindy、在线并允许相应远程访问。
 中国大陆版，独立 Bundle ID `com.chengfei.quotacat.cn`。
 
@@ -10,10 +10,9 @@
 ## 使用
 
 打开「猫猫.app」，用与远端电脑相同的 Cindy 账号登录。企业 SSO 默认标识为 `xd`，可修改。
-登录后直接进入全部电脑的额度总览；订阅固定按 Claude → OpenAI（ChatGPT）→ Cursor → agy 排序。
+登录后直接进入全部电脑的额度总览；订阅固定按 Claude → OpenAI（ChatGPT）→ agy 排序。
 Claude / ChatGPT 按来源实际返回的周期显示：有 5 小时与每周额度时并排显示，仅有每周时只显示每周，
 不为来源未返回的周期画空栏；其他周期也直接显示。模型专项额度仍放在详情中。
-Cursor 使用独立双池卡片：Cursor 模型、其他模型分别显示剩余／已用百分比与重置日期，不能相加或用最低值代表整个账号；只有总额度时明确显示汇总，缺失池显示未知。保留一位小数，非零的极小用量显示为 `<0.1%`，接近满额显示为 `>99.9%`，不把少量消耗四舍五入成从未使用。额外付费状态不作推测。
 agy 从提供额度的 Cindy 使用官方 CLI 的 `/usage` 查询。各模型组分别显示五小时和每周的剩余、已用和重置时间；只显示实际返回的窗口。
 电脑筛选、模型专项额度、重置时间均可直接查看。相同订阅在不同电脑共享额度，不作相加。
 
@@ -67,10 +66,9 @@ pnpm --dir apps/remote-mac-usage package
 - 不读取 Cindy 的 userData、登录文件或 Claude / ChatGPT 凭证。Renderer 不接收 token 或授权 ticket。
   只暴露固定登录／查看命令，Main 校验参数和窗口来源；页面无 Node、无网络能力，导航和下载关闭。
 - 复用 `@cindy/auth-client`、`@cindy/device-link` 与共享 Codex 限额桶选择逻辑，沿用现有加密 invoke 协议，不修改服务端或中转。
-  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`、`maker:usage:cursor-subscription`、`maker:usage:antigravity-subscription`。
+  额度查询仅使用 `maker:provider:list`、`maker:usage:claude-subscription`、`maker:usage:codex-rate-limits`、`maker:usage:antigravity-subscription`。
   内置 Claude / OpenAI 卡片使用既有 `default-subscription-account` 可选作用域，读取默认账号自身额度；
   暂停任务分配不影响查看，不借用账号池中其他账号的额度。旧 Cindy 忽略附加作用域，仍读取原默认账号。
-  Cursor 通道要求新版 Cindy；旧端返回不支持时明确提示更新。
   独立账号必须收到匹配的 providerId；旧端忽略账号参数时不借用默认账号额度。
 - 使用既有后台 link 能力，远端未确认支持时关闭该 peer 并提示更新，不降级为前台控制。
   这里的只读是客户端功能范围，Cindy 登录本身不等于服务端签发了只读权限。
@@ -88,7 +86,7 @@ pnpm --dir apps/remote-mac-usage package
   Rust 14 项、TS 41 项与类型检查通过，共享 Device Link 1306 项、
   自建中转 50 项及 2 项真实互通检查通过。未新增 wire 字段，中转仍按原有协议透明路由，
   无需升级。Developer ID 签名、严格校验及 ZIP 校验通过，已备份并替换本机独立猫猫，保留
-  原登录与设备筛选。同一生产取数代码实读提供端 Cursor 双池，连续两次重连结果一致；
+  原登录与设备筛选。同一生产取数代码实读远端额度，连续两次重连结果一致；
   修正打包路径后核对安装二进制与签名包一致，用户确认卡片恢复。最终画面由用户确认，
   未将程序取数成功作为界面目检证据。
 
@@ -107,13 +105,6 @@ pnpm --dir apps/remote-mac-usage package
 - 多选与排序：35 项单测、类型检查和 15 项 Electron 检查通过；覆盖多选恢复、旧单选记录兼容、
   账号隔离、选择／排序并发保存、刷新移除电脑时的迟到保存、离线及移除、真实拖放与键盘排序及刷新后焦点保留。深浅色及 390px 窄窗检查通过，
   两种模式的多选截图均已目检。本次验证使用独立演示 profile，未替换本机安装版。
-
-- 2026-11-04 / 0.1.8：独立猫猫新增 Cursor 双池卡片，固定 Claude → OpenAI → Cursor 排序。
-  同账号只读查询不开放 Cursor 远程执行；旧 Host 显示更新提示，失败与未知不当零。
-  31 项单测、类型检查、13 项 Electron UI 检查通过，覆盖深浅色／390px 窄窗、对比度与交互。
-  已在签名安装版保留原登录与设备筛选，通过实际 Device Link 读取真实 Cursor 两池数据；
-  已核对最终窗口的两池名称、剩余／已用、重置日期和排序。实测发现并修复小于 1% 的消耗被整数舍入隐藏的问题。
-
 
 - 2026-11-02 / 0.1.6：窗口失焦后自动收起，菜单栏图标上的点击交由显隐切换处理；
   延后到原生焦点／最小化状态更新后判定，避免打断最小化。类型检查、29 项单测及

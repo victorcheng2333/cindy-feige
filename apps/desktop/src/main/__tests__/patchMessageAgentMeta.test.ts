@@ -176,7 +176,7 @@ describe('patchMessageAgentMeta', () => {
 
 describe('extractEstimatedSessionValueEntries', () => {
   // Unit: older Agy messages have a subscription route and tokens but no price.
-  // A later Cursor/Claude turn must not change the billing identity of those messages.
+  // A later Claude turn must not change the billing identity of those messages.
   it('reopens historical Agy estimates from the saved route and date', () => {
     const details = {
       providerId: 'antigravity', billingSource: 'subscription', model: 'claude-opus-5-5',
@@ -189,7 +189,7 @@ describe('extractEstimatedSessionValueEntries', () => {
     expect(extractEstimatedSessionValueEntries([
       row('agy-reply', '2026-11-21T10:00:00Z', 'antigravity'),
       row('before-reference', '2026-08-01T10:00:00Z', 'antigravity'),
-      row('unrelated-reply', '2026-11-21T10:00:00Z', 'cursor'),
+      row('unrelated-reply', '2026-11-21T10:00:00Z', 'anthropic'),
     ])).toMatchObject([{
       clientId: 'agy-reply',
       money: { amount: expect.closeTo(0.0101622, 9), currency: 'USD', kind: 'value-estimate' },

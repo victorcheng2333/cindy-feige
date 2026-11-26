@@ -13,7 +13,6 @@
  */
 
 import { registerPiKernelIpc } from './pi-kernel.js';
-import { registerCursorSdkIpc } from './cursor-sdk.js';
 import { ipcMain } from 'electron';
 
 import { createLogger } from '../logger.js';
@@ -163,7 +162,6 @@ function resolveBinaryPath(kind: AgentBinaryKind): string | null {
 
 export function registerMakerBinaryVersionIpc(): void {
   registerPiKernelIpc();
-  registerCursorSdkIpc();
   log.info('registering maker:agent:binary-version IPC handler');
 
   ipcMain.handle(

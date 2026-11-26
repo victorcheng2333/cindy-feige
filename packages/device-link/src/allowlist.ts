@@ -655,8 +655,6 @@ const EXTENDED_INVOKE_CHANNELS: readonly string[] = [
   // Old hosts reject the channel; callers never fall back to their local account.
   'maker:usage:kimi-coding',
   'maker:usage:opencode-go',
-  // Same-account read-only Cursor pools; no credentials or account mutation.
-  'maker:usage:cursor-subscription',
   // Same-account agy model groups and quota windows, no account credentials.
   'maker:usage:antigravity-subscription',
   // cc 默认路由会话的生效计费路由观察值(只读,'gateway' | 'subscription' | null):

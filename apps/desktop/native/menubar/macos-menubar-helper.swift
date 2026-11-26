@@ -322,7 +322,7 @@ enum Palette {
     case "claude3": return claude3
     case "codex": return codex
     case "pi": return pi
-    case "cursor", "antigravity": return ink
+    case "antigravity": return ink
     default: return ink
     }
   }
@@ -339,7 +339,7 @@ enum Palette {
     switch harness {
     case "claude-code": return claude
     case "pi": return pi
-    case "cursor", "antigravity": return ink
+    case "antigravity": return ink
     default: return codex
     }
   }
@@ -2905,8 +2905,8 @@ struct UsagePoint: Identifiable {
   let value: Double
 }
 
-/// Harness stacking order, bottom to top: Codex, Claude Code, Pi, Cursor, Agy.
-let harnessOrder: [(index: Int, key: String)] = [(1, "codex"), (0, "claude-code"), (2, "pi"), (3, "cursor"), (4, "antigravity")]
+/// Harness stacking order, bottom to top: Codex, Claude Code, Pi, Agy.
+let harnessOrder: [(index: Int, key: String)] = [(1, "codex"), (0, "claude-code"), (2, "pi"), (3, "antigravity")]
 
 struct UsageChart: View {
   let days: [String]
@@ -2967,7 +2967,6 @@ struct UsageChart: View {
       "codex": gradient(Palette.codex),
       "claude-code": gradient(Palette.claude),
       "pi": gradient(Palette.pi),
-      "cursor": gradient(Palette.ink),
       "antigravity": gradient(Palette.ink),
     ])
     .chartLegend(.hidden)
@@ -3356,7 +3355,7 @@ struct UsagePage: View {
         let present = harnessOrder.filter { row.money[$0.index] > 0 }
         caption(present.isEmpty
           ? store.s("noUsage")
-          : present.map { "\(($0.key == "cursor" ? "Cursor" : store.s("harness." + $0.key))) \(Fmt.money(row.money[$0.index]))" }.joined(separator: " · "))
+          : present.map { "\(store.s("harness." + $0.key)) \(Fmt.money(row.money[$0.index]))" }.joined(separator: " · "))
       } else {
         bigNumber(Fmt.money(total))
         caption(store.s("wideCaptionMoney", ["n": String(store.usageRange)]) + " · " + store.s(scope == "local" ? "scopeLocal" : "scopeAll"))
@@ -3415,7 +3414,7 @@ struct UsagePage: View {
           VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
               Circle().fill(Palette.harness(harness.key)).frame(width: 6, height: 6)
-              Text((harness.key == "cursor" ? "Cursor" : store.s("harness." + harness.key))).lineLimit(1)
+              Text(store.s("harness." + harness.key)).lineLimit(1)
               Text("\(Int((byHarness[harness.index] / max(total, 0.0001) * 100).rounded()))%")
                 .foregroundStyle(Palette.ink3)
             }

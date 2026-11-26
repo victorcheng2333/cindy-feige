@@ -26,14 +26,13 @@ import { effectiveSourceIdForModel, movedCindyAutoSourceId, type ProviderView } 
 import { reconcileEffortForModel, type ProviderModelRow } from './providerModelSections';
 import type { RemoteSession } from './types';
 
-export type NewSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+export type NewSessionAgentKind = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 export type NewSessionWorkspaceKind = 'project' | 'dialogue';
 
 export const NEW_SESSION_AGENT_OPTIONS: readonly { kind: NewSessionAgentKind; label: string }[] = [
   { kind: 'claude-code', label: 'Claude' },
   { kind: 'codex', label: 'Codex' },
   { kind: 'pi', label: 'Pi' },
-  { kind: 'cursor', label: 'Cursor' },
   { kind: 'antigravity', label: 'Agy' },
 ];
 
@@ -46,7 +45,7 @@ export const NEW_SESSION_AGENT_OPTIONS: readonly { kind: NewSessionAgentKind; la
 export function availableNewSessionAgentOptions(
   available: ReadonlySet<NewSessionAgentKind> | null,
 ): readonly { kind: NewSessionAgentKind; label: string }[] {
-  if (!available) return NEW_SESSION_AGENT_OPTIONS.filter(option => option.kind !== 'cursor' && option.kind !== 'antigravity');
+  if (!available) return NEW_SESSION_AGENT_OPTIONS.filter(option => option.kind !== 'antigravity');
   const filtered = NEW_SESSION_AGENT_OPTIONS.filter((option) => available.has(option.kind));
   // 防御:被控端异常返回空集时不至于把入口清空到无法创建(至少保留 Claude)。
   return filtered.length > 0 ? filtered : NEW_SESSION_AGENT_OPTIONS.filter((o) => o.kind === 'claude-code');
@@ -265,7 +264,7 @@ export function parseNewSessionDeviceOptions(
 }
 
 export function normalizeNewSessionAgentKind(value: unknown): NewSessionAgentKind | null {
-  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity' ? value : null;
+  return value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'antigravity' ? value : null;
 }
 
 export function pickNewSessionDefaultDevice(input: {
@@ -359,7 +358,7 @@ export function summarizeNewSessionDraft(
   content: NewSessionDraftContentState = {},
 ): NewSessionDraftSummary {
   const validationMessage = validateNewSessionDraft(draft, content);
-  const agentLabel = draft.agentKind === 'antigravity' ? 'Agy' : draft.agentKind === 'cursor' ? 'Cursor' : draft.agentKind === 'codex' ? 'Codex' : draft.agentKind === 'pi' ? 'Pi' : 'Claude';
+  const agentLabel = draft.agentKind === 'antigravity' ? 'Agy' : draft.agentKind === 'codex' ? 'Codex' : draft.agentKind === 'pi' ? 'Pi' : 'Claude';
   const model = draft.model.trim() || i18n.t('session.new.noModelSelected');
   const effort = draft.effort.trim();
   const workspaceLabel = draft.workspaceKind === 'dialogue'

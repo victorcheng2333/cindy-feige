@@ -1048,7 +1048,7 @@ export function commitContextRebuild(
       | 'idle-gap';
     sourceUserClientId: string | null;
     handoffCoverage?: HandoffCoverage;
-    sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+    sourceAgentKind?: 'cc' | 'codex' | 'pi' | 'antigravity';
     sourceModel?: string | null;
     sourceProviderId?: string | null;
     expectedClearedAt?: number | null;
@@ -1336,7 +1336,7 @@ export async function createMessage(
      * 无 SDK 元信息的行留空(null 回落 session.agentKind)。
      */
     /** 'acp' = plugin engine task; its rows carry no vendor meta. */
-    agentKind?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp' | null;
+    agentKind?: 'cc' | 'codex' | 'pi' | 'antigravity' | 'acp' | null;
     createdAt?: number;
   },
   opts?: {

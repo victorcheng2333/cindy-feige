@@ -532,7 +532,6 @@ async function doStart(
       const active = getLiziMcpSessionContext();
       if (
         active?.agentKind !== 'pi' &&
-        active?.agentKind !== 'cursor' &&
         active?.agentKind !== 'codex' &&
         active?.agentKind !== 'claude-code' &&
         active?.agentKind !== 'antigravity'

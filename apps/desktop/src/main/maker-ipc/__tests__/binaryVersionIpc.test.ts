@@ -28,7 +28,6 @@ vi.mock('../../logger.js', () => ({
   createLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('../pi-kernel.js', () => ({ registerPiKernelIpc: vi.fn() }));
-vi.mock('../cursor-sdk.js', () => ({ registerCursorSdkIpc: vi.fn() }));
 vi.mock('../../security/trustedAppRenderer.js', () => ({
   assertTrustedAppRendererEvent: (event: unknown) => h.trust(event),
 }));

@@ -10,7 +10,6 @@
  */
 
 import { AntigravityMark } from '@/components/icons/AntigravityMark';
-import { CursorMark } from '@/components/icons/CursorMark';
 import { CodexMark } from '@/components/icons/CodexMark';
 import { ClaudeMark } from '@/components/icons/ClaudeMark';
 import { PiMark } from '@/components/icons/PiMark';
@@ -25,7 +24,6 @@ interface Props {
 }
 
 export function AgentMark({ agentKind, size = 14, className }: Props) {
-  if ((agentKind as string) === 'cursor') return <CursorMark size={size} className={className} />;
   if (agentKind === 'antigravity') return <AntigravityMark size={size} className={className} />;
   if (agentKind === 'acp') return <PluginEngineIcon size={size} className={className ?? 'text-current'} />;
   if (agentKind === 'codex') return <CodexMark size={size} className={className} />;

@@ -58,8 +58,8 @@ export function createLocalAgentGroupRouteResolver(deps: {
 }): LocalAgentRouteResolver {
   return async ({ sessionId, agentKind, model, ...route }) => {
     deps.assertCurrent();
-    if (agentKind === 'cursor' || agentKind === 'antigravity') {
-      if (route.agentDeviceId) throw new Error('Cursor does not support remote execution');
+    if (agentKind === 'antigravity') {
+      if (route.agentDeviceId) throw new Error('Antigravity does not support remote execution');
       return route;
     }
     // Shared providers are assigned by their owner; they cannot use the

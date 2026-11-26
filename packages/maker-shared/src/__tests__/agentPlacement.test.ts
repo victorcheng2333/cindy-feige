@@ -14,8 +14,7 @@ import {
 
 describe('agent placement', () => {
   it('lists the engines that only run on the task computer', () => {
-    expect(TASK_COMPUTER_ONLY_AGENT_KINDS).toEqual(['cursor']);
-    expect(runsOnTaskComputerOnly('cursor')).toBe(true);
+    expect(TASK_COMPUTER_ONLY_AGENT_KINDS).toEqual([]);
     expect(runsOnTaskComputerOnly('antigravity')).toBe(false);
     expect(runsOnTaskComputerOnly('claude-code')).toBe(false);
   });

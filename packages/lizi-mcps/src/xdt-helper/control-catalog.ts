@@ -49,7 +49,7 @@ export const CONTROL_CATALOG: readonly Control[] = [
   setting('projects.git-safety', 'projects', 'Git 安全快照', 'Git 自动快照开关。', 'git-safety', ['git', '快照']),
   setting('tasks.goal-defaults', 'tasks', '目标模式默认限制', '以后启动目标模式的轮数、token 预算与无进展限制。', 'goal-defaults', ['goal', '目标模式', '预算']),
   setting('runtimes.resources', 'runtimes-and-storage', '运行资源', '命令并发、进程优先级、工具链线程。', 'agent-resources', ['resource', '并发', '资源', '线程']),
-  setting('runtimes.harnesses', 'runtimes-and-storage', 'Harness 开关', '这台电脑上开关 Claude Code、Codex、Pi、Cursor；关掉的不再出现在模型选择器等新的选择里，运行中的任务不受影响。', 'harnesses', ['harness', 'Claude Code', 'Codex', 'Pi', 'Cursor', '引擎', '开关', '模型选择器', '隐藏']),
+  setting('runtimes.harnesses', 'runtimes-and-storage', 'Harness 开关', '这台电脑上开关 Claude Code、Codex、Pi；关掉的不再出现在模型选择器等新的选择里，运行中的任务不受影响。', 'harnesses', ['harness', 'Claude Code', 'Codex', 'Pi', '引擎', '开关', '模型选择器', '隐藏']),
   setting('application.memory', 'application', '全局记忆开关', 'Cindy 与各 Harness 的记忆开关，不是单个伙伴的记忆。', 'memory', ['memory', '全局记忆']),
   setting('models.subagents', 'models', '子代理模型', '子代理模型与 Codex 智能调配。', 'subagent-models', ['subagent', '子代理', '智能调配']),
   setting('models.auxiliary', 'models', '辅助模型', '辅助模型优先与备用。', 'auxiliary-models', ['auxiliary', '辅助模型']),

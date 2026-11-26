@@ -1009,8 +1009,7 @@ describe('getRunningSnapshot 后台 subagent 折算(真 store)', () => {
     }
   });
 
-  // Review P1: restored Cursor children must retain their real provider too.
-  it.each(['pi', 'cursor', 'codex'] as const)('seedBackgroundTaskSnapshots 保留 %s provider', (provider) => {
+  it.each(['pi', 'codex'] as const)('seedBackgroundTaskSnapshots 保留 %s provider', (provider) => {
     const sid = `seed-${provider}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       makerChatStore.seedBackgroundTaskSnapshots(sid, [
@@ -1617,10 +1616,10 @@ describe('getRunningSnapshot 后台 subagent 折算(真 store)', () => {
 });
 
 // Tier: unit. The Desktop reducer has its own protocol normalization; shared tests alone do not cover it.
-it('retains Cursor identity on native child task events', () => {
+it('retains Antigravity identity on native child task events', () => {
   const next = handleStreamEvent(EMPTY_SESSION_STATE, {
-    sessionId: 'cursor-protocol-fixture', type: 'agent_task_update', source: 'cursor',
-    data: { provider: 'cursor', taskId: 'child', status: 'completed', title: 'Inspect files' },
+    sessionId: 'antigravity-protocol-fixture', type: 'agent_task_update', source: 'antigravity',
+    data: { provider: 'antigravity', taskId: 'child', status: 'completed', title: 'Inspect files' },
   });
-  expect(next.taskUpdates?.get('child')).toMatchObject({ provider: 'cursor', status: 'completed' });
+  expect(next.taskUpdates?.get('child')).toMatchObject({ provider: 'antigravity', status: 'completed' });
 });

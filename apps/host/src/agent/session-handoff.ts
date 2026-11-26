@@ -120,7 +120,7 @@ export function createHostSessionHandoff(ports: {
         hasCindyAiApiKey: ports.hasCindyAiApiKey(),
       });
       ports.assertProviderExecutionSupported('', execution.providerId);
-      if (execution.agentKind === 'cursor' || execution.agentKind === 'antigravity') {
+      if (execution.agentKind === 'antigravity') {
         throw Object.assign(new Error(`${execution.agentKind} is not supported on headless host`), { code: 'UNSUPPORTED_CAPABILITY' });
       }
       return { ...execution, agentKind: execution.agentKind };

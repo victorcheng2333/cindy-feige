@@ -1,5 +1,4 @@
 import { antigravityQuotaAvailable, readAntigravityQuota } from '../maker-host/antigravity-host.js';
-import { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
 import { claudeCliLoginRevision } from '../maker-host/claude-native-cli-status.js';
 import { claudeAccountPrincipal } from '../maker-host/claude-account-auth.js';
 import { noteManagedClaudeRateLimit } from '../usage/claudeManagedAccountUsage.js';
@@ -104,7 +103,6 @@ import { createElectronIpcHandlerRegistry } from './electronIpcRegistry.js';
 import { registerMakerUsageHandlers } from './usageHandlers.js';
 
 const log = createLogger('maker-ipc:usage');
-let lastCursorQuotaSummary = '';
 
 /**
  * 当前 Claude 账号的快照归属指纹(CLI 登录邮箱的 sha256 截断,不含邮箱原文)。同机在
@@ -463,27 +461,6 @@ export function registerMakerUsageIpc(maker: Maker): void {
         connected,
         status: connected && snapshot ? 'ready' : 'unavailable',
         snapshot: connected ? snapshot : null,
-      };
-    },
-    readCursorSubscriptionUsage: async () => {
-      const snapshot = await readCursorQuota();
-      const connected = cursorConnected();
-      // Percentages and counts only, never the key or token. Logged when the reading changes,
-      // so an unknown quota can be told apart from a failed or disconnected read.
-      const summary = JSON.stringify({
-        connected,
-        pools: snapshot?.pools.map(pool => `${pool.id}:${Math.round(pool.usedPercent)}%`) ?? [],
-        resetKnown: snapshot?.resetsAtMs != null,
-      });
-      if (summary !== lastCursorQuotaSummary) {
-        lastCursorQuotaSummary = summary;
-        log.info('cursor quota read', JSON.parse(summary));
-      }
-      return {
-        providerId: 'cursor' as const,
-        connected,
-        status: snapshot ? 'ready' as const : 'unavailable' as const,
-        snapshot,
       };
     },
     assertTrustedSender: (event) => {

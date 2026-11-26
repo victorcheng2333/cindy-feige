@@ -267,7 +267,6 @@ export function createDeviceAgentStarter(deps: DeviceAgentServiceDeps) {
   const startAttempt = async (input: StartInput, skipDirect: boolean,
     attempt: ReturnType<typeof registerPendingRemoteStart>, recoverLostHistoryGrant = true,
     reissuedHistory = false): Promise<AgentSessionHandle> => {
-    if (input.agentKind === 'cursor') throw new Error('Cursor supports local desktop tasks only');
     const initialShareId = parseProviderShareAgentDeviceId(input.deviceId);
     if (input.agentKind === 'antigravity' && (deps.isSharedProviderDevice?.(input.deviceId) === true || !!initialShareId)) {
       throw new Error('[REMOTE_AGENT_UNSUPPORTED] Antigravity remote execution is available for your own computers only.');

@@ -104,7 +104,7 @@ export type TeammateCapabilityKind = "skill" | "mcp" | "toolset" | "feature";
 
 export interface AppDefaultModelRoute {
   /** `acp` only on teammateOnly choices (this computer's plugin engines). */
-  harness: 'claude' | 'codex' | 'pi' | 'cursor' | 'acp'; providerId: string | null;
+  harness: 'claude' | 'codex' | 'pi' | 'acp'; providerId: string | null;
   model: string; effort: string; fastMode: boolean | 'ultrafast';
 }
 

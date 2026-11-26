@@ -1463,11 +1463,6 @@
     "SSH_HOST_KEY_MISMATCH": "Chave do host SSH alterada",
     "DEVICE_LINK_MEDIA_ACCESS_DENIED": "O Cindy não consegue ler o anexo original; a mensagem não foi enviada. Salve uma cópia em Downloads ou em outra pasta acessível, remova o anexo original e adicione a cópia usando o botão de anexos antes de enviar novamente.",
     "UNSUPPORTED_CAPABILITY": "Esta operação não é compatível com a sessão ou o ambiente atual.",
-    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Não foi possível mudar para o Cursor: o Cursor não é compatível com diretórios de referência somente leitura nesta sessão.",
-    "CURSOR_HANDOFF_UNSUPPORTED": "Não foi possível mudar para o Cursor: apenas sessões comuns de desktop podem mudar para o Cursor.",
-    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Não foi possível mudar para o Cursor: o Cursor só pode ser executado no computador desta sessão.",
-    "CURSOR_CONNECTION_REQUIRED": "Não foi possível mudar para o Cursor: selecione um modelo na conexão do Cursor.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Não foi possível mudar para o Cursor: altere primeiro o modo de permissão para Automático, Acesso total ou Modo de planejamento.",
     "REVIEW_SETTINGS_FIXED": "As configurações da sessão de revisão ficam vinculadas à sessão de origem e não podem ser alteradas.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Sessões arquivadas não podem trocar de Harness.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Convidados de uma sessão compartilhada não podem mover o Agent para outro computador."
@@ -1590,19 +1585,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "Reservas",
-      "auto": "Modelos Cursor",
-      "api": "Outros modelos",
-      "total": "Uso incluído",
-      "remaining": "Restante por reserva",
-      "separate": "As reservas do Cursor são independentes.",
-      "explanation": "Esgotar uma reserva não esgota as outras. As porcentagens não são somadas.",
-      "resetUnknown": "Data de renovação desconhecida",
-      "extra": "Gastos adicionais",
-      "notRead": "Não disponível",
-      "extraHint": "Veja a cobrança do Cursor"
-    },
     "shared": {
       "label": "Compartilhado",
       "note": "Esta cota é compartilhada pela conta, não reservada para você.",
@@ -2910,6 +2892,7 @@
       "harnessChecking": "Verificando…",
       "harnessCheckFailed": "Não foi possível verificar atualizações. Abra o menu para tentar novamente.",
       "harnessUpdateAvailable": "Atualização disponível",
+      "harnessInstalling": "Instalando…",
       "harnessCheck": "Verificar atualizações",
       "harnessCheckedAt": "Última verificação: {{time}}",
       "logsDirLabel": "Diretório de logs",
@@ -3155,29 +3138,11 @@
       "harnessLastEnabledHint": "Mantenha pelo menos um harness ativado.",
       "harnessToggleFailed": "Não foi possível atualizar a configuração do harness. Tente novamente.",
       "agyCli": {
-        "label": "Versão do SDK do Cursor",
+        "label": "Versão do Agy CLI",
         "update": "Atualizar Agy CLI",
         "description": "Executa o atualizador oficial do Agy neste computador. A CLI usada pelo Cindy e pelo terminal será atualizada.",
         "busy": "Aguarde a tarefa atual do Agy terminar.",
         "failed": "Não foi possível atualizar o Agy CLI."
-      },
-      "cursorSdk": {
-        "label": "Versão do SDK do Cursor",
-        "manage": "Gerenciar SDK do Cursor",
-        "check": "Verificar atualizações",
-        "checking": "Verificando…",
-        "checkFailed": "Falha na verificação",
-        "available": "Atualização disponível",
-        "installing": "Instalando…",
-        "update": "Atualizar SDK",
-        "restore": "Restaurar versão incluída",
-        "updateTitle": "Atualizar para o SDK do Cursor {{version}}?",
-        "restoreTitle": "Restaurar o SDK do Cursor incluído?",
-        "description": "As atualizações são publicadas pelo Cursor e podem ter problemas de compatibilidade. Você pode restaurar a versão incluída a qualquer momento. As sessões de agente existentes mantêm sua versão.",
-        "installed": "O SDK do Cursor está pronto. A próxima sessão de agente usará a versão selecionada.",
-        "installFailed": "Falha na atualização. A versão anterior não foi alterada. Verifique as atualizações e tente novamente.",
-        "scope": "Válido a partir da próxima sessão de agente. As tarefas em execução não são afetadas.",
-        "checkedAt": "Última verificação: {{time}}"
       }
     },
     "apiKey": {
@@ -4914,18 +4879,7 @@
         "aiCreditsHint": "Permite que o Agy use seus créditos do Google AI após o fim da cota do plano. Entra em vigor após o turno atual.",
         "aiCreditsSaveFailed": "Não foi possível salvar a configuração de créditos AI."
       },
-      "claudeCleanupPending": "A conexão foi excluída, mas o Claude Code não concluiu a saída de algumas pastas de contas independentes. A Cindy tentará novamente na próxima inicialização. O histórico de tarefas será mantido.",
-      "cursor": {
-        "description": "Execute tarefas locais com sua conta Cursor. A cobrança é feita pelo Cursor. Suporta Auto, acesso total e plano; perguntar, retroceder e criar ramificações não estão disponíveis.",
-        "connect": "Conectar Cursor",
-        "disconnect": "Desconectar Cursor",
-        "waiting": "Conclua o login no navegador. Isso pode levar até cinco minutos.",
-        "stopWarning": "As tarefas Cursor em execução serão interrompidas. O histórico será mantido.",
-        "loginFailed": "O login no Cursor não foi concluído. Verifique o navegador e a conexão.",
-        "legacyPermission": "O Cursor não oferece o modo de permissões com confirmação. Esta tarefa é executada no modo automático, em que os comandos são executados sem revisão.",
-        "historyReset": "O histórico do Cursor desta tarefa não está disponível na conta atual. A referência anterior foi removida. Um novo envio usará um novo contexto; as mensagens da tarefa serão mantidas.",
-        "historyUnavailable": "Esta conta não consegue restaurar o histórico do Cursor da tarefa. Verifique a conta e o status da tarefa e tente novamente."
-      }
+      "claudeCleanupPending": "A conexão foi excluída, mas o Claude Code não concluiu a saída de algumas pastas de contas independentes. A Cindy tentará novamente na próxima inicialização. O histórico de tarefas será mantido."
     },
     "experimental": {
       "title": "Experimental",
@@ -14849,18 +14803,6 @@
           "bypassPermissions": {
             "label": "Acesso total",
             "description": "Ignora as verificações de permissão do Agy. As ferramentas podem ser executadas sem confirmação."
-          }
-        },
-        "cursor": {
-          "auto": {
-            "label": "Automático",
-            "description": "O Cursor executa comandos sem aprovação nem sandbox."
-          },
-          "bypassPermissions": {
-            "label": "Acesso total"
-          },
-          "plan": {
-            "label": "Modo de planejamento"
           }
         },
         "claude-code": {

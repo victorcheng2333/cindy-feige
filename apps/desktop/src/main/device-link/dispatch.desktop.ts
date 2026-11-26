@@ -4,7 +4,6 @@ import type { readUsageWidgetSnapshot } from '../quota-overview/service.js';
 import { configureStandbyGuestCleanup } from './providerShareAvailabilityGuests.js';
 import { prepareShareAvailability } from './providerShareAvailability.js';
 import { readKimiCodingAccountUsage, readOpenCodeGoAccountUsage } from '../maker-host/provider-account-usage.js';
-import { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
 import { antigravityQuotaAvailable, readAntigravityQuota } from '../maker-host/antigravity-host.js';
 import { executeTaskTags, TASK_TAG_CHANNEL } from '../localDb/ipc/taskTags.js';
 import { requestFilePeer, stopFilePeers } from './filePeer';
@@ -39,10 +38,7 @@ import {
   projectInteractionDismissedForRemote,
   projectInteractionRequestForRemote,
 } from '../cindy-brain/ghostSetupInteractionBridge.js';
-import {
-  remoteWorkingDirRejectionToIpcError,
-  type RemoteWorkingDirGuard,
-} from './remote-workdir-guard';
+import { remoteWorkingDirRejectionToIpcError } from './remote-workdir-guard';
 import { createInboundDispatch } from "./dispatch.js";
 export type * from "./dispatch.js";
 
@@ -119,10 +115,8 @@ export const {
   prepareShareAvailability,
   readKimiCodingAccountUsage,
   readOpenCodeGoAccountUsage,
-  readCursorQuota,
   antigravityQuotaAvailable,
   readAntigravityQuota,
-  cursorConnected,
   executeTaskTags: (...args) => executeTaskTags(...args),
   TASK_TAG_CHANNEL,
   requestFilePeer: (...args) => requestFilePeer(...args),

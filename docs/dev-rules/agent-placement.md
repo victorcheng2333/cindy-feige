@@ -3,7 +3,7 @@
 > **状态**：权威开发规则（authoritative）
 > **读取时机**：判断某个引擎（Harness）在某个任务里能否选用、切换引擎时决定 Agent 在哪台电脑运行、接入新的
 > 只能本机运行的引擎，或修改 `agentDeviceId`／`remoteHostId` 的使用方式之前
-> **适用路径**：`packages/maker-shared/src/agentPlacement.ts`、`apps/desktop/src/main/maker-ipc/sessionAgentSwitch*`、`apps/desktop/src/main/localDb/ipc/cursorTaskCreation.ts`、`apps/desktop/src/renderer/components/new-chat/{ChatInput,ModelSelector}.tsx`、`apps/mobile/src/session/{sessionAgentSwitch,sessionSelectableAgents}*`、`apps/mobile/app/sessions/**`、`packages/maker-core/src/agents/{cursor,antigravity}/**`
+> **适用路径**：`packages/maker-shared/src/agentPlacement.ts`、`apps/desktop/src/main/maker-ipc/sessionAgentSwitch*`、`apps/desktop/src/main/localDb/ipc/antigravityTaskCreation.ts`、`apps/desktop/src/renderer/components/new-chat/{ChatInput,ModelSelector}.tsx`、`apps/mobile/src/session/{sessionAgentSwitch,sessionSelectableAgents}*`、`apps/mobile/app/sessions/**`、`packages/maker-core/src/agents/antigravity/**`
 
 一个任务涉及几台电脑，各自含义不同。把「Agent 在哪运行」当成「任务在哪」，会把本该可用的
 引擎拦掉（2026-11-21，Agy 在三处出现同一错误，见文末）。
@@ -22,9 +22,8 @@
 
 ## 只能在任务所在电脑运行的引擎
 
-Cursor 依赖任务所在电脑上的 CLI、订阅和进程组，只能在任务所在电脑运行（Agy 已支持在同账号自己的其他电脑上经受限 `--agent` 与隧道 `cindy_exec` 远程运行，但不开放给供应商分享的受邀者或供应商组）。名单和判断
-只有一个正本：`packages/maker-shared/src/agentPlacement.ts`
-（`TASK_COMPUTER_ONLY_AGENT_KINDS`、`runsOnTaskComputerOnly`、`canHandOffToTaskComputerOnlyEngine`）。
+若接入只能依赖任务所在电脑的 CLI、订阅和进程组运行的引擎，名单和判断只有一个正本：`packages/maker-shared/src/agentPlacement.ts`
+（`TASK_COMPUTER_ONLY_AGENT_KINDS`、`runsOnTaskComputerOnly`、`canHandOffToTaskComputerOnlyEngine`）。当前 Cursor 引擎已于 2026-11-26 彻底移除；Agy 已支持在同账号自己的其他电脑上经受限 `--agent` 与隧道 `cindy_exec` 远程运行，但不开放给供应商分享的受邀者或供应商组。
 
 Agy 远程运行时，受限 `cindy-remote` 是否生效只能从 agy 自己的 worker 日志判断：agy 1.5.14
 启动时连不上 Google、拿不到功能开关，就记一行 `Agent "cindy-remote" not found` 并改用带全部本地

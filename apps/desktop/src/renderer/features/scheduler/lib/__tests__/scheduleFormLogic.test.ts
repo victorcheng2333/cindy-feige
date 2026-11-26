@@ -771,7 +771,7 @@ describe('hasRealBinding / agentKind 映射', () => {
   });
 
   // Agy scheduled-task compatibility / unit: buildScheduleInput and formToProjectConfig must
-  // accept antigravity selections (previously blocked alongside cursor) while keeping cursor blocked.
+  // accept antigravity selections.
   it('serializes antigravity selections in normal and project automation forms', () => {
     const agyForm = makeForm({
       agentKind: 'antigravity',

@@ -34,7 +34,6 @@ import { useModelRouteDevices } from '@/hooks/useModelRouteDevices';
 import { useSettingsTarget } from './settingsTarget';
 import { agentDeviceModelMemoryAccessors } from '@/state/agentDeviceModelMemory';
 import { PermissionSelector } from '@/components/new-chat/PermissionSelector';
-import type { MakerVendor } from '@/lib/ccAgent.types';
 import {
   getProviderModelEffort,
   setProviderModelChoice,
@@ -296,7 +295,7 @@ function PrefsField({
 }
 
 /** hook prefs 的 agentKind → 选择器的 vendor key。 */
-function toVendorKey(agentKind: string | null): 'cc' | 'codex' | 'pi' | 'cursor' {
+function toVendorKey(agentKind: string | null): 'cc' | 'codex' | 'pi' {
   return agentKind === 'codex' || agentKind === 'pi' ? agentKind : 'cc';
 }
 

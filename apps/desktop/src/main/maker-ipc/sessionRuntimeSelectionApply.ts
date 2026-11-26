@@ -1475,7 +1475,7 @@ export function createHandleSetModel(bindPorts: () => SessionRuntimeSelectionPor
               // Pi 切模后不重置 thinking level：把 renderer 记录的目标模型思考开关
               // 意图交给 runtime，由 Pi 按目标模型能力快照收敛（否则上一个模型的
               // off/旧档位会漂移给新模型）。非 Pi 引擎忽略该参数。
-              ...((runtimeAgentKind === 'pi' || runtimeAgentKind === 'cursor') && atomicSelection?.thinking !== undefined
+              ...(runtimeAgentKind === 'pi' && atomicSelection?.thinking !== undefined
                 ? { thinkingEnabled: atomicSelection.thinking }
                 : {}),
               forceSessionRebuild:

@@ -4663,7 +4663,7 @@ describe('session-agent-switch handoff injection', () => {
     expect(consumeWorkingDirectoryRecoveryNote).not.toHaveBeenCalled();
   });
 
-  it.each(['codex', 'cursor'] as const)('%s: pending 命中时 wire payload 前置交接段,落库内容保持用户原文,accepted 后 consume', async (agentKind) => {
+  it.each(['codex'] as const)('%s: pending 命中时 wire payload 前置交接段,落库内容保持用户原文,accepted 后 consume', async (agentKind) => {
     const consumePendingHandoff = vi.fn();
     const { deps, session } = createDeps({
       peekPendingHandoff: vi.fn(async () => 'HANDOFF-TEXT'),
@@ -4687,7 +4687,7 @@ describe('session-agent-switch handoff injection', () => {
     expect(consumePendingHandoff).toHaveBeenCalledWith('session-1');
   });
 
-  it.each(['codex', 'cursor'] as const)('%s: dispatch 未 accepted 时不 consume(pending 保留下次重试)', async (agentKind) => {
+  it.each(['codex'] as const)('%s: dispatch 未 accepted 时不 consume(pending 保留下次重试)', async (agentKind) => {
     const consumePendingHandoff = vi.fn();
     const session = createSession({
       agentKind,

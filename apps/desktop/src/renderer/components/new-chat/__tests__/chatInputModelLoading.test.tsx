@@ -1486,9 +1486,9 @@ it('offers both delivery modes for one message from the Send button tip, and cha
 });
 
 // 测试价值
-// - 生产入口与可观察结果：ChatInput 在 steerTextOnly=true（Cursor）且草稿含图片附件时，
+// - 生产入口与可观察结果：ChatInput 在 steerTextOnly=true 且草稿含图片附件时，
 //   运行中发送按钮与 Enter 降级为 queue，而不是虚假提示可插话并在提交后静默落入排队。
-// - Bug／规则依据：Cursor SDK Run.steer 仅支持纯文本，带图片插话会触发 STEER_FOLLOWUP_REQUIRED。
+// - Bug／规则依据：部分只支持纯文本插话的引擎带图片插话会触发 STEER_FOLLOWUP_REQUIRED。
 // - 现有覆盖缺口：已有 steer 矩阵仅覆盖纯文本输入，未覆盖 steerTextOnly + 图片附件降级。
 // - 最小失败输入：followUp=steer, isStreaming=true, steerTextOnly=true, attachmentState 含 image 文件。
 // - tier：unit/jsdom（真实 ChatInput 组件）。

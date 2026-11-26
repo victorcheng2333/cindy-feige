@@ -410,7 +410,7 @@ export function messageToCamel(row: MessageRow): Message {
       : projectMcpAppHistory(content, agentMeta?.mcpApp === true),
     toolUseId: row.toolUseId,
     agentMeta,
-    agentKind: (row.agentKind as 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | null) ?? null,
+    agentKind: (row.agentKind as 'cc' | 'codex' | 'pi' | 'antigravity' | null) ?? null,
     createdAt: new Date(row.createdAt).toISOString(),
   };
 }

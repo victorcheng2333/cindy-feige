@@ -10,7 +10,7 @@ Personalization is where you give the agents standing instructions that apply to
 
 - Open **Settings > Personalization**. The first section (**Personalization · Custom Prompts**) has a text box for your instructions.
 - Write your instructions, then click **Save**. The limit is 8,000 characters; a counter shows how much you've used.
-- They apply to every new built-in task across Claude Code, Codex, Pi, Cursor, and Agy. Claude Code, Codex, Pi, and Agy receive them in the system prompt. Cursor receives them in its first-turn context.
+- They apply to every new built-in task across Claude Code, Codex, Pi, and Agy. They are delivered in the system prompt.
 - Useful examples: "respond in Chinese", "default to TypeScript", "prefer pnpm over npm", "always check tests before reporting done".
 
 **Other sections on this page:**

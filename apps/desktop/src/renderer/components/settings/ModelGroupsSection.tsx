@@ -393,7 +393,7 @@ export function ModelGroupsSection({ scrollRef }: { scrollRef?: RefObject<HTMLDi
                         ariaContext={t('modelGroups.settings.addSource')}
                         fallbackOption={{ active: true, label: t('modelGroups.settings.chooseModel'), onSelect: () => undefined }}
                         onUnifiedSelect={({ engine, providerId, modelId, agentDevice }) => {
-                          if (engine === 'cursor' || engine === 'antigravity') return false;
+                          if (engine === 'antigravity') return false;
                           const added: ModelGroupCandidate = {
                             agentKind: engine, providerId, model: modelId,
                             ...(agentDevice ? { agentDeviceId: agentDevice.deviceId } : {}),

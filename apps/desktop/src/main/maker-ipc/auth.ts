@@ -22,7 +22,6 @@ import {
 } from '../maker-host/antigravity-proxy-settings-store.js';
 import { getActiveAppSession, isAppSessionBoundaryPending } from '../appSessionState.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
-import { cancelCursorApiKeyValidation, setCursorApiKey } from '../maker-host/cursor-auth.js';
 import { assertTrustedAppRendererEvent } from '../security/trustedAppRenderer.js';
 import { MAKER_INVOKE } from './channels.js';
 import { createLogger } from '../logger.js';
@@ -32,7 +31,7 @@ import { clearChatgptBridgeCredentialCache } from '../maker-host/anthropic-respo
 import { refreshDiscoveredCodexModels } from '../maker-host/createDesktopProviderService.js';
 import { requestCodexModelBackfill } from '../maker-host/index.js';
 import { syncOpenAiMediaAfterCodexAuthChange } from '../maker-host/model-discovery/openai-media.js';
-import { connectCursorApiKey, registerMakerAuthHandlers } from './authHandlers.js';
+import { registerMakerAuthHandlers } from './authHandlers.js';
 import { createElectronIpcHandlerRegistry } from './electronIpcRegistry.js';
 
 const log = createLogger('maker-ipc:auth');
@@ -99,11 +98,6 @@ export function registerMakerAuthIpc(maker: Maker): void {
     await recycleAgyRuntimes();
     return value;
   });
-  // This secret-writing endpoint is intentionally absent from Device Link allowlists.
-  registry.handle(MAKER_INVOKE.CURSOR_SET_API_KEY, async (event, apiKey: unknown) => {
-    assertTrustedAppRendererEvent(event as Parameters<typeof assertTrustedAppRendererEvent>[0]);
-    return connectCursorApiKey(apiKey, setCursorApiKey, broadcast);
-  });
 
   registerMakerAuthHandlers(
     cloudManagementProviderRegistry(registry),
@@ -133,7 +127,6 @@ export function registerMakerAuthIpc(maker: Maker): void {
       }
       syncOpenAiMediaAfterCodexAuthChange();
     },
-    cancelCursorApiKeyValidation,
     undefined,
     { assertAccess: assertProxySettingsAccess, afterLogout: recycleAgyRuntimes },
   );

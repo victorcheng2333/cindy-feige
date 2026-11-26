@@ -8,7 +8,7 @@
  * may add opaque `providerRunIds` without changing the product model.
  */
 
-export type SubagentProvider = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+export type SubagentProvider = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 
 /** Providers surfaced in the right-sidebar Subagents workspace panel. */
 export const SUBAGENT_SIDEBAR_PROVIDERS = ['pi', 'antigravity'] as const satisfies readonly SubagentProvider[];

@@ -25,12 +25,12 @@ describe('active catalog revision', () => {
   it('reads account-scoped local models outside the shared catalog cache and publishes revisions', () => {
     let ids = ['first-model'];
     setLocalHarnessProviderReader(() => ({
-      id: 'cursor', name: 'Cursor', source: 'builtin',
-      agents: ['cursor'], auth: { method: 'oauth' }, routing: {}, models: { cursor: ids.map(id => ({
+      id: 'antigravity', name: 'Agy', source: 'builtin',
+      agents: ['antigravity'], auth: { method: 'oauth' }, routing: {}, models: { antigravity: ids.map(id => ({
         id, name: id, contextWindow: 0, efforts: [], defaultEffort: null,
       })) },
     }));
-    const read = () => getActiveCatalog().providers.find(p => p.id === 'cursor')?.models.cursor?.map(m => m.id);
+    const read = () => getActiveCatalog().providers.find(p => p.id === 'antigravity')?.models.antigravity?.map(m => m.id);
     expect(read()).toEqual(['first-model']);
     const listener = vi.fn(read);
     setActiveCatalogChangedListener(listener);

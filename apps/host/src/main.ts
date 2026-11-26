@@ -1196,7 +1196,7 @@ setSessionOpeningModelAdmission(async body => {
     providerRouting: buildLocalProviderRoutingContext(snapshot.providers),
     hasCindyAiApiKey: currentGateway() !== null,
   });
-  if (execution.agentKind === 'cursor' || execution.agentKind === 'antigravity') {
+  if (execution.agentKind === 'antigravity') {
     throw new Error(`${execution.agentKind} is not supported on headless host`);
   }
   return { ...body, ...execution, effort: execution.effort ?? '',
@@ -1220,7 +1220,7 @@ const readSessionForRun = async (sessionId: string, { forHandoff = false } = {})
   const [botLink] = await db.drizzle.select({ botId: botSessionLinks.botId })
     .from(botSessionLinks).where(eq(botSessionLinks.sessionId, sessionId)).limit(1);
   if (forHandoff && botLink) return null;
-  if (row.agentKind === 'cursor' || row.agentKind === 'antigravity') {
+  if (row.agentKind === 'antigravity') {
     throw new Error(`${row.agentKind} is not supported on headless host`);
   }
   const storedKind = requireBuiltinAgentKind(row.agentKind as EngineKind, 'Host task execution');
@@ -1869,7 +1869,7 @@ const serverDeps = {
     if (agentDeviceId !== undefined && agentDeviceId !== null) {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Host does not yet support remote execution');
     }
-    if (targetAgentKind === 'cursor' || targetAgentKind === 'antigravity') {
+    if (targetAgentKind === 'antigravity') {
       throwIpcError('UNSUPPORTED_CAPABILITY', `${targetAgentKind} is not supported on headless host`);
     }
     return runtimeSelection.switchAgent({
@@ -2026,7 +2026,7 @@ const serverDeps = {
   interactions,
   agentCommands: async (input: { agentKind?: string; sessionId?: string }) => {
     const rawKind = String(input.agentKind ?? '');
-    if (rawKind === 'cursor' || rawKind === 'antigravity') return { success: false, error: `Agent '${rawKind}' is not registered` };
+    if (rawKind === 'antigravity') return { success: false, error: `Agent '${rawKind}' is not registered` };
     const kind = rawKind === 'codex' ? 'codex' : rawKind === 'pi' ? 'pi' : 'claude-code';
     const graph = agentGraph;
     const agent = graph?.instances?.[kind];
@@ -2055,7 +2055,7 @@ const serverDeps = {
     ensureSharedGlobalSkills: () => sharedGlobalSkills.ensureSharedGlobalSkills(),
   }),
   capabilities: async (agentKind: string) => {
-    if (agentKind === 'cursor' || agentKind === 'antigravity') throw new Error(`Agent '${agentKind}' is not registered`);
+    if (agentKind === 'antigravity') throw new Error(`Agent '${agentKind}' is not registered`);
     const requested = requireBuiltinAgentKind(agentKind as EngineKind, 'Host model capabilities');
     const kind = requested === 'codex' ? 'codex' : requested === 'pi' ? 'pi' : 'claude-code';
     const baseCaps = agentGraph?.capabilitiesByAgent?.[kind];

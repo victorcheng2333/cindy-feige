@@ -750,7 +750,7 @@ interface ChatInputProps {
    * row's text/files/mentions snapshot stays the same as normal queue send.
    */
   onQueueSteer?: (clientId: string) => Promise<boolean>;
-  /** True when the running harness only accepts text-only steering (e.g. Cursor). */
+  /** True when the running harness only accepts text-only steering. */
   steerTextOnly?: boolean;
   /** Queue row ids currently being delivered through onQueueSteer. */
   steeringQueueClientIds?: string[];
@@ -848,7 +848,7 @@ interface ChatInputProps {
    * M35: Vendor lock — when provided, ModelSelector only shows models
    * belonging to this vendor ('cc' for Claude, 'codex' for OpenAI Codex).
    */
-  vendorKey?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  vendorKey?: 'cc' | 'codex' | 'pi' | 'antigravity';
   /**
    * Optional override for the composerDraftStore key used to persist editor
    * content (and via attachmentState, attachments) across mount/unmount.
@@ -967,7 +967,7 @@ interface ChatInputProps {
   pluginModels?: PluginModelsPickerProps;
   /** 在原始模型面板内切换引擎，恢复对应草稿选择。 */
   draftEngineTabs?: boolean;
-  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity') => void;
+  onDraftVendorChange?: (vendor: 'cc' | 'codex' | 'pi' | 'antigravity') => void;
   /** 新任务的模型组(只有新任务草稿传)。 */
   modelGroups?: ModelGroupsPickerProps;
   /**
@@ -996,7 +996,7 @@ interface ChatInputProps {
    * `lastByVendor.model` 并原样进 createSession,写错就是首条请求路由到一个不存在的模型。
    */
   onUnifiedDraftSelect?: (selection: {
-    vendor: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+    vendor: 'cc' | 'codex' | 'pi' | 'antigravity';
     providerId: string;
     /** 选中引擎的 **wire model id**。 */
     modelId: string;
@@ -1094,19 +1094,18 @@ function rememberCatalogModelPrefs(
 }
 
 /** 统一模型选择器联合列表的候选引擎全集(与 SELECTABLE_VENDORS 同一顺序)。 */
-const UNIFIED_AGENT_KINDS: readonly AgentKind[] = ['claude-code', 'codex', 'pi', 'cursor', 'antigravity'];
+const UNIFIED_AGENT_KINDS: readonly AgentKind[] = ['claude-code', 'codex', 'pi', 'antigravity'];
 
 /** AgentKind → NewMaker vendor(useAvailableAgents 用 vendor 口径)。 */
-function agentKindToVendor(kind: AgentKind): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
-  return kind === 'antigravity' ? 'antigravity' : kind === 'cursor' ? 'cursor' : kind === 'codex' ? 'codex' : kind === 'pi' ? 'pi' : 'cc';
+function agentKindToVendor(kind: AgentKind): 'cc' | 'codex' | 'pi' | 'antigravity' {
+  return kind === 'antigravity' ? 'antigravity' : kind === 'codex' ? 'codex' : kind === 'pi' ? 'pi' : 'cc';
 }
 
-function vendorKeyToAgentKind(v?: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): AgentKind | null {
+function vendorKeyToAgentKind(v?: 'cc' | 'codex' | 'pi' | 'antigravity'): AgentKind | null {
   if (v === 'cc') return 'claude-code';
   if (v === 'codex') return 'codex';
   if (v === 'pi') return 'pi';
   if (v === 'antigravity') return 'antigravity';
-  if (v === 'cursor') return 'cursor';
   return null;
 }
 
@@ -1860,7 +1859,7 @@ export function ChatInput({
   // (localStorage,按 agent 分槽、sanitize 恒有种子值)。默认模型/档位偏好已全量本地化,
   // 不再依赖服务端 UserPreferences(登录态失效/离线时模型与档位选择必须照常工作)。
   const localVendorDefaults =
-    getDraft().lastByVendor[vendorKey === 'antigravity' ? 'antigravity' : vendorKey === 'cursor' ? 'cursor' : vendorKey === 'pi' ? 'pi' : vendorKey === 'codex' ? 'codex' : 'cc'];
+    getDraft().lastByVendor[vendorKey === 'antigravity' ? 'antigravity' : vendorKey === 'pi' ? 'pi' : vendorKey === 'codex' ? 'codex' : 'cc'];
   // session-agent-switch 意图制:意图期内 chip / 选择器显示用户选择的目标
   // (model/effort/provider/fast),props(镜像 DB)仍是旧引擎值——真切换在下一条
   // 消息发送时刻 apply,patched 回流后意图清除、显示交回 props。意图存放在
@@ -1996,9 +1995,8 @@ export function ChatInput({
     agentKind === 'antigravity' || composerSelection.display.agentKind === 'antigravity' ? 'antigravity' : null,
     catalogDeviceId,
   );
-  const cursorCaps = useAgentCapabilities('cursor', catalogDeviceId);
   const activeAgentCapabilities =
-    agentKind === 'antigravity' ? antigravityCaps.capabilities : agentKind === 'cursor' ? cursorCaps.capabilities : agentKind === 'codex'
+    agentKind === 'antigravity' ? antigravityCaps.capabilities : agentKind === 'codex'
       ? codexCaps.capabilities
       : agentKind === 'pi'
         ? piCaps.capabilities
@@ -2243,7 +2241,6 @@ export function ChatInput({
     cc: ccCaps,
     codex: codexCaps,
     pi: piCaps,
-    cursor: cursorCaps,
     antigravity: antigravityCaps,
     providers: remoteProviders,
   });
@@ -2264,8 +2261,6 @@ export function ChatInput({
   // 撤掉新会话工具条的 AgentSelect 后,它的 hiddenVendors 门禁就落到这里:Pi 二进制缺失
   // 时模型目录照样投影 Pi 模型,只看目录会让用户一路选到 requireAgent 的 not-registered。
   // 未加载完成 → 传 undefined；只有已有任务保留当前引擎，新任务严格按可选清单。
-  // Cursor's account/runtime belong to the task host, for drafts as well as
-  // existing tasks, not the borrowed catalog.
   // Other engines can still execute on the provider computer (e.g. shared Pi
   // without Pi installed locally), so keep their existing catalog-scoped roster.
   const taskComputerAgents = useAvailableAgents(deviceLinkDeviceId ?? undefined);
@@ -2293,9 +2288,6 @@ export function ChatInput({
           return agentKind === kind || (sessionAgentSwitchSupported && hostSupportsAntigravitySessionSwitch &&
             hostSupportsControlledAntigravityCreation && !remoteHostId && !sessionOrcaRole && !sessionOrcaRemoteWorker &&
             taskComputerAgents.availableVendors.has('antigravity'));
-        }
-        if (kind === 'cursor') {
-          return (!preserveDraftModel && kind === agentKind) || !taskComputerAgents.loaded || taskComputerAgents.availableVendors.has('cursor');
         }
         return (!preserveDraftModel && kind === agentKind) || runtimeAvailableVendors.has(agentKindToVendor(kind));
       },
@@ -7068,7 +7060,7 @@ export function ChatInput({
         deviceProviders: remoteProviders.providers,
         localProviders: providers,
         capabilities:
-          currentModelAgentKind === 'antigravity' ? antigravityCaps.capabilities : currentModelAgentKind === 'cursor' ? cursorCaps.capabilities : currentModelAgentKind === 'codex'
+          currentModelAgentKind === 'antigravity' ? antigravityCaps.capabilities : currentModelAgentKind === 'codex'
             ? codexCaps.capabilities
             : currentModelAgentKind === 'pi'
               ? piCaps.capabilities
@@ -7086,7 +7078,6 @@ export function ChatInput({
       ccCaps.capabilities,
       codexCaps.capabilities,
       piCaps.capabilities,
-      cursorCaps.capabilities,
       antigravityCaps.capabilities,
     ],
   );
@@ -7149,7 +7140,7 @@ export function ChatInput({
           initialProviderId,
         });
       if (!remoteDeviceId) {
-        const vendor = agentKind === 'antigravity' ? 'antigravity' : agentKind === 'cursor' ? 'cursor' : agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
+        const vendor = agentKind === 'antigravity' ? 'antigravity' : agentKind === 'codex' ? 'codex' : agentKind === 'pi' ? 'pi' : 'cc';
         if (modelOnly) {
           // 只保护新建默认的模型 / 来源 / 其思考档；按 (引擎, 模型) 跨来源共享的档位与 Fast 预设
           // 是独立的既有行为，下面照常记录。
@@ -7474,7 +7465,6 @@ export function ChatInput({
       runtimeAgentKind,
       deviceLinkDeviceId,
       piCaps.capabilities,
-      cursorCaps.capabilities,
       hostSupportsRemoteModelWindowRebuild,
     ],
   );
@@ -7544,7 +7534,7 @@ export function ChatInput({
   }>({ byProvider: () => {}, byModel: () => {} });
   const performAgentSwitch = useCallback(
     async (
-      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+      targetAgentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity',
       newModelId: string,
       providerId: string | null = null,
       // 意图期内的档位/Fast/思考开关改动经此显式覆盖(用户手选优先于记忆/默认解析)。
@@ -7660,7 +7650,7 @@ export function ChatInput({
           deviceProviders: remoteProviders.providers,
           localProviders: providers,
           capabilities:
-            targetAgentKind === 'antigravity' ? antigravityCaps.capabilities : targetAgentKind === 'cursor' ? cursorCaps.capabilities : targetAgentKind === 'codex'
+            targetAgentKind === 'antigravity' ? antigravityCaps.capabilities : targetAgentKind === 'codex'
               ? codexCaps.capabilities
               : targetAgentKind === 'pi'
                 ? piCaps.capabilities
@@ -7833,7 +7823,7 @@ export function ChatInput({
             toast.success(
               t('newChat.chatInput.agentSwitch.deferred', {
                 agent:
-                  targetAgentKind === 'antigravity' ? 'Agy' : targetAgentKind === 'cursor' ? 'Cursor' : targetAgentKind === 'codex'
+                  targetAgentKind === 'antigravity' ? 'Agy' : targetAgentKind === 'codex'
                     ? 'Codex'
                     : targetAgentKind === 'pi'
                       ? 'Pi'
@@ -7944,7 +7934,6 @@ export function ChatInput({
       ccCaps.capabilities,
       codexCaps.capabilities,
       piCaps.capabilities,
-      cursorCaps.capabilities,
       antigravityCaps.capabilities,
       syncSessionDraftModelPrefs,
     ],
@@ -8199,7 +8188,7 @@ export function ChatInput({
       /** 选中引擎的 **wire model id** —— 唯一可发送、可当记忆键的那个 id。 */
       modelId: string;
       effort?: Effort;
-      engine: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+      engine: 'cc' | 'codex' | 'pi' | 'antigravity';
       fast: boolean | 'ultrafast';
       favoriteUid: string | null;
       /** 行的归一化 id(面板行身份)。草稿层不消费,更不作为发送 id。 */
@@ -10382,7 +10371,7 @@ export function ChatInput({
                     }}
                     modelMemory={modelMemory}
                     vendorKey={
-                      runtimeAgentKind === 'antigravity' ? 'antigravity' : runtimeAgentKind === 'cursor' ? 'cursor' : runtimeAgentKind === 'codex'
+                      runtimeAgentKind === 'antigravity' ? 'antigravity' : runtimeAgentKind === 'codex'
                         ? 'codex'
                         : runtimeAgentKind === 'pi'
                           ? 'pi'

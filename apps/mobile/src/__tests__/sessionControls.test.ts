@@ -180,8 +180,3 @@ describe('sessionControls', () => {
     });
   });
 });
-
-// Unit: querying Cursor context must not bootstrap a Claude Code runtime.
-it('preserves Cursor identity in context queries', () => {
-  expect(buildContextUsageCreateOpts(session({ agentKind: 'cursor' }))).toMatchObject({ agentKind: 'cursor' });
-});

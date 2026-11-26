@@ -33,7 +33,6 @@ export function usageHistoryAgentColor(agentKind: UsageAgentKind): string {
     acp: 'var(--text-secondary)',
     media: 'var(--text-secondary)',
     antigravity: 'var(--usage-model-1)',
-    cursor: 'var(--text-primary)',
     auxiliary: 'var(--text-tertiary)',
   };
   return colors[agentKind];

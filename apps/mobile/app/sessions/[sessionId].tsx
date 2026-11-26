@@ -444,7 +444,6 @@ import { formatQuotesForSend, stripChatQuoteMarkerLines } from '@cindy/maker-sha
 import { permissionModeOrAsk } from '@cindy/maker-shared/permission-mode';
 import { projectDraftSessionTitle } from '@cindy/maker-shared/session-title';
 import {
-  canSwitchSessionToCursor,
   runsOnTaskComputerOnly,
   canSwitchSessionToAntigravity,
   effectiveAgentDeviceId,
@@ -2950,8 +2949,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
   const { catalogs: remoteAgentCatalogs, retainedCatalog: remoteRetainedCatalog, pendingCatalog: remotePendingCatalog } = useRemoteAgentCatalogsWithStatus({
     // 选择器打开时才读其他电脑;Agent 已在另一台电脑时还要按那台的目录显示模型药丸。
     // 共享任务访客读到的是自己账号的设备,与任务无关,不读。
-    enabled: !!deviceId && !isSharedTaskPeer(deviceId)
-      && (modelSheetOpen ? modelSheetAgentKind : composerDisplayAgentKind) !== 'cursor' && (
+    enabled: !!deviceId && !isSharedTaskPeer(deviceId) && (
       (agentLocationMovable && modelSheetOpen) || remoteAgentKeepDeviceIds.length > 0
     ),
     controlledDeviceId: deviceId,
@@ -9661,10 +9659,9 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!canUseRemoteSessionControls || !currentSession || controlBusy) return false;
     // 远程 Agent:这一行来自哪台电脑的目录(null = 被控电脑),能力就按那份目录核对
     // (同 id 模型两台电脑的档位 / Fast 可以不同)。
-    // Task-computer-only engines (Cursor, Agy) ignore a borrowed catalog's device, so a
+    // Task-computer-only engines (Agy) ignore a borrowed catalog's device, so a
     // task whose Agent runs elsewhere hands off home (docs/dev-rules/agent-placement.md).
     let catalogDeviceId = source?.deviceId ?? null;
-    if (config.agent === 'cursor' && sessionAgentKind !== 'cursor' && !canSwitchSessionToCursor(currentSession)) return false;
     if (runsOnTaskComputerOnly(config.agent)) catalogDeviceId = null;
     const catalogProviders = catalogDeviceId
       ? (remoteAgentCatalogs.find((item) => item.deviceId === catalogDeviceId)?.providers ?? [])
@@ -9676,8 +9673,6 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
     if (!targetCapabilities || deviceIdRef.current !== deviceId) return false;
     if (config.agent === 'antigravity' && (!targetCapabilities.supportsControlledAntigravityCreation
       || (sessionAgentKind !== 'antigravity' && !canSwitchSessionToAntigravity(currentSession, targetCapabilities)))) return false;
-    if (config.agent === 'cursor' && sessionAgentKind !== 'cursor'
-      && targetCapabilities.supportsControlledCursorCreation !== true) return false;
     if (config.fast && (!capability.supportsFastMode || !targetCapabilities.hasFastMode)) return false;
     // 与任务当前所在电脑不同 = 连 Agent 的运行位置一起换(下一条消息生效);
     // 同一台电脑内换模型直接切。
@@ -9704,7 +9699,6 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
       if (applied) setModelSheetAgentKind(config.agent);
       return applied;
     }
-    if (config.agent === 'cursor' && (relocates || orcaModelSelectionUsesIntent)) return false;
     if (relocates || modelSelectionUsesWindowIntent || orcaModelSelectionUsesIntent) {
       // 换电脑、宿主缩窗重建或 Orca 换模型均走下一条消息生效的切换意图。
       if (!canStageModelWindowSelection(config.agent, capability.contextWindow,
@@ -11390,7 +11384,6 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
               scope: JSON.stringify([auth.user?.id, deviceId, orcaRemoteAgentDeviceId]),
               // 插件引擎任务没有可原地换的内置引擎：被控电脑不支持换引擎时不列内置模型。
               agents: sessionAgentSwitchSupported ? sessionSwitchAgentKinds(selectableAgentKinds, sessionAgentKind,
-                canSwitchSessionToCursor(currentSession),
                 !isScopedPeer(deviceId) && canSwitchSessionToAntigravity(currentSession, capabilities))
                 : pluginEngineTask ? [] : [sessionAgentKind],
               loadCapabilities: async (agent) => {
@@ -11477,7 +11470,7 @@ function SessionScreenContent({ beforeSessionSwitchRef, newSessionActionRef }: S
                 selectedFastMode: collab.workerForm.form.model.fast,
               } : undefined,
               scope: JSON.stringify([auth.user?.id, collabWorkerDeviceId, 'orca-worker']),
-              agents: collab.workerForm.pickerAgents.filter(agent => agent !== 'cursor'),
+              agents: collab.workerForm.pickerAgents,
               loadCapabilities: async (agent) => {
                 const result = normalizeMobileAgentCapabilities(await collab.workerForm.maker.getCapabilities(agent));
                 if (!result) throw new Error('Capabilities unavailable');

@@ -1445,11 +1445,6 @@
     "SSH_HOST_KEY_MISMATCH": "SSH-Hostschlüssel geändert",
     "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy kann den ursprünglichen Anhang nicht lesen; die Nachricht wurde nicht gesendet. Speichere eine Kopie im Ordner Downloads oder einem anderen zugänglichen Ordner, entferne den ursprünglichen Anhang und füge die Kopie über die Anhang-Schaltfläche hinzu, bevor du erneut sendest.",
     "UNSUPPORTED_CAPABILITY": "Dieser Vorgang wird in der aktuellen Aufgabe oder Umgebung nicht unterstützt.",
-    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Cursor unterstützt keine schreibgeschützten Referenzverzeichnisse in dieser Aufgabe.",
-    "CURSOR_HANDOFF_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Nur normale Desktop-Aufgaben können zu Cursor wechseln.",
-    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Wechsel zu Cursor nicht möglich: Cursor kann nur auf dem Computer dieser Aufgabe ausgeführt werden.",
-    "CURSOR_CONNECTION_REQUIRED": "Wechsel zu Cursor nicht möglich: Bitte wähle ein Modell aus der Cursor-Verbindung.",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Wechsel zu Cursor nicht möglich: Stelle den Berechtigungsmodus zuerst auf Automatisch, Vollzugriff oder Planmodus um.",
     "REVIEW_SETTINGS_FIXED": "Die Einstellungen einer Review-Aufgabe sind an die Quellaufgabe gebunden und können nicht geändert werden.",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "Archivierte Aufgaben können den Harness nicht wechseln.",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "Gäste einer geteilten Aufgabe können den Agent nicht auf einen anderen Computer verschieben."
@@ -1569,19 +1564,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "Kontingente",
-      "auto": "Cursor-Modelle",
-      "api": "Andere Modelle",
-      "total": "Enthaltene Nutzung",
-      "remaining": "Verbleibend je Pool",
-      "separate": "Cursor-Nutzungspools sind unabhängig.",
-      "explanation": "Ist ein Pool aufgebraucht, kann ein anderer noch verfügbar sein. Prozentwerte werden nicht addiert.",
-      "resetUnknown": "Zurücksetzungszeit unbekannt",
-      "extra": "Zusätzliche Ausgaben",
-      "notRead": "Nicht verfügbar",
-      "extraHint": "Siehe Cursor-Abrechnung"
-    },
     "shared": {
       "label": "Geteilt",
       "note": "Dieses Kontingent wird vom gesamten Konto geteilt und ist nicht für dich reserviert.",
@@ -2872,6 +2854,7 @@
       "harnessChecking": "Wird geprüft…",
       "harnessCheckFailed": "Suche nach Updates fehlgeschlagen. Öffne das Menü, um es erneut zu versuchen.",
       "harnessUpdateAvailable": "Update verfügbar",
+      "harnessInstalling": "Wird installiert…",
       "harnessCheck": "Nach Updates suchen",
       "harnessCheckedAt": "Zuletzt geprüft: {{time}}",
       "logsDirLabel": "Protokollverzeichnis",
@@ -3117,29 +3100,11 @@
       "harnessLastEnabledHint": "Mindestens ein Harness muss eingeschaltet bleiben.",
       "harnessToggleFailed": "Die Harness-Einstellung konnte nicht aktualisiert werden. Versuche es erneut.",
       "agyCli": {
-        "label": "Cursor-SDK-Version",
+        "label": "Agy-CLI-Version",
         "update": "Agy CLI aktualisieren",
         "description": "Führt das offizielle agy-Update auf diesem Computer aus. Die von Cindy und dem Terminal genutzte CLI wird aktualisiert.",
         "busy": "Warte mit dem Update, bis die aktuelle agy-Aufgabe beendet ist.",
         "failed": "Agy CLI konnte nicht aktualisiert werden."
-      },
-      "cursorSdk": {
-        "label": "Cursor-SDK-Version",
-        "manage": "Cursor-SDK verwalten",
-        "check": "Nach Updates suchen",
-        "checking": "Wird geprüft…",
-        "checkFailed": "Prüfung fehlgeschlagen",
-        "available": "Update verfügbar",
-        "installing": "Wird installiert…",
-        "update": "SDK aktualisieren",
-        "restore": "Mitgelieferte Version wiederherstellen",
-        "updateTitle": "Auf Cursor-SDK {{version}} aktualisieren?",
-        "restoreTitle": "Mitgeliefertes Cursor-SDK wiederherstellen?",
-        "description": "Updates werden von Cursor veröffentlicht und können Kompatibilitätsprobleme aufweisen. Die mitgelieferte Version kann jederzeit wiederhergestellt werden. Bestehende Agent-Sitzungen behalten ihre Version.",
-        "installed": "Das Cursor-SDK ist bereit. Die nächste Agent-Sitzung verwendet die ausgewählte Version.",
-        "installFailed": "Das Update ist fehlgeschlagen. Die bisherige Version bleibt unverändert. Bitte erneut nach Updates suchen und versuchen.",
-        "scope": "Gilt ab der nächsten Agent-Sitzung. Laufende Aufgaben bleiben unberührt.",
-        "checkedAt": "Zuletzt geprüft: {{time}}"
       }
     },
     "apiKey": {
@@ -4858,18 +4823,7 @@
         "aiCreditsHint": "Erlaubt Agy, nach Ablauf des Tarifkontingents Google AI Credits zu nutzen. Gilt nach dem aktuellen Durchlauf.",
         "aiCreditsSaveFailed": "Die AI-Credits-Einstellung konnte nicht gespeichert werden."
       },
-      "claudeCleanupPending": "Die Verbindung wurde gelöscht, aber Claude Code konnte die Abmeldung aus einigen separaten Kontoordnern noch nicht abschließen. Cindy versucht es beim nächsten Start erneut. Der Aufgabenverlauf bleibt erhalten.",
-      "cursor": {
-        "description": "Lokale Aufgaben mit deinem Cursor-Konto ausführen. Die Abrechnung erfolgt über Cursor. Auto, Vollzugriff und Planung werden unterstützt; Nachfragen, Zurücksetzen und Verzweigen sind nicht verfügbar.",
-        "connect": "Cursor verbinden",
-        "disconnect": "Cursor trennen",
-        "waiting": "Schließe die Anmeldung im Browser ab. Dies kann bis zu fünf Minuten dauern.",
-        "stopWarning": "Laufende Cursor-Aufgaben werden gestoppt. Ihr Verlauf bleibt erhalten.",
-        "loginFailed": "Die Cursor-Anmeldung wurde nicht abgeschlossen. Prüfe den Browser und deine Verbindung.",
-        "legacyPermission": "Cursor unterstützt keinen Berechtigungsmodus mit Rückfragen. Diese Aufgabe läuft im automatischen Modus, in dem Befehle ohne Prüfung ausgeführt werden.",
-        "historyReset": "Der Cursor-Verlauf dieser Aufgabe ist im aktuellen Konto nicht verfügbar. Der alte Verweis wurde entfernt. Erneutes Senden verwendet einen neuen Kontext; die Nachrichten der Aufgabe bleiben erhalten.",
-        "historyUnavailable": "Dieses Konto kann den Cursor-Verlauf der Aufgabe nicht wiederherstellen. Prüfe Konto und Aufgabenstatus und versuche es erneut."
-      }
+      "claudeCleanupPending": "Die Verbindung wurde gelöscht, aber Claude Code konnte die Abmeldung aus einigen separaten Kontoordnern noch nicht abschließen. Cindy versucht es beim nächsten Start erneut. Der Aufgabenverlauf bleibt erhalten."
     },
     "experimental": {
       "title": "Experimentell",
@@ -14732,18 +14686,6 @@
           "bypassPermissions": {
             "label": "Vollzugriff",
             "description": "Überspringt die Berechtigungsprüfungen von Agy. Tools können ohne Bestätigung ausgeführt werden."
-          }
-        },
-        "cursor": {
-          "auto": {
-            "label": "Automatisch",
-            "description": "Cursor führt Befehle ohne Freigabe und ohne Sandbox aus."
-          },
-          "bypassPermissions": {
-            "label": "Vollzugriff"
-          },
-          "plan": {
-            "label": "Planmodus"
           }
         },
         "claude-code": {

@@ -1,7 +1,6 @@
 import { captureTurnUsageContext, turnBillingSource, type TurnUsageContext } from './turnUsageContext.js';
 import type { AgentEvent, Session } from '@cindy/maker-core';
 import { buildTurnUsageDetails } from '../../shared/turnUsageDetails.js';
-import { nativeSubscriptionApiValue } from '../usage/nativeSubscriptionApiValue.js';
 import { estimateAntigravitySubscriptionValue } from '../usage/antigravitySubscriptionValue.js';
 import { getActiveCatalog } from '../maker-host/active-catalog.js';
 import { recordSessionTurnTokens } from '../sessionSpendBroadcaster.js';
@@ -11,15 +10,14 @@ import type { RegionalMoney } from '../../shared/regionalMoney.js';
 import { rebroadcastTodaySpend, recordModelTurnUsage } from '../usageBroadcaster.js';
 import { captureDataOwnerBroadcastScope, isDataOwnerBroadcastScopeCurrent } from '../device-link/broadcast-tap.js';
 
-export interface RecordSessionCursorTurnUsageDeps {
+export interface RecordSessionNativeSubscriptionTurnUsageDeps {
   readonly turnUsageContextBySession: Map<string, TurnUsageContext>;
   readonly turnModelPromiseBySession: Map<string, Promise<string>>;
   readonly readSessionModelForUsage: (sessionId: string) => Promise<string>;
   readonly unpricedSubscriptionValueMarker: () => RegionalMoney;
 }
 
-/** Cursor SDK `TokenUsage`: `inputTokens` already includes cache reads and writes. */
-export function cursorUsageToTokens(raw: unknown, inputIncludesCache = true): {
+export function nativeSubscriptionUsageToTokens(raw: unknown): {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -31,14 +29,11 @@ export function cursorUsageToTokens(raw: unknown, inputIncludesCache = true): {
     const n = Number(value[key]);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   };
-  const input = count('inputTokens');
-  const cacheReadTokens = count('cacheReadTokens');
-  const cacheCreateTokens = count('cacheWriteTokens');
   return {
-    inputTokens: inputIncludesCache ? Math.max(0, input - cacheReadTokens - cacheCreateTokens) : input,
+    inputTokens: count('inputTokens'),
     outputTokens: count('outputTokens'),
-    cacheReadTokens,
-    cacheCreateTokens,
+    cacheReadTokens: count('cacheReadTokens'),
+    cacheCreateTokens: count('cacheWriteTokens'),
   };
 }
 
@@ -48,14 +43,14 @@ export function cursorUsageToTokens(raw: unknown, inputIncludesCache = true): {
  * the model's standard API tariff is unambiguous across buckets.
  */
 export async function recordSessionNativeSubscriptionTurnUsage(
-  deps: RecordSessionCursorTurnUsageDeps,
+  deps: RecordSessionNativeSubscriptionTurnUsageDeps,
   session: Session,
   event: AgentEvent,
   clientId: string | undefined,
 ): Promise<void> {
   const source = event.source;
-  if ((source !== 'cursor' && source !== 'antigravity') || (event.type !== 'done' && event.type !== 'error')) return;
-  if (source === 'antigravity' && event.type === 'error' &&
+  if (source !== 'antigravity' || (event.type !== 'done' && event.type !== 'error')) return;
+  if (event.type === 'error' &&
       (event.data as { isTerminal?: boolean } | undefined)?.isTerminal !== true) return;
   const owner = captureDataOwnerBroadcastScope();
   const turnContext = deps.turnUsageContextBySession.get(session.id) ?? captureTurnUsageContext(session.id);
@@ -63,7 +58,7 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   const modelPromise =
     deps.turnModelPromiseBySession.get(session.id) ?? deps.readSessionModelForUsage(session.id);
   deps.turnModelPromiseBySession.delete(session.id);
-  const tokens = cursorUsageToTokens((event.data as { usage?: unknown } | undefined)?.usage, source === 'cursor');
+  const tokens = nativeSubscriptionUsageToTokens((event.data as { usage?: unknown } | undefined)?.usage);
   if (!tokens) return;
   const totalTokens = tokens.inputTokens + tokens.outputTokens + tokens.cacheReadTokens + tokens.cacheCreateTokens;
   if (totalTokens <= 0) return;
@@ -79,12 +74,10 @@ export async function recordSessionNativeSubscriptionTurnUsage(
   }
   if (!isDataOwnerBroadcastScopeCurrent(owner)) return;
 
-  const money = source === 'antigravity'
-    ? estimateAntigravitySubscriptionValue(registry, model, tokens, at)
-    : nativeSubscriptionApiValue(registry, source, model, tokens, at);
+  const money = estimateAntigravitySubscriptionValue(registry, model, tokens, at);
   const details = buildTurnUsageDetails({
     ...turnBillingSource(turnContext, 'subscription'),
-    ...(source === 'antigravity' && turnContext.providerId !== source
+    ...(turnContext.providerId !== source
       ? { providerId: source, providerName: 'Agy' } : {}),
     ...tokens,
     model,
@@ -95,7 +88,7 @@ export async function recordSessionNativeSubscriptionTurnUsage(
     agentKind: source,
     // Preserve separate counters for Agy turns whose tariff was unavailable.
     // History can estimate those tokens when a dated quote becomes available.
-    model: source === 'cursor' || money?.amount ? nativeSubscriptionUsageModelKey(model) : model,
+    model: money?.amount ? nativeSubscriptionUsageModelKey(model) : model,
     money: money ?? deps.unpricedSubscriptionValueMarker(),
     inputTokensDelta: tokens.inputTokens,
     outputTokensDelta: tokens.outputTokens,

@@ -17,7 +17,7 @@ export interface ModelDefinition {
   description: string;
   efforts: readonly Effort[];
   defaultEffort: Effort | null;
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity';
   contextWindow?: number;
   supportsFastMode?: boolean;
   /** 目录展示排序;缺省排末尾(见 getDefaultModelForVendor)。 */
@@ -29,10 +29,10 @@ export interface ModelDefinition {
    * 解耦)。缺省 = 不作为默认。getDefaultModelForVendor / newSessionDefaultModelId 据它选默认;
    * Pi 只接受自己的 v3 标记，不借用其它 Agent 的默认策略。
    */
-  newSessionDefault?: ('claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity')[];
+  newSessionDefault?: ('claude-code' | 'codex' | 'pi' | 'antigravity')[];
 }
 
-function toLegacy(m: ModelDescriptor, vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): ModelDefinition {
+function toLegacy(m: ModelDescriptor, vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity'): ModelDefinition {
   return {
     id: m.id,
     label: m.displayName,
@@ -58,7 +58,6 @@ function allCachedModels(deviceId?: string): ModelDefinition[] {
     ...(cc?.availableModels ?? []).map((m) => toLegacy(m, 'cc')),
     ...(codex?.availableModels ?? []).map((m) => toLegacy(m, 'codex')),
     ...(getCachedCapabilities('pi', deviceId)?.availableModels ?? []).map((m) => toLegacy(m, 'pi')),
-    ...(getCachedCapabilities('cursor', deviceId)?.availableModels ?? []).map((m) => toLegacy(m, 'cursor')),
     ...(getCachedCapabilities('antigravity', deviceId)?.availableModels ?? []).map((m) => toLegacy(m, 'antigravity')),
   ];
 }
@@ -107,12 +106,12 @@ export function getModelById(modelId: string, deviceId?: string): ModelDefinitio
 }
 
 /** vendor → capabilities 缓存的 agent 键(pi 有自己的能力清单)。 */
-function agentKindForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
+function agentKindForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity'): 'claude-code' | 'codex' | 'pi' | 'antigravity' {
   return vendorKey === 'cc' ? 'claude-code' : vendorKey;
 }
 
 export function getModelsForVendor(
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity',
   deviceId?: string,
 ): readonly ModelDefinition[] {
   // 直接读该 vendor 对应 agent 的能力缓存 —— 不经 allCachedModels(后者只聚合 cc/codex 供
@@ -141,8 +140,8 @@ function firstByCatalogOrder(models: readonly ModelDefinition[]): ModelDefinitio
 
 /** vendor → 新对话默认所依据的目录 Agent 标记。 */
 function defaultMarkerAgentForVendor(
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
-): 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity',
+): 'claude-code' | 'codex' | 'pi' | 'antigravity' {
   if (vendorKey === 'cc') return 'claude-code';
   return vendorKey;
 }
@@ -158,7 +157,7 @@ function defaultMarkerAgentForVendor(
  * 本函数返回 null、默认行为不变。
  */
 export function newSessionDefaultModelId(
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity',
   deviceId?: string,
 ): string | null {
   const agent = defaultMarkerAgentForVendor(vendorKey);
@@ -180,7 +179,7 @@ export function newSessionDefaultModelId(
  * 入口复用校准后的结果(resolveNewTaskDefaultRoute),不直接读这里的种子。
  */
 export function getDefaultModelForVendor(
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity',
   deviceId?: string,
 ): ModelDefinition {
   const list = getModelsForVendor(vendorKey, deviceId);
@@ -213,9 +212,8 @@ const COLD_START_CODEX_MODEL_ID = 'gpt-5.6-sol';
 const COLD_START_PI_MODEL_ID = 'claude-sonnet-5';
 
 /** 冷启动占位 id 的只读导出（newMakerDraft 的种子默认复用，避免另一处写死）。 */
-export function coldStartModelIdForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): string {
+export function coldStartModelIdForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity'): string {
   if (vendorKey === 'antigravity') return '';
-  if (vendorKey === 'cursor') return ''; // Account discovery is the only source of Cursor model ids.
   return vendorKey === 'codex'
     ? COLD_START_CODEX_MODEL_ID
     : vendorKey === 'pi'
@@ -224,8 +222,7 @@ export function coldStartModelIdForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'cu
 }
 
 /** 冷启动占位的展示名(与占位 id 同源,仅首帧短暂可见)。 */
-function coldStartLabelForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'): string {
+function coldStartLabelForVendor(vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity'): string {
   if (vendorKey === 'antigravity') return 'Agy';
-  if (vendorKey === 'cursor') return 'Cursor';
   return vendorKey === 'codex' ? 'GPT-5.6-Sol' : vendorKey === 'pi' ? 'Sonnet 5' : 'Opus 5';
 }

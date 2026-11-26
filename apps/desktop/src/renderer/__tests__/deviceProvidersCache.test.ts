@@ -316,20 +316,18 @@ it('expires only the affected agent kind and keeps healthy in-flight kinds', asy
     await all;
     expect(capabilities.getCachedCapabilities('codex', 'host')).not.toBeNull();
     expect(capabilities.getCachedCapabilities('pi', 'host')).not.toBeNull();
-    expect(capabilities.getCachedCapabilities('cursor', 'host')).not.toBeNull();
     expect(capabilities.getCachedCapabilities('antigravity', 'host')).not.toBeNull();
-    expect(invoke).toHaveBeenCalledTimes(5);
+    expect(invoke).toHaveBeenCalledTimes(4);
 
     const beforeExpiry = events.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
     // Pi has no mounted consumer: retired without a read. Codex is mounted: one bounded re-read
     // (2026-11-23, same as provider catalogs and Mobile) instead of a terminal error.
     expect(capabilities.getCachedCapabilities('pi', 'host')).toBeNull();
-    expect(capabilities.getCachedCapabilities('cursor', 'host')).toBeNull();
     expect(capabilities.getCachedCapabilities('antigravity', 'host')).toBeNull();
     expect(events.mock.calls.slice(beforeExpiry).map(([event]) => event.status)).toEqual(['loading', 'ready']);
     expect(capabilities.getCachedCapabilities('codex', 'host')).not.toBeNull();
-    expect(invoke).toHaveBeenCalledTimes(6);
+    expect(invoke).toHaveBeenCalledTimes(5);
   } finally {
     off();
     capabilities.evictAllRemoteCapabilities();
@@ -1061,11 +1059,11 @@ describe('provider visibility readiness retry', () => {
   });
 });
 
-// Unit regression (2026-11-15): M5 Cursor models disappeared after successful
-// remote reads because both parsers rejected the SDK's unknown-window sentinel 0.
+// Unit regression (2026-11-15): remote models disappeared after successful
+// remote reads because both parsers rejected the unknown-window sentinel 0.
 // Existing remote fixtures all had positive windows. Exercise both public cache
 // reads and the picker model union; malformed capacities must still be removed.
-it('keeps remote Cursor models with unknown context windows in both catalogs', async () => {
+it('keeps remote Antigravity models with unknown context windows in both catalogs', async () => {
   const rows = [
     { id: 'known', contextWindow: 200000 },
     { id: 'unknown', contextWindow: 0 },
@@ -1075,26 +1073,26 @@ it('keeps remote Cursor models with unknown context windows in both catalogs', a
   ];
   const invoke = vi.fn(async (_device: string, channel: string, args: unknown[]) => {
     if (channel === 'maker:get-capabilities') return {
-      availableModels: args[0] === 'cursor' ? rows.map(row => ({ ...row,
+      availableModels: args[0] === 'antigravity' ? rows.map(row => ({ ...row,
         displayName: row.id, efforts: [], defaultEffort: null })) : [],
       hasFastMode: false, effortLevels: [], permissionModes: [],
     };
     if (channel === 'maker:provider:list') return { providers: [{
-      id: 'cursor', name: 'Cursor', source: 'builtin', agents: ['cursor'],
-      connected: true, auth: { method: 'oauth' }, routing: { cursor: {} },
-      models: { cursor: rows.map(row => ({ ...row, name: row.id,
+      id: 'antigravity', name: 'Antigravity', source: 'builtin', agents: ['antigravity'],
+      connected: true, auth: { method: 'oauth' }, routing: { antigravity: {} },
+      models: { antigravity: rows.map(row => ({ ...row, name: row.id,
         efforts: [], defaultEffort: null })) },
     }] };
     throw new Error('Unexpected channel: ' + channel);
   });
   vi.stubGlobal('window', { electronAPI: { deviceLink: { invoke } } });
-  await Promise.all([providerCache.prefetchDeviceProviders('m5-cursor'),
-    capabilities.prefetchDeviceCapabilities('m5-cursor')]);
-  const models = capabilities.getCachedCapabilities('cursor', 'm5-cursor')?.availableModels;
+  await Promise.all([providerCache.prefetchDeviceProviders('m5-agy'),
+    capabilities.prefetchDeviceCapabilities('m5-agy')]);
+  const models = capabilities.getCachedCapabilities('antigravity', 'm5-agy')?.availableModels;
   expect.soft(models?.map(row => [row.id, row.contextWindow])).toEqual([
     ['known', 200000], ['unknown', 0],
   ]);
-  const providers = providerCache.getCachedDeviceProviders('m5-cursor')?.providers ?? [];
-  expect(visibleModelUnion(providers, 'cursor', () => true).map(row => [row.id, row.contextWindow]))
+  const providers = providerCache.getCachedDeviceProviders('m5-agy')?.providers ?? [];
+  expect(visibleModelUnion(providers, 'antigravity', () => true).map(row => [row.id, row.contextWindow]))
     .toEqual([['known', 200000], ['unknown', 0]]);
 });

@@ -42,15 +42,15 @@ import { isProviderShareAgentDeviceId } from '../../../shared/providerShare';
 import { useBotTranslation } from './botPronounContext';
 import { ResetGroupButton } from '@/components/ui/reset-buttons';
 
-function vendorFor(harness: BotHarness): 'cc' | 'codex' | 'pi' | 'cursor' {
+function vendorFor(harness: BotHarness): 'cc' | 'codex' | 'pi' {
   return harness === 'claude' ? 'cc' : harness === 'acp' ? 'pi' : harness;
 }
 
-function harnessFor(vendor: 'cc' | 'codex' | 'pi' | 'cursor'): BotHarness {
+function harnessFor(vendor: 'cc' | 'codex' | 'pi'): BotHarness {
   return vendor === 'cc' ? 'claude' : vendor;
 }
 
-function agentKindFor(vendor: 'cc' | 'codex' | 'pi' | 'cursor'): AgentKind {
+function agentKindFor(vendor: 'cc' | 'codex' | 'pi'): AgentKind {
   return vendor === 'cc' ? 'claude-code' : vendor;
 }
 
@@ -398,7 +398,7 @@ export function BotModelChainEditor({
             },
           } : undefined}
           onUnifiedSelect={(selection) => {
-            if (selection.engine === 'cursor' || selection.engine === 'antigravity' || !visibleVendors.includes(selection.engine)) return;
+            if (selection.engine === 'antigravity' || !visibleVendors.includes(selection.engine)) return;
             replace(index, {
               harness: harnessFor(selection.engine),
               ...(route.agentDeviceId || selection.agentDevice ? { agentDeviceId: selection.agentDevice?.deviceId ?? null } : {}),

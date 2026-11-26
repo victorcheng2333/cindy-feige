@@ -3276,7 +3276,7 @@ function sweepStaleTaskUpdates(sessionId: string): boolean {
 function recallParkedTaskUpdates(
   sessionId: string,
   data: unknown,
-  source: 'claude-code' | 'codex' | 'pi' | 'cursor' | undefined,
+  source: 'claude-code' | 'codex' | 'pi' | undefined,
   prevMap: ReadonlyMap<string, AgentTaskUpdate> | undefined,
 ): ReadonlyMap<string, AgentTaskUpdate> | undefined {
   const parkedMap = sessionParkedTaskUpdates.get(sessionId);
@@ -5314,7 +5314,7 @@ export const remoteSessionStore = {
         return;
       }
       const rawSource = readString(event, 'source');
-      const source = rawSource === 'cursor' || rawSource === 'codex' || rawSource === 'claude-code' || rawSource === 'pi'
+      const source = rawSource === 'codex' || rawSource === 'claude-code' || rawSource === 'pi'
         ? rawSource
         : undefined;
       const next = applyAgentTaskUpdateEvent(

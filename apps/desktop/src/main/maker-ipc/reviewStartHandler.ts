@@ -150,7 +150,7 @@ export interface ReviewFailureReason {
 }
 
 export interface PreparedReviewRun {
-  sourceAgentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  sourceAgentKind: 'cc' | 'codex' | 'pi' | 'antigravity';
   prompt: string;
   /** What the Reviewer task shows as its input. The full prompt is model input only. */
   inputSummary?: string;

@@ -1394,7 +1394,7 @@ export function registerProviderHandlers(
         dataOwnerId,
         ownerGeneration: ownerAtIngress?.generation ?? 0,
         ...(scope === 'available' ? { deferredProviderIds } : {}),
-        providers: providers.filter(provider => trusted || (provider.id !== 'cursor' && provider.id !== 'antigravity') || (
+        providers: providers.filter(provider => trusted || provider.id !== 'antigravity' || (
           getDeviceLinkInvokeContext()?.sameAccountController === true && !getDeviceLinkInvokeContext()?.sharedTask
         )).map((provider) => {
           const safe = withoutProviderHeaderCredentials(provider);
@@ -2195,8 +2195,7 @@ export function registerProviderHandlers(
       typeof target.providerId !== 'string' ||
       target.providerId.length === 0 ||
       target.providerId.length > MAX_DISABLE_ID_LENGTH ||
-      (target.agent !== 'cursor' &&
-        !(target.agent === 'antigravity' && target.providerId === 'antigravity') &&
+      (!(target.agent === 'antigravity' && target.providerId === 'antigravity') &&
         !VALID_AGENTS.includes(String(target.agent))) ||
       typeof target.modelId !== 'string' ||
       target.modelId.length === 0 ||

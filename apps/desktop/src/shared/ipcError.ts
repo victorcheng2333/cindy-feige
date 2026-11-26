@@ -15,13 +15,6 @@ export function extractIpcError(err: unknown): IpcError | null {
 }
 
 const UNSUPPORTED_CAPABILITY_PRESENTATION_KEYS: Record<string, string> = {
-  'Cursor does not support read-only reference directories': 'CURSOR_EXTRA_DIRS_UNSUPPORTED',
-  'Cursor handoff supports ordinary desktop tasks only': 'CURSOR_HANDOFF_UNSUPPORTED',
-  'Cursor requires execution on the task computer': 'CURSOR_LOCAL_EXECUTION_REQUIRED',
-  'Cursor requires execution on the controlled computer and a same-account controller':
-    'CURSOR_LOCAL_EXECUTION_REQUIRED',
-  'Cursor requires the Cursor connection': 'CURSOR_CONNECTION_REQUIRED',
-  'Choose Auto, Full access or Plan before switching to Cursor': 'CURSOR_PERMISSION_MODE_UNSUPPORTED',
   'Review task settings are fixed to the source task': 'REVIEW_SETTINGS_FIXED',
   'archived task cannot change harness': 'ARCHIVED_HARNESS_SWITCH_UNSUPPORTED',
   'shared task guests cannot move the agent to another computer':

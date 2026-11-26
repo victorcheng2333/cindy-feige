@@ -1,6 +1,6 @@
 import { removeAntigravityTaskState } from '../maker-host/antigravity-state.js';
 import { antigravityModelDiscoveryFailure, readAntigravityConnection, readAntigravityCliState, readAntigravityCliVersion, updateAntigravityCli } from '../maker-host/antigravity-host.js';
-import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController, supportsControlledCursorCreation, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
+import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController } from '../localDb/ipc/antigravityTaskCreation.js';
 import { retireClaudeAccount, finalizeDeletedClaudeAccount, readClaudeAccountRecord, claudeAccountHome } from '../maker-host/claude-account-auth.js';
 import { assertSessionTreeOwner, navigateAndRehydrateSessionTree } from './sessionTreeNavigation.js';
 import { bindSessionUsageAccount } from '../usage/sessionUsageOwner.js';
@@ -3511,7 +3511,7 @@ export function stopPiIdleReleaseWatcher(): void {
 }
 
 function requireAgentKind(value: unknown, errorMessage = 'agentKind required'): AgentKind {
-  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity') return value;
+  if (value === 'claude-code' || value === 'codex' || value === 'pi' || value === 'antigravity') return value;
   throwIpcError('INVALID_PARAMS', errorMessage);
 }
 
@@ -6963,7 +6963,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     const registered = maker.listAvailableAgents();
     const disabled = readDisabledHarnesses();
     // 已知的 Harness 固定在前;关掉清单里本版本还不认识的 id 不展示(仍保留在文件里)。
-    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', 'cursor', 'antigravity', ...registered])];
+    const kinds = [...new Set<string>(['claude-code', 'codex', 'pi', 'antigravity', ...registered])];
     return {
       harnesses: kinds.map((kind) => ({
         kind,
@@ -7381,7 +7381,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       supportsControlledAntigravityCreation: agentKind === 'antigravity' && isSameAccountTaskController(),
       // Agy startSession falls back to Default and persists it; old hosts reject unoffered modes.
       supportsAntigravityPermissionFallback: agentKind === 'antigravity',
-      supportsControlledCursorCreation: agentKind === 'cursor' && supportsControlledCursorCreation(),
       // host 在 SET_MODEL 的 session lock 内执行 90% 模型窗口保护；旧 host 缺省 false，
       // Mobile 据此对已知受压缩窗降级为 fail closed。
       supportsModelWindowSwitchGuard: true,
@@ -7458,8 +7457,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       selectDraftAgent?: unknown;
       taskProviderId?: unknown;
     };
-    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' && p.agent !== 'antigravity') {
-      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor|antigravity');
+    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'antigravity') {
+      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|antigravity');
     }
     if (p.agent === 'antigravity') assertAntigravityTaskCreationAllowed({});
     if (p.providerId !== undefined && typeof p.providerId !== 'string') {
@@ -7547,8 +7546,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (typeof p.sessionId !== 'string' || !p.sessionId) {
       throwIpcError('INVALID_PARAMS', 'sessionId required');
     }
-    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' && p.agent !== 'antigravity') {
-      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|cursor|antigravity');
+    if (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'antigravity') {
+      throwIpcError('INVALID_PARAMS', 'agent must be claude-code|codex|pi|antigravity');
     }
     if (p.agent === 'antigravity') assertAntigravityTaskCreationAllowed({});
     if (typeof p.providerId !== 'string' || !p.providerId) {
@@ -7588,7 +7587,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     if (
       typeof p.sessionId !== 'string' ||
       !p.sessionId ||
-      (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'cursor' && p.agent !== 'antigravity') ||
+      (p.agent !== 'claude-code' && p.agent !== 'codex' && p.agent !== 'pi' && p.agent !== 'antigravity') ||
       typeof p.providerId !== 'string' ||
       !p.providerId ||
       typeof p.model !== 'string' ||
@@ -10346,9 +10345,8 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     assertSessionCreationCurrent();
     await ensureRemoteHostReady(remoteHostIdToEnsure);
     assertSessionCreationCurrent();
-    const ensureAgentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | null =
+    const ensureAgentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity' | null =
       session?.agentKind === 'antigravity' ||
-      session?.agentKind === 'cursor' ||
       session?.agentKind === 'codex' ||
       session?.agentKind === 'claude-code' ||
       session?.agentKind === 'pi'
@@ -10356,7 +10354,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         : createOpts && typeof createOpts === 'object'
           ? (() => {
               const ak = (createOpts as { agentKind?: unknown }).agentKind;
-              return ak === 'antigravity' || ak === 'cursor' || ak === 'codex' || ak === 'claude-code' || ak === 'pi' ? ak : null;
+              return ak === 'antigravity' || ak === 'codex' || ak === 'claude-code' || ak === 'pi' ? ak : null;
             })()
           : null;
     if (!ensureAgentKind) return;
@@ -10373,7 +10371,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       return;
     }
 
-    if (ensureAgentKind === 'cursor' || ensureAgentKind === 'antigravity') return;
+    if (ensureAgentKind === 'antigravity') return;
 
     // pi 远端:走通用 silent install(probe 远端 pi 二进制,缺/版本不符则安装)。
     await ensureRemoteAgentInstalledOrInstall(remoteHostIdToEnsure, ensureAgentKind);
@@ -10693,7 +10691,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     bootstrapSession: async (co) => {
       assertSessionCreationCurrent();
       if (co.agentKind === 'antigravity') assertAntigravityTaskCreationAllowed(co);
-      if (co.agentKind === 'cursor') assertCursorTaskCreationAllowed(co);
       const preparedId = co.id && controlledAgyDrafts.has(co.id) ? co.id : undefined;
       if (preparedId) {
         const prepared = controlledAgyDrafts.get(preparedId)!;
@@ -10912,7 +10909,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         await getDbClient().drizzle.insert(sessions).values(row).run();
       },
       bootstrapSession: async (opened, assertCurrent, modelGroupStart) => {
-        const agentKind = opened.agentKind === 'antigravity' || opened.agentKind === 'cursor' || opened.agentKind === 'codex' || opened.agentKind === 'pi'
+        const agentKind = opened.agentKind === 'antigravity' || opened.agentKind === 'codex' || opened.agentKind === 'pi'
           ? opened.agentKind
           : 'claude-code';
         await bootstrapSession(buildCreateOptsWithStderr({
@@ -11304,7 +11301,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         ...(additionalWorkingDirs.length > 0 ? { additionalWorkingDirs } : {}),
       };
       return {
-        sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+        sourceAgentKind: source.agentKind as 'cc' | 'codex' | 'pi' | 'antigravity',
         prompt: builtPrompt.prompt,
         replyLanguage: builtPrompt.replyLanguage,
         inputSummary: buildReviewInputSummary({
@@ -11783,12 +11780,6 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
     },
     assertAgentDeviceRouteUsable,
     describeAgentDevice,
-    assertCursorHandoffDirectories: async (sessionId) => {
-      const grants = directoryGrantsForRuntime(await readSessionExtraDirsFromDb(sessionId));
-      if (grants.extraDirs?.length) {
-        throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor does not support read-only reference directories');
-      }
-    },
     // Read-only folders only widen Cindy review for Agy. Writable folders become Agy's
     // ACP additionalDirectories, so the installed agy must advertise that capability.
     assertAntigravityHandoffDirectories: async (sessionId) => {
@@ -13792,12 +13783,11 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         resolveLocal: async input => {
           const execution = await resolveSessionExecution({ agentKind: input.agentKind, model: input.model, effort: input.effort, fastMode: input.fast });
           if (execution.agentKind === 'antigravity') throw Object.assign(new Error('Antigravity is available for local desktop tasks.'), { code: 'INVALID_ARGS' });
-          if (execution.agentKind === 'cursor') throw Object.assign(new Error('Cursor supports local desktop tasks only'), { code: 'INVALID_ARGS' });
           return { ...execution, agentKind: execution.agentKind };
         },
         readDefault: () => {
           const route = getSelectedNewMakerRoute(activeOwnerScopeKey());
-          if (!route || route.harness === 'cursor') return undefined;
+          if (!route) return undefined;
           return { agentKind: route.harness === 'claude' ? 'claude-code' : route.harness,
             model: route.model, effort: (route.effort || undefined) as Effort | undefined, fastMode: route.fastMode };
         },
@@ -14765,7 +14755,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         execution ??= await resolveSessionExecution(selection, sourceSessionId);
         assertPlugin(pluginId);
-        if (!execution.providerId || execution.agentKind === 'cursor' || execution.agentKind === 'antigravity') return routeUnavailable();
+        if (!execution.providerId || execution.agentKind === 'antigravity') return routeUnavailable();
         return { ...execution, agentKind: execution.agentKind === 'claude-code' ? 'cc' : execution.agentKind,
           providerId: execution.providerId, effort: execution.effort ?? '' };
       } catch (error) {
@@ -15000,7 +14990,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         // A queued input will execute the accepted next-send route. Keep its
         // receipt stable as a deferred model/Harness switch reaches that boundary.
         const selected = runtime?.pendingMutation?.profile ?? runtime?.effective;
-        if (selected?.agentKind === 'cursor' || selected?.agentKind === 'antigravity') return null;
+        if (selected?.agentKind === 'antigravity') return null;
         let resolvedConfig: PluginTaskRoute = selected
           ? { agentKind: selected.agentKind === 'claude-code' ? 'cc' : selected.agentKind,
             ...(selected.agentDeviceId ? { agentDeviceId: selected.agentDeviceId } : {}),
@@ -16326,8 +16316,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       };
       // 'acp' = the first Worker runs on a plugin engine (docs/plans/acp-plugin-bridge.md).
       const workerAgent: EngineKind =
-        body.workerAgent === 'cursor' ? 'cursor'
-          : body.workerAgent === 'antigravity' ? 'antigravity'
+        body.workerAgent === 'antigravity' ? 'antigravity'
             : body.workerAgent === 'codex' ? 'codex'
               : body.workerAgent === 'pi' ? 'pi'
                 : body.workerAgent === 'acp' ? 'acp' : 'claude-code';
@@ -18034,7 +18023,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       const binding = row && await activeModelGroupBinding(sessionId, row);
       if (!binding || !current.providerId || current.agentDeviceId) return null;
       const currentAgentKind = makerToDbAgentKind(current.agentKind);
-      if (currentAgentKind === 'cursor' || currentAgentKind === 'antigravity') return null;
+      if (currentAgentKind === 'antigravity') return null;
       const excluded = new Set(visited.map(key => key.replace(/^claude-code\u0000/, 'cc\u0000')));
 
       const offer = await readModelGroupRecoveryOffer(sessionId, { visited: excluded, ...recovery,
@@ -18050,7 +18039,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         labels: { from: offer.fromLabel ?? current.model, to: `${offer.modelName} · ${offer.sourceName}` },
         bindCommittedRoute: profile => {
           const agentKind = makerToDbAgentKind(profile.agentKind);
-          if (agentKind === 'cursor' || agentKind === 'antigravity') return;
+          if (agentKind === 'antigravity') return;
           if (profile.providerId) bindModelGroupSession(sessionId, binding.selection, modelGroupCandidateKey({
             agentKind, model: profile.model, providerId: profile.providerId,
           }));
@@ -18619,7 +18608,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
         }
         if (executionDeviceId) {
           if (!orcaRemoteWorkersForHost) throw new Error('[HOST_NOT_READY] Worker service is not ready');
-          if (agent === 'cursor' || agent === 'antigravity') throwIpcError('INVALID_PARAMS', 'The selected harness does not support remote workers');
+          if (agent === 'antigravity') throwIpcError('INVALID_PARAMS', 'The selected harness does not support remote workers');
           const result = await orcaRemoteWorkersForHost.readModels(executionDeviceId, {
             ...(agent ? { agent } : {}), agentDeviceId: requestedAgentDeviceId ?? null,
           });
@@ -23076,7 +23065,7 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       ? atomicSelection.effort
       : ((runtimeStatus.effort ?? null) as SessionRuntimeProfile['effort']);
     const targetFastMode = atomicSelection?.fastMode ?? runtimeStatus.fastMode;
-    const agentKind = dbToMakerAgentKind(runtimeStatus.agentKind as 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity');
+    const agentKind = dbToMakerAgentKind(runtimeStatus.agentKind as 'cc' | 'codex' | 'pi' | 'antigravity');
     if (internalOptions.source === 'user' && !internalOptions.applyingUserSelectionOnSend) {
       assertRuntimeOwnerCurrent();
       assertSharedTaskCurrent.admit();

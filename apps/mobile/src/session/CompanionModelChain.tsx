@@ -136,7 +136,7 @@ export function CompanionModelPicker({ visible, deviceId, route, onClose, onClos
     effort: selection.effort ?? '',
     fastMode: false,
   });
-  const select = async (config: MobileModelConfiguration, source?: { deviceId: string | null }) => config.agent === 'antigravity' || config.agent === 'cursor' ? false : onSelect({ agentDeviceId: source?.deviceId ?? null, harness: config.agent === 'claude-code' ? 'claude' : config.agent, model: config.modelId, providerId: config.providerId, effort: config.effort, fastMode: config.fast });
+  const select = async (config: MobileModelConfiguration, source?: { deviceId: string | null }) => config.agent === 'antigravity' ? false : onSelect({ agentDeviceId: source?.deviceId ?? null, harness: config.agent === 'claude-code' ? 'claude' : config.agent, model: config.modelId, providerId: config.providerId, effort: config.effort, fastMode: config.fast });
   // 选组只记下组；这一项暂以原来的模型(新加的一项用组里第一个来源)作存下的具体模型，保存时伙伴所在的电脑换成组此刻会选的来源。
   const selectGroup = (id: string) => {
     const group = modelGroups?.find(item => item.id === id);

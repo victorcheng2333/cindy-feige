@@ -496,7 +496,7 @@ describe('mobile home desktop-first surface', () => {
     expect(vendorIconSource).not.toContain('iconWidth');
     expect(agentMarkSource).toContain('width={size}');
     expect(agentMarkSource).toContain('height={size}');
-    expect(agentMarkSource).toContain("viewBox={agentKind === 'cursor' ? '0 0 466.73 532.09' : '0 0 24 24'}");
+    expect(agentMarkSource).toContain('viewBox="0 0 24 24"');
     expect(vendorPathsSource).toContain('CLAUDE_AGENT_PATH');
     expect(vendorPathsSource).toContain('CODEX_AGENT_FLOWER_PATH');
     expect(vendorPathsSource).toContain('CODEX_AGENT_PROMPT_PATH');
@@ -509,7 +509,7 @@ describe('mobile home desktop-first surface', () => {
     expect(vendorIconSource).toContain("import { MobileAgentMark } from './MobileAgentMark';");
     // vendor → Agent mark 的映射要带上 pi,不能把 π 吞成 Claude 脸。
     expect(vendorIconSource).toContain(
-      "const agentKind: AgentMarkKind = vendor === 'antigravity' || vendor === 'cursor' || vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';",
+      "const agentKind: AgentMarkKind = vendor === 'antigravity' || vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';",
     );
     expect(vendorIconSource).toContain('<MobileAgentMark agentKind={agentKind} color={color} size={size} />');
     expect(vendorIconSource).not.toContain('viewBox="136 137 282 158"');

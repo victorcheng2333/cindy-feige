@@ -384,7 +384,6 @@ export function createHostRuntimeSelection(deps: HostRuntimeSelectionDeps) {
     admitPluginEngineTarget: undefined,
     admitRemotePluginEngineTarget: undefined,
     describePluginEngine: undefined,
-    assertCursorHandoffDirectories: undefined,
     assertAntigravityHandoffDirectories: undefined,
     resolveHandoffWindow: async ({ sessionId, agent, model, providerId, agentDeviceId }) => {
       if (agentDeviceId) return null;

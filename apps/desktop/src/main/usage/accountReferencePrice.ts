@@ -156,7 +156,7 @@ export function providerRegistryTariffEndedAt(
 ): boolean {
   if (!registry) return false;
   const day = calendarDate(at);
-  const registryAgent = agent === 'pi' || agent === 'cursor' || agent === 'antigravity' ? undefined : agent;
+  const registryAgent = agent === 'pi' || agent === 'antigravity' ? undefined : agent;
   for (const catalogId of candidateCatalogIds(provider, providerId, modelId, registry, agent)) {
     for (const candidateModelId of candidateRegistryModelIds(catalogId, modelId)) {
       const matched = findModelRegistryRoute(registry, catalogId, candidateModelId, registryAgent);

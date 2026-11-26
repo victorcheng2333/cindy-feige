@@ -12,7 +12,7 @@ function isPluginEngineProviderId(value: unknown): value is string {
  * No credentials or provider metadata belong in this record.
  */
 export interface ModelRoute {
-  harness: 'claude' | 'codex' | 'pi' | 'cursor';
+  harness: 'claude' | 'codex' | 'pi';
   model: string;
   providerId: string | null;
   effort: string;
@@ -76,7 +76,7 @@ export function normalizeCompanionModelRoute(value: unknown): CompanionModelRout
   }
   if (providerId?.startsWith(ACP_PLUGIN_PROVIDER_PREFIX)) return null;
   return {
-    harness: record.harness === 'cursor' || record.harness === 'codex' || record.harness === 'pi' ? record.harness : 'claude',
+    harness: record.harness === 'codex' || record.harness === 'pi' ? record.harness : 'claude',
     model: record.model.trim(),
     providerId,
     effort: typeof record.effort === 'string' ? record.effort : '',

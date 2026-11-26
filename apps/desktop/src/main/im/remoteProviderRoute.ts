@@ -18,7 +18,7 @@ export async function readImRemoteAutomaticDefaults<T extends ImDefaultSettings>
   const providers = await readDeviceProviderViews(remoteBackgroundInvoke, options.agentDeviceId, {
     visibleOnly: true,
   });
-  if (options.agentKind === 'cursor' || options.agentKind === 'antigravity') return null;
+  if (options.agentKind === 'antigravity') return null;
   const resolved = resolveAutomaticImSettings(settings, providers, { ...options, agentKind: options.agentKind });
   if (!resolved) return null;
   return {

@@ -16,13 +16,10 @@ import { ConfirmDialogProvider } from '@/components/ui/confirm-dialog-provider';
 
 const getBinaryVersion = vi.fn();
 const getState = vi.fn();
-const getCursorState = vi.fn();
 const getAgyVersion = vi.fn();
 const getAgyState = vi.fn();
 const updateAgy = vi.fn();
 const setHarnessEnabled = vi.fn();
-const installCursor = vi.fn();
-const cursorState = { currentVersion: '1.3.1', bundledVersion: '1.3.1', source: 'bundled', latestVersion: null, checkedAt: null, checkFailed: false, updateAvailable: false, operation: null };
 const agyState = { version: '1.5.13', latestVersion: '1.5.13', updateAvailable: false, checkedAt: 1700000000000, checkFailed: false };
 const relaunchForHarnessUpdate = vi.fn();
 const prepareHarnessUpdate = vi.fn();
@@ -63,8 +60,6 @@ describe('AboutSection agent binary versions', () => {
     vi.clearAllMocks();
     prepareHarnessUpdate.mockResolvedValue({ ready: true });
     getState.mockResolvedValue({ currentVersion: '0.84.4', restartRequired: false, official: { release: null }, upstream: { release: null }, operation: null });
-    getCursorState.mockReset().mockResolvedValue(cursorState);
-    installCursor.mockReset();
     getAgyVersion.mockReset().mockResolvedValue('1.5.13');
     getAgyState.mockReset().mockResolvedValue(agyState);
     updateAgy.mockReset().mockResolvedValue({ status: 'updated', version: '1.6.0' });
@@ -83,7 +78,6 @@ describe('AboutSection agent binary versions', () => {
         ] }),
         setHarnessEnabled,
         onAgentsChanged: vi.fn(),
-        cursorSdk: { getState: getCursorState, install: installCursor },
         piKernel: { getState },
         agent: {
           getBinaryVersion,
@@ -97,7 +91,7 @@ describe('AboutSection agent binary versions', () => {
     Reflect.deleteProperty(window, 'electronAPI');
   });
 
-  it('requests and renders Claude Code, Codex, Pi, and Cursor SDK versions', async () => {
+  it('requests and renders Claude Code, Codex, and Pi versions', async () => {
     getBinaryVersion.mockImplementation((kind: string) =>
       Promise.resolve({
         kind,
@@ -124,34 +118,7 @@ describe('AboutSection agent binary versions', () => {
       expect(screen.getByText('2.1.258')).toBeTruthy();
       expect(screen.getByText('0.145.0')).toBeTruthy();
       expect(screen.getByText('0.84.4')).toBeTruthy();
-      expect(screen.getByText('1.3.1')).toBeTruthy();
     });
-    expect(getCursorState).toHaveBeenCalledWith(false);
-    expect(getCursorState).not.toHaveBeenCalledWith(true);
-  });
-
-  // Unit: the new SDK action must really check and install the confirmed version,
-  // without relaunching Cindy. Previously Cursor only offered the harness toggle.
-  it('checks Cursor manually and installs the exact version after confirmation', async () => {
-    mockOnline({});
-    const available = { ...cursorState, latestVersion: '1.4.0', updateAvailable: true };
-    getCursorState.mockImplementation(async (check: boolean) => check ? available : cursorState);
-    installCursor.mockImplementation(async () => {
-      const installed = { ...available, currentVersion: '1.4.0', source: 'managed', updateAvailable: false };
-      getCursorState.mockResolvedValue(installed);
-      return installed;
-    });
-    renderRows(); await screen.findByText('1.3.1');
-    fireEvent.keyDown(screen.getByRole('button', { name: 'settings.about.cursorSdk.manage' }), { key: 'ArrowDown' });
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.about.cursorSdk.check' }));
-    await waitFor(() => expect(getCursorState).toHaveBeenCalledWith(true));
-    await screen.findByText('settings.about.cursorSdk.available');
-    fireEvent.keyDown(screen.getByRole('button', { name: 'settings.about.cursorSdk.manage' }), { key: 'ArrowDown' });
-    fireEvent.click(await screen.findByRole('menuitem', { name: /settings.about.cursorSdk.update/ }));
-    expect(installCursor).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole('button', { name: 'settings.about.cursorSdk.update' }));
-    await waitFor(() => expect(installCursor).toHaveBeenCalledWith({ source: 'upstream', version: '1.4.0' }));
-    expect(relaunchForHarnessUpdate).not.toHaveBeenCalled();
   });
 
   // Unit: the About menu must check for Agy CLI updates, surface the update hint,

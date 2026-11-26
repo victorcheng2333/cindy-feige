@@ -286,8 +286,7 @@ describe('useVendorAuthGate 本机运行时轴', () => {
       maker: { agent: { getStatus }, listProviders: async () => ({ providers: [provider({})] }) },
     });
     const { result } = renderHook(() => useVendorAuthGate());
-    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(5));
-    expect(getStatus).toHaveBeenCalledWith('cursor');
+    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(4));
     expect(getStatus).toHaveBeenCalledWith('antigravity');
     getStatus.mockClear();
 

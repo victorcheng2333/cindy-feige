@@ -6,7 +6,6 @@ import type { prepareShareAvailability } from './providerShareAvailability.js';
 import { parseKimiUsageRequest, isKimiCodingProvider } from '../../shared/kimiCodingUsage.js';
 import { isOpenCodeGoProvider, parseOpenCodeGoUsageRequest } from '../../shared/opencodeGoUsage.js';
 import type { readKimiCodingAccountUsage, readOpenCodeGoAccountUsage } from '../maker-host/provider-account-usage.js';
-import type { cursorConnected, readCursorQuota } from '../maker-host/cursor-auth.js';
 import type { antigravityQuotaAvailable, readAntigravityQuota } from '../maker-host/antigravity-host.js';
 import { PROVIDER_SHARE_INSIGHTS_CHANNEL } from '../../shared/providerShareInsights.js';
 import { sharedTaskRecoveryError } from '../../shared/sharedTaskRecovery.js';
@@ -461,10 +460,8 @@ export interface InboundDispatchPorts {
   prepareShareAvailability?: typeof prepareShareAvailability;
   readKimiCodingAccountUsage?: typeof readKimiCodingAccountUsage;
   readOpenCodeGoAccountUsage?: typeof readOpenCodeGoAccountUsage;
-  readCursorQuota?: typeof readCursorQuota;
   antigravityQuotaAvailable?: typeof antigravityQuotaAvailable;
   readAntigravityQuota?: typeof readAntigravityQuota;
-  cursorConnected?: typeof cursorConnected;
   executeTaskTags: typeof executeTaskTags;
   TASK_TAG_CHANNEL: typeof TASK_TAG_CHANNEL;
   requestFilePeer?: typeof requestFilePeer;
@@ -535,10 +532,8 @@ export function createInboundDispatch(ports: InboundDispatchPorts) {
     prepareShareAvailability = unavailable('prepareShareAvailability'),
     readKimiCodingAccountUsage = unavailable('readKimiCodingAccountUsage'),
     readOpenCodeGoAccountUsage = unavailable('readOpenCodeGoAccountUsage'),
-    readCursorQuota = async () => null,
     antigravityQuotaAvailable = () => false,
     readAntigravityQuota = async () => null,
-    cursorConnected = () => false,
     executeTaskTags,
     TASK_TAG_CHANNEL,
     requestFilePeer = unavailable('requestFilePeer'),
@@ -5475,12 +5470,6 @@ async function executeRemoteInvoke(src: string, payload: InvokePayload | undefin
   // Subscription IPC validates local senders (Claude for named accounts, xAI always).
   // Keep that check; authorized device-link reads use the same injected data readers.
   // 直读注入的 usage reader(cached-first,只读快照,无副作用)。已过三道 gate。
-  if (payload.channel === 'maker:usage:cursor-subscription') {
-    if (!isSameAccountController(src)) return { ok: false, error: { code: 'IPC_ERROR', message: '[FORBIDDEN] Same-account connection required' } };
-    if ((payload.args ?? []).length) return { ok: false, error: { code: 'IPC_ERROR', message: '[INVALID_PARAMS] Cursor quota takes no arguments' } };
-    const snapshot = await readCursorQuota();
-    return { ok: true, result: { providerId: 'cursor', connected: cursorConnected(), status: snapshot ? 'ready' : 'unavailable', snapshot } };
-  }
   if (payload.channel === 'maker:usage:antigravity-subscription') {
     if (!isSameAccountController(src)) return { ok: false, error: { code: 'IPC_ERROR', message: '[FORBIDDEN] Same-account connection required' } };
     if ((payload.args ?? []).length) return { ok: false, error: { code: 'IPC_ERROR', message: '[INVALID_PARAMS] agy quota takes no arguments' } };

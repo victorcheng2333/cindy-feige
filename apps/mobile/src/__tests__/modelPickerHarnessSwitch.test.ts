@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest';
 
 vi.mock('react-native', () => ({ Alert: { alert: vi.fn() } }));
 
-import { canSwitchSessionToAntigravity, canSwitchSessionToCursor, resolveAgentLocationPick, runsOnTaskComputerOnly } from '@/session/sessionAgentSwitch';
+import { canSwitchSessionToAntigravity, resolveAgentLocationPick, runsOnTaskComputerOnly } from '@/session/sessionAgentSwitch';
 
 const source = ts.createSourceFile('screen.tsx', readFileSync(resolve(process.cwd(), 'app/sessions/[sessionId].tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const callbacks = new Map<string, string>();
@@ -30,7 +30,7 @@ function harness(
   const writeSessionAgentSwitchIntent = vi.fn(async(intent:unknown)=>{if(saved) state.intent=intent;return saved;});
   const setComposerModel = vi.fn(async()=>saved);
   const resolveAgentCapability = vi.fn(() => ({ supportsFastMode: true }));
-  const getCapabilities = vi.fn(async () => ({ hasFastMode: true, supportsControlledCursorCreation: true }));
+  const getCapabilities = vi.fn(async () => ({ hasFastMode: true }));
   const getRemoteCapabilities = vi.fn(async () => ({ hasFastMode: true }));
   const executionMakerForDevice = vi.fn((_deviceId: string) => ({ getCapabilities: getRemoteCapabilities }));
   const env = {
@@ -41,7 +41,7 @@ function harness(
     isProviderShareAgentDeviceId:(id:unknown)=>typeof id === 'string' && id.startsWith('share:'),
     agentLocationMovable:true,
     remoteAgentCatalogs:[{ deviceId:'device-studio-mac', name:'工作室 Mac', status:'ready', providers:studioProviders }],
-    canSwitchSessionToCursor, resolveAgentLocationPick, runsOnTaskComputerOnly,
+    resolveAgentLocationPick, runsOnTaskComputerOnly,
     canUseRemoteSessionControls:true,
     currentSession:{effort:'low',fastMode:false,agentKind:'codex',model:'current-model',providerId:null,agentDeviceId:null,...session},controlBusy:false,
     composerDeviceProviders:{providers:[]}, resolveAgentCapability,
@@ -121,17 +121,6 @@ it('registers a move back to the controlled computer', async () => {
   }));
   expect(h.getCapabilities).toHaveBeenCalledWith('codex');
   expect(h.getRemoteCapabilities).not.toHaveBeenCalled();
-});
-// Unit: Unlike ordinary remote models, Cursor must hand off on the task computer.
-// A borrowed source on the current execution computer must produce explicit null,
-// not omit the destination (which would leave the task on the borrowed computer).
-it('registers local Cursor with an explicit null destination when the source catalog is remote', async () => {
-  const h = harness(true, { agentDeviceId: studio.deviceId });
-  expect(await h.render()({ ...config, agent: 'cursor', providerId: 'cursor' }, studio)).toBe(true);
-  expect(h.state.intent).toMatchObject({ targetAgentKind: 'cursor', agentDeviceId: null });
-  expect(h.getCapabilities).toHaveBeenCalledWith('cursor');
-  expect(h.getRemoteCapabilities).not.toHaveBeenCalled();
-  expect(h.setComposerModel).not.toHaveBeenCalled();
 });
 // Regression: a task whose Agent borrowed another computer's source can switch to Agy
 // on a same-account computer or back to the task computer.

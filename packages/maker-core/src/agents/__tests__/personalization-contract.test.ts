@@ -1,7 +1,7 @@
 /**
  * Tier: unit.
  * Production entry: `ClaudeCodeAgent.startSession`, `CodexAgent.startSession`,
- * `PiAgent.startSession`, `CursorAgent.startSession` and `AntigravityAgent.startSession` + `handle.send`.
+ * `PiAgent.startSession`, and `AntigravityAgent.startSession` + `handle.send`.
  *
  * Cross-harness contract binding `AGENT_PERSONALIZATION_SUPPORT` (SSOT) to each
  * adapter's real session startup / prompt assembly / memory injection path.
@@ -10,7 +10,6 @@
  *    the SSOT table still declares support (or vice versa)
  *  - `reviewMode: true` leaks user instructions or memory
  *  - `makerMemoryEnabled: false` still injects memory rules/index
- *  - a `first-turn-context` harness (Cursor) re-injects `<cindy_context>` on resume
  */
 import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
@@ -114,9 +113,6 @@ import { ClaudeCodeAgent } from '../claude-code/index.js';
 import { CodexAgent } from '../codex/index.js';
 import { Method } from '../codex/app-server/protocol.js';
 import { PiAgent } from '../pi/index.js';
-import { CursorAgent, type CursorMcpServerContext } from '../cursor/index.js';
-import type { CursorRpc } from '../cursor/rpc-client.js';
-import type { CursorSendOptions } from '../cursor/protocol.js';
 import {
   AGENT_PERSONALIZATION_ORDER,
   AGENT_PERSONALIZATION_SUPPORT,
@@ -419,110 +415,41 @@ describe('Cross-harness personalization & memory contract', () => {
       };
     }
 
-    if (kind === 'antigravity') {
-      let memoryMcpEnabled = false;
-      const agent = new AntigravityAgent({
-        auth: {
-          getState: async () => ({ authenticated: true }),
-          triggerLogin: async () => ({ authenticated: true }),
-          logout: async () => {},
-          getAuthEnv: async () => ({}),
-        },
-        runtimeConfig: {
-          systemPrompt: 'HOST_SYSTEM_PROMPT',
-          userPrompt: scenario.runtimeUserPrompt,
-          makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled,
-        },
-        binaryPath: '/mock/agy',
-        logger: noopLogger,
-        makerMemory,
-        getDiscoveredCapabilities: () => undefined,
-        getEnv: () => ({}),
-        async prepareAcp(_options, memory) {
-          memoryMcpEnabled = memory.enabled;
-          return { stateDir: tempRoot, servers: [], dispose() {} };
-        },
-      });
-      const handle = await agent.startSession({
-        model: 'agy-model',
-        workingDir,
-        permissionMode: 'default',
-        userPrompt: scenario.userPrompt,
-        makerMemoryEnabled: scenario.makerMemoryEnabled,
-        makerMemoryScopeKey: workingDir,
-        reviewMode: scenario.reviewMode,
-      });
-      handlesToClose.push(handle);
-      return { deliveredPromptText: mocks.agyPrompt, memoryMcpEnabled };
-    }
-
-    // cursor
-    const calls: Array<{ method: string; params: unknown }> = [];
-    const rpc: CursorRpc = {
-      async request<T>(method: string, params?: unknown) {
-        calls.push({ method, params });
-        if (method === 'open') {
-          return { agentId: 'cursor-agent-1', store: { kind: 'sqlite' }, openMs: 1 } as T;
-        }
-        if (method === 'send') {
-          return { id: 'run-1', status: 'finished', result: 'ok' } as T;
-        }
-        return null as T;
-      },
-      close: vi.fn(async () => {}),
-    };
-    let capturedMcpCtx: CursorMcpServerContext | undefined;
-    const agent = new CursorAgent({
+    // antigravity
+    let memoryMcpEnabled = false;
+    const agent = new AntigravityAgent({
       auth: {
-        getState: async () => ({ authenticated: true, identity: 't', authSource: 'api-key' }),
+        getState: async () => ({ authenticated: true }),
         triggerLogin: async () => ({ authenticated: true }),
         logout: async () => {},
-        getAuthEnv: async () => ({ CURSOR_API_KEY: 'cur-test-key' }),
+        getAuthEnv: async () => ({}),
       },
       runtimeConfig: {
         systemPrompt: 'HOST_SYSTEM_PROMPT',
-        ...(scenario.runtimeUserPrompt !== undefined ? { userPrompt: scenario.runtimeUserPrompt } : {}),
-        ...(scenario.runtimeMakerMemoryEnabled !== undefined
-          ? { makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled }
-          : {}),
+        userPrompt: scenario.runtimeUserPrompt,
+        makerMemoryEnabled: scenario.runtimeMakerMemoryEnabled,
       },
-      binaryPath: '/mock/cursor-host.js',
+      binaryPath: '/mock/agy',
       logger: noopLogger,
       makerMemory,
-      getStateDir: async () => path.join(tempRoot, 'cursor-state'),
-      getMcpServers: async (_opts, ctx) => {
-        capturedMcpCtx = ctx;
-        return { servers: {}, dispose: () => {} };
+      getDiscoveredCapabilities: () => undefined,
+      getEnv: () => ({}),
+      async prepareAcp(_options, memory) {
+        memoryMcpEnabled = memory.enabled;
+        return { stateDir: tempRoot, servers: [], dispose() {} };
       },
-      createRpc: () => rpc,
     });
     const handle = await agent.startSession({
-      sessionId: 'contract-cursor',
-      model: 'cursor-model',
-      providerId: 'cursor',
+      model: 'agy-model',
       workingDir,
-      permissionMode: 'bypassPermissions',
+      permissionMode: 'default',
       userPrompt: scenario.userPrompt,
       makerMemoryEnabled: scenario.makerMemoryEnabled,
       makerMemoryScopeKey: workingDir,
       reviewMode: scenario.reviewMode,
-      resumeSessionId: scenario.resumeSessionId,
     });
     handlesToClose.push(handle);
-    const done = (async () => {
-      for await (const event of handle.events()) {
-        if (event.type === 'status' && (event.data as { isRunning: boolean }).isRunning === false) {
-          return;
-        }
-      }
-    })();
-    await handle.send({ type: 'user', content: 'Hello' });
-    await done;
-    const sendParams = calls.find((c) => c.method === 'send')?.params as CursorSendOptions;
-    return {
-      deliveredPromptText: sendParams.message.text,
-      memoryMcpEnabled: capturedMcpCtx?.memoryEnabled,
-    };
+    return { deliveredPromptText: mocks.agyPrompt, memoryMcpEnabled };
   }
 
   it.each(AGENT_PERSONALIZATION_ORDER)(

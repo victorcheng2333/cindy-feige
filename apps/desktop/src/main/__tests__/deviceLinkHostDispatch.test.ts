@@ -71,8 +71,6 @@ vi.mock('../maker-host/provider-account-usage.js', () => ({
   readKimiCodingAccountUsage: kimiRead,
   readOpenCodeGoAccountUsage: opencodeGoRead,
 }));
-const cursorRead = vi.hoisted(() => vi.fn());
-vi.mock('../maker-host/cursor-auth.js', () => ({ readCursorQuota: cursorRead, cursorConnected: () => true }));
 const TMP_DIR = os.tmpdir(); // 真实存在的目录(模拟"浏览到/新建的远程目录")
 let managedWorktreeTestRoot = '';
 let managedWorktreeDir = '';
@@ -519,7 +517,6 @@ it('advertises Kimi quota only from official routes in the redacted remote catal
   expect(text.match(/opencodeGoUsageAgents/g)).toHaveLength(1);
 });
 
-// Tier 2: Cursor is an explicit read-only tunnel, with no caller-selected credentials or URL.
 // Regression: the catalog handler needs the host's verified peer scope; a normal
 // same-account invoke previously looked identical to an arbitrary IPC sender.
 it('provides same-account scope to the model catalog without trusting invoke arguments', async () => {
@@ -534,15 +531,4 @@ it('provides same-account scope to the model catalog without trusting invoke arg
   expect(await runInvoke(SRC, { channel: 'maker:provider:list', args: [] }))
     .toMatchObject({ ok: false, error: { code: 'REMOTE_DISABLED' } });
   expect(handler).toHaveBeenCalledTimes(1);
-});
-
-it('reads only the current Cursor pools and rejects arguments or disabled access', async () => {
-  const snapshot = { pools: [{ id: 'auto', usedPercent: 1 }, { id: 'api', usedPercent: 3 }], resetsAtMs: 1796083200000, fetchedAtMs: 1793750400000 };
-  cursorRead.mockResolvedValue(snapshot);
-  expect(await runInvoke(SRC, { channel: 'maker:usage:cursor-subscription', args: [] })).toEqual({ ok: true, result: { providerId: 'cursor', connected: true, status: 'ready', snapshot } });
-  cursorRead.mockClear();
-  expect(await runInvoke(SRC, { channel: 'maker:usage:cursor-subscription', args: ['other-account'] })).toMatchObject({ ok: false, error: { code: 'IPC_ERROR' } });
-  h.settings.remoteControlEnabled = false;
-  expect(await runInvoke(SRC, { channel: 'maker:usage:cursor-subscription', args: [] })).toMatchObject({ ok: false, error: { code: 'REMOTE_DISABLED' } });
-  expect(cursorRead).not.toHaveBeenCalled();
 });

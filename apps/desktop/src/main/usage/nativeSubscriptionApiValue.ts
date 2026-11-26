@@ -2,7 +2,7 @@ import { resolveBaseModelReferencePrice, type ModelRegistry } from '@cindy/model
 import type { ModelPriceQuote } from '../../shared/regionalMoney.js';
 import { computePriceQuoteTurnMoney } from './turnCostCalculator.js';
 
-export type NativeSubscriptionProvider = 'cursor' | 'antigravity';
+export type NativeSubscriptionProvider = 'antigravity';
 
 function uniqueBaseModel(registry: ModelRegistry | undefined, modelId: string) {
   const exact = registry?.baseModels?.filter(m => m.id === modelId || m.aliases.includes(modelId)) ?? [];

@@ -27,7 +27,7 @@ const invalid = (message: string): GhostModelPreferencesResult =>
 const isLocal = (item: { providerId: string }) => !isNonLocalModelFavoriteSource(item.providerId);
 const isPluginPreference = <T extends { providerId: string; agent: RemoteModelFavorite['agent'] }>(
   item: T,
-): item is T & { agent: GhostModelPreferenceItem['agent'] } => item.agent !== 'cursor' && isLocal(item);
+): item is T & { agent: GhostModelPreferenceItem['agent'] } => isLocal(item);
 
 /**
  * `GET /model-preferences` and `POST /model-preferences/favorites` for plugins that declared

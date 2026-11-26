@@ -29,7 +29,6 @@ import { useLogUploadSettings } from '@/hooks/useLogUploadSettings';
 import { OpenLogsRow, UploadLogsRow } from '@/components/log-support/LogSupportActions';
 import { PiKernelVersionRow } from './PiKernelVersionRow';
 import { AntigravityCliVersionRow } from './AntigravityCliVersionRow';
-import { CursorSdkVersionRow } from './CursorSdkVersionRow';
 import {
   HARNESS_MENU_ITEM_CLASS,
   HarnessMenuFootnote,
@@ -210,9 +209,6 @@ export function AgentVersionsRows() {
       </SettingsBlock>
       <SettingsBlock className="p-0">
         <PiKernelVersionRow />
-      </SettingsBlock>
-      <SettingsBlock className="p-0">
-        <CursorSdkVersionRow />
       </SettingsBlock>
       <SettingsBlock className="p-0">
         <AntigravityCliVersionRow />

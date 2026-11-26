@@ -92,7 +92,7 @@ describe('standalone remote quota service', () => {
     const h = harness(); await h.service.restore(); expect(h.service.snapshot().signedIn).toBe(true);
     await h.service.refresh();
     expect(h.service.snapshot().devices.map(d => d.accounts[0].windows[0].remaining)).toEqual([68, 68]);
-    expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription', 'maker:usage:cursor-subscription', 'maker:usage:antigravity-subscription']));
+    expect(new Set(h.link.invoke.mock.calls.map(c => c[1].channel))).toEqual(new Set(['maker:provider:list', 'maker:usage:claude-subscription', 'maker:usage:antigravity-subscription']));
     expect(JSON.stringify(h.service.snapshot())).not.toContain('fake-access'); h.service.dispose();
   });
   // Unit regression: a paused default OpenAI account returned null through
@@ -235,37 +235,7 @@ describe('quota and local command boundaries', () => {
   });
 });
 
-// Unit: actual service discovery and tunnel routing must retain Cursor and independent pool values.
-it('discovers Cursor, reads separate pools, and keeps unavailable different from zero', async () => {
-  const h = harness();
-  h.link.invoke.mockImplementation(async (_id, request) => ({ ok: true, result: (request.channel === 'maker:provider:list'
-    ? { providers: [{ id: 'openai', name: 'OpenAI', connected: true, auth: { method: 'oauth' } }, provider()] }
-    : { providerId: 'cursor', connected: true, status: 'ready', snapshot: { pools: [{ id: 'auto', usedPercent: 1 }, { id: 'api', usedPercent: 100 }], fetchedAtMs: 1793750400000, resetsAtMs: 4102444800000 } }) as never }));
-  await h.service.restore(); await h.service.refresh();
-  expect(h.service.snapshot().devices[0].accounts.map(a => a.service)).toEqual(['Claude', 'ChatGPT', 'Cursor']);
-  expect(h.service.snapshot().devices[0].accounts[2]).toMatchObject({ service: 'Cursor', failed: false, windows: [
-    { label: 'Cursor 模型', remaining: 99, minutes: null, resetsAt: 4102444800 },
-    { label: '其他模型', remaining: 0, minutes: null, resetsAt: 4102444800 },
-  ] });
-  expect(h.link.invoke.mock.calls.some(call => call[1].channel === 'maker:usage:cursor-subscription')).toBe(true);
-  expect(parseAccount({ id: 'cursor' }, { providerId: 'cursor', status: 'unavailable', snapshot: null })).toMatchObject({ failed: true, windows: [] });
-  expect(() => parseAccount({ id: 'cursor' }, { providerId: 'another', status: 'ready' })).toThrow('mismatch');
-  h.link.invoke.mockImplementation(async (_id, request) => (request.channel === 'maker:provider:list' ? { ok: true, result: { providers: [] } } : { ok: false, error: { code: 'CHANNEL_NOT_ALLOWED', message: 'old host' } }) as never);
-  await h.service.refresh();
-  expect(h.service.snapshot().devices[0]).toMatchObject({ cursorUnsupported: true, error: null });
-  // 测试价值：Cursor 专用读取因链路失败时仍画出失败卡，避免看起来像这台电脑没连 Cursor。
-  h.link.invoke.mockImplementation(async (_id, request) => (request.channel === 'maker:provider:list'
-    ? { ok: true, result: { providers: [] } }
-    : { ok: false, error: { code: 'IPC_ERROR', message: 'link reset' } }) as never);
-  await h.service.refresh();
-  expect(h.service.snapshot().devices[0]).toMatchObject({ cursorUnsupported: false, error: null });
-  expect(h.service.snapshot().devices[0].accounts).toEqual([
-    expect.objectContaining({ service: 'Cursor', failed: true, error: '暂时读不到 Cursor 额度，请稍后刷新。' }),
-  ]);
-  h.service.dispose();
-});
-
-// Unit: live Cursor responses have sub-percent spend; integer rounding hid it as unused.
+// Unit: discover agy via its dedicated quota read and preserve sub-percent formatting.
 it('discovers agy by quota read and keeps model groups and periods independent', async () => {
   const h = harness();
   h.link.invoke.mockImplementation(async (_id, request) => {
@@ -290,7 +260,7 @@ it('discovers agy by quota read and keeps model groups and periods independent',
   h.service.dispose();
 });
 
-it('keeps sub-percent Cursor usage visible without claiming a full or empty pool', () => {
+it('keeps sub-percent usage visible without claiming a full or empty window', () => {
   expect(poolPercent(99.6)).toBe('99.6');
   expect(poolPercent(0.4)).toBe('0.4');
   expect(poolPercent(99.98)).toBe('>99.9');

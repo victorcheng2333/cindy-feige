@@ -25,7 +25,7 @@ export function createRuntimePluginTaskPrompt({ maker, ghostTaskSystemPrompt, re
   const appliedTaskPrompts = new WeakMap<Awaited<ReturnType<typeof maker.createSession>>, string>();
   // Plugin engines receive no Cindy system prompt (docs/plans/acp-plugin-bridge.md), so no task prompt either.
   const readTaskPrompt = (sessionId: string, agentKind: EngineKind, agentDeviceId?: string | null) =>
-    agentKind === 'acp' || agentKind === 'cursor' || agentKind === 'antigravity'
+    agentKind === 'acp' || agentKind === 'antigravity'
       ? ''
       : ghostTaskSystemPrompt(sessionId, agentKind === 'claude-code' ? 'cc' : agentKind, !(agentKind === 'pi' && agentDeviceId));
   const createSessionWithRuntimePlugins = (o: CreateOpts, signal?: AbortSignal) => {
@@ -80,7 +80,7 @@ export function createPrepareTaskRuntimePluginTurn({
       const profiles = await readSessionRuntimeProfiles(sessionId);
       if (!profiles) throw new Error('Task runtime unavailable');
       const route = profiles.pendingMutation?.profile ?? profiles.effective;
-      if (route.agentKind === 'cursor' || route.agentKind === 'antigravity') throw new Error('The selected harness is not available for plugin tasks');
+      if (route.agentKind === 'antigravity') throw new Error('The selected harness is not available for plugin tasks');
       return { agentKind: route.agentKind === 'claude-code' ? 'cc' : route.agentKind,
         model: route.model, providerId: route.providerId ?? 'xd',
         ...(route.agentDeviceId ? { agentDeviceId: route.agentDeviceId } : {}),

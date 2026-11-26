@@ -62,7 +62,7 @@ const restorationJs = ts.transpileModule(restorationSource, {
 }).outputText;
 const createRestorer = new Function('resolveFastSupported', 'env', `
   const {catalogDeviceId, remoteProviders, providers, currentModelAgentKind,
-    ccCaps, codexCaps, piCaps, cursorCaps, antigravityCaps = { capabilities: null }, modelMemory} = env;
+    ccCaps, codexCaps, piCaps, antigravityCaps = { capabilities: null }, modelMemory} = env;
   const useCallback = fn => fn;
   ${restorationJs}
   return resolveFast;
@@ -79,7 +79,7 @@ const switchFastJs = ts.transpileModule(switchFastSource, {
 }).outputText;
 const resolveSwitchFast = new Function('resolveFastSupported', 'env', `
   const {deviceLinkDeviceId, remoteProviders, providers, targetAgentKind,
-    ccCaps, codexCaps, piCaps, cursorCaps, antigravityCaps = { capabilities: null }, providerId, newModelId, modelMemory,
+    ccCaps, codexCaps, piCaps, antigravityCaps = { capabilities: null }, providerId, newModelId, modelMemory,
     overrides, fromOtherCatalog} = env;
   ${switchFastJs}
   return targetFast;
@@ -191,7 +191,7 @@ it.each([undefined, 'remote-host'])('composer restores speed by the target accou
     // Deliberately disagree with the remote account catalog.
     providers: deviceId ? [account('eligible', true), account('standard', true)] : executionProviders,
     currentModelAgentKind: 'codex',
-    ccCaps: capability, codexCaps: capability, piCaps: capability, cursorCaps: capability,
+    ccCaps: capability, codexCaps: capability, piCaps: capability,
     modelMemory: { getFast: () => remembered },
   }) as (modelId: string, providerId: string) => boolean | 'ultrafast';
   const selection = (providerId: string) => composeAtomicModelSelection({

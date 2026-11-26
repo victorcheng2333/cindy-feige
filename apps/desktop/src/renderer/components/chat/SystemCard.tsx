@@ -1239,7 +1239,7 @@ function AgentSwitchCard({ data, sessionId }: { data?: Record<string, unknown>; 
   const engineLabel = (kind: unknown, name: unknown): string =>
     kind === 'acp'
       ? (typeof name === 'string' && name ? name : t('newChat.pluginEngines.genericName'))
-      : kind === 'antigravity' ? 'Agy' : kind === 'cursor' ? 'Cursor' : kind === 'codex' ? 'Codex' : kind === 'pi' ? 'Pi' : 'Claude Code';
+      : kind === 'antigravity' ? 'Agy' : kind === 'codex' ? 'Codex' : kind === 'pi' ? 'Pi' : 'Claude Code';
   const fromLabel = engineLabel(data?.fromAgentKind, data?.fromEngineName);
   const toLabel = engineLabel(data?.toAgentKind, data?.toEngineName);
   const rawToModel = typeof data?.toModel === 'string' ? data.toModel : '';

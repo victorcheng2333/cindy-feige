@@ -26,7 +26,7 @@ export function formatTokenCount(n: number): string {
  */
 export function getModelContextWindow(
   model: string,
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity',
   deviceId?: string,
 ): number | undefined {
   const found = getModelsForVendor(vendorKey, deviceId).find((m) => m.id === model);
@@ -56,7 +56,7 @@ export function ContextCapacityRing({
   providerId?: string | null;
   contextTokens: number;
   model: string;
-  vendorKey: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  vendorKey: 'cc' | 'codex' | 'pi' | 'antigravity';
   /** SDK-reported context window; 0 = not yet known → use hardcoded fallback. */
   sdkContextWindow: number;
   /** ACP has no built-in model budget. Only the agent knows its actual window. */
@@ -85,7 +85,7 @@ export function ContextCapacityRing({
     sdkContextWindow,
     verifiedContextWindow,
     runtimeWindowAuthoritative: vendorKey === 'codex',
-    allowDefaultWindow: vendorKey !== 'cursor' && vendorKey !== 'antigravity',
+    allowDefaultWindow: vendorKey !== 'antigravity',
     nativeContextWindow: codexContext?.contextWindow,
     nativeContextPending: codexContext?.pendingApply,
     modelContextWindow: getModelContextWindow(model, vendorKey, deviceId),

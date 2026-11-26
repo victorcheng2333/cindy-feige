@@ -15,7 +15,7 @@ import { MobileAgentMark } from './MobileAgentMark';
 const RUNNING_BREATH_HALF_CYCLE_MS = 750;
 const RUNNING_BREATH_MIN_OPACITY = 0.3;
 
-type AgentMarkKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+type AgentMarkKind = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 
 /**
  * 各字形笔画右上角在自身方框里的位置(0–1,已留出与波纹点的间隙),与桌面 VendorIcon 的
@@ -26,7 +26,6 @@ const REMOTE_SIGNAL_ANCHOR: Record<AgentMarkKind, { x: number; y: number }> = {
   'claude-code': { x: 0.95, y: 0.13 },
   codex: { x: 0.9, y: 0.1 },
   pi: { x: 0.93, y: 0.19 },
-  cursor: { x: 0.93, y: 0.18 },
   antigravity: { x: 0.9, y: 0.1 },
 };
 
@@ -89,7 +88,7 @@ export function MobileVendorIcon({
     };
   }, [animate, opacity]);
 
-  const agentKind: AgentMarkKind = vendor === 'antigravity' || vendor === 'cursor' || vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';
+  const agentKind: AgentMarkKind = vendor === 'antigravity' || vendor === 'codex' || vendor === 'pi' ? vendor : 'claude-code';
   const pluginEngineTask = vendor === 'acp';
   const pluginIcon = pluginEngine?.iconDataUrl;
   const keepArtworkColor = running && pluginIcon && pluginIcon !== ANTIGRAVITY_MARK_DATA_URL;
@@ -108,7 +107,7 @@ export function MobileVendorIcon({
       accessible
       accessibilityLabel={pluginEngineTask
         ? pluginEngine?.name
-        : vendor === 'antigravity' ? 'Agy' : vendor === 'cursor' ? 'Cursor' : vendor === 'codex' ? 'Codex' : vendor === 'pi' ? 'Pi' : 'Claude Code'}
+        : vendor === 'antigravity' ? 'Agy' : vendor === 'codex' ? 'Codex' : vendor === 'pi' ? 'Pi' : 'Claude Code'}
       accessibilityRole="image"
       style={{ alignItems: 'center', height: size, justifyContent: 'center', opacity, width: size }}
     >

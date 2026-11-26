@@ -50,7 +50,7 @@ function refreshRemoteCapabilitiesOnce(deviceId: string): void {
   remoteCapabilitiesRefreshInFlight.set(deviceId, pending);
 }
 
-type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+type RuntimeAgentKind = 'claude-code' | 'codex' | 'pi' | 'antigravity';
 
 /** runtime agent id → NewMaker vendor(其余保持同名)。 */
 function toVendor(agent: RuntimeAgentKind): MakerVendor {
@@ -83,7 +83,7 @@ async function fetchAvailableAgents(deviceId?: string | null): Promise<RuntimeAg
     if (!dl) throw new Error('device-link IPC not available');
     const raw = await invokeModelCatalog(dl, deviceId, 'maker:list-available-agents', []);
     return Array.isArray(raw) ? (raw.filter((v): v is RuntimeAgentKind =>
-      v === 'claude-code' || v === 'codex' || v === 'pi' || v === 'cursor' || v === 'antigravity') as RuntimeAgentKind[]) : [];
+      v === 'claude-code' || v === 'codex' || v === 'pi' || v === 'antigravity') as RuntimeAgentKind[]) : [];
   }
   const api = getMakerApi();
   if (!api) throw new Error('maker IPC not available');
@@ -362,8 +362,8 @@ export function useModelPickerAgents(
   if (!loaded) return undefined;
   // Secondary pickers feed scheduler, IM, Orca and plugin tasks.
   const candidates: readonly RuntimeAgentKind[] = options?.includeAntigravity
-    ? ['claude-code', 'codex', 'pi', 'cursor', 'antigravity']
-    : ['claude-code', 'codex', 'pi', 'cursor'];
+    ? ['claude-code', 'codex', 'pi', 'antigravity']
+    : ['claude-code', 'codex', 'pi'];
   return candidates.filter(
     (agent) => agent === current || availableVendors.has(toVendor(agent)),
   );

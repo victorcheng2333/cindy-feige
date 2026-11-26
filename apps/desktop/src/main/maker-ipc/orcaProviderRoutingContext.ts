@@ -65,7 +65,6 @@ export function deviceWorkerRoutingContext(views: ProviderView[], agent: AgentKi
     'claude-code': availabilityFor('claude-code'),
     codex: availabilityFor('codex'),
     pi: availabilityFor('pi'),
-    cursor: availabilityFor('cursor'),
   };
   const models = deviceRoutableModels(views, agent);
   return {
@@ -200,7 +199,7 @@ export function buildLocalProviderRoutingContext(views: ProviderView[], modelReg
             modelRegistry,
             provider.id,
             model.id,
-            (agent === 'pi' || agent === 'cursor' || agent === 'antigravity') ? undefined : agent,
+            (agent === 'pi' || agent === 'antigravity') ? undefined : agent,
           );
           return matched ? [[model.id, matched.entry.id]] : [];
         }),
@@ -238,7 +237,6 @@ export function buildLocalProviderRoutingContext(views: ProviderView[], modelReg
       'claude-code': availabilityFor('claude-code'),
       codex: availabilityFor('codex'),
       pi: availabilityFor('pi'),
-      cursor: availabilityFor('cursor'),
       antigravity: availabilityFor('antigravity'),
     },
     resolveDefaultProviderIdForModel: (agent, model) =>

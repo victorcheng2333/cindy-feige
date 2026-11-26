@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // Production entry: useNewSessionAgentRoster -> visible new-task harness options.
-// Bug: revalidation cleared the roster, making Pi/Cursor tabs alternate.
+// Bug: revalidation cleared the roster, making Pi/Agy tabs alternate.
 // Gap: newSession.test only checks static option filtering/wiring, not async refresh.
-// Minimum input: known [codex,cursor], one pending refresh (then failure/change).
+// Minimum input: known [codex,antigravity], one pending refresh (then failure/change).
 // Tier: unit, real hook with deferred transport; standalone vitest wall time: 2.42s (2026-11-15).
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -19,14 +19,14 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-function mount() {
+function mount(defaultCapabilities: unknown = { supportsControlledAntigravityCreation: true }) {
   let read = deferred<NewSessionAgentKind[]>();
   const bindings = {
     deviceId: 'host', ownerGeneration: 1, refreshNonce: 0,
     openLink: vi.fn(async () => {}),
     maker: {
       listAvailableAgents: vi.fn(() => read.promise),
-      getCapabilities: vi.fn(async (): Promise<unknown> => ({ supportsControlledCursorCreation: true })),
+      getCapabilities: vi.fn(async (): Promise<unknown> => defaultCapabilities),
     },
   };
   let visible: string[] = [];
@@ -45,44 +45,44 @@ function mount() {
 it('keeps confirmed tabs during refresh/failure, then applies actual harness changes', async () => {
   const page = mount();
   await page.render();
-  await act(async () => page.read.resolve(['codex', 'cursor']));
-  expect(page.visible).toEqual(['codex', 'cursor']);
+  await act(async () => page.read.resolve(['codex', 'antigravity']));
+  expect(page.visible).toEqual(['codex', 'antigravity']);
   await page.refresh();
-  expect(page.visible).toEqual(['codex', 'cursor']);
+  expect(page.visible).toEqual(['codex', 'antigravity']);
   await act(async () => page.read.reject(new Error('unsupported')));
-  expect(page.visible).toEqual(['codex', 'cursor']);
+  expect(page.visible).toEqual(['codex', 'antigravity']);
   await page.refresh();
   await act(async () => page.read.resolve(['codex', 'pi']));
   expect(page.visible).toEqual(['codex', 'pi']);
 });
 
-// Bug: a failed Cursor capability read discarded a successful host roster and
+// Bug: a failed capability read discarded a successful host roster and
 // restored hidden Pi through the unknown-roster fallback. Existing cases only
-// fail the roster read. Minimum input: [codex,cursor], capability rejection.
+// fail the roster read. Minimum input: [codex,antigravity], capability rejection.
 // Tier: unit; exercise the production hook and visible option filtering.
-it('keeps host harness preferences when the Cursor capability read fails', async () => {
+it('keeps host harness preferences when the Agy capability read fails', async () => {
   const page = mount();
   page.bindings.maker.getCapabilities.mockRejectedValue(new Error('unsupported'));
   await page.render();
-  await act(async () => page.read.resolve(['codex', 'cursor']));
+  await act(async () => page.read.resolve(['codex', 'antigravity']));
   expect(page.visible).toEqual(['codex']);
-  page.bindings.maker.getCapabilities.mockResolvedValue({ supportsControlledCursorCreation: true });
+  page.bindings.maker.getCapabilities.mockResolvedValue({ supportsControlledAntigravityCreation: true });
   await page.refresh();
-  await act(async () => page.read.resolve(['codex', 'cursor']));
-  expect(page.visible).toEqual(['codex', 'cursor']);
+  await act(async () => page.read.resolve(['codex', 'antigravity']));
+  expect(page.visible).toEqual(['codex', 'antigravity']);
 });
 
 it.each(['device', 'account'] as const)('isolates %s changes and ignores late old responses', async (kind) => {
   const page = mount();
   await page.render();
-  await act(async () => page.read.resolve(['codex', 'cursor']));
+  await act(async () => page.read.resolve(['codex', 'antigravity']));
   await page.refresh();
   const stale = page.read;
   if (kind === 'device') page.bindings.deviceId = 'other';
   else page.bindings.ownerGeneration++;
   await page.refresh();
   expect(page.visible).toEqual(['claude-code', 'codex', 'pi']);
-  await act(async () => stale.resolve(['cursor']));
+  await act(async () => stale.resolve(['antigravity']));
   expect(page.visible).toEqual(['claude-code', 'codex', 'pi']);
   await act(async () => page.read.resolve(['pi']));
   expect(page.visible).toEqual(['pi']);
@@ -91,7 +91,7 @@ it.each(['device', 'account'] as const)('isolates %s changes and ignores late ol
 // Unit: an older host may list unknown engines, but agy only becomes a new-task
 // choice after the selected Mac explicitly advertises same-account creation.
 it('gates agy on the selected Mac capability', async () => {
-  const page = mount();
+  const page = mount({});
   await page.render();
   await act(async () => page.read.resolve(['codex', 'antigravity']));
   expect(page.visible).toEqual(['codex']);

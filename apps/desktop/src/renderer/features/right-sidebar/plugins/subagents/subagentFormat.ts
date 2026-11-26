@@ -45,7 +45,6 @@ export function providerLabel(provider: SubagentProvider): string {
   if (provider === 'claude-code') return 'Claude Code';
   if (provider === 'codex') return 'Codex';
   if (provider === 'antigravity') return 'Antigravity';
-  if (provider === 'cursor') return 'Cursor';
   // 轮 33 C2:'PI' → 'Pi'(与全产品命名一致)。
   return 'Pi';
 }

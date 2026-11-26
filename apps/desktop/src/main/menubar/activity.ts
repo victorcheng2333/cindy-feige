@@ -28,7 +28,7 @@ export function buildMenubarActivities(
       sessionId: session.sessionId,
       title: privacy
         ? t(companion ? 'ui.privateCompanion' : 'tasks.private', {
-            harness: harness === 'antigravity' ? 'Agy' : harness === 'cursor' ? 'Cursor' : t(`harness.${harness}`),
+            harness: harness === 'antigravity' ? 'Agy' : t(`harness.${harness}`),
           })
         : companion
           ? [companion.groupName, companion.name].filter(Boolean).join(' · ')

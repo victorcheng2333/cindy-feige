@@ -177,7 +177,7 @@ describe('session Agent switch UI wiring', () => {
     // 被控电脑自己的列表(旧版 / 扁平)只来自被控电脑。
     expect(rowSelector).toContain('catalogDeviceId: null,');
     expect(flatSelector).toContain('catalogDeviceId: null,');
-    // The unified picker’s remote, explicit-local, and Cursor destinations are
+    // The unified picker’s remote and explicit-local destinations are
     // exercised through the selection callback in modelPickerHarnessSwitch.test.ts.
 
     // 已登记换位置时,推理强度 / Fast 改的是 intent 本身(带着位置),不是 setEffort / setFastMode。

@@ -1,6 +1,5 @@
 import { setLocalHarnessProviderReader } from './active-catalog.js';
 import { antigravityModelDiscoveryFailure, antigravityProvider, readAntigravityConnection } from './antigravity-host.js';
-import { readCursorConnection, cursorModelDiscoveryFailure, cursorProvider } from './cursor-auth.js';
 import { loadManagedClaudeModels, refreshManagedClaudeModels } from './claude-account-models.js';
 import { listEvaluationModels } from '../cindy-evaluate/models.js';
 import { createXaiProviderTokenReader } from './xaiProviderToken.js';
@@ -956,7 +955,7 @@ setMergedProviderPoolResolver((providerId) => {
 
 function getLocalHarnessProviders() {
   const antigravity = antigravityProvider();
-  return antigravity ? [cursorProvider(), antigravity] : [cursorProvider()];
+  return antigravity ? [antigravity] : [];
 }
 
 /** 进程内单例：注入 active-catalog（同步读）+ 实时连接状态读取器。 */
@@ -982,12 +981,8 @@ export function getDesktopProviderService(options: { allowSideEffects?: boolean 
   }
   if (singleton) return singleton;
   singleton = createProviderService({
-    cursorConnected: readCursorConnection,
     antigravityConnected: readAntigravityConnection,
-    modelDiscoveryFailure: (id, connected) => {
-      if (id === 'antigravity') return antigravityModelDiscoveryFailure();
-      return id === 'cursor' && connected ? cursorModelDiscoveryFailure() : null;
-    },
+    modelDiscoveryFailure: (id) => (id === 'antigravity' ? antigravityModelDiscoveryFailure() : null),
     getModelContextLimits: readModelContextLimits,
     projectProvider: provider => {
       const accountKeys = subscriptionProviderAccountKeys(provider.id)

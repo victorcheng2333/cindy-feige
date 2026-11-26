@@ -1,6 +1,4 @@
 import { buildAntigravityAgent } from './antigravity-host.js';
-import { buildCursorAgent } from './cursor-host.js';
-import { setCursorSessionStopper } from './cursor-auth.js';
 import { refreshManagedClaudeModels } from './claude-account-models.js';
 import { setClaudeAccountRetirement, retryClaudeAccountCleanups } from './claude-account-auth.js';
 import { listCustomProviders } from './custom-provider-store.js';
@@ -2494,16 +2492,6 @@ export function getMaker(): Maker {
       sessionSkillLister,
     );
     if (antigravity) makerAgents.antigravity = antigravity;
-    const cursorAgent = buildCursorAgent(piMcpProviders, desktopMakerLogger, makerMemoryManager);
-    if (cursorAgent) {
-      makerAgents.cursor = cursorAgent;
-      _mcpProviders.cursor = piMcpProviders;
-    }
-    setCursorSessionStopper(async () => {
-      for (const session of _maker?.listActiveSessions() ?? []) {
-        if (session.agentKind === 'cursor') await _maker?.closeSession(session.id);
-      }
-    });
 
     const buildBotRuntimeDeps = (skillLinksChanged = false): BotProfileRuntimeDeps => ({
       getUserName: () => getAuthState().user?.name,
@@ -2722,7 +2710,7 @@ export function getMaker(): Maker {
               opts.vendorOptions = { ...opts.vendorOptions, [STARTUP_GHOST_TOOLS_OWNER_KEY]: owner };
             }
           }
-          if ((opts.agentKind === 'pi' || opts.agentKind === 'cursor') && opts.thinkingEnabled === undefined) {
+          if (opts.agentKind === 'pi' && opts.thinkingEnabled === undefined) {
             const thinkingEnabled = getThinkingEnabledFromMemory(
               opts.agentKind,
               opts.providerId,

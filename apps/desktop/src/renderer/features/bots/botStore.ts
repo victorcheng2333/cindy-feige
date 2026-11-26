@@ -82,7 +82,7 @@ export interface BotModelOverride {
 export type { BotHarness, BotModelRoute };
 export { BOT_MODEL_CHAIN_MAX };
 
-function vendorForHarness(harness: BotCapabilities['harness']): 'cc' | 'codex' | 'pi' | 'cursor' {
+function vendorForHarness(harness: BotCapabilities['harness']): 'cc' | 'codex' | 'pi' {
   return harness === 'claude' ? 'cc' : harness === 'acp' ? 'pi' : harness;
 }
 
@@ -171,7 +171,7 @@ export interface BotSessionProjection {
   profileVersion?: number;
   runtimeSnapshot?: {
     profileVersion: number;
-    agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor';
+    agentKind: 'claude-code' | 'codex' | 'pi';
     status: 'prepared' | 'applied' | 'degraded' | 'failed';
     preparedAt: number;
     appliedAt?: number;

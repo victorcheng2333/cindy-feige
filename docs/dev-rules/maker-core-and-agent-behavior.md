@@ -533,25 +533,9 @@ sessionRunningRetry 就停。每次因 replacement 关闭而重新入队都计�
 
 ## Cursor 用量、上下文与 API 等价估值
 
-Cursor 一轮结束时的 `usage`（`turn-ended` / `RunResult`）是计费用量，不能当作上下文占用。
-上下文占用由 `CursorHostRuntime` 在 SDK `createAgentPlatform` 已有的 checkpoint
-`loadLatest` / `saveCheckpoint` 上顺带读取，`cursorContextUsage` 只取出
-`tokenDetails.usedTokens / maxTokens` 两个计数；不另外加载、复制或解码原生历史，
-checkpoint 里的消息与 blob 不离开 SDK。取不到时上下文保持未知，不借用其它引擎同名模型的
-窗口。上下文计数随已有 status 下发，手机端写进任务的 `contextTokens` / `contextWindow`。
+原生订阅引擎（Agy）的 API 等价估值（`usage/nativeSubscriptionApiValue.ts`、`usage/antigravitySubscriptionValue.ts`）只用本轮上报的 token 桶，加上模型目录里厂商官方标准 API 参考价：型号按公共 ID、别名，或唯一的「厂商前缀 + 裸 ID」匹配；有歧义、价格来源不是厂商官方、或用到的缓存价格缺失时保持未知。
 
-API 等价估值（`usage/cursorApiValue.ts`）只用本轮 SDK 的 token 桶，加上模型目录里厂商
-官方标准 API 参考价：不读 SDK 的累计账单，不计 Cursor 套餐扣费、Fast 附加费或之前轮次
-迟到的费用。型号按公共 ID、别名，或唯一的「厂商前缀 + 裸 ID」匹配；有歧义、价格来源不是
-厂商官方、或用到的缓存价格缺失时保持未知。SDK 没有逐请求边界，只有从 0 到本轮累计输入
-上界之间所有可能的档位，对实际用到的 token 桶都同价时才估算，不能把跨价格档的整次运行当成
-一次长上下文请求计价。
-
-金额只作为 `value-estimate`，不计入 Cindy 实际花费，也不是 Cursor 账单
-（`maker-ipc/sessionCursorTurnUsage.ts`）。token 按轮累计到任务和模型账本，`done` 与
-`error` 都会记录，失败或取消的一轮保留已上报的用量；算不出估值时记为未定价，不补估。
-估值与缓存明细沿用现有的消息账本、模型账本与推送，Desktop 与 Mobile 共用，不新增数据库
-schema 或远程通道，以前缺失的金额不自动回填。
+金额只作为 `value-estimate`，不计入 Cindy 实际花费（`maker-ipc/sessionNativeSubscriptionTurnUsage.ts`）。token 按轮累计到任务和模型账本，`done` 与终态 `error` 都会记录；算不出估值时记为未定价，不补估。估值与缓存明细沿用现有的消息账本、模型账本与推送，Desktop 与 Mobile 共用，不新增数据库 schema 或远程通道，以前缺失的金额不自动回填。
 
 ## 事实来源
 
@@ -1087,13 +1071,6 @@ Desktop 的产品共用正文在 `apps/desktop/src/main/maker-host/host-system-p
 差异或原生提示词缺口；不要为相同产品规则维护多份文本。`claude-system-prompt.md` 与
 `codex-system-prompt.md` 当前留空，保留加载入口；`pi-system-prompt.md` 保留语言、文件工具
 和 MCP 网关调用说明。Skill 来源优先级仍仅注入 Claude/Codex；Pi 的精简回答协议仍单独维护。
-
-Cursor 不走 system 段：`cursor-host.ts` 把共用正文与 `cursor-system-prompt.md` 拼成
-`<cindy_context>`，附在新任务第一条消息末尾。Cursor SDK 从工作目录逐级向上读取每层的
-`.cursor/rules`、`AGENTS.md`（见 `LocalCursorRulesService.loadRulesFromDirAndAncestors`），
-项目位于用户主目录下时 `~/.cursor/rules` 仍会生效，`settingSources` 只收窄不到这一层。
-Cursor 补充因此只说明 Cindy 自动起标题、跳过要求调用 Cursor App `rename_chat` 的规则
-（2026-11-15 实测该类规则让首轮多绕约 10 秒去找不存在的工具）。
 
 Agy 补充 `antigravity-system-prompt.md` 由 `antigravity-host.ts` 作为 `localSystemPrompt` 交给
 maker-core，只追加到文件在本机的任务；同账号远程任务的 `cindy-remote` agent 没有自带的终端和

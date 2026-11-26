@@ -892,7 +892,7 @@ export function UserMessage({
   // 传了 agentKind → 按 capabilities.fork/rewind.supported 决定 icon 显示
   // renderer 'cc' ↔ maker 'claude-code' 别名映射 (DB / Session 用 'cc', maker IPC 用 'claude-code')
   const makerKind: MakerAgentKind =
-    agentKind === 'antigravity' || agentKind === 'cursor' || agentKind === 'codex' || agentKind === 'pi' ? agentKind : 'claude-code';
+    agentKind === 'antigravity' || agentKind === 'codex' || agentKind === 'pi' ? agentKind : 'claude-code';
   // 插件引擎任务(agent_kind = 'acp')不支持分叉与回退，也不读任何内置 Harness 的能力
   // (docs/plans/acp-plugin-bridge.md)。
   const pluginEngineTask = isPluginEngineKind(agentKind);

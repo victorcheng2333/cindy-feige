@@ -403,7 +403,6 @@ export function PluginScheduleDraft({
           },
           onSelect: async (value, source) => {
             const agent = value.agent;
-            if (agent === "cursor") return false;
             assertCurrent();
             setDraft((d) => ({
               ...d,

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canSwitchSessionToAntigravity,
-  canSwitchSessionToCursor,
   effectiveAgentDeviceId,
   intentChangesAgentLocation,
   mobileAgentLabel,
@@ -23,34 +22,13 @@ describe('mobile session Agent switch contract', () => {
     const task = { remoteHostId: null, agentDeviceId: null, orcaRole: null, orcaRemoteLead: null, source: 'desktop' };
     const caps = { supportsAntigravitySessionSwitch: true } as MobileAgentCapabilities;
     const available = new Set(['codex', 'antigravity']);
-    expect(sessionSwitchAgentKinds(available, 'codex', false, canSwitchSessionToAntigravity(task, caps)))
+    expect(sessionSwitchAgentKinds(available, 'codex', canSwitchSessionToAntigravity(task, caps)))
       .toEqual(['codex', 'antigravity']);
     expect(canSwitchSessionToAntigravity(task, null)).toBe(false);
     // A borrowed Claude/Codex/Pi source only says where the current Agent runs; Agy runs locally.
     expect(canSwitchSessionToAntigravity({ ...task, agentDeviceId: 'borrowed' }, caps)).toBe(true);
     expect(canSwitchSessionToAntigravity({ ...task, remoteHostId: 'ssh' }, caps)).toBe(false);
     expect(sessionSwitchAgentKinds(available, 'codex')).toEqual(['codex']);
-  });
-  // Unit regression: old tasks used a fixed three-engine roster. Exercise the
-  // production roster and the host-matching task scope, not source-code strings.
-  it('offers Cursor handoff on ordinary local tasks and respects its Harness switch', () => {
-    const task = { remoteHostId: null, agentDeviceId: null, orcaRole: null, orcaRemoteLead: null, source: 'desktop' };
-    const available = new Set(['codex', 'cursor']);
-    expect(sessionSwitchAgentKinds(available, 'codex', canSwitchSessionToCursor(task))).toEqual(['codex', 'cursor']);
-    expect(sessionSwitchAgentKinds(new Set(['codex']), 'codex', true)).toEqual(['codex']);
-    expect(sessionSwitchAgentKinds(new Set(['codex']), 'cursor', false)).toEqual(['codex', 'cursor']);
-    // Shared Claude/Codex/Pi still hand off to local Cursor; SSH / Orca / review do not.
-    expect(canSwitchSessionToCursor({ ...task, agentDeviceId: 'another-computer' })).toBe(true);
-    expect(sessionSwitchAgentKinds(available, 'codex', true)).toEqual(['codex', 'cursor']);
-    for (const restricted of [
-      { ...task, remoteHostId: 'ssh' },
-      { ...task, orcaRole: 'lead' }, { ...task, source: 'review' },
-      { ...task, orcaRemoteLead: { leadDeviceId: 'lead' } },
-    ]) {
-      const allowed = canSwitchSessionToCursor(restricted as Parameters<typeof canSwitchSessionToCursor>[0]);
-      expect(allowed).toBe(false);
-      expect(sessionSwitchAgentKinds(available, 'codex', allowed)).toEqual(['codex']);
-    }
   });
   it('normalizes only the public pending intent fields', () => {
     expect(normalizeSessionAgentSwitchIntent({
@@ -86,14 +64,6 @@ describe('mobile session Agent switch contract', () => {
     expect(sessionAgentKind({ agentKind: 'cc' })).toBe('claude-code');
     expect(sessionAgentKind({ agentKind: 'codex' })).toBe('codex');
     expect(sessionAgentKind({ agentKind: 'pi' })).toBe('pi');
-    // Remote Cursor rows previously fell through to Claude Code (unit, one host row).
-    expect(sessionAgentKind({ agentKind: 'cursor' })).toBe('cursor');
-    expect(mobileAgentLabel('cursor')).toBe('Cursor');
-    expect(mobileAgentLabelFromUnknown('cursor')).toBe('Cursor');
-    expect(mobileAgentVendor('cursor')).toBe('cursor');
-    // Host same-engine choices also arrive as pending intents; preserve the Cursor target.
-    expect(normalizeSessionAgentSwitchIntent({ targetAgentKind: 'cursor', model: 'grok', providerId: 'cursor', effort: 'low' }))
-      .toEqual({ targetAgentKind: 'cursor', model: 'grok', providerId: 'cursor', effort: 'low' });
     expect(mobileAgentLabel('claude-code')).toBe('Claude Code');
     expect(mobileAgentLabel('codex')).toBe('Codex');
     expect(mobileAgentLabel('pi')).toBe('Pi');

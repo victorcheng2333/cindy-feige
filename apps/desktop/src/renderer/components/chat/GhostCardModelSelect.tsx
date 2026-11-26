@@ -92,7 +92,7 @@ export function GhostCardModelSelect({
             if (draft.current) update({ ...draft.current, fastMode });
           }}
           onUnifiedSelect={({ providerId, modelId, engine, effort, fast, agentDevice }) => {
-            if (engine === 'cursor' || engine === 'antigravity') return false;
+            if (engine === 'antigravity') return false;
             picked.current = true;
             update({
               providerId,

@@ -36,9 +36,7 @@ vi.mock('@/hooks/useAgentCapabilities', async (importOriginal) => ({
     capabilityRequests.calls.push({ agent, deviceId });
     const error = agent && deviceId ? capabilityRequests.errorByKey[`${deviceId}:${agent}`] ?? null : null;
     return {
-      capabilities: error ? null : { hasFastMode: false, effortLevels: [], availableModels:
-        agent === 'cursor' && deviceId === 'device-b'
-          ? [{ id: 'm5-cursor', displayName: 'M5 Cursor model', contextWindow: 200000, efforts: [], defaultEffort: null }] : [] },
+      capabilities: error ? null : { hasFastMode: false, effortLevels: [], availableModels: [] },
       loading: false,
       error,
     };
@@ -76,9 +74,7 @@ const catalogs = vi.hoisted(() => {
     deviceLoading: {} as Record<string, boolean>,
     local: [provider('a-local', 'A Local', 'a-model')] as unknown[],
     byDevice: {
-      'device-b': [provider('b-main', 'B Main', 'b-model'),
-        provider('cursor', 'Cursor', 'm5-cursor', { agents: ['cursor'], routing: { cursor: {} },
-          models: { cursor: [{ id: 'm5-cursor', name: 'M5 Cursor model', contextWindow: 200000, efforts: [], defaultEffort: null }] } })],
+      'device-b': [provider('b-main', 'B Main', 'b-model')],
       'device-c': [provider('c-open', 'C Open', 'c-model', { remoteInvocationEnabled: true })],
       'share:abc': [provider('s-shared', 'S Shared', 's-model', { remoteInvocationEnabled: true })],
     } as Record<string, unknown[]>,
@@ -435,7 +431,6 @@ describe('精简任务列表跨 harness 切换', () => {
       expect(screen.getAllByRole('listbox')).toHaveLength(1);
       expect(screen.queryByRole('textbox')).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
-      expect(screen.getByRole('tab', { name: 'Cursor' })).toBeTruthy();
       const local = screen.getByRole('group', { name: 'target-local' });
       const remote = screen.getByRole('group', { name: 'target-remote' });
       await act(async () => { fireEvent.click(within(local).getByRole('option')); });
@@ -453,11 +448,11 @@ describe('精简任务列表跨 harness 切换', () => {
 });
 
 // Unit: 2026-11-15 new-task parity. Existing cases cover session handoff only.
-// Minimal input: compact draft with a Codex model and Cursor disabled; browsing
+// Minimal input: compact draft with a Codex model and Pi disabled; browsing
 // restores the parent-owned draft selection, and model selection emits the full tuple.
 // Focused run: 5.16s wall clock, 135ms test execution.
 describe('新任务引擎标签', () => {
-  it('切引擎恢复草稿选择，继续选模型提交完整配置，并隐藏关闭的 Cursor', async () => {
+  it('切引擎恢复草稿选择，继续选模型提交完整配置，并隐藏关闭的 Pi', async () => {
     const originalLocal = catalogs.local;
     catalogs.local = [...originalLocal, {
       ...(originalLocal[0] as object), id: 'codex-source', name: 'Codex Source',
@@ -468,7 +463,7 @@ describe('新任务引擎标签', () => {
     try {
       const onUnifiedSelect = vi.fn(async () => true);
       function DraftPicker() {
-        const [vendor, setVendor] = React.useState<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>('cc');
+        const [vendor, setVendor] = React.useState<'cc' | 'codex' | 'pi' | 'antigravity'>('cc');
         return <ModelSelectorContent
           modelId={vendor === 'codex' ? 'codex-model' : 'a-model'}
           currentProviderId={vendor === 'codex' ? 'codex-source' : 'a-local'}
@@ -479,7 +474,7 @@ describe('新任务引擎标签', () => {
         />;
       }
       render(<DraftPicker />);
-      expect(screen.queryByRole('tab', { name: 'Cursor' })).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'Pi' })).toBeNull();
       await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Codex' })); });
       expect(onUnifiedSelect).not.toHaveBeenCalled();
       expect(screen.queryByText('newChat.modelSelector.agentSwitch.hint')).toBeNull();
@@ -491,28 +486,6 @@ describe('新任务引擎标签', () => {
         providerId: 'codex-source', modelId: 'codex-model', engine: 'codex', effort: 'high', fast: false,
       }));
     } finally { catalogs.local = originalLocal; }
-  });
-});
-
-// Unit regression (2026-11-15): remote Claude catalogs hid the Cursor tab.
-// Existing cases only switch Codex/Pi on local catalogs. Minimum input: a remote
-// catalog with Cursor in the selectable roster; the real picker must expose the
-// tab and switch its browsing state. Tier: unit (in-memory provider fixtures).
-describe('远程目录 Cursor 入口', () => {
-  it('浏览远程 Claude 来源时仍可切换到 Cursor', async () => {
-    const onSwitch = vi.fn(async () => true);
-    renderPanel({ devices: [], selectedDeviceId: null, homeDeviceId: 'device-b' }, {
-      unifiedPanel: false, compactProviderList: true, onUnifiedSelect: undefined,
-      unifiedAgents: ['claude-code', 'cursor'],
-      agentSwitch: { currentVendor: 'cc', onSwitch },
-    });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Cursor' })); });
-    expect(screen.getByRole('tab', { name: 'Cursor' }).getAttribute('aria-selected')).toBe('true');
-    expect(onSwitch).not.toHaveBeenCalled();
-    // The active task is still Claude: browsing Cursor must load the controlled
-    // computer's capabilities before an engine switch, rather than local/empty caps.
-    await act(async () => { fireEvent.click(screen.getAllByText('M5 Cursor model')[0]!); });
-    expect(onSwitch).toHaveBeenCalledWith('cursor', 'm5-cursor', 'cursor', expect.any(Object));
   });
 });
 

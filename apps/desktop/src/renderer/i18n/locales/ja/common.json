@@ -1432,11 +1432,6 @@
     "SSH_HOST_KEY_MISMATCH": "SSH ホスト鍵が変更されました",
     "DEVICE_LINK_MEDIA_ACCESS_DENIED": "Cindy が元の添付ファイルを読み取れないため、メッセージは送信されていません。「ダウンロード」などアクセス可能なフォルダーにコピーを保存し、元の添付ファイルを削除してから、添付ボタンでコピーを追加し、再送信してください。",
     "UNSUPPORTED_CAPABILITY": "現在のタスクまたは環境ではこの操作に対応していません。",
-    "CURSOR_EXTRA_DIRS_UNSUPPORTED": "Cursor に切り替えられません：Cursor は読み取り専用の参照ディレクトリが追加されたタスクに対応していません。",
-    "CURSOR_HANDOFF_UNSUPPORTED": "Cursor に切り替えられません：通常のデスクトップタスクのみ Cursor に切り替えられます。",
-    "CURSOR_LOCAL_EXECUTION_REQUIRED": "Cursor に切り替えられません：Cursor はこのタスクのコンピューター上でのみ実行できます。",
-    "CURSOR_CONNECTION_REQUIRED": "Cursor に切り替えられません：Cursor 接続配下のモデルを選択してください。",
-    "CURSOR_PERMISSION_MODE_UNSUPPORTED": "Cursor に切り替えられません：先に権限モードを自動、フルアクセス、または計画モードに変更してください。",
     "REVIEW_SETTINGS_FIXED": "レビュータスクの設定は元のタスクに固定されており、変更できません。",
     "ARCHIVED_HARNESS_SWITCH_UNSUPPORTED": "アーカイブ済みのタスクでは Harness を切り替えられません。",
     "SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED": "共有タスクのゲストは Agent を別のコンピューターへ移動できません。"
@@ -1556,19 +1551,6 @@
     }
   },
   "menubar": {
-    "cursor": {
-      "pools": "利用枠",
-      "auto": "Cursor モデル",
-      "api": "その他のモデル",
-      "total": "プラン利用枠",
-      "remaining": "枠ごとの残り",
-      "separate": "Cursor の利用枠は独立しています。",
-      "explanation": "一つの枠を使い切っても、他の枠は利用できる場合があります。割合は合算できません。",
-      "resetUnknown": "リセット日時不明",
-      "extra": "追加利用料金",
-      "notRead": "未取得",
-      "extraHint": "Cursor の請求画面で確認"
-    },
     "shared": {
       "label": "共有",
       "note": "アカウント全体で共有する利用枠です。あなた専用の枠ではありません。",
@@ -2842,6 +2824,7 @@
       "harnessChecking": "確認中…",
       "harnessCheckFailed": "更新を確認できません。メニューを開いて再試行してください。",
       "harnessUpdateAvailable": "更新あり",
+      "harnessInstalling": "インストール中…",
       "harnessCheck": "更新を確認",
       "harnessCheckedAt": "最終確認：{{time}}",
       "logsDirLabel": "ログディレクトリ",
@@ -3092,24 +3075,6 @@
         "description": "このコンピュータで公式の Agy 更新コマンドを実行します。Cindy とターミナルで使う Agy CLI が更新されます。",
         "busy": "現在の Agy タスクが完了してから更新してください。",
         "failed": "Agy CLI を更新できませんでした。"
-      },
-      "cursorSdk": {
-        "label": "Cursor SDK バージョン",
-        "manage": "Cursor SDK を管理",
-        "check": "更新を確認",
-        "checking": "確認中…",
-        "checkFailed": "確認に失敗",
-        "available": "更新があります",
-        "installing": "インストール中…",
-        "update": "SDK を更新",
-        "restore": "同梱版に戻す",
-        "updateTitle": "Cursor SDK {{version}} に更新しますか？",
-        "restoreTitle": "同梱の Cursor SDK に戻しますか？",
-        "description": "更新版は Cursor が公開しています。互換性に問題がある場合は同梱版に戻せます。既存のエージェントセッションは現在のバージョンを使用し続けます。",
-        "installed": "Cursor SDK の準備ができました。次のエージェントセッションから適用されます。",
-        "installFailed": "Cursor SDK の更新に失敗しました。以前のバージョンは変更されていません。更新を再確認してお試しください。",
-        "scope": "次のエージェントセッションから適用されます。実行中のタスクには影響しません。",
-        "checkedAt": "最終確認：{{time}}"
       }
     },
     "apiKey": {
@@ -4815,18 +4780,7 @@
         "aiCreditsHint": "プランの上限に達した後、Google AI Credits を使って Agy を継続できるようにします。現在のターン終了後に反映されます。",
         "aiCreditsSaveFailed": "AI Credits 設定を保存できませんでした。"
       },
-      "claudeCleanupPending": "接続は削除されましたが、一部の専用アカウントフォルダーで Claude Code のログアウトが完了していません。Cindy は次回起動時に再試行します。タスク履歴は保持されます。",
-      "cursor": {
-        "description": "Cursor アカウントでローカルのタスクを実行します。料金は Cursor によって請求されます。自動、フルアクセス、計画に対応。確認、巻き戻し、分岐には未対応です。",
-        "connect": "Cursor に接続",
-        "disconnect": "Cursor の接続を解除",
-        "waiting": "ブラウザーでログインを完了してください。最大5分かかります。",
-        "stopWarning": "実行中の Cursor タスクは停止します。履歴は保持されます。",
-        "loginFailed": "Cursor のログインが完了しませんでした。ブラウザーと接続を確認してください。",
-        "legacyPermission": "Cursor は確認する権限モードに対応していません。このタスクは自動モードで実行され、コマンドはレビューなしで実行されます。",
-        "historyReset": "現在のアカウントでは、このタスクの Cursor 履歴が見つからないため、古い参照を削除しました。再送すると新しいコンテキストを使用します。タスクのメッセージは保持されます。",
-        "historyUnavailable": "このアカウントでは、タスクの Cursor 履歴を復元できません。アカウントとタスクの状態を確認してから、再試行してください。"
-      }
+      "claudeCleanupPending": "接続は削除されましたが、一部の専用アカウントフォルダーで Claude Code のログアウトが完了していません。Cindy は次回起動時に再試行します。タスク履歴は保持されます。"
     },
     "experimental": {
       "title": "実験的機能",
@@ -14678,18 +14632,6 @@
           "bypassPermissions": {
             "label": "フルアクセス",
             "description": "Agy の権限チェックを省略し、確認なしでツールを実行できます。"
-          }
-        },
-        "cursor": {
-          "auto": {
-            "label": "自動",
-            "description": "Cursor は承認やサンドボックスなしでコマンドを実行します。"
-          },
-          "bypassPermissions": {
-            "label": "フルアクセス"
-          },
-          "plan": {
-            "label": "計画モード"
           }
         },
         "claude-code": {

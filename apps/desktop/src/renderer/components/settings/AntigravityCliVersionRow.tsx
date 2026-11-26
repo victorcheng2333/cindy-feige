@@ -116,7 +116,7 @@ export function AntigravityCliVersionRow() {
 
   const updateAvailable = Boolean(!state.checking && !state.checkFailed && state.version && state.latestVersion && state.updateAvailable);
   const status = updating
-    ? t('settings.about.cursorSdk.installing')
+    ? t('settings.about.harnessInstalling')
     : state.checking
       ? t('settings.about.harnessChecking')
       : state.checkFailed

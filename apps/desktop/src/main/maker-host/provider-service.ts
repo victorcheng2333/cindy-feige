@@ -131,7 +131,6 @@ export interface ProviderServiceDeps {
    * 缺省 = 一律未连接。
    */
   antigravityConnected?: (options: ConnectionReadOptions) => boolean | Promise<boolean>;
-  cursorConnected?: (options: ConnectionReadOptions) => boolean | Promise<boolean>;
   builtinApiKeyConnected?: (providerId: string) => boolean;
   /** Saved custom configuration is not evidence that its credential still exists. */
   customApiKeyConnected?: (provider: Provider) => boolean;
@@ -235,17 +234,15 @@ export function createProviderService(deps: ProviderServiceDeps): ProviderServic
     }
     const readConnection = (id: keyof ProviderConnectionReaders) =>
       !pickerCatalog || pickerCatalog.providers.some(p => p.id === id) ? deps.connection[id](readOpts) : false;
-    const [xd, anthropic, openai, xai, cursor, antigravity] = await Promise.all([
+    const [xd, anthropic, openai, xai, antigravity] = await Promise.all([
       readConnection('xd'), readConnection('anthropic'), readConnection('openai'), readConnection('xai'),
-      !pickerCatalog || pickerCatalog.providers.some(p => p.id === 'cursor')
-        ? Promise.resolve(deps.cursorConnected?.(readOpts) ?? false) : false,
       !pickerCatalog || pickerCatalog.providers.some(p => p.id === 'antigravity')
         ? Promise.resolve(deps.antigravityConnected?.(readOpts) ?? false) : false,
     ]);
     // Full routing reads must materialize their catalog after all connection claims settle.
     const sourceCatalog = pickerCatalog ?? opts?.getCatalog?.() ?? opts?.catalog ?? deps.getCatalog();
     const catalog = pickerCatalog ?? deps.projectCatalog?.(sourceCatalog, routingCatalog) ?? sourceCatalog;
-    const connected: ConnectionState = { xd, anthropic, openai, xai, cursor, antigravity };
+    const connected: ConnectionState = { xd, anthropic, openai, xai, antigravity };
     for (const p of catalog.providers) {
       // 无鉴权供应商无需任何登录或密钥：只要目录声明有效，就可立即参与模型选择。
       // 该规则与 source 无关，覆盖远端目录下发的 built-in/self-hosted 条目。

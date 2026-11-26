@@ -41,8 +41,8 @@ function resolveAvailableLocalRoute(
 export function availableAppDefaultModels(input: {
   providers: readonly ProviderView[];
   currentRoute?: ModelRoute | null;
-  tuning?: (agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity', providerId: string, model: string) => { effort?: string; fastMode?: boolean | 'ultrafast' };
-  availableAgents: ReadonlySet<'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>;
+  tuning?: (agent: 'claude-code' | 'codex' | 'pi' | 'antigravity', providerId: string, model: string) => { effort?: string; fastMode?: boolean | 'ultrafast' };
+  availableAgents: ReadonlySet<'cc' | 'codex' | 'pi' | 'antigravity'>;
   enabled: NonNullable<Parameters<typeof resolveAvailableLocalRoute>[0]['isModelEnabled']>;
 }) {
   const current = resolveAvailableLocalRoute({ providers: input.providers, providersLoading: false,

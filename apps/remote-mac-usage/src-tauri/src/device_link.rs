@@ -125,7 +125,7 @@ impl PeerTransport {
     fn reset_for_disconnect(&mut self) {
         // Rotate the outbound stream so Cindy does not treat the next open as
         // duplicateOpen on the previous generation and drop later invokes
-        // (Cursor quota is the slow one that used to disappear).
+        // (slow quota invokes used to disappear).
         self.local_stream_id = Uuid::new_v4().to_string();
         self.next_seq = 1;
         self.reliable = false;

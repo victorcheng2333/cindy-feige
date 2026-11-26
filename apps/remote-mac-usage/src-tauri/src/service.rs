@@ -325,16 +325,11 @@ impl UsageService {
             if guard.epoch != epoch {
                 return Err("操作已取消".to_string());
             }
-            let old: HashMap<String, (Vec<Account>, Option<bool>, Option<f64>)> = guard
+            let old: HashMap<String, (Vec<Account>, Option<f64>)> = guard
                 .snapshot
                 .devices
                 .iter()
-                .map(|d| {
-                    (
-                        d.device_id.clone(),
-                        (d.accounts.clone(), d.cursor_unsupported, d.checked_at),
-                    )
-                })
+                .map(|d| (d.device_id.clone(), (d.accounts.clone(), d.checked_at)))
                 .collect();
             let valid_ids: HashSet<&str> = parsed.iter().map(|d| d.device_id.as_str()).collect();
             guard
@@ -344,9 +339,8 @@ impl UsageService {
             guard.snapshot.devices = parsed
                 .into_iter()
                 .map(|mut d| {
-                    if let Some((accounts, cursor_unsupported, checked_at)) = old.get(&d.device_id) {
+                    if let Some((accounts, checked_at)) = old.get(&d.device_id) {
                         d.accounts = accounts.clone();
-                        d.cursor_unsupported = *cursor_unsupported;
                         d.checked_at = *checked_at;
                     }
                     d
@@ -404,7 +398,7 @@ impl UsageService {
             message: String,
         }
 
-        let outcome: Result<(Vec<Account>, bool, bool), String> = async {
+        let outcome: Result<(Vec<Account>, bool), String> = async {
             self.check_epoch(epoch).await?;
             link.close_link(device_id, "user");
             let accepted = link.open_link(device_id, Duration::from_secs(15)).await?;
@@ -451,47 +445,10 @@ impl UsageService {
             let raw_providers = invoke_read("maker:provider:list", Vec::new())
                 .await
                 .map_err(|e| e.message)?;
-            let mut providers = subscription_providers(&raw_providers)?;
+            let providers = subscription_providers(&raw_providers)?;
 
-            // Cursor runtime remains local-only in the provider catalog. Discover quota
-            // through its dedicated read instead of exposing runnable Cursor models remotely.
-            let mut cursor_result: Option<Value> = None;
-            let mut cursor_unsupported = false;
-            let (cursor_read, antigravity_read) = tokio::join!(
-                invoke_read("maker:usage:cursor-subscription", Vec::new()),
-                invoke_read("maker:usage:antigravity-subscription", Vec::new()),
-            );
-            match cursor_read {
-                Ok(val) => {
-                    if val.get("connected").and_then(Value::as_bool) == Some(true)
-                        && !providers
-                            .iter()
-                            .any(|p| p.get("id").and_then(Value::as_str) == Some("cursor"))
-                    {
-                        let mut entry = serde_json::Map::new();
-                        entry.insert("id".to_string(), json!("cursor"));
-                        entry.insert("name".to_string(), json!("Cursor"));
-                        providers.push(entry);
-                    }
-                    cursor_result = Some(val);
-                }
-                Err(err) => {
-                    if err.code.as_deref() == Some("CHANNEL_NOT_ALLOWED") {
-                        cursor_unsupported = true;
-                    } else if !providers
-                        .iter()
-                        .any(|p| p.get("id").and_then(Value::as_str) == Some("cursor"))
-                    {
-                        // Keep a visible failed card. Cursor is local-only in the
-                        // provider catalog, so a dropped dedicated read used to look
-                        // like this computer had no Cursor connection.
-                        let mut entry = serde_json::Map::new();
-                        entry.insert("id".to_string(), json!("cursor"));
-                        entry.insert("name".to_string(), json!("Cursor"));
-                        providers.push(entry);
-                    }
-                }
-            }
+            let antigravity_read =
+                invoke_read("maker:usage:antigravity-subscription", Vec::new()).await;
 
             let mut accounts = Vec::with_capacity(providers.len());
             let mut tasks: Vec<Pin<Box<dyn Future<Output = Account> + Send + '_>>> =
@@ -502,34 +459,8 @@ impl UsageService {
                 let builtin = match base.service {
                     ServiceKind::Claude => "anthropic",
                     ServiceKind::ChatGPT => "openai",
-                    ServiceKind::Cursor => "cursor",
                     ServiceKind::Antigravity => unreachable!(),
                 };
-                if base.service == ServiceKind::Cursor {
-                    let cached = cursor_result.clone();
-                    tasks.push(Box::pin(async move {
-                        let res = match cached {
-                            Some(payload) => Ok(payload),
-                            None => invoke_read("maker:usage:cursor-subscription", Vec::new()).await,
-                        };
-                        match res {
-                            Ok(payload) => parse_account(&p, &payload, now_ms()).unwrap_or(Account {
-                                failed: true,
-                                ..base
-                            }),
-                            Err(err) => Account {
-                                failed: true,
-                                error: Some(if err.code.as_deref() == Some("CHANNEL_NOT_ALLOWED") {
-                                    "请更新这台电脑上的 Cindy，以读取 Cursor 额度。".to_string()
-                                } else {
-                                    "暂时读不到 Cursor 额度，请稍后刷新。".to_string()
-                                }),
-                                ..base
-                            },
-                        }
-                    }));
-                    continue;
-                }
                 let args = if base.id != builtin {
                     vec![json!(base.id)]
                 } else if base.service == ServiceKind::Claude {
@@ -540,7 +471,7 @@ impl UsageService {
                 let channel = match base.service {
                     ServiceKind::Claude => "maker:usage:claude-subscription",
                     ServiceKind::ChatGPT => "maker:usage:codex-rate-limits",
-                    ServiceKind::Cursor | ServiceKind::Antigravity => unreachable!(),
+                    ServiceKind::Antigravity => unreachable!(),
                 };
                 let fut = invoke_read(channel, args);
                 tasks.push(Box::pin(async move {
@@ -576,10 +507,9 @@ impl UsageService {
             accounts.sort_by_key(|a| match a.service {
                 ServiceKind::Claude => 0,
                 ServiceKind::ChatGPT => 1,
-                ServiceKind::Cursor => 2,
-                ServiceKind::Antigravity => 3,
+                ServiceKind::Antigravity => 2,
             });
-            Ok((accounts, cursor_unsupported, agy_refresh_failed))
+            Ok((accounts, agy_refresh_failed))
         }
         .await;
 
@@ -595,7 +525,7 @@ impl UsageService {
                 .find(|d| d.device_id == device_id)
             {
                 match outcome {
-                    Ok((mut accounts, cursor_unsupported, agy_refresh_failed)) => {
+                    Ok((mut accounts, agy_refresh_failed)) => {
                         if agy_refresh_failed {
                             if let Some(previous) = dev.accounts.iter().find(|a| {
                                 a.service == ServiceKind::Antigravity && !a.failed && !a.windows.is_empty()
@@ -607,12 +537,10 @@ impl UsageService {
                             }
                         }
                         dev.accounts = accounts;
-                        dev.cursor_unsupported = if cursor_unsupported { Some(true) } else { None };
                         dev.checked_at = Some(now_ms());
                         dev.error = None;
                     }
                     Err(msg) => {
-                        dev.cursor_unsupported = None;
                         dev.error = Some(if msg == "请更新这台电脑上的 Cindy，以支持后台读取" {
                             msg
                         } else {

@@ -385,7 +385,6 @@ export const MAKER_INVOKE = {
   AGY_PROXY_SET: 'maker:agy:proxy-set',
   AGY_USE_G1_CREDITS_GET: 'maker:agy:use-g1-credits-get',
   AGY_USE_G1_CREDITS_SET: 'maker:agy:use-g1-credits-set',
-  CURSOR_SET_API_KEY: 'maker:cursor:set-api-key',
   // 网关 API key presence-only 探测(只回 { present: boolean },不回密钥材料)——
   // 供 device-link 控制端(手机 / 远程桌面)判断折扣版是否置灰;判定真相在被控端
   // (key 存被控端 safeStorage)。见 device-link allowlist 的窄口径例外注释。
@@ -398,8 +397,6 @@ export const MAKER_INVOKE = {
   ANTIGRAVITY_CLI_VERSION: 'maker:agent:antigravity-cli-version',
   ANTIGRAVITY_CLI_STATE: 'maker:agent:antigravity-cli-state',
   ANTIGRAVITY_CLI_UPDATE: 'maker:agent:antigravity-cli-update',
-  CURSOR_SDK_STATE: 'maker:agent:cursor-sdk-state',
-  CURSOR_SDK_INSTALL: 'maker:agent:cursor-sdk-install',
   PI_KERNEL_INSTALL: 'maker:agent:pi-kernel-install',
   // Agent 今日累计 (取代老 codex:usage:today) —— 走 host 的 readAgentTodayUsage
   USAGE_TODAY: 'maker:usage:today',
@@ -412,9 +409,7 @@ export const MAKER_INVOKE = {
   USAGE_CLAUDE_SUBSCRIPTION: 'maker:usage:claude-subscription',
   // SuperGrok 账号周用量 (cli-chat-proxy settings + billing?format=credits)
   USAGE_XAI_SUBSCRIPTION: 'maker:usage:xai-subscription',
-  // Cursor 账期分池余量。与 device-link 同名通道同一信封，百分比来自 Cursor，不按套餐价反推。
   USAGE_ANTIGRAVITY_SUBSCRIPTION: 'maker:usage:antigravity-subscription',
-  USAGE_CURSOR_SUBSCRIPTION: 'maker:usage:cursor-subscription',
   // device-link v1 模型单价表:保留 modelId → USD/Mtok 扁平形状,旧控制端继续可读。
   USAGE_MODEL_PRICING: 'maker:usage:model-pricing',
   // Desktop renderer v2:Cindy AI `/models` 下发的 XD 原生报价。

@@ -121,7 +121,7 @@ export interface CollabWorkerConfig {
 
 export interface CollabDraft {
   enabled: boolean;
-  worker: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  worker: 'cc' | 'codex' | 'pi' | 'antigravity';
   workerConfig?: CollabWorkerConfig;
 }
 
@@ -249,7 +249,6 @@ function defaultVendorPrefs(vendor: MakerVendor): VendorPrefs {
       planMode: false, providerId: 'antigravity',
     };
   }
-  if (vendor === 'cursor') return { model: getDefaultModelForVendor('cursor').id, effort: 'medium', permissionMode: 'auto', permissionModeCustomized: false, planMode: false, providerId: 'cursor' };
   if (vendor === 'pi') {
     return {
       // pi 走 XD 网关(anthropic-messages 可达面),默认给网关中档模型;
@@ -310,7 +309,6 @@ function makeDefault(): NewMakerDraft {
     writableDirs: [],
     lastByVendor: {
       antigravity: defaultVendorPrefs('antigravity'),
-      cursor: defaultVendorPrefs('cursor'),
       cc: defaultVendorPrefs('cc'),
       pi: defaultVendorPrefs('pi'),
       orca: defaultVendorPrefs('orca'),
@@ -444,11 +442,11 @@ function sanitize(raw: unknown): NewMakerDraft {
       (p?.permissionModeCustomized === undefined && typeof p?.permissionMode === 'string' &&
         p.permissionMode !== 'auto' &&
         (v !== 'antigravity' || p.permissionMode !== 'default') &&
-        (v === 'cursor' || p.permissionMode !== 'plan'));
+        p.permissionMode !== 'plan');
     if (!p || typeof p !== 'object') return fallback;
     // 计划模式独立成一级开关后, 历史草稿里 permissionMode='plan' 迁移为
     // planMode=true + 该 vendor 默认权限档(与 DB 迁移同语义)。
-    const legacyPlanPermission = v !== 'cursor' && p.permissionMode === 'plan';
+    const legacyPlanPermission = p.permissionMode === 'plan';
     const remotePermissionModeCustomized = v === 'antigravity' && p.remotePermissionModeCustomized === true
       && typeof p.remotePermissionMode === 'string' && p.remotePermissionMode !== 'plan';
     return {
@@ -478,7 +476,7 @@ function sanitize(raw: unknown): NewMakerDraft {
       ? (r.modelChosenByVendor as Record<string, unknown>)
       : {};
   const modelChosenByVendor: Partial<Record<MakerVendor, boolean>> = {};
-  for (const v of ['cc', 'orca', 'codex', 'pi', 'cursor'] as const) {
+  for (const v of ['cc', 'orca', 'codex', 'pi'] as const) {
     if (modelChosenRaw[v] === true) modelChosenByVendor[v] = true;
   }
   // 老版本没有独立的组合标记：显式选过模型/来源/思考深度/Fast 都是足够强的
@@ -509,7 +507,7 @@ function sanitize(raw: unknown): NewMakerDraft {
   const legacyCcModel =
     legacyCcModelCandidate &&
     (r.defaultTupleCustomized === undefined || !isKnownProductTuple('cc', legacyCcPrefs));
-  const legacySourceSelection = (['cc', 'orca', 'codex', 'pi', 'cursor'] as const).some((slotVendor) => {
+  const legacySourceSelection = (['cc', 'orca', 'codex', 'pi'] as const).some((slotVendor) => {
     const prefs = lastByVendorRaw[slotVendor];
     if (
       !prefs ||
@@ -572,7 +570,6 @@ function sanitize(raw: unknown): NewMakerDraft {
     writableDirs,
     lastByVendor: {
       antigravity: sanitizeVendorPrefs(lastByVendorRaw.antigravity, 'antigravity'),
-      cursor: sanitizeVendorPrefs(lastByVendorRaw.cursor, 'cursor'),
       cc: sanitizeVendorPrefs(lastByVendorRaw.cc, 'cc'),
       pi: sanitizeVendorPrefs(lastByVendorRaw.pi, 'pi'),
       orca: sanitizeVendorPrefs(lastByVendorRaw.orca, 'orca'),
@@ -977,7 +974,7 @@ export function setNewChatDefaultPermissionMode(mode: PermissionMode | null): vo
   if (mode !== null && mode !== 'auto' && mode !== 'bypassPermissions') return;
   rebaseStoredDefaultTuplePreference();
   const lastByVendor = { ...currentDraft.lastByVendor };
-  for (const vendor of ['cc', 'pi', 'codex', 'orca', 'cursor', 'antigravity'] as const) {
+  for (const vendor of ['cc', 'pi', 'codex', 'orca', 'antigravity'] as const) {
     if (!lastByVendor[vendor].permissionModeCustomized) {
       lastByVendor[vendor] = { ...lastByVendor[vendor], permissionMode: mode ?? 'auto', permissionModeCustomized: false };
     }
@@ -1130,7 +1127,7 @@ export function switchVendor(next: MakerVendor, options?: { remoteFollow?: boole
     agentDeviceId: currentDraft.agentDeviceId, agentDeviceName: currentDraft.agentDeviceName,
   });
   // A different harness must not inherit the previous harness's borrowed source.
-  // With no remembered location, start on the task computer (including Cursor).
+  // With no remembered location, start on the task computer.
   const location = restoreAgentLocation && !currentDraft.remoteHostId
     ? agentLocationByVendor.get(next) ?? { agentDeviceId: null, agentDeviceName: null }
     : undefined;
@@ -1241,7 +1238,7 @@ export function fallbackUnavailableVendor(
   if (currentDraft.defaultTupleSelectionCustomized && !options?.differentCatalog) return false;
   const currentVendor = currentDraft.vendor;
   if (availableVendors.has(currentVendor)) return false;
-  const fallback = (['cc', 'codex', 'pi', 'cursor', 'antigravity'] as const).find((vendor) =>
+  const fallback = (['cc', 'codex', 'pi', 'antigravity'] as const).find((vendor) =>
     availableVendors.has(vendor),
   );
   if (!fallback) return false;
@@ -1252,7 +1249,7 @@ export function fallbackUnavailableVendor(
 }
 
 export interface SuggestedDefaultTuple {
-  vendor: Extract<MakerVendor, 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'>;
+  vendor: Extract<MakerVendor, 'cc' | 'codex' | 'pi' | 'antigravity'>;
   providerId: string;
   model: string;
   effort?: Effort | null;

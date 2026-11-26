@@ -28,8 +28,8 @@ import {
 } from './sessionPiTurnUsage.js';
 import {
   recordSessionNativeSubscriptionTurnUsage,
-  type RecordSessionCursorTurnUsageDeps,
-} from './sessionCursorTurnUsage.js';
+  type RecordSessionNativeSubscriptionTurnUsageDeps,
+} from './sessionNativeSubscriptionTurnUsage.js';
 
 export type SessionEventDependencies = PrepareSessionEventDeps &
   PersistSessionStreamEventDeps &
@@ -38,7 +38,7 @@ export type SessionEventDependencies = PrepareSessionEventDeps &
   RecordSessionClaudeTurnUsageDeps &
   RecordSessionCodexTurnUsageDeps &
   RecordSessionPiTurnUsageDeps &
-  RecordSessionCursorTurnUsageDeps & {
+  RecordSessionNativeSubscriptionTurnUsageDeps & {
     /** 按供应商记「本机」用量(远程与分享页的按使用方用量)。不提供 = 不记。 */
     readonly recordProviderPartyUsage?: (session: Session, event: AgentEvent) => void;
   };

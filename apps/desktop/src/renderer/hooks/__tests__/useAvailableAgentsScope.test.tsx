@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Unit regression: the first render after changing catalog ownership must never
 // expose the previous computer's roster as loaded. Otherwise the New-page
-// fallback effect can undo a click on local Cursor using Shared Mac's Claude roster.
+// fallback effect can undo a click on local Agy using Shared Mac's Claude roster.
 // Existing tests refresh one target; these cover cold and cached target changes.
 import React, { useEffect } from 'react';
 import { act, cleanup, fireEvent, render, screen, renderHook, waitFor } from '@testing-library/react';
@@ -23,20 +23,19 @@ beforeEach(() => {
   window.localStorage.clear();
   __reloadForTest();
   __resetAvailableAgentsCacheForTest();
-  api.maker.listAvailableAgents.mockReset().mockResolvedValue(['claude-code', 'cursor']);
+  api.maker.listAvailableAgents.mockReset().mockResolvedValue(['claude-code', 'antigravity']);
   api.deviceLink.invoke.mockReset().mockResolvedValue(['claude-code']);
   Object.assign(window, { electronAPI: api });
 });
 afterEach(cleanup);
 
-// Unit regression (2026-11-15): a remote roster advertised Cursor but the parser
-// discarded it. Existing scope cases only return Claude remotely. Minimum input:
-// a remote Cursor plus an unknown id; expose Cursor without accepting unknown ids.
-it('preserves Cursor in the remote selectable roster', async () => {
-  api.deviceLink.invoke.mockResolvedValue(['claude-code', 'cursor', 'unknown-engine']);
+// Unit regression: a remote roster advertised an additional harness alongside an unknown id;
+// expose supported harnesses without accepting unknown ids.
+it('preserves Antigravity in the remote selectable roster', async () => {
+  api.deviceLink.invoke.mockResolvedValue(['claude-code', 'antigravity', 'unknown-engine']);
   const hook = renderHook(() => useAvailableAgents('shared-computer'));
   await waitFor(() => expect(hook.result.current.loaded).toBe(true));
-  expect([...hook.result.current.availableVendors]).toEqual(['cc', 'cursor']);
+  expect([...hook.result.current.availableVendors]).toEqual(['cc', 'antigravity']);
 });
 
 it.each([false, true])('does not use the remote roster on the first local render (cached: %s)', async (cached) => {
@@ -56,14 +55,14 @@ it.each([false, true])('does not use the remote roster on the first local render
   if (!cached) api.maker.listAvailableAgents.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   frames.length = 0;
   hook.rerender({ deviceId: undefined });
-  expect(frames[0]).toEqual({ deviceId: undefined, loaded: cached, vendors: cached ? ['cc', 'cursor'] : [] });
-  if (!cached) await act(async () => { finish(['claude-code', 'cursor']); });
-  await waitFor(() => expect(hook.result.current.availableVendors.has('cursor')).toBe(true));
+  expect(frames[0]).toEqual({ deviceId: undefined, loaded: cached, vendors: cached ? ['cc', 'antigravity'] : [] });
+  if (!cached) await act(async () => { finish(['claude-code', 'antigravity']); });
+  await waitFor(() => expect(hook.result.current.availableVendors.has('antigravity')).toBe(true));
 });
 
 // Same selector, store and availability fallback as NewMakerDraftRoute. The IPC
-// fixture deliberately offers only Claude remotely, with Cursor on this Mac.
-it('clicking Cursor in the New-page selector leaves shared Claude and can switch back', async () => {
+// fixture deliberately offers only Claude remotely, with Agy on this Mac.
+it('clicking Agy in the New-page selector leaves shared Claude and can switch back', async () => {
   patchDraft({ agentDeviceId: 'shared-computer', agentDeviceName: 'Shared Mac' });
   function NewDraftPicker() {
     const draft = useNewMakerDraft();
@@ -75,10 +74,10 @@ it('clicking Cursor in the New-page selector leaves shared Claude and can switch
   await waitFor(() => expect(api.deviceLink.invoke).toHaveBeenCalled());
   await act(async () => {});
   fireEvent.click(screen.getByTitle('Claude'));
-  fireEvent.click(screen.getByRole('option', { name: 'Cursor' }));
-  await waitFor(() => expect(getDraft()).toMatchObject({ vendor: 'cursor', agentDeviceId: null }));
-  expect(screen.getByTitle('Cursor')).toBeTruthy();
-  fireEvent.click(screen.getByTitle('Cursor'));
+  fireEvent.click(screen.getByRole('option', { name: 'Agy' }));
+  await waitFor(() => expect(getDraft()).toMatchObject({ vendor: 'antigravity', agentDeviceId: null }));
+  expect(screen.getByTitle('Agy')).toBeTruthy();
+  fireEvent.click(screen.getByTitle('Agy'));
   fireEvent.click(screen.getByRole('option', { name: 'Claude' }));
   await waitFor(() => expect(getDraft()).toMatchObject({ vendor: 'cc', agentDeviceId: 'shared-computer' }));
 });

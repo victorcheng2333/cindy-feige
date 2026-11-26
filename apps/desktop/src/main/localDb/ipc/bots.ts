@@ -898,7 +898,7 @@ export async function reconcileBotProfileFolder(
   return derived;
 }
 
-function botSessionAgentKind(config: { harness?: unknown }): 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp' {
+function botSessionAgentKind(config: { harness?: unknown }): 'cc' | 'codex' | 'pi' | 'antigravity' | 'acp' {
   return config.harness === 'codex' || config.harness === 'pi' || config.harness === 'acp' ? config.harness : 'cc';
 }
 

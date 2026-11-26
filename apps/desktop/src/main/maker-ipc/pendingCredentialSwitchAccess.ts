@@ -51,7 +51,7 @@ export interface PendingCredentialSwitchAccessPorts {
   pendingCredentialSwitchHolder: PendingCredentialSwitchService | null;
   agentInputCoordinatorHolder: Pick<AgentInputCoordinator, 'wakeSession'> | null;
   /** 'acp' = plugin-engine task (docs/plans/acp-plugin-bridge.md); refused below, never mapped to a built-in. */
-  getSessionDbAgentKind: (sessionId: string) => 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp' | null;
+  getSessionDbAgentKind: (sessionId: string) => 'cc' | 'codex' | 'pi' | 'antigravity' | 'acp' | null;
   getMaker: () => Maker;
 }
 

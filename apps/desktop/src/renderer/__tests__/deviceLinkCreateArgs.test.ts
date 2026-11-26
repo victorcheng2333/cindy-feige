@@ -60,25 +60,6 @@ function deviceProvider(
 }
 
 describe('buildDeviceLinkCreateArgs', () => {
-  // Unit regression: same-account controlled Cursor creation was blocked in the
-  // submission builder although the destination already supports it. No prior
-  // case submitted Cursor on the task computer; agentDeviceId remains unsupported.
-  it('submits Cursor on the controlled project computer', () => {
-    const args = resolveDeviceLinkSubmission({ agentKind: 'cursor', workingDir: '/m5/project',
-      capabilityAgentKind: 'cursor', deviceProviders: [],
-      candidate: { model: 'fixture-model', providerId: 'cursor', effort: null,
-        permissionMode: 'auto', fastMode: false } });
-    expect(args).toMatchObject({ agentKind: 'cursor', workingDir: '/m5/project',
-      workspaceKind: 'project', providerId: 'cursor', effort: '' });
-    expect(args).not.toHaveProperty('agentDeviceId');
-    expect(buildProvisionalRemoteSession({ sessionId: 'remote', workDir: '/m5/project',
-      args, nowIso: '2026-11-15T00:00:00Z' }).agentKind).toBe('cursor');
-  });
-  it('rejects borrowing Cursor from a third computer', () => {
-    expect(() => buildDeviceLinkCreateArgs({ agentKind: 'cursor', agentDeviceId: 'other',
-      model: 'fixture-model', effort: null, permissionMode: 'auto', fastMode: false }))
-      .toThrow('task computer');
-  });
   it('submits Antigravity on the controlled project computer and allows own-computer borrowing', () => {
     const localArgs = resolveDeviceLinkSubmission({
       agentKind: 'antigravity',

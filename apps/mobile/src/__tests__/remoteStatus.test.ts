@@ -62,13 +62,6 @@ describe('remoteStatus', () => {
     expect(describeRemoteError('REMOTE_WORKDIR_NOT_FOUND missing folder')).not.toBe(i18n.t('deviceLink.remoteError.notFound'));
   });
 
-  // Unit: a disconnected host Cursor account must receive the same actionable
-  // sign-in guidance as other engines, rather than expose the raw SDK error.
-  it('names Cursor in host authentication recovery guidance', () => {
-    expect(humanizeRemoteError(new Error('cursor not authenticated: no_credentials'))).toContain('Cursor');
-    expect(humanizeRemoteError(new Error('cursor not authenticated: no_credentials'))).not.toContain('not authenticated');
-  });
-
   // #4841 (unit): the existing banner cases only cover stable codes, not a
   // direct Expo Android DNS error that has bypassed the API wrapper.
   it('describes Expo Android DNS failure in the connection banner language', () => {

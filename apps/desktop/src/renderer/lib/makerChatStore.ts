@@ -812,7 +812,7 @@ export interface ChatMessage {
 export type AgentTaskStatus = 'running' | 'completed' | 'failed' | 'stopped';
 
 export interface AgentTaskUpdate {
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  provider: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   taskId: string;
   parentToolUseId?: string;
   status: AgentTaskStatus;
@@ -2591,7 +2591,7 @@ export interface AgentSwitchIntentRecord {
    * 'acp' = 切到插件引擎(docs/plans/acp-plugin-bridge.md)，providerId 是 acp-plugin:<插件>:<引擎>。
    * 内置引擎的展示与切换链路只读 builtinAgentSwitchIntent()，插件引擎由选择器单独呈现。
    */
-  target: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp';
+  target: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'acp';
   model: string;
   providerId: string | null;
   effort?: string;
@@ -2638,7 +2638,7 @@ export interface SessionChatState {
    * Codex reducer。ensureInitialMessages 从 DB sessions.agent_kind 读出来灌进。
    * 默认 'claude-code' 兼容老路径(老 session row 没有此字段时按 Claude 处理)。
    */
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   /** 下一条消息发送时才由 main 应用的跨引擎切换意图。 */
   agentSwitchIntent: AgentSwitchIntentRecord | null;
   /**
@@ -5831,21 +5831,18 @@ function normalizeAgentTaskUpdate(
       ? rawStatus
       : 'running';
   const provider =
-    raw.provider === 'cursor'
-    || raw.provider === 'codex'
+    raw.provider === 'codex'
     || raw.provider === 'claude-code'
     || raw.provider === 'pi'
     || raw.provider === 'antigravity'
       ? raw.provider
-      : source === 'cursor'
-        ? 'cursor'
-        : source === 'codex'
-          ? 'codex'
-          : source === 'pi'
-            ? 'pi'
-            : source === 'antigravity'
-              ? 'antigravity'
-              : 'claude-code';
+      : source === 'codex'
+        ? 'codex'
+        : source === 'pi'
+          ? 'pi'
+          : source === 'antigravity'
+            ? 'antigravity'
+            : 'claude-code';
   const usageRaw =
     raw.usage && typeof raw.usage === 'object' ? (raw.usage as Record<string, unknown>) : null;
   const usage = usageRaw
@@ -7926,7 +7923,7 @@ type MakerEventPayload = {
   event?: {
     type: string;
     data: unknown;
-    source?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+    source?: 'claude-code' | 'codex' | 'pi' | 'antigravity';
     agentMeta?: Record<string, unknown>;
     turnContinuationId?: number;
     turnScope?: 'turn' | 'background';
@@ -7978,7 +7975,7 @@ type PendingTextDeltaBatch = {
   text: string;
   dataOwner: DataOwnerGeneration;
   ingress: LiveIngressContext;
-  source?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  source?: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   persistId?: string;
   agentMeta?: Record<string, unknown>;
 };
@@ -11079,7 +11076,7 @@ setRemoteTerminalErrorProbe(hasSessionTerminalError);
 
 interface ActiveSessionSnapshot {
   sessionId: string;
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   isTurnRunning: boolean;
 }
 
@@ -11129,7 +11126,7 @@ function isActiveSessionSnapshot(value: unknown): value is ActiveSessionSnapshot
   const item = value as Record<string, unknown>;
   return (
     typeof item.sessionId === 'string' &&
-    (item.agentKind === 'antigravity' || item.agentKind === 'cursor' || item.agentKind === 'claude-code' || item.agentKind === 'codex' || item.agentKind === 'pi') &&
+    (item.agentKind === 'antigravity' || item.agentKind === 'claude-code' || item.agentKind === 'codex' || item.agentKind === 'pi') &&
     typeof item.isTurnRunning === 'boolean'
   );
 }
@@ -12319,12 +12316,11 @@ function retryInvalidatedInitialHistoryFetchIfNeeded(
  */
 function dbAgentKindToMakerKind(
   dbKind: string | null | undefined,
-  fallback: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' = 'claude-code',
-): 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' {
+  fallback: 'claude-code' | 'codex' | 'pi' | 'antigravity' = 'claude-code',
+): 'claude-code' | 'codex' | 'pi' | 'antigravity' {
   if (dbKind === 'codex') return 'codex';
   if (dbKind === 'cc') return 'claude-code';
   if (dbKind === 'pi') return 'pi';
-  if (dbKind === 'cursor') return 'cursor';
   if (dbKind === 'antigravity') return 'antigravity';
   return fallback;
 }
@@ -15790,7 +15786,7 @@ function autoTitleFallbackLabels(): AutoTitleFallbackLabels {
 function scheduleAutoName(
   sessionId: string,
   text: string,
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity',
   isUserText = true,
 ): void {
   // 与 main 共用 normalizeAutoTitle,两端算出的占位串逐字一致,回流时不跳变。
@@ -15906,7 +15902,7 @@ function clearAutoTitlePreviewSafely(sessionId: string): void {
 function maybeAutoNameUnnamedSession(
   sessionId: string,
   seed: AutoTitleSeed | null,
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity',
 ): void {
   if (!seed?.isUserText) return;
   if (sessions.get(sessionId)?.autoTitleDisabled === true) return;
@@ -16331,7 +16327,7 @@ async function sendMessageCore(
       // 用会话真实 agentKind 起名 — 之前写死 'claude-code',导致 Codex 会话也
       // 用 Claude haiku 起标题:纯 Codex 用户(无 Claude 鉴权)会 oneShot 失败 →
       // fallback 原话,表现为"Codex 会话标题没有智能总结"。current.agentKind 已是
-      // maker 格式('claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'),直接透传。起名走立即占位 + 后台覆盖。
+      // maker 格式('claude-code' | 'codex' | 'pi' | 'antigravity'),直接透传。起名走立即占位 + 后台覆盖。
       if (autoTitleSeed) {
         scheduleAutoName(
           sessionId,
@@ -18973,7 +18969,7 @@ function sendUiTrigger(sessionId: string, prompt: string): Promise<void> {
  * sdkSessionId——否则 buildCreateOpts 会把旧引擎的原生会话 id 当 resume 目标
  * (main 侧 reconcileCreateOptsWithDb 是兜底,这里是第一现场收敛)。
  */
-function noteAgentSwitched(sessionId: string, agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'): void {
+function noteAgentSwitched(sessionId: string, agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity'): void {
   if (!sessionId) return;
   setState(sessionId, (s) => {
     const nextProviderId = s.agentSwitchIntent ? s.agentSwitchIntent.providerId : s.sessionProviderId;
@@ -19005,7 +19001,7 @@ function noteAgentSwitched(sessionId: string, agentKind: 'claude-code' | 'codex'
  */
 function noteAgentSwitchIntent(
   sessionId: string,
-  target: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  target: 'claude-code' | 'codex' | 'pi' | 'antigravity',
   opts: {
     model: string;
     providerId: string | null;
@@ -19065,7 +19061,6 @@ function normalizeAgentSwitchIntent(value: unknown): AgentSwitchIntentRecord | n
     item.targetAgentKind !== 'claude-code'
     && item.targetAgentKind !== 'codex'
     && item.targetAgentKind !== 'pi'
-    && item.targetAgentKind !== 'cursor'
     && item.targetAgentKind !== 'antigravity'
     && item.targetAgentKind !== 'acp'
   ) return null;
@@ -19135,7 +19130,7 @@ function mirrorAgentSwitchIntent(sessionId: string, value: unknown): void {
 function setSessionRuntime(
   sessionId: string,
   opts: {
-    agentKind?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+    agentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity';
     fastMode?: boolean | 'ultrafast';
     planModeEnabled?: boolean;
     /** Seed before SessionView hydrates the DB row; sendMessage reads this for SSH routing. */
@@ -19241,7 +19236,7 @@ function mirrorSessionFields(
   // 同步清 sdkSessionId(旧引擎的原生会话 id 对新引擎无意义,与 noteAgentSwitched
   // 口径一致)。幂等:发起窗口已 noteAgentSwitched → 同值 no-op。
   const pluginEngineFlip = isPluginEngineKind(patch.agentKind);
-  if (patch.agentKind === 'antigravity' || patch.agentKind === 'cursor' || patch.agentKind === 'cc' || patch.agentKind === 'codex' || patch.agentKind === 'pi' || pluginEngineFlip) {
+  if (patch.agentKind === 'antigravity' || patch.agentKind === 'cc' || patch.agentKind === 'codex' || patch.agentKind === 'pi' || pluginEngineFlip) {
     // 插件引擎任务的事件走 Claude Code 这套通用 reducer，与直接打开的插件引擎任务一致
     // (dbAgentKindToMakerKind 对 'acp' 回落 'claude-code')。
     const nextKind = pluginEngineFlip ? 'claude-code' : dbToMakerAgentKind(patch.agentKind as string);

@@ -436,7 +436,7 @@ describe('readUsageHistoryWith', () => {
     expect(result.totals.todayTokens).toBe(11635);
     const scope = usageScope(result, [TODAY], []);
     const view = usageView(result);
-    const expectedDay = { money: [0, 0, 0], paid: 0, tokens: [0, 0, 0, 0, 0, 0, 11635] };
+    const expectedDay = { money: [0, 0, 0], paid: 0, tokens: [0, 0, 0, 0, 0, 11635] };
     expect(view.usage.scopes.all.daily).toEqual([expectedDay]);
     const widget = buildUsageWidgetSnapshot(view, Date.now(), () => null, scope.modelSeries)?.usage;
     expect(widget?.daily).toEqual([{ ...expectedDay, tokens: [0, 0, 0, 0, 11635], models: [0, 0], modelTokens: [11635, 0] }]);

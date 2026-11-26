@@ -102,12 +102,12 @@ export interface UsageHistoryDay {
 }
 
 function usageAgentKind(value: string): UsageHistoryModel['agentKind'] {
-  return value === 'codex' || value === 'pi' || value === 'cursor' || value === 'antigravity' || value === 'acp' || value === 'media' || value === 'auxiliary'
+  return value === 'codex' || value === 'pi' || value === 'antigravity' || value === 'acp' || value === 'media' || value === 'auxiliary'
     ? value : 'claude-code';
 }
 
 export interface UsageHistoryModel {
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp' | 'media' | 'auxiliary';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'acp' | 'media' | 'auxiliary';
   model: string;
   /** SDK 实报美元 (Claude); Codex 恒 0。 */
   money: RegionalMoney;
@@ -754,7 +754,7 @@ export async function readUsageHistoryWith(
   // 覆盖记录也在这里读一次快照:缺价检查、模型聚合、每日明细三条遍历共用,
   // 避免历史重合并按 model-day 逐行 stat 覆盖文件。
   const hasMissingPendingSubscriptionPrice = modelRows.some((r) =>
-    r.agentKind !== 'cursor' && r.agentKind !== 'antigravity' && r.agentKind !== 'acp' &&
+    r.agentKind !== 'antigravity' && r.agentKind !== 'acp' &&
     isSubscriptionUsageModel(r.model) &&
     r.money.kind !== 'value-estimate' &&
     !getSubscriptionValuePriceFor(

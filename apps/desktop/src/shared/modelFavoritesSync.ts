@@ -11,8 +11,6 @@ export interface FavoriteHostRequest {
   expiresAt: number;
   ownerStamp: DataOwnerPushStamp;
   mutation?: ModelFavoriteMutation;
-  /** Main has verified both the caller scope and explicit reader opt-in. */
-  includeCursor?: boolean;
   /** Also read the renderer-owned recently used list (plugin `/model-preferences`). Never written. */
   recents?: true;
 }

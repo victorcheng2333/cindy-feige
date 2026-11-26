@@ -21,7 +21,6 @@ pub struct Quota {
 pub enum ServiceKind {
     Claude,
     ChatGPT,
-    Cursor,
     Antigravity,
 }
 
@@ -48,8 +47,6 @@ pub struct Device {
     pub remote_control_enabled: bool,
     pub platform: String,
     pub accounts: Vec<Account>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cursor_unsupported: Option<bool>,
     pub error: Option<String>,
     pub checked_at: Option<f64>,
 }
@@ -180,7 +177,6 @@ pub fn parse_devices(raw: &Value, self_id: &str) -> Result<Vec<Device>, String> 
             online,
             remote_control_enabled,
             accounts: Vec::new(),
-            cursor_unsupported: None,
             error: None,
             checked_at: None,
         });
@@ -206,21 +202,20 @@ pub fn subscription_providers(raw: &Value) -> Result<Vec<Map<String, Value>>, St
         };
         let auth = p.get("auth").and_then(Value::as_object);
         let is_oauth = auth.and_then(|a| a.get("method")).and_then(Value::as_str) == Some("oauth");
-        let access_ok = id == "cursor"
-            || match p.get("access") {
-                None | Some(Value::Null) => true,
-                Some(v) => {
-                    v.as_object()
-                        .and_then(|a| a.get("kind"))
-                        .and_then(Value::as_str)
-                        == Some("subscription")
-                }
-            };
+        let access_ok = match p.get("access") {
+            None | Some(Value::Null) => true,
+            Some(v) => {
+                v.as_object()
+                    .and_then(|a| a.get("kind"))
+                    .and_then(Value::as_str)
+                    == Some("subscription")
+            }
+        };
         let native = auth
             .and_then(|a| a.get("native"))
             .and_then(Value::as_str)
             .unwrap_or("");
-        let supported = matches!(native, "claude" | "codex") || matches!(id, "anthropic" | "openai" | "cursor");
+        let supported = matches!(native, "claude" | "codex") || matches!(id, "anthropic" | "openai");
         if connected && !removed && !suspended && is_oauth && access_ok && supported {
             out.push(p.clone());
         }
@@ -239,12 +234,11 @@ pub fn empty_account(p: &Map<String, Value>) -> Account {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    if id == "cursor" || id == "antigravity" {
-        let cursor = id == "cursor";
+    if id == "antigravity" {
         return Account {
             id,
-            name: if cursor { "Cursor" } else { "Agy" }.to_string(),
-            service: if cursor { ServiceKind::Cursor } else { ServiceKind::Antigravity },
+            name: "Agy".to_string(),
+            service: ServiceKind::Antigravity,
             plan: String::new(),
             windows: Vec::new(),
             updated_at: None,
@@ -399,56 +393,9 @@ pub fn parse_account(p: &Map<String, Value>, payload: &Value, current_ms: f64) -
         }
         return Ok(a);
     }
-    if a.service == ServiceKind::Cursor {
-        if raw.get("providerId").and_then(Value::as_str) != Some("cursor") {
-            return Err("Cursor account mismatch".to_string());
-        }
-        if raw.get("status").and_then(Value::as_str) != Some("ready") {
-            a.failed = true;
-            a.error = Some("远端暂未读到 Cursor 额度，请确认连接状态后刷新。".to_string());
-            return Ok(a);
-        }
-        let snapshot = raw
-            .get("snapshot")
-            .and_then(Value::as_object)
-            .unwrap_or(&empty_map);
-        a.updated_at = positive_timestamp(snapshot.get("fetchedAtMs"));
-        let reset = positive_timestamp(snapshot.get("resetsAtMs")).map(|ms| ms / 1000.0);
-        let mut seen = std::collections::HashSet::new();
-        if let Some(pools) = snapshot.get("pools").and_then(Value::as_array) {
-            for item in pools {
-                let Some(pool) = item.as_object() else { continue };
-                let Some(id) = pool.get("id").and_then(Value::as_str) else { continue };
-                let label = match id {
-                    "auto" => "Cursor 模型",
-                    "api" => "其他模型",
-                    "total" => "套餐总额度",
-                    _ => continue,
-                };
-                if !seen.insert(id) {
-                    continue;
-                }
-                let Some(used) = finite_number(pool.get("usedPercent")).filter(|&u| u >= 0.0) else {
-                    continue;
-                };
-                a.windows.push(Quota {
-                    minutes: None,
-                    remaining: (100.0 - used).clamp(0.0, 100.0),
-                    resets_at: reset,
-                    label: Some(label.to_string()),
-                });
-            }
-        }
-        if a.windows.is_empty() {
-            a.failed = true;
-            a.error = Some("远端未返回有效的 Cursor 额度池。".to_string());
-        }
-        return Ok(a);
-    }
     let builtin = match a.service {
         ServiceKind::Claude => "anthropic",
         ServiceKind::ChatGPT => "openai",
-        ServiceKind::Cursor => "cursor",
         ServiceKind::Antigravity => unreachable!(),
     };
     let resp_provider_id = raw.get("providerId");
@@ -514,7 +461,7 @@ pub fn parse_account(p: &Map<String, Value>, payload: &Value, current_ms: f64) -
                 }
             }
         }
-        ServiceKind::Cursor | ServiceKind::Antigravity => unreachable!(),
+        ServiceKind::Antigravity => unreachable!(),
     }
     Ok(a)
 }
@@ -710,7 +657,6 @@ pub fn demo_snapshot() -> Snapshot {
                 platform: "darwin".to_string(),
                 online: true,
                 remote_control_enabled: true,
-                cursor_unsupported: None,
                 error: None,
                 checked_at: Some(now),
                 accounts: vec![
@@ -766,29 +712,6 @@ pub fn demo_snapshot() -> Snapshot {
                             },
                         ],
                     },
-                    Account {
-                        id: "cursor".to_string(),
-                        name: "Cursor".to_string(),
-                        service: ServiceKind::Cursor,
-                        plan: String::new(),
-                        updated_at: Some(now),
-                        failed: false,
-                        error: None,
-                        windows: vec![
-                            Quota {
-                                minutes: None,
-                                remaining: 99.6,
-                                resets_at: Some(reset(28.0 * 24.0)),
-                                label: Some("Cursor 模型".to_string()),
-                            },
-                            Quota {
-                                minutes: None,
-                                remaining: 37.0,
-                                resets_at: Some(reset(28.0 * 24.0)),
-                                label: Some("其他模型".to_string()),
-                            },
-                        ],
-                    },
                     agy,
                 ],
             },
@@ -798,7 +721,6 @@ pub fn demo_snapshot() -> Snapshot {
                 platform: "darwin".to_string(),
                 online: false,
                 remote_control_enabled: true,
-                cursor_unsupported: None,
                 error: None,
                 checked_at: None,
                 accounts: Vec::new(),

@@ -255,7 +255,7 @@ function legacyCrossHarnessModelAgentKind(
   // Bound schedules never use a plugin engine (refused on save); refuse rather than reinterpret one.
   if (currentAgentKind === schedule.agentKind) return undefined;
   const kind = scheduledBuiltinAgentKind(schedule.agentKind);
-  return kind === 'cursor' ? undefined : kind;
+  return kind;
 }
 
 /**
@@ -1474,7 +1474,6 @@ export class MakerScheduleRunner implements ScheduleRunner {
           }
         }
         if (resolvedSelection) {
-          if (resolvedSelection.agentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
           schedule = {
             ...schedule,
             agentKind: resolvedSelection.agentKind,
@@ -1615,9 +1614,6 @@ export class MakerScheduleRunner implements ScheduleRunner {
           }
           if (reacquired) {
             resolvedSelection = reacquired;
-            if (resolvedSelection.agentKind === 'cursor') {
-              throw new Error('Cursor does not support scheduled tasks');
-            }
             schedule = {
               ...schedule,
               agentKind: resolvedSelection.agentKind,
@@ -1847,7 +1843,6 @@ export class MakerScheduleRunner implements ScheduleRunner {
       resolvedSelection = freshAgentDeviceId
         ? await this.deps.resolveModelSelection(selection, { agentDeviceId: freshAgentDeviceId })
         : await this.deps.resolveModelSelection(selection);
-      if (resolvedSelection.agentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
       createProviderId = resolvedSelection.providerId;
       fastMode = resolvedSelection.fastMode;
       schedule = {

@@ -76,7 +76,7 @@ export function buildUsageWidgetSnapshot(
   const scope = view.settings.scope;
   const data = view.usage.scopes[scope] ?? view.usage.scopes.all;
   const count = Math.min(view.usage.days.length, data?.daily.length ?? 0, WIDGET_DAYS);
-  const isWidgetExcludedHarness = (harness: string) => harness === 'cursor' || harness === 'antigravity';
+  const isWidgetExcludedHarness = (harness: string) => harness === 'antigravity';
   // Same days as the view; the series is collected alongside it, so it only lines up when its length matches.
   const seriesDaily = series && !series.models.some(model => isWidgetExcludedHarness(model.harness)) && series.daily.length === view.usage.days.length && count > 0
     ? series.daily.slice(-count) : undefined;
@@ -105,8 +105,8 @@ export function buildUsageWidgetSnapshot(
       daily: count > 0 && data ? data.daily.slice(-count).map((day, i) => {
         const models = seriesDaily?.[i];
         const modelTokens = seriesTokens?.[i];
-        // Widget v1 has three fixed harness slots (0..2); exclude Cursor/Agy (3..4) while preserving trailing auxiliary/ACP token slots (5..).
-        const extraTokens = day.tokens.slice(5);
+        // Widget v1 has three fixed harness slots (0..2); exclude Agy (3) while preserving trailing auxiliary/ACP token slots (4..).
+        const extraTokens = day.tokens.slice(4);
         const tokens: [number, number, number, ...number[]] = [
           day.tokens[0] ?? 0,
           day.tokens[1] ?? 0,
@@ -115,7 +115,7 @@ export function buildUsageWidgetSnapshot(
         ];
         return { money: [day.money[0], day.money[1], day.money[2]], paid: day.paid, tokens, ...(models && modelTokens ? { models, modelTokens } : {}) };
       }) : [],
-      ...(seriesDaily ? { models: series!.models.flatMap(model => model.harness === 'cursor' || model.harness === 'antigravity' ? [] : [{ ...model, harness: model.harness }]) } : {}),
+      ...(seriesDaily ? { models: series!.models.flatMap(model => model.harness === 'antigravity' ? [] : [{ ...model, harness: model.harness }]) } : {}),
     },
     strings,
   };

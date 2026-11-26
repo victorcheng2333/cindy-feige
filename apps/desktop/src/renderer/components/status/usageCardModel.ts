@@ -1,6 +1,5 @@
 /** Provider snapshots are adapted here; the card renders only this common presentation model. */
 import type { AntigravityQuotaSnapshot } from '../../../shared/antigravityQuota';
-import type { CursorQuotaSnapshot } from '../../../shared/cursorQuota';
 import { kimiUsageWindowMinutes, type KimiCodingUsageSnapshot } from '../../../shared/kimiCodingUsage';
 import type { TFunction } from 'i18next';
 import type { CodexRateLimitResetSummary } from '@cindy/maker-shared/session-controls';
@@ -260,36 +259,6 @@ export function buildZhipuUsageCard(
     planLabel: snapshot.level ? snapshot.level.toUpperCase() : undefined,
     windows,
     updatedAt: snapshot.fetchedAt,
-    emptyText: windows.length ? undefined : t('quotaCard.noWindows'),
-  };
-}
-
-/**
- * Cursor plan pools are independent. Percentages stay as returned, including bonus
- * usage, and there is no billing-period start from which to estimate pace.
- */
-export function buildCursorUsageCard(
-  snapshot: CursorQuotaSnapshot | null,
-  t: TFunction,
-): UsageCardAccount {
-  if (!snapshot) return { title: 'Cursor', windows: [], emptyText: t('quotaCard.waiting') };
-  const windows: UsageCardWindow[] = snapshot.pools.map((pool) => ({
-    key: pool.id,
-    title: t(`menubar.cursor.${pool.id}`),
-    showRemaining: true,
-    window: {
-      utilization: pool.usedPercent,
-      resetsAt: snapshot.resetsAtMs == null ? null : snapshot.resetsAtMs / 1000,
-    },
-  }));
-  return {
-    title: 'Cursor',
-    windows,
-    updatedAt: snapshot.fetchedAtMs,
-    details: [
-      t('menubar.cursor.explanation'),
-      `${t('menubar.cursor.extra')} · ${t('menubar.cursor.extraHint')}`,
-    ],
     emptyText: windows.length ? undefined : t('quotaCard.noWindows'),
   };
 }

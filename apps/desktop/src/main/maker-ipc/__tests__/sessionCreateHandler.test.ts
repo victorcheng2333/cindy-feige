@@ -354,16 +354,16 @@ it('closes the returned instance once when terminal cancellation interrupts publ
   expect(close).toHaveBeenCalledOnce();
 });
 
-// Regression: iOS sent a valid Cursor draft, but the production IPC parser rejected
-// it before the same-account creation guard/transaction could run. Tier: unit.
-it('accepts the complete Cursor create payload through the real IPC parser', async () => {
+// Regression: iOS sent a valid Agy draft, and the production IPC parser must accept
+// it before the same-account creation guard/transaction runs. Tier: unit.
+it('accepts the complete Agy create payload through the real IPC parser', async () => {
   const harness = new IpcHarness();
   const deps = createDeps({ bootstrapSession: vi.fn().mockResolvedValue({
-    session: createSessionStub({ agentKind: 'cursor' }), didInjectOrcaInstructions: false, didInjectProjectContext: true,
+    session: createSessionStub({ agentKind: 'antigravity' }), didInjectOrcaInstructions: false, didInjectProjectContext: true,
   }) });
   registerMakerSessionCreateHandler(harness, deps);
-  const draft = { agentKind: 'cursor', workingDir: '/repo', workspaceKind: 'project', model: 'cursor-model', providerId: 'cursor', effort: 'high', fastMode: true, permissionMode: 'auto', planMode: false };
-  await expect(harness.invoke(MAKER_INVOKE.CREATE_SESSION, draft)).resolves.toMatchObject({ sessionId: 'session-1', agentKind: 'cursor' });
+  const draft = { agentKind: 'antigravity', workingDir: '/repo', workspaceKind: 'project', model: 'agy-model', providerId: 'antigravity', effort: 'high', fastMode: false, permissionMode: 'auto', planMode: false };
+  await expect(harness.invoke(MAKER_INVOKE.CREATE_SESSION, draft)).resolves.toMatchObject({ sessionId: 'session-1', agentKind: 'antigravity' });
   expect(deps.bootstrapSession).toHaveBeenCalledWith(expect.objectContaining(draft));
   expect(deps.broadcastSessionCreated).toHaveBeenCalledWith('session-1');
 });

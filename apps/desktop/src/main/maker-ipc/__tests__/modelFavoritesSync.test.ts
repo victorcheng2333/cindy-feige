@@ -110,27 +110,6 @@ it.each([true, false])('codes host rejection or malformed reply (rejected=%s)', 
   await checked;
 });
 
-// Simulator regression: Cursor favorite saves were rejected by the three-engine wire parser.
-// Unit tier: actual IPC entry, verified controller scope and persistence acknowledgement.
-it('includes Cursor only for an opted-in same-account controller', async () => {
-  h.sameAccount = true;
-  const cursor = { ...item, agent: 'cursor' };
-  const result = h.handle.get(MODEL_FAVORITES_APPLY)!({}, { kind: 'add', item: cursor }, { includeCursor: true });
-  const request = host.send.mock.calls[0][1];
-  expect(request).toMatchObject({ includeCursor: true, mutation: { item: { ...cursor, uid: '' } } });
-  h.on.get(FAVORITE_HOST_REPLY)!({ sender: host }, { requestId: request.requestId, items: [cursor] });
-  expect(await result).toEqual([cursor]);
-});
-it.each(['legacy', 'unverified', 'guest'])('does not admit Cursor from %s callers', async kind => {
-  h.sameAccount = kind !== 'unverified';
-  h.sharedTask = kind === 'guest';
-  await expect(h.handle.get(MODEL_FAVORITES_APPLY)!({},
-    { kind: 'add', item: { ...item, agent: 'cursor' } },
-    kind === 'legacy' ? undefined : { includeCursor: true },
-  )).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-  expect(host.send).not.toHaveBeenCalled();
-});
-
 // Plugin /model-preferences (agent.modelPreferences) reuses this bridge instead of a second store:
 // reads ask the same host for recents too, mutations wait for its persisted reply, device-link GET
 // never asks for recents, and a malformed recents reply is not delivered.

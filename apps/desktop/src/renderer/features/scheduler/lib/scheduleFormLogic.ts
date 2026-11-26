@@ -165,8 +165,8 @@ export interface ScheduleFormState {
   webhookSigned?: boolean;
   /** 自定义格式的 JSON 文本，原样保留用户输入。 */
   webhookFormat?: string;
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'cursor';
-  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'cursor';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity';
+  modelAgentKind?: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   /**
    * 选中的插件引擎(docs/plans/acp-plugin-bridge.md)。和新建任务草稿一样单独保存在内置引擎的选择旁边：
    * 有值时保存为 agentKind / modelAgentKind = 'acp'，内置的 agentKind / model 只是切回内置引擎时的初值。
@@ -437,7 +437,7 @@ export function applyRunMode(
 
 /** renderer Session.agentKind('cc'|'codex'|'pi'|'antigravity')→ schedule agentKind 映射。 */
 export function sessionAgentKindToScheduleAgentKind(
-  kind: 'cc' | 'codex' | 'pi' | 'antigravity' | 'cursor',
+  kind: 'cc' | 'codex' | 'pi' | 'antigravity',
 ): ScheduleFormState['agentKind'] {
   if (kind === 'codex') return 'codex';
   if (kind === 'pi') return 'pi';
@@ -712,7 +712,6 @@ export function validGithubRepositories(text: string | undefined): boolean {
 
 export function buildScheduleInput(form: ScheduleFormState): CreateScheduleInput {
   const selectedAgent = scheduleAgentKindForForm(form);
-  if (selectedAgent === 'cursor' || form.modelAgentKind === 'cursor') throw new Error('Cursor does not support scheduled tasks');
   const isHeartbeat = !!form.targetSessionId.trim();
   const isScript = (form.executionMode ?? 'agent') === 'script';
   const cronExpr = form.cronExpr.trim();

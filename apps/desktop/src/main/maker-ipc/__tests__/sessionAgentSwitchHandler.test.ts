@@ -147,155 +147,6 @@ const validParams = {
   providerId: null,
 };
 
-// Unit regression: the model picker uses SWITCH_SESSION_AGENT even within Cursor.
-// Existing fixtures covered only the three older harnesses; one Cursor row was rejected
-// before reaching same-engine selection. Exercise the registered IPC with atomic axes.
-describe('Cursor model picker admission', () => {
-  it('routes a local Cursor choice and its tuning to same-engine model selection', async () => {
-    const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
-    const { deps, calls } = makeDeps({
-      getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cursor', model: 'old', providerId: 'cursor' })),
-      selectSameAgentModel,
-    });
-    const ipc = new IpcHarness();
-    registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', 'cursor', 'grok', 'cursor', 'high', true))
-      .resolves.toMatchObject({ agentKind: 'cursor', model: 'grok', deferred: true });
-    expect(vi.mocked(deps.selectSameAgentModel!).mock.calls[0].slice(0, 3)).toEqual(['s1', {
-      targetAgentKind: 'cursor', model: 'grok', providerId: 'cursor', effort: 'high', fastMode: true, sameAgentSelection: true,
-    }, false]);
-    expect(calls).toEqual([]);
-  });
-
-  // User regression, unit: local old tasks could neither enter nor leave Cursor.
-  // The old cases asserted rejection only; verify persisted history and engine startup.
-  it.each([
-    { source: 'cc', target: 'cursor', device: undefined },
-    { source: 'cursor', target: 'codex', device: undefined },
-  ])('hands local history from $source to $target', async ({ source, target }) => {
-    const { deps } = makeDeps({ getSessionRow: vi.fn(async () => makeRow({ agentKind: source })) });
-    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', target, 'model', target === 'cursor' ? 'cursor' : null))
-      .resolves.toMatchObject({ switched: true, agentKind: target, engineReady: true });
-    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({ agentKind: target, sdkSessionId: null }));
-    expect(deps.insertBoundaryMessage).toHaveBeenCalledWith('s1', expect.objectContaining({
-      fromAgentKind: source, toAgentKind: target, handoff: expect.stringContaining('你好'),
-    }));
-    expect(deps.setPendingHandoff).toHaveBeenCalledWith('s1', expect.stringContaining('Cursor'), undefined);
-    expect(deps.bootstrapSwitchedSession).toHaveBeenCalled();
-  });
-
-  it.each([
-    { source: 'cc', rowDevice: 'shared-mac' as string | undefined, requestDevice: undefined as string | undefined },
-    { source: 'cc', rowDevice: 'shared-mac', requestDevice: 'shared-mac' },
-    { source: 'codex', rowDevice: 'shared-mac', requestDevice: undefined },
-  ])('hands shared $source history to local Cursor instead of inheriting $rowDevice', async ({ source, rowDevice, requestDevice }) => {
-    const { deps } = makeDeps({
-      getSessionRow: vi.fn(async () => makeRow({ agentKind: source, agentDeviceId: rowDevice })),
-    });
-    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(
-      MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', 'cursor', 'grok', 'cursor', 'high', false,
-      requestDevice ? { agentDeviceId: requestDevice } : undefined,
-    )).resolves.toMatchObject({ switched: true, agentKind: 'cursor', engineReady: true });
-    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
-      agentKind: 'cursor', agentDeviceId: null, sdkSessionId: null,
-    }));
-    expect(deps.insertBoundaryMessage).toHaveBeenCalledWith('s1', expect.objectContaining({
-      fromAgentKind: source, toAgentKind: 'cursor', handoff: expect.stringContaining('你好'),
-    }));
-    expect(deps.setPendingHandoff).toHaveBeenCalledWith('s1', expect.stringContaining('Cursor'), undefined);
-    expect(deps.bootstrapSwitchedSession).toHaveBeenCalled();
-  });
-
-  it.each([
-    { target: 'antigravity' as const, providerId: 'antigravity', expectedDbKind: 'antigravity', expectedProviderId: 'antigravity' },
-    { target: 'claude-code' as const, providerId: null, expectedDbKind: 'cc', expectedProviderId: null },
-    { target: 'codex' as const, providerId: null, expectedDbKind: 'codex', expectedProviderId: null },
-  ])('hands local Cursor history to remote $target on another computer', async ({ target, providerId, expectedDbKind, expectedProviderId }) => {
-    const { deps } = makeDeps({
-      getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cursor', agentDeviceId: null })),
-    });
-    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(
-      MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', target, 'model', providerId, 'high', false,
-      { agentDeviceId: 'other-mac' },
-    )).resolves.toMatchObject({ switched: true, agentKind: target, engineReady: true });
-    expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', expect.objectContaining({
-      agentKind: expectedDbKind, providerId: expectedProviderId, agentDeviceId: 'other-mac', sdkSessionId: null,
-    }));
-    expect(deps.insertBoundaryMessage).toHaveBeenCalledWith('s1', expect.objectContaining({
-      fromAgentKind: 'cursor', toAgentKind: expectedDbKind, handoff: expect.stringContaining('你好'),
-    }));
-    expect(deps.setPendingHandoff).toHaveBeenCalledWith('s1', expect.stringContaining('Cursor'), undefined);
-    expect(deps.bootstrapSwitchedSession).toHaveBeenCalled();
-  });
-
-  it.each([
-    { source: 'cursor', target: 'cursor', device: 'other-device' },
-  ])('rejects moving Cursor from $source to $target ($device)', async ({ source, target, device }) => {
-    const selectSameAgentModel = vi.fn(async () => ({ deferred: true }));
-    const { deps, calls } = makeDeps({ getSessionRow: vi.fn(async () => makeRow({ agentKind: source })), selectSameAgentModel });
-    const ipc = new IpcHarness(); registerMakerSessionAgentSwitchHandler(ipc, deps);
-    await expect(ipc.invoke(MAKER_INVOKE.SWITCH_SESSION_AGENT, 's1', target, 'model', null, 'high', false,
-      device ? { agentDeviceId: device } : undefined)).rejects.toThrow('UNSUPPORTED_CAPABILITY');
-    expect(calls).toEqual([]);
-    expect(selectSameAgentModel).not.toHaveBeenCalled();
-  });
-
-  it.each(['ask', 'acceptEdits', 'default', undefined] as const)(
-    'normalizes legacy permissionMode %s to auto when switching to Cursor',
-    async (permissionMode) => {
-      const { deps } = makeDeps({
-        getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cc', permissionMode })),
-      });
-      await expect(
-        performSessionAgentSwitch(deps, {
-          ...validParams,
-          targetAgentKind: 'cursor',
-          providerId: 'cursor',
-        }),
-      ).resolves.toMatchObject({ switched: true, agentKind: 'cursor', engineReady: true });
-      expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith(
-        's1',
-        expect.objectContaining({
-          agentKind: 'cursor',
-          permissionMode: 'auto',
-        }),
-      );
-    },
-  );
-
-  it.each(['auto', 'bypassPermissions', 'plan'] as const)(
-    'preserves Cursor-supported permissionMode %s when switching to Cursor',
-    async (permissionMode) => {
-      const { deps } = makeDeps({
-        getSessionRow: vi.fn(async () => makeRow({ agentKind: 'cc', permissionMode })),
-      });
-      await expect(
-        performSessionAgentSwitch(deps, {
-          ...validParams,
-          targetAgentKind: 'cursor',
-          providerId: 'cursor',
-        }),
-      ).resolves.toMatchObject({ switched: true, agentKind: 'cursor', engineReady: true });
-      const patch = vi.mocked(deps.applyAgentSwitchToDb).mock.calls[0]?.[1];
-      expect(patch).not.toHaveProperty('permissionMode');
-    },
-  );
-
-  it.each([
-    { source: 'bot' },
-    { orcaRemoteLead: 'remote-lead' },
-    { orcaRole: 'worker' },
-  ])('preserves the original task when Cursor cannot accept it: %j', async (patch) => {
-    const { deps, calls } = makeDeps({ getSessionRow: vi.fn(async () => makeRow(patch)) });
-    await expect(performSessionAgentSwitch(deps, { ...validParams, targetAgentKind: 'cursor', providerId: 'cursor' }))
-      .rejects.toThrow('UNSUPPORTED_CAPABILITY');
-    expect(calls).toEqual([]);
-  });
-});
-
 describe('manual SWITCH_SESSION_AGENT takeover', () => {
   // Unit, PR #12422: the registered IPC handler must retire a reconnect before
   // it can run while the picker waits on the send lock. Existing validation
@@ -1946,15 +1797,15 @@ describe('Phase 2:切回停泊引擎(resume + 增量交接)', () => {
     expect(pending.get('s1')).toBeUndefined();
   });
 
-  it.each(['codex', 'cursor'] as const)('%s: 有停泊绑定:DB 落停泊 id、交接为增量模式、边界行标 resumed', async (targetAgentKind) => {
+  it.each(['codex'] as const)('%s: 有停泊绑定:DB 落停泊 id、交接为增量模式、边界行标 resumed', async (targetAgentKind) => {
     const { deps } = makeResumeDeps();
-    const result = await performSessionAgentSwitch(deps, { ...validParams, targetAgentKind, providerId: targetAgentKind === 'cursor' ? 'cursor' : null });
+    const result = await performSessionAgentSwitch(deps, { ...validParams, targetAgentKind, providerId: null });
     expect(result).toMatchObject({ switched: true, engineReady: true });
     expect(deps.findParkedEngineSession).toHaveBeenCalledWith('s1', targetAgentKind, null);
     expect(deps.applyAgentSwitchToDb).toHaveBeenCalledWith('s1', {
       agentKind: targetAgentKind,
       model: 'gpt-5.5',
-      providerId: targetAgentKind === 'cursor' ? 'cursor' : null,
+      providerId: null,
       sdkSessionId: 'sdk-parked-codex',
     });
     // 增量素材按水位线取
@@ -2001,12 +1852,12 @@ describe('Phase 2:切回停泊引擎(resume + 增量交接)', () => {
     expect(calls).toContain('bootstrap');
   });
 
-  it.each(['codex', 'cursor'] as const)('%s: resume bootstrap 失败:清停泊 id → 边界行改写全量交接 → fresh 重试成功', async (targetAgentKind) => {
+  it.each(['codex'] as const)('%s: resume bootstrap 失败:清停泊 id → 边界行改写全量交接 → fresh 重试成功', async (targetAgentKind) => {
     const bootstrap = vi
       .fn(async () => {})
       .mockRejectedValueOnce(new Error('resume transcript missing'));
     const { deps } = makeResumeDeps({ bootstrapSwitchedSession: bootstrap });
-    const result = await performSessionAgentSwitch(deps, { ...validParams, targetAgentKind, providerId: targetAgentKind === 'cursor' ? 'cursor' : null });
+    const result = await performSessionAgentSwitch(deps, { ...validParams, targetAgentKind, providerId: null });
     expect(result).toMatchObject({ switched: true, engineReady: true });
     // 同一原子事务清掉失效 id并改写边界为全量交接 + resumed:false
     const rewritten = vi.mocked(deps.applyResumeFallbackAtomically).mock.calls[0];

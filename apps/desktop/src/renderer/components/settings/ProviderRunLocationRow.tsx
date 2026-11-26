@@ -179,7 +179,7 @@ export function ProviderOwnComputersStatus({ provider }: { provider: ProviderVie
   const { t } = useTranslation();
   const { borrowed } = useProviderBorrow(provider);
   const remoteControl = useRemoteControlAllowed();
-  if (!remoteControl || provider.remoteInvocationEnabled !== true || borrowed || !provider.connected || provider.suspended || provider.agents.length === 0 || provider.id === 'cursor') return null;
+  if (!remoteControl || provider.remoteInvocationEnabled !== true || borrowed || !provider.connected || provider.suspended || provider.agents.length === 0) return null;
   return (
     <span data-testid="provider-own-computers" className="min-w-0 truncate text-12 leading-tight">
       {t('settings.providers.detail.ownComputersCanUse')}

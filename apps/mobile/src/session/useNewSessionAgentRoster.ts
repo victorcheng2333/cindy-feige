@@ -4,8 +4,8 @@ import { withTransientRemoteRetry } from '@/device-link/remoteRetry';
 import { normalizeMobileAgentCapabilities } from './agentCapabilities';
 import type { NewSessionAgentKind } from './newSession';
 
-/** Refresh in place: an unknown roster shows Pi and hides Cursor, so clearing a
- * known roster while revalidating makes the two tabs visibly alternate. */
+/** Refresh in place: an unknown roster shows Pi and hides Agy, so clearing a
+ * known roster while revalidating makes the tabs visibly alternate. */
 export function useNewSessionAgentRoster(p: {
   deviceId: string;
   ownerGeneration: number;
@@ -32,17 +32,16 @@ export function useNewSessionAgentRoster(p: {
       const agents = await maker.listAvailableAgents();
       if (cancelled) return null;
       const verified = await Promise.all(agents.map(async agent => {
-        if (agent !== 'cursor' && agent !== 'antigravity') return agent;
+        if (agent !== 'antigravity') return agent;
         const caps = normalizeMobileAgentCapabilities(await maker.getCapabilities(agent).catch(() => null));
-        return (agent === 'cursor' ? caps?.supportsControlledCursorCreation : caps?.supportsControlledAntigravityCreation)
-          ? agent : null;
+        return caps?.supportsControlledAntigravityCreation ? agent : null;
       }));
       return verified.filter(agent => agent !== null);
     }).then((agents) => {
       if (cancelled || !agents) return;
       setSnapshot({ scope, agents: new Set(agents.filter(
         (agent): agent is NewSessionAgentKind =>
-          agent === 'claude-code' || agent === 'codex' || agent === 'pi' || agent === 'cursor' || agent === 'antigravity',
+          agent === 'claude-code' || agent === 'codex' || agent === 'pi' || agent === 'antigravity',
       )) });
     }).catch(() => {
       // Keep the last successful roster for this owner/device on a transient failure.

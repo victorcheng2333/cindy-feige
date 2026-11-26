@@ -1,7 +1,7 @@
 import { buildSkillList } from './skillListProjection';
 import { prepareSkillScanGrants } from './skillScanGrants';
 import {
-  scanClaudeCustomizations, scanCodexCustomizations, scanPiCustomizations, scanCursorCustomizations,
+  scanClaudeCustomizations, scanCodexCustomizations, scanPiCustomizations,
 } from '@cindy/maker-core/customization-scanner';
 import type { CustomizationScanRequest, CustomizationScanResponse } from './customizationScanProtocol';
 
@@ -31,7 +31,6 @@ parentPort?.once('message', async ({ data: request }) => {
     'claude-code': scanClaudeCustomizations,
     codex: scanCodexCustomizations,
     pi: scanPiCustomizations,
-    cursor: scanCursorCustomizations,
   };
   if (!Object.hasOwn(scanners, request.engine)) return;
   try {

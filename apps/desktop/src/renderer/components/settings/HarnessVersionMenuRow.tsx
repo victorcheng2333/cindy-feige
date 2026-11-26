@@ -18,7 +18,7 @@ export const HARNESS_MENU_ITEM_CLASS = 'gap-3';
 
 /** One harness, one row: the version pill opens that harness's action menu. */
 export function HarnessVersionMenuRow({ harnessKind, label, manageLabel, version, status, pending, testId, children }: {
-  /** Harness id(claude-code / codex / pi / cursor):菜单顶部带「在模型选择器中显示」开关。 */
+  /** Harness id(claude-code / codex / pi / antigravity):菜单顶部带「在模型选择器中显示」开关。 */
   harnessKind: string;
   label: string;
   manageLabel: string;

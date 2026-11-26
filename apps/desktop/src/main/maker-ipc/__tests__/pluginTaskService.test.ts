@@ -1889,9 +1889,7 @@ it('an open plugin selection without a source session follows the auxiliary chai
   // Rule (2026-11-16): a saved run location applies without an explicit route and is admitted
   // by that location's catalog, never the local resolver or chain.
   const savedRemote = { agentKind: 'codex' as const, providerId: 'only-remote', model: 'remote-model', agentDeviceId: 'share:abc' };
-  // Unit merge regression: a saved Cursor route is outside the plugin remote
-  // contract; unlike supported routes above it must fail, never fall back locally.
-  expect(() => savedPluginTaskRemoteRoute({ ...savedRemote, agentKind: 'cursor' }))
+  expect(() => savedPluginTaskRemoteRoute({ ...savedRemote, agentKind: 'antigravity' }))
     .toThrowError(expect.objectContaining({ code: 'ROUTE_UNAVAILABLE' }));
   await expect(run([{ agentKind: 'codex', providerId: f.route.providerId, model: 'cheap' }], savedRemote))
     .resolves.toEqual({ ...savedRemote, effort: '', fastMode: false, viaRemoteCatalog: true });

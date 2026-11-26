@@ -80,7 +80,7 @@ export interface RemoteSession {
   interruptedTurnStartedAt?: number | null;
   lastTurnEndedAt?: number | null;
   status: RemoteSessionStatus;
-  agentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  agentKind: 'cc' | 'codex' | 'pi' | 'antigravity';
   /**
    * 远程 Agent:非空 = Agent 在同账号另一台电脑上运行(desktop sessions.agent_device_id),
    * 任务与文件仍留在被控电脑;null / 缺省 = Agent 就在被控电脑运行(含旧被控端)。
@@ -142,7 +142,7 @@ export interface RemoteSession {
 }
 
 export interface RemoteSessionRuntimeProfile {
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   model: string;
   providerId: string | null;
   effort: string | null;
@@ -272,7 +272,7 @@ export interface QueuedRemoteMessage {
   /** Classical output style chosen next to the language; used only with a Chinese uiLanguage. */
   classicalStyle?: string;
   createOpts: {
-    agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+    agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity';
     workingDir: string;
     model: string;
     effort?: string;

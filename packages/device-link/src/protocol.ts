@@ -166,7 +166,7 @@ export const CONTROLLER_CAPABILITY_PROVIDER_LOGO_KINDS_V2 = 'provider-logo-kinds
 export const CONTROLLER_CAPABILITY_PROVIDER_PICKER_V1 = 'provider-picker-v1';
 
 export interface ProviderPickerModel {
-  agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  agent: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   providerId: string | null;
   modelId: string;
 }

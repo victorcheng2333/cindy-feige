@@ -6,7 +6,7 @@
  *
  * Protects UI copy, settings search, and help docs from drifting away from
  * `HARNESS_PERSONALIZATION_SUPPORT` (regression: locales hardcoded "Claude / Codex"
- * while Pi and Cursor also participated).
+ * while Pi and Agy also participated).
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';

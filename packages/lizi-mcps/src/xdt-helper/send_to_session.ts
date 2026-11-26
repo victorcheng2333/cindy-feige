@@ -51,7 +51,7 @@ export type SendToSessionCallback = (params: {
       responsibilityRecorded?: false;
       targetSessionId: string;
       /** 'acp' only for collaboration-internal deliveries to a plugin-engine Worker. */
-      agentKind: ControlWorkerEngine | 'cursor' | 'antigravity';
+      agentKind: ControlWorkerEngine | 'antigravity';
       wakeKind: "resumed" | "already-active" | "created" | "queued";
       targetTitle: string | null;
       targetLastUserSendAt: string | null;

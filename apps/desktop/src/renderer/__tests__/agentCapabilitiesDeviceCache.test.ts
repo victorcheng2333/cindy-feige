@@ -41,7 +41,7 @@ function stubElectron() {
   const invoke = vi.fn(async (deviceId: string, _channel: string, args: unknown[]) =>
     caps(`${deviceId}:${String(args[0])}`),
   );
-  const listAvailableAgents = vi.fn(async () => ['claude-code', 'codex', 'pi', 'cursor']);
+  const listAvailableAgents = vi.fn(async () => ['claude-code', 'codex', 'pi']);
   vi.stubGlobal('window', {
     electronAPI: { maker: { getCapabilities, listAvailableAgents }, deviceLink: { invoke } },
   });
@@ -130,7 +130,6 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
     await expect(mod.loadLocalCapabilitiesSnapshot()).resolves.toEqual([
       ['claude-code', caps('local:claude-code')],
       ['codex', caps('local:codex')],
-      ['cursor', caps('local:cursor')],
     ]);
     expect(getCapabilities).toHaveBeenCalledWith('pi');
   });
@@ -563,7 +562,7 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
       mod.prefetchDeviceCapabilities('dev-1'),
     ]);
     const requestedKinds = invoke.mock.calls.map(([, , args]) => args[0]);
-    expect(requestedKinds.sort()).toEqual(['antigravity', 'claude-code', 'codex', 'cursor', 'pi']);
+    expect(requestedKinds.sort()).toEqual(['antigravity', 'claude-code', 'codex', 'pi']);
   });
 
   it('驱逐:evict 只清该设备,本地与其它设备保留', async () => {
@@ -660,7 +659,7 @@ describe('useAgentCapabilities deviceId-aware cache', () => {
       const stale = mod.prefetchDeviceCapabilities('dev-1');
       mod.evictDeviceCapabilities('dev-1');
       const fresh = mod.prefetchDeviceCapabilities('dev-1');
-      const kinds = ['claude', 'codex', 'pi', 'cursor', 'antigravity'];
+      const kinds = ['claude', 'codex', 'pi', 'antigravity'];
       expect(resolvers).toHaveLength(kinds.length * 2);
       for (const [index, kind] of kinds.entries())
         resolvers[index + kinds.length](caps(`fresh:${kind}`));

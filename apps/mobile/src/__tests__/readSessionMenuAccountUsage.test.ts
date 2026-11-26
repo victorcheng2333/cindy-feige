@@ -42,17 +42,6 @@ const reader = () => ({
 });
 
 describe("existing remote quota compatibility", () => {
-  // Unit: Cursor native models may share names with subscription bridges. Existing
-  // fixtures lacked Cursor; one xai-prefixed model must not query an unrelated account.
-  it('does not attribute Cursor models to other subscription accounts', async () => {
-    const cursor = { ...session, agentKind: 'cursor' as const, providerId: null, model: 'xai/grok' };
-    const r = reader();
-    expect(sessionSubscriptionFamily(cursor)).toBeNull();
-    expect(await readSessionMenuAccountUsage(cursor, r)).toMatchObject({ source: 'unavailable', windows: [], amounts: [] });
-    expect(r.getCodexRateLimits).not.toHaveBeenCalled();
-    expect(r.getSubscriptionUsage).not.toHaveBeenCalled();
-  });
-
   // A plugin task with a Codex-looking model must use the plugin account on its executing device.
   it('keeps plugin balances and reset windows on the plugin route, including on older hosts', async () => {
     const task = { ...session, agentKind: 'acp', providerId: 'acp-plugin:demo:engine' } as unknown as RemoteSession;
@@ -657,14 +646,14 @@ describe("new subscription families cannot be skipped", () => {
     },
   );
 
-  it("covers session subscription channels and the separate Cursor quota channel", () => {
+  it("covers session subscription channels and the separate Antigravity quota channel", () => {
     const exposed = [...REMOTE_INVOKE_ALLOWLIST].filter((channel) =>
       /^maker:usage:[a-z0-9-]+-subscription$/.test(channel),
     );
     expect(exposed.length).toBeGreaterThan(0);
-    // Cursor quota is readable by the usage clients, but Cursor remote sessions are
-    // intentionally unsupported. It must not become a native session auth family.
-    expect([...Object.values(SUBSCRIPTION_USAGE_CHANNELS), "maker:usage:cursor-subscription", "maker:usage:antigravity-subscription"].sort())
+    // Antigravity quota is readable by the usage clients, but does not become a
+    // native session subscription auth family.
+    expect([...Object.values(SUBSCRIPTION_USAGE_CHANNELS), "maker:usage:antigravity-subscription"].sort())
       .toEqual(exposed.sort());
   });
 

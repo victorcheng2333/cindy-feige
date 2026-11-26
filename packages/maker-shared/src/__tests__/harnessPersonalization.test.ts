@@ -20,21 +20,21 @@ describe('harnessPersonalization SSOT', () => {
       Object.keys(HARNESS_PERSONALIZATION_SUPPORT).sort(),
     );
     // Agy takes the shared instructions and memory through its ACP system-prompt append.
-    expect(getUserPromptSupportedHarnesses()).toEqual(['claude-code', 'codex', 'pi', 'cursor', 'antigravity']);
-    expect(getMakerMemorySupportedHarnesses()).toEqual(['claude-code', 'codex', 'pi', 'cursor', 'antigravity']);
+    expect(getUserPromptSupportedHarnesses()).toEqual(['claude-code', 'codex', 'pi', 'antigravity']);
+    expect(getMakerMemorySupportedHarnesses()).toEqual(['claude-code', 'codex', 'pi', 'antigravity']);
     expect(getMakerMemoryUnsupportedHarnesses()).toEqual([]);
     expect(getMemorySettingsRowHarnesses()).toEqual(['claude-code', 'codex', 'pi']);
   });
 
   it('formats harness brand name lists cleanly across locales including classical Chinese', () => {
     const all = getMakerMemorySupportedHarnesses();
-    expect(formatHarnessNameList(all, 'en')).toBe('Claude Code, Codex, Pi, Cursor, and Agy');
-    expect(formatHarnessNameList(all, 'zh-CN')).toBe('Claude Code、Codex、Pi、Cursor 和 Agy');
-    expect(formatHarnessNameList(all, 'zh-TW')).toBe('Claude Code、Codex、Pi、Cursor 和 Agy');
-    expect(formatHarnessNameList(all, 'zh-Hans-x-lzh')).toBe('Claude Code、Codex、Pi、Cursor 与 Agy');
-    expect(formatHarnessNameList(all, 'zh-Hant-x-lzh')).toBe('Claude Code、Codex、Pi、Cursor 與 Agy');
+    expect(formatHarnessNameList(all, 'en')).toBe('Claude Code, Codex, Pi, and Agy');
+    expect(formatHarnessNameList(all, 'zh-CN')).toBe('Claude Code、Codex、Pi 和 Agy');
+    expect(formatHarnessNameList(all, 'zh-TW')).toBe('Claude Code、Codex、Pi 和 Agy');
+    expect(formatHarnessNameList(all, 'zh-Hans-x-lzh')).toBe('Claude Code、Codex、Pi 与 Agy');
+    expect(formatHarnessNameList(all, 'zh-Hant-x-lzh')).toBe('Claude Code、Codex、Pi 與 Agy');
     expect(formatHarnessNameList(['claude-code', 'codex'], 'zh-CN')).toBe('Claude Code 和 Codex');
-    expect(formatHarnessNameList(['cursor'], 'en')).toBe('Cursor');
+    expect(formatHarnessNameList(['antigravity'], 'en')).toBe('Agy');
     expect(formatHarnessNameList([], 'en')).toBe('');
   });
 });

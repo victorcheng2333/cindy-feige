@@ -27,7 +27,6 @@ import {
 // 用 renderer 自己的 ModelDescriptor（Effort=string，宽松）—— 与 capabilities.availableModels
 // 同型，picker 现有代码（effortDisplayNames 按 string 索引等）零改动即可消费。
 import type { AgentCapabilities, ModelDescriptor } from '@/hooks/useAgentCapabilities';
-import { isSubscriptionDirectModel } from '../../shared/subscriptionModels';
 
 /** Resolve a context window by the complete runtime route, never a first-wins model id. */
 export function resolveProviderModelContextWindow(params: {
@@ -238,7 +237,6 @@ export function selectVisibleModels(params: {
   deviceCcModels: ModelDescriptor[];
   deviceCodexModels: ModelDescriptor[];
   devicePiModels?: ModelDescriptor[];
-  deviceCursorModels?: ModelDescriptor[];
   deviceAntigravityModels?: ModelDescriptor[];
   /**
    * SSH 远程会话(remoteHostId)传 true:订阅直连模型(chatgpt/ / xai/)不再被过滤,
@@ -265,7 +263,6 @@ export function selectVisibleModels(params: {
     deviceCcModels,
     deviceCodexModels,
     devicePiModels = [],
-    deviceCursorModels = [],
     deviceAntigravityModels = [],
     excludeSubscriptionDirect,
     excludeChatBridgedCodex,
@@ -285,12 +282,10 @@ export function selectVisibleModels(params: {
       model.id.startsWith('chatgpt/') &&
       model.id.endsWith('[1m]')
     ));
-  const cursor = pass(deviceId ? deviceCursorModels : deriveModelsFromProviders(providers, 'cursor'));
   const antigravity = pass(deviceId ? deviceAntigravityModels : deriveModelsFromProviders(providers, 'antigravity'));
   if (agentKind === 'claude-code') return cc;
   if (agentKind === 'codex') return codex;
   if (agentKind === 'pi') return pi;
-  if (agentKind === 'cursor') return cursor;
   if (agentKind === 'antigravity') return antigravity;
   const merged = [...cc];
   const seen = new Set(merged.map((m) => m.id));
@@ -315,15 +310,13 @@ export function resolveVisibleModelAgentKind(params: {
   ccModels: ModelDescriptor[];
   codexModels: ModelDescriptor[];
   piModels?: ModelDescriptor[];
-  cursorModels?: ModelDescriptor[];
   providers: ProviderView[];
 }): AgentKind | null {
-  const { modelId, agentKind, ccModels, codexModels, piModels = [], cursorModels = [], providers } = params;
+  const { modelId, agentKind, ccModels, codexModels, piModels = [], providers } = params;
   if (agentKind) return agentKind;
   if (ccModels.some((model) => model.id === modelId)) return 'claude-code';
   if (codexModels.some((model) => model.id === modelId)) return 'codex';
   if (piModels.some((model) => model.id === modelId)) return 'pi';
-  if (cursorModels.some((model) => model.id === modelId)) return 'cursor';
   if (providers.some((provider) => providerOffersModel(provider, modelId, 'claude-code'))) {
     return 'claude-code';
   }
@@ -332,9 +325,6 @@ export function resolveVisibleModelAgentKind(params: {
   }
   if (providers.some((provider) => providerOffersModel(provider, modelId, 'pi'))) {
     return 'pi';
-  }
-  if (providers.some((provider) => providerOffersModel(provider, modelId, 'cursor'))) {
-    return 'cursor';
   }
   return null;
 }

@@ -138,7 +138,7 @@ export function normalizeWorkflowProgressEntries(
 }
 
 export interface AgentTaskUpdate {
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  provider: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   taskId: string;
   parentToolUseId?: string;
   status: AgentTaskStatus;
@@ -380,7 +380,7 @@ export function extractAgySubagentConversationId(result: string | null | undefin
  */
 export function normalizeAgentTaskUpdate(
   data: unknown,
-  source?: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+  source?: 'claude-code' | 'codex' | 'pi' | 'antigravity',
 ): AgentTaskUpdate | null {
   if (!data || typeof data !== 'object') return null;
   const raw = data as Record<string, unknown>;
@@ -396,13 +396,12 @@ export function normalizeAgentTaskUpdate(
       ? rawStatus
       : 'running';
   const provider =
-    raw.provider === 'cursor'
-    || raw.provider === 'codex'
+    raw.provider === 'codex'
     || raw.provider === 'claude-code'
     || raw.provider === 'pi'
     || raw.provider === 'antigravity'
       ? raw.provider
-      : source === 'cursor' || source === 'codex' || source === 'pi' || source === 'antigravity'
+      : source === 'codex' || source === 'pi' || source === 'antigravity'
         ? source
         : 'claude-code';
   const usageRaw = raw.usage && typeof raw.usage === 'object' ? raw.usage as Record<string, unknown> : null;
@@ -482,7 +481,7 @@ export function isSameAgentTaskAlias(left: AgentTaskUpdate, right: AgentTaskUpda
 export function applyAgentTaskUpdateEvent(
   prevMap: ReadonlyMap<string, AgentTaskUpdate> | undefined,
   data: unknown,
-  source: 'claude-code' | 'codex' | 'pi' | 'cursor' | undefined,
+  source: 'claude-code' | 'codex' | 'pi' | undefined,
   nowIso: string,
 ): Map<string, AgentTaskUpdate> | null {
   const update = normalizeAgentTaskUpdate(data, source);
@@ -537,7 +536,7 @@ export function findAgentTaskUpdate(
  */
 export interface AgentTaskCardModel {
   status: AgentTaskStatus;
-  provider: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  provider: 'claude-code' | 'codex' | 'pi' | 'antigravity';
   /** Best title, or null when nothing usable was found (caller supplies its own fallback). */
   title: string | null;
   description?: string;
@@ -643,7 +642,7 @@ export function buildAgentTaskCardModel(input: {
   // callers (AgentTaskCard / listSessionTasks). With no tool name (history
   // replay of a legacy update card) fall back to the provider heuristic below,
   // matching AgentTaskCard's claudeProtocolResult.
-  const providerFallback: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' =
+  const providerFallback: 'claude-code' | 'codex' | 'pi' | 'antigravity' =
     update?.provider
     ?? (toolName?.startsWith('collab:')
       ? 'codex'

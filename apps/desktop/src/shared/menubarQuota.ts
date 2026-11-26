@@ -137,7 +137,7 @@ export interface MenubarDetail {
 export interface MenubarTask {
   sessionId: string;
   title: string;
-  harness: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp';
+  harness: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'acp';
   logoSvg: string;
   /** Estimated value today, in the ledger currency. */
   value: number;

@@ -48,7 +48,7 @@ import { isProviderShareAgentDeviceId } from '../../shared/providerShare.js';
 import { createSharedTaskPendingSelectionGuard, createSharedTaskSettingGuard } from './sharedTaskSetting.js';
 
 import { MAKER_INVOKE } from './channels.js';
-import { assertAntigravityTaskCreationAllowed, assertCursorTaskCreationAllowed } from '../localDb/ipc/cursorTaskCreation.js';
+import { assertAntigravityTaskCreationAllowed } from '../localDb/ipc/antigravityTaskCreation.js';
 import type { IpcHandlerRegistry } from './ipcHandlerRegistry.js';
 import {
   buildHandoff,
@@ -140,7 +140,6 @@ const PLUGIN_ENGINE_FALLBACK_LABEL = 'plugin';
 /** 交接 framing 与边界卡展示用的引擎名；插件引擎优先用它自己的名称(describePluginEngine)。 */
 export function agentEngineLabel(dbKind: DbEngineKind): string {
   if (dbKind === 'antigravity') return 'agy';
-  if (dbKind === 'cursor') return 'Cursor';
   if (dbKind === 'codex') return 'Codex';
   if (dbKind === 'pi') return 'Pi';
   if (dbKind === 'acp') return PLUGIN_ENGINE_FALLBACK_LABEL;
@@ -233,8 +232,6 @@ export interface AgentSwitchSessionRow {
 const AGENT_DEVICE_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 export interface MakerSessionAgentSwitchHandlerDeps {
-  /** Reject unsupported reference-directory grants before committing a Cursor handoff. */
-  assertCursorHandoffDirectories?(sessionId: string): Promise<void>;
   assertAntigravityHandoffDirectories?(sessionId: string): Promise<void>;
   /**
    * 任务要换到供应商组那一项(组所在电脑上那个建了组的供应商)时，由组按它的状态选一台能用的电脑
@@ -244,7 +241,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
   resolveProviderGroupTarget?(
     sessionId: string,
     target: {
-      agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+      agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity';
       model: string;
       providerId: string | null;
       /** 用户选的位置(null = 任务所在电脑)。 */
@@ -285,7 +282,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
    * (测试最小 harness)。
    */
   assertModelRouteUsable?(
-    agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+    agent: 'claude-code' | 'codex' | 'pi' | 'antigravity',
     model: string,
     providerId: string | null,
     /** 被切换的任务；Agent 在另一台电脑运行的任务按那台的目录裁决(本机不校验)。 */
@@ -299,7 +296,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
    */
   assertAgentDeviceRouteUsable?(
     deviceId: string,
-    agent: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity',
+    agent: 'claude-code' | 'codex' | 'pi' | 'antigravity',
     model: string,
     providerId: string | null,
   ): Promise<number | null | void>;
@@ -348,7 +345,7 @@ export interface MakerSessionAgentSwitchHandlerDeps {
   }): Promise<number | null>;
   listCompanionSessionIds?(sessionId: string): Promise<{ sessionIds: string[]; chatsTruncated: boolean } | undefined>;
   relocateNativeHistory?(input: {
-    sessionId: string; kind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity'; nativeId: string; workingDir: string;
+    sessionId: string; kind: 'claude-code' | 'codex' | 'pi' | 'antigravity'; nativeId: string; workingDir: string;
     fromDevice: string | null; toDevice: string | null; assertCurrent(): void;
   }): Promise<string | null>;
   closeSession(sessionId: string): Promise<void>;
@@ -822,8 +819,8 @@ function validateAgentSwitchRequest(params: {
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throwIpcError('INVALID_PARAMS', 'sessionId required');
   }
-  if (targetAgentKind !== 'claude-code' && targetAgentKind !== 'codex' && targetAgentKind !== 'pi' && targetAgentKind !== 'cursor' && targetAgentKind !== 'antigravity' && targetAgentKind !== 'acp') {
-    throwIpcError('INVALID_PARAMS', 'targetAgentKind must be claude-code | codex | pi | cursor | antigravity | acp');
+  if (targetAgentKind !== 'claude-code' && targetAgentKind !== 'codex' && targetAgentKind !== 'pi' && targetAgentKind !== 'antigravity' && targetAgentKind !== 'acp') {
+    throwIpcError('INVALID_PARAMS', 'targetAgentKind must be claude-code | codex | pi | antigravity | acp');
   }
   if (typeof model !== 'string' || model.length === 0) {
     throwIpcError('INVALID_PARAMS', 'model required');
@@ -989,29 +986,6 @@ export async function performSessionAgentSwitch(
       }
       await deps.assertAntigravityHandoffDirectories?.(sessionId);
       normalizedProviderId = 'antigravity';
-    }
-  }
-  // Local Cursor uses the shared bounded handoff and parked-thread resume flow.
-  // Moving an already-Cursor runtime between computers is still unsupported.
-  // Switching *to* Cursor from a borrowed source is allowed: destination is local.
-  // Switching *from* local Cursor to a remote-capable engine (e.g. remote Agy/Claude/Codex)
-  // hands off conversation history via Cindy instead of moving the Cursor runtime.
-  if (row.agentKind === 'cursor' && targetAgentKind === 'cursor' && (row.agentDeviceId || agentDeviceId)) {
-    throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires execution on the task computer');
-  }
-  if (targetAgentKind === 'cursor') {
-    assertCursorTaskCreationAllowed({
-      remoteHostId: row.remoteHostId,
-      orcaRole: row.orcaRole,
-    });
-    if (row.agentKind !== 'cursor') {
-      if (row.orcaRemoteLead || (row.source && row.source !== 'desktop')) {
-        throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor handoff supports ordinary desktop tasks only');
-      }
-      if (normalizedProviderId !== 'cursor') {
-        throwIpcError('UNSUPPORTED_CAPABILITY', 'Cursor requires the Cursor connection');
-      }
-      await deps.assertCursorHandoffDirectories?.(sessionId);
     }
   }
   if (params.runtimeSource === 'agent' && row.status === 'archived') {
@@ -1528,18 +1502,14 @@ export async function performSessionAgentSwitch(
     if (rebuildingRoute) assertTransferCurrent();
     params.onRelocationMutationStart?.();
     // ---- commit point:此后切换生效 ----
-    // Cursor only supports auto, bypassPermissions, and plan. Re-read permissionMode at
-    // commit time so a concurrent permission switch cannot be overwritten by stale preflight data.
-    const latestTargetRow = targetAgentKind === 'cursor' || targetAgentKind === 'antigravity'
+    // Re-read permissionMode at commit time so a concurrent permission switch cannot be overwritten by stale preflight data.
+    const latestTargetRow = targetAgentKind === 'antigravity'
       ? (await deps.getSessionRow(sessionId)) ?? row
       : row;
     const latestPermissionMode = latestTargetRow.permissionMode;
     if (targetAgentKind === 'antigravity' && (latestTargetRow.planModeEnabled || latestPermissionMode === 'plan')) {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Exit Plan mode before switching to agy');
     }
-    const needsCursorAutoPermission =
-      targetAgentKind === 'cursor' &&
-      !['auto', 'bypassPermissions', 'plan'].includes(latestPermissionMode ?? '');
     try {
       await deps.applyAgentSwitchToDb(sessionId, pluginTarget
         // 插件引擎：思考深度只写它为该模型列出的档位(没有可选档位时不写，引擎启动时不认的档位
@@ -1562,7 +1532,6 @@ export async function performSessionAgentSwitch(
             ...(typeof params.effort === 'string' && params.effort ? { effort: params.effort } : {}),
             ...(targetAgentKind === 'antigravity' ? { fastMode: false } :
               ((typeof params.fastMode === 'boolean' || params.fastMode === 'ultrafast') ? { fastMode: params.fastMode } : {})),
-            ...(needsCursorAutoPermission ? { permissionMode: 'auto' as const } : {}),
             ...(targetAgentKind === 'antigravity' && !isAntigravityPermissionMode(latestPermissionMode)
               ? { permissionMode: 'auto' as const } : {}),
             // 同机换连接／组选回的当前位置在另一台电脑时也带上位置：提交按它判断窗口该查哪台的目录，不能拿本机目录。

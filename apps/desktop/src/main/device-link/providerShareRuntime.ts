@@ -1062,7 +1062,7 @@ async function createLink(
   assertCurrent();
   requireRunning();
   // 逐级开启：允许远程控制 → 允许被远程调用 → 分享。
-  if (providerId === 'antigravity' || providerId === 'cursor') {
+  if (providerId === 'antigravity') {
     throwIpcError('UNSUPPORTED_CAPABILITY', 'This provider is available for your own computers only');
   }
   if (!readDeviceLinkSettings().remoteControlEnabled) throwIpcError('PRECONDITION_FAILED', 'Remote control is off');

@@ -231,7 +231,7 @@ it('caches a confirmed empty default but retries an unready host without discard
   expect(second.state.runtime).toBeNull();
   await act(async () => second.read.resolve({}));
   await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-  expect(second.bindings.maker.getNewMakerDefaults).toHaveBeenCalledTimes(15); // Five engines, at most three reads each.
+  expect(second.bindings.maker.getNewMakerDefaults).toHaveBeenCalledTimes(12); // Four engines, at most three reads each.
   expect(mount().state.settled).toBe(true);
   await act(async () => {});
 });

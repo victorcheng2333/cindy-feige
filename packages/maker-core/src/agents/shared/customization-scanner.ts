@@ -17,7 +17,7 @@ import type {
 import { shouldPruneSkillScanDirectory } from './skill-scan-limits.js';
 
 export interface SourceDef {
-  engine: 'claude-code' | 'codex' | 'pi' | 'cursor';
+  engine: 'claude-code' | 'codex' | 'pi';
   kind: 'skill' | 'command' | 'agent';
   scope: string;
   dir: string;

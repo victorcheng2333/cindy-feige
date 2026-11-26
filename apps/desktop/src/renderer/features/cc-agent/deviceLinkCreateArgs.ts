@@ -25,8 +25,8 @@ import { isProviderShareAgentDeviceId } from '../../../shared/providerShare';
 import { PLUGIN_ENGINE_DEFAULT_MODEL, type PluginEngineEffort } from '../../../shared/pluginEngines';
 
 export interface DeviceLinkCreateParams {
-  /** 草稿 vendor 形态:'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity'(persistedAgentKind)，或被控电脑的插件引擎 'acp'。 */
-  agentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp';
+  /** 草稿 vendor 形态:'cc' | 'codex' | 'pi' | 'antigravity'(persistedAgentKind)，或被控电脑的插件引擎 'acp'。 */
+  agentKind: 'cc' | 'codex' | 'pi' | 'antigravity' | 'acp';
   /**
    * 被控端上的项目目录。缺省 / 空白 = 在该设备上建**不绑项目的 standalone dialogue**,
    * workspaceKind 随之派生为 'dialogue',运行目录由被控端分配。
@@ -65,7 +65,7 @@ export interface DeviceLinkCreateParams {
 }
 
 export interface DeviceLinkCreateArgs {
-  agentKind: 'claude-code' | 'codex' | 'pi' | 'cursor' | 'antigravity' | 'acp';
+  agentKind: 'claude-code' | 'codex' | 'pi' | 'antigravity' | 'acp';
   /** 控制端预生成的会话 id(worktree 流程中与 worktree:create 登记的绑定同 id)。 */
   id?: string;
   /** 仅项目会话出现;dialogue 不带此字段(被控端自行分配运行目录)。 */
@@ -87,10 +87,6 @@ export interface DeviceLinkCreateArgs {
 }
 
 export function buildDeviceLinkCreateArgs(p: DeviceLinkCreateParams): DeviceLinkCreateArgs {
-  // Remote control creates the task on its own computer; borrowing Cursor
-  // from another provider computer is a different, unsupported execution path.
-  if (p.agentKind === 'cursor' && p.agentDeviceId)
-    throw new Error('Cursor requires execution on the task computer');
   if (p.agentKind === 'antigravity' && p.agentDeviceId && isProviderShareAgentDeviceId(p.agentDeviceId))
     throw new Error('Antigravity cannot run on a shared provider');
   // 空白目录一律当「没选项目」处理(与本机 selectedWorkingDir 的 trim() || undefined 同口径),
@@ -136,7 +132,7 @@ export interface DeviceLinkSubmissionCandidate {
 }
 
 export interface DeviceLinkSubmissionParams {
-  agentKind: 'cc' | 'codex' | 'pi' | 'cursor' | 'antigravity';
+  agentKind: 'cc' | 'codex' | 'pi' | 'antigravity';
   workingDir?: string;
   id?: string;
   extraDirs?: string[];
@@ -291,7 +287,7 @@ export function buildProvisionalRemoteSession(p: ProvisionalRemoteSessionParams)
     // 回流都会把它冲回 null,会话就先掉进项目外的草稿区、首条落地后再跳回项目。
     userSendAt: null,
     status: 'active',
-    // Session.agentKind 是本机形态('cc' | 'codex' | 'pi' | 'cursor' | 'antigravity',运行时也承载插件引擎的 'acp'),args 里是 maker-core 形态。
+    // Session.agentKind 是本机形态('cc' | 'codex' | 'pi' | 'antigravity',运行时也承载插件引擎的 'acp'),args 里是 maker-core 形态。
     agentKind: (p.args.agentKind === 'claude-code' ? 'cc' : p.args.agentKind) as Session['agentKind'],
     // 乐观行就带上 Agent 所在电脑:会话页的模型按钮与目录从一开始就按那台显示。
     ...(p.args.agentDeviceId ? { agentDeviceId: p.args.agentDeviceId } : {}),

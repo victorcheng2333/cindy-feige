@@ -60,12 +60,6 @@ describe('model-window switch IPC errors', () => {
   });
 
   it.each([
-    ['Cursor does not support read-only reference directories', 'ipcError.CURSOR_EXTRA_DIRS_UNSUPPORTED'],
-    ['Cursor handoff supports ordinary desktop tasks only', 'ipcError.CURSOR_HANDOFF_UNSUPPORTED'],
-    ['Cursor requires execution on the task computer', 'ipcError.CURSOR_LOCAL_EXECUTION_REQUIRED'],
-    ['Cursor requires execution on the controlled computer and a same-account controller', 'ipcError.CURSOR_LOCAL_EXECUTION_REQUIRED'],
-    ['Cursor requires the Cursor connection', 'ipcError.CURSOR_CONNECTION_REQUIRED'],
-    ['Choose Auto, Full access or Plan before switching to Cursor', 'ipcError.CURSOR_PERMISSION_MODE_UNSUPPORTED'],
     ['Review task settings are fixed to the source task', 'ipcError.REVIEW_SETTINGS_FIXED'],
     ['archived task cannot change harness', 'ipcError.ARCHIVED_HARNESS_SWITCH_UNSUPPORTED'],
     ['shared task guests cannot move the agent to another computer', 'ipcError.SHARED_TASK_GUEST_RELOCATION_UNSUPPORTED'],
