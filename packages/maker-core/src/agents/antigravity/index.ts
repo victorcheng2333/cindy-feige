@@ -566,6 +566,7 @@ export class AntigravityAgent extends BaseAgent {
           await session.steer(message, options);
         },
         isTurnRunning: () => session.isTurnRunning(),
+        yieldBackgroundTurnForQueuedInput: () => session.yieldBackgroundTurnForQueuedInput(),
         abort: () => session.abort(),
         close: () => session.close(),
         compactSession: instructions => session.compact(instructions),

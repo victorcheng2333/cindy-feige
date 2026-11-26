@@ -2522,6 +2522,40 @@ test('a steer sends the authored text as its auto-review source', async () => {
   await h.queue.dispose();
 });
 
+// 测试价值
+// - 生产入口与可观察结果：Host createInputQueue(events → coordinator.onBackgroundTurnYieldable → session.yieldBackgroundTurnForQueuedInput → enqueue drain，及 steer → flushAssistantBlock → persistMessage)；
+//   验证 Host 端口同步接线后，可让渡前台状态唤醒排队消息立即派发，且 steer 先落库预流式助手文本再写 steer user 行。
+// - Bug／规则依据：docs/dev-rules/architecture-invariants.md §5 要求共享核心新端口同步接入 Node Host 并跑通 Host 测试。
+// - 现有覆盖缺口：Host harness 尚未覆盖新增 `yieldBackgroundTurnForQueuedInput` / `onBackgroundTurnYieldable` / `onBeforeSteerCommit` 端口。
+// - 最小失败输入：运行中会话先入队一条消息，再收到 `backgroundHoldYieldable: true` 状态帧；以及运行中有未 flush delta 时调用 `steer`。
+// - tier：unit（Host fake Maker + in-memory persistMessage）。
+test('Host coordinator ports yield background holds for queued input and flush assistant text before steer row persistence', async () => {
+  const h = createHarness();
+  await enqueue(h, 'host-yield', { clientId: 'first', text: 'start wait' });
+  const yieldSession = h.maker.getSession('host-yield');
+  yieldSession.yieldBackgroundTurnForQueuedInput = () => {
+    yieldSession.emit({ type: 'done', data: { status: 'completed', result: 'paused to yield' } });
+    return true;
+  };
+  await h.queue.enqueue('host-yield', { clientId: 'queued-reply', text: 'remote reply arrived' });
+  assert.equal(yieldSession.sent.includes('remote reply arrived'), false);
+  yieldSession.emit({ type: 'status', data: { status: 'running', isRunning: true, backgroundHoldYieldable: true } });
+  await waitFor(() => yieldSession.sent.includes('remote reply arrived'));
+
+  await enqueue(h, 'host-steer-flush', { clientId: 'turn-1', text: 'run' });
+  const steerSession = h.maker.getSession('host-steer-flush');
+  steerSession.steer = async () => ({ accepted: true });
+  steerSession.emit({ type: 'text', data: { text: 'pre-steer prose', isFinal: false } });
+  await h.queue.steer('host-steer-flush', { clientId: 'steer-1', text: 'add this' });
+  await waitFor(() => h.persisted.some(row => row.sessionId === 'host-steer-flush' && row.clientId === 'steer-1'));
+
+  const rows = h.persisted.filter(row => row.sessionId === 'host-steer-flush');
+  const preSteerIdx = rows.findIndex(row => row.role === 'assistant' && row.content === 'pre-steer prose');
+  const steerIdx = rows.findIndex(row => row.role === 'user' && row.clientId === 'steer-1');
+  assert.ok(preSteerIdx >= 0 && steerIdx > preSteerIdx, JSON.stringify(rows));
+  await h.queue.dispose();
+});
+
 // Shutdown used Promise.all: one failed task teardown rejected disposal while
 // another task was still stopping, allowing the launcher to close its database.
 // Unit: two actual queue sessions, one failed abort + one gated abort.

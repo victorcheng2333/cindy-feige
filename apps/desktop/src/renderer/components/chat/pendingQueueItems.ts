@@ -1,6 +1,14 @@
 import { isAnsweredAsyncQuestionClientId } from '@cindy/maker-shared/interaction';
-import type { ChatMessage } from '@/lib/makerChatStore';
+import type { ChatMessage, QueuedMessage } from '@/lib/makerChatStore';
 import type { RenderItem } from './messageWorkGroups';
+
+/**
+ * Other-task collaboration / session-to-session messages enqueued behind an active turn.
+ * These are incoming replies rather than user-typed follow-up drafts.
+ */
+export function isIncomingTaskQueueEntry(entry: Pick<QueuedMessage, 'origin'>): boolean {
+  return entry.origin?.kind === 'session' || entry.origin?.kind === 'orca';
+}
 
 /** Append after grouping: queued input must never close the current assistant turn. */
 export function appendPendingQueueItems(

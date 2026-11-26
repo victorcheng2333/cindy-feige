@@ -433,6 +433,11 @@ export interface AgentInputCoordinatorDeps {
    * its abort lock before the in-flight send outcome settles.
    */
   reconcileTurnIdle?: (sessionId: string) => boolean;
+  /**
+   * 仅当底层会话正处于可安全让渡的后台等待（例如 ACP `schedule` / 子任务等待且当前
+   * 无工具/思考/交互）时主动让渡当前 turn；不可让渡返回 `false`。
+   */
+  yieldBackgroundTurnForQueuedInput?: (sessionId: string) => boolean;
   hasPendingInteraction: (sessionId: string) => boolean;
   getAgentKind: (sessionId: string) => AgentInputCreateOpts['agentKind'] | null;
   getSdkSessionId: (sessionId: string) => Promise<string | undefined>;
@@ -658,6 +663,11 @@ export interface AgentInputCoordinatorDeps {
    * per-clientId turn-start bookkeeping here rather than running it.
    */
   onSteerAccepted?: (sessionId: string, item: AgentInputQueuedMessage) => void | Promise<void>;
+  /**
+   * Called just before an accepted steer replaces `activeTurn` / writes its user row so the
+   * host can flush buffered pre-steer assistant text with the pre-steer attribution intact.
+   */
+  onBeforeSteerCommit?: (sessionId: string) => void | Promise<void>;
   /** Host-verified Worker inputs eligible for event-stream recovery. */
   workerInputs?: WeakSet<object>;
   /**
@@ -755,8 +765,6 @@ export interface AgentInputCoordinatorDeps {
 }
 
 interface ActiveTurn {
-  /** Retained after steering receipt cleanup until this turn ends. */
-  latestSteeringClientId?: string;
   /** Display provenance only; never changes input scheduling or execution. */
   replyInputClientIds?: string[];
   item: AgentInputQueuedMessage | null;
@@ -1533,8 +1541,8 @@ export class AgentInputCoordinator {
     if (!active) return null;
     if (vendorGeneration !== undefined && active.vendorTurnGeneration !== null
       && vendorGeneration !== active.vendorTurnGeneration) return null;
-    // A human steering a private reply takes ownership of the resulting output.
-    return active.latestSteeringClientId ?? active.item?.clientId ?? null;
+    // Ownership transfers only when accepted steering replaces `active.item` (after pre-steer flush).
+    return active.item?.clientId ?? null;
   }
 
   /** Only a main-owned accepted receipt can silence this turn. Human steering restores visibility. */
@@ -2999,9 +3007,6 @@ export class AgentInputCoordinator {
     // steer ack 期间原 turn 可能先收到 terminal 事件并清掉 activeTurn。owner 是本次
     // 注入开始时就已确定的 vendor-turn 身份，必须在 await 前快照，不能等 ack 后再从
     // 可能已经清空的 activeTurn 读取。
-    const steerOwnerTurn = state.activeTurn;
-    const priorSteeringClientId = steerOwnerTurn?.latestSteeringClientId;
-    if (steerOwnerTurn) steerOwnerTurn.latestSteeringClientId = item.clientId;
     const steerContinuationOwnerClientId = state.activeTurn?.continuationOwnerClientId ?? null;
     const steerVendorTurnGeneration = this.deps.getTurnGeneration?.(sessionId) ?? null;
     const steerRuntime = this.deps.getTurnSessionIdentity?.(sessionId);
@@ -3285,11 +3290,6 @@ export class AgentInputCoordinator {
         : undefined;
       if (queuedSteerRevocation && ownedQueuedRow && ownedQueuedRow.text === item.text) {
         if (markerStillPresent) this.clearDirectSteeringItem(latest, item.clientId);
-        if (latest.activeTurn && latest.activeTurn === steerOwnerTurn
-          && latest.activeTurn.latestSteeringClientId === item.clientId) {
-          if (priorSteeringClientId === undefined) delete latest.activeTurn.latestSteeringClientId;
-          else latest.activeTurn.latestSteeringClientId = priorSteeringClientId;
-        }
         latest.pendingQueue = latest.pendingQueue.filter((row) => row.clientId !== item.clientId);
         this.removePendingCompactWaitClientId(latest, item.clientId);
         latest.queueEditLocks = latest.queueEditLocks.filter((id) => id !== item.clientId);
@@ -3513,6 +3513,8 @@ export class AgentInputCoordinator {
           typeof steerVendorTurnGeneration === 'number' ? steerVendorTurnGeneration : null,
         workerRecoverySource,
       };
+      const beforeSteer = this.flushBeforeSteerCommit(sessionId);
+      if (beforeSteer) await beforeSteer;
       const persisted = await this.persistAcceptedUserMessage(sessionId, detachedAcceptedTurn);
       if (opts?.touchUserSend && persisted === 'persisted') this.touchUserSend(sessionId);
       log.info('steer accepted after marker cancellation; persisted without reopening boundary', {
@@ -3562,6 +3564,8 @@ export class AgentInputCoordinator {
     } else {
       workerRecoverySource = undefined;
     }
+    const beforeSteer = this.flushBeforeSteerCommit(sessionId);
+    if (beforeSteer) await beforeSteer;
     accepted.activeTurn = {
       // Only accepted steering participates. Pending/rejected delivery cannot claim an unrelated final.
       replyInputClientIds: sameVendorTurn
@@ -5637,6 +5641,85 @@ export class AgentInputCoordinator {
     }
   }
 
+  /**
+   * 底层会话从活动生成进入可让渡的后台/异步等待态时触发，唤醒排空检查以便已排队的
+   * 外部回执立刻送达。
+   */
+  onBackgroundTurnYieldable(sessionId: string): void {
+    const state = this.getState(sessionId);
+    const hasRunnableWork =
+      state.pendingQueue.length > 0 ||
+      state.pendingCompacts.some((item) => item.waitForClientIds.length === 0);
+    if (!hasRunnableWork) return;
+    this.scheduleDrain(sessionId, 'background-turn-yieldable');
+  }
+
+  private flushBeforeSteerCommit(sessionId: string): Promise<void> | void {
+    try {
+      const pending = this.deps.onBeforeSteerCommit?.(sessionId);
+      if (pending && typeof (pending as Promise<unknown>).then === 'function') {
+        return Promise.resolve(pending).catch((error) => {
+          log.warn('before-steer flush failed', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    } catch (error) {
+      log.warn('before-steer flush failed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private tryYieldBackgroundTurnForQueue(
+    sessionId: string,
+    state: SessionInputState,
+  ): boolean {
+    if (!this.deps.yieldBackgroundTurnForQueuedInput) return false;
+    if (this.queueRestorePromises.has(sessionId)) return false;
+    if (this.restoreAttempted.has(sessionId) && !this.restoredQueueSessions.has(sessionId)) {
+      return false;
+    }
+    if (
+      state.abortBoundaryToken ||
+      state.queueAbortPending ||
+      state.pendingExternalTerminalDone ||
+      state.queueInteractionLocks.length > 0 ||
+      state.steeringQueueClientIds.length > 0 ||
+      state.recovery ||
+      this.deps.hasPendingCredentialSwitch?.(sessionId) ||
+      this.deps.hasPendingInteraction(sessionId) ||
+      (state.activeTurn !== null && !isActiveTurnDispatched(state.activeTurn))
+    ) {
+      return false;
+    }
+    const runnableCompact =
+      !state.queuePaused &&
+      state.pendingCompacts[0] !== undefined &&
+      state.pendingCompacts[0].waitForClientIds.length === 0;
+    const head = state.pendingQueue[0];
+    const runnableHead =
+      Boolean(head) &&
+      !(head!.origin?.kind === 'orca' && requiresOrcaReportPersistence(head!) && state.orcaReportsStopped) &&
+      !(
+        state.queuePaused &&
+        !(
+          state.queuePausedByRestore &&
+          (this.restoredUsageLimitRetryItems.has(head!) || this.restoredOrcaReports.has(head!))
+        )
+      ) &&
+      !this.botCapabilityRefreshWaits.get(head!)?.waiting &&
+      !state.queueEditLocks.includes(head!.clientId);
+    if (!runnableCompact && !runnableHead) return false;
+    try {
+      return this.deps.yieldBackgroundTurnForQueuedInput(sessionId) === true;
+    } catch {
+      return false;
+    }
+  }
+
   private isDispatchBoundaryBusy(sessionId: string, state: SessionInputState): boolean {
     return (
       state.activeTurn !== null ||
@@ -6056,6 +6139,19 @@ export class AgentInputCoordinator {
       const hasRunnableWork =
         state.pendingQueue.length > 0 ||
         state.pendingCompacts.some((item) => item.waitForClientIds.length === 0);
+      if (
+        hasRunnableWork &&
+        this.isDispatchBoundaryBusy(sessionId, state) &&
+        this.tryYieldBackgroundTurnForQueue(sessionId, state)
+      ) {
+        log.debug('yielded idle background wait for queued input', {
+          sessionId,
+          reason,
+          queueLength: state.pendingQueue.length,
+          headClientId: state.pendingQueue[0]?.clientId ?? null,
+        });
+        return;
+      }
       if (
         hasRunnableWork &&
         this.isDispatchBoundaryBusy(sessionId, state) &&

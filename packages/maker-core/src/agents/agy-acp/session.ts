@@ -526,6 +526,8 @@ interface ActiveTurn {
    * idle (`SUBAGENT_STATE_ALIVE`) detached subagent has not been killed.
    */
   inFlightIdleSettleTimer: ReturnType<typeof setTimeout> | null;
+  /** Debounced timer to confirm an in-flight `session/prompt` async wait (`schedule` / workflow) is idle and yieldable. */
+  inFlightAsyncWaitTimer: ReturnType<typeof setTimeout> | null;
   /** Idle-settle timer used once all background tools finish with no active `session/prompt`. */
   backgroundSettleTimer: ReturnType<typeof setTimeout> | null;
   /** Hard ceiling on holding a turn open for background commands/subagents after `end_turn`. */
@@ -548,6 +550,10 @@ interface ActiveTurn {
   replyOpen: boolean;
   /** True while an in-flight `session/prompt` has emitted assistant text and no subsequent thought/tool started. */
   inFlightReplyOpen: boolean;
+  /** True while an in-flight `session/prompt` is idly awaiting an async launcher (`schedule` / subagents) and can yield to queued input. */
+  inFlightAsyncWaitYieldable: boolean;
+  /** True once `backgroundHoldYieldable: true` was emitted for the current idle-wait episode. */
+  backgroundHoldYieldableEmitted: boolean;
   /** Guards against overlapping in-flight idle-subagent settlement probes. */
   inFlightCheckInFlight: boolean;
   /** Monotonic sequence incremented on every in-flight activity update to invalidate stale probes. */
@@ -873,6 +879,23 @@ export class AcpSession {
     return this.turn !== null || this.compacting !== null || this.preparation.pending > 0;
   }
 
+  /**
+   * Yields an idle background wait or in-flight async wait (`schedule` / active subagents) so
+   * queued external input can start a fresh turn immediately instead of remaining stuck queued.
+   */
+  yieldBackgroundTurnForQueuedInput(): boolean {
+    if (!this.canYieldBackgroundHold()) return false;
+    const turn = this.turn!;
+    const outcome = turn.continuingInBackground
+      ? this.resolveBackgroundOutcome(turn)
+      : {
+          stopReason: 'end_turn' as const,
+          ...(turn.usage ? { usage: turn.usage } : {}),
+        };
+    this.finishTurn(turn.token, outcome);
+    return true;
+  }
+
   setInteractionResolver(resolver: InteractionResolver): void {
     this.resolver = resolver;
   }
@@ -936,6 +959,7 @@ export class AcpSession {
       this.pump();
       return;
     }
+    this.emit(this.translator.flushPending());
     this.requestPrompt(turn, prompt);
   }
 
@@ -1302,6 +1326,7 @@ export class AcpSession {
       cancelTimer: null,
       inactivityTimer: null,
       inFlightIdleSettleTimer: null,
+      inFlightAsyncWaitTimer: null,
       backgroundSettleTimer: null,
       backgroundHoldTimer: null,
       backgroundPollTimer: null,
@@ -1313,6 +1338,8 @@ export class AcpSession {
       recheckBackgroundAfterFlight: false,
       replyOpen: false,
       inFlightReplyOpen: false,
+      inFlightAsyncWaitYieldable: false,
+      backgroundHoldYieldableEmitted: false,
       inFlightCheckInFlight: false,
       inFlightActivitySeq: 0,
       backgroundCheckInFlight: false,
@@ -1336,6 +1363,7 @@ export class AcpSession {
   private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
     this.clearBackgroundTimers(turn);
     this.clearInFlightIdleSettleTimer(turn);
+    this.clearInFlightAsyncWaitTimer(turn);
     turn.continuingInBackground = false;
     turn.awaitingAsyncWakeup = false;
     turn.awaitingSubagentWakeup = false;
@@ -1344,6 +1372,8 @@ export class AcpSession {
     turn.recheckBackgroundAfterFlight = false;
     turn.replyOpen = false;
     turn.inFlightReplyOpen = false;
+    turn.inFlightAsyncWaitYieldable = false;
+    turn.backgroundHoldYieldableEmitted = false;
     turn.inFlightActivitySeq += 1;
     turn.deferredOutcome = null;
     turn.sawTextSinceBackgroundWait = false;
@@ -1455,9 +1485,21 @@ export class AcpSession {
         turn.replyOpen = false;
         turn.deferredOutcome = effectiveOutcome;
         turn.sawTextSinceBackgroundWait = false;
+        turn.inFlightAsyncWaitYieldable = false;
+        turn.backgroundHoldYieldableEmitted = false;
         this.translator.clearAwaitingAsyncLaunch();
         this.emit(this.translator.flushPending());
-        this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true } }]);
+        const yieldable = this.canYieldBackgroundHold();
+        if (yieldable) turn.backgroundHoldYieldableEmitted = true;
+        this.emit([{
+          type: 'status',
+          data: {
+            status: 'running',
+            ...this.usage,
+            isRunning: true,
+            ...(yieldable ? { backgroundHoldYieldable: true } : {}),
+          },
+        }]);
         this.startBackgroundHoldTimer(turn);
         if (turn.awaitingAsyncWakeup || nativePending) {
           this.scheduleBackgroundPoll(turn);
@@ -1562,6 +1604,12 @@ export class AcpSession {
     turn.inFlightIdleSettleTimer = null;
   }
 
+  private clearInFlightAsyncWaitTimer(turn: ActiveTurn): void {
+    if (!turn.inFlightAsyncWaitTimer) return;
+    clearTimeout(turn.inFlightAsyncWaitTimer);
+    turn.inFlightAsyncWaitTimer = null;
+  }
+
   private clearBackgroundSettleTimer(turn: ActiveTurn): void {
     if (!turn.backgroundSettleTimer) return;
     clearTimeout(turn.backgroundSettleTimer);
@@ -1593,7 +1641,52 @@ export class AcpSession {
     }
     this.clearPromptInactivityTimer(turn);
     this.clearInFlightIdleSettleTimer(turn);
+    this.clearInFlightAsyncWaitTimer(turn);
     this.clearBackgroundTimers(turn);
+  }
+
+  private canYieldBackgroundHold(): boolean {
+    const turn = this.turn;
+    if (
+      !turn
+      || !this.continueWhileToolsPending
+      || turn.settled
+      || turn.cancelTimer
+      || this.ended
+      || this.closing
+      || this.compacting !== null
+      || this.preparation.pending > 0
+      || this.pendingPrompts.length > 0
+      || this.hasOpenUserInteraction()
+      || this.translator.hasPendingNonDaemonTools()
+      || this.translator.hasOpenThinking()
+    ) {
+      return false;
+    }
+    if (turn.continuingInBackground) {
+      return (
+        turn.outstanding.size === 0
+        && turn.awaitingAsyncWakeup
+        && !turn.replyOpen
+        && !turn.sawTextSinceBackgroundWait
+        && !this.translator.hasAwaitingAsyncLaunch()
+      );
+    }
+    return turn.outstanding.size > 0 && turn.inFlightAsyncWaitYieldable;
+  }
+
+  private emitBackgroundHoldYieldable(turn: ActiveTurn): void {
+    if (turn.backgroundHoldYieldableEmitted || this.turn !== turn || !this.canYieldBackgroundHold()) return;
+    turn.backgroundHoldYieldableEmitted = true;
+    this.emit([{
+      type: 'status',
+      data: {
+        status: 'running',
+        ...this.usage,
+        isRunning: true,
+        backgroundHoldYieldable: true,
+      },
+    }]);
   }
 
   private startBackgroundHoldTimer(turn: ActiveTurn): void {
@@ -1663,7 +1756,10 @@ export class AcpSession {
   private handleSubagentMessaged(childId: string): void {
     if (this.turn) {
       this.clearInFlightIdleSettleTimer(this.turn);
+      this.clearInFlightAsyncWaitTimer(this.turn);
       this.turn.inFlightReplyOpen = false;
+      this.turn.inFlightAsyncWaitYieldable = false;
+      this.turn.backgroundHoldYieldableEmitted = false;
       this.turn.inFlightActivitySeq += 1;
     }
     const tracked = this.trackedSubagents.get(childId);
@@ -1926,6 +2022,12 @@ export class AcpSession {
         turn.observedActiveSubagents = true;
       }
       if (state.pendingReply || state.activeSubagents === true) {
+        if (state.pendingReply) {
+          turn.backgroundHoldYieldableEmitted = false;
+        } else if (turn.awaitingAsyncWakeup && !turn.replyOpen) {
+          turn.sawTextSinceBackgroundWait = false;
+          this.emitBackgroundHoldYieldable(turn);
+        }
         this.scheduleBackgroundPoll(turn);
         return;
       }
@@ -1939,6 +2041,10 @@ export class AcpSession {
           turn.awaitingSubagentWakeup = false;
           this.finishTurn(turn.token, this.resolveBackgroundOutcome(turn));
         } else {
+          if (!turn.replyOpen) {
+            turn.sawTextSinceBackgroundWait = false;
+            this.emitBackgroundHoldYieldable(turn);
+          }
           this.scheduleBackgroundPoll(turn);
         }
         return;
@@ -1981,6 +2087,7 @@ export class AcpSession {
       cancelTimer: null,
       inactivityTimer: null,
       inFlightIdleSettleTimer: null,
+      inFlightAsyncWaitTimer: null,
       backgroundSettleTimer: null,
       backgroundHoldTimer: null,
       backgroundPollTimer: null,
@@ -1992,6 +2099,8 @@ export class AcpSession {
       recheckBackgroundAfterFlight: false,
       replyOpen: false,
       inFlightReplyOpen: false,
+      inFlightAsyncWaitYieldable: false,
+      backgroundHoldYieldableEmitted: false,
       inFlightCheckInFlight: false,
       inFlightActivitySeq: 0,
       backgroundCheckInFlight: false,
@@ -2015,6 +2124,9 @@ export class AcpSession {
     const turn = this.turn;
     if (!turn || turn.continuingInBackground || turn.outstanding.size === 0 || turn.settled || turn.cancelTimer) return;
     this.clearInFlightIdleSettleTimer(turn);
+    this.clearInFlightAsyncWaitTimer(turn);
+    turn.inFlightAsyncWaitYieldable = false;
+    turn.backgroundHoldYieldableEmitted = false;
     turn.inFlightActivitySeq += 1;
     const kind = update?.sessionUpdate;
     if (kind === 'agent_message_chunk') {
@@ -2094,10 +2206,19 @@ export class AcpSession {
       // Only settle an in-flight `session/prompt` when native subagent records exist and
       // every detached subagent has already reported back or terminated (Agy holds
       // `session/prompt` open while an idle `SUBAGENT_STATE_ALIVE` child has not been killed).
-      if (state.pendingReply || state.hasPendingTranscriptStep || state.activeSubagents !== false || state.hasIdleAliveSubagents === false) {
+      if (state.pendingReply || state.hasPendingTranscriptStep) {
+        return;
+      }
+      if (state.activeSubagents !== false || state.hasIdleAliveSubagents === false) {
+        if (state.activeSubagents === true) {
+          turn.inFlightAsyncWaitYieldable = true;
+          this.emitBackgroundHoldYieldable(turn);
+        }
         return;
       }
       if (this.pollSubagentRuns && this.hasTrackedSubagentsNeedingPoll()) {
+        turn.inFlightAsyncWaitYieldable = true;
+        this.emitBackgroundHoldYieldable(turn);
         this.scheduleInFlightIdleSubagentCheck(turn, this.bgPollMs);
         return;
       }
@@ -2111,12 +2232,80 @@ export class AcpSession {
     }
   }
 
+  private scheduleInFlightAsyncWaitYieldable(turn: ActiveTurn, delayMs: number): void {
+    this.clearInFlightAsyncWaitTimer(turn);
+    if (
+      !this.continueWhileToolsPending
+      || !this.replyEndsWithUsageUpdate
+      || turn.settled
+      || this.turn !== turn
+      || turn.continuingInBackground
+      || turn.outstanding.size === 0
+      || turn.cancelTimer
+      || !turn.inFlightReplyOpen
+      || !this.translator.hasAwaitingOtherAsyncLaunch()
+    ) {
+      return;
+    }
+    const activitySeq = turn.inFlightActivitySeq;
+    turn.inFlightAsyncWaitTimer = setTimeout(() => {
+      turn.inFlightAsyncWaitTimer = null;
+      void this.verifyInFlightAsyncWaitYieldable(turn, activitySeq);
+    }, delayMs);
+    (turn.inFlightAsyncWaitTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private async verifyInFlightAsyncWaitYieldable(turn: ActiveTurn, activitySeq: number): Promise<void> {
+    if (
+      !this.continueWhileToolsPending
+      || !this.replyEndsWithUsageUpdate
+      || turn.settled
+      || this.turn !== turn
+      || turn.continuingInBackground
+      || turn.outstanding.size === 0
+      || turn.cancelTimer
+      || !turn.inFlightReplyOpen
+      || turn.inFlightActivitySeq !== activitySeq
+      || this.translator.hasOpenThinking()
+      || this.hasOpenUserInteraction()
+      || this.translator.hasPendingNonDaemonTools()
+      || !this.translator.hasAwaitingOtherAsyncLaunch()
+    ) {
+      return;
+    }
+    if (this.checkBackgroundActivity) {
+      const state = await this.probeBackgroundActivity();
+      if (
+        turn.settled
+        || this.turn !== turn
+        || turn.continuingInBackground
+        || turn.outstanding.size === 0
+        || turn.cancelTimer
+        || !turn.inFlightReplyOpen
+        || turn.inFlightActivitySeq !== activitySeq
+        || this.translator.hasOpenThinking()
+        || this.hasOpenUserInteraction()
+        || this.translator.hasPendingNonDaemonTools()
+        || !this.translator.hasAwaitingOtherAsyncLaunch()
+      ) {
+        return;
+      }
+      if (state.pendingReply || state.hasPendingTranscriptStep) {
+        this.scheduleInFlightAsyncWaitYieldable(turn, this.bgPollMs);
+        return;
+      }
+    }
+    turn.inFlightAsyncWaitYieldable = true;
+    this.emitBackgroundHoldYieldable(turn);
+  }
+
   private afterBackgroundContentUpdate(update?: AcpRecord): void {
     const turn = this.turn;
     if (!turn || !turn.continuingInBackground || turn.settled || turn.cancelTimer || turn.outstanding.size > 0) return;
     this.clearBackgroundSettleTimer(turn);
     this.clearBackgroundPollTimer(turn);
     turn.settleWhenClear = false;
+    turn.backgroundHoldYieldableEmitted = false;
     if (this.hasOpenUserInteraction()) return;
     const kind = update?.sessionUpdate;
     if (this.translator.hasAwaitingAsyncLaunch()) {
@@ -2126,6 +2315,7 @@ export class AcpSession {
       turn.replyOpen = false;
       turn.sawTextSinceBackgroundWait = false;
       this.translator.clearAwaitingAsyncLaunch();
+      this.emitBackgroundHoldYieldable(turn);
       this.scheduleBackgroundPoll(turn);
       return;
     }
@@ -2241,7 +2431,6 @@ export class AcpSession {
         void this.verifyBackgroundContinuation(turn);
       } else if (
         this.replyEndsWithUsageUpdate
-        && this.checkBackgroundActivity
         && !turn.continuingInBackground
         && turn.outstanding.size > 0
         && turn.inFlightReplyOpen
@@ -2250,9 +2439,12 @@ export class AcpSession {
         && !turn.cancelTimer
         && !this.hasOpenUserInteraction()
         && !this.translator.hasPendingNonDaemonTools()
-        && !this.translator.hasAwaitingOtherAsyncLaunch()
       ) {
-        this.scheduleInFlightIdleSubagentCheck(turn, this.bgAfterTextMs);
+        if (this.translator.hasAwaitingOtherAsyncLaunch()) {
+          this.scheduleInFlightAsyncWaitYieldable(turn, this.bgAfterTextMs);
+        } else if (this.checkBackgroundActivity) {
+          this.scheduleInFlightIdleSubagentCheck(turn, this.bgAfterTextMs);
+        }
       }
     }
   }
@@ -2275,7 +2467,10 @@ export class AcpSession {
     if (!resolver) return { outcome: 'cancelled' };
     if (this.turn) {
       this.clearInFlightIdleSettleTimer(this.turn);
+      this.clearInFlightAsyncWaitTimer(this.turn);
       this.turn.inFlightReplyOpen = false;
+      this.turn.inFlightAsyncWaitYieldable = false;
+      this.turn.backgroundHoldYieldableEmitted = false;
       this.turn.inFlightActivitySeq += 1;
     }
     if (this.turn?.continuingInBackground) {
@@ -2324,6 +2519,7 @@ export class AcpSession {
         if (this.turn.awaitingAsyncWakeup || this.turn.settleWhenClear) {
           this.scheduleBackgroundPoll(this.turn);
         }
+        this.emitBackgroundHoldYieldable(this.turn);
       }
     }
   }
@@ -2369,7 +2565,10 @@ export class AcpSession {
     if (this.shouldOpenAutonomousTurnForTool(toolCall)) this.beginAutonomousTurn();
     if (this.turn) {
       this.clearInFlightIdleSettleTimer(this.turn);
+      this.clearInFlightAsyncWaitTimer(this.turn);
       this.turn.inFlightReplyOpen = false;
+      this.turn.inFlightAsyncWaitYieldable = false;
+      this.turn.backgroundHoldYieldableEmitted = false;
       this.turn.inFlightActivitySeq += 1;
     }
     if (this.turn?.continuingInBackground) {
@@ -2479,6 +2678,7 @@ export class AcpSession {
         if (this.turn.awaitingAsyncWakeup || this.turn.settleWhenClear) {
           this.scheduleBackgroundPoll(this.turn);
         }
+        this.emitBackgroundHoldYieldable(this.turn);
       }
     }
   }

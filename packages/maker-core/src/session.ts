@@ -2465,6 +2465,24 @@ export class Session {
   }
 
   /**
+   * 仅当会话不存在发送预留、事件流栅栏、Host 租约、权限切换或未决交互，
+   * 且底层 handle 处于可让渡的后台/空闲等待时，主动结束当前等待 turn，
+   * 让排队输入（例如其他任务发来的已完成结果）得以立刻送达。
+   */
+  yieldBackgroundTurnForQueuedInput(): boolean {
+    if (
+      this.sendReservation !== null ||
+      this.eventStreamHoldFence ||
+      this.hostTurnLeases.size > 0 ||
+      this.permissionModeChangesInFlight > 0 ||
+      this.pendingInteractions > 0
+    ) {
+      return false;
+    }
+    return this.handle.yieldBackgroundTurnForQueuedInput?.() === true;
+  }
+
+  /**
    * 项目资源漂移且满足回收空闲口径时返回 true(仅 pi 本地根任务实现,其余 agent
    * 恒 false)。只判定不执行 close:close 必须由持有 Maker 的调用方走
    * closeSessionIfCurrent(session, 'runtime-refresh'),让 session:closed 带上 Maker

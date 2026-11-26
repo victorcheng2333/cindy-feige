@@ -14858,7 +14858,16 @@
       "syntheticTriggerLabel": "Systemanweisung",
       "steerKeptInQueue": "Einbringen ist gerade nicht möglich; die Nachricht bleibt in der Warteschlange.",
       "steerFellBackToQueue": "Diese Nachricht kann nicht in die laufende Aufgabe eingebracht werden und wurde stattdessen in die Warteschlange gestellt.",
-      "steerImageDisabled": "Dieser Agent unterstützt nur reines Text-Einbringen; Nachrichten mit Bildern bleiben in der Warteschlange."
+      "steerImageDisabled": "Dieser Agent unterstützt nur reines Text-Einbringen; Nachrichten mit Bildern bleiben in der Warteschlange.",
+      "waitingForTurn": "Wartet auf das Ende der aktuellen Runde",
+      "incomingSingleSummary": "Antwort von „{{sender}}“ · Wartet auf das Rundenende",
+      "incomingSummary_one": "{{count}} Antwort aus einer anderen Aufgabe · Wartet auf das Rundenende",
+      "incomingSummary_other": "{{count}} Antworten aus anderen Aufgaben · Wartet auf das Rundenende",
+      "incomingExpand": "Aufklappen",
+      "incomingCollapse": "Einklappen",
+      "incomingShowFull": "Vollständig anzeigen",
+      "incomingHideFull": "Einklappen",
+      "incomingRegionAria": "Ausstehende Antworten aus anderen Aufgaben"
     },
     "newChatView": {
       "missing": {

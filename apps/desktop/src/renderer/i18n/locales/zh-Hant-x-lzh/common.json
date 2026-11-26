@@ -14804,7 +14804,16 @@
       "syntheticTriggerLabel": "系統之令",
       "steerKeptInQueue": "暫不能插話，訊仍留佇列中。",
       "steerFellBackToQueue": "此訊暫不能插話於今之差事，已改列待遣。",
-      "steerImageDisabled": "今之 Agent 僅許純文插話，附畫之訊須列待遣。"
+      "steerImageDisabled": "今之 Agent 僅許純文插話，附畫之訊須列待遣。",
+      "waitingForTurn": "待此輪畢乃理",
+      "incomingSingleSummary": "自「{{sender}}」之覆訊 · 待此輪畢乃理",
+      "incomingSummary_one": "有 {{count}} 條他差事之覆訊 · 待此輪畢乃理",
+      "incomingSummary_other": "有 {{count}} 條他差事之覆訊 · 待此輪畢乃理",
+      "incomingExpand": "展",
+      "incomingCollapse": "收",
+      "incomingShowFull": "展全文",
+      "incomingHideFull": "收全文",
+      "incomingRegionAria": "待理之他差事覆訊"
     },
     "newChatView": {
       "missing": {

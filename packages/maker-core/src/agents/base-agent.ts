@@ -2692,6 +2692,13 @@ export interface AgentSessionHandle {
   abort(): Promise<void>;
 
   /**
+   * 当底层会话处于纯后台等待或空闲子任务等待（例如已调 `schedule` 且当前没有
+   * 进行中的工具/输出/交互）时，主动让渡当前 turn 以便排队消息立即开启新 turn。
+   * 不可让渡时返回 `false`。
+   */
+  yieldBackgroundTurnForQueuedInput?(): boolean;
+
+  /**
    * 请求当前 turn 在 provider 的安全边界停止。
    *
    * 与 abort() 的产品语义不同：这里只发送 provider 原生的软中断请求，不得关闭

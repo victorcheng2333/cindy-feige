@@ -323,6 +323,7 @@ export function createInputQueue(deps) {
       onPersistenceError: persistenceFailed,
       // When a terminal arrives (turn-executor.mjs handTerminalToCoordinator), as on the desktop.
       handTerminal: (id, type, error, signals, meta) => coordinator.onTurnEvent(id, type, error, signals, meta),
+      onBackgroundTurnYieldable: id => coordinator.onBackgroundTurnYieldable(id),
       isSessionErrorSuppressed: (id, event) => isSessionErrorSuppressed(coordinator, id, event),
       // Once the turn's rows settle: the coordinator already has the terminal when it arrived as an
       // event, so it is only woken; a turn that ended without one (a stop that only went idle, a

@@ -14,6 +14,7 @@ type LiveSession = {
   agentKind?: string;
   capabilities?: { sameTurnSteer?: { supported: boolean } };
   isTurnRunning?(): boolean;
+  yieldBackgroundTurnForQueuedInput?(): boolean;
   getTurnGeneration?(): number | null;
   getObservedCurrentTurnTerminal?(): ReturnType<NonNullable<Deps['getObservedCurrentTurnTerminal']>>;
 };
@@ -50,6 +51,7 @@ export interface HostCoordinatorExecutor {
   isRunning(sessionId: string): boolean;
   isSettling(sessionId: string): boolean;
   reconcileIdle: NonNullable<Deps['reconcileTurnIdle']>;
+  flushAssistantBlock(sessionId: string): void;
   beforeDispatchUserTurn(
     ...args: [...Parameters<NonNullable<Deps['beforeDispatchUserTurn']>>,
       (snapshots: Parameters<typeof prepareQueuedPromptSnapshot>[0]) => Promise<void>]
@@ -141,6 +143,16 @@ export function hostCoordinatorDeps(ctx: HostCoordinatorContext): AgentInputCoor
     getTurnSessionIdentity: id => (deps.getMaker()?.getSession(id) as object | undefined) ?? null,
     getObservedCurrentTurnTerminal: id => deps.getMaker()?.getSession(id)?.getObservedCurrentTurnTerminal?.(),
     reconcileTurnIdle: executor.reconcileIdle,
+    yieldBackgroundTurnForQueuedInput: id => {
+      if (executor.isSettling(id)) return false;
+      const session = deps.getMaker()?.getSession(id);
+      if (!session) return false;
+      try {
+        return session.yieldBackgroundTurnForQueuedInput?.() === true;
+      } catch {
+        return false;
+      }
+    },
     getAgentKind: id => (makerKind(deps.getMaker()?.getSession(id)?.agentKind) ?? null) as ReturnType<Deps['getAgentKind']>,
     getSdkSessionId: async id => (await deps.readSession(id)).sdkSessionId || undefined,
     hasAssistantProgressAfter: deps.hasAssistantProgressAfter,
@@ -254,6 +266,9 @@ export function hostCoordinatorDeps(ctx: HostCoordinatorContext): AgentInputCoor
       if (!item.autoResume) void deps.touchSessionActivity?.(id);
       void settleTaskActionInput(item).catch(() => undefined);
       // The desktop also releases the Orca accepted callback; Orca tasks are refused at Host admission.
+    },
+    onBeforeSteerCommit: id => {
+      executor.flushAssistantBlock(id);
     },
     workerInputs: undefined, // Orca Worker recovery is owned by the desktop runtime.
     onUiRetry: (id, clientId, source, attemptToken) => {

@@ -2106,6 +2106,8 @@ function createHarness(opts?: {
   providerGroupSwitchCandidate?: AgentInputCoordinatorDeps['providerGroupSwitchCandidate'];
   sendToSessionHint?: AgentInputCoordinatorDeps['sendToSessionHint'];
   supportsSameTurnSteer?: AgentInputCoordinatorDeps['supportsSameTurnSteer'];
+  yieldBackgroundTurnForQueuedInput?: AgentInputCoordinatorDeps['yieldBackgroundTurnForQueuedInput'];
+  onBeforeSteerCommit?: AgentInputCoordinatorDeps['onBeforeSteerCommit'];
 }) {
   let running = false;
   let liveRunningOverride: boolean | null | 'unknown' = null;
@@ -2294,6 +2296,9 @@ function createHarness(opts?: {
     },
     getTurnSessionIdentity: () => turnSessionIdentity,
     reconcileTurnIdle,
+    ...(opts?.yieldBackgroundTurnForQueuedInput
+      ? { yieldBackgroundTurnForQueuedInput: opts.yieldBackgroundTurnForQueuedInput }
+      : {}),
     hasPendingInteraction: () => pendingInteraction,
     getAgentKind: () => agentKind,
     getSdkSessionId,
@@ -2313,6 +2318,7 @@ function createHarness(opts?: {
     onUserMessagePersistenceFailed,
     onAcceptedQueuedMessage,
     onSteerAccepted,
+    ...(opts?.onBeforeSteerCommit ? { onBeforeSteerCommit: opts.onBeforeSteerCommit } : {}),
     onDispatchedUserTurn,
     onResumableTurnError,
     isResumableTurnErrorCandidate,
@@ -20266,5 +20272,149 @@ describe('teammate relay review intent', () => {
     await flush();
     expect(h.sendToAgent).toHaveBeenCalledTimes(1);
     expect(h.sendToAgent.mock.calls[0][3][AUTO_REVIEW_SOURCE_CONTENT]).toBe(expected);
+  });
+});
+
+describe('background hold yield and pre-steer flush', () => {
+  // 测试价值
+  // - 生产入口与可观察结果：AgentInputCoordinator.enqueue / onBackgroundTurnYieldable / drain；
+  //   验证在途后台等待阻塞 `drain` 时，无论回复先入队还是先进入可让渡等待，都能触发 `yieldBackgroundTurnForQueuedInput`
+  //   并在收到 `done` 后立即派发队列回执；同时验证未派发、队列暂停、插话在途及未决交互期间绝不误让渡。
+  // - Bug／规则依据：Agy `schedule` 等待期 `isTurnRunning()` 持续为真会卡住跨任务回执，但只有已越过派发边界且无交互/暂停/插话锁时才能让渡。
+  // - 现有覆盖缺口：既有协调器测试未覆盖 `yieldBackgroundTurnForQueuedInput` 与 `onBackgroundTurnYieldable` 路径及安全门控。
+  // - 最小失败输入：running 中调用 `AgentInputCoordinator.enqueue` 入队协作消息并分别触发 `enqueue` / `onBackgroundTurnYieldable`，以及四类阻断状态。
+  // - tier：unit（coordinator test harness + mock session callbacks）。
+  it('yields idle background holds on enqueue and onBackgroundTurnYieldable while respecting busy/pause/steer/interaction guards', async () => {
+    const sid = 'yield-flow';
+    let yieldable = false;
+    const yieldFn = vi.fn((sessionId: string) => {
+      if (!yieldable) return false;
+      h.setRunning(false);
+      queueMicrotask(() => {
+        h.coordinator.onTurnEvent(sessionId, 'done');
+      });
+      return true;
+    });
+    const h = createHarness({ yieldBackgroundTurnForQueuedInput: yieldFn });
+
+    // Start first turn cleanly.
+    h.coordinator.enqueue(sid, makeItem('turn-1', 'Start check'));
+    await flush();
+    expect(h.sendToAgent).toHaveBeenCalledTimes(1);
+
+    // Reply arrives while actively generating (yieldable = false) -> remains queued.
+    h.coordinator.enqueue(sid, makeItem('reply-1', 'M3 done', {
+      origin: { kind: 'session', senderSessionId: 'm3', displayText: 'M3 done' },
+    }));
+    await flush();
+    expect(yieldFn).toHaveBeenCalled();
+    expect(h.sendToAgent).toHaveBeenCalledTimes(1);
+    expect(h.coordinator.getProjection(sid).pendingQueue.map(q => q.clientId)).toEqual(['reply-1']);
+
+    // Guard 1: pending interaction blocks yielding.
+    yieldable = true;
+    yieldFn.mockClear();
+    h.setPendingInteraction(true);
+    h.coordinator.onBackgroundTurnYieldable(sid);
+    await flush();
+    expect(yieldFn).not.toHaveBeenCalled();
+    h.setPendingInteraction(false);
+
+    // Guard 2: paused queue blocks yielding.
+    await h.coordinator.stop(sid, { keepQueue: true, pauseQueue: true });
+    await flush();
+    yieldFn.mockClear();
+    h.coordinator.onBackgroundTurnYieldable(sid);
+    await flush();
+    expect(yieldFn).not.toHaveBeenCalled();
+    h.setRunning(true);
+    h.coordinator.onTurnEvent(sid, 'done'); // clear stop's aborted settle if any, then restart clean turn
+    await flush();
+
+    // Re-seed clean active turn and paused-resumed state via resumeQueue / fresh session for crisp steer/preparing checks.
+    const sid2 = 'yield-resume-and-guards';
+    let allowSend2!: () => void;
+    const h2 = createHarness({ yieldBackgroundTurnForQueuedInput: yieldFn });
+    yieldFn.mockClear();
+    yieldable = false;
+    h2.sendToAgent.mockImplementationOnce(async (_id, _msg, _opts, sendOpts) => {
+      sendOpts.onVendorTurnReserved?.(1);
+      await new Promise<void>(resolve => { allowSend2 = resolve; });
+      return { kind: 'session-dispatch', source: 'test', dispatched: true };
+    });
+    h2.coordinator.enqueue(sid2, makeItem('t-initial', 'First'));
+    await vi.waitFor(() => expect(allowSend2).toBeDefined());
+
+    // Guard 3: undispatched activeTurn (preparing/sending) must NOT call yieldBackgroundTurnForQueuedInput.
+    yieldable = true;
+    h2.coordinator.enqueue(sid2, makeItem('t-queued', 'Queued'));
+    await flush();
+    expect(yieldFn).not.toHaveBeenCalled();
+
+    // Guard 4: steer in flight must NOT yield.
+    allowSend2();
+    h2.setRunning(true);
+    await flush();
+    const steerGate = deferred<void>();
+    h2.steerToAgent.mockImplementationOnce(() => steerGate.promise);
+    const steering = h2.coordinator.steer(sid2, makeItem('t-steer', 'Steer in flight'));
+    await vi.waitFor(() => expect(h2.steerToAgent).toHaveBeenCalledOnce());
+    yieldFn.mockClear();
+    h2.coordinator.onBackgroundTurnYieldable(sid2);
+    await flush();
+    expect(yieldFn).not.toHaveBeenCalled();
+    steerGate.resolve();
+    await steering;
+
+    // Now clear + yieldable -> onBackgroundTurnYieldable yields and drains t-queued!
+    const yieldFn3 = vi.fn((sessionId: string) => {
+      h3.setRunning(false);
+      queueMicrotask(() => h3.coordinator.onTurnEvent(sessionId, 'done'));
+      return true;
+    });
+    const h3 = createHarness({ yieldBackgroundTurnForQueuedInput: yieldFn3 });
+    h3.coordinator.enqueue('sid3', makeItem('t3-1', 'Hold with schedule'));
+    await flush();
+    yieldFn3.mockClear();
+    // Simulate active turn busy then becoming yieldable after queue already holds item.
+    yieldFn3.mockReturnValueOnce(false);
+    h3.coordinator.enqueue('sid3', makeItem('t3-reply', 'Remote reply'));
+    await flush();
+    expect(h3.sendToAgent).toHaveBeenCalledTimes(1);
+    h3.coordinator.onBackgroundTurnYieldable('sid3');
+    await vi.waitFor(() => expect(h3.sendToAgent).toHaveBeenCalledTimes(2));
+    expect((h3.sendToAgent.mock.calls[1]?.[1] as { content?: string })?.content).toBe('Remote reply');
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AgentInputCoordinator.steer → deps.onBeforeSteerCommit → mocks.createMessage；
+  //   验证被接收的 `steer` 在提交用户消息行和切换 `activeTurn` 之前触发 `onBeforeSteerCommit`，且此时 `getActiveInputClientId` 仍返回 steer 前的 clientId。
+  // - Bug／规则依据：若先切换 `activeTurn` 再 flush 在飞文本，pre-steer 助手文本会继承 steer 用户的 `replyToClientId` 且落库顺序错乱。
+  // - 现有覆盖缺口：既有 steer 用例未校验 pre-steer flush 钩子与 `createUserMessage` 及 `getActiveInputClientId` 的先后契约。
+  // - 最小失败输入：turn `'u-1'` 正在运行时调用 `coordinator.steer(sid, makeItem('u-steer', ...))`。
+  // - tier：unit（coordinator test harness）。
+  it('calls onBeforeSteerCommit before replacing activeInputClientId and before creating the steered user row', async () => {
+    const sid = 'pre-steer-flush-order';
+    const order: string[] = [];
+    let observedActiveIdDuringFlush: string | null = null;
+    const h = createHarness({
+      onBeforeSteerCommit: (sessionId) => {
+        observedActiveIdDuringFlush = h.coordinator.getActiveInputClientId(sessionId);
+        order.push('before-steer-flush');
+      },
+    });
+    h.coordinator.enqueue(sid, makeItem('u-1', 'Initial turn'));
+    await flush();
+
+    mocks.createMessage.mockImplementationOnce(async (_sessionId, row) => {
+      order.push(`create:${(row as { clientId?: string } | undefined)?.clientId ?? 'unknown'}`);
+      return {};
+    });
+    order.length = 0;
+
+    await h.coordinator.steer(sid, makeItem('u-steer', 'Steer correction'));
+    expect(observedActiveIdDuringFlush).toBe('u-1');
+    expect(order).toEqual(['before-steer-flush', 'create:u-steer']);
+    expect(h.coordinator.getActiveInputClientId(sid)).toBe('u-steer');
   });
 });

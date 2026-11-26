@@ -14804,7 +14804,16 @@
       "syntheticTriggerLabel": "系統指令",
       "steerKeptInQueue": "暫時無法插話，訊息仍保留在佇列中。",
       "steerFellBackToQueue": "這條訊息暫時無法插話到當前任務，已轉為排隊傳送。",
-      "steerImageDisabled": "目前 Agent 僅支援純文字插話，帶圖片的訊息會排隊傳送。"
+      "steerImageDisabled": "目前 Agent 僅支援純文字插話，帶圖片的訊息會排隊傳送。",
+      "waitingForTurn": "待本輪結束後處理",
+      "incomingSingleSummary": "來自「{{sender}}」的回覆 · 待本輪結束後處理",
+      "incomingSummary_one": "{{count}} 則來自其他任務的回覆 · 待本輪結束後處理",
+      "incomingSummary_other": "{{count}} 則來自其他任務的回覆 · 待本輪結束後處理",
+      "incomingExpand": "展開",
+      "incomingCollapse": "收起",
+      "incomingShowFull": "展開全文",
+      "incomingHideFull": "收起全文",
+      "incomingRegionAria": "待處理的其他任務回覆"
     },
     "newChatView": {
       "missing": {

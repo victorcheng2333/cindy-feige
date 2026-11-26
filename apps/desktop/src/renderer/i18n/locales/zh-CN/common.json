@@ -14804,7 +14804,16 @@
       "syntheticTriggerLabel": "系统指令",
       "steerKeptInQueue": "暂时无法插话，消息仍保留在队列中。",
       "steerFellBackToQueue": "这条消息暂时无法插话到当前任务，已转为排队发送。",
-      "steerImageDisabled": "当前 Agent 仅支持纯文本插话，带图片的消息会排队发送。"
+      "steerImageDisabled": "当前 Agent 仅支持纯文本插话，带图片的消息会排队发送。",
+      "waitingForTurn": "待本轮结束后处理",
+      "incomingSingleSummary": "来自「{{sender}}」的回复 · 待本轮结束后处理",
+      "incomingSummary_one": "{{count}} 条来自其他任务的回复 · 待本轮结束后处理",
+      "incomingSummary_other": "{{count}} 条来自其他任务的回复 · 待本轮结束后处理",
+      "incomingExpand": "展开",
+      "incomingCollapse": "收起",
+      "incomingShowFull": "展开全文",
+      "incomingHideFull": "收起全文",
+      "incomingRegionAria": "待处理的其他任务回复"
     },
     "newChatView": {
       "missing": {

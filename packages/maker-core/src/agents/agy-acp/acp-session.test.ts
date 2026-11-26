@@ -2232,3 +2232,187 @@ describe('AcpSession Antigravity live subagent task updates', () => {
     }
   });
 });
+
+describe('AcpSession background wait yielding & steer flush', () => {
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send / events / yieldBackgroundTurnForQueuedInput / Session.yieldBackgroundTurnForQueuedInput；
+  //   验证 Mode 1A（`schedule` + `end_turn`）只发射一次 `backgroundHoldYieldable: true` 且可让渡给下一个 `send`，
+  //   但在存在未完成非守护工具或未决交互时拒绝让渡。
+  // - Bug／规则依据：Agy `schedule` 等待期 `isTurnRunning()` 持续为真会阻塞跨任务回执出队；仅空闲等待窗口才允许让渡。
+  // - 现有覆盖缺口：既有后台等待用例仅验证了定时/唤醒自动结算，未验证外部队列主动让渡及安全阻断条件。
+  // - 最小失败输入：`schedule` 后 `end_turn` 期间调用 `yieldBackgroundTurnForQueuedInput()`，以及有活跃 tool / open permission 时的对比。
+  // - tier：unit（fake ACP transport + fake timers）。
+  it('yields Mode 1A schedule holds once ready while staying guarded against active tools and open interactions', async () => {
+    vi.useFakeTimers();
+    try {
+      const state: { pendingReply: boolean; activeSubagents: boolean | null } = {
+        pendingReply: false,
+        activeSubagents: false,
+      };
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        permissionMode: 'ask',
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundContinuationDelaysMs: { afterToolSettledMs: 5_000, afterThinkingMs: 5_000, afterTextMs: 100, pollMs: 40 },
+        checkBackgroundActivity: async () => state,
+      });
+
+      await session.send({ type: 'user', content: 'schedule work' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'sched-1a',
+        title: 'Run schedule',
+        status: 'completed',
+        rawInput: { DurationSeconds: 60, Prompt: 'check later' },
+      });
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.waitFor(() =>
+        expect(
+          events.filter(e => e.type === 'status' && (e.data as { backgroundHoldYieldable?: boolean })?.backgroundHoldYieldable === true),
+        ).toHaveLength(1),
+      );
+      // Repeated background polls must not spam duplicate yieldable status events.
+      await vi.advanceTimersByTimeAsync(120);
+      expect(
+        events.filter(e => e.type === 'status' && (e.data as { backgroundHoldYieldable?: boolean })?.backgroundHoldYieldable === true),
+      ).toHaveLength(1);
+
+      // An open permission prompt blocks yielding until resolved.
+      let releasePerm!: (d: InteractionDecision) => void;
+      session.setInteractionResolver(() => new Promise<InteractionDecision>(resolve => { releasePerm = resolve; }));
+      const permPromise = agent.requestPermission({
+        toolCall: { toolCallId: 'perm-1', title: 'Check file', kind: 'execute', status: 'pending' },
+        options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+      });
+      await vi.waitFor(() => expect(releasePerm).toBeDefined());
+      expect(session.yieldBackgroundTurnForQueuedInput()).toBe(false);
+      releasePerm({ kind: 'permission', behavior: 'allow' });
+      await permPromise;
+      agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 'perm-1', status: 'completed' });
+      await vi.advanceTimersByTimeAsync(1);
+
+      // Once clear again, yielding finishes the held turn cleanly and allows a new turn immediately.
+      expect(session.yieldBackgroundTurnForQueuedInput()).toBe(true);
+      await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(1));
+      expect(session.isTurnRunning()).toBe(false);
+
+      await session.send({ type: 'user', content: 'queued reply arrived' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+
+      // Pending non-daemon tool blocks yielding even after end_turn.
+      agent.update({ sessionUpdate: 'tool_call', toolCallId: 'bg-bash', title: 'Build', kind: 'execute', status: 'in_progress' });
+      agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(session.yieldBackgroundTurnForQueuedInput()).toBe(false);
+
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send → session/update(schedule + text + usage_update) → AcpSession.yieldBackgroundTurnForQueuedInput；
+  //   验证 Mode 1B（在途 `session/prompt` 挂起）在保持非自动结束的同时发射 `backgroundHoldYieldable: true` 并允许让渡，而新思考块会取消该窗口。
+  // - Bug／规则依据：Agy 在调用 `schedule` 并输出等待文本后常不返回 `end_turn`；旧逻辑因 `!hasAwaitingOtherAsyncLaunch()` 跳过检测导致外部回复卡死。
+  // - 现有覆盖缺口：已有 Mode 1B 测试仅断言不早结束，未覆盖 `schedule` 在途等待可被外部输入安全让渡及 `agent_thought_chunk` 取消让渡。
+  // - 最小失败输入：在途 `session/prompt` 内完成 `Run schedule`、发送文本与 `usage_update` 并分别测试无干扰 vs 紧随思考块。
+  // - tier：unit（fake ACP transport + fake timers）。
+  it('marks in-flight schedule prompts yieldable after afterTextMs without auto-settling, and resets on new thought', async () => {
+    vi.useFakeTimers();
+    try {
+      const state = { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false };
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundContinuationDelaysMs: { afterTextMs: 100, pollMs: 40 },
+        checkBackgroundActivity: async () => state,
+      });
+
+      await session.send({ type: 'user', content: 'check remotes and wait' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'sched-1b',
+        title: 'Run schedule',
+        status: 'completed',
+        rawInput: { DurationSeconds: 45, Prompt: 'poll remotes' },
+      });
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Waiting 45s...' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 500, size: 100_000 });
+
+      // New thought before afterTextMs cancels yieldability.
+      await vi.advanceTimersByTimeAsync(50);
+      agent.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Wait, checking one more thing' } });
+      await vi.advanceTimersByTimeAsync(120);
+      expect(session.yieldBackgroundTurnForQueuedInput()).toBe(false);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      // After emitting closing text + usage_update and waiting afterTextMs cleanly, hold becomes yieldable without auto-settling.
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Ready to wait.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 650, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(110);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+      expect(
+        events.some(e => e.type === 'status' && (e.data as { backgroundHoldYieldable?: boolean })?.backgroundHoldYieldable === true),
+      ).toBe(true);
+
+      expect(session.yieldBackgroundTurnForQueuedInput()).toBe(true);
+      await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(1));
+      expect(session.isTurnRunning()).toBe(false);
+
+      // Late RPC settlement of the yielded in-flight prompt is a no-op.
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(20);
+      expect(events.filter(e => e.type === 'done')).toHaveLength(1);
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send → agent_message_chunk → AcpSession.steer → AcpSession.events & ACP wire `session/prompt`；
+  //   验证 `steer()` 在发送新的 `session/prompt` 之前先把在途文本收口为 `text { isFinal: true }`。
+  // - Bug／规则依据：Agy `steer()` 未调用 `flushPending()` 会导致 steer 前的流式文本落入 steer 后的轮次。
+  // - 现有覆盖缺口：既有 steer 用例未校验新 prompt 发出前的事件顺序中是否存在 `isFinal: true` 收口事件。
+  // - 最小失败输入：流式 `agent_message_chunk` 后在同一个活跃 turn 上调用 `session.steer()`。
+  // - tier：unit（fake ACP transport）。
+  it('flushes buffered assistant text as isFinal before dispatching a steered prompt', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, {
+      agentKind: 'antigravity',
+      steerByPrompt: true,
+    });
+
+    await session.send({ type: 'user', content: 'first prompt' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Pre-steer output' } });
+    await vi.waitFor(() => expect(events.some(e => e.type === 'text')).toBe(true));
+
+    await session.steer({ type: 'user', content: 'follow up steer' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+
+    await vi.waitFor(() =>
+      expect(
+        events.filter(e => e.type === 'text' && (e.data as { isFinal?: boolean })?.isFinal === true),
+      ).toHaveLength(1),
+    );
+    const finals = events.filter(
+      e => e.type === 'text' && (e.data as { isFinal?: boolean })?.isFinal === true,
+    );
+    expect((finals[0]!.data as { text?: string }).text).toBe('Pre-steer output');
+
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(1));
+    await session.close();
+  });
+});

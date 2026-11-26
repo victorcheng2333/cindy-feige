@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import { getPendingQueueRowPresentation } from '../new-chat/pendingQueueRowPresentation';
+import { isIncomingTaskQueueEntry } from './pendingQueueItems';
 import { UserMessage } from './UserMessage';
 
 export interface PendingQueueBubbleProps {
@@ -58,7 +59,13 @@ export function PendingQueueBubble({
   const { t } = useTranslation();
   const presentation = getPendingQueueRowPresentation(entry);
   const editing = editingClientId === entry.clientId;
-  const queueStatus = t(entry.waitingForRemoteAccount ? 'newChat.pendingQueue.waitingForDevice' : 'newChat.pendingQueue.queued');
+  const queueStatus = t(
+    entry.waitingForRemoteAccount
+      ? 'newChat.pendingQueue.waitingForDevice'
+      : isIncomingTaskQueueEntry(entry)
+        ? 'newChat.pendingQueue.waitingForTurn'
+        : 'newChat.pendingQueue.queued',
+  );
   const sending = entry.isPendingEnqueue || steeringClientIds.includes(entry.clientId);
   const availability = buildQueueRowPresentation({
     item: entry,

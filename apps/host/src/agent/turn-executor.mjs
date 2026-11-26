@@ -613,6 +613,10 @@ export function createTurnExecutor(deps) {
           }
           listActivityInTurn.add(sessionId);
         }
+        if (event.type === 'status' && event.data?.backgroundHoldYieldable === true
+          && isForegroundRunningStatus(event.data, event) && !turn.terminal) {
+          deps.onBackgroundTurnYieldable?.(sessionId);
+        }
         if (turn.terminal) {
           recordContextSnapshot();
           // The turn has ended for the Host; only its Git baseline still listens.
@@ -1441,6 +1445,7 @@ export function createTurnExecutor(deps) {
     isInputRecovering(id, clientId) { return recovery?.replayClientId(id) === clientId; },
     /** A context recovery of the task is running: part of its turn (input-queue.mjs releaseDesktopHold). */
     isRecovering(id) { return recovery?.isRecovering(id) === true; },
+    flushAssistantBlock(id) { historyFor(id).flushAssistantBlock(id); },
     reconcileIdle(id) {
       const turn = turns.get(id);
       if (!turn?.abortRequested || turn.terminal || turn.session?.isTurnRunning?.() !== false) return false;

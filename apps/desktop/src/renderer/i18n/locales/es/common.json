@@ -14976,7 +14976,17 @@
       "showMore_many": "{{count}} más",
       "steerKeptInQueue": "No se puede incorporar ahora; el mensaje permanece en cola.",
       "steerFellBackToQueue": "Este mensaje no se puede incorporar a la tarea en curso; se puso en cola.",
-      "steerImageDisabled": "Este agente solo admite incorporar texto; los mensajes con imágenes se envían en cola."
+      "steerImageDisabled": "Este agente solo admite incorporar texto; los mensajes con imágenes se envían en cola.",
+      "waitingForTurn": "Esperando a que termine el turno actual",
+      "incomingSingleSummary": "Respuesta de «{{sender}}» · Esperando al final del turno",
+      "incomingSummary_one": "{{count}} respuesta de otra tarea · Esperando al final del turno",
+      "incomingSummary_other": "{{count}} respuestas de otras tareas · Esperando al final del turno",
+      "incomingSummary_many": "{{count}} respuestas de otras tareas · Esperando al final del turno",
+      "incomingExpand": "Expandir",
+      "incomingCollapse": "Contraer",
+      "incomingShowFull": "Mostrar completo",
+      "incomingHideFull": "Contraer",
+      "incomingRegionAria": "Respuestas pendientes de otras tareas"
     },
     "newChatView": {
       "missing": {

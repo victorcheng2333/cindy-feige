@@ -14858,7 +14858,16 @@
       "syntheticTriggerLabel": "System instruction",
       "steerKeptInQueue": "Cannot steer right now; the message remains queued.",
       "steerFellBackToQueue": "Cannot steer this message into the running task; it was queued instead.",
-      "steerImageDisabled": "This agent only supports text-only steering; messages with images stay queued."
+      "steerImageDisabled": "This agent only supports text-only steering; messages with images stay queued.",
+      "waitingForTurn": "Waiting for current turn to finish",
+      "incomingSingleSummary": "Reply from {{sender}} · Waiting for current turn",
+      "incomingSummary_one": "{{count}} reply from another task · Waiting for current turn",
+      "incomingSummary_other": "{{count}} replies from other tasks · Waiting for current turn",
+      "incomingExpand": "Expand",
+      "incomingCollapse": "Collapse",
+      "incomingShowFull": "Show full",
+      "incomingHideFull": "Collapse",
+      "incomingRegionAria": "Pending replies from other tasks"
     },
     "newChatView": {
       "missing": {

@@ -2685,7 +2685,13 @@ export function createMessagePersistence(deps: MessagePersistencePorts) {
         if (finalBelongsToBlock) {
           stampBlockAfterTurnStart(sessionId, block, turnScope);
         }
-        if (agentMeta) block.agentMeta = agentMeta;
+        if (agentMeta) {
+          const existingReplyTo = block.agentMeta?.replyToClientId;
+          block.agentMeta =
+            existingReplyTo && agentMeta.replyToClientId !== existingReplyTo
+              ? { ...agentMeta, replyToClientId: existingReplyTo }
+              : agentMeta;
+        }
         return block.persistId;
       }
       // 边界 flush 后同源的全文快照:交互边界(ask_user / plan_review)会先落
@@ -2796,6 +2802,15 @@ export function createMessagePersistence(deps: MessagePersistencePorts) {
 
     // delta: accumulate the raw snapshot; strip only the completed block.
     let block = assistantBlocks.get(sessionId);
+    if (
+      block &&
+      block.agentMeta?.replyToClientId &&
+      agentMeta?.replyToClientId &&
+      block.agentMeta.replyToClientId !== agentMeta.replyToClientId
+    ) {
+      flushAssistantBlock(sessionId);
+      block = undefined;
+    }
     if (!block) {
       // 新的 delta block 已开始:上一条边界 flush 的身份不再可复用(它的全文快照
       // 已经过去,或会走 block 分支),避免吞掉这条新消息。
@@ -2811,7 +2826,13 @@ export function createMessagePersistence(deps: MessagePersistencePorts) {
     } else {
       block.text += rawText;
       stampBlockAfterTurnStart(sessionId, block, turnScope);
-      if (agentMeta) block.agentMeta = agentMeta;
+      if (agentMeta) {
+        const existingReplyTo = block.agentMeta?.replyToClientId;
+        block.agentMeta =
+          existingReplyTo && !agentMeta.replyToClientId
+            ? { ...agentMeta, replyToClientId: existingReplyTo }
+            : agentMeta;
+      }
     }
     return block.persistId;
   }

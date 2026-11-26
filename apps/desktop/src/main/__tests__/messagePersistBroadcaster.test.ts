@@ -4814,3 +4814,71 @@ it('does not publish a pending media import after its owner is superseded', asyn
   await drainPersistQueue();
   expect(updateMessageContent).not.toHaveBeenCalled();
 });
+
+// 测试价值
+// - 生产入口与可观察结果：onAssistantTextEvent(delta / isFinal) → flushAssistantBlock → createMessage；
+//   验证 steer 后带新 `replyToClientId` 的 `isFinal` 不会覆盖已有 pre-steer 块的 `replyToClientId`，
+//   而带新 `replyToClientId` 的新 `delta` 会先 flush 旧块并另起新块分别落库。
+// - Bug／规则依据：steer 插入在飞块与后续输出之间时，跨 `replyToClientId` 边界若直接合并或覆盖 meta 会造成先后归属错乱。
+// - 现有覆盖缺口：已有测试未覆盖跨 `replyToClientId` 的 `isFinal` 保真与 `delta` 分块。
+// - 最小失败输入：先以 `replyToClientId: 'u-initial'` 累积 delta，再分别投递 `replyToClientId: 'u-steer'` 的 `isFinal` 与新 `delta`。
+// - tier：unit（mock DB writer + writeChain flush）。
+it('preserves replyToClientId on isFinal and splits assistant blocks when delta replyToClientId changes', async () => {
+  const sid1 = 'steer-isfinal-preserve';
+  const sid2 = 'steer-delta-split';
+  clearSessionPersistState(sid1);
+  clearSessionPersistState(sid2);
+  vi.clearAllMocks();
+
+  // Case 1: late isFinal carrying post-steer replyToClientId must preserve original block replyToClientId.
+  onAssistantTextEvent(sid1, { text: 'pre-steer ', isFinal: false }, { replyToClientId: 'u-initial' });
+  onAssistantTextEvent(
+    sid1,
+    { text: 'pre-steer complete', isFinal: true, isFullText: true },
+    { replyToClientId: 'u-steer' },
+  );
+  flushAssistantBlock(sid1, null);
+  await flushWrites();
+
+  expect(createMessage).toHaveBeenCalledWith(
+    sid1,
+    expect.objectContaining({
+      role: 'assistant',
+      content: 'pre-steer complete',
+      agentMeta: expect.objectContaining({ replyToClientId: 'u-initial' }),
+    }),
+    broadcastGuard(),
+  );
+
+  vi.clearAllMocks();
+
+  // Case 2: new delta carrying a different replyToClientId flushes the pre-steer block and opens a new block.
+  onAssistantTextEvent(sid2, { text: 'part 1', isFinal: false }, { replyToClientId: 'u-initial' });
+  onAssistantTextEvent(sid2, { text: 'part 2', isFinal: false }, { replyToClientId: 'u-steer' });
+  flushAssistantBlock(sid2, null);
+  await flushWrites();
+
+  expect(createMessage).toHaveBeenNthCalledWith(
+    1,
+    sid2,
+    expect.objectContaining({
+      role: 'assistant',
+      content: 'part 1',
+      agentMeta: expect.objectContaining({ replyToClientId: 'u-initial' }),
+    }),
+    broadcastGuard(),
+  );
+  expect(createMessage).toHaveBeenNthCalledWith(
+    2,
+    sid2,
+    expect.objectContaining({
+      role: 'assistant',
+      content: 'part 2',
+      agentMeta: expect.objectContaining({ replyToClientId: 'u-steer' }),
+    }),
+    broadcastGuard(),
+  );
+
+  clearSessionPersistState(sid1);
+  clearSessionPersistState(sid2);
+});

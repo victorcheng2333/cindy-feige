@@ -109,7 +109,7 @@ export interface PrepareSessionEventDeps extends InteractionDismissedDeps {
   readonly agentInputCoordinatorHolder: Pick<
     AgentInputCoordinator,
     'onTurnEvent' | 'noteSuppressedTerminalError' | 'getActiveInputClientId' | 'getActiveInputClientIds' | 'getAcceptedInputProvenance' | 'isActiveTaskCoordination'
-  > & Partial<Pick<AgentInputCoordinator, 'isActiveInputOwnerAuthored'>> | null;
+  > & Partial<Pick<AgentInputCoordinator, 'isActiveInputOwnerAuthored' | 'onBackgroundTurnYieldable'>> | null;
   readonly handleSilentStopTurnEnd: (
     session: Session,
     doneAt: number,
@@ -318,6 +318,9 @@ export function prepareSessionEvent(
         const context = captureTurnUsageContext(session.id, undefined, companyAgent, session.model);
         if (!session.remoteHostId && !session.agentDeviceId && companyAgent) beginCompanyTurn(context, context.providerId, companyAgent);
         deps.turnUsageContextBySession.set(session.id, context);
+      }
+      if ((data as { backgroundHoldYieldable?: unknown }).backgroundHoldYieldable === true) {
+        deps.agentInputCoordinatorHolder?.onBackgroundTurnYieldable?.(session.id);
       }
     } else if (endsForegroundTurnByStatus(data, isContinuationBoundary, event)) {
       shouldMarkTurnStatusIdleAfterBroadcast = true;

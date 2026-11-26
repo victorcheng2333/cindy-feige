@@ -2607,6 +2607,68 @@ describe('makerChatStore text delta batching', () => {
     ]);
   });
 
+  // 测试价值
+  // - 生产入口与可观察结果：maker:event(text delta) → local-db:messages:created(user, delivery='steer') → makerChatStore.getSnapshot；
+  //   验证插话 `user` 行到达时立即结束当前流式助手气泡，后续文本开启新气泡排在插话之后，而早于流式气泡创建的普通用户回声不会误拆分流式输出。
+  // - Bug／规则依据：handleMessageCreatedRaw 插入 `steer` 行前未调 `finalizeStreamingInState` 会让插话前后的流式文本并入同一个未封口助手气泡。
+  // - 现有覆盖缺口：既有测试仅覆盖 persistId 变更或助手回声合入，未覆盖 `steer` user 行与在飞助手气泡并发时序。
+  // - 最小失败输入：assistant-1 正在 `isStreaming: true` 时收到 `delivery: 'steer'` 的 `user` created 事件，紧接着收到新的 delta。
+  // - tier：unit（fake timers + store event/DB push listeners）。
+  it('finalizes an active streaming assistant bubble when a steered user row arrives, without splitting on older user echoes', () => {
+    emitTextDelta('Pre-steer answer', SESSION_ID, 'assistant-1');
+    vi.advanceTimersByTime(32);
+    const streamCreatedAt = makerChatStore.getSnapshot(SESSION_ID).messages[0]?.createdAt;
+    const olderTime = new Date(Date.parse(streamCreatedAt ?? '2026-06-15T00:00:00.000Z') - 60_000).toISOString();
+    const newerTime = new Date(Date.parse(streamCreatedAt ?? '2026-06-15T00:00:00.000Z') + 1_000).toISOString();
+
+    // An older pre-stream user echo must NOT finalize the active assistant bubble.
+    onDbMessageCreated?.({
+      sessionId: SESSION_ID,
+      message: {
+        id: 'early-user',
+        clientId: 'early-user',
+        role: 'user',
+        content: 'Initial prompt',
+        createdAt: olderTime,
+      },
+    });
+    expect(makerChatStore.getSnapshot(SESSION_ID).streamingClientId).toBe('assistant-1');
+
+    // A steered user row finalizes the active streaming bubble so later deltas start a new bubble after it.
+    onDbMessageCreated?.({
+      sessionId: SESSION_ID,
+      message: {
+        id: 'steer-1',
+        clientId: 'steer-1',
+        role: 'user',
+        content: 'Check this too',
+        delivery: 'steer',
+        createdAt: newerTime,
+      },
+    });
+    expect(makerChatStore.getSnapshot(SESSION_ID).streamingClientId).toBeNull();
+    expect(makerChatStore.getSnapshot(SESSION_ID).messages.find((m) => m.clientId === 'assistant-1')).toMatchObject({
+      content: 'Pre-steer answer',
+      isStreaming: false,
+    });
+
+    emitTextDelta('Post-steer answer', SESSION_ID, 'assistant-2');
+    vi.advanceTimersByTime(32);
+
+    const ordered = makerChatStore.getSnapshot(SESSION_ID).messages.map((m) => ({
+      clientId: m.clientId,
+      role: m.role,
+      content: m.content,
+      isStreaming: m.isStreaming,
+    }));
+    expect(ordered).toEqual([
+      { clientId: 'early-user', role: 'user', content: 'Initial prompt', isStreaming: false },
+      { clientId: 'assistant-1', role: 'assistant', content: 'Pre-steer answer', isStreaming: false },
+      { clientId: 'steer-1', role: 'user', content: 'Check this too', isStreaming: false },
+      { clientId: 'assistant-2', role: 'assistant', content: 'Post-steer answer', isStreaming: true },
+    ]);
+  });
+
   it('keeps accumulated text when an unmarked isFinal event is only a tail block', () => {
     emitTextDelta('Hello ');
 

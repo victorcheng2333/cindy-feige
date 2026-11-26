@@ -20694,6 +20694,15 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       // 但终态事件丢失时，都走同一条收口路径。
       return reconcileSessionTurnIdle(sessionId, 'authoritative-idle');
     },
+    yieldBackgroundTurnForQueuedInput: (sessionId) => {
+      const lookup = lookupStableSessionForTurnBoundary(sessionId);
+      if (lookup.status !== 'found') return false;
+      try {
+        return lookup.session.yieldBackgroundTurnForQueuedInput();
+      } catch {
+        return false;
+      }
+    },
     hasPendingInteraction: hasPendingAgentInteractionForSession,
     getAgentKind: (sessionId) => builtinAgentKindOrNull(getStableSessionForTurnBoundary(sessionId)?.agentKind),
     getSdkSessionId: async (sessionId) => {
@@ -20742,6 +20751,9 @@ export function registerMakerIpc(maker: Maker, options: RegisterMakerIpcOptions)
       if (!item.autoResume) void touchSessionActivityInDb(sessionId);
       void settleTaskActionInput(item).catch(() => undefined);
       orcaInterAgentDispatcher.discardQueuedOrcaInterAgentAcceptedCallback(item.clientId);
+    },
+    onBeforeSteerCommit: (sessionId) => {
+      flushAssistantBlock(sessionId);
     },
     getSchedulerRunSignal: (sessionId, item) => schedulerQueueBridgeHolder?.runSignalFor(sessionId, item),
     onAcceptedQueuedMessage: async (sessionId, item, restoredFromSnapshot): Promise<void> => {

@@ -9454,17 +9454,38 @@ function initGlobalListeners(options: GlobalListenerOptions = {}): void {
             isFirstMessage: mapped.role === 'user' ? false : s.isFirstMessage,
           };
         }
-        const merged = mergeMessages([mapped], s.messages, hydrateOptions);
+        let baseState = s;
+        if (mapped.role === 'user' && s.streamingClientId !== null) {
+          const streamingMsg = s.messages.find((m) => m.clientId === s.streamingClientId);
+          const mappedAt = Date.parse(mapped.createdAt ?? '');
+          const streamAt = Date.parse(streamingMsg?.createdAt ?? '');
+          const shouldFinalize =
+            (existingIdx < 0 || mapped.delivery === 'steer') &&
+            (mapped.delivery === 'steer' ||
+              !Number.isFinite(mappedAt) ||
+              !Number.isFinite(streamAt) ||
+              mappedAt >= streamAt);
+          if (shouldFinalize) {
+            baseState = finalizeStreamingInState(s);
+          }
+        }
+        const merged = mergeMessages([mapped], baseState.messages, hydrateOptions);
         const nextMessages = userAwaitsHistoryView
-          ? reserveEchoedLocalUser(sessionId, s, merged, mapped.clientId)
+          ? reserveEchoedLocalUser(sessionId, baseState, merged, mapped.clientId)
           : merged;
-        const pendingQueue = s.pendingQueue.filter((item) => item.clientId !== mapped.clientId);
-        if (nextMessages === s.messages && pendingQueue.length === s.pendingQueue.length) return s;
+        const pendingQueue = baseState.pendingQueue.filter((item) => item.clientId !== mapped.clientId);
+        if (
+          baseState === s &&
+          nextMessages === s.messages &&
+          pendingQueue.length === s.pendingQueue.length
+        ) {
+          return s;
+        }
         return {
-          ...s,
+          ...baseState,
           messages: nextMessages,
           pendingQueue,
-          isFirstMessage: mapped.role === 'user' ? false : s.isFirstMessage,
+          isFirstMessage: mapped.role === 'user' ? false : baseState.isFirstMessage,
         };
       },
       { deferNotification },

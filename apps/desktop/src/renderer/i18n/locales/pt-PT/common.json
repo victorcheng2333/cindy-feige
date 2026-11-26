@@ -14976,7 +14976,17 @@
       "showMore_many": "mais {{count}}",
       "steerKeptInQueue": "Não é possível encaminhar agora; a mensagem continua em fila.",
       "steerFellBackToQueue": "Não foi possível encaminhar esta mensagem para a tarefa em curso; foi colocada em fila.",
-      "steerImageDisabled": "Este agente só suporta encaminhamento de texto; mensagens com imagens ficam em fila."
+      "steerImageDisabled": "Este agente só suporta encaminhamento de texto; mensagens com imagens ficam em fila.",
+      "waitingForTurn": "A aguardar o fim do turno atual",
+      "incomingSingleSummary": "Resposta de «{{sender}}» · A aguardar o fim do turno",
+      "incomingSummary_one": "{{count}} resposta de outra tarefa · A aguardar o fim do turno",
+      "incomingSummary_other": "{{count}} respostas de outras tarefas · A aguardar o fim do turno",
+      "incomingSummary_many": "{{count}} respostas de outras tarefas · A aguardar o fim do turno",
+      "incomingExpand": "Expandir",
+      "incomingCollapse": "Recolher",
+      "incomingShowFull": "Mostrar tudo",
+      "incomingHideFull": "Recolher",
+      "incomingRegionAria": "Respostas pendentes de outras tarefas"
     },
     "newChatView": {
       "missing": {

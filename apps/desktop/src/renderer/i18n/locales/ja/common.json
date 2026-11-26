@@ -14804,7 +14804,16 @@
       "syntheticTriggerLabel": "システム指示",
       "steerKeptInQueue": "今は割り込み送信できないため、メッセージはキューに保持されます。",
       "steerFellBackToQueue": "このメッセージは実行中のタスクに割り込めないため、キューに追加しました。",
-      "steerImageDisabled": "この Agent はテキストのみの割り込みに対応しているため、画像付きメッセージはキューで送信されます。"
+      "steerImageDisabled": "この Agent はテキストのみの割り込みに対応しているため、画像付きメッセージはキューで送信されます。",
+      "waitingForTurn": "現在のターンの終了を待機中",
+      "incomingSingleSummary": "「{{sender}}」からの返信 · 現在のターン終了待ち",
+      "incomingSummary_one": "別タスクからの返信 {{count}} 件 · 現在のターン終了待ち",
+      "incomingSummary_other": "別タスクからの返信 {{count}} 件 · 現在のターン終了待ち",
+      "incomingExpand": "展開",
+      "incomingCollapse": "折りたたむ",
+      "incomingShowFull": "全文を表示",
+      "incomingHideFull": "折りたたむ",
+      "incomingRegionAria": "他タスクからの待機中の返信"
     },
     "newChatView": {
       "missing": {

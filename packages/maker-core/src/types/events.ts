@@ -40,7 +40,7 @@ export type AgentEventType =
   | 'interaction_request'   // 需要用户决策(permission / ask_user_question / plan_review)
   | 'interaction_dismissed' // pending interaction 被自动 resolve(如 setPermissionMode 切换)
   | 'plan_mode_changed'     // agent 自行切换计划模式(典型: 计划批准后自动退出), data: { enabled: boolean }; host 据此回写持久化 + 广播 UI
-  | 'status'                // 状态变化（idle / running / waiting + UsageSnapshot 内联在 data 里）
+  | 'status'                // 状态变化（idle / running / waiting / backgroundHoldYieldable + UsageSnapshot 内联在 data 里）
   | 'compact_boundary'      // auto-compact 边界
   | 'session_id'            // SDK session id 回填
   | 'done'                  // 一轮 turn 完成
@@ -479,6 +479,18 @@ export interface UsageSnapshot {
    * 只由 Claude Code / Pi 的 AutoCompactController 锁存。
    */
   needsRollover?: boolean;
+}
+
+/** `'status'` 事件 payload（内联 `UsageSnapshot` 与运行态控制标志）。 */
+export interface AgentStatusEventData extends Partial<UsageSnapshot> {
+  status?: string;
+  isRunning?: boolean;
+  providerInitiatedTurn?: boolean;
+  /**
+   * True when an ACP background/async-wait hold is currently idle and can yield
+   * its active turn immediately for queued external input.
+   */
+  backgroundHoldYieldable?: boolean;
 }
 
 /**

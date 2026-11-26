@@ -14976,7 +14976,17 @@
       "showMore_many": "{{count}} de plus",
       "steerKeptInQueue": "Impossible de réorienter pour le moment ; le message reste en file d’attente.",
       "steerFellBackToQueue": "Ce message ne peut pas réorienter la tâche en cours ; il a été mis en file d’attente.",
-      "steerImageDisabled": "Cet Agent ne prend en charge que la réorientation par texte ; les messages avec images restent en file d’attente."
+      "steerImageDisabled": "Cet Agent ne prend en charge que la réorientation par texte ; les messages avec images restent en file d’attente.",
+      "waitingForTurn": "En attente de la fin du tour en cours",
+      "incomingSingleSummary": "Réponse de « {{sender}} » · En attente de la fin du tour",
+      "incomingSummary_one": "{{count}} réponse d’une autre tâche · En attente de la fin du tour",
+      "incomingSummary_other": "{{count}} réponses d’autres tâches · En attente de la fin du tour",
+      "incomingSummary_many": "{{count}} réponses d’autres tâches · En attente de la fin du tour",
+      "incomingExpand": "Développer",
+      "incomingCollapse": "Réduire",
+      "incomingShowFull": "Tout afficher",
+      "incomingHideFull": "Réduire",
+      "incomingRegionAria": "Réponses en attente d’autres tâches"
     },
     "newChatView": {
       "missing": {

@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react';
 import { createElement, type PropsWithChildren } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES } from '@/cindy-brain/PluginUiContributions';
 import { PendingQueueBubble } from '@/components/chat/PendingQueueBubble';
-import { appendPendingQueueItems } from '@/components/chat/pendingQueueItems';
+import { appendPendingQueueItems, isIncomingTaskQueueEntry } from '@/components/chat/pendingQueueItems';
+import { PendingIncomingRepliesBar } from '@/components/new-chat/PendingIncomingRepliesBar';
 import { ConfirmDialogProvider } from '@/components/ui/confirm-dialog-provider';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
 import { stringifyUserContent } from '@/lib/imageRef';
 import { updateQueuedMessageText } from '../../shared/agentInputQueue';
@@ -502,5 +503,165 @@ describe('pending queue timeline', () => {
     const result = appendPendingQueueItems([delivered], [first, second], [first]);
     expect(result).toEqual([delivered, pending[1]]);
     expect(result[0]).toBe(delivered);
+  });
+});
+
+describe('PendingIncomingRepliesBar & incoming reply classification', () => {
+  let originalResizeObserver: typeof globalThis.ResizeObserver | undefined;
+  beforeEach(() => {
+    originalResizeObserver = globalThis.ResizeObserver;
+    class MockResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: MockResizeObserver,
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: originalResizeObserver,
+    });
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：isIncomingTaskQueueEntry / PendingIncomingRepliesBar / PendingQueueBubble；
+  //   验证只有 `session` / `orca` 来信被归入顶部紧凑收拢栏（默认折叠，展开显示发送方、全文开关及 Steer/Delete 操作），
+  //   而普通用户输入保留在气泡队列并继续展示「排队中」，来信气泡兜底则显示「待本轮结束后处理」。
+  // - Bug／规则依据：产品设计要求跨任务回执默认收在输入框上方紧凑托盘，避免与用户追问气泡混排误导用户。
+  // - 现有覆盖缺口：新增来信判别、`waitingForTurn` 状态文案及紧凑托盘交互尚无回归测试。
+  // - 最小失败输入：同时构造 `origin.kind = 'session'` / `'orca'` 长文本来信与普通草稿条目。
+  // - tier：unit（jsdom + Testing Library）。
+  it('classifies incoming session/orca entries, keeps PendingQueueBubble status copy accurate, and toggles compact tray', async () => {
+    const incomingSession = queuedMessage({
+      clientId: 'session-reply-1',
+      text: 'Long report '.repeat(20),
+      persistedContent: 'Long report '.repeat(20),
+      origin: {
+        kind: 'session',
+        senderSessionId: 'm3-air',
+        senderSessionTitle: 'M3-Air 验收',
+        displayText: 'Long report '.repeat(20),
+      },
+    });
+    const incomingOrca = queuedMessage({
+      clientId: 'orca-reply-1',
+      text: 'Worker finished',
+      persistedContent: 'Worker finished',
+      origin: {
+        kind: 'orca',
+        senderLabel: 'Worker A',
+        displayText: 'Worker finished',
+      },
+    });
+    const userDraft = queuedMessage({ clientId: 'user-draft-1', text: 'my follow up' });
+    const schedulerEntry = queuedMessage({
+      clientId: 'sched-1',
+      origin: { kind: 'scheduler', scheduleId: 's', scheduleName: 'Nightly', runId: 'r' },
+    });
+
+    expect(isIncomingTaskQueueEntry(incomingSession)).toBe(true);
+    expect(isIncomingTaskQueueEntry(incomingOrca)).toBe(true);
+    expect(isIncomingTaskQueueEntry(userDraft)).toBe(false);
+    expect(isIncomingTaskQueueEntry(schedulerEntry)).toBe(false);
+
+    // Bubble copy uses waitingForTurn for incoming entries vs queued for user drafts.
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(MemoryRouter, null, createElement(ConfirmDialogProvider, { children }));
+    const bubbleIncoming = render(
+      createElement(PendingQueueBubble, {
+        pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+        entry: incomingSession,
+        index: 0,
+        count: 2,
+        editingClientId: null,
+        steeringClientIds: [],
+        editLocks: [],
+        interactionLocks: [],
+        onEdit: () => {},
+        onRemove: () => {},
+        onMove: () => {},
+      }),
+      { wrapper },
+    );
+    expect(
+      bubbleIncoming.getByRole('button', { name: i18n.t('newChat.pendingQueue.waitingForTurn') }),
+    ).toBeTruthy();
+
+    const bubbleDraft = render(
+      createElement(PendingQueueBubble, {
+        pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES,
+        entry: userDraft,
+        index: 1,
+        count: 2,
+        editingClientId: null,
+        steeringClientIds: [],
+        editLocks: [],
+        interactionLocks: [],
+        onEdit: () => {},
+        onRemove: () => {},
+        onMove: () => {},
+      }),
+      { wrapper },
+    );
+    expect(
+      bubbleDraft.getByRole('button', { name: i18n.t('newChat.pendingQueue.queued') }),
+    ).toBeTruthy();
+    bubbleIncoming.unmount();
+    bubbleDraft.unmount();
+
+    const onSteer = vi.fn(async () => true);
+    const onRemove = vi.fn();
+    const tray = render(
+      createElement(PendingIncomingRepliesBar, {
+        entries: [incomingSession, incomingOrca],
+        fullQueue: [userDraft, incomingSession, incomingOrca],
+        steeringClientIds: [],
+        editLocks: [],
+        interactionLocks: [],
+        onSteer,
+        onRemove,
+      }),
+    );
+
+    const view = within(tray.container);
+    const toggle = view.getByRole('button', { expanded: false });
+    expect(toggle.textContent).toContain(
+      i18n.t('newChat.pendingQueue.incomingSummary', { count: 2 }),
+    );
+    expect(view.queryByRole('list')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(view.getByRole('list')).toBeTruthy();
+    expect(view.getByText('M3-Air 验收')).toBeTruthy();
+    expect(view.getByText('Worker A')).toBeTruthy();
+
+    const showFullBtn = view.getByRole('button', {
+      name: i18n.t('newChat.pendingQueue.incomingShowFull'),
+    });
+    fireEvent.click(showFullBtn);
+    expect(
+      view.getByRole('button', { name: i18n.t('newChat.pendingQueue.incomingHideFull') }),
+    ).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(
+        view.getByRole('button', {
+          name: i18n.t('newChat.pendingQueue.steerAria', { index: 2 }),
+        }),
+      );
+    });
+    expect(onSteer).toHaveBeenCalledWith('session-reply-1');
+
+    fireEvent.click(
+      view.getByRole('button', {
+        name: i18n.t('newChat.pendingQueue.removeAria', { index: 3 }),
+      }),
+    );
+    expect(onRemove).toHaveBeenCalledWith('orca-reply-1');
   });
 });
