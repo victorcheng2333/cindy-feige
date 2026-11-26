@@ -58,6 +58,43 @@ class PurgeCursor(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('SELECT count(*) FROM sessions').fetchone()[0], 2)
 
+    def test_cleans_residual_usage_tables_even_after_sessions_removed(self):
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.executescript('''
+              CREATE TABLE daily_model_usage(day TEXT, agent_kind TEXT, model TEXT);
+              CREATE TABLE account_usage_snapshots(agent_kind TEXT PRIMARY KEY, snapshot TEXT);
+              CREATE TABLE daily_token_attribution(day TEXT, provider TEXT, model TEXT);
+              CREATE TABLE token_reporting_first_day(provider TEXT, model TEXT);
+              INSERT INTO daily_model_usage VALUES('2026-11-01','cursor','composer-2.5'),('2026-11-01','codex','gpt-5.5');
+              INSERT INTO account_usage_snapshots VALUES('cursor','{}'),('antigravity','{}');
+              INSERT INTO daily_token_attribution VALUES('2026-11-01','cursor','composer-2.5'),('2026-11-01','xd','claude-sonnet-4-6');
+              INSERT INTO token_reporting_first_day VALUES('cursor','composer-2.5'),('anthropic','claude-sonnet-4-6');
+            ''')
+        # Delete session rows first to verify residual usage tables are still detected & cleaned.
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("DELETE FROM sessions WHERE agent_kind='cursor'")
+        preview = module.purge(self.path, False)
+        self.assertEqual(preview['tasks'], 0)
+        self.assertEqual(preview['usage_rows'], 4)
+        applied = module.purge(self.path, True)
+        self.assertTrue(applied['applied'])
+        with closing(sqlite3.connect(self.path)) as db, db:
+            self.assertEqual(db.execute('SELECT agent_kind FROM daily_model_usage').fetchall(), [('codex',)])
+            self.assertEqual(db.execute('SELECT agent_kind FROM account_usage_snapshots').fetchall(), [('antigravity',)])
+            self.assertEqual(db.execute('SELECT provider FROM daily_token_attribution').fetchall(), [('xd',)])
+            self.assertEqual(db.execute('SELECT provider FROM token_reporting_first_day').fetchall(), [('anthropic',)])
+
+    def test_standalone_cursor_schedule_refuses_without_deleting(self):
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.executescript('''
+              CREATE TABLE schedules(id TEXT PRIMARY KEY, target_session_id TEXT, agent_kind TEXT, model_agent_kind TEXT, provider_id TEXT);
+              INSERT INTO schedules VALUES('s1', NULL, 'cursor', NULL, 'cursor');
+            ''')
+        with self.assertRaisesRegex(ValueError, 'Cursor automations'):
+            module.purge(self.path, True)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            self.assertEqual(db.execute('SELECT count(*) FROM sessions').fetchone()[0], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -24,6 +24,13 @@ ORPHAN_TABLES = (
     ('media_refs', 'origin_session_id'),
 )
 
+USAGE_TABLES = (
+    ('daily_model_usage', 'agent_kind'),
+    ('account_usage_snapshots', 'agent_kind'),
+    ('daily_token_attribution', 'provider'),
+    ('token_reporting_first_day', 'provider'),
+)
+
 
 def quote(name):
     return '"' + name.replace('"', '""') + '"'
@@ -50,13 +57,17 @@ def purge(database, apply=False):
     db = sqlite3.connect(database.as_uri() + '?mode=' + mode, uri=True, timeout=15)
     db.execute('PRAGMA foreign_keys=ON')
     try:
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         ids = [r[0] for r in db.execute("SELECT id FROM sessions WHERE agent_kind='cursor' ORDER BY id")]
         count = db.execute("SELECT count(*) FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE agent_kind='cursor')").fetchone()[0]
-        result = {'tasks': len(ids), 'messages': count, 'applied': False,
+        usage_rows = sum(
+            db.execute('SELECT count(*) FROM ' + quote(t) + ' WHERE ' + quote(c) + "='cursor'").fetchone()[0]
+            for t, c in USAGE_TABLES if t in tables and c in columns(db, t)
+        )
+        result = {'tasks': len(ids), 'messages': count, 'usage_rows': usage_rows, 'applied': False,
                   'sdk_state': [str(p) for p in state if p.exists()]}
-        if not apply or not ids and not result['sdk_state']:
+        if not apply or (not ids and not usage_rows and not result['sdk_state']):
             return result
-        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         sc = columns(db, 'sessions')
         if {'active_turn_started_at', 'last_turn_ended_at'} <= sc:
             active = db.execute("SELECT count(*) FROM sessions WHERE agent_kind='cursor' AND active_turn_started_at > coalesce(last_turn_ended_at,0)").fetchone()[0]
@@ -64,9 +75,14 @@ def purge(database, apply=False):
                 raise ValueError('Stop running Cursor turns before cleanup')
         if 'embedding_jobs' in tables and db.execute("SELECT count(*) FROM embedding_jobs WHERE source='chat' AND source_id IN (SELECT id FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE agent_kind='cursor'))").fetchone()[0]:
             raise ValueError('These tasks have vector indexes; use Cindy database cleanup before retrying')
-        if 'schedules' in tables and 'target_session_id' in columns(db, 'schedules'):
-            if db.execute("SELECT count(*) FROM schedules WHERE target_session_id IN (SELECT id FROM sessions WHERE agent_kind='cursor')").fetchone()[0]:
-                raise ValueError('Detach task-bound automations before cleanup')
+        if 'schedules' in tables:
+            sched_cols = columns(db, 'schedules')
+            if 'target_session_id' in sched_cols:
+                if db.execute("SELECT count(*) FROM schedules WHERE target_session_id IN (SELECT id FROM sessions WHERE agent_kind='cursor')").fetchone()[0]:
+                    raise ValueError('Detach task-bound automations before cleanup')
+            for col in ('agent_kind', 'model_agent_kind', 'provider_id'):
+                if col in sched_cols and db.execute('SELECT count(*) FROM schedules WHERE ' + quote(col) + "='cursor'").fetchone()[0]:
+                    raise ValueError('Detach or update Cursor automations before cleanup')
         baseline_violations = set(db.execute('PRAGMA foreign_key_check').fetchall())
         backup_root = profile / 'backups'
         backup_root.mkdir(mode=0o700, exist_ok=True)
@@ -86,6 +102,9 @@ def purge(database, apply=False):
             for table, column in ORPHAN_TABLES:
                 if table in tables and column in columns(db, table):
                     db.execute('DELETE FROM ' + quote(table) + ' WHERE ' + quote(column) + ' IN (SELECT id FROM cleanup_cursor_ids)')
+            for table, column in USAGE_TABLES:
+                if table in tables and column in columns(db, table):
+                    db.execute('DELETE FROM ' + quote(table) + ' WHERE ' + quote(column) + "='cursor'")
             # Existing foreign keys remove messages, queues and child observations;
             # references from surviving tasks use SET NULL, not recursive task deletion.
             db.execute("DELETE FROM sessions WHERE agent_kind='cursor' AND id IN (SELECT id FROM cleanup_cursor_ids)")

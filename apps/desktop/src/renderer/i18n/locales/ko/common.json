@@ -1744,7 +1744,8 @@
     "harness": {
       "claude-code": "Claude Code",
       "codex": "Codex",
-      "pi": "Pi"
+      "pi": "Pi",
+      "antigravity": "Agy"
     },
     "usage": {
       "estimateNote": "구독 환산 = 구독에서 쓴 양을 API 참고 가격으로 환산한 금액이며, 청구서가 아니에요.",
@@ -1813,7 +1814,8 @@
       "harness": {
         "claude-code": "Claude Code",
         "codex": "Codex",
-        "pi": "Pi"
+        "pi": "Pi",
+        "antigravity": "Agy"
       },
       "dailyAverage": "하루 평균",
       "paid": "실제 결제",

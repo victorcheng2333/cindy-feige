@@ -24,7 +24,7 @@ import {
   getActiveDataOwnerPushStamp,
   isAppSessionBoundaryPending,
 } from '../appSessionState.js';
-import { isDeviceLinkInvoke, getDeviceLinkInvokeContext } from '../device-link/invoke-context.js';
+import { isDeviceLinkInvoke } from '../device-link/invoke-context.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 
 /** Favorites plus the renderer-owned recently used list, both newest/display order. */

@@ -1744,7 +1744,8 @@
     "harness": {
       "claude-code": "Claude Code",
       "codex": "Codex",
-      "pi": "Pi"
+      "pi": "Pi",
+      "antigravity": "Agy"
     },
     "usage": {
       "estimateNote": "订阅等值＝依 API 参考价折算订阅所耗之量，非帐单也。",
@@ -1813,7 +1814,8 @@
       "harness": {
         "claude-code": "Claude Code",
         "codex": "Codex",
-        "pi": "Pi"
+        "pi": "Pi",
+        "antigravity": "Agy"
       },
       "dailyAverage": "日均",
       "paid": "实付",

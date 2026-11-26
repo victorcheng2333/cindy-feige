@@ -1,7 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { assertAntigravityTaskCreationAllowed, isSameAccountTaskController } from '../antigravityTaskCreation';
 
-const state = vi.hoisted(() => ({ context: null as any }));
+const state = vi.hoisted(() => ({
+  context: null as { controllerPlatform?: string; sameAccountController?: boolean; sharedTask?: Record<string, unknown> } | null,
+}));
 vi.mock('../../../device-link/invoke-context.js', () => ({ getDeviceLinkInvokeContext: () => state.context }));
 beforeEach(() => { state.context = null; });
 

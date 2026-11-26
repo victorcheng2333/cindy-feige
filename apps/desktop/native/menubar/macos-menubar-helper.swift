@@ -3355,13 +3355,19 @@ struct UsagePage: View {
         let present = harnessOrder.filter { row.money[$0.index] > 0 }
         caption(present.isEmpty
           ? store.s("noUsage")
-          : present.map { "\(store.s("harness." + $0.key)) \(Fmt.money(row.money[$0.index]))" }.joined(separator: " · "))
+          : present.map { "\(harnessLabel($0.key)) \(Fmt.money(row.money[$0.index]))" }.joined(separator: " · "))
       } else {
         bigNumber(Fmt.money(total))
         caption(store.s("wideCaptionMoney", ["n": String(store.usageRange)]) + " · " + store.s(scope == "local" ? "scopeLocal" : "scopeAll"))
         caption(stats(daily: daily, total: total))
       }
     }
+  }
+
+  private func harnessLabel(_ key: String) -> String {
+    let lookup = "harness." + key
+    let value = store.s(lookup)
+    return value == lookup && key == "antigravity" ? "Agy" : value
   }
 
   private func bigNumber(_ text: String) -> some View {
@@ -3414,7 +3420,7 @@ struct UsagePage: View {
           VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
               Circle().fill(Palette.harness(harness.key)).frame(width: 6, height: 6)
-              Text(store.s("harness." + harness.key)).lineLimit(1)
+              Text(harnessLabel(harness.key)).lineLimit(1)
               Text("\(Int((byHarness[harness.index] / max(total, 0.0001) * 100).rounded()))%")
                 .foregroundStyle(Palette.ink3)
             }

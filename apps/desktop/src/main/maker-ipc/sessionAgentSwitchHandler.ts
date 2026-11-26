@@ -922,7 +922,7 @@ export async function performSessionAgentSwitch(
     assertAntigravityTaskCreationAllowed({ agentDeviceId });
   }
   let requestedAgentDeviceId = agentDeviceId;
-  // Task-computer-only engines (Cursor) run where the task lives. A borrowed
+  // Task-computer-only engines (Agy) run where the task lives. A borrowed
   // runtime device must not become their destination — the switch moves the Agent home.
   if (runsOnTaskComputerOnly(targetAgentKind)) requestedAgentDeviceId = null;
   // 必须在第一个 await 前快照：跨窗口 / 跨设备写入即使 set→clear 回到同值，修订号也会变化。

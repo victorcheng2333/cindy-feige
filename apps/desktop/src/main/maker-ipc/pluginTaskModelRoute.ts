@@ -42,7 +42,7 @@ export function savedPluginTaskRemoteRoute(config: {
   const { agentDeviceId, providerId, model } = config;
   const agentKind = config.agentKind === 'claude-code' ? 'cc' : config.agentKind;
   if (!agentDeviceId || !agentKind || !providerId || !model) return null;
-  // Cursor is supported by ordinary tasks, but the plugin remote route contract
+  // Agy is supported by ordinary tasks, but the plugin remote route contract
   // currently lists only cc/codex/pi. Never drop its saved remote location and run locally.
   if (agentKind === 'antigravity') {
     throw new PluginTaskError('ROUTE_UNAVAILABLE', '所选来源的模型、引擎或配置已不可用，请重新选择');

@@ -117,7 +117,6 @@ const UPDATER_EXE = `${BRAND_IDENTITY.updaterName}.exe`;
 // version conflicts, so it is copied with parent-relative node_modules layout
 // instead of being flattened into the generic runtime dep list below.
 const DISCORD_RUNTIME_DEPS = ['discord.js'];
-// SDK webpack chunks must stay beside the entry; zod is its runtime peer.
 
 // Workspace 用 pnpm `node-linker=hoisted`，所有依赖都只在根 node_modules/ 下，
 // apps/desktop/node_modules/ 里连 symlink 都没建。electron-packager 只扫

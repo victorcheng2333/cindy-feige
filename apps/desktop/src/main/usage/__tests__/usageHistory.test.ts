@@ -1443,3 +1443,20 @@ it('keeps auxiliary sources across devices while counting their shared model onc
     estimatedMoney: null, money: expect.objectContaining({ amount: 0 }) })]);
   expect(history.modelDaily.map(row => row.source).sort()).toEqual(['title', 'voice-refinement']);
 });
+
+// Unit (docs/dev-rules/engineering-conventions.md §3.2):
+// - Production entry: readUsageHistoryWith
+// - Bug basis: residual daily_model_usage rows or un-upgraded peer device rows with retired agentKind='cursor'
+// - Coverage gap: existing tests never pass a retired 'cursor' row after removing 'cursor' from usageAgentKind()
+// - Minimal failing input: one modelRow with agentKind='cursor'
+// - Tier: unit
+it('ignores retired cursor rows instead of attributing them to claude-code', async () => {
+  const cursorRow = { ...modelRow(TODAY, 'codex', 'composer-2.5', actual(2.5), { inputTokens: 900 }), agentKind: 'cursor' as never };
+  const codexRow = modelRow(TODAY, 'codex', 'gpt-5.5', actual(0), { inputTokens: 100 });
+  const result = await readUsageHistoryWith(makeDeps({
+    getModelUsageSince: async () => [cursorRow, codexRow],
+  }));
+  expect(result.totals.todayTokens).toBe(100);
+  expect(result.models).toEqual([expect.objectContaining({ agentKind: 'codex', model: 'gpt-5.5', inputTokens: 100 })]);
+  expect(result.modelDaily.map(r => r.agentKind)).toEqual(['codex']);
+});

@@ -1744,7 +1744,8 @@
     "harness": {
       "claude-code": "Claude Code",
       "codex": "Codex",
-      "pi": "Pi"
+      "pi": "Pi",
+      "antigravity": "Agy"
     },
     "usage": {
       "estimateNote": "サブスク換算 = サブスクで使った分を API の参考価格で換算した額で、請求額ではありません。",
@@ -1813,7 +1814,8 @@
       "harness": {
         "claude-code": "Claude Code",
         "codex": "Codex",
-        "pi": "Pi"
+        "pi": "Pi",
+        "antigravity": "Agy"
       },
       "dailyAverage": "1 日平均",
       "paid": "支払額",

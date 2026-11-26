@@ -1800,7 +1800,8 @@
     "harness": {
       "claude-code": "Claude Code",
       "codex": "Codex",
-      "pi": "Pi"
+      "pi": "Pi",
+      "antigravity": "Agy"
     },
     "usage": {
       "estimateNote": "Valor da assinatura = quanto o uso custaria pelos preços de referência da API. Não é uma cobrança.",
@@ -1874,7 +1875,8 @@
       "harness": {
         "claude-code": "Claude Code",
         "codex": "Codex",
-        "pi": "Pi"
+        "pi": "Pi",
+        "antigravity": "Agy"
       },
       "dailyAverage": "Média diária",
       "paid": "Pago",

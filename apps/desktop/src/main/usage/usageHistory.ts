@@ -664,7 +664,9 @@ export async function readUsageHistoryWith(
     : heatmapCutoff < modelCutoff
       ? heatmapCutoff
       : modelCutoff;
-  const rawModels = await deps.getModelUsageSince(usageRowsSince);
+  const rawModels = (await deps.getModelUsageSince(usageRowsSince)).filter(
+    (row) => row.agentKind !== 'cursor',
+  );
   const priceOverrides = deps.getModelPriceOverridesSnapshot();
   const available = new Set<MoneyCurrency>();
   for (const row of spendDayRows) {

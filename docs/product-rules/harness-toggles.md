@@ -6,7 +6,7 @@
 
 ## 1. 定位
 
-Cindy 同时承载多个 Harness（目前 Claude Code、Codex、Pi、Cursor、Antigravity）。用户不用的
+Cindy 同时承载多个 Harness（目前 Claude Code、Codex、Pi、Antigravity）。用户不用的
 Harness 不应该一直出现在模型选择器里。开关让用户在这台电脑上关掉某个 Harness，关掉后它不再
 作为新的选择出现（2026-11-14 维护者裁决：按电脑保存）。
 
@@ -33,8 +33,7 @@ Harness 不应该一直出现在模型选择器里。开关让用户在这台电
   id 原样保留，不丢用户的选择。
 - **至少保留一个**：不能关掉最后一个开着且已注册的 Harness。没装好的 Harness（例如 Pi）可以
   预先关掉。即使手改文件关掉了全部，可选清单也会退回全部已注册的引擎，不会一个都选不了。
-- **入口**：设置 →「关于」每行 Harness 的版本菜单里的「在模型选择器中显示」。Cursor 同时提供
-  SDK 当前版本、手动检查更新、独立安装与恢复内置版本；Antigravity 显示本机 agy CLI 版本，并在用户
+- **入口**：设置 →「关于」每行 Harness 的版本菜单里的「在模型选择器中显示」。Antigravity 显示本机 agy CLI 版本，并在用户
   确认后运行官方手动更新。Agent 通过设置工具的
   `harnesses` 分类（`list_app_settings` / `update_app_settings`）修改同一份设置。
 
