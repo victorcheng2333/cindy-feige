@@ -1940,4 +1940,162 @@ describe('AcpSession Antigravity live subagent task updates', () => {
       vi.useRealTimers();
     }
   });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send → session/update(invoke_subagent / agent_message_chunk / usage_update) → AcpSession.events；
+  //   验证当 agy 因存在已汇报但未 kill 的 idle subagent 而持续挂起在途 `session/prompt` 时，
+  //   会话在最终回复与关闭 `usage_update` 后的 `afterTextMs` 静默窗口结束时正常结算 `done`，
+  //   后续 `session.send()` 可启动新轮次且延迟返回的旧 `session/prompt` 不会触发重复结算或干扰新轮次。
+  // - Bug／规则依据：Agy 1.5.16 在存在 `SUBAGENT_STATE_ALIVE` 空闲子代理时不返回 `end_turn`，导致任务在已输出最终回复后一直卡在运行中直至 15 分钟超时报错。
+  // - 现有覆盖缺口：现有用例均在 `session/prompt` 返回 `end_turn` 后才走后台结算，未覆盖在途 `session/prompt` 不返回但子代理已空闲的场景。
+  // - 最小失败输入：带 `replyEndsWithUsageUpdate: true`、`checkBackgroundActivity` 返回 `{ pendingReply: false, activeSubagents: false }` 且 `session/prompt` 保持未 resolve 的回合。
+  // - tier：unit（fake ACP transport + fake timers，无外部进程或网络）。
+  it('settles an in-flight prompt kept open by idle subagents after final reply + usage_update and ignores late resolution', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: { pendingReply: boolean; activeSubagents: boolean | null } = { pendingReply: false, activeSubagents: false };
+      let trackedStatus: 'running' | 'completed' = 'running';
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        steerByPrompt: true,
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundContinuationDelaysMs: { afterTextMs: 100, pollMs: 40 },
+        checkBackgroundActivity: async () => state,
+        pollSubagentRuns: async () => [{
+          childId: 'sub-idle-1',
+          status: trackedStatus,
+          startedAt: 1_000,
+          updatedAt: 2_000,
+          ...(trackedStatus === 'completed' ? { endedAt: 2_000, returnedResult: 'PASS' } : {}),
+        }],
+      });
+
+      await session.send({ type: 'user', content: 'review and push' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'call-sub-idle',
+        title: 'Run invoke_subagent',
+        status: 'completed',
+        rawInput: { Role: 'Reviewer', Prompt: 'Review diff' },
+        rawOutput: '{"conversationId":"sub-idle-1"}',
+      });
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'All pushed and verified.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 1_200, size: 100_000 });
+
+      // Tracked subagent snapshot is still `running`, so do not settle yet.
+      await vi.advanceTimersByTimeAsync(110);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      // Once tracked snapshot flips to completed, the re-scheduled check settles the turn.
+      trackedStatus = 'completed';
+      await vi.advanceTimersByTimeAsync(50);
+      await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+      expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'All pushed and verified.' });
+      expect(session.isTurnRunning()).toBe(false);
+
+      // Sending a follow-up turn works cleanly, and late resolution of prompt 1 is a no-op.
+      await session.send({ type: 'user', content: 'next question' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.advanceTimersByTimeAsync(20);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.filter(e => e.type === 'done')).toHaveLength(1);
+
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Second answer.' } });
+      agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+      await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(2));
+      expect(events.at(-1)?.data).toMatchObject({ status: 'completed', result: 'Second answer.' });
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：AcpSession.send → session/update → AcpSession.isTurnRunning / events；
+  //   验证在途空闲子代理兜底不会在无子代理（`activeSubagents: null`）、子代理仍在运行（`activeSubagents: true`）、
+  //   仍有未读唤醒（`pendingReply: true`）、非守护工具进行中、`schedule` 定时器已启动、
+  //   或静默窗口内出现新思考/工具时误结束回合。
+  // - Bug／规则依据：兜底结算必须严格限定在「存在原生子代理记录且全部已汇报/终态」的场景，避免截断普通多步调用、后台命令或定时任务。
+  // - 现有覆盖缺口：新增在途结算分支的负向边界条件尚未被现有测试覆盖。
+  // - 最小失败输入：上述任一阻断条件成立时发送 `agent_message_chunk` + `usage_update` 并推进超过 `afterTextMs`。
+  // - tier：unit（fake ACP transport + fake timers，无外部进程或网络）。
+  it('does not settle an in-flight prompt early without idle-only subagents or while tools/schedule/new activity are pending', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: { pendingReply: boolean; activeSubagents: boolean | null } = { pendingReply: false, activeSubagents: null };
+      const agent = createFakeAgent();
+      const { session, events } = await open(agent, {
+        agentKind: 'antigravity',
+        continueWhileToolsPending: true,
+        replyEndsWithUsageUpdate: true,
+        backgroundContinuationDelaysMs: { afterTextMs: 100, pollMs: 40 },
+        checkBackgroundActivity: async () => state,
+      });
+
+      await session.send({ type: 'user', content: 'guarded turn' });
+      await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+
+      // 1. activeSubagents === null (no subagent records on disk) must NEVER settle early.
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Step 1.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 200, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+
+      // 2. activeSubagents === true (child still running) must not settle.
+      state = { pendingReply: false, activeSubagents: true };
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Waiting on child.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 300, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+
+      // 3. pendingReply === true (unread wake in parent inbox) must not settle.
+      state = { pendingReply: true, activeSubagents: false };
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hold on.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 400, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+
+      // 4. New thought arriving within afterTextMs cancels the settle timer even when state is clear.
+      state = { pendingReply: false, activeSubagents: false };
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Checking more...' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 500, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(50);
+      agent.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Wait, check one more file' } });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+
+      // 5. Pending non-daemon tool blocks settlement even after text + usage_update.
+      agent.update({ sessionUpdate: 'tool_call', toolCallId: 'bg-cmd', title: 'Run build', kind: 'execute', status: 'in_progress' });
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Build running...' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 600, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+      agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 'bg-cmd', status: 'completed' });
+
+      // 6. A non-subagent async launcher (`schedule`) blocks in-flight idle settlement.
+      agent.update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'sched-in-flight',
+        title: 'Run schedule',
+        status: 'completed',
+        rawInput: { DurationSeconds: 60, Prompt: 'check later' },
+      });
+      agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Timer scheduled.' } });
+      agent.update({ sessionUpdate: 'usage_update', used: 700, size: 100_000 });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(session.isTurnRunning()).toBe(true);
+      expect(events.some(e => e.type === 'done')).toBe(false);
+
+      agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

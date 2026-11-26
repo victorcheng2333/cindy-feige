@@ -506,6 +506,105 @@ describe('Antigravity native state inspection', () => {
     }
   });
 
+  // 测试价值
+  // - 生产入口与可观察结果：readAntigravityBackgroundState；
+  //   验证曾向父会话汇报过的 `SUBAGENT_STATE_ALIVE` 子代理在收到父会话新的高优先级唤醒消息（无论未读或已读）
+  //   或 transcript 出现晚于上次汇报的 `SYSTEM_MESSAGE` 时，`activeSubagents` 重新返回 `true`，
+  //   且汇报后子代理自身的收尾 `PLANNER_RESPONSE` 不会误判为唤醒，新汇报落盘后恢复为 `false`。
+  // - Bug／规则依据：原实现仅用 `inbox.senders.has(convId)` 判断子代理是否完成，被 `send_message` 二次唤醒的子代理会被误判为已空闲。
+  // - 现有覆盖缺口：index.test.ts 原用例仅覆盖子代理首次汇报和 system stop 后的恢复，未覆盖已汇报子代理被二次 `send_message` 唤醒的完整周期。
+  // - 最小失败输入：已向父 inbox 写入 `msg-1` 的 `SUBAGENT_STATE_ALIVE` 子代理在其自身 inbox 收到晚于 `msg-1` 的高优先级消息。
+  // - tier：unit（临时本地目录文件读写，无外部进程或网络）。
+  it('treats a previously reported SUBAGENT_STATE_ALIVE subagent as active again when revived via inbox or transcript', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-revive-'));
+    try {
+      const parentSys = path.join(dir, 'antigravity-cli', 'brain', 'sess-revive', '.system_generated');
+      const parentMessages = path.join(parentSys, 'messages');
+      const parentSubagents = path.join(parentSys, 'subagents');
+      const childSys = path.join(dir, 'antigravity-cli', 'brain', 'child-revive', '.system_generated');
+      const childMessages = path.join(childSys, 'messages');
+      const childLogs = path.join(childSys, 'logs');
+      await mkdir(parentMessages, { recursive: true });
+      await mkdir(parentSubagents, { recursive: true });
+      await mkdir(childMessages, { recursive: true });
+      await mkdir(childLogs, { recursive: true });
+
+      await writeFile(
+        path.join(parentSubagents, 'child-revive.json'),
+        JSON.stringify({ conversationId: 'child-revive', state: 'SUBAGENT_STATE_ALIVE' }),
+      );
+      await writeFile(
+        path.join(parentMessages, 'report-1.json'),
+        JSON.stringify({
+          id: 'report-1',
+          sender: 'child-revive',
+          priority: 'MESSAGE_PRIORITY_HIGH',
+          timestamp: '2026-11-26T10:00:00.000Z',
+        }),
+      );
+      await writeFile(path.join(parentMessages, 'read.json'), JSON.stringify({ 'report-1': true }));
+      // A closing PLANNER_RESPONSE written shortly after the report does NOT mean the child was revived.
+      await writeFile(
+        path.join(childLogs, 'transcript.jsonl'),
+        [
+          JSON.stringify({ step_index: 1, type: 'USER_INPUT', created_at: '2026-11-26T09:59:00.000Z' }),
+          JSON.stringify({ step_index: 2, type: 'PLANNER_RESPONSE', created_at: '2026-11-26T10:00:04.000Z', content: 'Sent report.' }),
+        ].join('\n') + '\n',
+      );
+      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, activeSubagents: false });
+
+      // 1. Parent revives child via send_message (unread high-priority wake in child inbox).
+      await writeFile(
+        path.join(childMessages, 'wake-1.json'),
+        JSON.stringify({
+          id: 'wake-1',
+          sender: 'sess-revive',
+          priority: 'MESSAGE_PRIORITY_HIGH',
+          timestamp: '2026-11-26T10:01:00.000Z',
+          content: 'Check one more file',
+        }),
+      );
+      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, activeSubagents: true });
+
+      // 2. Child dequeues the wake into read.json & transcript; still active until it reports back again.
+      await writeFile(path.join(childMessages, 'read.json'), JSON.stringify({ 'wake-1': true }));
+      await writeFile(
+        path.join(childLogs, 'transcript.jsonl'),
+        [
+          JSON.stringify({ step_index: 1, type: 'USER_INPUT', created_at: '2026-11-26T09:59:00.000Z' }),
+          JSON.stringify({ step_index: 2, type: 'PLANNER_RESPONSE', created_at: '2026-11-26T10:00:04.000Z' }),
+          JSON.stringify({ step_index: 3, type: 'SYSTEM_MESSAGE', created_at: '2026-11-26T10:01:02.000Z', content: 'Check one more file' }),
+        ].join('\n') + '\n',
+      );
+      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, activeSubagents: true });
+
+      // 3. Child sends its second report -> activeSubagents clears again once parent reads it.
+      await writeFile(
+        path.join(parentMessages, 'report-2.json'),
+        JSON.stringify({
+          id: 'report-2',
+          sender: 'child-revive',
+          priority: 'MESSAGE_PRIORITY_HIGH',
+          timestamp: '2026-11-26T10:02:00.000Z',
+        }),
+      );
+      await writeFile(path.join(parentMessages, 'read.json'), JSON.stringify({ 'report-1': true, 'report-2': true }));
+      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, activeSubagents: false });
+
+      // 4. Even without a newer child inbox file, a newer SYSTEM_MESSAGE in child transcript marks it active.
+      await writeFile(
+        path.join(childLogs, 'transcript.jsonl'),
+        [
+          JSON.stringify({ step_index: 3, type: 'SYSTEM_MESSAGE', created_at: '2026-11-26T10:01:02.000Z' }),
+          JSON.stringify({ step_index: 4, type: 'SYSTEM_MESSAGE', created_at: '2026-11-26T10:03:00.000Z', content: 'One more check' }),
+        ].join('\n') + '\n',
+      );
+      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, activeSubagents: true });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('retires cindy-acp-session-id marker and sets needsRollover when INVALID_THINKING_SIGNATURE hits', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-broken-'));
     try {

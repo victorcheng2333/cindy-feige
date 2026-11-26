@@ -321,6 +321,11 @@ export class AcpUpdateTranslator {
     return this.awaitingSubagentLaunch && !this.awaitingOtherAsyncLaunch;
   }
 
+  /** True when a non-subagent async launcher (e.g. `schedule`, `run_workflow`) succeeded since last cleared. */
+  hasAwaitingOtherAsyncLaunch(): boolean {
+    return this.awaitingOtherAsyncLaunch;
+  }
+
   clearAwaitingAsyncLaunch(): void {
     this.awaitingSubagentLaunch = false;
     this.awaitingOtherAsyncLaunch = false;

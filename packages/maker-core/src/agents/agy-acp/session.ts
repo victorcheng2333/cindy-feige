@@ -516,6 +516,11 @@ interface ActiveTurn {
   cancelTimer: ReturnType<typeof setTimeout> | null;
   /** Watchdog for an in-flight `session/prompt` that stops emitting progress. */
   inactivityTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * Idle-settle timer for an in-flight `session/prompt` kept open by Agy solely because an
+   * idle (`SUBAGENT_STATE_ALIVE`) detached subagent has not been killed.
+   */
+  inFlightIdleSettleTimer: ReturnType<typeof setTimeout> | null;
   /** Idle-settle timer used once all background tools finish with no active `session/prompt`. */
   backgroundSettleTimer: ReturnType<typeof setTimeout> | null;
   /** Hard ceiling on holding a turn open for background commands/subagents after `end_turn`. */
@@ -536,6 +541,12 @@ interface ActiveTurn {
   recheckBackgroundAfterFlight: boolean;
   /** True while an autonomous post-settle reply has emitted assistant text and awaits its closing `usage_update`. */
   replyOpen: boolean;
+  /** True while an in-flight `session/prompt` has emitted assistant text and no subsequent thought/tool started. */
+  inFlightReplyOpen: boolean;
+  /** Guards against overlapping in-flight idle-subagent settlement probes. */
+  inFlightCheckInFlight: boolean;
+  /** Monotonic sequence incremented on every in-flight activity update to invalidate stale probes. */
+  inFlightActivitySeq: number;
   /** Guards against overlapping `checkBackgroundActivity` calls. */
   backgroundCheckInFlight: boolean;
   /** Deferred prompt outcome held until background work settles. */
@@ -1221,6 +1232,7 @@ export class AcpSession {
             this.emit(this.translator.noteToolCall(verdict.toolCall));
             this.flushDeferredSubagentEvents();
             this.refreshPromptInactivityTimer(this.turn);
+            this.noteInFlightContentUpdate(update);
             this.afterBackgroundContentUpdate(update);
             return;
           }
@@ -1228,6 +1240,7 @@ export class AcpSession {
         this.emit(this.translator.handleUpdate(update));
         this.flushDeferredSubagentEvents();
         this.refreshPromptInactivityTimer(this.turn);
+        this.noteInFlightContentUpdate(update);
         this.afterBackgroundContentUpdate(update);
         return;
       }
@@ -1245,6 +1258,7 @@ export class AcpSession {
         if (this.shouldOpenAutonomousTurnForContent(update)) this.beginAutonomousTurn();
         this.emit(this.translator.handleUpdate(update));
         this.refreshPromptInactivityTimer(this.turn);
+        this.noteInFlightContentUpdate(update);
         this.afterBackgroundContentUpdate(update);
     }
   }
@@ -1282,6 +1296,7 @@ export class AcpSession {
       settled: false,
       cancelTimer: null,
       inactivityTimer: null,
+      inFlightIdleSettleTimer: null,
       backgroundSettleTimer: null,
       backgroundHoldTimer: null,
       backgroundPollTimer: null,
@@ -1292,6 +1307,9 @@ export class AcpSession {
       settleWhenClear: false,
       recheckBackgroundAfterFlight: false,
       replyOpen: false,
+      inFlightReplyOpen: false,
+      inFlightCheckInFlight: false,
+      inFlightActivitySeq: 0,
       backgroundCheckInFlight: false,
       deferredOutcome: null,
       sawTextSinceBackgroundWait: false,
@@ -1312,6 +1330,7 @@ export class AcpSession {
   /** Sends a prompt for `turn`; a later one (a steer) takes over ending the turn. */
   private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
     this.clearBackgroundTimers(turn);
+    this.clearInFlightIdleSettleTimer(turn);
     turn.continuingInBackground = false;
     turn.awaitingAsyncWakeup = false;
     turn.awaitingSubagentWakeup = false;
@@ -1319,6 +1338,8 @@ export class AcpSession {
     turn.settleWhenClear = false;
     turn.recheckBackgroundAfterFlight = false;
     turn.replyOpen = false;
+    turn.inFlightReplyOpen = false;
+    turn.inFlightActivitySeq += 1;
     turn.deferredOutcome = null;
     turn.sawTextSinceBackgroundWait = false;
     const lease = ++turn.lease;
@@ -1356,6 +1377,7 @@ export class AcpSession {
     const watcherPromise = turn.outcomeWatchers.get(lease);
     turn.outstanding.delete(lease);
     turn.outcomeWatchers.delete(lease);
+    if (turn.settled || this.turn !== turn) return;
     if (outcome.usage) turn.usage = addUsage(turn.usage, outcome.usage);
     // A newer prompt took the turn over; the agent answers the older one immediately.
     if (lease !== turn.lease) return;
@@ -1529,6 +1551,12 @@ export class AcpSession {
     (turn.inactivityTimer as unknown as { unref?: () => void }).unref?.();
   }
 
+  private clearInFlightIdleSettleTimer(turn: ActiveTurn): void {
+    if (!turn.inFlightIdleSettleTimer) return;
+    clearTimeout(turn.inFlightIdleSettleTimer);
+    turn.inFlightIdleSettleTimer = null;
+  }
+
   private clearBackgroundSettleTimer(turn: ActiveTurn): void {
     if (!turn.backgroundSettleTimer) return;
     clearTimeout(turn.backgroundSettleTimer);
@@ -1559,6 +1587,7 @@ export class AcpSession {
       turn.cancelTimer = null;
     }
     this.clearPromptInactivityTimer(turn);
+    this.clearInFlightIdleSettleTimer(turn);
     this.clearBackgroundTimers(turn);
   }
 
@@ -1627,6 +1656,11 @@ export class AcpSession {
   }
 
   private handleSubagentMessaged(childId: string): void {
+    if (this.turn) {
+      this.clearInFlightIdleSettleTimer(this.turn);
+      this.turn.inFlightReplyOpen = false;
+      this.turn.inFlightActivitySeq += 1;
+    }
     const tracked = this.trackedSubagents.get(childId);
     if (!tracked) return;
     tracked.revivePollPending = true;
@@ -1936,6 +1970,7 @@ export class AcpSession {
       settled: false,
       cancelTimer: null,
       inactivityTimer: null,
+      inFlightIdleSettleTimer: null,
       backgroundSettleTimer: null,
       backgroundHoldTimer: null,
       backgroundPollTimer: null,
@@ -1946,6 +1981,9 @@ export class AcpSession {
       settleWhenClear: false,
       recheckBackgroundAfterFlight: false,
       replyOpen: false,
+      inFlightReplyOpen: false,
+      inFlightCheckInFlight: false,
+      inFlightActivitySeq: 0,
       backgroundCheckInFlight: false,
       deferredOutcome: { stopReason: 'end_turn' },
       sawTextSinceBackgroundWait: false,
@@ -1961,6 +1999,106 @@ export class AcpSession {
     this.usage = { ...this.usage, tokenUsage: 0, outputTokens: 0 };
     this.emit([{ type: 'status', data: { status: 'running', ...this.usage, isRunning: true, providerInitiatedTurn: true } }]);
     this.startBackgroundHoldTimer(turn);
+  }
+
+  private noteInFlightContentUpdate(update?: AcpRecord): void {
+    const turn = this.turn;
+    if (!turn || turn.continuingInBackground || turn.outstanding.size === 0 || turn.settled || turn.cancelTimer) return;
+    this.clearInFlightIdleSettleTimer(turn);
+    turn.inFlightActivitySeq += 1;
+    const kind = update?.sessionUpdate;
+    if (kind === 'agent_message_chunk') {
+      const block = asRecord(update?.content);
+      if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
+        turn.inFlightReplyOpen = true;
+      }
+    } else if (kind === 'agent_thought_chunk') {
+      const block = asRecord(update?.content);
+      if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
+        turn.inFlightReplyOpen = false;
+      }
+    } else if (kind === 'tool_call' || kind === 'tool_call_update') {
+      turn.inFlightReplyOpen = false;
+    }
+  }
+
+  private scheduleInFlightIdleSubagentCheck(turn: ActiveTurn, delayMs: number): void {
+    this.clearInFlightIdleSettleTimer(turn);
+    if (
+      !this.checkBackgroundActivity
+      || turn.settled
+      || this.turn !== turn
+      || turn.continuingInBackground
+      || turn.outstanding.size === 0
+      || turn.cancelTimer
+      || !turn.inFlightReplyOpen
+    ) {
+      return;
+    }
+    turn.inFlightIdleSettleTimer = setTimeout(() => {
+      turn.inFlightIdleSettleTimer = null;
+      void this.verifyInFlightIdleSubagentSettle(turn);
+    }, delayMs);
+    (turn.inFlightIdleSettleTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private async verifyInFlightIdleSubagentSettle(turn: ActiveTurn): Promise<void> {
+    if (
+      !this.checkBackgroundActivity
+      || turn.settled
+      || this.turn !== turn
+      || turn.continuingInBackground
+      || turn.outstanding.size === 0
+      || turn.cancelTimer
+      || !turn.inFlightReplyOpen
+      || turn.inFlightCheckInFlight
+      || this.translator.hasOpenThinking()
+      || this.hasOpenUserInteraction()
+      || this.translator.hasPendingNonDaemonTools()
+      || this.translator.hasAwaitingOtherAsyncLaunch()
+    ) {
+      return;
+    }
+    const activitySeq = turn.inFlightActivitySeq;
+    turn.inFlightCheckInFlight = true;
+    try {
+      const [state] = await Promise.all([
+        this.probeBackgroundActivity(),
+        this.syncSubagentSnapshots(),
+      ]);
+      if (
+        turn.settled
+        || this.turn !== turn
+        || turn.continuingInBackground
+        || turn.outstanding.size === 0
+        || turn.cancelTimer
+        || !turn.inFlightReplyOpen
+        || turn.inFlightActivitySeq !== activitySeq
+        || this.translator.hasOpenThinking()
+        || this.hasOpenUserInteraction()
+        || this.translator.hasPendingNonDaemonTools()
+        || this.translator.hasAwaitingOtherAsyncLaunch()
+      ) {
+        return;
+      }
+      // Only settle an in-flight `session/prompt` when native subagent records exist and
+      // every detached subagent has already reported back or terminated (Agy holds
+      // `session/prompt` open while an idle `SUBAGENT_STATE_ALIVE` child has not been killed).
+      if (state.pendingReply || state.activeSubagents !== false) {
+        return;
+      }
+      if (this.pollSubagentRuns && this.hasTrackedSubagentsNeedingPoll()) {
+        this.scheduleInFlightIdleSubagentCheck(turn, this.bgPollMs);
+        return;
+      }
+      this.logger?.info('acp: settling in-flight prompt after reply completed with only idle subagents remaining');
+      this.finishTurn(turn.token, {
+        stopReason: 'end_turn',
+        ...(turn.usage ? { usage: turn.usage } : {}),
+      });
+    } finally {
+      turn.inFlightCheckInFlight = false;
+    }
   }
 
   private afterBackgroundContentUpdate(update?: AcpRecord): void {
@@ -2091,6 +2229,20 @@ export class AcpSession {
         this.clearBackgroundSettleTimer(turn);
         this.clearBackgroundPollTimer(turn);
         void this.verifyBackgroundContinuation(turn);
+      } else if (
+        this.replyEndsWithUsageUpdate
+        && this.checkBackgroundActivity
+        && !turn.continuingInBackground
+        && turn.outstanding.size > 0
+        && turn.inFlightReplyOpen
+        && !this.translator.hasOpenThinking()
+        && !turn.settled
+        && !turn.cancelTimer
+        && !this.hasOpenUserInteraction()
+        && !this.translator.hasPendingNonDaemonTools()
+        && !this.translator.hasAwaitingOtherAsyncLaunch()
+      ) {
+        this.scheduleInFlightIdleSubagentCheck(turn, this.bgAfterTextMs);
       }
     }
   }
@@ -2111,6 +2263,11 @@ export class AcpSession {
   ): Promise<AcpPermissionOutcome> {
     const resolver = this.resolver;
     if (!resolver) return { outcome: 'cancelled' };
+    if (this.turn) {
+      this.clearInFlightIdleSettleTimer(this.turn);
+      this.turn.inFlightReplyOpen = false;
+      this.turn.inFlightActivitySeq += 1;
+    }
     if (this.turn?.continuingInBackground) {
       this.clearBackgroundSettleTimer(this.turn);
       this.clearBackgroundHoldTimer(this.turn);
@@ -2188,6 +2345,11 @@ export class AcpSession {
         toolCall = verdict.toolCall;
         if (verdict.autoApproveOnce && allowOnce) {
           if (this.shouldOpenAutonomousTurnForTool(toolCall)) this.beginAutonomousTurn();
+          if (this.turn) {
+            this.clearInFlightIdleSettleTimer(this.turn);
+            this.turn.inFlightReplyOpen = false;
+            this.turn.inFlightActivitySeq += 1;
+          }
           if (this.turn?.continuingInBackground) this.clearBackgroundSettleTimer(this.turn);
           this.emit(this.translator.noteToolCall(toolCall));
           return selected(allowOnce);
@@ -2195,6 +2357,11 @@ export class AcpSession {
       }
     }
     if (this.shouldOpenAutonomousTurnForTool(toolCall)) this.beginAutonomousTurn();
+    if (this.turn) {
+      this.clearInFlightIdleSettleTimer(this.turn);
+      this.turn.inFlightReplyOpen = false;
+      this.turn.inFlightActivitySeq += 1;
+    }
     if (this.turn?.continuingInBackground) {
       this.clearBackgroundSettleTimer(this.turn);
       this.clearBackgroundPollTimer(this.turn);

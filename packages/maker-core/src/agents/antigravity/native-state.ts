@@ -512,9 +512,63 @@ async function readLastTranscriptLine(
   }
 }
 
+async function readLatestTranscriptWakeAtMs(
+  stateDir: string,
+  subdir: string,
+  sessionId: string,
+): Promise<number | undefined> {
+  const file = await resolveAntigravityManagedPath(
+    stateDir,
+    [subdir, 'brain', sessionId, '.system_generated', 'logs', 'transcript.jsonl'],
+    'file',
+  );
+  if (!file) return undefined;
+  const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+  let handle: fsp.FileHandle | undefined;
+  try {
+    handle = await fsp.open(file.path, openFlags);
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size === 0) return undefined;
+    const start = Math.max(0, stat.size - TRANSCRIPT_TAIL_BYTES);
+    const buffer = Buffer.alloc(stat.size - start);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+    if (bytesRead <= 0) return undefined;
+    let slice = buffer.subarray(0, bytesRead);
+    if (start > 0) {
+      const firstNewline = slice.indexOf(0x0a);
+      if (firstNewline === -1) return undefined;
+      slice = slice.subarray(firstNewline + 1);
+    }
+    const text = slice.toString('utf8');
+    let latestWakeAtMs: number | undefined;
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+        const rec = parsed as Record<string, unknown>;
+        if (rec.type !== 'SYSTEM_MESSAGE' && rec.type !== 'USER_INPUT') continue;
+        const createdAtMs = parseIsoTimestampMs(rec.created_at);
+        if (createdAtMs !== undefined && (latestWakeAtMs === undefined || createdAtMs > latestWakeAtMs)) {
+          latestWakeAtMs = createdAtMs;
+        }
+      } catch {
+        // Ignore truncated or malformed JSONL lines.
+      }
+    }
+    return latestWakeAtMs;
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
 interface InboxSummary {
   hasUnreadHighPriority: boolean;
-  senders: Set<string>;
+  latestHighPriorityAtMs?: number;
+  latestReportAtBySender: Map<string, number>;
   systemStopAtMs?: number;
 }
 
@@ -523,16 +577,16 @@ async function readInboxSummary(
   subdir: string,
   sessionId: string,
 ): Promise<InboxSummary> {
-  const senders = new Set<string>();
+  const latestReportAtBySender = new Map<string, number>();
   const dirSegments = [subdir, 'brain', sessionId, '.system_generated', 'messages'];
   const inbox = await resolveAntigravityManagedPath(stateDir, dirSegments, 'directory');
-  if (!inbox) return { hasUnreadHighPriority: false, senders };
+  if (!inbox) return { hasUnreadHighPriority: false, latestReportAtBySender };
 
   const entries = await fsp.readdir(inbox.path).catch(() => undefined);
-  if (!entries) return { hasUnreadHighPriority: false, senders };
+  if (!entries) return { hasUnreadHighPriority: false, latestReportAtBySender };
   const messageNames = entries.filter(name => name.endsWith('.json') && name !== 'read.json');
   if (messageNames.length === 0 || messageNames.length > MAX_MESSAGE_FILES) {
-    return { hasUnreadHighPriority: false, senders };
+    return { hasUnreadHighPriority: false, latestReportAtBySender };
   }
 
   let readReceipts: Record<string, unknown> = {};
@@ -552,6 +606,7 @@ async function readInboxSummary(
   }
 
   let hasUnreadHighPriority = false;
+  let latestHighPriorityAtMs: number | undefined;
   let systemStopAtMs: number | undefined;
   for (const name of messageNames) {
     const file = await resolveAntigravityManagedPath(stateDir, [...dirSegments, name], 'file');
@@ -566,28 +621,41 @@ async function readInboxSummary(
     } catch {
       continue;
     }
+    const messageTs = parseIsoTimestampMs(parsed.timestamp) ?? Math.floor(file.info.mtimeMs);
     if (typeof parsed.sender === 'string' && parsed.sender) {
-      senders.add(parsed.sender);
+      const prevTs = latestReportAtBySender.get(parsed.sender);
+      if (prevTs === undefined || messageTs > prevTs) {
+        latestReportAtBySender.set(parsed.sender, messageTs);
+      }
       if (
         parsed.sender === 'system'
         && typeof parsed.content === 'string'
         && parsed.content.includes(SYSTEM_STOP_NOTICE_SUBSTRING)
       ) {
-        const stopTs = parseIsoTimestampMs(parsed.timestamp) ?? Math.floor(file.info.mtimeMs);
-        if (systemStopAtMs === undefined || stopTs > systemStopAtMs) {
-          systemStopAtMs = stopTs;
+        if (systemStopAtMs === undefined || messageTs > systemStopAtMs) {
+          systemStopAtMs = messageTs;
         }
       }
     }
     const fileId = name.slice(0, -5);
     const messageId = typeof parsed.id === 'string' ? parsed.id : undefined;
     const isRead = readReceipts[fileId] === true || (messageId !== undefined && readReceipts[messageId] === true);
-    if (!isRead && parsed.priority === HIGH_PRIORITY_MESSAGE) {
-      hasUnreadHighPriority = true;
+    if (parsed.priority === HIGH_PRIORITY_MESSAGE) {
+      if (latestHighPriorityAtMs === undefined || messageTs > latestHighPriorityAtMs) {
+        latestHighPriorityAtMs = messageTs;
+      }
+      if (!isRead) {
+        hasUnreadHighPriority = true;
+      }
     }
   }
 
-  return { hasUnreadHighPriority, senders, ...(systemStopAtMs !== undefined ? { systemStopAtMs } : {}) };
+  return {
+    hasUnreadHighPriority,
+    ...(latestHighPriorityAtMs !== undefined ? { latestHighPriorityAtMs } : {}),
+    latestReportAtBySender,
+    ...(systemStopAtMs !== undefined ? { systemStopAtMs } : {}),
+  };
 }
 
 export interface AntigravityBackgroundState {
@@ -655,8 +723,37 @@ export async function readAntigravityBackgroundState(
         anyReadable = true;
         const state = typeof record.state === 'string' ? record.state.trim().toUpperCase() : '';
         const convId = typeof record.conversationId === 'string' ? record.conversationId : childId;
-        if (inbox.senders.has(convId) || inbox.senders.has(childId) || TERMINAL_SUBAGENT_STATES.has(state)) {
+        if (TERMINAL_SUBAGENT_STATES.has(state)) {
           continue;
+        }
+        const reportByConv = inbox.latestReportAtBySender.get(convId);
+        const reportByChild = inbox.latestReportAtBySender.get(childId);
+        const latestReportAtMs =
+          reportByConv !== undefined && reportByChild !== undefined
+            ? Math.max(reportByConv, reportByChild)
+            : reportByConv ?? reportByChild;
+        if (latestReportAtMs !== undefined) {
+          // A `SUBAGENT_STATE_ALIVE` child that already reported back can later be revived via
+          // `send_message`. Treat it as running again if its own inbox has an unread or newer
+          // high-priority wake, or its transcript has a wake entry newer than its latest report.
+          let revived = false;
+          if (NATIVE_SESSION_ID.test(convId)) {
+            const childInbox = await readInboxSummary(stateDir, subdir, convId);
+            if (
+              childInbox.hasUnreadHighPriority
+              || (childInbox.latestHighPriorityAtMs !== undefined && childInbox.latestHighPriorityAtMs > latestReportAtMs)
+            ) {
+              revived = true;
+            } else {
+              const latestWakeAtMs = await readLatestTranscriptWakeAtMs(stateDir, subdir, convId);
+              if (latestWakeAtMs !== undefined && latestWakeAtMs > latestReportAtMs + 1_000) {
+                revived = true;
+              }
+            }
+          }
+          if (!revived) {
+            continue;
+          }
         }
         // Agy leaves `subagents/<childId>.json` in `SUBAGENT_STATE_ALIVE` after user
         // force-cancellation or server restart and writes a low-priority `sender: "system"`
