@@ -63,6 +63,95 @@ describe('Native subscription API equivalent without a native bill', () => {
     const base = registry.baseModels!.find(m => m.id === 'google/gemini-4-hydrogen')!;
     expect(nativeSubscriptionReferenceQuote({ ...registry, baseModels: [...registry.baseModels!, { ...base, id: 'other/gemini-4-hydrogen' }] }, 'antigravity', 'gemini-4-hydrogen', at)).toBeUndefined();
   });
+  // 测试价值：Agy 架构模式（Orchestrator）只按 orchestrator ID 汇总上报 token，未在 registry 单独建档，
+  // 此前 nativeSubscriptionReferenceQuote/nativeSubscriptionApiValue 均返回空导致「本轮费用暂无法估算」；
+  // 覆盖缺口：验证 Orchestrator ID 回退主模型官方单价、保留原 modelId、允许用户覆盖且显式建档优先。
+  // 最小失败输入：gemini-pro-orchestrator-neon + 非零输入/输出/缓存读 token；tier: unit。
+  it('estimates Agy Orchestrator models from their main model reference tariff while preserving modelId', () => {
+    const at = '2026-11-26';
+    const registry = BUNDLED_CATALOG.modelRegistry!;
+    expect(nativeSubscriptionReferenceQuote(registry, 'antigravity', 'gemini-pro-orchestrator-neon', at))
+      .toMatchObject({
+        providerId: 'antigravity',
+        modelId: 'gemini-pro-orchestrator-neon',
+        currency: 'USD',
+        source: 'subscription-reference',
+        approximate: true,
+        inputPerMtok: 3,
+        outputPerMtok: 15,
+        cacheReadPerMtok: 0.15,
+      });
+    expect(nativeSubscriptionReferenceQuote(registry, 'antigravity', 'gemini-pro-orchestrator', at))
+      .toMatchObject({
+        modelId: 'gemini-pro-orchestrator',
+        inputPerMtok: 2,
+        outputPerMtok: 10,
+        cacheReadPerMtok: 0.1,
+      });
+    expect(nativeSubscriptionReferenceQuote(registry, 'antigravity', 'gemini-pro-orchestrator-argon', at))
+      .toMatchObject({
+        modelId: 'gemini-pro-orchestrator-argon',
+        inputPerMtok: 2,
+        outputPerMtok: 10,
+        cacheReadPerMtok: 0.1,
+      });
+
+    const usage = { inputTokens: 350_000, outputTokens: 46_700, cacheReadTokens: 3_300_000, cacheCreateTokens: 0 };
+    // 0.35M * $3 + 0.0467M * $15 + 3.3M * $0.15 = 1.05 + 0.7005 + 0.495 = 2.2455
+    expect(nativeSubscriptionApiValue(registry, 'antigravity', 'gemini-pro-orchestrator-neon', usage, at))
+      .toMatchObject({
+        amount: expect.closeTo(2.2455, 7),
+        currency: 'USD',
+        approximate: true,
+        kind: 'value-estimate',
+      });
+
+    // User price override still takes precedence over the reference fallback.
+    expect(nativeSubscriptionApiValue(registry, 'antigravity', 'gemini-pro-orchestrator-neon', usage, at, reference => ({
+      ...reference!,
+      source: 'user-override',
+      inputPerMtok: 1,
+      outputPerMtok: 5,
+      cacheReadPerMtok: 0.05,
+    }))).toMatchObject({
+      amount: expect.closeTo(0.7485, 7),
+      currency: 'USD',
+      kind: 'value-estimate',
+    });
+
+    // An explicit registry entry for the orchestrator ID takes precedence over the fallback map.
+    const neonBase = registry.baseModels!.find(m => m.id === 'google/gemini-4-neon')!;
+    const explicitRegistry = {
+      ...registry,
+      baseModels: [
+        ...registry.baseModels!,
+        {
+          ...neonBase,
+          id: 'google/gemini-pro-orchestrator-neon',
+          aliases: [],
+          referencePriceGroups: [{
+            id: 'global',
+            prices: [{
+              currency: 'USD' as const,
+              variant: 'standard' as const,
+              inputPerMtok: 1.5,
+              outputPerMtok: 7.5,
+              cacheReadPerMtok: 0.075,
+              effectiveFrom: '2026-11-18',
+              source: { kind: 'provider-official' as const, url: 'https://ai.google.dev/gemini-api/docs/pricing', verifiedAt: '2026-11-26' },
+            }],
+          }],
+        },
+      ],
+    };
+    expect(nativeSubscriptionReferenceQuote(explicitRegistry, 'antigravity', 'gemini-pro-orchestrator-neon', at))
+      .toMatchObject({
+        modelId: 'gemini-pro-orchestrator-neon',
+        inputPerMtok: 1.5,
+        outputPerMtok: 7.5,
+        cacheReadPerMtok: 0.075,
+      });
+  });
 });
 const XD_GATEWAY_CN: TurnPricingContext = {
   providerId: 'xd',

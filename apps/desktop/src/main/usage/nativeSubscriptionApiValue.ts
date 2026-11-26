@@ -4,6 +4,15 @@ import { computePriceQuoteTurnMoney } from './turnCostCalculator.js';
 
 export type NativeSubscriptionProvider = 'antigravity';
 
+// Agy Orchestrator models only report aggregated tokens under the orchestrator ID
+// without a per-executor breakdown. Map them to their underlying main model's official
+// API tariff as a reference value estimate unless the registry defines an explicit entry.
+const ANTIGRAVITY_ORCHESTRATOR_REFERENCE_MODELS: Readonly<Record<string, string>> = {
+  'gemini-pro-orchestrator-neon': 'gemini-4-neon',
+  'gemini-pro-orchestrator': 'gemini-4-carbon',
+  'gemini-pro-orchestrator-argon': 'gemini-4-argon',
+};
+
 function uniqueBaseModel(registry: ModelRegistry | undefined, modelId: string) {
   const exact = registry?.baseModels?.filter(m => m.id === modelId || m.aliases.includes(modelId)) ?? [];
   // The harnesses use bare IDs. Only accept a unique, exact model identity.
@@ -14,10 +23,15 @@ function uniqueBaseModel(registry: ModelRegistry | undefined, modelId: string) {
 
 function basePrice(
   registry: ModelRegistry | undefined,
+  providerId: NativeSubscriptionProvider,
   modelId: string,
   at: string | Date,
 ) {
-  const matched = uniqueBaseModel(registry, modelId);
+  const matched =
+    uniqueBaseModel(registry, modelId) ??
+    (providerId === 'antigravity' && Object.hasOwn(ANTIGRAVITY_ORCHESTRATOR_REFERENCE_MODELS, modelId)
+      ? uniqueBaseModel(registry, ANTIGRAVITY_ORCHESTRATOR_REFERENCE_MODELS[modelId])
+      : undefined);
   if (!matched) return undefined;
   return resolveBaseModelReferencePrice(registry, matched.id, { at, inputTokens: 0 });
 }
@@ -60,7 +74,7 @@ export function nativeSubscriptionReferenceQuote(
   modelId: string,
   at: string | Date = new Date(),
 ): ModelPriceQuote | undefined {
-  const base = basePrice(registry, modelId, at);
+  const base = basePrice(registry, providerId, modelId, at);
   if (!base || base.price.source.kind !== 'provider-official') return undefined;
   return referenceQuote(providerId, modelId, base, at);
 }
@@ -80,7 +94,7 @@ export function nativeSubscriptionApiValue(
     ['cacheReadTokens', 'cacheReadPerMtok'], ['cacheCreateTokens', 'cacheCreatePerMtok'],
   ] as const;
   if (!fields.every(([bucket]) => Number.isSafeInteger(tokens[bucket]) && tokens[bucket] >= 0)) return null;
-  const base = basePrice(registry, modelId, at);
+  const base = basePrice(registry, providerId, modelId, at);
   const reference = base?.price.source.kind === 'provider-official'
     ? referenceQuote(providerId, modelId, base, at) : undefined;
   const quote = override?.(reference) ?? reference;
