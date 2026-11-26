@@ -415,7 +415,9 @@ export class AntigravityAgent extends BaseAgent {
             () => this.readSessionSkills(cwd, this.agyDeps.logger),
             (message) => this.agyDeps.logger.warn('antigravity: Skill invocation left unexpanded', { message }),
           );
-      await seedAgyStateDir(stateDir);
+      const agyEnv = this.agyDeps.getEnv();
+      const nativeHomeDir = agyEnv.HOME ?? agyEnv.USERPROFILE;
+      await seedAgyStateDir(stateDir, nativeHomeDir ? { homeDir: nativeHomeDir } : undefined);
       const hostedMcp = hosted ? buildAntigravityHostedMcpServers(hosted) : undefined;
       if (hosted && hostedMcp) {
         remoteWorkspace = await prepareAntigravityRemoteWorkspaceDir(stateDir, hosted, hostedMcp.serverNames, cwd);
@@ -437,7 +439,7 @@ export class AntigravityAgent extends BaseAgent {
         this.deps.binaryPath,
         launchCwd,
         stateDir,
-        this.agyDeps.getEnv(),
+        agyEnv,
         hosted ? { agent: ANTIGRAVITY_REMOTE_AGENT_NAME, useG1Credits } : { readOnlyDirs: readOnlySandboxDirs, useG1Credits },
       );
       const subagentReader = createAntigravitySubagentRunsReader(stateDir);

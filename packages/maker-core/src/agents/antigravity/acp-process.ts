@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { AcpConnection, methodNotFound } from '../agy-acp/connection.js';
 import { ACP_PROTOCOL_VERSION, asRecord, normalizeInitializeResult } from '../agy-acp/protocol.js';
@@ -16,12 +17,124 @@ async function pruneAgyLogs(stateDir: string): Promise<void> {
   await Promise.all(logs.slice(KEPT_AGY_LOGS).map(log => rm(path.join(stateDir, log.name), { force: true }).catch(() => {})));
 }
 
+const MAX_USER_CONFIG_BYTES = 1024 * 1024;
+const ORCHESTRATOR_SETTING_KEYS = ['orchestratorModel', 'orchestratorExecutorModel'] as const;
+type OrchestratorSettingKey = (typeof ORCHESTRATOR_SETTING_KEYS)[number];
+type OrchestratorSettingValue = string | number;
+const VALID_MODEL_SETTING_STRING = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sanitizeOrchestratorSettingValue(value: unknown): OrchestratorSettingValue | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return VALID_MODEL_SETTING_STRING.test(trimmed) ? trimmed : undefined;
+  }
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return value;
+  }
+  return undefined;
+}
+
+async function readJsonObjectFile(filePath: string): Promise<{ exists: boolean; data?: Record<string, unknown> }> {
+  let info;
+  try {
+    info = await stat(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { exists: false };
+    return { exists: true };
+  }
+  if (!info.isFile() || info.size > MAX_USER_CONFIG_BYTES) return { exists: true };
+  try {
+    const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+    return isPlainObject(parsed) ? { exists: true, data: parsed } : { exists: true };
+  } catch {
+    return { exists: true };
+  }
+}
+
+async function readNativeOrchestratorSettings(
+  sourceConfigPath: string,
+): Promise<Partial<Record<OrchestratorSettingKey, OrchestratorSettingValue>>> {
+  const { data } = await readJsonObjectFile(sourceConfigPath);
+  if (!data || !isPlainObject(data.userSettings)) return {};
+  const result: Partial<Record<OrchestratorSettingKey, OrchestratorSettingValue>> = {};
+  for (const key of ORCHESTRATOR_SETTING_KEYS) {
+    const value = sanitizeOrchestratorSettingValue(data.userSettings[key]);
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Syncs only `userSettings.orchestratorModel` and `userSettings.orchestratorExecutorModel`
+ * from the user's native `~/.gemini/config/config.json` into Cindy's isolated per-task
+ * `<stateDir>/config/config.json`. Permissions, sandbox, plugins and sidecars stay isolated.
+ */
+async function syncOrchestratorSettings(stateDir: string, sourceConfigPath: string): Promise<void> {
+  const desired = await readNativeOrchestratorSettings(sourceConfigPath);
+  const targetConfigPath = path.join(stateDir, 'config', 'config.json');
+  const existing = await readJsonObjectFile(targetConfigPath);
+
+  if (!existing.exists && Object.keys(desired).length === 0) return;
+  if (existing.exists && !existing.data) return;
+
+  const base: Record<string, unknown> = existing.data ? { ...existing.data } : {};
+  const prevUserSettings = isPlainObject(base.userSettings) ? base.userSettings : undefined;
+  const nextUserSettings: Record<string, unknown> = prevUserSettings ? { ...prevUserSettings } : {};
+
+  let changed = !existing.exists;
+  for (const key of ORCHESTRATOR_SETTING_KEYS) {
+    const nextValue = desired[key];
+    const prevValue = prevUserSettings?.[key];
+    if (nextValue === undefined) {
+      if (key in nextUserSettings) {
+        delete nextUserSettings[key];
+        changed = true;
+      }
+    } else if (prevValue !== nextValue) {
+      nextUserSettings[key] = nextValue;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  if (Object.keys(nextUserSettings).length > 0) {
+    base.userSettings = nextUserSettings;
+  } else {
+    delete base.userSettings;
+  }
+
+  const configDir = path.dirname(targetConfigPath);
+  const tempPath = path.join(configDir, `.config.${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, `${JSON.stringify(base, null, 2)}\n`, { mode: 0o600 });
+    await rename(tempPath, targetConfigPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+export interface SeedAgyStateDirOptions {
+  /** User home directory used to locate native `~/.gemini/config/config.json`. */
+  homeDir?: string;
+  /** Explicit override for the native Antigravity `config.json` path (primarily for tests). */
+  userConfigPath?: string;
+}
+
 /**
  * A fresh `--gemini_dir` lacks the default CLI project that agy reads on every tool
  * call (it otherwise logs `missing project file` each time). Seed the same record agy
  * writes in its own data directory; never overwrite one agy already keeps.
+ *
+ * When `homeDir` (or `userConfigPath`) is provided, also syncs the user's native
+ * Antigravity App `orchestratorModel` / `orchestratorExecutorModel` selections into
+ * `<stateDir>/config/config.json` while keeping all other settings isolated.
  */
-export async function seedAgyStateDir(stateDir: string): Promise<void> {
+export async function seedAgyStateDir(stateDir: string, options?: SeedAgyStateDirOptions): Promise<void> {
   // Called before the task's agy starts, so no pruned log is still being written.
   await pruneAgyLogs(stateDir);
   const projects = path.join(stateDir, 'config', 'projects');
@@ -29,6 +142,12 @@ export async function seedAgyStateDir(stateDir: string): Promise<void> {
   const record = { id: 'default-cli-project', name: 'CLI Project', projectResources: {}, updatedAt: new Date().toISOString() };
   await writeFile(path.join(projects, 'default-cli-project.json'), JSON.stringify(record), { flag: 'wx', mode: 0o600 })
     .catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+
+  const sourceConfigPath = options?.userConfigPath
+    ?? (options?.homeDir?.trim() ? path.join(options.homeDir.trim(), '.gemini', 'config', 'config.json') : undefined);
+  if (sourceConfigPath) {
+    await syncOrchestratorSettings(stateDir, sourceConfigPath).catch(() => {});
+  }
 }
 
 const MAX_STDERR_TAIL_CHARS = 4096;

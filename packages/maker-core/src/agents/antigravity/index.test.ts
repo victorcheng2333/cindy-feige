@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -10,7 +10,7 @@ import { createConsoleLogger } from '../../interfaces/logger.js';
 import type { AgentEvent } from '../../types/events.js';
 import type { StartSessionOptions, AgentSessionHandle } from '../base-agent.js';
 import { AntigravityAgent, probeAntigravityCatalog } from './index.js';
-import { buildAgySettingsJson, classifyAgyProcessExit, runAntigravityAccountCommand } from './acp-process.js';
+import { buildAgySettingsJson, classifyAgyProcessExit, runAntigravityAccountCommand, seedAgyStateDir } from './acp-process.js';
 import {
   AGY_INVALID_THINKING_SIGNATURE_REASON,
   readAntigravityBackgroundState,
@@ -864,6 +864,105 @@ describe('Agy settings, crash diagnostics, and catalog discovery metadata', () =
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：seedAgyStateDir 与 AntigravityAgent.startSession；
+  //   验证从原生 `<homeDir>/.gemini/config/config.json` 仅同步 `userSettings.orchestratorModel` /
+  //   `orchestratorExecutorModel` 到任务隔离的 `<stateDir>/config/config.json`，不拷贝权限/沙箱/插件等
+  //   其他配置；保留任务目录已有运行时键；当原生配置恢复默认（删除字段）时清理任务目录中的陈旧覆盖值；
+  //   缺失或损坏源文件不阻断启动。
+  // - Bug／规则依据：Cindy 以独立 `--gemini_dir=<stateDir>` 启动 `agy acp`，此前未同步这两个字段，
+  //   导致用户在 Antigravity App 中配置的 Orchestrator / Executor 模型与 effort 在 Cindy 中不生效。
+  // - 现有覆盖缺口：index.test.ts 原用例 `getEnv: () => ({})` 未覆盖 `seedAgyStateDir` 的配置同步与复位。
+  // - 最小失败输入：`<homeDir>/.gemini/config/config.json` 含 `userSettings.orchestratorModel` 时调用
+  //   `AntigravityAgent.startSession`，检查 `<stateDir>/config/config.json` 是否包含该字段且不含权限/插件。
+  // - tier：unit（临时目录文件读写 + 进程内 fake AgyProcess，无外部进程或真实 HOME 读取）。
+  it('syncs only orchestratorModel and orchestratorExecutorModel from native Agy config into the isolated stateDir', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-orch-cfg-'));
+    try {
+      const fakeHome = path.join(root, 'home');
+      const stateDir = path.join(root, 'state');
+      const nativeConfig = path.join(fakeHome, '.gemini', 'config', 'config.json');
+      await mkdir(path.dirname(nativeConfig), { recursive: true });
+      await writeFile(nativeConfig, JSON.stringify({
+        plugins: { swarm: { enabled: true } },
+        userSettings: {
+          orchestratorModel: 'MODEL_PLACEHOLDER_M532',
+          orchestratorExecutorModel: 'MODEL_PLACEHOLDER_M540',
+          permissionPreset: 'AGENT_PERMISSION_PRESET_TURBO',
+          enableTerminalSandbox: false,
+          nonWorkspaceFileAccessPolicy: 'AGENT_SETTING_POLICY_ALLOW',
+        },
+      }));
+
+      // Start via AntigravityAgent.startSession with fakeHome in env.HOME.
+      const agent = new AntigravityAgent({
+        binaryPath: '/test/agy',
+        logger: createConsoleLogger('agy-orch-cfg-test'),
+        auth: {
+          getState: async () => ({ authenticated: true }),
+          triggerLogin: async () => ({ authenticated: true }),
+          logout: async () => {},
+          getAuthEnv: async () => ({}),
+        },
+        runtimeConfig: { systemPrompt: 'Fixture instructions' },
+        prepareAcp: async () => ({ stateDir, servers: [], dispose() {} }),
+        getEnv: () => ({ HOME: fakeHome }),
+        getDiscoveredCapabilities: () => undefined,
+      });
+      new AgyProcess('acp-orch-cfg');
+      const handle = await agent.startSession({ workingDir: root, model: 'gemini-4-neon' });
+      await handle.close();
+
+      const syncedConfigPath = path.join(stateDir, 'config', 'config.json');
+      expect(JSON.parse(await readFile(syncedConfigPath, 'utf8'))).toEqual({
+        userSettings: {
+          orchestratorModel: 'MODEL_PLACEHOLDER_M532',
+          orchestratorExecutorModel: 'MODEL_PLACEHOLDER_M540',
+        },
+      });
+
+      // Preserve task-local keys written by agy acp, update changed values, and clear reset keys.
+      await writeFile(syncedConfigPath, JSON.stringify({
+        plugins: { localOnly: { enabled: true } },
+        userSettings: {
+          orchestratorModel: 'MODEL_PLACEHOLDER_M532',
+          orchestratorExecutorModel: 'MODEL_PLACEHOLDER_M540',
+          themeMode: 'THEME_MODE_DARK',
+        },
+      }));
+      await writeFile(nativeConfig, JSON.stringify({
+        userSettings: {
+          orchestratorModel: 'MODEL_PLACEHOLDER_M533',
+          // orchestratorExecutorModel removed (reset to default)
+        },
+      }));
+      await seedAgyStateDir(stateDir, { homeDir: fakeHome });
+      expect(JSON.parse(await readFile(syncedConfigPath, 'utf8'))).toEqual({
+        plugins: { localOnly: { enabled: true } },
+        userSettings: {
+          orchestratorModel: 'MODEL_PLACEHOLDER_M533',
+          themeMode: 'THEME_MODE_DARK',
+        },
+      });
+
+      // Missing / malformed / invalid values fail safely and do not create config.json on fresh stateDir.
+      const freshState = path.join(root, 'fresh-state');
+      await writeFile(nativeConfig, JSON.stringify({
+        userSettings: {
+          orchestratorModel: 'bad value with spaces',
+          orchestratorExecutorModel: { nested: true },
+        },
+      }));
+      await seedAgyStateDir(freshState, { homeDir: fakeHome });
+      await expect(stat(path.join(freshState, 'config', 'config.json'))).rejects.toThrow();
+
+      await writeFile(nativeConfig, '{not valid json');
+      await expect(seedAgyStateDir(freshState, { homeDir: fakeHome })).resolves.toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });
