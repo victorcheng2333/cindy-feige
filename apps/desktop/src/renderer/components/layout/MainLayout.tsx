@@ -169,6 +169,7 @@ import {
   resolveAgentIslandVisibleSessionsFromPath,
   resolveAgentIslandVisibleSessionIdFromPath,
 } from '@/lib/agentIslandVisibleSessionRoute';
+import { useAtBottomVisibleSessions } from '@/lib/sessionTailReadStore';
 
 const SIDEBAR_RAIL_KEY = 'sidebar-rail';
 
@@ -547,6 +548,7 @@ export function MainLayout() {
   );
 
   useTaskArchiveProtection(dataOwnerId, dataOwnerGeneration, visibleSessions);
+  const agentIslandVisibleSessions = useAtBottomVisibleSessions(visibleSessions);
   const syncAgentIslandVisibleSession = useCallback(() => {
     if (!isAgentIslandSupported()) return;
     if (!document.hasFocus()) return;
@@ -555,9 +557,9 @@ export function MainLayout() {
     // The task view confirms metadata and rendered history before acknowledging a single task.
     if (typeof visibleSessions === 'string') return;
     void window.electronAPI.agentIsland?.setVisibleSession?.(
-      visibleSessions,
+      agentIslandVisibleSessions,
     );
-  }, [location.pathname, visibleSessions]);
+  }, [agentIslandVisibleSessions, location.pathname, visibleSessions]);
 
   useEffect(() => {
     syncAgentIslandVisibleSession();

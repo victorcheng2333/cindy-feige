@@ -45,6 +45,7 @@ import * as sessionService from '@/lib/sessionService';
 import { getDraft, getFastModeForModel } from '@/state/newMakerDraft';
 import { isAgentIslandSupported } from '@/hooks/useAgentIslandSettings';
 import { resolveAgentIslandVisibleSessionIdForWorkdirBrowseRail } from '@/lib/agentIslandVisibleSessionRoute';
+import { useIsSessionScrolledUpInHistory } from '@/lib/sessionTailReadStore';
 import type { AgentKind } from '@/lib/ccAgent.types';
 import { CCAgentSessionView } from '../CCAgentSessionView';
 import { CindyMakeSessionGate } from '../CindyMakeSessionGate';
@@ -181,7 +182,7 @@ function WorkdirBrowseContent({ requestedDeviceId }: { requestedDeviceId: string
   const rail = useChatRailResize();
   const railCollapse = useChatRailCollapsed();
   const activeSessionIsOrcaLead = Boolean(currentSession && isOrcaLeadSession(currentSession));
-  const agentIslandVisibleSessionId = useMemo(
+  const rawAgentIslandVisibleSessionId = useMemo(
     () =>
       resolveAgentIslandVisibleSessionIdForWorkdirBrowseRail({
         sessionId,
@@ -190,6 +191,10 @@ function WorkdirBrowseContent({ requestedDeviceId }: { requestedDeviceId: string
       }),
     [activeSessionIsOrcaLead, railCollapse.collapsed, sessionId],
   );
+  const isRailSessionScrolledUp = useIsSessionScrolledUpInHistory(rawAgentIslandVisibleSessionId);
+  const agentIslandVisibleSessionId = isRailSessionScrolledUp
+    ? null
+    : rawAgentIslandVisibleSessionId;
   const syncAgentIslandVisibleSession = useCallback(() => {
     if (!isAgentIslandSupported()) return;
     if (!document.hasFocus()) return;

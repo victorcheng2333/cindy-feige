@@ -4301,14 +4301,19 @@ function disposeUpdatePresentationRecovery(): void {
   updatePresentationRecoveryInitialized = false;
 }
 
+function getFocusedAppWindow(): BrowserWindow | null {
+  return BrowserWindow.getAllWindows().find((win) => isFocusedAppContentWindow(win)) ?? null;
+}
+
 function hasFocusedAppWindow(): boolean {
-  return BrowserWindow.getAllWindows().some((win) => isFocusedAppContentWindow(win));
+  return getFocusedAppWindow() !== null;
 }
 
 function syncAppFocusState(): void {
-  const appFocused = hasFocusedAppWindow();
+  const focusedWindow = getFocusedAppWindow();
+  const appFocused = focusedWindow !== null;
   providerModelFocusRefreshTracker.sync(appFocused);
-  getAgentIslandService()?.setAppFocused(appFocused);
+  getAgentIslandService()?.setAppFocused(appFocused, focusedWindow);
 }
 
 function scheduleAppFocusSync(): void {
@@ -5399,6 +5404,7 @@ const registerIpcHandlers = () => {
   });
   initWecomGroupNotificationIpc();
   setCompanionAvatarResolver((request) => companionAvatarCache.resolve(request));
+  const initialFocusedWindow = getFocusedAppWindow();
   initAgentIslandService({
     getMainWindow: () => getWindow() ?? null,
     isPlannedRemoteDaemonClose: isCcMgrUpgradeInFlight,
@@ -5410,7 +5416,7 @@ const registerIpcHandlers = () => {
       if (hasFocusedAppWindow()) return;
       showDeviceSessionDesktopEvent(() => getWindow() ?? null, event);
     },
-  })?.setAppFocused(hasFocusedAppWindow());
+  })?.setAppFocused(initialFocusedWindow !== null, initialFocusedWindow);
   // 定向 replay:快照只补发给刚完成 sessions 订阅的那一台控制端。若沿默认广播
   // 通道扇出,每次 subscribe 都会把 O(会话数) 的帧重复灌给其它所有控制端,
   // 多控制端重连风暴中会互相挤爆对方的可靠传输窗口。

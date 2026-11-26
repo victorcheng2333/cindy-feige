@@ -61,8 +61,8 @@ const attentionStatements = expanded.body!.statements.filter(statement => {
   const dependencies = call.arguments[1];
   if (!dependencies || !ts.isArrayLiteralExpression(dependencies)) return false;
   const names = dependencies.elements.map(dependency => dependency.getText(source));
-  return names.includes('activeRemoteAttentionRev')
-    || names.length === 1 && names[0] === 'viewedSessionId';
+  return names.includes('activeSessionRemoteReceiptKey')
+    || (names.includes('viewedSessionId') && call.getText(source).includes("addEventListener('focus'"));
 });
 if (attentionStatements.length !== 3) throw new Error('Missing production sidebar attention consumers');
 const attentionCode = ts.transpileModule(
@@ -71,19 +71,24 @@ const attentionCode = ts.transpileModule(
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 ).outputText;
 
-function attentionSidebar() {
+function attentionSidebar(options?: {
+  isSessionScrolledUpInHistory?: (sessionId: string | null | undefined) => boolean;
+}) {
   const clearAttention = vi.fn();
+  const clearNotification = vi.fn();
+  const markAutomationSessionRunsRead = vi.fn();
   const bindings = {
     useCallback, useEffect, window,
-    activeSessionRemoteReceiptKey: undefined, activeRemoteAttentionRev: 0,
-    markAutomationSessionRunsRead: vi.fn(), clearSystemSessionAttention: clearAttention,
+    activeSessionRemoteReceiptKey: undefined,
+    isSessionScrolledUpInHistory: options?.isSessionScrolledUpInHistory ?? (() => false),
+    markAutomationSessionRunsRead, clearSystemSessionAttention: clearAttention,
     hasSessionSelectionModifier: () => false,
     selectedSessionIdsRef: { current: new Set<string>() }, setSelectedSessionIds: vi.fn(),
     setSelectionAnchorSessionId: vi.fn(), urgentSetRef: { current: new Set<string>() },
     attentionKindsRef: { current: new Map() }, sessionsByIdRef: { current: new Map() },
     runningSessionIdsRef: { current: new Set() }, sidebarNotificationsRef: { current: new Set() },
     holdSidebarViewedPriority: vi.fn(), sidebarPriorityContext: (context: unknown) => context,
-    clearNotification: vi.fn(), activeSessionIdRef: { current: 'shown' },
+    clearNotification, activeSessionIdRef: { current: 'shown' },
     navigate: vi.fn(), resolveSessionRoute: async () => '/cc-agent/clicked',
     importMeta: { env: { DEV: false } }, perfLog: { debug: vi.fn() },
   };
@@ -95,7 +100,7 @@ function attentionSidebar() {
     // the production ExpandedView code. Receipt payloads stay in helper tests.
     return createElement('button', { onClick: () => onSessionClick(clickedSessionId) }, 'Open task');
   }
-  return { Component: SidebarAttention, clearAttention };
+  return { Component: SidebarAttention, clearAttention, clearNotification, markAutomationSessionRunsRead };
 }
 
 type NotificationSession = {
@@ -308,6 +313,34 @@ describe('sidebar system attention consumers', () => {
     clearAttention.mockClear();
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open task' })));
     expect(clearAttention.mock.calls).toEqual([['shown']]);
+  });
+
+  // 验证用户处于向上翻历史态时，切到/聚焦/点击该会话均不提前抹掉完成提示与未读自动化记录。
+  it('keeps attention and unread runs intact while the viewed session is scrolled up in history', async () => {
+    const scrolledUp = vi.fn((sessionId: string | null | undefined) => sessionId === 'hist');
+    const {
+      Component,
+      clearAttention,
+      clearNotification,
+      markAutomationSessionRunsRead,
+    } = attentionSidebar({ isSessionScrolledUpInHistory: scrolledUp });
+
+    const view = render(createElement(Component, { viewedSessionId: 'hist', clickedSessionId: 'hist' }));
+    expect(clearAttention).not.toHaveBeenCalled();
+    expect(markAutomationSessionRunsRead).not.toHaveBeenCalled();
+
+    fireEvent(window, new Event('focus'));
+    expect(clearAttention).not.toHaveBeenCalled();
+    expect(markAutomationSessionRunsRead).not.toHaveBeenCalled();
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open task' })));
+    expect(clearAttention).not.toHaveBeenCalled();
+    expect(clearNotification).not.toHaveBeenCalled();
+    expect(markAutomationSessionRunsRead).not.toHaveBeenCalled();
+
+    view.rerender(createElement(Component, { viewedSessionId: 'tail', clickedSessionId: 'tail' }));
+    expect(clearAttention).toHaveBeenCalledWith('tail');
+    expect(markAutomationSessionRunsRead).toHaveBeenCalledWith('tail');
   });
 });
 

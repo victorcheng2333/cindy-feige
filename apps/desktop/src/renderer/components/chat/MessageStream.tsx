@@ -146,6 +146,11 @@ import {
   type SessionScrollSnapshot,
 } from '@/lib/sessionScrollStore';
 import {
+  allocateSessionTailViewId,
+  clearSessionTailReadState,
+  setSessionTailReadState,
+} from '@/lib/sessionTailReadStore';
+import {
   SHARE_EXCLUDE_ATTR,
   SHARE_MESSAGE_ATTR,
   SHARE_SESSION_ATTR,
@@ -509,6 +514,8 @@ interface MessageStreamProps {
   /** Bot read position captured before entry marks the conversation read. */
   botUnreadBoundaryAt?: number | null;
   onBotReadThrough?: (at: number) => void;
+  /** Whether the hosting chat surface is visibly displayed (not hidden/collapsed). */
+  isViewVisible?: boolean;
   messages: ChatMessage[];
   /** Exact row owned by a rendered replacement error banner; otherwise keep its history card. */
   activeErrorClientId?: string | null;
@@ -3286,6 +3293,7 @@ export function MessageStream({
   simplifiedBotConversation = false,
   botUnreadBoundaryAt = null,
   onBotReadThrough,
+  isViewVisible = true,
   messages,
   activeErrorClientId = null,
   activeVoiceCallId = null,
@@ -5007,6 +5015,26 @@ export function MessageStream({
   // Restored history starts unfollowed. Initialize the indicator from the same
   // snapshot as the scroll gate: later input may correctly leave false unchanged.
   const [isNearBottom, setIsNearBottom] = useState<boolean>(() => isNearBottomRef.current);
+  const tailReadViewIdRef = useRef<string | null>(null);
+  if (tailReadViewIdRef.current === null) {
+    tailReadViewIdRef.current = allocateSessionTailViewId();
+  }
+  useLayoutEffect(() => {
+    if (!sessionId || !isViewVisible || !historyLoaded) return undefined;
+    const viewId = tailReadViewIdRef.current!;
+    setSessionTailReadState(sessionId, viewId, isNearBottomRef.current && !restoringRef.current);
+    return () => {
+      clearSessionTailReadState(sessionId, viewId);
+    };
+  }, [sessionId, isViewVisible, historyLoaded]);
+  useLayoutEffect(() => {
+    if (!sessionId || !isViewVisible || !historyLoaded) return;
+    setSessionTailReadState(
+      sessionId,
+      tailReadViewIdRef.current!,
+      isNearBottom && isNearBottomRef.current && !restoringRef.current,
+    );
+  }, [sessionId, isViewVisible, historyLoaded, isNearBottom]);
   const [unreadKeys, setUnreadKeys] = useState<ReadonlySet<string>>(NO_UNREAD_KEYS);
   const unreadCount = unreadKeys.size;
   // Only the rendered tail of a canonical Bot chat acknowledges replies. History

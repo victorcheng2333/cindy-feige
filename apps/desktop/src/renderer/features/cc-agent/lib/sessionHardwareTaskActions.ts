@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useConfirmTaskArchive } from '../hooks/useConfirmTaskArchive';
 import { loadActiveBoundScheduleNames } from '@/features/scheduler/lib/archiveScheduleWarning';
-import { useSessionRunningStatus } from '@/hooks/useSessionRunningStatus';
+import { useRunningSessionIds } from '@/hooks/useSessionRunningStatus';
 import type { Session } from '@/lib/ccAgent.types';
 import { createLogger } from '@/lib/logger';
 import * as sessionService from '@/lib/sessionService';
@@ -31,7 +31,7 @@ export function useSessionHardwareTaskActions({
   const { t } = useTranslation();
   const confirmTaskArchive = useConfirmTaskArchive();
   const { runSessionAction } = useSessionLifecycleActions();
-  const { runningSessionIds } = useSessionRunningStatus(session?.id);
+  const runningSessionIds = useRunningSessionIds();
   const sessionId = session?.id ?? null;
   const pinnedAt = session?.pinnedAt ?? null;
   const deviceLinkDeviceId = session?.deviceLinkDeviceId;

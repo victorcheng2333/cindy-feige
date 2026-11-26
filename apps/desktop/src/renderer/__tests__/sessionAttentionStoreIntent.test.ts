@@ -3,8 +3,20 @@
  * sessionAttentionStore 的 intent 语义:被动清除(默认)不允许吞掉 'error' 红角标,
  * 显式清除(explicit)可清任何 kind,并把 intent 随 IPC 桥接给 main。
  */
+import { createElement } from 'react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sharedTaskHostPeer } from '@cindy/device-link';
+
+import type { AgentIslandSessionActivity } from '../../shared/agentIsland';
+import { ActiveLocalCompletionAttentionSync } from '@/features/cc-agent/sidebar/ActiveLocalCompletionAttentionSync';
+import { __resetAgentIslandActivityForTests } from '@/state/agentIslandActivity';
+import { clearSessionScroll, saveSessionScroll } from '@/lib/sessionScrollStore';
+import {
+  __resetSessionTailReadStoreForTests,
+  clearSessionTailReadState,
+  setSessionTailReadState,
+} from '@/lib/sessionTailReadStore';
 
 import {
   addSessionAttention,
@@ -506,5 +518,205 @@ describe('clearSystemSessionAttention 的远程路由', () => {
     expect(hasSessionAttention('rs1')).toBe(false);
     expect(ipcClearMock).toHaveBeenCalledWith('rs1', 'passive');
     expect(deviceLinkInvokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ActiveLocalCompletionAttentionSync', () => {
+  // 测试价值:验证当前对话处于焦点且本机回复完成时，无需切走再切回即可自动消绿点，
+  // 且不误清后台其他对话、失焦状态、error/awaiting 或绕过远程会话的 sync 新鲜度门槛。
+  let activityListener: ((list: AgentIslandSessionActivity[]) => void) | undefined;
+
+  const makeIslandCompletedActivity = (sessionId: string): AgentIslandSessionActivity => ({
+    sessionId,
+    phase: 'completed',
+    compactDetail: 'Done',
+    currentActionSummary: '运行已正常结束',
+    attention: true,
+    startedAtMs: 1_000,
+    lastActivityAtMs: 2_000,
+    workflow: null,
+    turnGeneration: null,
+    gracefulStopState: 'none',
+    source: 'live',
+  });
+
+  beforeEach(() => {
+    activityListener = undefined;
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      notificationClearSessionAttention: ipcClearMock,
+      notificationMarkSessionAttention: ipcMarkMock,
+      deviceLink: { invoke: deviceLinkInvokeMock },
+      agentIsland: {
+        onSessionActivity: (cb: (list: AgentIslandSessionActivity[]) => void) => {
+          activityListener = cb;
+          return () => {};
+        },
+      },
+    };
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    cleanup();
+    __resetAgentIslandActivityForTests();
+    __resetSessionTailReadStoreForTests();
+    clearSessionScroll('local-a');
+    clearSessionScroll('local-b');
+    clearSessionScroll('local-c');
+    clearSessionAttentionMany(['local-a', 'local-b', 'local-c', 'rs-sync'], {
+      intent: 'explicit',
+    });
+    remoteProjectsStore.setDeviceSessions('dev1', 'Dev', []);
+    setRemoteReceiptDisplayReady('rs-sync', false);
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it('clears local done attention and island completed unread immediately when focused, leaving other sessions intact', () => {
+    addSessionAttention('local-a', 'done');
+    addSessionAttention('local-b', 'done');
+    ipcClearMock.mockClear();
+
+    render(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-a' }));
+
+    expect(hasSessionAttention('local-a')).toBe(false);
+    expect(hasSessionAttention('local-b')).toBe(true);
+    expect(ipcClearMock).toHaveBeenCalledWith('local-a', 'passive');
+
+    ipcClearMock.mockClear();
+    act(() => {
+      activityListener?.([makeIslandCompletedActivity('local-a')]);
+    });
+    expect(ipcClearMock).toHaveBeenCalledWith('local-a', 'passive');
+  });
+
+  it('keeps local done attention while blurred and clears it when window focus returns', () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    addSessionAttention('local-a', 'done');
+    ipcClearMock.mockClear();
+
+    render(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-a' }));
+    expect(hasSessionAttention('local-a')).toBe(true);
+    expect(ipcClearMock).not.toHaveBeenCalled();
+
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(hasSessionAttention('local-a')).toBe(false);
+    expect(ipcClearMock).toHaveBeenCalledWith('local-a', 'passive');
+  });
+
+  it('never clears error or awaiting attention on the active focused session', () => {
+    addSessionAttention('local-a', 'error');
+    addSessionAttention('local-b', 'awaiting');
+    ipcClearMock.mockClear();
+
+    const view = render(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-a' }));
+    expect(getSessionAttentionKind('local-a')).toBe('error');
+    expect(ipcClearMock).not.toHaveBeenCalled();
+
+    view.rerender(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-b' }));
+    expect(getSessionAttentionKind('local-b')).toBe('awaiting');
+    expect(ipcClearMock).not.toHaveBeenCalled();
+  });
+
+  it('does not bypass remote receipt freshness for remote sessions', () => {
+    remoteProjectsStore.setDeviceSessions('dev1', 'Dev', [
+      { id: 'rs-sync', deviceLinkDeviceId: 'dev1' } as never,
+    ]);
+    addSessionAttention('rs-sync', 'done');
+    deviceLinkInvokeMock.mockClear();
+
+    render(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'rs-sync' }));
+    expect(hasSessionAttention('rs-sync')).toBe(true);
+    expect(deviceLinkInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps local done attention, island unread, and schedule runs unread while scrolled up, clearing them once scrolled to bottom while focused', () => {
+    addSessionAttention('local-a', 'done');
+    setSessionTailReadState('local-a', 'view-1', false);
+    const markRunsRead = vi.fn();
+    ipcClearMock.mockClear();
+
+    render(
+      createElement(ActiveLocalCompletionAttentionSync, {
+        sessionId: 'local-a',
+        hasUnreadScheduleRun: true,
+        onMarkAutomationRunsRead: markRunsRead,
+      }),
+    );
+
+    expect(hasSessionAttention('local-a')).toBe(true);
+    expect(ipcClearMock).not.toHaveBeenCalled();
+    expect(markRunsRead).not.toHaveBeenCalled();
+
+    act(() => {
+      activityListener?.([makeIslandCompletedActivity('local-a')]);
+    });
+    expect(ipcClearMock).not.toHaveBeenCalled();
+
+    // 如果在后台状态滑到底，仍须等到窗口聚焦才清。
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    act(() => {
+      setSessionTailReadState('local-a', 'view-1', true);
+    });
+    expect(hasSessionAttention('local-a')).toBe(true);
+    expect(ipcClearMock).not.toHaveBeenCalled();
+    expect(markRunsRead).not.toHaveBeenCalled();
+
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(hasSessionAttention('local-a')).toBe(false);
+    expect(ipcClearMock).toHaveBeenCalledWith('local-a', 'passive');
+    expect(markRunsRead).toHaveBeenCalledWith('local-a');
+  });
+
+  // 测试价值:验证「上滑看历史未读 → 切走保留未读 → 切回仍未贴底继续保留 → 点“新消息”跳到底立即消点且不影响其它未读会话」。
+  it('keeps unread dots when switching away from a scrolled-up session and clears only after returning and jumping to bottom', () => {
+    addSessionAttention('local-a', 'done');
+    addSessionAttention('local-c', 'done');
+    setSessionTailReadState('local-a', 'view-a', false);
+    ipcClearMock.mockClear();
+
+    const view = render(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-a' }));
+    expect(hasSessionAttention('local-a')).toBe(true);
+    expect(hasSessionAttention('local-c')).toBe(true);
+    expect(ipcClearMock).not.toHaveBeenCalled();
+
+    // 切到其他对话，local-a 卸载并落盘未贴底快照，未读小绿点仍须保留。
+    act(() => {
+      saveSessionScroll('local-a', {
+        windowAnchorKey: null,
+        viewportTopKey: 'm1',
+        offset: 0,
+        isNearBottom: false,
+      });
+      clearSessionTailReadState('local-a', 'view-a');
+      view.rerender(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-b' }));
+    });
+    expect(hasSessionAttention('local-a')).toBe(true);
+    expect(hasSessionAttention('local-c')).toBe(true);
+    expect(ipcClearMock).not.toHaveBeenCalled();
+
+    // 切回 local-a 时按上滑历史位置恢复，仍保持未读。
+    act(() => {
+      setSessionTailReadState('local-a', 'view-a2', false);
+      view.rerender(createElement(ActiveLocalCompletionAttentionSync, { sessionId: 'local-a' }));
+    });
+    expect(hasSessionAttention('local-a')).toBe(true);
+    expect(hasSessionAttention('local-c')).toBe(true);
+    expect(ipcClearMock).not.toHaveBeenCalled();
+
+    // 点击“新消息”或跳到最下面贴底后，当前会话立即消点，其它对话未读保留。
+    act(() => {
+      setSessionTailReadState('local-a', 'view-a2', true);
+    });
+    expect(hasSessionAttention('local-a')).toBe(false);
+    expect(hasSessionAttention('local-c')).toBe(true);
+    expect(ipcClearMock).toHaveBeenCalledWith('local-a', 'passive');
   });
 });

@@ -65,6 +65,14 @@ import {
   ensureAgentIslandActivitySubscribed,
   isSessionCompletionHeldByAgentIsland,
 } from '@/state/agentIslandActivity';
+import { isSessionScrolledUpInHistory } from '@/lib/sessionTailReadStore';
+
+function isActivelyReadingSessionTail(
+  sessionId: string,
+  activeSessionId: string | undefined,
+): boolean {
+  return sessionId === activeSessionId && !isSessionScrolledUpInHistory(sessionId);
+}
 
 // Codex maker 化后, codex session 也走 makerChatStore;
 // 不再需要双 store 合并 —— 直接订阅 makerChatStore 即可。
@@ -155,6 +163,16 @@ interface UseSessionRunningStatusOptions {
       | { inputHandoff: true; inputHandoffRequestId?: string; alertEventId?: string }
       | { alertEventId: string },
   ) => void;
+}
+
+/** Read-only subscription to currently running session IDs (no notification or attention side effects). */
+export function useRunningSessionIds(): ReadonlySet<string> {
+  const statusMap = useSyncExternalStore(
+    makerChatStore.subscribeAll,
+    makerChatStore.getRunningSnapshot,
+    makerChatStore.getRunningSnapshot,
+  );
+  return useMemo(() => deriveRunningSet(statusMap), [statusMap]);
 }
 
 /**
@@ -361,7 +379,7 @@ export function useSessionRunningStatus(
         // 状态判断更 robust。存量 pending 若存在(理论上不会:起新 turn 就清了),覆盖掉。
         const existing = pendingDoneTimersRef.current.get(sessionId);
         if (existing !== undefined) clearTimeout(existing);
-        const wasActiveAtCompletion = sessionId === activeSessionId;
+        const wasActiveAtCompletion = isActivelyReadingSessionTail(sessionId, activeSessionId);
         const timer = setTimeout(() => {
           pendingDoneTimersRef.current.delete(sessionId);
           // Recovery may have been projected after this timer was scheduled.
@@ -384,7 +402,7 @@ export function useSessionRunningStatus(
           // section 3 在 section 2 之后跑、awaiting 天然覆盖 done;debounce 把 done 推迟到
           // section 3 之后,必须显式让 awaiting 优先。done 系统通知仍照常发(与原行为一致)。
           const cur = runningSnapshot.get(sessionId);
-          const isActive = sessionId === activeSessionIdRef.current;
+          const isActive = isActivelyReadingSessionTail(sessionId, activeSessionIdRef.current);
           const isRunning = cur?.isRunning === true;
           // debounce 期间下一轮可能在真正进入 running 前失败并写入 terminal error。
           // error 红点由现有告警 owner 投影；这里必须避免旧 run 的延迟 done 把它
@@ -556,10 +574,16 @@ export function useSessionRunningStatus(
     };
   }, []);
 
-  // When the active session changes, clear its notification if any.
+  // When the active session changes, clear its notification if any (unless scrolled up in history).
   // Navigation can precede history and error rendering, so it uses a passive clear.
   useEffect(() => {
     if (!activeSessionId) return;
+    if (isSessionScrolledUpInHistory(activeSessionId)) {
+      if (getSessionAttentionKind(activeSessionId) === 'awaiting') {
+        clearSessionAttention(activeSessionId);
+      }
+      return;
+    }
     clearSessionAttention(activeSessionId);
     // 完成后的 debounce 窗口内用户已经点进任务,说明这次完成已被消费。
     // 直接取消待落地的 done,避免用户很快切走后定时器再补橙点并抬升排序。

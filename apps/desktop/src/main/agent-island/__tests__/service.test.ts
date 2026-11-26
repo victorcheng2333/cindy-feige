@@ -7938,3 +7938,82 @@ it('preserves async pushes across Stop until their own settlement', async () => 
     vi.mocked(retireReadMobileNotifications).mockReset();
   }
 });
+
+describe('visible-session retention across redundant focus and enable sync', () => {
+  // 测试价值:验证同一窗口已聚焦状态下 setEnabled(true) / 冗余 setAppFocused(true, win) /
+  // blur→focus 期间 renderer 先到 setVisibleSession 时不抹掉可见会话，切到另一内容窗才清掉旧窗会话。
+  // 覆盖缺口:原有 service.test.ts 仅覆盖 blur→focus 丢旧会话，未覆盖同窗冗余同步和切窗清空。
+  it('preserves visibleSessionIds for the same focused window, clears on switch to another content window, and handles renderer-first focus', async () => {
+    const { AgentIslandService } = await import('../service.js');
+    const publish = vi.fn((state: AgentIslandDisplayState, frameOrFrames: AgentIslandNativeFrame | AgentIslandNativeFrame[]) => {
+      void state;
+      void frameOrFrames;
+      return true;
+    });
+    const firstWindow = {
+      isDestroyed: () => false,
+      isFocused: () => true,
+      isMinimizable: () => true,
+    } as unknown as BrowserWindow;
+    const secondWindow = {
+      isDestroyed: () => false,
+      isFocused: () => false,
+      isMinimizable: () => true,
+    } as unknown as BrowserWindow;
+    markAppContentWindow(firstWindow);
+    markAppContentWindow(secondWindow);
+    mocks.browserWindowGetAllWindows.mockReturnValue([firstWindow, secondWindow]);
+
+    const service = new AgentIslandService({
+      getMainWindow: () => firstWindow,
+      nativeHost: { failed: false, publish },
+    });
+    service.registerIpc();
+    service.setEnabled(false);
+    service.setAppFocused(true, firstWindow);
+
+    mocks.browserWindowFromWebContents.mockReturnValue(firstWindow);
+    await registeredIpcHandler(AGENT_ISLAND_SET_VISIBLE_SESSION_CHANNEL)(
+      { sender: {} },
+      'active-session',
+    );
+
+    // (a) Late renderer settings sync (setEnabled(true)) and redundant setAppFocused(true, firstWindow)
+    // must keep 'active-session' visible and smart-suppressed.
+    service.setEnabled(true);
+    service.setAppFocused(true, firstWindow);
+    service.handleUserPrompt({ sessionId: 'active-session', agentKind: 'codex' }, 'prompt');
+    service.handleAgentEvent({ sessionId: 'active-session', agentKind: 'codex' }, doneEvent());
+    expect(publish.mock.calls.at(-1)?.[0].pillSnapshot).toMatchObject({
+      unreadCompletedCount: 0,
+      deferredRevealCount: 0,
+    });
+
+    // (b) Focusing a different content window clears the first window's visibleSessionIds so
+    // a subsequent completion in 'active-session' surfaces as unread.
+    (firstWindow as unknown as { isFocused: () => boolean }).isFocused = () => false;
+    (secondWindow as unknown as { isFocused: () => boolean }).isFocused = () => true;
+    service.setAppFocused(true, secondWindow);
+    service.handleUserPrompt({ sessionId: 'active-session', agentKind: 'codex' }, 'prompt-2');
+    service.handleAgentEvent({ sessionId: 'active-session', agentKind: 'codex' }, doneEvent());
+    expect(publish.mock.calls.at(-1)?.[0].pillSnapshot).toMatchObject({
+      unreadCompletedCount: 1,
+    });
+
+    // (c) After blur, if renderer on the newly focused window reports setVisibleSession before
+    // main's setAppFocused(true, secondWindow) arrives, visibleSessionIds is preserved.
+    service.setAppFocused(false);
+    mocks.browserWindowFromWebContents.mockReturnValue(secondWindow);
+    await registeredIpcHandler(AGENT_ISLAND_SET_VISIBLE_SESSION_CHANNEL)(
+      { sender: {} },
+      'second-session',
+    );
+    service.setAppFocused(true, secondWindow);
+    service.handleUserPrompt({ sessionId: 'second-session', agentKind: 'codex' }, 'prompt-3');
+    service.handleAgentEvent({ sessionId: 'second-session', agentKind: 'codex' }, doneEvent());
+    expect(publish.mock.calls.at(-1)?.[0].pillSnapshot).toMatchObject({
+      unreadCompletedCount: 1, // only 'active-session' from (b) remains unread; 'second-session' is suppressed
+    });
+    expect(service.getSessionActivitySnapshot('second-session')?.attention).toBe(false);
+  });
+});

@@ -45,7 +45,7 @@ import {
 } from '@/lib/worktreeRemovalWarning';
 import { useCCSessions } from '@/hooks/useCCSessions';
 import { useProjectPickerOptions } from '@/hooks/useProjectPickerOptions';
-import { useSessionRunningStatus } from '@/hooks/useSessionRunningStatus';
+import { useRunningSessionIds } from '@/hooks/useSessionRunningStatus';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { useConfirmTaskArchive } from './hooks/useConfirmTaskArchive';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -153,7 +153,7 @@ export function SessionContentHeader({
   // active 桶里的会话。
   const session = routeSessionById.get(sessionProp.id) ?? sessionProp;
   const sharedGuest = isSharedTaskPeer(session.deviceLinkDeviceId ?? '');
-  const { runningSessionIds } = useSessionRunningStatus(session.id);
+  const runningSessionIds = useRunningSessionIds();
   // worktree 归属取 store 镜像（与 main 的 worktreeStore 同源）：回收后仍留历史路径、
   // 或存量半移动行的会话，不能靠 cwd 猜归属。
   const { confirm: confirmDialog } = useConfirmDialog();

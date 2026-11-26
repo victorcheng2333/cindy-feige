@@ -119,7 +119,7 @@ import {
   isDirtyWorktree,
   resolveWorktreeRemovalPreflight,
 } from '@/lib/worktreeRemovalWarning';
-import { useSessionRunningStatus } from '@/hooks/useSessionRunningStatus';
+import { useRunningSessionIds, useSessionRunningStatus } from '@/hooks/useSessionRunningStatus';
 import { useAttachedSessionIds } from '@/hooks/useAttachedSessionIds';
 import {
   BOT_GROUP_LANE_SESSION,
@@ -136,6 +136,7 @@ import {
   clearSystemSessionAttention,
   useSessionAttentionSnapshot,
 } from '@/lib/sessionAttentionStore';
+import { isSessionScrolledUpInHistory } from '@/lib/sessionTailReadStore';
 import {
   findOrcaLeadSessionIdForWorker,
   formatOrcaWorkerNotificationTitle,
@@ -244,9 +245,9 @@ import {
 } from '@/features/device-link/remoteProjectsStore';
 import {
   getRemoteSessionActivity,
-  useRemoteSessionActivity,
   useRemoteSessionActivityRevision,
 } from '@/features/device-link/remoteSessionActivityStore';
+import { ActiveLocalCompletionAttentionSync } from './sidebar/ActiveLocalCompletionAttentionSync';
 import { resolveCollapsedProjectAttentionTone } from './sidebar/projectCollapsedAttention';
 import { WorkdirBrowseSidebar } from './workdir-browse/WorkdirBrowseSidebar';
 import {
@@ -866,7 +867,6 @@ export function CCAgentSidebarUpper() {
               hiddenProjectKeys={hiddenProjectKeys}
               sessions={visibleSessionsWithRemote}
               activeSessionId={activeSessionId}
-              attentionSessionId={activeSessionId ?? filesSessionId ?? viewedBotSessionId}
               notifications={railNotifications}
               manualPinnedOrder={filter.manualPinnedOrder}
               pinnedSortBy={filter.pinnedSortBy}
@@ -2566,37 +2566,13 @@ function ExpandedView({
     const remote = remoteProjectSessions.find((s) => s.id === viewedSessionId);
     return `${deviceId}:${remote?.deviceLinkConnectionStatus ?? 'unknown'}`;
   }, [viewedSessionId, remoteProjectSessions]);
-  // 注视中完成的远程 turn:被控端推来 attention=true 的活动包,但上面的 key 只含
-  // 设备与连接态,不会重跑回执 effect。触发条件用**活动签名变化且 attention=true**
-  // (与手机端 / 咽喉重定基同语义):仅凭 false→true 布尔沿会漏掉「attention 一直为
-  // true 但内容更新」的场景(前一次收尾包丢失 / 延迟时,新 completed/error/
-  // needs-interaction 到来布尔值不变)。attention 回落不计——那通常是本回执生效后
-  // relay 推回的收尾包,重发只是无谓 invoke。
-  const activeRemoteActivity = useRemoteSessionActivity(
-    viewedSessionId ?? '',
-    getSessionDeviceId(viewedSessionId ?? ''),
-  );
-  const activeRemoteAttention = activeRemoteActivity?.attention === true;
-  const activeRemoteActivitySig = activeRemoteActivity
-    ? `${activeRemoteActivity.phase}|${activeRemoteActivity.attention === true ? 1 : 0}|${activeRemoteActivity.interactionKind ?? ''}|${activeRemoteActivity.compactDetail}`
-    : 'none';
-  const [activeRemoteAttentionRev, setActiveRemoteAttentionRev] = useState(0);
-  const prevActiveRemoteActivitySigRef = useRef<string | null>(null);
   useEffect(() => {
-    const prevSig = prevActiveRemoteActivitySigRef.current ?? activeRemoteActivitySig;
-    if (activeRemoteAttention && activeRemoteActivitySig !== prevSig) {
-      setActiveRemoteAttentionRev((rev) => rev + 1);
-    }
-    prevActiveRemoteActivitySigRef.current = activeRemoteActivitySig;
-  }, [activeRemoteActivitySig, activeRemoteAttention]);
-  useEffect(() => {
-    if (!viewedSessionId) return;
+    if (!viewedSessionId || isSessionScrolledUpInHistory(viewedSessionId)) return;
     markAutomationSessionRunsRead(viewedSessionId);
     clearSystemSessionAttention(viewedSessionId);
   }, [
     viewedSessionId,
     activeSessionRemoteReceiptKey,
-    activeRemoteAttentionRev,
     markAutomationSessionRunsRead,
   ]);
 
@@ -2606,11 +2582,13 @@ function ExpandedView({
   useEffect(() => {
     if (!viewedSessionId) return;
     const handler = () => {
+      if (isSessionScrolledUpInHistory(viewedSessionId)) return;
+      markAutomationSessionRunsRead(viewedSessionId);
       clearSystemSessionAttention(viewedSessionId);
     };
     window.addEventListener('focus', handler);
     return () => window.removeEventListener('focus', handler);
-  }, [viewedSessionId]);
+  }, [viewedSessionId, markAutomationSessionRunsRead]);
 
   const handleSessionClick = useCallback(
     async (id: string, modifiers?: SessionClickModifiers) => {
@@ -2677,10 +2655,12 @@ function ExpandedView({
           (session) => getRemoteSessionActivity(session.id, session.deviceLinkDeviceId)?.phase,
         ),
       );
-      // F-SB-7: Clear done notification on click
-      clearNotification(id);
-      markAutomationSessionRunsRead(id);
-      clearSystemSessionAttention(id);
+      // F-SB-7: Clear done notification on click unless the user's reading position is scrolled up in history.
+      if (!isSessionScrolledUpInHistory(id)) {
+        clearNotification(id);
+        markAutomationSessionRunsRead(id);
+        clearSystemSessionAttention(id);
+      }
       if (target?.orcaRole === 'lead') {
         const worker = pendingOrcaWorkerQuestion(id);
         if (worker) {
@@ -4064,6 +4044,11 @@ function ExpandedView({
         onSettings={setSettingsProject}
       />
       {deleteScheduleDialog}
+      <ActiveLocalCompletionAttentionSync
+        sessionId={viewedSessionId}
+        hasUnreadScheduleRun={Boolean(viewedSessionId && unreadScheduleSessionIds.has(viewedSessionId))}
+        onMarkAutomationRunsRead={markAutomationSessionRunsRead}
+      />
     </>
   );
 }
@@ -4079,8 +4064,6 @@ interface CollapsedProps {
   /** rail 数据源——全量可见 sessions(本地 + 远程镜像合并),RailNav 内部切片。 */
   sessions: Session[];
   activeSessionId: string | undefined;
-  /** 与 ExpandedView 同口径的「注视中」会话(含正在看的伙伴会话),只用于运行状态 hook。 */
-  attentionSessionId: string | undefined;
   /** 未读集 = attention 快照 ∪ 定时任务未读运行——段瓷砖/面板行角标依据。 */
   notifications: ReadonlySet<string>;
   /** 与展开态共用的置顶顺序(置顶面板同序)。 */
@@ -4103,7 +4086,6 @@ function CollapsedView({
   hiddenProjectKeys,
   sessions,
   activeSessionId,
-  attentionSessionId,
   notifications,
   manualPinnedOrder,
   pinnedSortBy,
@@ -4125,11 +4107,8 @@ function CollapsedView({
     [switcherDevices],
   );
   const { t } = useTranslation();
-  // 只读 running 快照——**不传 options**：通知副作用（onSessionDone 等）由
-  // ExpandedView 的实例独家持有，两个视图常驻挂载，双回调会重复发桌面通知。
-  // 「注视中」与 ExpandedView 同口径:该 hook 即使不传回调也会写未读,伙伴页上
-  // 正在看的伙伴会话不能被这个常驻实例当成后台会话记未读。
-  const { runningSessionIds } = useSessionRunningStatus(attentionSessionId);
+  // 只读 running 快照：通知与未读写入由 ExpandedView 独家持有。
+  const runningSessionIds = useRunningSessionIds();
   // 瓷砖未读点颜色按 attention kind(done 绿 / awaiting TapTap 蓝 / error 红);组件层
   // 取一次,renderItem 里查表(renderItem 非组件,不能 per-item 用 hook)。
   // Lead 的 kind 已并入其 Worker 的出错 / 等待确认(notifications 由上层同口径合并)。

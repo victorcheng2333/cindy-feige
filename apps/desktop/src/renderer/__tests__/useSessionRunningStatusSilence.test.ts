@@ -12,7 +12,19 @@ import {
   scheduleClearSilencedRun,
 } from '@/lib/silencedSessionDoneStore';
 import { markSessionStarting, resetSessionStartingStoreForTests } from '@/lib/sessionStartingStore';
-import { sessionAlertEventId, useSessionRunningStatus } from '@/hooks/useSessionRunningStatus';
+import {
+  clearSessionScroll,
+  saveSessionScroll,
+} from '@/lib/sessionScrollStore';
+import {
+  __resetSessionTailReadStoreForTests,
+  setSessionTailReadState,
+} from '@/lib/sessionTailReadStore';
+import {
+  sessionAlertEventId,
+  useRunningSessionIds,
+  useSessionRunningStatus,
+} from '@/hooks/useSessionRunningStatus';
 import { setDataOwnerGeneration } from '@/contexts/dataOwnerGeneration';
 import { noteSessionTurnStartedForAlerts, refreshPendingAlerts } from '@/hooks/usePendingAlertAttention';
 import {
@@ -115,6 +127,9 @@ describe('useSessionRunningStatus silenced completion handling', () => {
     storeMock.attentionClearedListeners.clear();
     resetSilencedSessionDoneStoreForTests();
     resetSessionStartingStoreForTests();
+    __resetSessionTailReadStoreForTests();
+    clearSessionScroll('session-scrolled-up');
+    clearSessionScroll('session-restored');
     setDataOwnerGeneration(null);
     vi.clearAllMocks();
     vi.restoreAllMocks();
@@ -1101,5 +1116,80 @@ describe('useSessionRunningStatus stale error dot', () => {
     });
     expect(addSessionAttention).not.toHaveBeenCalled();
     expect(onSessionDone).not.toHaveBeenCalled();
+  });
+
+  // 测试价值:验证只读 useRunningSessionIds 返回实时 running 集合且在 running→done 时不写入/清除全局 attention。
+  // 覆盖缺口:拆分只读 hook 前，辅实例会用自身 sessionId 覆盖主对话并给正在看的会话挂 'done' 绿点。
+  it('useRunningSessionIds tracks running state without emitting or clearing attention', async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useRunningSessionIds());
+    await emitSnapshot(new Map([['active-main', status(true)]]));
+    expect(result.current.has('active-main')).toBe(true);
+
+    await emitSnapshot(new Map([['active-main', status(false)]]));
+    expect(result.current.has('active-main')).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(addSessionAttention).not.toHaveBeenCalled();
+    expect(clearSessionAttention).not.toHaveBeenCalled();
+  });
+
+  // 测试价值:验证当前对话上滑查看历史时，完成态仍写入 'done' 绿点；若防抖期内滑回底部则取消。
+  it('marks done attention when active session finishes while scrolled up in history, unless scrolled back down during debounce', async () => {
+    vi.useFakeTimers();
+    const onSessionDone = vi.fn();
+    setSessionTailReadState('session-scrolled-up', 'view-1', false);
+    renderHook(() => useSessionRunningStatus('session-scrolled-up', { onSessionDone }));
+
+    await emitSnapshot(new Map([['session-scrolled-up', status(true)]]));
+    await emitSnapshot(new Map([['session-scrolled-up', status(false)]]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(addSessionAttention).toHaveBeenCalledExactlyOnceWith('session-scrolled-up', 'done');
+    expect(onSessionDone).toHaveBeenCalledExactlyOnceWith('session-scrolled-up');
+
+    vi.mocked(addSessionAttention).mockClear();
+    onSessionDone.mockClear();
+
+    await emitSnapshot(new Map([['session-scrolled-up', status(true)]]));
+    await emitSnapshot(new Map([['session-scrolled-up', status(false)]]));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    setSessionTailReadState('session-scrolled-up', 'view-1', true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(addSessionAttention).not.toHaveBeenCalledWith('session-scrolled-up', 'done');
+    expect(onSessionDone).toHaveBeenCalledExactlyOnceWith('session-scrolled-up');
+  });
+
+  it('does not passively clear done attention on navigation to a scrolled-up session while still clearing awaiting', () => {
+    saveSessionScroll('session-restored', {
+      windowAnchorKey: null,
+      viewportTopKey: 'm1',
+      offset: 0,
+      isNearBottom: false,
+    });
+    vi.mocked(getSessionAttentionKind).mockReturnValue('done');
+    const initialProps: { activeSessionId: string | undefined } = {
+      activeSessionId: undefined,
+    };
+    const { rerender } = renderHook(
+      ({ activeSessionId }: { activeSessionId: string | undefined }) =>
+        useSessionRunningStatus(activeSessionId),
+      { initialProps },
+    );
+
+    rerender({ activeSessionId: 'session-restored' });
+    expect(clearSessionAttention).not.toHaveBeenCalled();
+
+    vi.mocked(getSessionAttentionKind).mockReturnValue('awaiting');
+    rerender({ activeSessionId: undefined });
+    rerender({ activeSessionId: 'session-restored' });
+    expect(clearSessionAttention).toHaveBeenCalledWith('session-restored');
+    vi.mocked(getSessionAttentionKind).mockReturnValue(undefined);
   });
 });

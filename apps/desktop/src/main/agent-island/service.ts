@@ -498,6 +498,7 @@ export class AgentIslandService {
     request: Extract<InteractionRequest, { kind: 'permission' }>;
   }>();
   private readonly sessionActivityRelay: SessionActivityRelay;
+  private visibleSessionWindow: BrowserWindow | null = null;
   private permissionResolver: ((requestId: string, decision: AgentIslandPermissionDecision) => boolean) | null = null;
   private shouldDeferCompletion: ((sessionId: string) => boolean) | null = null;
   private layoutPreferenceWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -702,7 +703,12 @@ export class AgentIslandService {
         return { ok: true };
       }
       const now = Date.now();
-      let changed = setAgentIslandVisibleSession(this.state, nextSessionId, now);
+      this.visibleSessionWindow = nextSessionId ? sourceWindow : null;
+      let changed = false;
+      if (sourceWindow.isFocused() && !this.state.appFocused) {
+        changed = setAgentIslandAppFocused(this.state, true, now) || changed;
+      }
+      changed = setAgentIslandVisibleSession(this.state, nextSessionId, now) || changed;
       for (const visibleSessionId of getVisibleSessionIdsForReadAck(nextSessionId)) {
         // passive:仅凭「路由停在该会话 + 窗口聚焦」不足以证明用户看到了报错,
         // 未读 error 会话在 state 层对被动 ack 免疫(见 acknowledgeAgentIslandSessionRead)。
@@ -1098,6 +1104,7 @@ export class AgentIslandService {
     this.companionChats.clear();
     this.publishAttentionCount(0);
     this.islandEntryAlert = null;
+    this.visibleSessionWindow = null;
     this.emitSessionActivityTransitions([], Date.now());
     this.metadataCache.clear();
     this.metadataLoading.clear();
@@ -1141,22 +1148,42 @@ export class AgentIslandService {
     this.notifySessionActivityConsumer([]);
   }
 
-  setAppFocused(focused: boolean): void {
+  setAppFocused(focused: boolean, focusedWindow?: BrowserWindow | null): void {
     const now = Date.now();
-    if (focused) {
-      // Window focus can arrive before the focused renderer reports its route.
-      // Drop the previous focused window's sessions so app focus cannot
-      // smart-suppress a completion for a session the user is no longer viewing.
-      setAgentIslandVisibleSession(this.state, null, now);
-    }
-    setAgentIslandAppFocused(this.state, focused, now);
+    const activeWindow = focused
+      ? (focusedWindow !== undefined
+          ? focusedWindow
+          : BrowserWindow.getAllWindows().find((win) => isFocusedAppContentWindow(win)) ?? null)
+      : null;
+    this.applyAppFocusState(focused, activeWindow, now);
     this.publish();
   }
 
   private syncAppContentFocusState(now: number): void {
-    const focused = BrowserWindow.getAllWindows().some((win) => isFocusedAppContentWindow(win));
-    if (focused) {
-      setAgentIslandVisibleSession(this.state, null, now);
+    const focusedWindow = BrowserWindow.getAllWindows().find((win) => isFocusedAppContentWindow(win)) ?? null;
+    this.applyAppFocusState(focusedWindow !== null, focusedWindow, now);
+  }
+
+  private applyAppFocusState(
+    focused: boolean,
+    focusedWindow: BrowserWindow | null,
+    now: number,
+  ): void {
+    const wasFocused = this.state.appFocused;
+    if (!focused) {
+      this.visibleSessionWindow = null;
+    } else {
+      const sameVisibleWindow =
+        this.visibleSessionWindow !== null &&
+        focusedWindow !== null &&
+        focusedWindow === this.visibleSessionWindow;
+      // Preserve the current window's visible sessions across redundant focus syncs (such as
+      // settings sync or non-content popups); clear only when focus enters from blur or switches
+      // to a different content window so another window's session cannot stay suppressed.
+      if (!sameVisibleWindow && (!wasFocused || focusedWindow !== null)) {
+        setAgentIslandVisibleSession(this.state, null, now);
+        this.visibleSessionWindow = null;
+      }
     }
     setAgentIslandAppFocused(this.state, focused, now);
   }

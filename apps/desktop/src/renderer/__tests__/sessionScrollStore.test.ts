@@ -10,6 +10,13 @@ import {
   type SessionScrollSnapshot,
 } from '../lib/sessionScrollStore';
 import {
+  __resetSessionTailReadStoreForTests,
+  allocateSessionTailViewId,
+  clearSessionTailReadState,
+  isSessionScrolledUpInHistory,
+  setSessionTailReadState,
+} from '../lib/sessionTailReadStore';
+import {
   decideAutoFillAction,
   decideUserIntentFillAction,
   MAX_AUTO_LOAD_ATTEMPTS,
@@ -32,6 +39,7 @@ const bottomSnapshot: SessionScrollSnapshot = {
 afterEach(() => {
   clearSessionScroll(SESSION_A);
   clearSessionScroll(SESSION_B);
+  __resetSessionTailReadStoreForTests();
 });
 
 describe('session automatic history load memory', () => {
@@ -126,5 +134,37 @@ describe('session automatic history load memory', () => {
 
     expect(readSessionScroll(SESSION_A)).toBeUndefined();
     expect(restoreSessionAutomaticHistoryLoadAttempts(SESSION_A, MAX_AUTO_LOAD_ATTEMPTS)).toBe(0);
+  });
+});
+
+describe('sessionTailReadStore', () => {
+  // 测试价值:验证实时视图挂载、多视图聚合与切离后快照回退的组合规则。
+  it('falls back to persisted scroll snapshot when unmounted and honors live multi-view bottom state', () => {
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(false);
+
+    saveSessionScroll(SESSION_A, {
+      ...bottomSnapshot,
+      isNearBottom: false,
+    });
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(true);
+
+    const view1 = allocateSessionTailViewId();
+    const view2 = allocateSessionTailViewId();
+    setSessionTailReadState(SESSION_A, view1, false);
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(true);
+
+    // 任意可见视图贴底即视为在读最新回复。
+    setSessionTailReadState(SESSION_A, view2, true);
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(false);
+
+    // 第二个视图离开或隐藏后，重新按首个上滑视图判定；全数清理后回退至快照。
+    clearSessionTailReadState(SESSION_A, view2);
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(true);
+
+    clearSessionTailReadState(SESSION_A, view1);
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(true);
+
+    saveSessionScroll(SESSION_A, bottomSnapshot);
+    expect(isSessionScrolledUpInHistory(SESSION_A)).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ import { useRemoteProjectSessions } from '@/features/device-link/remoteProjectsS
 import { cn } from '@/lib/utils';
 import { CCAgentSessionView } from './CCAgentSessionView';
 import { isAgentIslandSupported } from '@/hooks/useAgentIslandSettings';
+import { useIsSessionScrolledUpInHistory } from '@/lib/sessionTailReadStore';
 import { useStopOrcaCollabWithoutNavigation } from './hooks/useStopOrcaCollab';
 import {
   clearWorkerAttention,
@@ -93,10 +94,16 @@ export function OrcaSplitView({
     agent: orcaAgentLabel(workerAgentKind),
   });
   const attention = useWorkerAttentionSnapshot();
+  const isOrcaPaneScrolledUp = useIsSessionScrolledUpInHistory(
+    reportAgentIslandVisibility
+      ? (togglePane === 'worker' ? (workerSession?.id ?? null) : leadSessionId)
+      : null,
+  );
   const agentIslandVisibleSessionIds = useMemo(() => {
     if (!reportAgentIslandVisibility) return null;
+    if (isOrcaPaneScrolledUp) return null;
     return togglePane === 'worker' ? (workerSession?.id ?? null) : leadSessionId;
-  }, [leadSessionId, reportAgentIslandVisibility, togglePane, workerSession?.id]);
+  }, [isOrcaPaneScrolledUp, leadSessionId, reportAgentIslandVisibility, togglePane, workerSession?.id]);
 
   const syncAgentIslandVisibleSession = useCallback(() => {
     if (!isAgentIslandSupported()) return;

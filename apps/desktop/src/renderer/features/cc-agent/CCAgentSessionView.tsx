@@ -2,6 +2,8 @@ import { useSplitPaneFocus } from '@/features/cc-agent/splitPaneFocus';
 import { useProjectInfo } from './hooks/useProjectInfo';
 import { SessionProjectSettingsDialog } from './sidebar/SessionProjectMenuButton';
 import { acquireQueueEditLock, releaseQueueEditLock, type QueueEditLockOwner } from '@/components/new-chat/pendingQueueLocks';
+import { PendingIncomingRepliesBar } from '@/components/new-chat/PendingIncomingRepliesBar';
+import { isIncomingTaskQueueEntry } from '@/components/chat/pendingQueueItems';
 import { getLiveErrorMessageClientId } from '@/lib/makerChatStore';
 import { findErrorTailMessage } from '@/lib/errorTailMessage';
 import { PendingQueueBubble } from '@/components/chat/PendingQueueBubble';
@@ -123,7 +125,15 @@ import { cn, basename } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { createRemoteSessionSubscription } from '@/lib/remoteSessionSubscription';
 import { Spinner } from '@/components/ui/spinner';
-import { setRemoteReceiptDisplayReady } from '@/lib/sessionAttentionStore';
+import {
+  clearSystemSessionAttention,
+  getSessionAttentionKind,
+  setRemoteReceiptDisplayReady,
+} from '@/lib/sessionAttentionStore';
+import {
+  isSessionScrolledUpInHistory,
+  useIsSessionScrolledUpInHistory,
+} from '@/lib/sessionTailReadStore';
 import { shortSessionId } from '@/lib/sessionId';
 import { isQuotaExhaustedErrorMessage } from '@/utils/quotaError';
 import { isOverloadErrorMessage } from '@/utils/overloadError';
@@ -2037,8 +2047,11 @@ function CCAgentSessionContent({
   // 能力、登录检查与发送只看切到内置引擎的意图，与没有插件引擎时一致。
   const agentSwitchIntent = builtinAgentSwitchIntent(storedAgentSwitchIntent);
   const pluginEngineSwitchIntent = pluginEngineAgentSwitchIntent(storedAgentSwitchIntent);
+  const isScrolledUpInHistory = useIsSessionScrolledUpInHistory(sessionId);
   useBotIslandVisibleSession(
-    viewVisible && session?.id === sessionId && historyLoaded ? sessionId ?? null : null,
+    viewVisible && session?.id === sessionId && historyLoaded && !isScrolledUpInHistory
+      ? sessionId ?? null
+      : null,
     ownsWindowRoute && !isCompactRail && !isOrcaMode,
   );
   const clearQueueComposerEditDraft = useCallback(
@@ -3248,24 +3261,77 @@ function CCAgentSessionContent({
   // 复访(缓存残留)、首拉完成、以及对账失败后 focus / 重连 / turn-end 驱动的后续对账,
   // 都经同一代数机制自然收敛,无需在视图里区分场景。visible 翻 false 时收回放行,
   // 期间到达的回执重新挂起,重新可见后放行。
+  const remoteAttentionActiveRef = useRef(false);
+  remoteAttentionActiveRef.current = remoteSessionActivity?.attention === true;
   useEffect(() => {
     if (!sessionId || !remoteDeviceId || !historyLoaded || !viewVisible) return undefined;
-    setRemoteReceiptDisplayReady(sessionId, true);
-    void makerChatStore.reconcileRemoteMessages(sessionId).catch(() => undefined);
-    return () => setRemoteReceiptDisplayReady(sessionId, false);
+    let cancelled = false;
+    // Defer reconcile to a microtask so sibling route effects enqueue their passive receipt
+    // before noteRemoteSessionSyncStarted bumps startedGen, while still reconciling replies when
+    // scrolled up so the NewMessageIndicator updates.
+    queueMicrotask(() => {
+      if (!cancelled) void makerChatStore.reconcileRemoteMessages(sessionId).catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [historyLoaded, remoteDeviceId, sessionId, viewVisible]);
+  const prevTailScrollRef = useRef<{
+    sessionId: string | undefined;
+    scrolledUp: boolean;
+  }>({ sessionId, scrolledUp: isScrolledUpInHistory });
+  useEffect(() => {
+    const prev = prevTailScrollRef.current;
+    prevTailScrollRef.current = { sessionId, scrolledUp: isScrolledUpInHistory };
+    if (!sessionId || !remoteDeviceId || !historyLoaded || !viewVisible || isScrolledUpInHistory) {
+      return undefined;
+    }
+    let cancelled = false;
+    setRemoteReceiptDisplayReady(sessionId, true);
+    if (
+      prev.sessionId === sessionId
+      && prev.scrolledUp
+      && (remoteAttentionActiveRef.current || getSessionAttentionKind(sessionId) === 'done')
+      && document.visibilityState === 'visible'
+      && document.hasFocus()
+    ) {
+      // Scrolled back to the bottom while holding unread attention: enqueue passive receipt
+      // synchronously before a fresh reconcile so releaseGen === startedGen + 1.
+      clearSystemSessionAttention(sessionId, 'passive');
+      queueMicrotask(() => {
+        if (!cancelled) void makerChatStore.reconcileRemoteMessages(sessionId).catch(() => undefined);
+      });
+    }
+    return () => {
+      cancelled = true;
+      setRemoteReceiptDisplayReady(sessionId, false);
+    };
+  }, [historyLoaded, isScrolledUpInHistory, remoteDeviceId, sessionId, viewVisible]);
   // 远程会话已打开并可见时，若 sessions topic 的 attention=true 晚于重 topic 的 turn-end
-  // 对账到达，CCAgentSidebarUpper 入队的 passive 回执会要求新一轮 sync 代。这里补一次对账，
-  // 防止回执无限挂起导致小绿点在多端残留（与手机端 useSessionActivityInvalidation 对齐）。
+  // 对账到达，在这里同步先入队 passive 回执再补对账（保证 releaseGen === startedGen + 1），
+  // 防止两轮渲染拆开导致 releaseGen 比对账代数高 1 而无限挂起。
   const remoteAttentionVisibleSig = remoteSessionActivity?.attention === true
     ? `${remoteSessionActivity.phase}|1|${remoteSessionActivity.interactionKind ?? ''}|${remoteSessionActivity.compactDetail}`
     : 'none';
   const prevRemoteAttentionVisibleSigRef = useRef<string | null>(null);
   useEffect(() => {
-    const prevSig = prevRemoteAttentionVisibleSigRef.current;
-    prevRemoteAttentionVisibleSigRef.current = remoteAttentionVisibleSig;
+    const key = sessionId ? `${sessionId}:${remoteAttentionVisibleSig}` : null;
+    const prevKey = prevRemoteAttentionVisibleSigRef.current;
+    prevRemoteAttentionVisibleSigRef.current = key;
     if (!sessionId || !remoteDeviceId || !historyLoaded || !viewVisible) return;
-    if (remoteAttentionVisibleSig === 'none' || prevSig === null || remoteAttentionVisibleSig === prevSig) return;
+    if (
+      remoteAttentionVisibleSig === 'none'
+      || prevKey === null
+      || !prevKey.startsWith(`${sessionId}:`)
+      || key === prevKey
+    ) return;
+    if (
+      !isSessionScrolledUpInHistory(sessionId)
+      && document.visibilityState === 'visible'
+      && document.hasFocus()
+    ) {
+      clearSystemSessionAttention(sessionId, 'passive');
+    }
     void makerChatStore.reconcileRemoteMessages(sessionId).catch(() => undefined);
   }, [historyLoaded, remoteAttentionVisibleSig, remoteDeviceId, sessionId, viewVisible]);
   // worktree 创建过程中禁用 ChatInput,防止用户在 worktree 还没就绪时继续派发消息。
@@ -6061,7 +6127,14 @@ function CCAgentSessionContent({
   const openVoiceTask = useCallback((clientId: string) => {
     if (sessionId) requestChatTaskFocus(sessionId, clientId);
   }, [sessionId]);
-  const pendingMessages = useMemo(() => pendingQueue.map((entry) => entry.chatMessage), [pendingQueue]);
+  const incomingQueueEntries = useMemo(
+    () => pendingQueue.filter((entry) => isIncomingTaskQueueEntry(entry)),
+    [pendingQueue],
+  );
+  const pendingMessages = useMemo(
+    () => pendingQueue.filter((entry) => !isIncomingTaskQueueEntry(entry)).map((entry) => entry.chatMessage),
+    [pendingQueue],
+  );
   const renderPendingMessage = (message: ChatMessage, pluginUi: import('@/cindy-brain/PluginUiContributions').PluginUiMessageCandidates) => {
     const index = pendingQueue.findIndex((entry) => entry.clientId === message.clientId);
     const entry = pendingQueue[index];
@@ -6299,6 +6372,7 @@ function CCAgentSessionContent({
       simplifiedBotConversation={Boolean(botChatIdentity)}
       botUnreadBoundaryAt={botChatIdentity ? botUnreadBoundaryAt : null}
       onBotReadThrough={viewVisible ? onBotReadThrough : undefined}
+      isViewVisible={viewVisible}
       messages={timelineMessages}
       activeErrorClientId={bannerErrorClientId}
       activeVoiceCallId={activeVoiceCallId}
@@ -6941,13 +7015,26 @@ function CCAgentSessionContent({
                 />
               ) : (
                 <div
-                  className={voiceModeOpen && voiceSurfaceAvailable ? 'w-full opacity-60' : 'contents'}
+                  className={voiceModeOpen && voiceSurfaceAvailable ? 'flex w-full flex-col gap-2.5 opacity-60' : 'contents'}
                   inert={voiceModeOpen && voiceSurfaceAvailable}
                   aria-hidden={voiceModeOpen && voiceSurfaceAvailable ? true : undefined}
                 >
                 {projectSettingsOpen && session && (
                   <SessionProjectSettingsDialog key={session.id} session={session}
                     onClose={() => setProjectSettingsOpen(false)} />
+                )}
+                {incomingQueueEntries.length > 0 && (
+                  <PendingIncomingRepliesBar
+                    entries={incomingQueueEntries}
+                    fullQueue={pendingQueue}
+                    steeringClientIds={steeringQueueClientIds}
+                    editLocks={queueEditLocks}
+                    interactionLocks={queueInteractionLocks}
+                    readOnly={readOnly || queueAbortPending}
+                    onSteer={steerUnsupported || !canSteer ? undefined : steerQueuedMessage}
+                    steerTextOnly={Boolean(steerCaps?.sameTurnSteerTextOnly)}
+                    onRemove={removeFromQueue}
+                  />
                 )}
                 <ChatInput
                   onOpenProjectSettings={(projectInfo?.settingsVersion ?? 0) >= 6 && session?.workspaceKind === 'project' &&
