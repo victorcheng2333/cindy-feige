@@ -129,7 +129,28 @@ export function MachineSwitcherMenu({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { devices, selectedDeviceId, select, toggle } = useMachineSwitcher();
-  const desktopTargets=(useDeviceLinkDeviceList()??[]).filter(device=>!device.isSelf&&!isMobilePlatform(device.platform));
+  const directoryDevices = useDeviceLinkDeviceList() ?? [];
+  const connectedDevices = new Map(
+    devices.filter((device) => device.status === 'connected').map((device) => [device.deviceId, device]),
+  );
+  const desktopTargets = directoryDevices
+    .filter((device) => !device.isSelf && !isMobilePlatform(device.platform))
+    .map((device) => {
+      const liveConnected = connectedDevices.has(device.deviceId);
+      const online = device.online || liveConnected;
+      const remoteAllowed = device.remoteControlEnabled || (liveConnected && !device.online);
+      return {
+        deviceId: device.deviceId,
+        name: connectedDevices.get(device.deviceId)?.name || device.name,
+        disabled: !online || !remoteAllowed || !device.controlEnabled,
+      };
+    });
+  const directoryIds = new Set(directoryDevices.map((device) => device.deviceId));
+  for (const device of connectedDevices.values()) {
+    if (!directoryIds.has(device.deviceId)) {
+      desktopTargets.push({ deviceId: device.deviceId, name: device.name, disabled: false });
+    }
+  }
   // 设备列表只看当前是否真有可展示的远程设备。hasRemote 还会把「目录已空、
   // raw 仍记着远端」算进去——那是旧逃生口,标题恒在后会误画出「所有 / 本机」。
   const showDeviceList = devices.length > 0;
@@ -171,7 +192,7 @@ export function MachineSwitcherMenu({
         <DropdownMenuSubTrigger className={MENU_ROW_CLASS}><Monitor size={14}/><span>{t('remoteDesktop.title')}</span></DropdownMenuSubTrigger>
         <DropdownMenuSubContent>{desktopTargets.map(device=><DropdownMenuItem
           key={device.deviceId} className={MENU_ITEM_CLASS}
-          disabled={!device.online||!device.remoteControlEnabled||!device.controlEnabled}
+          disabled={device.disabled}
           onSelect={()=>void window.electronAPI.openRemoteDesktop({deviceId:device.deviceId,name:device.name}).catch(()=>toast.error(t('remoteDesktop.connectionError')))}>
           <span>{device.name}</span>
         </DropdownMenuItem>)}</DropdownMenuSubContent>

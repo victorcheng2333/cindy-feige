@@ -40,6 +40,7 @@ import {
   engineIconKindOf,
   type EngineIconKind,
 } from '@/components/sidebar/VendorIcon';
+import { useRemoteDevices } from '@/features/device-link/remoteProjectsStore';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import { useProviderShareReceived } from '@/features/provider-share/providerShareStore';
 import { useProviderShareAgentDevices } from '@/features/provider-share/useProviderShareAgentDevices';
@@ -145,10 +146,15 @@ function AgentDeviceVendorIcon({
 }) {
   const { t } = useTranslation();
   const device = useDeviceLinkDeviceList()?.find((item) => item.deviceId === deviceId);
+  const syncedDevice = useRemoteDevices().find((item) => item.deviceId === deviceId);
+  const liveConnected = syncedDevice?.connected === true;
   // 分享来的供应商(`share:<id>`)不在同账号设备列表里，本机任务的名字取自已收到的分享。
   const { nameFor: providerShareDeviceName } = useProviderShareAgentDevices();
-  const name = device?.name || (controlledTask ? null : providerShareDeviceName(deviceId));
-  const offline = device ? !device.online : false;
+  const name =
+    device?.name ||
+    syncedDevice?.deviceName ||
+    (controlledTask ? null : providerShareDeviceName(deviceId));
+  const offline = liveConnected ? false : device ? !device.online : false;
   return (
     <VendorIcon
       {...iconProps}

@@ -9,6 +9,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { REMOTE_DESKTOP_CHANNEL } from '@cindy/device-link';
 import i18n from '@/i18n';
+import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { unresponsiveDevicesStore } from '@/features/device-link/unresponsiveDevicesStore';
 import {
@@ -180,6 +181,7 @@ it.each(['legacy-root', 'root-current-layout', 'different-detail-source', 'diffe
 );
 
 beforeEach(async () => {
+  remoteProjectsStore.clear();
   revokedDevicesStore.clearAll();
   unresponsiveDevicesStore.clearAll();
   fixture.devices = [
@@ -225,6 +227,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  remoteProjectsStore.clear();
   vi.restoreAllMocks();
 });
 
@@ -486,4 +489,31 @@ it.each([
   fireEvent.click(screen.getByRole('button', { name: 'Install the “Device Simulator” plugin' }));
   for (let i = 0; i < 4; i++) await settle();
   check();
+});
+
+// 测试价值：
+// - 生产入口与可观察结果：useTaskLiveScreens 在目录暂缺或陈旧离线但会话分片仍在线时，照常请求实时屏幕按钮而不随目录滞后隐藏。
+// - Bug／规则依据：TaskLiveScreenButtons 与 TaskRemoteDesktopButton 共处顶栏右端，此前仅认目录快照导致入口缺失。
+// - 现有覆盖缺口：既有测试均预设在线且开远控的目录行。
+// - 最小失败输入：fixture.devices=[] 及 { online: false, remoteControlEnabled: false } + 已连接分片；tier:unit。
+it('queries live screens when a live connected shard exists despite missing or stale-offline directory rows', async () => {
+  act(() => {
+    remoteProjectsStore.setDeviceSessions('remote', 'M5-Mac', []);
+  });
+  invoke.mockImplementation(async (_device: string, _channel: string, [request]: [{ op: string }]) =>
+    request.op === 'capabilities'
+      ? { version: 1, enabled: true, liveScreens: true }
+      : { screens: [listed('sim-live', 'Live Phone', ['task-1'])] },
+  );
+
+  fixture.devices = [];
+  const view = render(<Entries />);
+  await settle();
+  await settle();
+  expect(screen.getByRole('button', { name: 'Device Simulator · Live Phone' })).toBeTruthy();
+
+  fixture.devices = [{ deviceId: 'remote', name: 'M5-Mac', platform: 'darwin', appVersion: '1', lastSeenAt: null, online: false, busy: false, remoteControlEnabled: false, controlEnabled: true, isSelf: false }];
+  view.rerender(<Entries />);
+  await settle();
+  expect(screen.getByRole('button', { name: 'Device Simulator · Live Phone' })).toBeTruthy();
 });

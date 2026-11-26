@@ -12,6 +12,7 @@ import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Session } from '@/lib/ccAgent.types';
+import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
 
 const devices = vi.hoisted(() => ({
   list: [{ deviceId: 'device-b', name: 'Studio Mac', online: true }] as Array<{
@@ -74,6 +75,7 @@ function renderStatus(
 
 afterEach(() => {
   cleanup();
+  remoteProjectsStore.clear();
   devices.list = [{ deviceId: 'device-b', name: 'Studio Mac', online: true }];
 });
 
@@ -138,6 +140,18 @@ describe('SessionStatusIcon for an Agent on another computer', () => {
     devices.list = [{ deviceId: 'device-b', name: 'Studio Mac', online: false }];
     const { getByTitle } = renderStatus({ agentDeviceId: 'device-b' });
     expect(getByTitle('ccAgent.sessionHeader.agentDeviceOffline:Studio Mac')).toBeTruthy();
+  });
+
+  // 测试价值：
+  // - 生产入口与可观察结果：SessionStatusIcon 在远程设备分片已直连时即使目录行呈陈旧离线，也显示在线名称而非 offline。
+  // - Bug／规则依据：在线的机器不该因目录陈旧或离线投影误显离线。
+  // - 现有覆盖缺口：既有仅覆盖目录行 offline: false 且无分片的情况。
+  // - 最小失败输入：devices.list 中 online:false 同时 remoteProjectsStore 处于 connected；tier:unit。
+  it('treats an agent device as online when a live synced shard is connected despite stale directory status', () => {
+    devices.list = [{ deviceId: 'device-b', name: 'Studio Mac', online: false }];
+    remoteProjectsStore.setDeviceSessions('device-b', 'Studio Mac', []);
+    const { getByTitle } = renderStatus({ agentDeviceId: 'device-b' });
+    expect(getByTitle('ccAgent.sessionHeader.agentDevice:Studio Mac')).toBeTruthy();
   });
 
   it('leaves tasks whose Agent runs where the task is, and SSH tasks, unmarked', () => {

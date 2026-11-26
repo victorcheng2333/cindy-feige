@@ -93,7 +93,7 @@ function isDeviceLinkDeviceView(value: unknown): value is DeviceLinkDeviceView {
     typeof value.deviceId === 'string' &&
     value.deviceId.length > 0 &&
     typeof value.name === 'string' &&
-    isNullableString(value.platform) &&
+    (value.platform === undefined || isNullableString(value.platform)) &&
     typeof value.online === 'boolean' &&
     typeof value.remoteControlEnabled === 'boolean' &&
     typeof value.controlEnabled === 'boolean' &&
@@ -518,10 +518,11 @@ function ensureStarted(): void {
         finishRefresh(gen, background);
         return;
       }
-      const list = result?.devices;
-      if (!Array.isArray(list) || !list.every(isDeviceLinkDeviceView)) {
+      const rawList = result?.devices;
+      if (!Array.isArray(rawList) || !rawList.every(isDeviceLinkDeviceView)) {
         throw new Error('Invalid device list response');
       }
+      const list = rawList.map((entry) => ({ ...entry, platform: entry.platform ?? null }));
       clearRetryTimer();
       // 服务端限流期限:记住了就让下一次退避让过它;拿到权威目录 = 没有在限流,期限作废。
       // A **partial** directory (only one hybrid leg answered) is fresh for the

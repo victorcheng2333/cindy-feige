@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { REMOTE_DESKTOP_CHANNEL } from '@cindy/device-link';
 import i18n from '@/i18n';
+import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { unresponsiveDevicesStore } from '@/features/device-link/unresponsiveDevicesStore';
 import { toast } from '@/lib/toast';
@@ -41,6 +42,7 @@ const device = (): DeviceLinkDeviceView => ({
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  remoteProjectsStore.clear();
   revokedDevicesStore.clearAll();
   unresponsiveDevicesStore.clearAll();
   fixture.devices = [device()];
@@ -51,6 +53,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  remoteProjectsStore.clear();
   revokedDevicesStore.clearAll();
   unresponsiveDevicesStore.clearAll();
   vi.restoreAllMocks();
@@ -415,4 +418,242 @@ it('explains how to grant screen recording on the remote Mac when clicked', asyn
   const action = unavailable();
   expect(action.getAttribute('aria-label')).toContain('On the remote Mac, open System Settings');
   expect(action.getAttribute('aria-label')).not.toContain('accessibility');
+});
+
+// 测试价值：
+// - 生产入口与可观察结果：DeviceSectionHeader 在设备已建立会话同步分片但目录缺失或呈陈旧离线投影时，仍主动探测 capabilities 并展示可点击的「打开远程桌面」。
+// - Bug／规则依据：本机实机现象（会话同步已直连，远程桌面按钮却落入 checkFailed 且无法打开）。
+// - 现有覆盖缺口：既有测试均假设 useDeviceLinkDeviceList 同步拥有在线目录项。
+// - 最小失败输入：remoteProjectsStore 已连接 + fixture.devices=[] 或 { online: false, remoteControlEnabled: false }；tier:unit。
+it('probes capabilities when a live synced shard exists despite a missing or stale-offline directory row', async () => {
+  act(() => {
+    remoteProjectsStore.setDeviceSessions('remote', 'M5-Mac (2313)', []);
+  });
+  fixture.devices = [];
+  const view = render(header());
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBeTruthy();
+
+  fixture.devices = [{ ...device(), online: false, remoteControlEnabled: false }];
+  view.rerender(header());
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBeTruthy();
+
+  fixture.devices = [{ ...device(), controlEnabled: false }];
+  view.rerender(header());
+  expect(unavailable().getAttribute('aria-label')).toContain(
+    i18n.getResource('en', 'common', 'remoteDesktop.shortcut.controlDisabled'),
+  );
+
+  fixture.devices = [{ ...device(), online: false, remoteControlEnabled: false }];
+  act(() => revokedDevicesStore.markRevoked('remote'));
+  view.rerender(header());
+  expect(unavailable().getAttribute('aria-label')).toContain(i18n.t('remoteDesktop.accessRevoked'));
+});
+
+// 测试价值：
+// - 生产入口与可观察结果：DeviceSectionHeader 探测返回临时 checkFailed（NETWORK_PROBE_FAILED / null）后按有界退避自动重试并在上限后停表，链路重连或悬停可立即重查恢复，且忽略其它对端的 dataPathChangedDeviceId。
+// - Bug／规则依据：本机实机现象与审阅要求（checkFailed 卡死不再重试，且避免无关 peer 状态震荡重置计数）。
+// - 现有覆盖缺口：既有仅测试 checkInterrupted / offline 在悬停时的手动重查，未测有界退避上限、dataPathChangedDeviceId 过滤与耗尽后重连恢复。
+// - 最小失败输入：invoke 连续拒绝 Error('NETWORK_PROBE_FAILED')，再变为 capabilities；tier:unit。
+it('automatically retries checkFailed with bounded backoff and resets on reconnect or hover', async () => {
+  type StatusPayload = {
+    status: 'stopped' | 'connecting' | 'online';
+    directDataDeviceIds?: string[];
+    dataPathChangedDeviceId?: string;
+  };
+  const statusListeners = new Set<(p: StatusPayload) => void>();
+  const reopenedListeners = new Set<(e: { deviceId: string }) => void>();
+  Object.assign(window, {
+    electronAPI: {
+      deviceLink: {
+        invoke,
+        onStatusChanged: (cb: (p: StatusPayload) => void) => {
+          statusListeners.add(cb);
+          return () => statusListeners.delete(cb);
+        },
+        onPeerLinkReopened: (cb: (e: { deviceId: string }) => void) => {
+          reopenedListeners.add(cb);
+          return () => reopenedListeners.delete(cb);
+        },
+      },
+      openRemoteDesktop: open,
+    },
+  });
+  invoke.mockRejectedValue(new Error('NETWORK_PROBE_FAILED'));
+  render(header());
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(unavailable().getAttribute('aria-label')).toContain(
+    i18n.t('remoteDesktop.shortcut.checkFailed'),
+  );
+
+  for (const [idx, delay] of [2_000, 4_000, 8_000, 16_000, 30_000].entries()) {
+    await act(async () => vi.advanceTimersByTimeAsync(delay));
+    expect(invoke).toHaveBeenCalledTimes(idx + 2);
+  }
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(invoke).toHaveBeenCalledTimes(6);
+
+  invoke.mockResolvedValueOnce(null);
+  act(() => {
+    for (const cb of reopenedListeners) cb({ deviceId: 'remote' });
+  });
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledTimes(7);
+
+  invoke.mockResolvedValueOnce(capabilities);
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(invoke).toHaveBeenCalledTimes(8);
+  expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBeTruthy();
+
+  // Exhaust retries on remote-2, verify unrelated peer data-path changes are ignored,
+  // and verify global onStatusChanged('online') breaks the exhausted state.
+  cleanup();
+  invoke.mockReset().mockRejectedValue(new Error('NETWORK_PROBE_FAILED'));
+  fixture.devices = [device(), { ...device(), deviceId: 'remote-2', name: 'M3-Air' }];
+  render(
+    <DeviceSectionHeader deviceId="remote-2" name="M3-Air">
+      <button type="button" onClick={toggle}>
+        Machine 2
+      </button>
+    </DeviceSectionHeader>,
+  );
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledTimes(1);
+  for (const [idx, delay] of [2_000, 4_000, 8_000, 16_000, 30_000].entries()) {
+    await act(async () => vi.advanceTimersByTimeAsync(delay));
+    expect(invoke).toHaveBeenCalledTimes(idx + 2);
+  }
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(invoke).toHaveBeenCalledTimes(6);
+
+  act(() => {
+    for (const cb of statusListeners) {
+      cb({ status: 'online', dataPathChangedDeviceId: 'remote', directDataDeviceIds: ['remote'] });
+    }
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(invoke).toHaveBeenCalledTimes(6);
+
+  invoke.mockResolvedValue(capabilities);
+  act(() => {
+    for (const cb of statusListeners) cb({ status: 'online' });
+  });
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledTimes(7);
+  expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBeTruthy();
+});
+
+// 测试价值：
+// - 生产入口与可观察结果：永久关闭/不支持/锁屏未认证的远端主机不会在后台按 2s..30s 连续发起 5 轮探测，其中 DESKTOP_UNAVAILABLE 直接归类为 remoteDesktop.disabled。
+// - Bug／规则依据：server-channel-review 禁止对默认关闭远程桌面的对端做后台重试放大。
+// - 现有覆盖缺口：既有测试未区分 DESKTOP_UNAVAILABLE / NOT_SUPPORTED / DESKTOP_AUTHENTICATION_REQUIRED 与瞬态失败。
+// - 最小失败输入：invoke 分别拒绝上述三类错误并推进 60s；tier:unit。
+it.each([
+  ['DESKTOP_UNAVAILABLE', 'remoteDesktop.disabled'],
+  ['[NOT_SUPPORTED] requestRemoteDesktop is not available on this Host', 'remoteDesktop.shortcut.unsupported'],
+  ['DESKTOP_AUTHENTICATION_REQUIRED', 'remoteDesktop.shortcut.checkFailed'],
+] as const)(
+  'does not schedule background auto-retries for permanent or auth-gated refusal: %s',
+  async (message, reasonKey) => {
+    invoke.mockRejectedValue(new Error(message));
+    render(header());
+    await act(async () => {});
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(unavailable().getAttribute('aria-label')).toContain(i18n.t(reasonKey));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(invoke).toHaveBeenCalledTimes(1);
+  },
+);
+
+// 测试价值：
+// - 生产入口与可观察结果：窗口切到后台（onWindowHiddenChange / document.hidden）后撤除已挂自动重试计时器并暂缓重连探测，回到前台后再立即恢复探测。
+// - Bug／规则依据：engineering-conventions §8.3 要求同步监听主进程 onWindowHiddenChange 与 document.hidden。
+// - 现有覆盖缺口：既有测试均在可见窗口运行，未覆盖 visible->hidden->visible 生命周期。
+// - 最小失败输入：初始探测失败后广播 windowHidden=true 推进 60s，并触发 onPeerLinkReopened 后再恢复 visible；tier:unit。
+it('cancels retry timers while window is hidden and flushes pending reconnect when visible again', async () => {
+  const hiddenListeners = new Set<(hidden: boolean) => void>();
+  const reopenedListeners = new Set<(e: { deviceId: string }) => void>();
+  const origHidden = Object.getOwnPropertyDescriptor(document, 'hidden');
+  let docHidden = false;
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => docHidden });
+  Object.assign(window, {
+    electronAPI: {
+      deviceLink: {
+        invoke,
+        onPeerLinkReopened: (cb: (e: { deviceId: string }) => void) => {
+          reopenedListeners.add(cb);
+          return () => reopenedListeners.delete(cb);
+        },
+      },
+      onWindowHiddenChange: (cb: (hidden: boolean) => void) => {
+        hiddenListeners.add(cb);
+        return () => hiddenListeners.delete(cb);
+      },
+      openRemoteDesktop: open,
+    },
+  });
+  try {
+    invoke.mockRejectedValueOnce(new Error('NETWORK_PROBE_FAILED')).mockResolvedValueOnce(capabilities);
+    render(header());
+    await act(async () => {});
+    expect(invoke).toHaveBeenCalledTimes(1);
+
+    docHidden = true;
+    act(() => {
+      for (const cb of hiddenListeners) cb(true);
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(invoke).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      for (const cb of reopenedListeners) cb({ deviceId: 'remote' });
+    });
+    await act(async () => {});
+    expect(invoke).toHaveBeenCalledTimes(1);
+
+    docHidden = false;
+    act(() => {
+      for (const cb of hiddenListeners) cb(false);
+    });
+    await act(async () => {});
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBeTruthy();
+  } finally {
+    if (origHidden) Object.defineProperty(document, 'hidden', origHidden);
+    else delete (document as { hidden?: boolean }).hidden;
+  }
+});
+
+// 测试价值：
+// - 生产入口与可观察结果：自动重试耗尽并经悬停恢复后，若打开远程桌面时再次遭遇瞬态掉线，自动重试预算会清零并在 2s 后自动恢复。
+// - Bug／规则依据：修复 autoRetryRef.current.count 在探测成功或 markUnavailable 后未清零导致后续无法自动重试的问题。
+// - 现有覆盖缺口：既有测试未覆盖「重试耗尽 → 恢复成功 → markUnavailable 再自动重试」路径。
+// - 最小失败输入：6 次失败后悬停成功，随后 openRemoteDesktop 拒绝 PEER_OFFLINE；tier:unit。
+it('resets auto-retry budget after recovery so subsequent markUnavailable auto-retries again', async () => {
+  invoke.mockRejectedValue(new Error('NETWORK_PROBE_FAILED'));
+  render(header());
+  await act(async () => {});
+  for (const delay of [2_000, 4_000, 8_000, 16_000, 30_000]) {
+    await act(async () => vi.advanceTimersByTimeAsync(delay));
+  }
+  expect(invoke).toHaveBeenCalledTimes(6);
+
+  invoke.mockResolvedValue(capabilities);
+  await hover();
+  expect(invoke).toHaveBeenCalledTimes(7);
+  const openBtn = screen.getByRole('button', { name: 'Open remote desktop' });
+
+  open.mockRejectedValueOnce(new Error('PEER_OFFLINE'));
+  fireEvent.click(openBtn);
+  await act(async () => {});
+  expect(open).toHaveBeenCalledOnce();
+  open.mockClear();
+  expect(unavailable().getAttribute('aria-label')).toContain(i18n.t('remoteDesktop.shortcut.offline'));
+
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(invoke).toHaveBeenCalledTimes(8);
+  expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBeTruthy();
 });

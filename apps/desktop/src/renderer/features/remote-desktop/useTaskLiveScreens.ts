@@ -1,11 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
+  isSharedTaskPeer,
   REMOTE_DESKTOP_CHANNEL,
   taskLiveScreens,
   type RemoteDesktopCapabilities,
   type RemoteLiveScreen,
 } from '@cindy/device-link';
 import { isMobilePlatform } from '@cindy/maker-shared/device-list';
+import { useRemoteDevices } from '@/features/device-link/remoteProjectsStore';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { unresponsiveDevicesStore } from '@/features/device-link/unresponsiveDevicesStore';
@@ -37,6 +39,7 @@ export function useTaskLiveScreens(
   sessionId: string | null | undefined,
 ): TaskLiveScreens {
   const devices = useDeviceLinkDeviceList();
+  const syncedDevices = useRemoteDevices();
   const revoked = useSyncExternalStore(
     revokedDevicesStore.subscribe,
     revokedDevicesStore.getSnapshot,
@@ -45,16 +48,23 @@ export function useTaskLiveScreens(
     unresponsiveDevicesStore.subscribe,
     unresponsiveDevicesStore.getSnapshot,
   );
+  const sharedTask = !!deviceId && isSharedTaskPeer(deviceId);
   const device = deviceId ? devices?.find((entry) => entry.deviceId === deviceId) : undefined;
+  const liveConnected =
+    !!deviceId &&
+    !sharedTask &&
+    syncedDevices.some((entry) => entry.deviceId === deviceId && entry.connected);
+  const directoryOffline = !!device && !device.online;
   const reachable =
-    !!device &&
-    !device.isSelf &&
-    !isMobilePlatform(device.platform) &&
-    device.online &&
-    device.controlEnabled &&
-    device.remoteControlEnabled &&
-    !revoked.has(device.deviceId) &&
-    !unresponsive.has(device.deviceId);
+    !!deviceId &&
+    !sharedTask &&
+    (!!device || liveConnected) &&
+    !(device && (device.isSelf || isMobilePlatform(device.platform))) &&
+    ((device?.online ?? false) || liveConnected) &&
+    (!device || device.controlEnabled) &&
+    (!device || directoryOffline || device.remoteControlEnabled) &&
+    !revoked.has(deviceId) &&
+    !unresponsive.has(deviceId);
   const key = reachable && deviceId && sessionId ? `${deviceId}:${sessionId}` : '';
   const [state, setState] = useState<{ key: string; value: TaskLiveScreens }>({
     key: '',

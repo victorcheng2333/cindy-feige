@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { WINDOW_NO_DRAG_STYLE } from '@/components/layout/windowDrag';
 import { Tip } from '@/components/ui/tooltip';
+import { useRemoteDevices } from '@/features/device-link/remoteProjectsStore';
 import { useDeviceLinkDeviceList } from '@/features/device-link/useDeviceLinkDeviceList';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -29,7 +30,10 @@ export function TaskRemoteDesktopButton({
 }) {
   const { t } = useTranslation();
   const devices = useDeviceLinkDeviceList();
-  const name = deviceDisplayName(deviceId, undefined, devices ?? []);
+  const syncedDeviceName = useRemoteDevices().find(
+    (entry) => entry.deviceId === deviceId,
+  )?.deviceName;
+  const name = deviceDisplayName(deviceId, syncedDeviceName, devices ?? []);
   const availability = useRemoteDesktopAvailability(deviceId);
   const [opening, setOpening] = useState(false);
   const mounted = useRef(true);

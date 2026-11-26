@@ -1532,3 +1532,51 @@ it('reconciles cached and rejected machine options only when the directory confi
   expect(result.current).toEqual(['offline']);
   unmount();
 });
+
+// 测试价值：
+// - 生产入口与可观察结果：useDeviceLinkDeviceList 兼容省略 platform 字段（undefined → null），同时继续拒绝非法非字符串 platform（落入 error 态）。
+// - Bug／规则依据：个别设备省略 platform 字段时曾触发 Invalid device list response，导致整窗目录被清空。
+// - 现有覆盖缺口：既有用例每台设备均显式提供 platform，未测 undefined 归一化与非字符串拒绝边界。
+// - 最小失败输入：listDevices 首次返回 { platform: undefined }，下次返回 { platform: 123 }；tier:unit。
+it('normalizes omitted device platform to null while rejecting non-string platforms', async () => {
+  const validWithUndefinedPlatform = {
+    deviceId: 'peer-no-platform',
+    name: 'M3-Air',
+    online: true,
+    busy: false,
+    remoteControlEnabled: true,
+    controlEnabled: true,
+    isSelf: false,
+    lastSeenAt: null,
+  };
+  const listDevices = vi
+    .fn()
+    .mockResolvedValueOnce({ devices: [validWithUndefinedPlatform] })
+    .mockResolvedValueOnce({ devices: [{ ...validWithUndefinedPlatform, platform: 123 }] });
+  vi.stubGlobal('electronAPI', {
+    deviceLink: {
+      listDevices,
+      getState: vi.fn().mockResolvedValue({ linkStatus: 'online' }),
+      onPresenceChanged: vi.fn(),
+      onStatusChanged: vi.fn(),
+      onControlTargetChanged: vi.fn(),
+    },
+  });
+  const {
+    useDeviceLinkDeviceList,
+    useDeviceLinkDeviceListRequestState,
+    retryDeviceLinkDeviceList,
+  } = await import('@/features/device-link/useDeviceLinkDeviceList');
+  const { result, unmount } = renderHook(() => ({
+    devices: useDeviceLinkDeviceList(),
+    request: useDeviceLinkDeviceListRequestState(),
+  }));
+  await waitFor(() => expect(result.current.request.status).toBe('ready'));
+  expect(result.current.devices).toEqual([
+    expect.objectContaining({ deviceId: 'peer-no-platform', platform: null }),
+  ]);
+
+  act(() => retryDeviceLinkDeviceList());
+  await waitFor(() => expect(result.current.request.status).toBe('error'));
+  unmount();
+});

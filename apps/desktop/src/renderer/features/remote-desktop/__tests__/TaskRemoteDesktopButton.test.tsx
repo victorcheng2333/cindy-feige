@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { REMOTE_DESKTOP_CHANNEL } from '@cindy/device-link';
 import i18n from '@/i18n';
+import { remoteProjectsStore } from '@/features/device-link/remoteProjectsStore';
 import { revokedDevicesStore } from '@/features/device-link/revokedDevicesStore';
 import { unresponsiveDevicesStore } from '@/features/device-link/unresponsiveDevicesStore';
 import { toast } from '@/lib/toast';
@@ -50,6 +51,7 @@ const device = (): DeviceLinkDeviceView => ({
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  remoteProjectsStore.clear();
   revokedDevicesStore.clearAll();
   unresponsiveDevicesStore.clearAll();
   fixture.devices = [device()];
@@ -60,6 +62,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  remoteProjectsStore.clear();
   revokedDevicesStore.clearAll();
   unresponsiveDevicesStore.clearAll();
   vi.restoreAllMocks();
@@ -226,4 +229,55 @@ it('keeps the remote desktop action clickable in the mac titlebar trailing slot'
   fireEvent.click(action);
   expect(open).toHaveBeenCalledExactlyOnceWith({ deviceId: 'remote', name: 'Remote computer' });
   await act(async () => {});
+});
+
+// 测试价值：
+// - 生产入口与可观察结果：TaskRemoteDesktopButton 在目录暂缺但分片已连接时正常探测并以同步名打开，且 checkFailed 在 2s 退避后后台静默自动重试恢复，期间不闪烁转圈。
+// - Bug／规则依据：任务顶栏远程桌面按钮与侧栏共用 useRemoteDesktopAvailability，之前同样会误显 checkFailed 且不自动重试，自动重试期间还可能闪烁 spinner。
+// - 现有覆盖缺口：既有未覆盖 live shard 回退命名与 checkFailed 静默自动退避重试。
+// - 最小失败输入：fixture.devices=[] + live synced shard；以及 NETWORK_PROBE_FAILED 首次拒绝；tier:unit。
+it('falls back to live synced shard when directory omits the device and silently auto-retries checkFailed', async () => {
+  fixture.devices = [];
+  act(() => {
+    remoteProjectsStore.setDeviceSessions('remote', 'M5-Mac (2313)', []);
+  });
+  render(<TaskRemoteDesktopButton deviceId="remote" />);
+  await act(async () => {});
+  expect(invoke).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: 'Open remote desktop' }));
+  expect(open).toHaveBeenCalledExactlyOnceWith({ deviceId: 'remote', name: 'M5-Mac (2313)' });
+  cleanup();
+
+  vi.useFakeTimers();
+  try {
+    fixture.devices = [device()];
+    let resolveRetry!: (value: unknown) => void;
+    invoke
+      .mockReset()
+      .mockRejectedValueOnce(new Error('NETWORK_PROBE_FAILED'))
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolveRetry = done;
+        }),
+      );
+    render(<TaskRemoteDesktopButton deviceId="remote" />);
+    await act(async () => {});
+    const action = unavailable();
+    expect(action.getAttribute('aria-label')).toContain(
+      i18n.t('remoteDesktop.shortcut.checkFailed'),
+    );
+
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(invoke).toHaveBeenCalledTimes(2);
+    // Background auto-retry must not flicker the titlebar button into a loading spinner.
+    expect(action.getAttribute('aria-busy')).toBeNull();
+    expect(action.getAttribute('aria-label')).toContain(
+      i18n.t('remoteDesktop.shortcut.checkFailed'),
+    );
+
+    await act(async () => resolveRetry(capabilities));
+    expect(screen.getByRole('button', { name: 'Open remote desktop' })).toBe(action);
+  } finally {
+    vi.useRealTimers();
+  }
 });
