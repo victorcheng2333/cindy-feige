@@ -940,7 +940,10 @@ exec/patch 的同轮宿主反馈走 `formatPermissionDenial`，Pi 由桥接扩�
   可写根为任务目录 + 可写目录。宿主侧工具审批（`reviewAutoPermissionAction`）复用同一审核器。
 
 任务目录：Cindy 的可写目录作为 ACP `additionalDirectories` 交给 agy（agy 1.5.13 声明支持），
-只读参考目录不交给 agy，只扩大 Cindy 审核的可读范围，避免加一个参考目录就让 agy 获得写权限。
+只读参考目录不作为 `additionalDirectories` 交给 agy，避免加一个参考目录就让 agy 获得写权限；它们
+扩大 Cindy 审核的可读范围，并经 `--settings` 的 `permissions.allow` 以 `read_file(<path>)` 授给 agy
+（`buildAgySettingsJson`），让 agy 沙箱免确认读取、仍不能写。含 `()*?[]`、换行等会扩大匹配范围的
+路径与根目录不授予。
 运行中改目录立即更新审核范围；agy 在任务下次启动时才拿到新的可写目录。回归见
 `acp-session.test.ts`（Cindy Auto-review、additional directories）、`agy-acp/auto-review-policy.test.ts`
 与 Agy `index.test.ts`。

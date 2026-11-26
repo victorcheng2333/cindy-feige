@@ -243,6 +243,41 @@ describe('antigravity remote-workspace helpers', () => {
     // Cloud-only search_web passes through
     expect(guard.inspect({ toolCallId: 'web1', name: 'search_web', kind: 'fetch', rawInput: { query: 'acp' } }, 'update')).toEqual({ action: 'pass' });
   });
+
+  // 测试价值
+  // - 生产入口与可观察结果：createAntigravityRemoteWorkspaceGuard().inspect；`block` 会让会话停下并提示
+  //   「尝试使用本机工具」，`pass`／`rewrite` 让远程任务照常运行。
+  // - Bug／规则依据：远程任务不得在 Agy 所在电脑上执行任何操作（agent-placement.md「只能在任务所在电脑
+  //   运行的引擎」）。2026-11-26 前只拦固定的文件／终端工具名，kind 为 `other` 的子 Agent、工作流、swarm、
+  //   browser 与新版新增工具会放行，它们启动的 agent 带 agy 默认本地工具且不经过这层拦截；权限请求里认不出
+  //   服务器的 `call_mcp_tool` 也会放行并在完全访问下被自动允许。
+  // - 现有覆盖缺口：上一个用例只覆盖了名单内的本地工具与带本地 kind 的调用；放行侧还要守住 agy 1.5.18
+  //   带 `Run ` 前缀的 name（同 auto-review-policy.test.ts）和计划模式工具，误拦会直接停掉远程任务。
+  // - 最小失败输入：`{ toolCallId: 'x1', name: 'invoke_subagent', kind: 'other' }` 修复前为 pass；
+  //   `{ name: 'Run exit_plan_mode', kind: 'other' }` 曾被误拦。
+  // - tier：unit（纯函数，无 I/O）。实测耗时：本文件单独运行约 2 秒（含启动）。
+  it.each([
+    ['a subagent launch', 'update', { name: 'invoke_subagent', kind: 'other' }, 'block'],
+    ['a title-only subagent launch', 'update', { title: 'Run invoke_subagent' }, 'block'],
+    ['a workflow run', 'update', { name: 'run_workflow', kind: 'other' }, 'block'],
+    ['the browser agent', 'update', { name: 'browser', kind: 'fetch' }, 'block'],
+    ['an unknown future Agy tool', 'update', { name: 'some_new_tool' }, 'block'],
+    ['an MCP call to a server outside this task', 'update', { name: 'call_mcp_tool', kind: 'other', rawInput: { ServerName: 'rogue_local', ToolName: 'Bash' } }, 'block'],
+    ['a resumed-format call to a server outside this task', 'update', { name: 'mcp_rogue_local_Bash', kind: 'other' }, 'block'],
+    ['an MCP permission request without a task server', 'permission', { name: 'call_mcp_tool', kind: 'other', rawInput: { serverName: 'rogue_local' } }, 'block'],
+    ['step tracking', 'update', { name: 'update_steps', kind: 'other' }, 'pass'],
+    ['a Run-prefixed name from the Orchestrator', 'update', { name: 'Run update_steps', kind: 'other' }, 'pass'],
+    ['leaving plan mode', 'permission', { name: 'Run exit_plan_mode', kind: 'other', rawInput: { plan: 'p' } }, 'pass'],
+    ['a focus update', 'update', { title: 'Run update_focus' }, 'pass'],
+    ['a user question', 'update', { name: 'ask_question', kind: 'other' }, 'pass'],
+    ['a timer', 'update', { title: 'Run schedule' }, 'pass'],
+    ['an MCP call whose arguments have not arrived', 'update', { name: 'call_mcp_tool', kind: 'other' }, 'pass'],
+    ['a status-only follow-up', 'update', { status: 'completed' }, 'pass'],
+    ['a title-only call to a task server', 'update', { title: 'Run mcp_cindy_exec_Bash' }, 'rewrite'],
+  ] as const)('remote guard verdict for %s', (_label, source, fields, expected) => {
+    const guard = createAntigravityRemoteWorkspaceGuard(['cindy_exec', 'cindy_memory']);
+    expect(guard.inspect({ toolCallId: 'x1', ...fields }, source).action).toBe(expected);
+  });
 });
 
 describe('AntigravityAgent device-hosted remote workspace', () => {

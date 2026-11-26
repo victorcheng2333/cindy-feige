@@ -135,7 +135,7 @@ agy acp --process-per-session（front）→ worker → 工具子进程
 | `plan` | 更新已有的任务计划卡。同一轮重复的更新使用同一个卡片 ID。 |
 | `usage_update` | 上下文占用，逐轮 token 由终态回执记账（§3.8） |
 | `config_option_update` | 更新句柄的当前模型、档位、模式 |
-| `available_commands_update` | 忽略 |
+| `available_commands_update` | 不渲染；只用来判断 agy 是否提供 `compact`，有则 `/compact` 走原生压缩（`nativeCompactCommand`） |
 
 ### 3.7 Cindy MCP 与记忆
 

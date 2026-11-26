@@ -32,6 +32,18 @@ Agy 远程运行时，受限 `cindy-remote` 是否生效只能从 agy 自己的 
 本地工具拦截（`acp-remote-tool-blocked`）保留为最后一道防线。依据是 2026-11-23 M3 上 7 次远程
 启动有 2 次回落，首条命令即被拦停；回归见 `remote-workspace.test.ts`。
 
+拦截按允许名单判断（`ANTIGRAVITY_REMOTE_ALLOWED_NATIVE_TOOLS`）：除本任务隧道 MCP 外，只放行
+`search_web`、`update_steps`、`update_focus`、`exit_plan_mode`、`ask_question`、`schedule` 这几个不碰本机
+的 agy 自带工具；其他带名字的工具（含 `invoke_subagent`、`run_workflow`、`swarm`、`browser` 和新版 agy
+新增的工具）、调用本任务以外 MCP 服务器的请求以及本地类 `kind` 一律拦停。工具名取 `name`，缺省时取
+`Run <工具名>` 形式的标题，两者都先去掉 agy 1.5.18 会加的 `Run ` 前缀。子 Agent、工作流和浏览器 agent
+会拿到 agy 默认的本地工具，且它们自己的工具调用不经过这层拦截，所以不能只拦文件／终端工具。
+
+仍会放行的两种帧：参数还没到的 `call_mcp_tool` 进度更新（权限请求不放行，它本应带着参数，放行会让
+完全访问下的 agy 自动允许本任务以外的服务器），以及既没有工具名、也没有 `Run <工具名>` 标题的状态更新。
+依据是 2026-11-26 核对本机 agy 历史记录：远程任务只用过 `call_mcp_tool`；新增 agy 自带工具前，先确认它
+不读写本机、不执行命令、不启动其他 agent。回归见 `remote-workspace.test.ts`。
+
 Desktop 新建页里 Agy 的权限按 Agent 运行位置分两份记：在任务所在电脑运行用 `permissionMode`（默认
 Auto），借用另一台电脑时用 `remotePermissionMode`（默认完全访问），各自保留用户的显式选择；读取走
 `draftVendorPrefs`，其他引擎不分。原因是 agy 1.5.14 在多数会话里对每次 MCP 工具调用先跑自带的 Sonar

@@ -8,8 +8,9 @@
  *  - All workspace file/shell actions and Cindy tools go through the task's loopback
  *    tunnel MCP servers (`cindy_exec` + the controller's MCP servers).
  *  - Because Agy offers no pre-flight tool-list introspection, the ACP relay fails closed:
- *    versions below 1.5.13 are refused, and any non-MCP tool call that reads, edits or
- *    executes locally immediately rejects and terminates the Agy process group.
+ *    versions below 1.5.13 are refused, and any non-MCP tool call outside a short list of
+ *    Agy built-ins that touch nothing on this computer immediately rejects and terminates
+ *    the Agy process group.
  */
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -35,12 +36,28 @@ export const ANTIGRAVITY_LOCAL_TOOL_KINDS: ReadonlySet<string> = new Set([
   'read', 'edit', 'delete', 'move', 'execute',
 ]);
 
-/** Agy's own local file and shell tools, by reported name. */
-export const ANTIGRAVITY_LOCAL_TOOL_NAMES: ReadonlySet<string> = new Set([
-  'view_file', 'multimodal_view_file', 'read_file', 'list_dir', 'find_by_name', 'grep_search', 'code_search',
-  'write_to_file', 'write_file', 'create_file', 'edit_file', 'replace_file_content', 'multi_replace_file_content',
-  'delete_file', 'move_file', 'run_command', 'command_status', 'send_command_input',
+/**
+ * Agy built-in tools a remote-workspace task may call besides the tunnel MCP servers. None of
+ * them reads this computer's files, runs commands here or starts another agent: a subagent,
+ * workflow, swarm or browser agent would get Agy's default local tools and its own tool calls
+ * never pass through this guard. Every other named tool fails closed, so a tool added by a
+ * later Agy release stops the task instead of running on this computer. `exit_plan_mode` and
+ * `update_focus` only change session state (Agy 1.5.18 Orchestrator, as in auto-review-policy).
+ */
+export const ANTIGRAVITY_REMOTE_ALLOWED_NATIVE_TOOLS: ReadonlySet<string> = new Set([
+  'search_web', 'update_steps', 'update_focus', 'exit_plan_mode', 'ask_question', 'schedule',
 ]);
+
+/**
+ * Agy's tool name without the `Run ` prefix it may put on `name` (Agy 1.5.18 Orchestrator sends
+ * `Run exit_plan_mode`), or from a `Run <tool_name>` title when `name` is absent. Case is kept
+ * for matching `mcp_<server>_<tool>`.
+ */
+function nativeToolName(toolCall: AcpToolCallFields): string | undefined {
+  const name = toolCall.name?.trim().replace(/^Run\s+/i, '').trim();
+  if (name) return name;
+  return /^Run\s+([A-Za-z][A-Za-z0-9_]*)$/.exec(toolCall.title?.trim() ?? '')?.[1];
+}
 
 /** Display tool kinds for Cindy's `cindy_exec` remote workspace tools. */
 const EXEC_TOOL_KINDS: Readonly<Record<string, string>> = {
@@ -263,7 +280,8 @@ export type AntigravityRemoteToolVerdict =
  *    and `mcp_<server>_<tool>` in resumed sessions), rewrites them to Cindy's tool names
  *    (`Bash`, `Read`, ..., or `mcp__<server>__<tool>`), and hands permission gating off to
  *    the task computer's MCP approval layer (`autoApproveOnce: true`).
- *  - Fails closed (`block`) on any non-MCP tool call that reads, edits or executes locally.
+ *  - Fails closed (`block`) on any non-MCP tool call with a local kind, and on any named
+ *    tool outside `ANTIGRAVITY_REMOTE_ALLOWED_NATIVE_TOOLS` (including unknown future tools).
  */
 export function createAntigravityRemoteWorkspaceGuard(serverNames: readonly string[]) {
   const allowedServers = new Set(serverNames);
@@ -276,7 +294,8 @@ export function createAntigravityRemoteWorkspaceGuard(serverNames: readonly stri
       && allowedServers.has(raw.ServerName)
       ? { server: raw.ServerName, tool: raw.ToolName }
       : null;
-    const direct = nested ? null : matchDirectMcpTool(toolCall.name, serverNames);
+    const toolName = nativeToolName(toolCall);
+    const direct = nested ? null : matchDirectMcpTool(toolName, serverNames);
     const matched = nested ?? direct;
     let known = id ? seenMcpCalls.get(id) : undefined;
     if (matched) {
@@ -315,15 +334,20 @@ export function createAntigravityRemoteWorkspaceGuard(serverNames: readonly stri
       };
     }
 
-    const name = toolCall.name ?? '';
     const kind = toolCall.kind ?? '';
-    if (ANTIGRAVITY_LOCAL_TOOL_NAMES.has(name) || ANTIGRAVITY_LOCAL_TOOL_KINDS.has(kind)) {
-      return {
-        action: 'block',
-        reason: ANTIGRAVITY_REMOTE_TOOL_BLOCKED_MESSAGE,
-        tool: name || kind,
-      };
+    const block = (tool: string): AntigravityRemoteToolVerdict => ({
+      action: 'block', reason: ANTIGRAVITY_REMOTE_TOOL_BLOCKED_MESSAGE, tool,
+    });
+    if (ANTIGRAVITY_LOCAL_TOOL_KINDS.has(kind)) return block(toolName || kind);
+    const name = toolName?.toLowerCase();
+    // `call_mcp_tool` updates whose arguments have not arrived yet carry no server to check.
+    // A permission request carries its arguments, and passing it would let Agy's own
+    // approval allow a server outside this task (Full access allows every request).
+    if (name === 'call_mcp_tool' && source === 'update' && !(isRecord(raw) && 'ServerName' in raw)) {
+      return { action: 'pass' };
     }
+    if (name && !ANTIGRAVITY_REMOTE_ALLOWED_NATIVE_TOOLS.has(name)) return block(toolName!);
+    // Status-only updates of an already admitted call carry neither name nor kind.
     return { action: 'pass' };
   }
 
