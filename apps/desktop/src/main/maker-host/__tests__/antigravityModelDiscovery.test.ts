@@ -89,6 +89,36 @@ it('reports a missing Agy login and publishes models on a successful retry', asy
   expect(agy.antigravityProvider()?.models.antigravity).toMatchObject([{ id: 'gemini-fixture' }]);
 });
 
+// Unit regression: a TTL-triggered probe used to erase same-owner models on network failure.
+// Manual retries in the login test bypass both cache expiry and retry backoff.
+it('retains models across a transient automatic discovery failure until a verified refresh', async () => {
+  const clock = vi.spyOn(Date, 'now');
+  try {
+    const start = Date.now();
+    clock.mockReturnValue(start);
+    fixture.probe.mockResolvedValueOnce(catalog);
+    const discover = () => agy.readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true });
+    await agy.readAntigravityConnection({ allowSideEffects: true, waitForDiscovery: true, force: true });
+    clock.mockReturnValue(start + 6 * 60 * 60_000);
+    fixture.probe.mockRejectedValueOnce(Object.assign(new Error('ACP agent ended'), { name: 'AcpConnectionClosedError', info: { detail: 'network-or-proxy' } }));
+    await expect(discover()).resolves.toBe(true);
+    expect(agy.antigravityProvider()?.models.antigravity).toMatchObject([{ id: 'gemini-fixture' }]);
+    expect(agy.antigravityModelDiscoveryFailure()?.kind).toBe('network');
+    expect(agy.antigravityProvider()).toMatchObject({ subscriptionReadUnavailable: true, subscriptionModelsConfirmedAt: start });
+    await discover();
+    expect(fixture.probe).toHaveBeenCalledTimes(2);
+    fixture.owner = 'b';
+    expect(agy.antigravityProvider()?.models.antigravity).toEqual([]);
+    fixture.owner = 'a';
+    clock.mockReturnValue(start + 6 * 60 * 60_000 + 30_000);
+    fixture.probe.mockResolvedValueOnce(catalog);
+    await expect(discover()).resolves.toBe(true);
+    expect(agy.antigravityModelDiscoveryFailure()).toBeNull();
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 // Agy runs shell commands in its terminal sandbox, which cannot execute the rg copies under
 // Cindy's user data (`zsh: operation not permitted: rg`), so Agy must find the bundled one first.
 it('puts the bundled rg first on the PATH Agy receives', async () => {

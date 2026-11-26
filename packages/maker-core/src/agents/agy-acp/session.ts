@@ -305,7 +305,9 @@ export interface OpenAcpSessionOptions {
    */
   checkBackgroundActivity?: (
     sessionId: string,
+    generation: string,
   ) => Promise<{
+    scanPending?: boolean;
     pendingReply: boolean;
     hasPendingTranscriptStep?: boolean;
     activeSubagents: boolean | null;
@@ -515,6 +517,8 @@ export async function openAcpSession(opts: OpenAcpSessionOptions): Promise<AcpSe
   }
 }
 
+type PromptOutcomeWatcher = ReturnType<NonNullable<OpenAcpSessionOptions['watchPromptOutcome']>>;
+
 interface ActiveTurn {
   token: number;
   settled: boolean;
@@ -558,12 +562,17 @@ interface ActiveTurn {
   deferredOutcome: AcpTurnOutcome | null;
   /** Whether the post-wakeup phase has emitted assistant text since the last tool/thought started. */
   sawTextSinceBackgroundWait: boolean;
-  /** Newest `session/prompt` serving this turn; only its result ends the turn. */
+  /** Monotonic send order, including rejected prompts. */
   lease: number;
   /** Prompts sent for this turn whose `session/prompt` has not returned yet. */
   outstanding: Map<number, AcpContentBlock[]>;
+  /** Latest non-rejected input whose result can end the turn after all receipts arrive. */
+  latestReceipt?: { lease: number; outcome: AcpTurnOutcome; watcher?: PromptOutcomeWatcher };
+  rejectedSteers?: Map<number, AcpContentBlock[]>;
+  initialPromptLease?: number;
+  dispatchTail?: Promise<void>;
   /** Optional native outcome watchers keyed by prompt lease. */
-  outcomeWatchers: Map<number, Promise<(stopReason: AcpStopReason, context?: { hasResponseText?: boolean }) => Promise<AcpTurnOutcome | undefined>>>;
+  outcomeWatchers: Map<number, PromptOutcomeWatcher>;
   /** Usage reported by every request of this turn (superseded ones report none). */
   usage?: AcpPromptUsage;
 }
@@ -936,7 +945,7 @@ export class AcpSession {
       this.pump();
       return;
     }
-    this.requestPrompt(turn, prompt);
+    this.requestPrompt(turn, prompt, true);
   }
 
   /** Runs the agent's native `/compact` command without injecting a visible chat turn. */
@@ -1333,7 +1342,7 @@ export class AcpSession {
   }
 
   /** Sends a prompt for `turn`; a later one (a steer) takes over ending the turn. */
-  private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[]): void {
+  private requestPrompt(turn: ActiveTurn, prompt: AcpContentBlock[], steer = false): void {
     this.clearBackgroundTimers(turn);
     this.clearInFlightIdleSettleTimer(turn);
     turn.continuingInBackground = false;
@@ -1348,6 +1357,7 @@ export class AcpSession {
     turn.deferredOutcome = null;
     turn.sawTextSinceBackgroundWait = false;
     const lease = ++turn.lease;
+    if (!steer) turn.initialPromptLease = lease;
     turn.outstanding.set(lease, prompt);
     const dispatch = (): void => {
       if (turn.settled || this.turn !== turn || this.ended || this.closing || turn.cancelTimer) {
@@ -1364,14 +1374,16 @@ export class AcpSession {
           void this.settleLease(turn, lease, { stopReason: normalizeStopReason(result), usage: readAcpPromptUsage(result.usage) });
         },
         (error: unknown) => {
-          void this.settleLease(turn, lease, this.errorOutcome(error), error instanceof AcpRpcError);
+          void this.settleLease(turn, lease, this.errorOutcome(error), steer && error instanceof AcpRpcError);
         },
       );
     };
     if (this.watchPromptOutcome) {
       const watcherPromise = this.watchPromptOutcome(this.nativeId).catch(() => undefined);
       turn.outcomeWatchers.set(lease, watcherPromise.then(fn => fn ?? (async () => undefined)));
-      void watcherPromise.then(() => dispatch());
+      // Preparing a native watcher does I/O. Preserve the send order even when a
+      // later watcher is ready first; only wait for dispatch, never for its RPC reply.
+      turn.dispatchTail = Promise.all([turn.dispatchTail, watcherPromise]).then(dispatch);
       return;
     }
     dispatch();
@@ -1382,36 +1394,46 @@ export class AcpSession {
     const watcherPromise = turn.outcomeWatchers.get(lease);
     turn.outstanding.delete(lease);
     turn.outcomeWatchers.delete(lease);
-    if (turn.settled || this.turn !== turn) return;
+    if (!prompt || turn.settled || this.turn !== turn) return;
     if (outcome.usage) turn.usage = addUsage(turn.usage, outcome.usage);
-    // A newer prompt took the turn over; the agent answers the older one immediately.
-    if (lease !== turn.lease) return;
-    if (refused && turn.outstanding.size > 0 && !turn.settled) {
-      // The agent refused the steer while an earlier prompt still runs. That prompt ends the
-      // turn; the steered input runs next unless the user stopped the turn.
-      turn.lease = Math.max(...turn.outstanding.keys());
-      this.logger?.warn('acp: agent refused a steer; delivering it as the next turn', { error: 'error' in outcome ? outcome.error : '' });
-      if (prompt && !turn.cancelTimer) this.pendingPrompts.unshift(prompt);
-      this.refreshPromptInactivityTimer(turn);
+    if (refused) {
+      (turn.rejectedSteers ??= new Map()).set(lease, prompt);
+    } else if (!turn.latestReceipt || lease > turn.latestReceipt.lease) {
+      turn.latestReceipt = { lease, outcome, watcher: watcherPromise };
+    }
+    // An older steer can still be rejected after the newest prompt succeeded. Keep
+    // its receipt alive, and replay rejected inputs in send order rather than ACK order.
+    // A superseded initial request has no steering input to recover. Its delayed
+    // receipt must not hold a successful newer reply open.
+    if (turn.initialPromptLease !== undefined && turn.latestReceipt
+      && turn.latestReceipt.lease > turn.initialPromptLease && turn.outstanding.size === 1
+      && turn.outstanding.has(turn.initialPromptLease)) {
+      turn.outstanding.delete(turn.initialPromptLease);
+      turn.outcomeWatchers.delete(turn.initialPromptLease);
+    }
+    if (turn.outstanding.size > 0) return;
+    if (turn.cancelTimer) {
+      this.finishTurn(turn.token, { stopReason: 'cancelled', usage: turn.usage });
       return;
     }
     this.clearPromptInactivityTimer(turn);
-
-    let effectiveOutcome = outcome;
+    const generation = turn.lease;
+    const latest = turn.latestReceipt;
+    // An autonomous background turn may have only a rejected steer.
+    let effectiveOutcome: AcpTurnOutcome = latest?.outcome ?? { stopReason: 'end_turn' };
     if (
-      watcherPromise
+      latest?.watcher
       && !turn.settled
       && !turn.cancelTimer
-      && !refused
       && 'stopReason' in effectiveOutcome
       && (effectiveOutcome.stopReason === 'end_turn' || effectiveOutcome.stopReason === 'refusal')
     ) {
       try {
-        const checker = await watcherPromise;
+        const checker = await latest.watcher;
         const inspected = await checker(effectiveOutcome.stopReason, {
           hasResponseText: this.translator.hasResponseText(),
         });
-        if (turn.settled || this.turn !== turn || lease !== turn.lease) return;
+        if (turn.settled || this.turn !== turn || generation !== turn.lease) return;
         if (inspected && 'error' in inspected) {
           effectiveOutcome = {
             ...inspected,
@@ -1426,9 +1448,9 @@ export class AcpSession {
       && turn.outstanding.size === 0
       && !turn.settled
       && !turn.cancelTimer
-      && !refused
       && 'stopReason' in effectiveOutcome
       && effectiveOutcome.stopReason === 'end_turn'
+      && !turn.rejectedSteers?.size
       && this.pendingPrompts.length === 0
     ) {
       const hasPendingTools = this.translator.hasPendingNonDaemonTools();
@@ -1437,9 +1459,9 @@ export class AcpSession {
       let nativePending = false;
       let nativeActiveSubagents = false;
       if (!hasPendingTools && !hasAsyncLaunch && this.checkBackgroundActivity) {
-        const state = await this.probeBackgroundActivity();
-        if (turn.settled || this.turn !== turn || lease !== turn.lease || turn.outstanding.size > 0) return;
-        nativePending = state.pendingReply;
+        const state = await this.probeBackgroundActivity(turn);
+        if (turn.settled || this.turn !== turn || generation !== turn.lease || turn.outstanding.size > 0) return;
+        nativePending = state.scanPending === true || state.pendingReply;
         nativeActiveSubagents = state.activeSubagents === true;
       }
       if (hasPendingTools || hasAsyncLaunch || nativePending || nativeActiveSubagents) {
@@ -1477,6 +1499,11 @@ export class AcpSession {
       if (heldFailure) {
         finalOutcome = { ...heldFailure, ...(finalOutcome.usage ? { usage: finalOutcome.usage } : {}) };
       }
+    }
+    if (turn.rejectedSteers && !turn.cancelTimer && !this.closing && !this.connection.closed
+      && !this.violationTerminated && !('stopReason' in finalOutcome && finalOutcome.stopReason === 'cancelled')) {
+      const retries = [...turn.rejectedSteers].sort(([a], [b]) => a - b);
+      this.pendingPrompts.unshift(...retries.map(([, input]) => input));
     }
     turn.settled = true;
     this.clearTurnTimers(turn);
@@ -1854,7 +1881,8 @@ export class AcpSession {
     }
   }
 
-  private async probeBackgroundActivity(): Promise<{
+  private async probeBackgroundActivity(turn: ActiveTurn): Promise<{
+    scanPending?: boolean;
     pendingReply: boolean;
     hasPendingTranscriptStep?: boolean;
     activeSubagents: boolean | null;
@@ -1864,7 +1892,7 @@ export class AcpSession {
       return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
     }
     try {
-      return await this.checkBackgroundActivity(this.nativeId);
+      return await this.checkBackgroundActivity(this.nativeId, `${turn.token}:${turn.lease}:${turn.inFlightActivitySeq}`);
     } catch {
       return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
     }
@@ -1905,14 +1933,16 @@ export class AcpSession {
     }
     turn.backgroundCheckInFlight = true;
     turn.recheckBackgroundAfterFlight = false;
+    const lease = turn.lease;
     try {
       const [state] = await Promise.all([
-        this.probeBackgroundActivity(),
+        this.probeBackgroundActivity(turn),
         this.syncSubagentSnapshots(),
       ]);
       if (
         turn.settled
         || this.turn !== turn
+        || turn.lease !== lease
         || !turn.continuingInBackground
         || turn.outstanding.size > 0
         || turn.cancelTimer
@@ -1925,7 +1955,7 @@ export class AcpSession {
       if (state.activeSubagents === true) {
         turn.observedActiveSubagents = true;
       }
-      if (state.pendingReply || state.activeSubagents === true) {
+      if (state.scanPending || state.pendingReply || state.activeSubagents === true) {
         this.scheduleBackgroundPoll(turn);
         return;
       }
@@ -2073,7 +2103,7 @@ export class AcpSession {
     turn.inFlightCheckInFlight = true;
     try {
       const [state] = await Promise.all([
-        this.probeBackgroundActivity(),
+        this.probeBackgroundActivity(turn),
         this.syncSubagentSnapshots(),
       ]);
       if (
@@ -2089,6 +2119,10 @@ export class AcpSession {
         || this.translator.hasPendingNonDaemonTools()
         || this.translator.hasAwaitingOtherAsyncLaunch()
       ) {
+        return;
+      }
+      if (state.scanPending || turn.outstanding.size > 1 || !turn.outstanding.has(turn.lease)) {
+        this.scheduleInFlightIdleSubagentCheck(turn, this.bgPollMs);
         return;
       }
       // Only settle an in-flight `session/prompt` when native subagent records exist and

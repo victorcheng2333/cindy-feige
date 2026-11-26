@@ -930,6 +930,24 @@ describe('AcpSession steering by prompt', () => {
     await session.close();
   });
 
+  // Unit: Agy's native receipt watcher can finish preparing the steer before its parent
+  // prompt. Input must reach the ACP peer in the same order as the receipts we track.
+  it('dispatches a steer after its parent when native watcher preparation completes out of order', async () => {
+    const agent = createFakeAgent();
+    const ready = deferred<() => Promise<undefined>>();
+    const watchPromptOutcome = vi.fn(async () => async () => undefined).mockReturnValueOnce(ready.promise);
+    const { session } = await open(agent, { steerByPrompt: true, watchPromptOutcome });
+    await session.send({ type: 'user', content: 'original' });
+    await session.steer({ type: 'user', content: 'amendment' });
+    ready.resolve(async () => undefined);
+    await vi.waitFor(() => expect(agent.prompts.map(request => request.params.prompt)).toEqual([
+      [{ type: 'text', text: 'original' }], [{ type: 'text', text: 'amendment' }],
+    ]));
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(session.isTurnRunning()).toBe(false));
+    await session.close();
+  });
+
   it('keeps usage when the steer arrived after the agent had already finished', async () => {
     const agent = createFakeAgent();
     const { session, events } = await open(agent, { steerByPrompt: true });
@@ -973,6 +991,30 @@ describe('AcpSession steering by prompt', () => {
     expect(agent.prompts[2]!.params.prompt).toEqual([{ type: 'text', text: 'two' }]);
     expect(events.filter(event => event.type === 'done')).toHaveLength(1);
     expect(events.find(event => event.type === 'done')?.data).not.toHaveProperty('error');
+    await session.close();
+  });
+
+  // Unit regression: ACP may acknowledge the newest prompt before rejecting older steers.
+  // A single busy steer does not cover out-of-order replies, replay order, or Stop.
+  it.each([false, true])('preserves refused steers in input order unless stopped (stop=%s)', async stop => {
+    const agent = createFakeAgent();
+    const { session } = await open(agent, { steerByPrompt: true });
+    await session.send({ type: 'user', content: 'original' });
+    for (const content of ['A', 'B', 'C']) await session.steer({ type: 'user', content });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    agent.prompts[2]!.settle.reject(new Error('busy'));
+    if (stop) await session.abort();
+    agent.prompts[3]!.settle.resolve({ stopReason: stop ? 'cancelled' : 'end_turn' });
+    agent.prompts[1]!.settle.reject(new Error('busy'));
+    if (!stop) {
+      for (const [index, text] of ['A', 'B'].entries()) {
+        await vi.waitFor(() => expect(agent.prompts).toHaveLength(5 + index));
+        expect(agent.prompts[4 + index]!.params.prompt).toEqual([{ type: 'text', text }]);
+        agent.prompts[4 + index]!.settle.resolve({ stopReason: 'end_turn' });
+      }
+    }
+    await vi.waitFor(() => expect(session.isTurnRunning()).toBe(false));
+    expect(agent.prompts).toHaveLength(stop ? 4 : 6);
     await session.close();
   });
 
@@ -1343,7 +1385,8 @@ describe('AcpSession background tool continuation', () => {
   it('settles autonomous wakeup on usage_update when native background state is clear and holds when pendingReply is true', async () => {
     vi.useFakeTimers();
     try {
-      let state: { pendingReply: boolean; activeSubagents: boolean | null } = { pendingReply: true, activeSubagents: null };
+      let state: { scanPending?: boolean; pendingReply: boolean; activeSubagents: boolean | null } =
+        { scanPending: true, pendingReply: false, activeSubagents: null };
       const agent = createFakeAgent();
       const { session, events } = await open(agent, {
         continueWhileToolsPending: true,
@@ -1355,7 +1398,10 @@ describe('AcpSession background tool continuation', () => {
       await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
       agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
       await vi.advanceTimersByTimeAsync(50);
-      // Native inbox still has an unread high-priority wake, so turn stays running.
+      // A partial page keeps the turn open even before it discovers the pending wake.
+      expect(session.isTurnRunning()).toBe(true);
+      state = { pendingReply: true, activeSubagents: null };
+      await vi.advanceTimersByTimeAsync(100);
       expect(session.isTurnRunning()).toBe(true);
       expect(events.some(e => e.type === 'done')).toBe(false);
 

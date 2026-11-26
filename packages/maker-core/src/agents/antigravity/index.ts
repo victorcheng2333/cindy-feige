@@ -42,7 +42,7 @@ import { seedAgyStateDir, startAgyAcpProcess } from './acp-process.js';
 import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js';
 import {
   classifyAntigravityErrorText,
-  readAntigravityBackgroundState,
+  createAntigravityBackgroundProbe,
   watchAntigravityPromptOutcome,
   type OpenReadonlySqlite,
 } from './native-state.js';
@@ -480,7 +480,7 @@ export class AntigravityAgent extends BaseAgent {
           sessionId,
           openSqlite: this.agyDeps.openReadonlySqlite,
         }),
-        checkBackgroundActivity: (sessionId) => readAntigravityBackgroundState(stateDir, sessionId),
+        checkBackgroundActivity: createAntigravityBackgroundProbe(stateDir),
         pollSubagentRuns: (sessionId, extraChildIds) =>
           subagentReader.readRuns(sessionId, { extraChildIds }),
         onSessionBroken: async () => {

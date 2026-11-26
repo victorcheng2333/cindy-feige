@@ -58,7 +58,8 @@ const GO_DURATION_UNIT_MS: Record<string, number> = {
 };
 
 const DATA_SUBDIRS = ['antigravity-cli', 'antigravity-acp'] as const;
-const MAX_MESSAGE_FILES = 256;
+const MESSAGES_PER_PROBE = 256;
+const CHILDREN_PER_PROBE = 64;
 const MAX_JSON_FILE_BYTES = 1024 * 1024;
 const PENDING_REPLY_TAIL_BYTES = 64 * 1024;
 const TRANSCRIPT_TAIL_BYTES = 256 * 1024;
@@ -574,20 +575,29 @@ interface InboxSummary {
   systemStopAtMs?: number;
 }
 
-async function readInboxSummary(
+interface BackgroundScanBudget {
+  messages: number;
+  children: number;
+  paged: boolean;
+  directories: { segments: string[]; info?: fs.Stats }[];
+}
+
+async function* readInboxSummary(
   stateDir: string,
   subdir: string,
   sessionId: string,
-): Promise<InboxSummary> {
+  budget: BackgroundScanBudget,
+): AsyncGenerator<void, InboxSummary> {
   const latestReportAtBySender = new Map<string, number>();
   const dirSegments = [subdir, 'brain', sessionId, '.system_generated', 'messages'];
   const inbox = await resolveAntigravityManagedPath(stateDir, dirSegments, 'directory');
+  budget.directories.push({ segments: dirSegments, info: inbox?.info });
   if (!inbox) return { hasUnreadHighPriority: false, latestReportAtBySender };
 
   const entries = await fsp.readdir(inbox.path).catch(() => undefined);
   if (!entries) return { hasUnreadHighPriority: false, latestReportAtBySender };
   const messageNames = entries.filter(name => name.endsWith('.json') && name !== 'read.json');
-  if (messageNames.length === 0 || messageNames.length > MAX_MESSAGE_FILES) {
+  if (messageNames.length === 0) {
     return { hasUnreadHighPriority: false, latestReportAtBySender };
   }
 
@@ -611,6 +621,13 @@ async function readInboxSummary(
   let latestHighPriorityAtMs: number | undefined;
   let systemStopAtMs: number | undefined;
   for (const name of messageNames) {
+    if (budget.messages === MESSAGES_PER_PROBE) {
+      budget.messages = 0;
+      budget.children = 0;
+      budget.paged = true;
+      yield;
+    }
+    budget.messages++;
     const file = await resolveAntigravityManagedPath(stateDir, [...dirSegments, name], 'file');
     if (!file || file.info.size > MAX_JSON_FILE_BYTES) continue;
     const raw = await fsp.readFile(file.path, 'utf8').catch(() => undefined);
@@ -661,6 +678,8 @@ async function readInboxSummary(
 }
 
 export interface AntigravityBackgroundState {
+  /** Another bounded page is needed before the remaining fields can be used to settle a turn. */
+  scanPending?: true;
   /** True when Agy has an unread high-priority wake or dequeued SYSTEM_MESSAGE awaiting a planner reply. */
   pendingReply: boolean;
   /** True when transcript tail stops on an intermediate `GENERIC` or tool-calling `PLANNER_RESPONSE` step. */
@@ -682,10 +701,10 @@ export interface AntigravityBackgroundState {
  * Inspects Agy's native inbox, transcript tail, and detached subagent records read-only to
  * determine whether background work or an autonomous wakeup reply is still pending.
  */
-export async function readAntigravityBackgroundState(
+async function* scanBackgroundState(
   stateDir: string,
   sessionId: string,
-): Promise<AntigravityBackgroundState> {
+): AsyncGenerator<void, AntigravityBackgroundState> {
   if (!NATIVE_SESSION_ID.test(sessionId)) {
     return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
   }
@@ -694,7 +713,8 @@ export async function readAntigravityBackgroundState(
     return { pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: null, hasIdleAliveSubagents: false };
   }
 
-  const inbox = await readInboxSummary(stateDir, subdir, sessionId);
+  const budget: BackgroundScanBudget = { messages: 0, children: 0, paged: false, directories: [] };
+  const inbox = yield* readInboxSummary(stateDir, subdir, sessionId, budget);
   let pendingReply = inbox.hasUnreadHighPriority;
   let hasPendingTranscriptStep = false;
   if (!pendingReply) {
@@ -714,15 +734,23 @@ export async function readAntigravityBackgroundState(
 
   const subagentDirSegments = [subdir, 'brain', sessionId, '.system_generated', 'subagents'];
   const subagentsDir = await resolveAntigravityManagedPath(stateDir, subagentDirSegments, 'directory');
+  budget.directories.push({ segments: subagentDirSegments, info: subagentsDir?.info });
   let activeSubagents: boolean | null = null;
   let hasIdleAliveSubagents = false;
   if (subagentsDir) {
     const entries = await fsp.readdir(subagentsDir.path).catch(() => undefined);
     const childFiles = entries?.filter(name => name.endsWith('.json') && NATIVE_SESSION_ID.test(name.slice(0, -5))) ?? [];
-    if (childFiles.length > 0 && childFiles.length <= 64) {
+    if (childFiles.length > 0) {
       let anyRunning = false;
       let anyReadable = false;
       for (const fileName of childFiles) {
+        if (budget.children === CHILDREN_PER_PROBE) {
+          budget.messages = 0;
+          budget.children = 0;
+          budget.paged = true;
+          yield;
+        }
+        budget.children++;
         const childId = fileName.slice(0, -5);
         const recordFile = await resolveAntigravityManagedPath(stateDir, [...subagentDirSegments, fileName], 'file');
         if (!recordFile || recordFile.info.size > MAX_JSON_FILE_BYTES) continue;
@@ -754,7 +782,7 @@ export async function readAntigravityBackgroundState(
           // high-priority wake, or its transcript has a wake entry newer than its latest report.
           let revived = false;
           if (NATIVE_SESSION_ID.test(convId)) {
-            const childInbox = await readInboxSummary(stateDir, subdir, convId);
+            const childInbox = yield* readInboxSummary(stateDir, subdir, convId, budget);
             if (
               childInbox.hasUnreadHighPriority
               || (childInbox.latestHighPriorityAtMs !== undefined && childInbox.latestHighPriorityAtMs > latestReportAtMs)
@@ -808,5 +836,48 @@ export async function readAntigravityBackgroundState(
     }
   }
 
+  // New inbox or registry entries can arrive between polls. An incomplete view must
+  // not close the turn; start a fresh pass when the directory membership changed.
+  if (budget.paged && !pendingReply && !activeSubagents) {
+    for (const { segments, info } of budget.directories.reverse()) {
+      if (budget.children === CHILDREN_PER_PROBE) {
+        budget.children = 0;
+        yield;
+      }
+      budget.children++;
+      const current = await resolveAntigravityManagedPath(stateDir, segments, 'directory');
+      if (current?.info.ino !== info?.ino || current?.info.mtimeMs !== info?.mtimeMs) return INCOMPLETE_SCAN;
+    }
+  }
   return { pendingReply, hasPendingTranscriptStep, activeSubagents, hasIdleAliveSubagents };
+}
+
+const INCOMPLETE_SCAN: AntigravityBackgroundState = {
+  scanPending: true, pendingReply: false, activeSubagents: null,
+  hasPendingTranscriptStep: false, hasIdleAliveSubagents: false,
+};
+
+/** One scan per prompt. Overlapping probes share a page; the next poll resumes it. */
+export function createAntigravityBackgroundProbe(stateDir: string) {
+  let scan: {
+    sessionId: string;
+    generation: string;
+    pages: ReturnType<typeof scanBackgroundState>;
+    pending?: Promise<AntigravityBackgroundState>;
+  } | undefined;
+  return (sessionId: string, generation: string): Promise<AntigravityBackgroundState> => {
+    if (!scan || scan.sessionId !== sessionId || scan.generation !== generation) {
+      scan = { sessionId, generation, pages: scanBackgroundState(stateDir, sessionId) };
+    }
+    const current = scan;
+    current.pending ??= current.pages.next().then((page): AntigravityBackgroundState => {
+      if (!page.done) return INCOMPLETE_SCAN;
+      if (current === scan) scan = undefined;
+      return page.value;
+    }, error => {
+      if (current === scan) scan = undefined;
+      throw error;
+    }).finally(() => { current.pending = undefined; });
+    return current.pending;
+  };
 }

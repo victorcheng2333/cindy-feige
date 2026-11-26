@@ -13,7 +13,7 @@ import { AntigravityAgent, probeAntigravityCatalog } from './index.js';
 import { buildAgySettingsJson, classifyAgyProcessExit, runAntigravityAccountCommand } from './acp-process.js';
 import {
   AGY_INVALID_THINKING_SIGNATURE_REASON,
-  readAntigravityBackgroundState,
+  createAntigravityBackgroundProbe,
   watchAntigravityPromptOutcome,
 } from './native-state.js';
 
@@ -445,9 +445,47 @@ describe('Antigravity native state inspection', () => {
     }
   });
 
+  // Unit: a synthetic native inbox and registry at their first overflow (257 / 65)
+  // must still expose a wake and a running child. Small-directory cases missed both.
+  it('keeps pending background work visible beyond one scan page', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-pages-'));
+    try {
+      const root = path.join(dir, 'antigravity-cli', 'brain', 'large', '.system_generated');
+      const messages = path.join(root, 'messages');
+      const children = path.join(root, 'subagents');
+      await mkdir(messages, { recursive: true });
+      await mkdir(children);
+      for (let id = 0; id < 257; id++) {
+        await writeFile(path.join(messages, id + '.json'), id === 256 ? '{"priority":"MESSAGE_PRIORITY_HIGH"}' : '{}');
+      }
+      for (let id = 0; id < 65; id++) {
+        await writeFile(path.join(children, String(id).padStart(2, '0') + '.json'), JSON.stringify({
+          state: id === 64 ? 'RUNNING' : 'SUBAGENT_STATE_KILLED',
+        }));
+      }
+      const probe = createAntigravityBackgroundProbe(dir);
+      expect(await probe('large', 'turn-1')).toMatchObject({ scanPending: true });
+      let state = await probe('large', 'turn-1');
+      if (state.scanPending) state = await probe('large', 'turn-1');
+      expect(state).toMatchObject({ pendingReply: true, activeSubagents: true });
+
+      // A new wake arrives after the directory listing for the next pass was read.
+      await writeFile(path.join(messages, 'read.json'), '{"256":true}');
+      await writeFile(path.join(children, '64.json'), '{"state":"SUBAGENT_STATE_KILLED"}');
+      expect(await probe('large', 'turn-2')).toMatchObject({ scanPending: true });
+      await writeFile(path.join(messages, 'new.json'), '{"priority":"MESSAGE_PRIORITY_HIGH"}');
+      state = await probe('large', 'turn-2');
+      for (let page = 0; state.scanPending && page < 6; page++) state = await probe('large', 'turn-2');
+      expect(state).toMatchObject({ pendingReply: true, activeSubagents: false });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('detects unread high-priority inbox wakes, trailing SYSTEM_MESSAGE, and active vs reported subagents', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-bg-'));
     try {
+      const probe = createAntigravityBackgroundProbe(dir);
       const sysGen = path.join(dir, 'antigravity-cli', 'brain', 'sess-bg', '.system_generated');
       const messagesDir = path.join(sysGen, 'messages');
       const logsDir = path.join(sysGen, 'logs');
@@ -457,20 +495,20 @@ describe('Antigravity native state inspection', () => {
       await mkdir(subagentsDir, { recursive: true });
 
       await writeFile(path.join(subagentsDir, 'child-1.json'), JSON.stringify({ conversationId: 'child-1', state: 'RUNNING' }));
-      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
+      expect(await probe('sess-bg', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
 
       // Child reports back with high-priority message -> activeSubagents becomes false, pendingReply becomes true.
       await writeFile(path.join(messagesDir, 'msg-1.json'), JSON.stringify({ id: 'msg-1', sender: 'child-1', priority: 'MESSAGE_PRIORITY_HIGH' }));
-      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: true, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
+      expect(await probe('sess-bg', 'turn-1')).toEqual({ pendingReply: true, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
 
       // Parent reads the message and transcript ends with SYSTEM_MESSAGE -> still pendingReply until planner responds.
       await writeFile(path.join(messagesDir, 'read.json'), JSON.stringify({ 'msg-1': true }));
       await writeFile(path.join(logsDir, 'transcript.jsonl'), `${JSON.stringify({ step_index: 5, type: 'SYSTEM_MESSAGE', content: '[Message] priority=MESSAGE_PRIORITY_HIGH' })}\n`);
-      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: true, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
+      expect(await probe('sess-bg', 'turn-1')).toEqual({ pendingReply: true, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
 
       // Once planner responds, both are clear.
       await writeFile(path.join(logsDir, 'transcript.jsonl'), `${JSON.stringify({ step_index: 6, type: 'PLANNER_RESPONSE', content: 'Done' })}\n`);
-      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
+      expect(await probe('sess-bg', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
 
       // Stale SUBAGENT_STATE_ALIVE child stopped by a newer system notice does not pin activeSubagents,
       // while subsequent activity newer than the stop notice marks it active again.
@@ -494,20 +532,20 @@ describe('Antigravity native state inspection', () => {
           content: '[Notice] All your subagents and background tasks have been stopped due to server restart.',
         }),
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
+      expect(await probe('sess-bg', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
 
       await writeFile(
         path.join(childLogsDir, 'transcript.jsonl'),
         `${JSON.stringify({ step_index: 2, type: 'SYSTEM_MESSAGE', created_at: '2026-11-25T06:06:00Z', content: 'revived' })}\n`,
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-bg')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: expect.any(Boolean) });
+      expect(await probe('sess-bg', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: expect.any(Boolean) });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
   // 测试价值
-  // - 生产入口与可观察结果：readAntigravityBackgroundState；
+  // - 生产入口与可观察结果：createAntigravityBackgroundProbe；
   //   验证曾向父会话汇报过的 `SUBAGENT_STATE_ALIVE` 子代理在收到父会话新的高优先级唤醒消息（无论未读或已读）
   //   或 transcript 出现晚于上次汇报的 `SYSTEM_MESSAGE` 时，`activeSubagents` 重新返回 `true`，
   //   且汇报后子代理自身的收尾 `PLANNER_RESPONSE` 不会误判为唤醒，新汇报落盘后恢复为 `false`。
@@ -518,6 +556,7 @@ describe('Antigravity native state inspection', () => {
   it('treats a previously reported SUBAGENT_STATE_ALIVE subagent as active again when revived via inbox or transcript', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-revive-'));
     try {
+      const probe = createAntigravityBackgroundProbe(dir);
       const parentSys = path.join(dir, 'antigravity-cli', 'brain', 'sess-revive', '.system_generated');
       const parentMessages = path.join(parentSys, 'messages');
       const parentSubagents = path.join(parentSys, 'subagents');
@@ -551,7 +590,7 @@ describe('Antigravity native state inspection', () => {
           JSON.stringify({ step_index: 2, type: 'PLANNER_RESPONSE', created_at: '2026-11-26T10:00:04.000Z', content: 'Sent report.' }),
         ].join('\n') + '\n',
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
+      expect(await probe('sess-revive', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
 
       // 1. Parent revives child via send_message (unread high-priority wake in child inbox).
       await writeFile(
@@ -564,7 +603,7 @@ describe('Antigravity native state inspection', () => {
           content: 'Check one more file',
         }),
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
+      expect(await probe('sess-revive', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
 
       // 2. Child dequeues the wake into read.json & transcript; still active until it reports back again.
       await writeFile(path.join(childMessages, 'read.json'), JSON.stringify({ 'wake-1': true }));
@@ -576,7 +615,7 @@ describe('Antigravity native state inspection', () => {
           JSON.stringify({ step_index: 3, type: 'SYSTEM_MESSAGE', created_at: '2026-11-26T10:01:02.000Z', content: 'Check one more file' }),
         ].join('\n') + '\n',
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
+      expect(await probe('sess-revive', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
 
       // 3. Child sends its second report -> activeSubagents clears again once parent reads it.
       await writeFile(
@@ -589,7 +628,7 @@ describe('Antigravity native state inspection', () => {
         }),
       );
       await writeFile(path.join(parentMessages, 'read.json'), JSON.stringify({ 'report-1': true, 'report-2': true }));
-      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
+      expect(await probe('sess-revive', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: false, hasIdleAliveSubagents: true });
 
       // 4. Even without a newer child inbox file, a newer SYSTEM_MESSAGE in child transcript marks it active.
       await writeFile(
@@ -599,24 +638,25 @@ describe('Antigravity native state inspection', () => {
           JSON.stringify({ step_index: 4, type: 'SYSTEM_MESSAGE', created_at: '2026-11-26T10:03:00.000Z', content: 'One more check' }),
         ].join('\n') + '\n',
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-revive')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
+      expect(await probe('sess-revive', 'turn-1')).toEqual({ pendingReply: false, hasPendingTranscriptStep: false, activeSubagents: true, hasIdleAliveSubagents: false });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
   // 测试价值
-  // - 生产入口与可观察结果：readAntigravityBackgroundState；
+  // - 生产入口与可观察结果：createAntigravityBackgroundProbe；
   //   验证 `GENERIC` 行或带 `tool_calls` 的 `PLANNER_RESPONSE` 行仅标记 `hasPendingTranscriptStep: true`（不污染 `pendingReply`），
   //   且终态子代理（`KILLED`）不会设置 `hasIdleAliveSubagents: true`。
   // - Bug／规则依据：Agy 1.5.18 Orchestrator 在 Planner→Executor 切换及阶段过渡期间会在 transcript 尾写入这些中间步骤，
   //   仅阻止在途提前结算而不拖住显式 `end_turn`，同时已结束子代理不应误放行在途空闲结算。
   // - 现有覆盖缺口：此前仅测试了 `SYSTEM_MESSAGE` / 无工具 `PLANNER_RESPONSE` 以及 `RUNNING`/`ALIVE` 子代理。
   // - 最小失败输入：`transcript.jsonl` 末尾为 `PLANNER_RESPONSE` + `tool_calls`，或 `subagents/*.json` 为 `KILLED`。
-  // - tier：unit（临时目录 + readAntigravityBackgroundState）。
+  // - tier：unit（临时目录 + createAntigravityBackgroundProbe）。
   it('marks GENERIC and tool-calling PLANNER_RESPONSE tails via hasPendingTranscriptStep and keeps hasIdleAliveSubagents false for KILLED children', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-orch-state-'));
     try {
+      const probe = createAntigravityBackgroundProbe(dir);
       const logsDir = path.join(dir, 'antigravity-cli', 'brain', 'sess-orch', '.system_generated', 'logs');
       const subagentsDir = path.join(dir, 'antigravity-cli', 'brain', 'sess-orch', '.system_generated', 'subagents');
       await mkdir(logsDir, { recursive: true });
@@ -627,7 +667,7 @@ describe('Antigravity native state inspection', () => {
         path.join(logsDir, 'transcript.jsonl'),
         `${JSON.stringify({ step_index: 1, type: 'GENERIC', content: 'handing off to executor' })}\n`,
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-orch')).toEqual({
+      expect(await probe('sess-orch', 'turn-1')).toEqual({
         pendingReply: false,
         hasPendingTranscriptStep: true,
         activeSubagents: false,
@@ -638,7 +678,7 @@ describe('Antigravity native state inspection', () => {
         path.join(logsDir, 'transcript.jsonl'),
         `${JSON.stringify({ step_index: 2, type: 'PLANNER_RESPONSE', tool_calls: [{ id: 'tc1', name: 'read_file' }] })}\n`,
       );
-      expect(await readAntigravityBackgroundState(dir, 'sess-orch')).toEqual({
+      expect(await probe('sess-orch', 'turn-1')).toEqual({
         pendingReply: false,
         hasPendingTranscriptStep: true,
         activeSubagents: false,

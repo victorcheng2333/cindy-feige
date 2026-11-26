@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
 import { AntigravityAgent, antigravityEnv, probeAntigravityCatalog, runAntigravityAccountCommand, type AgentDeps, type AntigravityAgentDeps, type McpProvider, type AuthAdapter, type Capabilities, type OpenReadonlySqlite } from '@cindy/maker-core';
-import { BUNDLED_CATALOG, findBaseModel, type Provider, type ProviderModelDiscoveryFailure } from '@cindy/model-providers';
+import { BUNDLED_CATALOG, findBaseModel, type Provider, type ProviderView, type ProviderModelDiscoveryFailure } from '@cindy/model-providers';
 import { getActiveAppSession, ownerScopedUserDataPath } from '../appSessionState.js';
 import { resolveBetterSqliteNativeBinding } from '../localDb/betterSqliteFactory.js';
 import * as agySettingsStore from './antigravity-proxy-settings-store.js';
@@ -89,6 +89,7 @@ let snapshot: {
   /** Sanitized subscription plan label from `_meta.antigravity.tier.name`, e.g. `Google AI Ultra`. */
   tierName?: string;
   expiresAt: number;
+  confirmedAt?: number;
   failure: ProviderModelDiscoveryFailure | null;
 } | undefined;
 let discovery: { scope: string; token: symbol; retainOnFailure: boolean; promise: Promise<boolean> } | undefined;
@@ -387,6 +388,12 @@ function discoveryFailureKind(error: unknown): ProviderModelDiscoveryFailure['ki
   // Match CLI diagnostics here and publish only the category. The original output
   // can contain private account or proxy information.
   const output = `${failure.stderr ?? ''}\n${failure.stdout ?? ''}\n${failure.message ?? ''}`;
+  if (failure.name === 'AcpConnectionClosedError' && 'info' in failure) {
+    const detail = (failure.info as { detail?: string } | undefined)?.detail;
+    if (detail === 'auth-required') return 'unauthorized';
+    if (detail === 'network-or-proxy') return 'network';
+    if (detail === 'region-blocked') return 'regionBlocked';
+  }
   if (failure.name === 'AcpAuthRequiredError' || /please sign in to view available models|authentication expired/i.test(output)) return 'unauthorized';
   if (/user location is not supported/i.test(output)) return 'regionBlocked';
   if ((failure.killed && failure.signal === 'SIGTERM') || /deadline exceeded|timed out/i.test(output)) return 'timeout';
@@ -401,9 +408,14 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   const scope = ownerScopedUserDataPath('antigravity');
   if (!options.force && snapshot?.scope === scope && Date.now() < snapshot.expiresAt) return currentModels().length > 0;
   if (!options.allowSideEffects) return currentModels().length > 0;
+  // A manual refresh reports whether that attempt succeeded. A connection read can
+  // still use the same owner's retained catalog when that same attempt fails.
+  const readDuringDiscovery = (pending: Promise<boolean>) => options.waitForDiscovery
+    ? pending.then(refreshed => refreshed || (!options.force && snapshot?.scope === scope && currentModels().length > 0))
+    : currentModels().length > 0;
   if (discovery?.scope === scope) {
     if (options.force) discovery.retainOnFailure = true;
-    return options.waitForDiscovery ? discovery.promise : currentModels().length > 0;
+    return readDuringDiscovery(discovery.promise);
   }
   const token = Symbol();
   const promise = (async () => {
@@ -437,9 +449,9 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     if (discovery?.token !== token || scope !== ownerScopedUserDataPath('antigravity')) return false;
     const now = Date.now();
     const failure = failureKind ? { kind: failureKind, at: new Date(now).toISOString() } : null;
-    // Last known models remain useful after a failed manual refresh, except when
-    // the CLI explicitly reports that it cannot use the saved sign-in.
-    const retainPrevious = !!(failure && failure.kind !== 'unauthorized' && discovery.retainOnFailure && snapshot?.scope === scope);
+    const temporaryFailure = failure?.kind === 'network' || failure?.kind === 'timeout' || failure?.kind === 'upstream';
+    const retainPrevious = failure && failure.kind !== 'unauthorized' && snapshot?.scope === scope
+      && (temporaryFailure || discovery.retainOnFailure);
     const retainedCapabilities = retainPrevious ? snapshot?.capabilities : failure ? undefined : capabilities;
     const retainedVerified = retainPrevious ? snapshot?.runtimeVerifiedContextModels : failure ? undefined : runtimeVerifiedContextModels;
     const retainedTier = retainPrevious ? snapshot?.tierName : failure ? undefined : discoveredTier;
@@ -451,6 +463,7 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
     snapshot = {
       scope,
       capabilities: retainedCapabilities,
+      confirmedAt: retainPrevious ? snapshot?.confirmedAt : failure ? undefined : now,
       runtimeVerifiedContextModels: retainedVerified,
       tierName: retainedTier,
       expiresAt: now + ttl,
@@ -461,15 +474,22 @@ export async function readAntigravityConnection(options: { allowSideEffects?: bo
   })();
   discovery = { scope, token, retainOnFailure: options.force === true, promise };
   void promise.finally(() => { if (discovery?.promise === promise) discovery = undefined; });
-  return options.waitForDiscovery ? promise : currentModels().length > 0;
+  return readDuringDiscovery(promise);
 }
 
-export function antigravityProvider(): Provider | undefined {
+export function antigravityProvider(): (Provider & Pick<ProviderView,
+  'subscriptionReadUnavailable' | 'subscriptionReadUnreachable' | 'subscriptionModelsConfirmedAt'>) | undefined {
   if (!executable) return undefined;
   const scope = ownerScopedUserDataPath('antigravity');
-  const verifiedModels = snapshot?.scope === scope ? snapshot.runtimeVerifiedContextModels : undefined;
+  const current = snapshot?.scope === scope ? snapshot : undefined;
+  const verifiedModels = current?.runtimeVerifiedContextModels;
   return {
     id: 'antigravity',
+    ...(current?.failure && current.confirmedAt !== undefined ? {
+      subscriptionReadUnavailable: true,
+      subscriptionModelsConfirmedAt: current.confirmedAt,
+      ...(current.failure.kind === 'network' || current.failure.kind === 'timeout' ? { subscriptionReadUnreachable: true } : {}),
+    } : {}),
     name: 'Agy',
     source: 'builtin',
     agents: ['antigravity'],
