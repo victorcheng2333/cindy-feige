@@ -3494,9 +3494,6 @@ function HomeScreenContent({ active = true, width, newSessionInSystemBar = false
     pendingDeviceOptionActionRef.current = action;
     setDeviceOptionsTarget(null);
   }, []);
-  const handleChangeShowCollapsedTeammateAvatars = useCallback((value: boolean) => {
-    void setShowCollapsedTeammateAvatars(value);
-  }, [setShowCollapsedTeammateAvatars]);
   const changePinnedView = useCallback((mode: HomePinnedView) => {
     viewPrefsTouchedRef.current = true;
     setPinnedView(mode);
@@ -3952,7 +3949,6 @@ function HomeScreenContent({ active = true, width, newSessionInSystemBar = false
         ListHeaderComponent={<>
         <HomeTeammatesSection
           showCollapsedAvatars={showCollapsedTeammateAvatars}
-          onChangeShowCollapsedAvatars={handleChangeShowCollapsedTeammateAvatars}
           context={teammatesSectionContext}
           active={active}
           refreshKey={teammatesRefreshKey}

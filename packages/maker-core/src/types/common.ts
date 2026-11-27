@@ -45,8 +45,8 @@ export function assertNeverEngineKind(kind: never, context?: string): never {
 }
 
 /**
- * Compile-time exhaustive dispatch over all 4 `EngineKind` values.
- * Every branch (`claude-code`, `codex`, `pi`, `acp`) must be named explicitly
+ * Compile-time exhaustive dispatch over all `EngineKind` values.
+ * Every branch (`claude-code`, `codex`, `pi`, `antigravity`, `acp`) must be named explicitly
  * so adding or touching an engine surface cannot silently fall back to Claude.
  */
 export function matchEngineKind<T>(kind: EngineKind, handlers: Readonly<Record<EngineKind, () => T>>): T {

@@ -11,9 +11,9 @@ import {
 } from './common.js';
 
 describe('EngineKind and AgentKind type guards & exhaustive dispatch', () => {
-  it('distinguishes built-in AgentKind from all four EngineKind values', () => {
-    expect(BUILTIN_AGENT_KINDS_LIST).toEqual(['claude-code', 'codex', 'pi']);
-    expect(ALL_ENGINE_KINDS).toEqual(['claude-code', 'codex', 'pi', 'acp']);
+  it('distinguishes built-in AgentKind from all EngineKind values', () => {
+    expect(BUILTIN_AGENT_KINDS_LIST).toEqual(['claude-code', 'codex', 'pi', 'antigravity']);
+    expect(ALL_ENGINE_KINDS).toEqual(['claude-code', 'codex', 'pi', 'antigravity', 'acp']);
 
     for (const kind of BUILTIN_AGENT_KINDS_LIST) {
       expect(isBuiltinAgentKind(kind)).toBe(true);
@@ -38,6 +38,7 @@ describe('EngineKind and AgentKind type guards & exhaustive dispatch', () => {
         'claude-code': () => 'Claude Code',
         codex: () => 'Codex',
         pi: () => 'Pi',
+        antigravity: () => 'Antigravity',
         acp: () => 'ACP Plugin Engine',
       });
 
@@ -45,6 +46,7 @@ describe('EngineKind and AgentKind type guards & exhaustive dispatch', () => {
       'Claude Code',
       'Codex',
       'Pi',
+      'Antigravity',
       'ACP Plugin Engine',
     ]);
   });

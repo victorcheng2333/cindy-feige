@@ -735,23 +735,52 @@ export function observeDefaultClaudeSubscriptionStatus(status: ClaudeCliLoginSta
   if (isAppSessionBoundaryPending()) return;
   const provider = 'anthropic';
   const pool = readPool(provider);
-  if (!pool || pool.disconnected || !pool.accounts.some(account => account.id === 'default')) return;
+  const saved = pool?.accounts.find(account => account.id === 'default');
+  if (!pool || pool.disconnected || !saved) return;
   const state = currentRuntime();
   const key = keyOf(provider, 'default');
   const previous = state.cache.get(key);
-  const expectedIdentity = pool.accounts.find(account => account.id === 'default')?.reloginIdentity;
-  const identityMatches = !expectedIdentity || status.email?.trim().toLowerCase() === expectedIdentity.toLowerCase();
+  const expectedIdentity = saved.reloginIdentity;
+  const namelessLongLived = status.loggedIn && Boolean(status.longLivedToken) && !status.email;
+  const effectiveIdentity = status.email ?? (namelessLongLived ? (saved.reloginIdentity ?? saved.lastConfirmedIdentity) : undefined);
+  const effectivePlan = status.subscriptionType ?? (status.loggedIn && status.longLivedToken ? saved.longLivedToken?.plan : undefined);
+  const effectivePlanTier = status.planTier ?? (status.loggedIn && status.longLivedToken ? saved.longLivedToken?.planTier : undefined);
+  const effectivePlanDisplayName = status.planDisplayName ?? (status.loggedIn && status.longLivedToken ? saved.longLivedToken?.planDisplayName : undefined);
+  const identityMatches = !expectedIdentity || effectiveIdentity?.trim().toLowerCase() === expectedIdentity.toLowerCase();
   const authenticated = status.loggedIn && defaultAccountBound(provider) && identityMatches;
-  const sameIdentity = authenticated && previous?.auth.authenticated && previous.auth.identity === status.email;
+  const sameIdentity = authenticated && previous?.auth.authenticated && previous.auth.identity === effectiveIdentity;
   const auth: AccountSnapshot['auth'] = authenticated
-    ? { authenticated: true, authSource: 'oauth', identity: status.email, plan: status.subscriptionType,
-      ...(status.loginExpiresAt ? { loginExpiresAt: status.loginExpiresAt } : {}) }
-    : { authenticated: false, ...(expectedIdentity ? { identity: expectedIdentity } : {}),
-      ...(status.loggedIn && !identityMatches ? { errorReason: 'account_mismatch' } : {}) };
+    ? {
+        authenticated: true,
+        authSource: 'oauth',
+        identity: effectiveIdentity,
+        plan: effectivePlan,
+        planTier: effectivePlanTier,
+        planDisplayName: effectivePlanDisplayName,
+        ...(status.loginExpiresAt ? { loginExpiresAt: status.loginExpiresAt } : {}),
+        ...(status.longLivedToken
+          ? {
+              longLivedToken: {
+                source: status.longLivedToken,
+                ...(status.storedLogin !== undefined ? { storedLogin: status.storedLogin } : {}),
+                ...(status.longLivedTokenVersion ? { version: status.longLivedTokenVersion } : {}),
+              },
+            }
+          : {}),
+      }
+    : {
+        authenticated: false,
+        ...(expectedIdentity ? { identity: expectedIdentity } : {}),
+        ...(status.loggedIn && !identityMatches ? { errorReason: 'account_mismatch' } : {}),
+      };
   state.defaultClaudeAuth = auth;
   state.cache.set(key, {
     auth,
     ...(sameIdentity && previous?.usage ? { usage: previous.usage, usageAt: previous.usageAt } : {}),
+    ...(sameIdentity && previous?.storedLoginResets ? { storedLoginResets: previous.storedLoginResets } : {}),
+    ...(sameIdentity && previous?.storedLoginResetsSeq !== undefined
+      ? { storedLoginResetsSeq: previous.storedLoginResetsSeq }
+      : {}),
     authOnly: authenticated && (!sameIdentity || previous?.authOnly === true),
     at: Date.now(),
   });

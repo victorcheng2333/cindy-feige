@@ -286,7 +286,7 @@ it('hides avatars for both legacy preferences and restores rows only when expand
   expect(byId('row.bot')).toBeNull();
   expect(byId('home.teammatesStrip')).toBeNull();
 });
-it('keeps create and display preferences inside header options when collapsed with avatars disabled', async () => {
+it('keeps create actions inside header options without exposing the removed collapsed avatars toggle', async () => {
   const onChangeShowCollapsedAvatars = vi.fn();
   const swipeRegistry = { onRowOpen: vi.fn(), onRowClose: vi.fn(), closeOpenRow: vi.fn(() => false) };
   h.collapsed = true; h.showAvatars = false;
@@ -302,8 +302,8 @@ it('keeps create and display preferences inside header options when collapsed wi
   expect(byId('home.teammatesStripCreate')).toBeNull();
   await act(async () => byId('home.teammatesSettings')!.click());
   expect(byId('home.teammatesOptionsSheet')).not.toBeNull();
-  await act(async () => byId('home.teammatesOptions.showCollapsedAvatars')!.click());
-  expect(onChangeShowCollapsedAvatars).toHaveBeenCalledWith(true);
+  expect(byId('home.teammatesOptions.showCollapsedAvatars')).toBeNull();
+  expect(onChangeShowCollapsedAvatars).not.toHaveBeenCalled();
   await act(async () => byId('home.teammatesOptions.createBot.host')!.click());
   expect(h.startBot).toHaveBeenCalledExactlyOnceWith('host');
   await act(async () => byId('home.teammatesHeader')!.click());

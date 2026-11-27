@@ -1619,7 +1619,7 @@ export function createMessagePersistence(deps: MessagePersistencePorts) {
       rememberToolUseInfo(sessionId, toolUseId, toolName, persistedInput);
     }
     const existingPersistId =
-      isUpdatableToolUse(toolName) && toolUseId
+      (!acpTool || toolName === 'update_plan') && isUpdatableToolUse(toolName) && toolUseId
         ? updatableToolUsePersistIdBySession.get(sessionId)?.get(toolUseId)
         : undefined;
     if (existingPersistId) {

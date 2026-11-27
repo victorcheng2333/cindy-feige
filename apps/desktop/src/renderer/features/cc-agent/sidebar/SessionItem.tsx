@@ -834,7 +834,7 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       cancelNavigation();
-      if (isEditing || navigationOnly || isArchived || isEmpty ||
+      if (isEditing || navigationOnly || isArchived || isEmpty || e.shiftKey || isSidebarNewWindowActivation(e) ||
         parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host') return;
       e.stopPropagation();
       e.preventDefault();

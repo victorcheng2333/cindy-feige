@@ -228,19 +228,6 @@ function SectionContent({ shared, active, refreshKey, visible, query, showCollap
         });
       }
     }
-    if (onChangeShowCollapsedAvatars) {
-      sections.push({
-        id: 'display',
-        title: t('devices.list.menu.displayHeading'),
-        items: [{
-          id: 'showCollapsedAvatars',
-          title: t('devices.list.menu.showCollapsedTeammateAvatars'),
-          selected: showCollapsedAvatars,
-          testID: 'home.teammatesOptions.showCollapsedAvatars',
-          onPress: () => onChangeShowCollapsedAvatars(!showCollapsedAvatars),
-        }],
-      });
-    }
     if (error) {
       sections.push({
         id: 'retry',
@@ -267,11 +254,9 @@ function SectionContent({ shared, active, refreshKey, visible, query, showCollap
     error,
     errorKey,
     groupTargetsList,
-    onChangeShowCollapsedAvatars,
     retry,
     retrying,
     runAfterOptionsClose,
-    showCollapsedAvatars,
     showCreate,
     t,
   ]);

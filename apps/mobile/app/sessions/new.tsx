@@ -839,8 +839,9 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   }), [draft.workingDir, draft.workspaceKind]);
   // 旧被控电脑不支持给 Worker 选 Agent 位置：首个 Worker 只能从被控电脑的目录里选，与任务的
   // Agent 在另一台电脑运行对不上，两者仍互斥。
-  // 插件引擎任务同样可以开启协同 Lead（对齐 Desktop PR #13001）；Antigravity 仍不作为协同 Lead。
-  const collabEligible = draft.agentKind !== 'antigravity' && isOrcaCollabEligible(collabTarget)
+  // 插件引擎任务同样可以开启协同 Lead（对齐 Desktop PR #13001）；仅实际选用 Antigravity 时不作为协同 Lead。
+  const antigravityActive = !pluginEnginePick && !activeHostModelGroup && draft.agentKind === 'antigravity';
+  const collabEligible = !antigravityActive && isOrcaCollabEligible(collabTarget)
     && (!pluginEnginePick?.agentDeviceId || workerAgentLocationSupported)
     && (remoteAgentPick === null || workerAgentLocationSupported);
   // 换设备 / 换工作区后,草稿里的协同设置属于旧目标:丢弃,避免在新目标上静默开启。
@@ -849,17 +850,22 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
   const collabTargetKey = orcaCollabDraftTargetKey(selectedDeviceId, draft.workspaceKind, draft.workingDir);
   const collabDraftTargetRef = useRef<string | null>(null);
   useEffect(() => {
-    if (draft.agentKind === 'antigravity' || collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);
-  }, [collabTargetKey, draft.agentKind]);
+    if (antigravityActive || collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);
+  }, [antigravityActive, collabTargetKey]);
   // 读入口状态;重连后重读:断线时读失败会落成「不可用」,不能让表单一直卡住。
   useEffect(() => {
-    if (!contextSheetOpen || !collabEligible || !selectedDeviceId || draft.agentKind === 'antigravity') return undefined;
+    if (!contextSheetOpen || !collabEligible || !selectedDeviceId || antigravityActive) return undefined;
     let cancelled = false;
     setCollabEntryStatus('loading');
-    void readOrcaCollabEntryStatus(maker, collabTarget, pluginEnginePick ? 'acp' : draft.agentKind)
+    const entryAgent = pluginEnginePick
+      ? 'acp'
+      : draft.agentKind === 'antigravity'
+        ? 'claude-code'
+        : draft.agentKind;
+    void readOrcaCollabEntryStatus(maker, collabTarget, entryAgent)
       .then((status) => { if (!cancelled) setCollabEntryStatus(status); });
     return () => { cancelled = true; };
-  }, [collabEligible, collabTarget, connectionEpoch, contextSheetOpen, draft.agentKind, maker, pluginEnginePick, selectedDeviceId]);
+  }, [antigravityActive, collabEligible, collabTarget, connectionEpoch, contextSheetOpen, draft.agentKind, maker, pluginEnginePick, selectedDeviceId]);
   const openCollabDraftForm = useCallback(() => {
     if (collabDraft) {
       collabForm.restore(collabDraft);
