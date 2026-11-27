@@ -82,9 +82,15 @@ import { SessionProjectMoveSubmenu } from './SessionProjectMoveSubmenu';
 import type { SessionMoveTarget } from './sessionMoveTarget';
 import type { FolderPickerOption } from '@/components/new-chat/FolderPickerPopover';
 import { RemoteProjectIcon } from './RemoteProjectIcon';
+import { SessionOriginMark } from './SessionOriginMark';
 import { BotFollowMark, useSessionFollowers } from '@/features/bots/BotFollowMark';
 import { SessionShareExportDialog } from './SessionShareExportDialog';
 import { isRemoteSessionWriteBlocked } from '../lib/remoteSessionWriteGuard';
+import {
+  getSidebarNewWindowShortcutKey,
+  isSidebarNewWindowActivation,
+  preventMiddleClickAutoscroll,
+} from '@/lib/sidebarNewWindowActivation';
 import { useOfflineInboxIntent } from '@/features/device-link/offlineInboxIntentsStore';
 import { Tip } from '@/components/ui/tooltip';
 import { prefetchDirtyWorktreeForRemoval } from '@/lib/worktreeRemovalWarning';
@@ -130,7 +136,7 @@ function loadScheduleSidebarIndexRunsCached(): Promise<ScheduleSidebarIndexRun[]
 
 const SESSION_ROW_INTERACTIVE_SELECTOR = 'button, a, input, select, textarea, [role="button"]';
 
-function isNestedSessionRowAction(target: EventTarget | null, row: Element): boolean {
+export function isNestedSessionRowAction(target: EventTarget | null, row: Element): boolean {
   if (!(target instanceof Element)) return false;
   const interactive = target.closest(SESSION_ROW_INTERACTIVE_SELECTOR);
   return interactive !== null && interactive !== row;
@@ -307,6 +313,8 @@ export interface SessionClickModifiers {
   shiftKey: boolean;
   metaKey: boolean;
   ctrlKey: boolean;
+  altKey?: boolean;
+  button?: number;
 }
 
 export type SessionClickHandler = (id: string, modifiers?: SessionClickModifiers) => void;
@@ -633,18 +641,41 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       if (isEditing) return;
-      const modifiers = { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey };
+      const modifiers = {
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        button: e.button,
+      };
       cancelNavigation();
-      // 多选、键盘合成点击和只读导航仍立即响应。
+      // 多选、修饰键新窗打开、键盘合成点击和只读导航仍立即响应。
       if (navigationOnly || isArchived || isEmpty ||
         parseSharedTaskPeer(session.deviceLinkDeviceId ?? '')?.role === 'host' ||
-        e.detail === 0 || e.shiftKey || e.metaKey || e.ctrlKey) {
+        e.detail === 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || isSidebarNewWindowActivation(e)) {
         onClick(session.id, modifiers);
       } else if (e.detail === 1) {
         scheduleNavigation(() => onClick(session.id, modifiers));
       }
     },
     [isEditing, navigationOnly, isArchived, isEmpty, onClick, session.id, session.deviceLinkDeviceId, scheduleNavigation, cancelNavigation],
+  );
+
+  const handleAuxClick = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (isEditing || e.button !== 1 || isNestedSessionRowAction(e.target, e.currentTarget)) return;
+      cancelNavigation();
+      e.preventDefault();
+      e.stopPropagation();
+      onClick(session.id, {
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        button: e.button,
+      });
+    },
+    [cancelNavigation, isEditing, onClick, session.id],
   );
 
   // 置顶段使用原生 Sortable DnD：Sortable 负责侧栏内排序，原生 dragstart 同时写入
@@ -990,7 +1021,13 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
           makerChatStore.ensureInitialMessages(session.id);
         }
       }}
+      onMouseDown={(e) => {
+        if (!isEditing && !isNestedSessionRowAction(e.target, e.currentTarget)) {
+          preventMiddleClickAutoscroll(e);
+        }
+      }}
       onClick={handleClick}
+      onAuxClick={handleAuxClick}
       onDoubleClick={handleDoubleClick}
       onKeyDown={(e) => {
         // target 守卫:内部按钮(More/Archive/Undo/Edit/Run 等)的 Enter/Space
@@ -1002,7 +1039,12 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
         if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
           cancelNavigation();
-          onClick(session.id);
+          onClick(session.id, {
+            shiftKey: e.shiftKey,
+            metaKey: e.metaKey,
+            ctrlKey: e.ctrlKey,
+            altKey: e.altKey,
+          });
         }
       }}
       onContextMenu={(e) => {
@@ -1137,6 +1179,11 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
           <TaskTagDots tags={session.tags} />
           {/* 这件任务所在的项目交给了伙伴时，显示伙伴头像（伙伴在跟进）。 */}
           {showTeammate && <BotFollowMark followers={followers} />}
+          <SessionOriginMark
+            session={session}
+            isActive={isActive}
+            suppressTaskOrigin={showTeammate && followers.length > 0 && Boolean(session.createdBySession?.botId)}
+          />
           {remoteIconKind && (
             <RemoteProjectIcon
               kind={remoteIconKind}
@@ -1350,6 +1397,7 @@ export const SessionItem = withSidebarNavigation<SessionItemProps>(function Sess
             onRename={handleRenameSelect} onPin={handlePinSelect}
             onArchive={handleArchiveSelect} onUnarchive={handleUnarchiveSelect} onDelete={handleDeleteSelect}
             onOpenInNewWindow={handleOpenInNewWindowSelect}
+            openInNewWindowShortcut={t(getSidebarNewWindowShortcutKey())}
             move={moveToProjectSubmenu} tags={tagMenu} copy={copySessionIdSubmenu} exportShare={exportShareMenuItem}
           />
         </DropdownMenu>

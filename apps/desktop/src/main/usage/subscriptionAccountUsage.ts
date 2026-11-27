@@ -82,12 +82,20 @@ export function readSubscriptionAccountUsage(providerId: string, options?: { fre
   if (subscriptionAccountKind(providerId) === 'claude') return readManagedClaudeUsage(providerId, options);
   return reader(providerId)?.read() ?? Promise.resolve(null);
 }
-export function triggerSubscriptionAccountUsage(providerId: string): void {
+export function triggerSubscriptionAccountUsage(
+  providerId: string,
+  options?: { source?: 'turn' | 'poll' | 'manual' },
+): void {
   if (subscriptionAccountKind(providerId) === 'claude') {
     if (!isProviderRouteMutationInProgress(providerId)) triggerManagedClaudeUsage(providerId);
     return;
   }
-  if (!isProviderRouteMutationInProgress(providerId)) reader(providerId)?.triggerRefresh();
+  if (!isProviderRouteMutationInProgress(providerId)) {
+    const source = options?.source ?? 'turn';
+    reader(providerId)?.triggerRefresh(
+      source === 'manual' ? { manual: true } : { activity: source === 'turn' },
+    );
+  }
 }
 export async function syncSubscriptionAccountUsage(providerId: string): Promise<void> {
   if (subscriptionAccountKind(providerId) === 'claude') return syncManagedClaudeUsage(providerId);

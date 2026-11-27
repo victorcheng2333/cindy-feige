@@ -52,9 +52,11 @@ import { resolveSafe as resolveCindyMediaUrl, getBlobsRoot as cindyMediaBlobsRoo
 import { app } from 'electron';
 
 import {
+  XDTSHARE_ACP_MIN_READER_VERSION,
   XDTSHARE_FORMAT_VERSION,
   XDTSHARE_MIN_READER_VERSION,
   XDTSHARE_ORCA_MIN_READER_VERSION,
+  type XdtshareAgentKind,
   type XdtshareFidelity,
   type XdtshareManifest,
   type XdtshareManifestEntry,
@@ -158,6 +160,7 @@ interface SessionRow {
   model: string;
   effort: string;
   permissionMode: string;
+  providerId: string | null;
   status: string;
   sdkSessionId: string | null;
   totalTokenUsage: number;
@@ -343,9 +346,10 @@ async function collectSessionPhaseA(
   const refs: XdtshareTranscriptRef[] = [];
   let codexState: CodexThreadStateDump | null = null;
 
-  // 任务与消息属于本机，但原生转录属于运行 Agent 的电脑。本机可能残留切换
-  // 供应商之前的同名转录，不能将它当作当前历史；按既有 db-only 格式导出。
-  if (session.agentDeviceId) {
+  // 远程供应商任务的原生转录在运行 Agent 的电脑上；插件引擎(acp)的原生会话格式
+  // 随外部 CLI/适配器而异、不可跨机搬运。两者均按 db-only 导出，不附原生转录，
+  // 由导入端通过 Cindy 消息历史重建上下文。
+  if (session.agentDeviceId || session.agentKind === 'acp') {
     return {
       session, messages, zipPrefix, sdkSessionIds, activeSdkSessionId, candidates, refs, codexState,
     };
@@ -522,13 +526,14 @@ async function readSessionPhaseB(
       }
     }
   }
-  if (session.agentKind === 'pi' || session.agentDeviceId) {
-    activeSdkSessionId = session.sdkSessionId
-      ? (piPortableIds.get(session.sdkSessionId) ?? null)
-      : null;
+  if (session.agentKind === 'pi' || session.agentKind === 'acp' || session.agentDeviceId) {
+    activeSdkSessionId =
+      session.agentKind === 'pi' && session.sdkSessionId
+        ? (piPortableIds.get(session.sdkSessionId) ?? null)
+        : null;
     bundleMessages = a.messages.map((message) => ({
       ...message,
-      content: session.agentDeviceId && message.role === 'agent_switch'
+      content: (session.agentDeviceId || session.agentKind === 'acp') && message.role === 'agent_switch'
         ? detachAgentSwitchSessionForExport(message.content)
         : message.content,
       agentMeta: rewriteAgentMetaForExport(message.agentMeta, piPortableIds),
@@ -579,7 +584,8 @@ async function collectOrcaWorkerSources(
     if (
       workerSession.agentKind !== 'cc' &&
       workerSession.agentKind !== 'codex' &&
-      workerSession.agentKind !== 'pi'
+      workerSession.agentKind !== 'pi' &&
+      workerSession.agentKind !== 'acp'
     ) {
       throw codedError(
         'SHARE_EXPORT_FAILED',
@@ -622,7 +628,12 @@ export async function exportSessionShare(
       'orca worker sessions cannot be exported directly; export the lead session',
     );
   }
-  if (session.agentKind !== 'cc' && session.agentKind !== 'codex' && session.agentKind !== 'pi') {
+  if (
+    session.agentKind !== 'cc' &&
+    session.agentKind !== 'codex' &&
+    session.agentKind !== 'pi' &&
+    session.agentKind !== 'acp'
+  ) {
     throw codedError('PRECONDITION_FAILED', `unsupported agentKind: ${session.agentKind}`);
   }
 
@@ -800,8 +811,9 @@ export async function exportSessionShare(
   const allRefs = allB.flatMap((b) => b.refs);
   const foundCount = allRefs.filter((t) => t.path !== null).length;
   let fidelity: XdtshareFidelity;
+  const hasDbOnlyMember = allA.some((a) => a.session.agentDeviceId || a.session.agentKind === 'acp');
   if (allRefs.length === 0 || foundCount === 0) fidelity = 'db-only';
-  else if (foundCount === allRefs.length && !allA.some((a) => a.session.agentDeviceId)) fidelity = 'full';
+  else if (foundCount === allRefs.length && !hasDbOnlyMember) fidelity = 'full';
   else fidelity = 'partial';
 
   // ── 打 zip ──
@@ -869,7 +881,8 @@ export async function exportSessionShare(
         teamStatus: orcaSources.teamStatus,
         workers: workerSources.map((w, i): XdtshareOrcaWorkerManifest => ({
           index: i,
-          agentKind: w.session.agentKind as 'cc' | 'codex' | 'pi',
+          agentKind: w.session.agentKind as XdtshareAgentKind,
+          ...(w.session.agentKind === 'acp' ? { providerId: w.session.providerId ?? null } : {}),
           title: w.session.title,
           role: w.record.role,
           label: w.record.label,
@@ -883,15 +896,24 @@ export async function exportSessionShare(
       }
     : undefined;
 
+  const hasAcpMember =
+    session.agentKind === 'acp' || workerSources.some((w) => w.session.agentKind === 'acp');
+  const bundleVersion = hasAcpMember
+    ? XDTSHARE_ACP_MIN_READER_VERSION
+    : orcaSection
+      ? XDTSHARE_ORCA_MIN_READER_VERSION
+      : XDTSHARE_MIN_READER_VERSION;
+
   const manifest: XdtshareManifest = {
-    formatVersion: orcaSection ? XDTSHARE_FORMAT_VERSION : XDTSHARE_MIN_READER_VERSION,
-    // 协同包必须让不认识 orca 段的旧读端拒读(否则静默丢全部 Worker);
-    // 普通包保持 1,旧读端照常可读。
-    minReaderVersion: orcaSection ? XDTSHARE_ORCA_MIN_READER_VERSION : XDTSHARE_MIN_READER_VERSION,
+    formatVersion: hasAcpMember ? XDTSHARE_FORMAT_VERSION : bundleVersion,
+    // 含插件引擎(acp)的包提至 v3,协同内置包提至 v2,普通内置包保持 v1,
+    // 确保旧读端继续兼容 v1/v2 并明确拒读不认识的新能力。
+    minReaderVersion: bundleVersion,
     appVersion: safeAppVersion(),
     platform: process.platform,
     exportedAt: new Date().toISOString(),
-    agentKind: session.agentKind as 'cc' | 'codex' | 'pi',
+    agentKind: session.agentKind as XdtshareAgentKind,
+    ...(session.agentKind === 'acp' ? { providerId: session.providerId ?? null } : {}),
     title: session.title,
     workspaceKind: session.workspaceKind === 'dialogue' ? 'dialogue' : 'project',
     originalWorkingDir: session.workingDir,
@@ -981,9 +1003,9 @@ function buildSessionSnapshot(
     model: session.model,
     effort: session.effort,
     permissionMode: session.permissionMode,
-    // Pi 只写便携 id；远程供应商没有随包原生历史，不回退到不可恢复的 DB id。
+    // Pi 只写便携 id；远程供应商与插件引擎(acp)没有随包原生历史，不回退到不可恢复的 DB id。
     sdkSessionId:
-      session.agentKind === 'pi' || session.agentDeviceId
+      session.agentKind === 'pi' || session.agentKind === 'acp' || session.agentDeviceId
         ? activeSdkSessionId
         : (activeSdkSessionId ?? session.sdkSessionId),
     totalTokenUsage: session.totalTokenUsage,
@@ -993,6 +1015,7 @@ function buildSessionSnapshot(
     fastMode: (session.fastMode ?? false),
     planModeEnabled: !!session.planModeEnabled,
     agentKind: session.agentKind,
+    ...(session.agentKind === 'acp' ? { providerId: session.providerId ?? null } : {}),
     codexHistoryHasProductPrompt:
       session.codexHistoryHasProductPrompt == null ? null : !!session.codexHistoryHasProductPrompt,
     clearedAt: session.clearedAt,
@@ -1079,6 +1102,7 @@ async function readSessionRow(sessionId: string): Promise<SessionRow | null> {
         workspace_kind AS workspaceKind,
         model, effort,
         permission_mode AS permissionMode,
+        provider_id AS providerId,
         status,
         sdk_session_id AS sdkSessionId,
         total_token_usage AS totalTokenUsage,

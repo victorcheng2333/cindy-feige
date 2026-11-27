@@ -136,6 +136,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: {},
       workspaceKindByDevice: {},
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
     expect(JSON.parse(store.get(__testing.storageKey) ?? '{}')).toEqual({
       agentKind: 'codex',
@@ -165,6 +166,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: {},
       workspaceKindByDevice: {},
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
 
     store.set(__testing.storageKey, '{broken');
@@ -176,6 +178,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: {},
       workspaceKindByDevice: {},
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
 
     await saveNewSessionPreferences({
@@ -189,6 +192,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: {},
       workspaceKindByDevice: {},
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
   });
 
@@ -219,6 +223,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: {},
       workspaceKindByDevice: {},
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
 
     // 插件引擎写入 lastPermissionMode 时同步保留给内置与插件引擎沿用（default -> ask）。
@@ -240,6 +245,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: {},
       workspaceKindByDevice: {},
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
   });
 
@@ -267,6 +273,7 @@ describe('newSessionPreferenceStore', () => {
       workingDirByDevice: { devA: '/repo/fourth', devB: ' /other/app ' },
       workspaceKindByDevice: { devA: 'project', devB: 'project' },
       remoteAgentByDevice: {},
+      pluginEngineByDevice: {},
     });
     expect(JSON.parse(store.get(__testing.storageKey) ?? '{}')).toEqual({
       workspaceKind: 'dialogue',
@@ -314,6 +321,26 @@ describe('newSessionPreferenceStore', () => {
     await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'pi', pick: null } });
     await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'antigravity', pick: null } });
     expect((await readNewSessionPreferences()).remoteAgentByDevice).toEqual({});
+  });
+
+  it('remembers and isolates the selected plugin engine per controlled device and account', async () => {
+    const { readNewSessionPreferences, saveNewSessionPreferences } =
+      await import('@/session/newSessionPreferenceStore');
+    const pick = {
+      providerId: 'acp-plugin:dsh:dsh',
+      modelId: 'deepseek-v4',
+      effort: 'high' as const,
+      deviceId: 'share:s1',
+    };
+    await saveNewSessionPreferences({ pluginEngineForDevice: { deviceId: 'mac', selection: pick } });
+    expect((await readNewSessionPreferences()).pluginEngineByDevice).toEqual({ mac: pick });
+
+    setMobileAuthOwner('account-b');
+    expect((await readNewSessionPreferences()).pluginEngineByDevice).toEqual({});
+
+    setMobileAuthOwner('account-a');
+    await saveNewSessionPreferences({ pluginEngineForDevice: { deviceId: 'mac', selection: null } });
+    expect((await readNewSessionPreferences()).pluginEngineByDevice).toEqual({});
   });
 
   it('remembers either workspace mode across reloads without losing other preferences', async () => {

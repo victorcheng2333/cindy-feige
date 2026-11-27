@@ -131,6 +131,10 @@ export interface HostAgentGraphOptions {
   /** Shared global Skill preparation (agent/shared-global-skills.ts, release table row 25): before
    * each Claude CLI start (the desktop's Claude getAuthEnv) and before local Pi (piNativeProviders). */
   sharedGlobalSkills?: Pick<HostSharedGlobalSkills, 'ensureSharedGlobalSkills' | 'beforeClaudeLaunch'> | null;
+  /** Expands a Smart Routing auxiliary ref (`route:<id>`) into local catalog pins. */
+  expandRouteRef?: (routeId: string) => string[];
+  /** Resolves a Smart Routing Claude subagent route (`route:<id>`) into local CC candidate pairs. */
+  subagentRouteMembers?: (routeId: string) => readonly { providerId: string; model: string }[];
 }
 
 /** The desktop's Claude getAuthEnv opens with the shared Skill preparation; the Host adapter keeps its own body. */
@@ -624,7 +628,9 @@ export function createHostAgentGraph(options: HostAgentGraphOptions) {
   const autoReview = createHostAutoReview({
     userDataDir: options.userDataDir, getMaker: () => maker, gateway: options.gateway,
     reportGatewayKeyRejected: options.reportGatewayKeyRejected, providerConfig: config,
-    bridge: () => options.codexRuntime?.subscriptions.bridge ?? null, logger: LOGGER,
+    bridge: () => options.codexRuntime?.subscriptions.bridge ?? null,
+    expandRouteRef: options.expandRouteRef,
+    logger: LOGGER,
   });
   const piAuth = bindAuthOwner(createPiAuthAdapter({
     subscriptionAccountKind,
@@ -674,6 +680,7 @@ export function createHostAgentGraph(options: HostAgentGraphOptions) {
     codexBinaryPath: () => codexBinaryPath,
     // Managed Claude connections remain a Desktop-only fork feature.
     claudeAccountAuthenticated: () => false,
+    ...(options.subagentRouteMembers ? { subagentRouteMembers: options.subagentRouteMembers } : {}),
   });
   // Without an account gateway the Host keeps the endpoint unset, as before.
   const hostEndpoint = (() => options.gateway?.endpoint || undefined) as () => string;
@@ -854,6 +861,7 @@ export function createHostAgentGraph(options: HostAgentGraphOptions) {
   // As the desktop (pi-host.ts, maker-host/index.ts): Pi packages from this profile's pi-package-home.
   const piPackages = createHostPiPackages({ userDataDir: options.userDataDir, piBinaryPath: options.piBinaryPath ?? null });
   const piNativeProviders = createHostPiNativeProviders({
+    getCatalog: () => modelContext.getRoutingCatalog(),
     userDataDir: options.userDataDir, piBinaryPath: options.piBinaryPath ?? null, endpoint: engineEndpoint,
     claudeProxy, providerConfig: config,
     ensureSharedGlobalSkills: () => options.sharedGlobalSkills?.ensureSharedGlobalSkills() ?? Promise.resolve(),

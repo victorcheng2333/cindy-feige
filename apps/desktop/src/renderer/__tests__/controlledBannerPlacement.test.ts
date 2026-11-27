@@ -30,6 +30,7 @@ describe('controlled banner placement', () => {
     expect(sessionViewSource).toContain(
       'const isHidden = suppressContent || (!showContent && !visible);',
     );
+    expect(sessionViewSource).toContain('centeredSlot={composerCenter}');
     expect(sessionViewSource).toContain('data-running-status-meta="true"');
   });
 
@@ -41,8 +42,9 @@ describe('controlled banner placement', () => {
     expect(sessionViewSource).toContain('className="col-start-1 row-start-1"');
     expect(sessionViewSource).toContain('data-composer-center-group="true"');
     expect(sessionViewSource).toContain(
-      'className="pointer-events-none relative z-raised col-start-1 row-start-1 flex max-w-full -translate-y-1 items-center justify-center gap-2"',
+      'className="pointer-events-none relative z-raised col-span-full row-start-1 flex max-w-full -translate-y-1 items-center justify-center gap-2',
     );
+    expect(sessionViewSource).toContain('{centeredSlot && <ComposerCenterGroup>{centeredSlot}</ComposerCenterGroup>}');
     expect(sessionViewSource).toContain('className="mb-0"');
     expect(pinnedPlanSource).toContain(
       "cn('mb-1.5 flex h-8 w-auto max-w-full shrink-0 items-center', className)",
