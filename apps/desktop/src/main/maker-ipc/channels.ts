@@ -452,6 +452,10 @@ export const MAKER_INVOKE = {
   USER_PROMPT_GET: 'maker:user-prompt:get',
   USER_PROMPT_SET: 'maker:user-prompt:set',
   USER_PROMPT_MIGRATE_LEGACY: 'maker:user-prompt:migrate-legacy',
+  /** 统一全局记忆与技能整理（仅本机设置页控制频率与手动触发，不进远程白名单）。 */
+  MEMORY_TIDY_STATUS: 'maker:memory:tidy-status',
+  MEMORY_TIDY_SET_CADENCE: 'maker:memory:tidy-set-cadence',
+  MEMORY_TIDY_RUN: 'maker:memory:tidy-run',
   /** IM 普通会话默认 agent/model/effort/provider；仅影响新 IM session 和 Feishu `/new`。 */
   IM_DEFAULT_SETTINGS_GET: 'maker:im-default-settings:get',
   IM_DEFAULT_SETTINGS_SET: 'maker:im-default-settings:set',

@@ -3354,6 +3354,7 @@ interface ElectronAPI {
         | { type: 'installed-plugin'; ghostId?: string }
         | { type: 'gift-card'; code: string }
         | { type: 'settings-navigation'; target: import('@cindy/maker-shared/settings-navigation').SettingsNavigationTarget }
+        | { type: 'plugin-engine-settings'; engineKey: string }
         | { type: 'settings'; tab: 'voice-input' | 'providers' | 'billing' | 'remote-control' | 'builtin-tools' | 'im-bot'; focusDeviceId?: string; connect?: string; intent?: 'topup'; imGroup?: 'cindy' | 'personal' },
     ) => void,
   ) => () => void;
@@ -3380,6 +3381,7 @@ interface ElectronAPI {
     | { type: 'installed-plugin'; ghostId?: string }
     | { type: 'gift-card'; code: string }
     | { type: 'settings-navigation'; target: import('@cindy/maker-shared/settings-navigation').SettingsNavigationTarget }
+    | { type: 'plugin-engine-settings'; engineKey: string }
     | { type: 'settings'; tab: 'voice-input' | 'providers' | 'billing' | 'remote-control' | 'builtin-tools' | 'im-bot'; focusDeviceId?: string; connect?: string; intent?: 'topup'; imGroup?: 'cindy' | 'personal' }
     | null
   >;
@@ -4995,6 +4997,12 @@ interface ElectronAPI {
       cb: (data: import('@/lib/gitContext.types').GitContextSnapshot) => void,
     ) => () => void;
     onPrRefsChanged: (cb: (data: { sessionId: string }) => void) => () => void;
+    onPrStatusChanged: (
+      cb: (
+        data: import('@/lib/gitContext.types').PrStatusResult,
+        ownerStamp?: import('../shared/dataOwnerPush').DataOwnerPushStamp,
+      ) => void,
+    ) => () => void;
   };
 
   gitReview: {
@@ -7154,6 +7162,33 @@ interface ElectronAPI {
     userPromptGet: () => Promise<{ value: string; isCustomized: boolean }>;
     userPromptSet: (value: string) => Promise<{ value: string; isCustomized: boolean }>;
     userPromptMigrateLegacy: (legacyValue: string) => Promise<{ value: string; isCustomized: boolean }>;
+    memoryTidyStatus: () => Promise<{
+      cadence: 'weekly' | 'biweekly' | 'monthly' | 'off';
+      isCustomCadence: boolean;
+      running: boolean;
+      lastRunAt: number | null;
+      lastOutcome: 'idle' | 'updated' | 'skipped' | 'error' | null;
+      lastSummary: string;
+      lastTouchedBots: string[];
+      nextEligibleAt: number | null;
+    }>;
+    memoryTidySetCadence: (
+      cadence: 'weekly' | 'biweekly' | 'monthly' | 'off' | null,
+    ) => Promise<{
+      cadence: 'weekly' | 'biweekly' | 'monthly' | 'off';
+      isCustomCadence: boolean;
+      running: boolean;
+      lastRunAt: number | null;
+      lastOutcome: 'idle' | 'updated' | 'skipped' | 'error' | null;
+      lastSummary: string;
+      lastTouchedBots: string[];
+      nextEligibleAt: number | null;
+    }>;
+    memoryTidyRun: () => Promise<{
+      outcome: 'idle' | 'updated' | 'skipped' | 'error';
+      summary: string;
+      touchedBots: string[];
+    }>;
 
     /** IM 新会话默认 agent/model/effort/provider。传 channel 时按渠道独立读写。 */
     imDefaultSettingsGet: (channel?: ImDefaultSettingsChannel) => Promise<ImDefaultSettingsState>;

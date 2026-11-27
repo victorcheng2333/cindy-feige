@@ -13,13 +13,15 @@ import { useAppSettingsRevision } from '@/hooks/useAppSettingsRevision';
  *
  * 版式用 settings-rows 的分区/卡片/行, 每行左侧保留 agent 图标块。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eraser, Sparkles } from 'lucide-react';
+import { Eraser, RefreshCw, Sparkles } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Tip } from '@/components/ui/tooltip';
 import { SettingsCard, SettingsRow, SettingsSection } from '@/components/ui/settings-rows';
@@ -74,6 +76,16 @@ interface MemorySlotState {
 
 const INITIAL: MemorySlotState = { enabled: undefined, pending: false };
 
+type MemoryTidyCadence = 'weekly' | 'biweekly' | 'monthly' | 'off';
+
+interface MemoryTidyControl {
+  cadence: MemoryTidyCadence;
+  cadencePending: boolean;
+  running: boolean;
+  onCadenceChange: (next: MemoryTidyCadence) => Promise<void>;
+  onRunNow: () => Promise<void>;
+}
+
 function createInitialSlots(): Record<AgentKind, MemorySlotState> {
   const rowSet = new Set(AGENTS.map((a) => a.kind));
   return Object.fromEntries(
@@ -93,6 +105,10 @@ export function MemorySection() {
   // 在状态不同步的窗口里点击 toggle 引发误解)。
   const { makerEnabled, setMakerEnabled } = useMemorySettings();
   const [settingsCustomized, setSettingsCustomized] = useState(false);
+  const [tidyCadence, setTidyCadence] = useState<MemoryTidyCadence>('weekly');
+  const [tidyCustomized, setTidyCustomized] = useState(false);
+  const [tidyCadencePending, setTidyCadencePending] = useState(false);
+  const [tidyRunning, setTidyRunning] = useState(false);
   const [slots, setSlots] = useState<Record<AgentKind, MemorySlotState>>(createInitialSlots);
   // pending 飞行中跳过 reload — 否则 toggle/reset 飞行期间 focus 触发 reload 会
   // 把用户刚改的乐观值或回滚状态覆盖掉。任一 slot pending 都跳过整轮 reload。
@@ -133,6 +149,13 @@ export function MemorySection() {
     void window.electronAPI.maker.memoryGetSettingsState()
       .then((settings) => setSettingsCustomized(settings.isCustomized))
       .catch(() => undefined);
+    void window.electronAPI.maker.memoryTidyStatus?.()
+      .then((status) => {
+        setTidyCadence(status.cadence);
+        setTidyCustomized(Boolean(status.isCustomCadence));
+        setTidyRunning(status.running);
+      })
+      .catch(() => undefined);
     const onFocus = () => void reloadSlots();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -140,12 +163,76 @@ export function MemorySection() {
     };
   }, [reloadSlots, settingsRevision]);
 
+  // If a background tidy was already running when Settings opened, poll status until it finishes
+  // (or the component unmounts) so the cadence selector and button re-enable promptly.
+  useEffect(() => {
+    if (!tidyRunning) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void window.electronAPI.maker.memoryTidyStatus?.()
+        .then((status) => {
+          if (cancelled) return;
+          setTidyCadence(status.cadence);
+          setTidyCustomized(Boolean(status.isCustomCadence));
+          if (!status.running) setTidyRunning(false);
+        })
+        .catch(() => {
+          if (!cancelled) setTidyRunning(false);
+        });
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [tidyRunning]);
+
+  const handleTidyCadenceChange = useCallback(async (next: MemoryTidyCadence) => {
+    setTidyCadencePending(true);
+    try {
+      const status = await window.electronAPI.maker.memoryTidySetCadence(next);
+      setTidyCadence(status.cadence);
+      setTidyCustomized(Boolean(status.isCustomCadence));
+      toast.success(t('settings.memory.tidy.toast.cadenceSaved'));
+    } catch (err) {
+      log.warn('memoryTidySetCadence failed', err);
+      toast.error(err instanceof Error ? err.message : t('settings.memory.tidy.toast.cadenceFailed'));
+    } finally {
+      setTidyCadencePending(false);
+    }
+  }, [t]);
+
+  const handleTidyRunNow = useCallback(async () => {
+    setTidyRunning(true);
+    try {
+      const result = await window.electronAPI.maker.memoryTidyRun();
+      if (result.outcome === 'updated') {
+        toast.success(t('settings.memory.tidy.toast.updated', { count: result.touchedBots.length }));
+      } else if (result.outcome === 'idle') {
+        toast.success(t('settings.memory.tidy.toast.idle'));
+      } else if (result.outcome === 'skipped') {
+        toast.success(t('settings.memory.tidy.toast.skipped'));
+      } else {
+        toast.error(result.summary || t('settings.memory.tidy.toast.failed'));
+      }
+    } catch (err) {
+      log.warn('memoryTidyRun failed', err);
+      toast.error(err instanceof Error ? err.message : t('settings.memory.tidy.toast.failed'));
+    } finally {
+      setTidyRunning(false);
+    }
+  }, [t]);
+
   const handleResetSettings = useCallback(async () => {
     setMakerTogglePending(true);
     try {
       const settings = await window.electronAPI.maker.memoryResetSettings();
       setMakerEnabled(settings.maker);
       setSettingsCustomized(settings.isCustomized);
+      if (window.electronAPI.maker.memoryTidySetCadence) {
+        const tidyStatus = await window.electronAPI.maker.memoryTidySetCadence(null);
+        setTidyCadence(tidyStatus.cadence);
+        setTidyCustomized(Boolean(tidyStatus.isCustomCadence));
+      }
       await reloadSlots();
       // codexRestartDeferred: Codex 正忙时设置已生效, 只是存活会话要等任务结束后
       // 才换到新状态 — 信息性后缀, 不用 warning (同 per-agent 'next-session' 语义)。
@@ -286,7 +373,7 @@ export function MemorySection() {
 
   return (
     <MemorySectionView
-      settingsCustomized={settingsCustomized}
+      settingsCustomized={settingsCustomized || tidyCustomized}
       makerEnabled={makerEnabled}
       makerTogglePending={makerTogglePending}
       makerResetPending={makerResetPending}
@@ -296,6 +383,13 @@ export function MemorySection() {
       handleMakerReset={handleMakerReset}
       handleToggle={handleToggle}
       handleReset={handleReset}
+      tidyControl={{
+        cadence: tidyCadence,
+        cadencePending: tidyCadencePending,
+        running: tidyRunning,
+        onCadenceChange: handleTidyCadenceChange,
+        onRunNow: handleTidyRunNow,
+      }}
     />
   );
 }
@@ -314,6 +408,7 @@ export function MemorySectionView({
   handleReset,
   agentRows = true,
   headingStatus,
+  tidyControl,
 }: {
   settingsCustomized: boolean;
   makerEnabled: boolean;
@@ -329,6 +424,8 @@ export function MemorySectionView({
   agentRows?: boolean;
   /** Cloud settings: a group that could not be read says so here, in place of the heading's action. */
   headingStatus?: ReactNode;
+  /** Local-only unified memory & skill tidying cadence and manual trigger. */
+  tidyControl?: MemoryTidyControl;
 }) {
   const { t, i18n } = useTranslation();
   const locale = i18n?.language;
@@ -343,6 +440,12 @@ export function MemorySectionView({
           harnesses: formatHarnessNameList(unsupportedMakerHarnesses, locale),
         })}`
       : makerHintBase;
+  const tidyCadenceOptions = useMemo(() => ([
+    { value: 'weekly', label: t('settings.memory.tidy.cadences.weekly') },
+    { value: 'biweekly', label: t('settings.memory.tidy.cadences.biweekly') },
+    { value: 'monthly', label: t('settings.memory.tidy.cadences.monthly') },
+    { value: 'off', label: t('settings.memory.tidy.cadences.off') },
+  ]), [t]);
 
   return (
     <SettingsSection
@@ -460,6 +563,48 @@ export function MemorySectionView({
             />
           );
         })}
+
+        {tidyControl && (
+          <SettingsRow
+            lead={
+              <span
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                  'bg-[var(--settings-input-bg)]',
+                )}
+              >
+                <RefreshCw size={17} className="text-[var(--settings-section-title)]" aria-hidden />
+              </span>
+            }
+            title={t(personalizationDetailsSettings.memoryTidyLabel.titleKey)}
+            hint={t(personalizationDetailsSettings.memoryTidyLabel.descriptionKey)}
+            wrap
+            trailing={
+              <div className="flex items-center gap-2">
+                <Select
+                  data-setting-id={personalizationDetailsSettings.memoryTidyLabel.id}
+                  label={t('settings.memory.tidy.cadenceLabel')}
+                  value={tidyControl.cadence}
+                  options={tidyCadenceOptions}
+                  width="sm"
+                  disabled={tidyControl.cadencePending || tidyControl.running}
+                  onValueChange={(value) => void tidyControl.onCadenceChange(value as MemoryTidyCadence)}
+                />
+                <Button
+                  data-settings-search-action="Run global memory and skill tidying now"
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled={tidyControl.running || tidyControl.cadencePending}
+                  onClick={() => void tidyControl.onRunNow()}
+                >
+                  {tidyControl.running ? <Spinner size="xs" /> : null}
+                  {t(tidyControl.running ? 'settings.memory.tidy.running' : 'settings.memory.tidy.runNow')}
+                </Button>
+              </div>
+            }
+          />
+        )}
       </SettingsCard>
     </SettingsSection>
   );

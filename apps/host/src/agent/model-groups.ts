@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import type { ProviderView } from '@cindy/model-providers';
-import { dbToMakerAgentKind, makerToDbAgentKind } from '../../../desktop/src/shared/agentKindConversion.js';
+import { dbToMakerEngineKind, makerToDbEngineKind } from '../../../desktop/src/shared/agentKindConversion.js';
 import {
   modelGroupCandidateKey,
   type ModelGroupSessionBindingView,
@@ -283,20 +283,23 @@ export function createHostModelGroups(ports: HostModelGroupsPorts) {
     if (!row || !isModelGroupRecoverySource(row.source) || !currentProviderId) return null;
     const binding = await readModelGroupBindingForDispatch(sessionId);
     if (!binding) return null;
-    const currentAgentKind = makerToDbAgentKind(current.agentKind);
+    const currentAgentKind = makerToDbEngineKind(current.agentKind);
     if (currentAgentKind === 'antigravity') return null;
     const excluded = new Set(visited.map((key) => key.replace(/^claude-code\u0000/, 'cc\u0000')));
 
     const offer = await runOutsideDeviceLinkInvokeContext(() => runtime.readModelGroupRecoveryOffer(sessionId, {
       visited: excluded,
       ...recovery,
-      recordUnavailable: (candidate) => recordFailedSessionRuntimeFallbackCandidate(sessionId, generation, {
-        ...current,
-        agentKind: dbToMakerAgentKind(candidate.agentKind),
-        providerId: candidate.providerId,
-        model: candidate.model,
-        agentDeviceId: candidate.agentDeviceId ?? null,
-      }),
+      recordUnavailable: (candidate) => {
+        if (candidate.agentKind === 'acp') return;
+        recordFailedSessionRuntimeFallbackCandidate(sessionId, generation, {
+          ...current,
+          agentKind: dbToMakerEngineKind(candidate.agentKind),
+          providerId: candidate.providerId,
+          model: candidate.model,
+          agentDeviceId: candidate.agentDeviceId ?? null,
+        });
+      },
       current: {
         agentKind: currentAgentKind,
         providerId: currentProviderId,
@@ -310,8 +313,9 @@ export function createHostModelGroups(ports: HostModelGroupsPorts) {
     if (
       !offer
       || offer.agentDeviceId
+      || offer.agentKind === 'acp'
       || (
-        dbToMakerAgentKind(offer.agentKind) === current.agentKind
+        dbToMakerEngineKind(offer.agentKind) === current.agentKind
         && offer.providerId === current.providerId
         && offer.model === current.model
         && (offer.agentDeviceId ?? null) === (current.agentDeviceId ?? null)
@@ -322,7 +326,7 @@ export function createHostModelGroups(ports: HostModelGroupsPorts) {
 
     return {
       candidate: {
-        agentKind: dbToMakerAgentKind(offer.agentKind),
+        agentKind: dbToMakerEngineKind(offer.agentKind),
         model: offer.model,
         providerId: offer.providerId,
         agentDeviceId: null,
@@ -331,7 +335,7 @@ export function createHostModelGroups(ports: HostModelGroupsPorts) {
       },
       labels: { from: offer.fromLabel ?? current.model, to: `${offer.modelName} · ${offer.sourceName}` },
       bindCommittedRoute: (profile: SessionRuntimeProfile) => {
-        const committedAgentKind = makerToDbAgentKind(profile.agentKind);
+        const committedAgentKind = makerToDbEngineKind(profile.agentKind);
         if (profile.providerId && committedAgentKind !== 'antigravity') {
           bindModelGroupSession(sessionId, binding.selection, modelGroupCandidateKey({
             agentKind: committedAgentKind,
