@@ -69,9 +69,6 @@ export interface DesktopHostCommand {
 }
 export interface DesktopLocalState {
   enabled: boolean;
-  active: { peer: string; controlling: boolean } | null;
-  /** The on-screen controlled overlay is showing; it then replaces the main window's notice. */
-  overlay?: boolean;
   permissionGuide?: boolean;
   windowsSupport?: WindowsDesktopSupport;
 }

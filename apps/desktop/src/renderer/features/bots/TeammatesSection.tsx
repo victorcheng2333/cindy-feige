@@ -5,12 +5,13 @@ import { aggregateTeammateStatus } from '@cindy/maker-shared/teammate-status';
 import { localTeammateStatus, remoteTeammateStatus, groupTeammateStatus } from './teammateRosterStatus';
 import { BotGenerationLabel } from './BotGenerationLabel';
 import { botRosterLabel } from '../../../shared/botCreation';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type KeyboardEvent, type MouseEvent } from 'react';
 import {
   Check,
   LayoutGrid,
   LayoutList,
   AlertTriangle,
+  AppWindow,
   Archive,
   ArchiveRestore,
   ChevronDown,
@@ -31,7 +32,6 @@ import { Tip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { SectionCollapse } from '@/features/cc-agent/sidebar/SectionCollapse';
-import { useCollapsibleShowAll } from '@/features/cc-agent/sidebar/hooks/useCollapsibleShowAll';
 import { SIDEBAR_LIST_ROW_ACTIVE_CLASS, SIDEBAR_LIST_ROW_HEIGHT_CLASS } from '@/features/cc-agent/sidebar/listRowStyle';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { getDataOwnerGeneration, isDataOwnerGenerationCurrent } from '@/contexts/dataOwnerGeneration';
@@ -123,7 +123,7 @@ function useAvatarRowCapacity(element: HTMLDivElement | null): number {
 /**
  * 侧栏第一层的「伙伴」段(2026-10-13 定稿):固定在置顶段上方,与置顶、全部任务并存。
  * 点伙伴只切换主区域,左栏不再整栏切换。显示方式与收起状态独立，按账号记住。
- * 收起默认隐藏全部聊天，可选择显示所有头像。通知由任务侧栏负责。
+ * 收起默认仅保留未读或等待处理的聊天，可选择显示所有头像。通知由任务侧栏负责。
  */
 export function TeammatesSection() {
   const { t } = useTranslation();
@@ -143,6 +143,7 @@ export function TeammatesSection() {
   const deviceId = remoteRoute?.params.deviceId;
   const selectedGroupId = matchPath('/bots/groups/:groupId', pathname)?.params.groupId;
   const [collapsed, setCollapsed] = useState(() => readTeammatesSectionCollapsed(dataOwnerId));
+  const [keepSelectedChat, setKeepSelectedChat] = useState(true);
   const [viewMode, setViewMode] = useState(() => readTeammatesViewMode(dataOwnerId));
   const [showCollapsedAvatars, setShowCollapsedAvatars] = useState(() => readCollapsedTeammateAvatars(dataOwnerId));
   const changeCollapsedAvatars = (enabled: boolean) => {
@@ -153,7 +154,7 @@ export function TeammatesSection() {
     setViewMode(mode);
     writeTeammatesViewMode(dataOwnerId, mode);
   };
-  const [showAllChats, setShowAllChats] = useCollapsibleShowAll(collapsed);
+  const [showAllChats, setShowAllChats] = useState(false);
   const [avatarRowElement, setAvatarRowElement] = useState<HTMLDivElement | null>(null);
   const avatarCapacity = useAvatarRowCapacity(avatarRowElement);
   useEffect(() => {
@@ -165,6 +166,11 @@ export function TeammatesSection() {
   const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
+    if (next) {
+      setShowAllChats(false);
+      // An explicit collapse overrides the temporary protection of a read chat.
+      setKeepSelectedChat(Boolean(selectedChat && needsAttention(selectedChat)));
+    }
     writeTeammatesSectionCollapsed(dataOwnerId, next);
   };
   const cloud = useCompanionCloud();
@@ -401,10 +407,32 @@ export function TeammatesSection() {
   if (selectedChat && !previewChats.includes(selectedChat)) {
     previewChats[CHAT_PREVIEW_LIMIT - 1] = selectedChat;
   }
-  const displayedChats = showAllChats ? visibleChats : previewChats;
+  const needsAttention = (entry: (typeof visibleChats)[number]) => {
+    const unread = entry.kind === 'group' ? isBotGroupUnread(entry.group)
+      : entry.kind === 'cindy' ? cindyOptions.some(option => option.unread)
+        : 'deviceId' in entry.bot ? isRemoteBotUnread(entry.bot) : (unreadByBotId[entry.bot.id] ?? 0) > 0;
+    const status = entry.kind === 'group' ? groupTeammateStatus(entry.group, bots, islandActivity, unread)
+      : entry.kind === 'cindy' ? cindyStatus : statusForBot(entry.bot);
+    return unread || status === 'awaiting' || status === 'error';
+  };
+  const selectedChatKey = selectedChat?.kind === 'group' ? `group:${selectedChat.group.id}`
+    : selectedChat?.kind === 'cindy' ? 'cindy-devices'
+      : selectedChat ? ('deviceId' in selectedChat.bot ? remoteBotKey(selectedChat.bot) : `local:${selectedChat.bot.id}`) : null;
+  const selectedNeedsAttention = Boolean(selectedChat && needsAttention(selectedChat));
+  // Switching chats or receiving new attention starts a new retention period.
+  // Manual collapse can end it without changing the currently open conversation.
+  useEffect(() => {
+    setKeepSelectedChat(true);
+  }, [selectedChatKey, dataOwnerId]);
+  useEffect(() => {
+    if (selectedNeedsAttention) setKeepSelectedChat(true);
+  }, [selectedNeedsAttention]);
+  const attentionChats = visibleChats.filter(entry =>
+    (keepSelectedChat && entry === selectedChat) || needsAttention(entry));
+  const displayedChats = collapsed ? attentionChats : showAllChats ? visibleChats : previewChats;
   const collapsedAvatars = collapsed && showCollapsedAvatars;
-  const showIconStrip = (!collapsed && viewMode === 'icons') || collapsedAvatars;
-  const iconChats = visibleChats;
+  const showIconStrip = viewMode === 'icons' || collapsedAvatars;
+  const iconChats = collapsed && !collapsedAvatars ? attentionChats : visibleChats;
 
   useEffect(() => {
     if (roster.visible.length + remoteBots.length + groups.length === 0) return;
@@ -497,6 +525,22 @@ export function TeammatesSection() {
         </DropdownMenuItem>
   </>);
 
+  const groupMenuProps = (id: string) => ({
+    'aria-haspopup': 'menu' as const,
+    onContextMenu: (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openContextMenu('group', id, event.currentTarget, event.clientX, event.clientY);
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return;
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      openContextMenu('group', id, event.currentTarget, rect.left + 10, rect.bottom);
+    },
+  });
+
+  const menuGroup = contextMenu?.kind === 'group' ? groups.find(item => item.id === contextMenu.id) : undefined;
   const renderGroupRow = (group: BotGroupSummary) => (
     <BotGroupSidebarRow key={'group:' + group.id} group={group} bots={bots}
       islandActivity={islandActivity} now={now} selected={group.id === selectedGroupId}
@@ -504,29 +548,7 @@ export function TeammatesSection() {
         const query = reply ? '?' + new URLSearchParams(reply).toString() : '';
         navigate('/bots/groups/' + encodeURIComponent(id) + query);
       }}
-      onContextMenu={event => {
-        event.preventDefault(); event.stopPropagation();
-        openContextMenu('group', group.id, event.currentTarget, event.clientX, event.clientY);
-      }}
-      onKeyDown={event => {
-        if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return;
-        event.preventDefault();
-        const rect = event.currentTarget.getBoundingClientRect();
-        openContextMenu('group', group.id, event.currentTarget, rect.left + 10, rect.bottom);
-      }}>
-      {renderContextMenu('group', group.id, <>
-        <DropdownMenuItem onSelect={() => navigate('/bots/groups/' + encodeURIComponent(group.id) + '?' + BOT_GROUP_SETTINGS_PARAM + '=1')}>
-          <Settings size={14} className="mr-2" />{t('bots.groupChat.settings.title')}
-        </DropdownMenuItem>
-        {group.serverBacked && !group.dissolvedAt && group.members.some(member => member.isOwned && (member.role === 'owner' || member.role === 'admin')) && <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem disabled={archiveBusy} onSelect={() => void changeGroupArchive(group)}>
-            {group.archived ? <ArchiveRestore size={14} className="mr-2" /> : <Archive size={14} className="mr-2" />}
-            {t('bots.groupChat.server.settings.' + (group.archived ? 'unarchive' : 'archive'))}
-          </DropdownMenuItem>
-        </>}
-      </>)}
-    </BotGroupSidebarRow>
+      {...groupMenuProps(group.id)} />
   );
 
   const ToggleIcon = collapsed ? ChevronRight : ChevronDown;
@@ -540,6 +562,24 @@ export function TeammatesSection() {
 
   return (
     <div ref={sidebarRef} className="flex w-full flex-col gap-0.5" data-sidebar-section="teammates">
+      {renderContextMenu('group', menuGroup?.id ?? '', menuGroup && <>
+        <DropdownMenuItem onSelect={() => {
+          void window.electronAPI.maker.openSessionInNewWindow('/bots/groups/' + encodeURIComponent(menuGroup.id))
+            .catch(() => toast.error(t('ccAgent.common.openFailed')));
+        }}>
+          <AppWindow size={14} className="mr-2" />{t('rightSidebar.tabs.contextMenu.openInWindow')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => navigate('/bots/groups/' + encodeURIComponent(menuGroup.id) + '?' + BOT_GROUP_SETTINGS_PARAM + '=1')}>
+          <Settings size={14} className="mr-2" />{t('bots.groupChat.settings.title')}
+        </DropdownMenuItem>
+        {menuGroup.serverBacked && !menuGroup.dissolvedAt && menuGroup.members.some(member => member.isOwned && (member.role === 'owner' || member.role === 'admin')) && <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={archiveBusy} onSelect={() => void changeGroupArchive(menuGroup)}>
+            {menuGroup.archived ? <ArchiveRestore size={14} className="mr-2" /> : <Archive size={14} className="mr-2" />}
+            {t('bots.groupChat.server.settings.' + (menuGroup.archived ? 'unarchive' : 'archive'))}
+          </DropdownMenuItem>
+        </>}
+      </>)}
       {/* 段头与置顶 / 全部任务段头同款:高 24,左 24 / 右 12;动作悬停浮现。 */}
       <div className="group/sidebar-header flex h-6 items-center justify-between pr-3 pl-6">
         <div className="flex min-w-0 items-center gap-1">
@@ -648,6 +688,8 @@ export function TeammatesSection() {
                     <button
                       type="button"
                       {...companionDragProps(chatRoute(entry), label)}
+                      {...(entry.kind === 'group' ? groupMenuProps(entry.group.id) : {})}
+                      data-bot-group-id={entry.kind === 'group' ? entry.group.id : undefined}
                       onClick={() => { const route = chatRoute(entry); if (route) navigate(route); }}
                       aria-label={label}
                       aria-current={selected ? 'page' : undefined}
@@ -696,10 +738,10 @@ export function TeammatesSection() {
         <div className="pt-1 pr-0 pl-3"><BotRosterLoadError /></div>
       ) : null}
 
-      <SectionCollapse collapsed={showIconStrip || collapsed}>
-      <div className="flex flex-col pt-1 pr-0 pl-3">
+      {archiveError && <p role="alert" className="mb-2 pt-1 pr-2.5 pl-[22px] text-12 text-[var(--error-fg)]">{archiveError}</p>}
 
-      {archiveError && <p role="alert" className="mb-2 px-2.5 text-12 text-[var(--error-fg)]">{archiveError}</p>}
+      <SectionCollapse collapsed={showIconStrip || (collapsed && attentionChats.length === 0)}>
+      <div className="flex flex-col pt-1 pr-0 pl-3">
 
       <div>
         {roster.visible.length === 0 && roster.hidden.length === 0 && archivedBots.length === 0 && remoteBots.length === 0 && visibleGroups.length === 0 ? (

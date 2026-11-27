@@ -26,6 +26,7 @@ import type { Logger } from '../logger.js';
 import { forgetCredentialGrants } from '../remote-agent/executor/credentialGrants.js';
 import { throwIpcError } from '../utils/ipcValidate.js';
 import { isDeviceLinkInvoke } from '../device-link/invoke-context.js';
+import { parseScheduledModelBaseline } from '../../shared/scheduledModelBaseline.js';
 import { withBotPermissionChange } from './botPermissionDispatch.js';
 import { withSessionPermissionChange } from './sessionPermissionChange.js';
 import { isSessionPermissionMode } from './sessionPermissionModes.js';
@@ -66,18 +67,27 @@ export async function commitSessionPermissionModeWith(
     await assertReviewSettingsUnlocked(sessionId);
     await beforeMutation?.();
     assertOwnerCurrent();
-    const [row] = await snapshot!.client.drizzle.select({permissionMode: sessions.permissionMode, agentKind: sessions.agentKind})
-      .from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const [row] = await snapshot!.client.drizzle.select({
+      agentKind: sessions.agentKind,
+      permissionMode: sessions.permissionMode,
+      scheduledModelBaseline: sessions.scheduledModelBaseline,
+    }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
     assertOwnerCurrent();
     if (!row) throwIpcError('NOT_FOUND', 'session not found');
-    if (row.agentKind === 'antigravity' && !isAntigravityPermissionMode(mode)) {
+    const savedBaseline = parseScheduledModelBaseline(row.scheduledModelBaseline);
+    // While a task is temporarily switched across built-in ↔ plugin engine for an
+    // automation, the UI projects the owner's baseline; update that saved choice
+    // without forcing an unsupported mode onto the temporary engine runtime.
+    const crossPluginTemp = !!savedBaseline && !savedBaseline.pendingBotProfileVersion
+      && (row.agentKind === 'acp') !== (savedBaseline.agentKind === 'acp');
+    if (!crossPluginTemp && row.agentKind === 'antigravity' && !isAntigravityPermissionMode(mode)) {
       throwIpcError('UNSUPPORTED_CAPABILITY', 'Unsupported Agy permission mode');
     }
     await beforeMutation?.();
     const sess = maker.getSession(sessionId);
     let runtimeChanged = false;
     try {
-      if (sess) {
+      if (sess && !crossPluginTemp) {
         await sess.setPermissionMode(mode as PermissionMode);
         runtimeChanged = true;
       }
@@ -97,7 +107,7 @@ export async function commitSessionPermissionModeWith(
       throw error;
     }
     // 分享供应商的「本任务总是允许」随权限档变化失效；Agent 实例被回收时执行器收不到这次切换。
-    if (row.permissionMode !== mode) forgetCredentialGrants(sessionId);
+    if ((crossPluginTemp ? savedBaseline.permissionMode : row.permissionMode) !== mode) forgetCredentialGrants(sessionId);
     broadcastSessionPatched(sessionId, { permissionMode: mode });
     await syncBotLinkedLanePermissions(sessionId);
     if (remote) {

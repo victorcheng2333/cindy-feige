@@ -42,10 +42,10 @@ vi.mock('@/contexts/PrRefsContext', () => ({
 vi.mock('@cindy/maker-shared', async () => {
   const { leadingSlashInvocation } = await import('@cindy/maker-shared/composer-palette');
   const { normalizeTaskTags, reconcileTaskTags } = await import('../../../../../packages/maker-shared/src/taskTags');
-  const { MAX_STATUS_QUERIES } = await import('../../../../../packages/maker-shared/src/sessionPrRefs');
+  const sessionPrRefs = await import('../../../../../packages/maker-shared/src/sessionPrRefs');
   const workingStatus = await import('../../../../../packages/maker-shared/src/workingStatus');
   const userBubble = await import('../../../../../packages/maker-shared/src/userBubbleAppearance');
-  return { leadingSlashInvocation, normalizeTaskTags, reconcileTaskTags, MAX_STATUS_QUERIES, ...workingStatus, ...userBubble };
+  return { leadingSlashInvocation, normalizeTaskTags, reconcileTaskTags, ...sessionPrRefs, ...workingStatus, ...userBubble };
 });
 vi.mock('@cindy/device-link', async () => ({
   ...await import('../../../../../packages/device-link/src/sharedTaskPeer'),
@@ -182,6 +182,7 @@ describe('SelectionQuoteButton — quote rendering and menu placement', () => {
 // and observe the composer quote or side-chat request. jsdom only needs layout geometry.
 describe('SelectionQuoteButton — message body selection actions', () => {
   const sessionId = 'message-body-selection';
+  const pendingDraftKey = 'side-chat-pending:selection';
   const userText = 'Please check this requirement';
   const assistantText = 'I will check the requirement';
   let nativeAddToChat: () => void;
@@ -199,6 +200,7 @@ describe('SelectionQuoteButton — message body selection actions', () => {
   afterEach(() => {
     cleanup();
     clearDraft(sessionId);
+    clearDraft(pendingDraftKey);
     window.getSelection()?.removeAllRanges();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -206,7 +208,7 @@ describe('SelectionQuoteButton — message body selection actions', () => {
   });
 
   async function renderMessages(onAskInSideChat?: (quote: string) => Promise<boolean>, reply = assistantText, nextUser?: string,
-    userProps?: { content: string; quotesEncoded: boolean }, cards?: ReactNode) {
+    userProps?: { content: string; quotesEncoded: boolean }, cards?: ReactNode, draftKey?: string) {
     const containerRef = createRef<HTMLDivElement>();
     await act(async () => {
       render(createElement(MemoryRouter, null,
@@ -229,7 +231,7 @@ describe('SelectionQuoteButton — message body selection actions', () => {
               }),
               cards,
               nextUser && createElement(UserMessage, { pluginUi: EMPTY_PLUGIN_UI_MESSAGE_CANDIDATES, workingDir: '', content: nextUser }),
-              createElement(SelectionQuoteButton, { sessionId, containerRef, onAskInSideChat }),
+              createElement(SelectionQuoteButton, { sessionId, draftKey, containerRef, onAskInSideChat }),
             ),
             createElement('p', null, 'Outside the message stream'),
           ),
@@ -272,6 +274,18 @@ describe('SelectionQuoteButton — message body selection actions', () => {
     ]);
     expect(selection.isCollapsed).toBe(true);
     expect(screen.queryByRole('button', { name: 'chat.quote.addToChat' })).toBeNull();
+  });
+
+  // Unit, #12799: the child can receive a reply while its composer still
+  // owns a preview draft. The selected reply belongs to that draft.
+  it('adds a selected reply to the active side-chat draft', async () => {
+    await renderMessages(undefined, assistantText, undefined, undefined, undefined, pendingDraftKey);
+    selectText(screen.getByText(assistantText));
+    fireEvent.click(screen.getByRole('button', { name: 'chat.quote.addToChat' }));
+    expect(getDraft(pendingDraftKey)?.text?.content?.[0]?.content).toEqual([
+      { type: 'composerQuote', attrs: { text: assistantText, sourcePath: null, startLine: null, endLine: null } },
+    ]);
+    expect(getDraft(sessionId)).toBeUndefined();
   });
 
   it.each(['user', 'assistant', 'both'])('opens a side chat with selected %s message text', async (source) => {

@@ -263,7 +263,7 @@ describe('useOwnRemoteProviders', () => {
       ['mini-a', {
         providers: [provider('anthropic', {
           group: {
-            strategy: 'least',
+            strategy: 'expiring',
             members: [
               { kind: 'local' },
               { kind: 'device', agentDeviceId: 'mini-b', providerId: 'anthropic' },
@@ -290,7 +290,7 @@ describe('useOwnRemoteProviders', () => {
       { deviceId: 'mini-b', name: 'Studio', platform: 'darwin' },
     ];
     const group = {
-      strategy: 'least',
+      strategy: 'expiring',
       members: [{ kind: 'local' }, { kind: 'device', agentDeviceId: 'mini-b', providerId: 'anthropic' }],
     };
     for (const state of [{ connected: false }, { suspended: true }, { remoteInvocationEnabled: false }]) {
@@ -310,7 +310,7 @@ describe('useOwnRemoteProviders', () => {
   // Claude entry can still be in the host catalog alongside its Anthropic pool. Unit, in memory.
   it('hides merged entries unless the host still shares them or they represent a group', async () => {
     devices.value = [{ deviceId: 'mini-a', name: 'Mac Mini', platform: 'darwin' }];
-    const group = { strategy: 'least', members: [{ kind: 'local' }, { kind: 'device', agentDeviceId: 'mini-b', providerId: 'anthropic' }] };
+    const group = { strategy: 'expiring', members: [{ kind: 'local' }, { kind: 'device', agentDeviceId: 'mini-b', providerId: 'anthropic' }] };
     const alias = (id: string, overrides: Record<string, unknown> = {}) => provider(id, {
       name: 'Claude · account', subscriptionPoolAlias: true, subscriptionPoolTarget: 'anthropic', ...overrides,
     });
@@ -451,7 +451,7 @@ describe('OwnRemoteProviderRows / OwnRemoteProviderDetail', () => {
       ...entry,
       provider: { ...entry.provider, auth: { method: 'oauth', native: 'claude' } },
       group: {
-        strategy: 'least', autoSwitch: true,
+        strategy: 'expiring', autoSwitch: true,
         members: [{ key: 'local', kind: 'local', agentDeviceId: null, providerId: 'anthropic', limit: 4, weight: 1, paused: false }],
       },
     }} />);
@@ -532,7 +532,7 @@ describe('OwnRemoteProviderRows / OwnRemoteProviderDetail', () => {
         ? {
             providerId: 'anthropic',
             configured: true,
-            strategy: 'least',
+            strategy: 'expiring',
             accounts: [
               poolAccount('default', {
                 identity: 'first@example.com',
@@ -552,7 +552,7 @@ describe('OwnRemoteProviderRows / OwnRemoteProviderDetail', () => {
               }),
             ],
           }
-        : { providerId: 'anthropic', configured: true, strategy: 'least', accounts: [] });
+        : { providerId: 'anthropic', configured: true, strategy: 'expiring', accounts: [] });
 
       const subscription: OwnRemoteProvider = {
         ...entry,
@@ -584,7 +584,7 @@ describe('OwnRemoteProviderRows / OwnRemoteProviderDetail', () => {
         providerId: 'claude-work',
         kind: 'anthropic',
         configured: true,
-        strategy: 'least',
+        strategy: 'expiring',
         accounts: [
           poolAccount('acc-1', { identity: 'one@example.com', plan: 'pro', usage: claudeUsage(20, 40) }),
           poolAccount('acc-2', { identity: 'two@example.com', status: 'signed-out' }),
@@ -593,7 +593,7 @@ describe('OwnRemoteProviderRows / OwnRemoteProviderDetail', () => {
         providerId: 'claude-work',
         kind: 'anthropic',
         configured: true,
-        strategy: 'least',
+        strategy: 'expiring',
         accounts: [
           poolAccount('acc-1', { identity: 'one@example.com', plan: 'pro', usage: claudeUsage(20, 40) }),
           poolAccount('acc-2', { identity: 'two@example.com', plan: 'pro', usage: claudeUsage(10, 30) }),

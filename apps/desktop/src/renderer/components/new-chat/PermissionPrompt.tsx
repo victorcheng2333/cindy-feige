@@ -23,6 +23,7 @@ import type { BotChatIdentity } from '@/features/bots/BotSessionContentHeader';
 import { shouldCardShortcutYield } from '@/lib/editableKeyboardTarget';
 import { cn } from '@/lib/utils';
 import { Tip } from '@/components/ui/tooltip';
+import { Kbd } from '@/components/ui/kbd';
 import { Button } from '@/components/ui/button';
 import type { PendingPermission } from '@/lib/makerChatStore';
 import { describeSessionPermissionScope } from '@/lib/permissionSuggestionScope';
@@ -285,9 +286,9 @@ export function PermissionPrompt({
           className={secondaryActionClass}
         >
           <span>{t(isMcpUrl ? 'newChat.permissionPrompt.mcpCancel' : isMediaDownload ? 'newChat.mediaDownload.defer' : 'agentIsland.native.deny')}</span>
-          <kbd className="rounded-[4px] border border-[var(--chat-input-border)] bg-[var(--perm-code-bg)] px-1.5 py-px text-11 font-normal text-[var(--status-bar-meta)]">
+          <Kbd>
             Esc
-          </kbd>
+          </Kbd>
         </Button>
 
         {acpChoices?.allowOnce === false && !canRemember && !allowRememberedAcpPermission && (
@@ -323,12 +324,12 @@ export function PermissionPrompt({
                   ? t('newChat.permissionPrompt.alwaysAllowScoped', { scope: allowScope })
                   : t('agentIsland.native.alwaysAllowForSession'))}
               </span>
-              <kbd className="shrink-0 rounded-[4px] border border-[var(--chat-input-border)] bg-[var(--perm-code-bg)] px-1.5 py-px text-11 font-normal text-[var(--status-bar-meta)]">
+              <Kbd className="shrink-0">
                 Ctrl
-              </kbd>
-              <kbd className="-ml-1 shrink-0 rounded-[4px] border border-[var(--chat-input-border)] bg-[var(--perm-code-bg)] px-1.5 py-px text-11 font-normal text-[var(--status-bar-meta)]">
+              </Kbd>
+              <Kbd className="-ml-1 shrink-0">
                 Enter
-              </kbd>
+              </Kbd>
             </Button>
           </Tip>
         )}
@@ -344,9 +345,9 @@ export function PermissionPrompt({
           className={allowActionClass}
         >
           <span>{t(isFirstInstall ? 'settings.ghosts.installConsent.confirmInstall' : showInstallSummary ? 'settings.ghosts.contribution.viewDetails' : isMcpUrl ? 'newChat.permissionPrompt.mcpComplete' : isMediaDownload ? 'newChat.mediaDownload.allow' : 'agentIsland.native.allowOnce')}</span>
-          <kbd className="rounded-[4px] border border-[var(--perm-allow-kbd-border)] bg-[var(--perm-allow-kbd-bg)] px-1.5 py-px text-11 font-normal text-[var(--perm-allow-btn-text)] opacity-70">
+          <Kbd tone="onSolid">
             Enter
-          </kbd>
+          </Kbd>
         </Button>}
       </div>
     </div>

@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 
 import {
   hasProviderLogo,
+  CONNECTION_BRANDS, isConnectionBrand,
   isProviderLogoKind,
   PROVIDER_LOGO_PATHS,
   resolveProviderLogoKind,
@@ -44,9 +45,10 @@ export function ProviderLogoMark({
   size = 14,
   className,
 }: ProviderLogoMarkProps) {
-  const kind = isProviderLogoKind(logoKind)
+  const selected = isProviderLogoKind(logoKind)
     ? logoKind
     : resolveProviderLogoKind(providerId, routing);
+  const kind = isConnectionBrand(selected) ? CONNECTION_BRANDS[selected] : selected;
   if (!kind) return <>{fallback}</>;
   if (kind === 'anthropic') return <AnthropicMark size={size} className={className} />;
   if (kind === 'openai-spectrum') return <OpenAISpectrumMark size={size} className={className} />;
