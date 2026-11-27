@@ -27,7 +27,6 @@ import {
 import {
   Check,
   SlidersHorizontal,
-  Star,
   X,
   LayoutGrid,
   Waypoints,
@@ -92,7 +91,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
   useEffect(() => {
     setPage(null);
   }, [p.visible, p.options?.row.key, p.pluginEngineOptions?.row.key]);
-  const mark = (Icon: typeof Check | typeof Star, filled = false) => (
+  const mark = (Icon: typeof Check, filled = false) => (
     <NativeMark>
       <Icon
         size={iconSize.action}
@@ -103,7 +102,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
   );
   const options = p.options;
   const pluginOptions = p.pluginEngineOptions;
-  const isFavorite = options?.isFavorite ?? !!options?.row.favorite;
   const config = options?.row.config;
   const favoritesGroup = p.groups.find((group) => group.key === "favorites");
   const otherGroups = p.groups.filter((group) => group.key !== "favorites");
@@ -186,7 +184,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
         }
         optionsIcon={onPluginOptions ? mark(SlidersHorizontal) : undefined}
         selectionIcon={mark(Check)}
-        accessory={row.favorite ? mark(Star, true) : undefined}
         selected={row.selected}
         disabled={p.busy || row.disabled}
         onPress={() => p.pluginEngines?.onSelect(row)}
@@ -301,7 +298,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
       }
       optionsIcon={mark(SlidersHorizontal)}
       selectionIcon={mark(Check)}
-      accessory={row.favorite ? mark(Star, true) : undefined}
       selected={row.selected}
       disabled={p.busy || row.disabled}
       onPress={() => p.onSelect(row)}
@@ -649,28 +645,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               {pluginOptions.context}
             </Text>
           </Section>
-          {pluginOptions.onEditFavorite ? (
-            <Section>
-              <ComposerNativeRow
-                title={t("models.unified.editFavorite")}
-                onPress={pluginOptions.onEditFavorite}
-                disabled={p.busy || pluginOptions.favoritesDisabled}
-                testID={`${p.testID}.editFavorite`}
-              />
-            </Section>
-          ) : null}
-          {pluginOptions.editingFavorite ? (
-            <Section>
-              <Text
-                modifiers={[
-                  font({ textStyle: "footnote" }),
-                  foregroundStyle(colors.textSecondary),
-                ]}
-              >
-                {t("models.unified.editFavoriteHint")}
-              </Text>
-            </Section>
-          ) : null}
           {pluginOptions.efforts.length > 1 ? (
             <Section>
               <Picker
@@ -691,49 +665,6 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
               </Picker>
             </Section>
           ) : null}
-          {pluginOptions.editingFavorite ? (
-            <Section>
-              <ComposerNativeRow
-                title={t("models.unified.saveFavorite")}
-                onPress={() => pluginOptions.onSaveEdit?.()}
-                disabled={p.busy || pluginOptions.favoritesDisabled}
-                testID={`${p.testID}.saveFavorite`}
-              />
-              <ComposerNativeRow
-                title={t("models.unified.cancelEdit")}
-                onPress={() => pluginOptions.onCancelEdit?.()}
-                disabled={p.busy}
-                testID={`${p.testID}.cancelEdit`}
-              />
-            </Section>
-          ) : (
-            <Section title={t("models.unified.currentConfiguration")}>
-              <ComposerNativeRow
-                title={t(
-                  pluginOptions.isFavorite
-                    ? "models.unified.savedConfiguration"
-                    : "models.unified.favoriteConfiguration",
-                )}
-                subtitle={pluginOptions.configurationSummary}
-                leading={mark(Star, pluginOptions.isFavorite)}
-                disabled={p.busy || pluginOptions.favoritesDisabled}
-                onPress={pluginOptions.onFavorite}
-                testID={`${p.testID}.favorite`}
-              />
-              <Text
-                modifiers={[
-                  font({ textStyle: "footnote" }),
-                  foregroundStyle(colors.textSecondary),
-                ]}
-              >
-                {t(
-                  pluginOptions.isFavorite
-                    ? "models.unified.removeFavoriteHint"
-                    : "models.unified.saveFavoriteHint",
-                )}
-              </Text>
-            </Section>
-          )}
           {pluginOptions.notice ? (
             <Section>
               <Text

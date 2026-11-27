@@ -347,7 +347,7 @@ export interface UnifiedMobilePickerViewProps {
     onEditFavorite?: () => void;
     onCancelEdit?: () => void;
     onSaveEdit?: () => void;
-    onFavorite(): void;
+    onFavorite?: () => void;
   };
 }
 const ALL_AGENTS: readonly AgentKind[] = ["claude-code", "codex", "pi", "antigravity"];
@@ -1946,7 +1946,7 @@ export function UnifiedModelPickerSheet(
               effort: activePluginRow.effort,
               efforts: activePluginRow.efforts,
               onChangeEffort: changePluginEngineEffort,
-              favoritesDisabled: !prefs.favoritesReady,
+              favoritesDisabled: !favoritesEnabled || !prefs.favoritesReady,
               isFavorite: !!pluginFavoriteToRemove,
               configurationSummary: [
                 activePluginEngine.name,
@@ -1957,7 +1957,7 @@ export function UnifiedModelPickerSheet(
               notice,
               editingFavorite: !!pluginFavoriteEdit,
               onEditFavorite:
-                originPluginFavorite && !pluginFavoriteEdit && activePluginRow.efforts.length > 1
+                favoritesEnabled && originPluginFavorite && !pluginFavoriteEdit && activePluginRow.efforts.length > 1
                   ? () => {
                       if (lock.current || p.disabled) return;
                       setPluginFavoriteEdit({
@@ -1972,89 +1972,95 @@ export function UnifiedModelPickerSheet(
                       setError(null);
                     }
                   : undefined,
-              onCancelEdit: () => {
-                if (lock.current) return;
-                setPluginFavoriteEdit(null);
-                setError(null);
-                setNotice(null);
-              },
-              onSaveEdit: () => {
-                if (!pluginFavoriteEdit) return;
-                void transact(async (isCurrent) => {
-                  const original = prefs.value.favorites.find(
-                    (item) => item.uid === pluginFavoriteEdit.original.uid,
-                  );
-                  if (
-                    !original ||
-                    original.providerId !== pluginFavoriteEdit.original.providerId ||
-                    original.modelId !== pluginFavoriteEdit.original.modelId ||
-                    original.effort !== pluginFavoriteEdit.original.effort
-                  ) {
-                    setError(t("models.unified.favoriteChanged"));
-                    return;
+              onCancelEdit: favoritesEnabled
+                ? () => {
+                    if (lock.current) return;
+                    setPluginFavoriteEdit(null);
+                    setError(null);
+                    setNotice(null);
                   }
-                  if (
-                    prefs.value.favorites.some(
-                      (item) =>
-                        item.uid !== original.uid && pluginFavoriteMatches(item),
-                    )
-                  ) {
-                    setError(t("models.unified.favoriteExists"));
-                    return;
-                  }
-                  const nextEffort = pluginFavoriteEdit.effort;
-                  await prefs.save({
-                    ...prefs.value,
-                    favorites: prefs.value.favorites.map((item) =>
-                      item.uid === original.uid
-                        ? {
-                            ...item,
-                            agent: PLUGIN_ENGINE_MOBILE_WIRE_AGENT,
-                            effort: nextEffort ?? "",
-                            fast: false,
-                          }
-                        : item,
-                    ),
-                  });
-                  if (!isCurrent()) return;
-                  setPluginFavoriteEdit(null);
-                  setPluginTarget((current) => (current ? { ...current, effort: nextEffort } : current));
-                  setNotice(t("models.unified.favoriteUpdated"));
-                });
-              },
-              onFavorite: () => {
-                if (!prefs.favoritesReady || pluginFavoriteEdit) return;
-                void transact(async (isCurrent) => {
-                  if (pluginFavoriteToRemove) {
-                    await prefs.save({
-                      ...prefs.value,
-                      favorites: prefs.value.favorites.filter(
-                        (item) => item.uid !== pluginFavoriteToRemove.uid,
-                      ),
+                : undefined,
+              onSaveEdit: favoritesEnabled
+                ? () => {
+                    if (!pluginFavoriteEdit) return;
+                    void transact(async (isCurrent) => {
+                      const original = prefs.value.favorites.find(
+                        (item) => item.uid === pluginFavoriteEdit.original.uid,
+                      );
+                      if (
+                        !original ||
+                        original.providerId !== pluginFavoriteEdit.original.providerId ||
+                        original.modelId !== pluginFavoriteEdit.original.modelId ||
+                        original.effort !== pluginFavoriteEdit.original.effort
+                      ) {
+                        setError(t("models.unified.favoriteChanged"));
+                        return;
+                      }
+                      if (
+                        prefs.value.favorites.some(
+                          (item) =>
+                            item.uid !== original.uid && pluginFavoriteMatches(item),
+                        )
+                      ) {
+                        setError(t("models.unified.favoriteExists"));
+                        return;
+                      }
+                      const nextEffort = pluginFavoriteEdit.effort;
+                      await prefs.save({
+                        ...prefs.value,
+                        favorites: prefs.value.favorites.map((item) =>
+                          item.uid === original.uid
+                            ? {
+                                ...item,
+                                agent: PLUGIN_ENGINE_MOBILE_WIRE_AGENT,
+                                effort: nextEffort ?? "",
+                                fast: false,
+                              }
+                            : item,
+                        ),
+                      });
+                      if (!isCurrent()) return;
+                      setPluginFavoriteEdit(null);
+                      setPluginTarget((current) => (current ? { ...current, effort: nextEffort } : current));
+                      setNotice(t("models.unified.favoriteUpdated"));
                     });
-                    if (isCurrent()) setNotice(t("models.unified.favoriteRemoved"));
-                  } else {
-                    if (prefs.value.favorites.some(pluginFavoriteMatches)) {
-                      if (isCurrent()) setNotice(t("models.unified.favoriteSaved"));
-                      return;
-                    }
-                    await prefs.save(
-                      addModelFavorite(
-                        prefs.value,
-                        {
-                          providerId: activePluginRow.providerId,
-                          modelId: activePluginRow.modelId,
-                          agent: PLUGIN_ENGINE_MOBILE_WIRE_AGENT,
-                          effort: activePluginRow.effort ?? "",
-                          fast: false,
-                        },
-                        createFavoriteUid(),
-                      ),
-                    );
-                    if (isCurrent()) setNotice(t("models.unified.favoriteSaved"));
                   }
-                });
-              },
+                : undefined,
+              onFavorite: favoritesEnabled
+                ? () => {
+                    if (!prefs.favoritesReady || pluginFavoriteEdit) return;
+                    void transact(async (isCurrent) => {
+                      if (pluginFavoriteToRemove) {
+                        await prefs.save({
+                          ...prefs.value,
+                          favorites: prefs.value.favorites.filter(
+                            (item) => item.uid !== pluginFavoriteToRemove.uid,
+                          ),
+                        });
+                        if (isCurrent()) setNotice(t("models.unified.favoriteRemoved"));
+                      } else {
+                        if (prefs.value.favorites.some(pluginFavoriteMatches)) {
+                          if (isCurrent()) setNotice(t("models.unified.favoriteSaved"));
+                          return;
+                        }
+                        await prefs.save(
+                          addModelFavorite(
+                            prefs.value,
+                            {
+                              providerId: activePluginRow.providerId,
+                              modelId: activePluginRow.modelId,
+                              agent: PLUGIN_ENGINE_MOBILE_WIRE_AGENT,
+                              effort: activePluginRow.effort ?? "",
+                              fast: false,
+                            },
+                            createFavoriteUid(),
+                          ),
+                        );
+                        if (isCurrent()) setNotice(t("models.unified.favoriteSaved"));
+                      }
+                    });
+                  }
+                : undefined,
             }
           : undefined
       }

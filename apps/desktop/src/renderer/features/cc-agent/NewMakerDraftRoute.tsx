@@ -2891,7 +2891,9 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
       )
     : resolveBuiltinVendorPermissionMode(
         draft.vendor,
-        draftPermissionPreference,
+        !activePluginEngine && draft.vendor === 'antigravity' && effectiveAgentDeviceId != null
+          ? chatPrefs.permissionMode
+          : draftPermissionPreference,
         capabilities?.permissionModes?.map((mode) => mode.id),
       );
   remoteDraftPermissionRef.current = isDeviceLinkDraft
@@ -4117,11 +4119,15 @@ function NewMakerDraftForm({ composerKey: NEW_MAKER_DRAFT_KEY }: { composerKey: 
         setDlSel((prev) => (prev ? { ...prev, permissionMode: newMode } : prev));
         return;
       }
+      if (!activePluginEngine && draft.vendor === 'antigravity' && effectiveAgentDeviceId != null) {
+        patchActivePrefs({ permissionMode: newMode });
+        return;
+      }
       // 新建任务的权限选择跨内置 Harness 与插件引擎统一记住：
       // 无论当前选着内置模型还是插件引擎，切换其他 Harness / 插件模型时都沿用这次选择。
       setDraftPermissionMode(newMode);
     },
-    [isDeviceLinkDraft, activePluginEngine, dlPluginEngine, effectiveDeviceLinkDeviceId],
+    [isDeviceLinkDraft, activePluginEngine, dlPluginEngine, effectiveDeviceLinkDeviceId, draft.vendor, effectiveAgentDeviceId, patchActivePrefs],
   );
   // 计划模式草稿开关:写当前 vendor prefs(发送建会话时经 planModeEnabled 落库)。
   // 远程草稿随创建参数提交，不修改被控端的新建默认值。

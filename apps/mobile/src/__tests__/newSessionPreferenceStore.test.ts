@@ -300,16 +300,19 @@ describe('newSessionPreferenceStore', () => {
     const { readNewSessionPreferences, saveNewSessionPreferences } =
       await import('@/session/newSessionPreferenceStore');
     const pick = { deviceId: 'share:s1', agentKind: 'codex' as const, model: 'gpt-x', providerId: 'openai', effort: 'high', fastMode: true };
+    const agyPick = { deviceId: 'studio', agentKind: 'antigravity' as const, model: 'gemini-3-pro', providerId: 'agy', effort: '', fastMode: false };
     await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'codex', pick } });
     await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'pi', pick: { ...pick, agentKind: 'pi', deviceId: 'studio' } } });
+    await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'antigravity', pick: agyPick } });
     expect((await readNewSessionPreferences()).remoteAgentByDevice).toEqual({
-      mac: { codex: pick, pi: { ...pick, agentKind: 'pi', deviceId: 'studio' } },
+      mac: { codex: pick, pi: { ...pick, agentKind: 'pi', deviceId: 'studio' }, antigravity: agyPick },
     });
     setMobileAuthOwner('account-b');
     expect((await readNewSessionPreferences()).remoteAgentByDevice).toEqual({});
     setMobileAuthOwner('account-a');
     await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'codex', pick: null } });
     await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'pi', pick: null } });
+    await saveNewSessionPreferences({ remoteAgentForDevice: { deviceId: 'mac', agentKind: 'antigravity', pick: null } });
     expect((await readNewSessionPreferences()).remoteAgentByDevice).toEqual({});
   });
 

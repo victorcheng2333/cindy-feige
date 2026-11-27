@@ -249,7 +249,7 @@ function normalizeRemoteAgentByDevice(value: unknown): NewSessionStoredPreferenc
     const byAgent = readRecord(byAgentValue);
     if (!controlledDeviceId.trim() || !byAgent) continue;
     const picks: Partial<Record<NewSessionAgentKind, NewSessionRemoteAgentPick>> = {};
-    for (const agentKind of ['claude-code', 'codex', 'pi'] as const) {
+    for (const agentKind of ['claude-code', 'codex', 'pi', 'antigravity'] as const) {
       const pick = readRecord(byAgent[agentKind]);
       const deviceId = readString(pick?.deviceId);
       const model = readString(pick?.model);

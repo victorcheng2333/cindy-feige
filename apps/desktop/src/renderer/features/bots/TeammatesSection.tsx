@@ -32,6 +32,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { SectionCollapse } from '@/features/cc-agent/sidebar/SectionCollapse';
+import { useCollapsibleShowAll } from '@/features/cc-agent/sidebar/hooks/useCollapsibleShowAll';
 import { SIDEBAR_LIST_ROW_ACTIVE_CLASS, SIDEBAR_LIST_ROW_HEIGHT_CLASS } from '@/features/cc-agent/sidebar/listRowStyle';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog-provider';
 import { getDataOwnerGeneration, isDataOwnerGenerationCurrent } from '@/contexts/dataOwnerGeneration';
@@ -123,7 +124,7 @@ function useAvatarRowCapacity(element: HTMLDivElement | null): number {
 /**
  * 侧栏第一层的「伙伴」段(2026-10-13 定稿):固定在置顶段上方,与置顶、全部任务并存。
  * 点伙伴只切换主区域,左栏不再整栏切换。显示方式与收起状态独立，按账号记住。
- * 收起默认仅保留未读或等待处理的聊天，可选择显示所有头像。通知由任务侧栏负责。
+ * 收起默认隐藏全部聊天，可选择显示所有头像。通知由任务侧栏负责。
  */
 export function TeammatesSection() {
   const { t } = useTranslation();
@@ -143,7 +144,6 @@ export function TeammatesSection() {
   const deviceId = remoteRoute?.params.deviceId;
   const selectedGroupId = matchPath('/bots/groups/:groupId', pathname)?.params.groupId;
   const [collapsed, setCollapsed] = useState(() => readTeammatesSectionCollapsed(dataOwnerId));
-  const [keepSelectedChat, setKeepSelectedChat] = useState(true);
   const [viewMode, setViewMode] = useState(() => readTeammatesViewMode(dataOwnerId));
   const [showCollapsedAvatars, setShowCollapsedAvatars] = useState(() => readCollapsedTeammateAvatars(dataOwnerId));
   const changeCollapsedAvatars = (enabled: boolean) => {
@@ -154,7 +154,7 @@ export function TeammatesSection() {
     setViewMode(mode);
     writeTeammatesViewMode(dataOwnerId, mode);
   };
-  const [showAllChats, setShowAllChats] = useState(false);
+  const [showAllChats, setShowAllChats] = useCollapsibleShowAll(collapsed);
   const [avatarRowElement, setAvatarRowElement] = useState<HTMLDivElement | null>(null);
   const avatarCapacity = useAvatarRowCapacity(avatarRowElement);
   useEffect(() => {
@@ -166,11 +166,6 @@ export function TeammatesSection() {
   const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
-    if (next) {
-      setShowAllChats(false);
-      // An explicit collapse overrides the temporary protection of a read chat.
-      setKeepSelectedChat(Boolean(selectedChat && needsAttention(selectedChat)));
-    }
     writeTeammatesSectionCollapsed(dataOwnerId, next);
   };
   const cloud = useCompanionCloud();
@@ -407,32 +402,10 @@ export function TeammatesSection() {
   if (selectedChat && !previewChats.includes(selectedChat)) {
     previewChats[CHAT_PREVIEW_LIMIT - 1] = selectedChat;
   }
-  const needsAttention = (entry: (typeof visibleChats)[number]) => {
-    const unread = entry.kind === 'group' ? isBotGroupUnread(entry.group)
-      : entry.kind === 'cindy' ? cindyOptions.some(option => option.unread)
-        : 'deviceId' in entry.bot ? isRemoteBotUnread(entry.bot) : (unreadByBotId[entry.bot.id] ?? 0) > 0;
-    const status = entry.kind === 'group' ? groupTeammateStatus(entry.group, bots, islandActivity, unread)
-      : entry.kind === 'cindy' ? cindyStatus : statusForBot(entry.bot);
-    return unread || status === 'awaiting' || status === 'error';
-  };
-  const selectedChatKey = selectedChat?.kind === 'group' ? `group:${selectedChat.group.id}`
-    : selectedChat?.kind === 'cindy' ? 'cindy-devices'
-      : selectedChat ? ('deviceId' in selectedChat.bot ? remoteBotKey(selectedChat.bot) : `local:${selectedChat.bot.id}`) : null;
-  const selectedNeedsAttention = Boolean(selectedChat && needsAttention(selectedChat));
-  // Switching chats or receiving new attention starts a new retention period.
-  // Manual collapse can end it without changing the currently open conversation.
-  useEffect(() => {
-    setKeepSelectedChat(true);
-  }, [selectedChatKey, dataOwnerId]);
-  useEffect(() => {
-    if (selectedNeedsAttention) setKeepSelectedChat(true);
-  }, [selectedNeedsAttention]);
-  const attentionChats = visibleChats.filter(entry =>
-    (keepSelectedChat && entry === selectedChat) || needsAttention(entry));
-  const displayedChats = collapsed ? attentionChats : showAllChats ? visibleChats : previewChats;
+  const displayedChats = showAllChats ? visibleChats : previewChats;
   const collapsedAvatars = collapsed && showCollapsedAvatars;
-  const showIconStrip = viewMode === 'icons' || collapsedAvatars;
-  const iconChats = collapsed && !collapsedAvatars ? attentionChats : visibleChats;
+  const showIconStrip = (!collapsed && viewMode === 'icons') || collapsedAvatars;
+  const iconChats = visibleChats;
 
   useEffect(() => {
     if (roster.visible.length + remoteBots.length + groups.length === 0) return;
@@ -639,9 +612,8 @@ export function TeammatesSection() {
       </div>
 
       {showIconStrip && iconChats.length > 0 ? (
-        // 默认收起时待处理头像全部可见；主动显示所有头像时沿用单行 +N。
         // pl-[22px] = 列表容器 pl-3 + 行 px-2.5，与列表模式头像对齐（DESIGN.md §5 悬挂缩进）。
-        <div ref={setAvatarRowElement} className={cn('flex items-center gap-1 py-1 pr-0 pl-[22px]', collapsed && !collapsedAvatars ? 'flex-wrap' : 'flex-nowrap overflow-hidden')}>
+        <div ref={setAvatarRowElement} className="flex flex-nowrap items-center gap-1 overflow-hidden py-1 pr-0 pl-[22px]">
           {(() => {
             const entries = iconChats.map((entry) => {
               const key = entry.kind === 'group' ? `group:${entry.group.id}`
@@ -740,7 +712,7 @@ export function TeammatesSection() {
 
       {archiveError && <p role="alert" className="mb-2 pt-1 pr-2.5 pl-[22px] text-12 text-[var(--error-fg)]">{archiveError}</p>}
 
-      <SectionCollapse collapsed={showIconStrip || (collapsed && attentionChats.length === 0)}>
+      <SectionCollapse collapsed={showIconStrip || collapsed}>
       <div className="flex flex-col pt-1 pr-0 pl-3">
 
       <div>

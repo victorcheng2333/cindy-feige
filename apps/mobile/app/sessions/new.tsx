@@ -2531,21 +2531,24 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     const targetCapabilities = normalizeMobileAgentCapabilities(await capabilitiesMaker.getCapabilities(agent));
     if (!targetCapabilities
       || (agent === 'antigravity' && !targetCapabilities.supportsControlledAntigravityCreation)) return false;
-    const currentEffectivePermission = activePluginEngine?.permissionMode ?? draft.permissionMode;
-    const preferredPermission =
-      newSessionPreferences?.lastPermissionMode
-      ?? currentEffectivePermission
-      ?? newSessionPreferences?.permissionModeByAgent[agent]
-      ?? defaultPermissionModeForNewSessionAgent(agent);
+    const pickingRemoteAntigravity = Boolean(remoteDeviceId && agent === 'antigravity');
+    const currentEffectivePermission = activePluginEngine?.permissionMode ?? builtinDisplayPermissionMode;
+    const preferredPermission = pickingRemoteAntigravity
+      ? remoteAntigravityPermissionMode(newSessionPreferences)
+      : (newSessionPreferences?.lastPermissionMode
+        ?? (remoteAntigravityActive ? draft.permissionMode : currentEffectivePermission)
+        ?? newSessionPreferences?.permissionModeByAgent[agent]
+        ?? defaultPermissionModeForNewSessionAgent(agent));
     const permission = resolvePermissionModeForNewSessionAgent(
       agent,
       preferredPermission,
       targetCapabilities.permissionModes.map((option) => option.id),
     );
-    const hasRememberedPermission =
-      newSessionPreferences?.lastPermissionMode !== undefined
-      || newSessionPreferences?.permissionModeByAgent[agent] !== undefined
-      || activePluginEngine !== null;
+    const hasRememberedPermission = pickingRemoteAntigravity
+      ? newSessionPreferences?.remoteAntigravityPermissionMode !== undefined
+      : (newSessionPreferences?.lastPermissionMode !== undefined
+        || newSessionPreferences?.permissionModeByAgent[agent] !== undefined
+        || activePluginEngine !== null);
     if (permission !== currentEffectivePermission && !(await confirmFullAccessChange(currentEffectivePermission, permission, {
       restoringRememberedChoice: hasRememberedPermission,
     }))) return false;
@@ -2556,12 +2559,17 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     const fastMode = targetCapabilities.hasFastMode === true && config.fast;
     if (remoteDeviceId) {
       // 模型与来源属于那台电脑:单独记,草稿只跟着换 Agent 与权限(权限仍在被控电脑上生效)。
+      // 远程 Agy 的权限单独记在 remoteAntigravityPermissionMode，不覆盖本地 draft.permissionMode。
       setRemoteAgentChoice({
         controlledDeviceId: deviceAtStart,
         pick: { deviceId: remoteDeviceId, agentKind: agent, model: config.modelId,
           providerId: config.providerId, effort: config.effort, fastMode },
       });
-      setDraft((current) => ({ ...current, agentKind: agent, permissionMode: permission }));
+      setDraft((current) => ({
+        ...current,
+        agentKind: agent,
+        ...(pickingRemoteAntigravity ? {} : { permissionMode: permission }),
+      }));
     } else {
       explicitProviderModelSelectionRef.current = config.modelId;
       setRemoteAgentChoice(null);
@@ -2582,7 +2590,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
       },
     });
     return true;
-  }, [creating, selectedDeviceId, maker, executionMakerForDevice, newSessionPreferences, activePluginEngine, draft.permissionMode, requestHostChoiceWrite]);
+  }, [creating, selectedDeviceId, maker, executionMakerForDevice, newSessionPreferences, activePluginEngine, builtinDisplayPermissionMode, draft.permissionMode, remoteAntigravityActive, requestHostChoiceWrite]);
 
   // 扁平回退(被控端 0 供应商):只落 model、清来源(默认路由),effort 跟随 capabilities reconcile。
   // 选中插件引擎的一行：任务将以该引擎在被控电脑本机运行；权限模式沿用新建任务跨引擎统一的权限选择
@@ -3980,10 +3988,10 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
     explicitProviderModelSelectionRef.current = null;
     const seqAtTrigger = ++runtimeActionSeqRef.current;
     void saveNewSessionPreferences({ agentKind: nextKind });
-    const currentEffectivePermission = activePluginEngine?.permissionMode ?? draft.permissionMode;
+    const currentEffectivePermission = activePluginEngine?.permissionMode ?? builtinDisplayPermissionMode;
     const preferredPermission =
       newSessionPreferences?.lastPermissionMode
-      ?? currentEffectivePermission
+      ?? (remoteAntigravityActive ? draft.permissionMode : currentEffectivePermission)
       ?? newSessionPreferences?.permissionModeByAgent[nextKind]
       ?? defaultPermissionModeForNewSessionAgent(nextKind);
     const nextPermissionMode = resolvePermissionModeForNewSessionAgent(nextKind, preferredPermission);
@@ -4043,7 +4051,7 @@ function NewRemoteSessionContent({ creatingRef }: { creatingRef: { current: bool
         };
       });
     });
-  }, [activePluginEngine, draft.agentKind, draft.permissionMode, deviceProviders.providers, deviceProviders.modelVisibilityOverrides, hostRuntimeFor, newSessionPreferences, selectedDeviceId, waitHostDraftDefaults]);
+  }, [activePluginEngine, builtinDisplayPermissionMode, draft.agentKind, draft.permissionMode, remoteAntigravityActive, deviceProviders.providers, deviceProviders.modelVisibilityOverrides, hostRuntimeFor, newSessionPreferences, selectedDeviceId, waitHostDraftDefaults]);
 
   // 选中的 agent 在被控端未注册(如 Pi 二进制缺失)时,coerce 到首个可用来源,避免用户停在
   // 被隐藏的选项、并防止创建出注定 requireAgent 报错的会话。仅在已拉到可用集后收敛一次。

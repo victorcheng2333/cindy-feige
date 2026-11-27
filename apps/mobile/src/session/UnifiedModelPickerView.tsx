@@ -743,7 +743,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             testID={`${p.testID}.cancelEdit`}
           />
         </Group>
-      ) : (
+      ) : pluginOptions.onFavorite ? (
         <>
           <Group title={t("models.unified.currentConfiguration")}>
             <Row
@@ -767,7 +767,7 @@ export function UnifiedModelPickerView(p: UnifiedMobilePickerViewProps) {
             )}
           </Text>
         </>
-      )}
+      ) : null}
       {pluginOptions.notice ? (
         <Text
           style={styles.footnote}
