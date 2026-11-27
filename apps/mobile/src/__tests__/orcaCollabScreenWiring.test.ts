@@ -82,7 +82,8 @@ describe('mobile Orca collaboration wiring', () => {
     expect(source).toContain("if (collabEnabled && session.orcaRole !== 'lead') session = { ...session, orcaRole: 'lead' };");
     expect(source).toContain('prefsScope: outboxOwner.accountKey || null,');
     // create-failed「返回编辑」带回协同草稿;目标比对防止恢复时被「换目标即清」误清。
-    expect(source).toContain("if (draft.agentKind === 'antigravity' || collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);");
+    expect(source).toContain("const antigravityActive = !pluginEnginePick && !activeHostModelGroup && draft.agentKind === 'antigravity';");
+    expect(source).toContain("if (antigravityActive || collabDraftTargetRef.current !== collabTargetKey) setCollabDraft(null);");
     // The stashed-draft hook owns the restoration condition after extraction.
     // Keep the cross-entry handoff guarded; hook behavior is mounted in
     // newSessionWorkspaceEffects.test.tsx.
