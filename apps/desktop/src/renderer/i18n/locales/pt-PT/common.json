@@ -4504,7 +4504,8 @@
           },
           "codexContextUnknown": "Configuração da CLI indisponível",
           "codexContextValues": "Total {{total}} · Utilizável {{usable}} · Compactação automática {{compact}} tokens",
-          "contextLimitGptHint": "GPT usa por predefinição um máximo de 272K; pode defini-lo como 1M aqui. Codex aplica a janela e o limiar de compactação automática em conjunto, mantendo uma margem de 5%. A capacidade real depende do serviço do modelo."
+          "contextLimitGptHint": "GPT usa por predefinição um máximo de 272K; pode defini-lo como 1M aqui. Codex aplica a janela e o limiar de compactação automática em conjunto, mantendo uma margem de 5%. A capacidade real depende do serviço do modelo.",
+          "agyContextManaged": "O Agy gere a sua própria janela de contexto e compacta automaticamente quando cerca de metade está em uso. Para os modelos Agy, o Cindy não pode alterar nenhuma destas definições."
         },
         "kindFilter": {
           "all": "Todos",
@@ -17377,7 +17378,10 @@
       "costHint": "Uma janela maior contém mais conteúdo e pode custar mais.",
       "technical": "Detalhes técnicos",
       "auto": "Compactação automática",
-      "autoHelp": "O Codex compacta automaticamente o contexto perto do limiar de compactação."
+      "autoHelp": "O Codex compacta automaticamente o contexto perto do limiar de compactação.",
+      "nearAutoCompact": "Compactação automática em breve",
+      "agyAutoHelp": "O Agy compacta o contexto por si próprio quando cerca de metade da janela está em uso, resumindo o conteúdo anterior. É o Agy que decide quando isso acontece e o Cindy não o pode alterar.",
+      "agyAutoDetail": "Observado por volta de {{tokens}} tokens. Cada compactação aparece na conversa como um separador Compactação automática."
     },
     "contextWindowBudget": {
       "menuTitle": "Janela de contexto da tarefa",

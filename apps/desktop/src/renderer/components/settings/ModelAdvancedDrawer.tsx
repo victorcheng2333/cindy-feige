@@ -293,6 +293,9 @@ export function ModelAdvancedDrawer({
 
   const contextAgent = primaryAgent && chatAgents.includes(primaryAgent) ? primaryAgent : null;
   const contextModel = contextAgent ? row?.byAgent[contextAgent] : null;
+  // `agy acp` reads neither a context limit nor a compaction ratio (antigravity-cli #1812): its
+  // window and its auto-compaction point are decided by Agy, so they are explained, not edited.
+  const agyManagedContext = chatAgents.length > 0 && chatAgents.every((agent) => agent === 'antigravity');
 
   const contextTarget = useMemo(
     () =>
@@ -936,7 +939,15 @@ export function ModelAdvancedDrawer({
                     </Section>
                   )}
 
-                  {conversational && (
+                  {conversational && agyManagedContext && (
+                    <Section title={t('settings.providers.models.advanced.contextLimit')}>
+                      <p className="text-12 leading-relaxed text-[var(--text-secondary)]">
+                        {t('settings.providers.models.advanced.agyContextManaged')}
+                      </p>
+                    </Section>
+                  )}
+
+                  {conversational && !agyManagedContext && (
                     <Section
                       title={t('settings.providers.models.advanced.contextLimit')}
                       hint={t(supportsMillionContext ? 'settings.providers.models.advanced.contextLimitLocalMillionHint' : /^(?:(?:openai-codex|codex|openai|chatgpt)\/)?gpt-/.test(primaryModel.id) && provider.source !== 'user' && ['openai', 'xd'].includes(provider.id)

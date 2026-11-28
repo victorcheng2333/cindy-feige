@@ -14,6 +14,7 @@ import { buildAgySettingsJson, classifyAgyProcessExit, runAntigravityAccountComm
 import {
   AGY_INVALID_THINKING_SIGNATURE_REASON,
   readAntigravityBackgroundState,
+  readAntigravityCheckpointSteps,
   watchAntigravityPromptOutcome,
 } from './native-state.js';
 
@@ -363,6 +364,32 @@ it('closes the native ACP process when Google sign-in is cancelled', async () =>
 // Unit: read-only SQLite trajectory inspection & native inbox/subagent detection against
 // temporary `--gemini_dir` fixtures (matches live Agy `antigravity-cli/` layout).
 describe('Antigravity native state inspection', () => {
+  // Native auto-compaction writes a CHECKPOINT step (type 23) and `agy acp` sends no notification.
+  // Uses the production default opener (`node:sqlite`, no injected binding).
+  it('counts CHECKPOINT steps after a known index and fails closed without a trajectory', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-checkpoint-'));
+    try {
+      const convDir = path.join(dir, 'antigravity-cli', 'conversations');
+      await mkdir(convDir, { recursive: true });
+      const { DatabaseSync } = await import('node:sqlite');
+      const db = new DatabaseSync(path.join(convDir, 'sess-cp.db'));
+      db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)');
+      const insert = db.prepare('INSERT INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)');
+      [15, 132, 23, 15, 23, 132].forEach((type, idx) => insert.run(idx, type, Buffer.from('x')));
+      db.close();
+      const read = (afterIndex: number, sessionId = 'sess-cp') =>
+        readAntigravityCheckpointSteps({ stateDir: dir, sessionId, afterIndex });
+
+      expect(await read(-1)).toEqual({ lastIndex: 5, checkpointCount: 2, lastCheckpointIndex: 4 });
+      expect(await read(2)).toEqual({ lastIndex: 5, checkpointCount: 1, lastCheckpointIndex: 4 });
+      expect(await read(5)).toEqual({ lastIndex: 5, checkpointCount: 0 });
+      expect(await read(-1, 'sess-missing')).toBeUndefined();
+      expect(await read(-1, '../escape')).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('classifies SQLite error steps (quota reset delay, invalid thinking signature, 404 before/after model)', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cindy-agy-native-'));
     try {

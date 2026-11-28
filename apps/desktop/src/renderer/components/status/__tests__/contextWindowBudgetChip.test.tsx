@@ -419,6 +419,30 @@ describe('ContextWindowBudgetChip', () => {
     await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull());
   });
 
+  // Agy compacts at about 512K of its 1M window (antigravity-cli #1812; 14 local compactions had a
+  // median of ~519K). Gap: the ring said "plenty of room" at 45% while compaction was imminent.
+  // Minimal failing input: vendorKey="antigravity", 470K of 1,048,576 (45%).
+  it.each([
+    [300_000, 'msg-tool-card-chevron', false],
+    [470_000, 'warning-fg', true],
+  ] as const)('explains Agy auto-compaction and warns ahead of it at %s tokens', async (tokens, token, warned) => {
+    const { container } = render(<ContextCapacityRing
+      sessionId={SESSION_ID}
+      contextTokens={tokens}
+      sdkContextWindow={1_048_576}
+      model="gemini-4-neon"
+      providerId="antigravity"
+      vendorKey="antigravity"
+    />);
+    expect(container.querySelectorAll('circle')[1]?.getAttribute('stroke')).toBe(`var(--${token})`);
+    fireEvent.click(document.querySelector('[data-context-window-budget-chip]')!);
+    expect(await screen.findByText('ccAgent.contextRingPanel.agyAutoHelp')).toBeTruthy();
+    expect(screen.getByText('ccAgent.contextRingPanel.agyAutoDetail#{"tokens":"512K"}')).toBeTruthy();
+    expect(screen.queryByText('ccAgent.contextRingPanel.nearAutoCompact') !== null).toBe(warned);
+    expect(screen.queryByText('ccAgent.contextRingPanel.continueHint') !== null).toBe(!warned);
+    expect(screen.queryByText('ccAgent.contextRingPanel.autoHelp')).toBeNull();
+  });
+
   it('keeps the card open when the trigger is clicked after hover opened it', async () => {
     // 与底栏用量 chip（TodaySpendChip）一致：展开/收起只由 hover、焦点与 outside-click
     // 驱动，点击不当作开关。用户实测：左边卡片悬浮展开后点击不会收起，本卡却会 —— 两张

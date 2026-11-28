@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Tip } from '@/components/ui/tooltip';
 import { useCodexContextWindow } from '@/hooks/useCodexContextWindow';
 import { getModelsForVendor } from '@/lib/modelDefinitions';
-import { resolveDisplayContextWindow } from '@/lib/contextWindow';
+import { antigravityAutoCompactTokens, resolveDisplayContextWindow } from '@/lib/contextWindow';
 import { ContextWindowBudgetChip } from './ContextWindowBudgetChip';
 import appI18n from 'i18next';
 
@@ -102,11 +102,15 @@ export function ContextCapacityRing({
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (circumference * pct) / 100;
 
+  // Agy compacts at about half of its window, long before the generic 70% warning.
+  const agyCompactAt = vendorKey === 'antigravity' ? antigravityAutoCompactTokens(contextWindow) : 0;
+  const nearAgyCompaction = agyCompactAt > 0 && contextTokens >= agyCompactAt * 0.8;
+
   // Color thresholds per spec
   const fillColor =
     pct > 90
       ? 'var(--error-flat)'
-      : pct > 70
+      : pct > 70 || nearAgyCompaction
         ? 'var(--warning-fg)'
         : 'var(--msg-tool-card-chevron)';
 
@@ -156,7 +160,13 @@ export function ContextCapacityRing({
   );
 
   const statusKey =
-    contextWindow <= 0 ? 'unknown' : pct > 90 ? 'nearLimit' : pct > 70 ? 'elevated' : 'available';
+    contextWindow <= 0
+      ? 'unknown'
+      : pct > 90
+        ? 'nearLimit'
+        : nearAgyCompaction
+          ? 'nearAutoCompact'
+          : pct > 70 ? 'elevated' : 'available';
   const details = (
     <div className="space-y-4">
       <div>
@@ -206,12 +216,32 @@ export function ContextCapacityRing({
             </p>
           </>
         )}
-        {(contextWindow <= 0 || pct <= 70) && (
+        {(contextWindow <= 0 || (pct <= 70 && !nearAgyCompaction)) && (
           <p className="mt-2 text-12 leading-relaxed text-[var(--text-secondary)]">
             {t(`ccAgent.contextRingPanel.${contextWindow <= 0 ? 'unknownHint' : 'continueHint'}`)}
           </p>
         )}
       </div>
+      {vendorKey === 'antigravity' && (
+        <div className="border-t border-[var(--border-default)] pt-3">
+          <p className="text-12 font-medium text-[var(--text-primary)]">
+            {t('ccAgent.contextRingPanel.auto')}
+          </p>
+          <p className="mt-1 text-12 leading-relaxed text-[var(--text-secondary)]">
+            {t('ccAgent.contextRingPanel.agyAutoHelp')}
+          </p>
+          {agyCompactAt > 0 && (
+            <details className="mt-2 text-11 text-[var(--text-secondary)]">
+              <summary className="cursor-pointer">{t('ccAgent.contextRingPanel.technical')}</summary>
+              <p className="mt-1 leading-relaxed">
+                {t('ccAgent.contextRingPanel.agyAutoDetail', {
+                  tokens: formatTokenCount(agyCompactAt),
+                })}
+              </p>
+            </details>
+          )}
+        </div>
+      )}
       {vendorKey === 'codex' && (
         <div className="border-t border-[var(--border-default)] pt-3">
           <p className="text-12 font-medium text-[var(--text-primary)]">

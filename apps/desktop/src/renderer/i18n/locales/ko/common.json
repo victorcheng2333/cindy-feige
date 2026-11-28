@@ -4408,7 +4408,8 @@
           },
           "codexContextUnknown": "CLI 설정을 읽을 수 없음",
           "codexContextValues": "전체 {{total}} · 사용 가능 {{usable}} · 자동 압축 {{compact}} tokens",
-          "contextLimitGptHint": "GPT는 기본적으로 최대 272K를 사용하며 여기서 1M으로 변경할 수 있습니다. Codex는 창과 자동 압축 임계값을 함께 적용하고 5%의 여유를 유지합니다. 실제 용량은 모델 서비스에 따라 다릅니다."
+          "contextLimitGptHint": "GPT는 기본적으로 최대 272K를 사용하며 여기서 1M으로 변경할 수 있습니다. Codex는 창과 자동 압축 임계값을 함께 적용하고 5%의 여유를 유지합니다. 실제 용량은 모델 서비스에 따라 다릅니다.",
+          "agyContextManaged": "Agy는 컨텍스트 윈도우를 직접 관리하며 절반 정도 사용하면 자동으로 압축합니다. Agy 모델에서는 Cindy가 두 항목을 바꿀 수 없습니다."
         },
         "kindFilter": {
           "all": "전체",
@@ -17140,7 +17141,10 @@
       "costHint": "큰 창은 더 많은 내용을 담지만 비용이 늘어날 수 있습니다.",
       "technical": "상세 정보",
       "auto": "자동 압축",
-      "autoHelp": "Codex는 압축 임계값에 가까워지면 컨텍스트를 자동으로 정리합니다."
+      "autoHelp": "Codex는 압축 임계값에 가까워지면 컨텍스트를 자동으로 정리합니다.",
+      "nearAutoCompact": "곧 자동 압축",
+      "agyAutoHelp": "Agy는 컨텍스트 윈도우를 절반 정도 사용하면 자동으로 압축해 이전 내용을 요약합니다. 압축 시점은 Agy가 정하며 Cindy에서 바꿀 수 없습니다.",
+      "agyAutoDetail": "실측 기준 약 {{tokens}} 토큰에서 발생합니다. 압축될 때마다 대화에 '자동 압축' 구분선이 표시됩니다."
     },
     "contextWindowBudget": {
       "menuTitle": "이 작업의 컨텍스트 창",

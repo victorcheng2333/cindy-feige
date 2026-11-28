@@ -994,6 +994,30 @@ describe('model advanced editor', () => {
     expect(screen.queryByText('settings.providers.models.advanced.codexContextHint')).toBeNull();
   });
 
+  // `agy acp` ignores Cindy's context limit and compaction ratio (antigravity-cli #1812), so an
+  // Agy model must explain the native behaviour instead of offering controls that do nothing.
+  it('explains instead of editing the context limit and compaction ratio of an Agy model', () => {
+    mocks.compactionEnabled = true;
+    const agyModel: CatalogModel = { ...model, id: 'gemini-4-neon', name: 'Gemini 4 Neon', contextWindow: 1_048_576 };
+    render(
+      <ModelAdvancedDrawer
+        provider={{ ...provider, id: 'antigravity', name: 'Agy', agents: ['antigravity'] } as ProviderView}
+        row={{ id: agyModel.id, name: agyModel.name, avail: ['antigravity'], byAgent: { antigravity: agyModel } }}
+        open
+        onOpenChange={vi.fn()}
+        pricePresentationOf={() => null}
+        onDisable={vi.fn()}
+        disabled={false}
+        paymentRequired={false}
+      />,
+    );
+    expect(screen.getByText('settings.providers.models.advanced.agyContextManaged')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'settings.providers.models.advanced.contextLimitAria' })).toBeNull();
+    expect(screen.queryByRole('slider')).toBeNull();
+    expect(mocks.setLimit).not.toHaveBeenCalled();
+    expect(mocks.setCompaction).not.toHaveBeenCalled();
+  });
+
   it('uses the same context editor for custom Codex providers', () => {
     render(
       <ModelAdvancedDrawer

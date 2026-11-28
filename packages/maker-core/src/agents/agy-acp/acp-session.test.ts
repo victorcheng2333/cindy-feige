@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, InteractionDecision, InteractionRequest } from '../../types/events.js';
 import { AcpLineDecoder, AcpLineTooLongError, type AcpLineTransport, type AcpTransportClosed } from './line-transport.js';
 import {
+  AGY_POST_COMPACTION_NOTICE,
   AcpAuthRequiredError,
   AcpResumeUnavailableError,
   openAcpSession,
@@ -2413,6 +2414,142 @@ describe('AcpSession background wait yielding & steer flush', () => {
 
     agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
     await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(1));
+    await session.close();
+  });
+});
+
+// Tier: unit. Production entry: `openAcpSession` with `readNativeCompactions` (wired by the Agy agent
+// to its SQLite trajectory), `send`, `compact`, and the emitted AgentEvent stream.
+// Basis: `agy acp` (1.5.16–1.5.18) compacts at about half of its 1M window without any ACP
+// notification (antigravity-cli #1509, #1812); 14 real compactions on 2026-11-25..27 showed the
+// context reading falling from about 520K to about 20K inside one turn. The checkpoint summary can
+// tell the model evicted files are still loaded (antigravity-cli #1294).
+// Gap: only manual `/compact` emitted `compact_boundary`; automatic ones were invisible and the
+// next prompt carried no warning that earlier tool results are gone.
+// Minimal failing inputs: a turn whose trajectory gains a CHECKPOINT step; a resumed session whose
+// trajectory already holds one; a manual compaction followed by an ordinary turn.
+describe('AcpSession native auto-compaction', () => {
+  const CHECKPOINT = 23;
+  /** In-memory trajectory: one step type per index, scanned like the SQLite reader does. */
+  function trajectory(initial: number[] = []) {
+    const steps = [...initial];
+    const reads: number[] = [];
+    return {
+      steps,
+      reads,
+      reader: async (_sessionId: string, afterIndex: number) => {
+        reads.push(afterIndex);
+        const later = steps.map((type, idx) => ({ type, idx })).filter(s => s.idx > afterIndex && s.type === CHECKPOINT);
+        return {
+          lastIndex: steps.length - 1,
+          checkpointCount: later.length,
+          ...(later.length ? { lastCheckpointIndex: later.at(-1)!.idx } : {}),
+        };
+      },
+    };
+  }
+  const textOf = (params: AcpRecord): string[] =>
+    (params.prompt as Array<{ type: string; text?: string }>).map(block => block.text ?? '');
+
+  it('marks an automatic compaction inside its turn and reminds the model once on the next prompt', async () => {
+    const agent = createFakeAgent();
+    const native = trajectory();
+    const { session, events } = await open(agent, { readNativeCompactions: native.reader });
+
+    await session.send({ type: 'user', content: 'Read the big log' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.update({ sessionUpdate: 'usage_update', used: 577_554, size: 1_048_576 });
+    native.steps.push(15, 132, CHECKPOINT, 15);
+    agent.update({ sessionUpdate: 'usage_update', used: 19_280, size: 1_048_576 });
+    agent.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done reading.' } });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+
+    const boundaries = events.filter(e => e.type === 'compact_boundary');
+    expect(boundaries).toEqual([expect.objectContaining({
+      data: { boundaryId: 'sess-1:2', trigger: 'auto', preTokens: 577_554, postTokens: 19_280 },
+    })]);
+    // Shown inside the turn it happened in, not as a background frame after `done`.
+    expect(boundaries[0]!.turnScope).toBeUndefined();
+    expect(events.findIndex(e => e.type === 'compact_boundary')).toBeLessThan(events.findIndex(e => e.type === 'done'));
+    // The user's own prompt was untouched.
+    expect(textOf(agent.prompts[0]!.params)).toEqual(['Read the big log']);
+
+    // A slash command runs as typed; the reminder waits for the next ordinary prompt.
+    await session.send({ type: 'user', content: '/review' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    expect(textOf(agent.prompts[1]!.params)).toEqual(['/review']);
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(2));
+
+    await session.send({ type: 'user', content: 'Is the fix applied?' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(3));
+    expect(textOf(agent.prompts[2]!.params)).toEqual(['Is the fix applied?', AGY_POST_COMPACTION_NOTICE]);
+    agent.prompts[2]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(3));
+
+    // One compaction, one marker, one reminder.
+    await session.send({ type: 'user', content: 'Thanks' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(4));
+    expect(textOf(agent.prompts[3]!.params)).toEqual(['Thanks']);
+    agent.prompts[3]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.filter(e => e.type === 'done')).toHaveLength(4));
+    expect(events.filter(e => e.type === 'compact_boundary')).toHaveLength(1);
+    await session.close();
+  });
+
+  it('treats compactions from before a resume as history and does not report a manual compaction twice', async () => {
+    const agent = createFakeAgent({
+      agentCapabilities: { sessionCapabilities: { resume: {} } },
+      handlers: { 'session/resume': () => ({}) },
+    });
+    const native = trajectory([15, CHECKPOINT, 15]);
+    const { session, events } = await open(agent, {
+      resumeSessionId: 'old-1',
+      nativeCompactCommand: true,
+      readNativeCompactions: native.reader,
+    });
+    agent.update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact', description: 'Compact' }] }, 'old-1');
+    await vi.waitFor(() => expect(session.capabilities.manualCompact?.supported).toBe(true));
+
+    await session.send({ type: 'user', content: 'Continue' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.update({ sessionUpdate: 'usage_update', used: 40_000, size: 1_048_576 }, 'old-1');
+    native.steps.push(15);
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    expect(textOf(agent.prompts[0]!.params)).toEqual(['Continue']);
+
+    const compacting = session.compact();
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    native.steps.push(CHECKPOINT);
+    agent.update({ sessionUpdate: 'usage_update', used: 6_000, size: 1_048_576 }, 'old-1');
+    agent.prompts[1]!.settle.resolve({ stopReason: 'end_turn' });
+    await compacting;
+
+    await session.send({ type: 'user', content: 'Next' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(3));
+    agent.prompts[2]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.filter(e => e.type === 'done').length).toBeGreaterThanOrEqual(2));
+
+    expect(events.filter(e => e.type === 'compact_boundary').map(e => (e.data as { trigger: string }).trigger)).toEqual(['manual']);
+    expect(textOf(agent.prompts[2]!.params)).toEqual(['Next']);
+    await session.close();
+  });
+
+  it('changes nothing when the trajectory cannot be read', async () => {
+    const agent = createFakeAgent();
+    const { session, events } = await open(agent, { readNativeCompactions: async () => undefined });
+    await session.send({ type: 'user', content: 'Hi' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(1));
+    agent.update({ sessionUpdate: 'usage_update', used: 500_000, size: 1_048_576 });
+    agent.update({ sessionUpdate: 'usage_update', used: 20_000, size: 1_048_576 });
+    agent.prompts[0]!.settle.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('done'));
+    await session.send({ type: 'user', content: 'Again' });
+    await vi.waitFor(() => expect(agent.prompts).toHaveLength(2));
+    expect(textOf(agent.prompts[1]!.params)).toEqual(['Again']);
+    expect(events.some(e => e.type === 'compact_boundary')).toBe(false);
     await session.close();
   });
 });

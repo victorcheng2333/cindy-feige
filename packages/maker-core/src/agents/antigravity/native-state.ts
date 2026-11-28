@@ -31,6 +31,9 @@ export type OpenReadonlySqlite = (filePath: string) => ReadonlySqliteDatabase;
 // CORTEX_STEP_TYPE_ERROR_MESSAGE and CORTEX_STEP_TYPE_PLANNER_RESPONSE in Agy trajectory DB.
 const ERROR_STEP_TYPE = 17;
 const PLANNER_RESPONSE_STEP_TYPE = 15;
+// CORTEX_STEP_TYPE_CHECKPOINT: the step a native compaction writes. Matched every `CHECKPOINT`
+// record of `transcript.jsonl` across 14 real compactions (agy 1.5.18, 2026-11-28).
+const CHECKPOINT_STEP_TYPE = 23;
 const MAX_ERROR_PAYLOAD_BYTES = 16_384;
 const NATIVE_SESSION_ID = /^[A-Za-z0-9-]{1,128}$/;
 
@@ -443,6 +446,52 @@ export async function watchAntigravityPromptOutcome(options: {
     }
     return classified;
   };
+}
+
+/** Native compaction steps recorded in a session's trajectory after a known step index. */
+export interface AntigravityCheckpointScan {
+  /** Highest step index in the trajectory (-1 when it has no steps yet). */
+  lastIndex: number;
+  /** Number of CHECKPOINT steps after `afterIndex`. */
+  checkpointCount: number;
+  /** Step index of the newest CHECKPOINT after `afterIndex`. */
+  lastCheckpointIndex?: number;
+}
+
+/**
+ * Reads the CHECKPOINT (native compaction) steps the session's SQLite trajectory recorded after
+ * `afterIndex`. `agy acp` sends no ACP notification when it compacts on its own, so this is the
+ * only record of it. Returns undefined when the trajectory cannot be read.
+ */
+export async function readAntigravityCheckpointSteps(options: {
+  stateDir: string;
+  sessionId: string;
+  afterIndex: number;
+  openSqlite?: OpenReadonlySqlite;
+}): Promise<AntigravityCheckpointScan | undefined> {
+  if (!NATIVE_SESSION_ID.test(options.sessionId)) return undefined;
+  const openSqlite = await resolveSqliteOpener(options.openSqlite);
+  if (!openSqlite) return undefined;
+  const subdir = await resolveDataSubdir(options.stateDir);
+  if (!subdir) return undefined;
+  const dbFile = await resolveAntigravityManagedPath(
+    options.stateDir,
+    [subdir, 'conversations', `${options.sessionId}.db`],
+    'file',
+  );
+  if (!dbFile) return undefined;
+  return readDbWithTimeout(openSqlite, dbFile.path, (db) => {
+    const lastIndex = readLastStepIndex(db);
+    const row = db.prepare(
+      'SELECT count(*) AS n, max(idx) AS last FROM steps WHERE idx > ? AND step_type = ?',
+    ).get(options.afterIndex, CHECKPOINT_STEP_TYPE) as { n?: unknown; last?: unknown } | undefined;
+    const checkpointCount = typeof row?.n === 'number' ? row.n : Number(row?.n ?? 0) || 0;
+    return {
+      lastIndex,
+      checkpointCount,
+      ...(checkpointCount > 0 && typeof row?.last === 'number' ? { lastCheckpointIndex: row.last } : {}),
+    };
+  });
 }
 
 interface ParsedTranscriptLine {

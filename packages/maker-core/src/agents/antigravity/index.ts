@@ -43,6 +43,7 @@ import { describeAntigravityCatalog, resolveAntigravityModel } from './models.js
 import {
   classifyAntigravityErrorText,
   readAntigravityBackgroundState,
+  readAntigravityCheckpointSteps,
   watchAntigravityPromptOutcome,
   type OpenReadonlySqlite,
 } from './native-state.js';
@@ -480,6 +481,12 @@ export class AntigravityAgent extends BaseAgent {
         watchPromptOutcome: (sessionId) => watchAntigravityPromptOutcome({
           stateDir,
           sessionId,
+          openSqlite: this.agyDeps.openReadonlySqlite,
+        }),
+        readNativeCompactions: (sessionId, afterIndex) => readAntigravityCheckpointSteps({
+          stateDir,
+          sessionId,
+          afterIndex,
           openSqlite: this.agyDeps.openReadonlySqlite,
         }),
         checkBackgroundActivity: (sessionId) => readAntigravityBackgroundState(stateDir, sessionId),

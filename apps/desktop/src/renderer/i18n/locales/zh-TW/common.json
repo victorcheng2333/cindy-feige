@@ -4408,7 +4408,8 @@
           },
           "codexContextUnknown": "未讀取到 CLI 設定",
           "codexContextValues": "總視窗 {{total}} · 可用 {{usable}} · 自動壓縮 {{compact}} tokens",
-          "contextLimitGptHint": "GPT 預設最多使用 272K；可在此自訂為 1M。Codex 會同步套用視窗與自動壓縮門檻，保留 5% 餘量；實際容量受模型服務限制。"
+          "contextLimitGptHint": "GPT 預設最多使用 272K；可在此自訂為 1M。Codex 會同步套用視窗與自動壓縮門檻，保留 5% 餘量；實際容量受模型服務限制。",
+          "agyContextManaged": "Agy 自行管理上下文視窗，並在用到約一半時自動壓縮。Cindy 無法為 Agy 模型調整這兩項。"
         },
         "kindFilter": {
           "all": "全部",
@@ -17140,7 +17141,10 @@
       "costHint": "較大的視窗可容納更多內容，也可能增加費用。",
       "technical": "技術詳情",
       "auto": "自動壓縮",
-      "autoHelp": "Codex 會在接近壓縮門檻時自動整理上下文。"
+      "autoHelp": "Codex 會在接近壓縮門檻時自動整理上下文。",
+      "nearAutoCompact": "即將自動壓縮",
+      "agyAutoHelp": "Agy 會在上下文視窗用到約一半時自動壓縮，概括較早的內容。壓縮時機由 Agy 決定，Cindy 無法調整。",
+      "agyAutoDetail": "實測約在 {{tokens}} tokens 時觸發。每次壓縮後，對話中會出現「自動壓縮」分隔線。"
     },
     "contextWindowBudget": {
       "menuTitle": "任務上下文視窗",

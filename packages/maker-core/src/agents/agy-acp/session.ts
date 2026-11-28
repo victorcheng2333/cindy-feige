@@ -70,6 +70,20 @@ import {
   type AcpWarningClassification,
 } from './translator.js';
 
+/**
+ * Appended once to the first ordinary prompt after a native auto-compaction. Agy's checkpoint
+ * summary can claim evicted files are still "in memory" and steer the model away from tools
+ * (antigravity-cli #1294); the model then cites or reports work it can no longer see.
+ */
+export const AGY_POST_COMPACTION_NOTICE = [
+  '<system-reminder>',
+  'Your context was automatically compacted before this message: earlier file contents, command',
+  'output and tool results were replaced by a summary and are no longer available to you. Before',
+  'quoting a file, relying on an earlier result, or saying that a change is done or verified, read',
+  'the file or run the command again instead of answering from the summary.',
+  '</system-reminder>',
+].join('\n');
+
 const DEFAULT_CANCEL_GRACE_MS = 15_000;
 const SESSION_CLOSE_TIMEOUT_MS = 2_000;
 const DEFAULT_BG_AFTER_TOOL_SETTLED_MS = 20_000;
@@ -299,6 +313,15 @@ export interface OpenAcpSessionOptions {
   watchPromptOutcome?: (
     sessionId: string,
   ) => Promise<(stopReason: AcpStopReason, context?: { hasResponseText?: boolean }) => Promise<AcpTurnOutcome | undefined>>;
+  /**
+   * Optional read-only scan of native compaction (CHECKPOINT) steps after `afterIndex`.
+   * `agy acp` compacts on its own without any ACP notification; the session reads its
+   * trajectory at turn end and before the next prompt to surface the compaction.
+   */
+  readNativeCompactions?: (
+    sessionId: string,
+    afterIndex: number,
+  ) => Promise<{ lastIndex: number; checkpointCount: number; lastCheckpointIndex?: number } | undefined>;
   /**
    * Optional read-only probe of native inbox/transcript/subagent state to make background
    * completion deterministic instead of relying solely on idle timers.
@@ -685,6 +708,18 @@ export class AcpSession {
   private readonly backgroundCommandHoldMaxMs: number | undefined;
   private readonly replyEndsWithUsageUpdate: boolean;
   private readonly watchPromptOutcome: OpenAcpSessionOptions['watchPromptOutcome'];
+  private readonly readNativeCompactions: OpenAcpSessionOptions['readNativeCompactions'];
+  /**
+   * Highest native step index already accounted for. Undefined until the first scan of a
+   * resumed session: compactions recorded before this process attached are history.
+   */
+  private compactionCursor: number | undefined;
+  /** Serializes compaction scans so one CHECKPOINT is never surfaced twice. */
+  private compactionScan: Promise<void> = Promise.resolve();
+  /** Highest context reading since the previous scan; the size the native compaction started from. */
+  private peakContextTokens = 0;
+  /** A native auto-compaction happened; the next user prompt carries a re-verify reminder. */
+  private pendingCompactionNotice = false;
   private readonly checkBackgroundActivity: OpenAcpSessionOptions['checkBackgroundActivity'];
   private readonly pollSubagentRuns: OpenAcpSessionOptions['pollSubagentRuns'];
   private readonly onSessionBroken: OpenAcpSessionOptions['onSessionBroken'];
@@ -768,6 +803,8 @@ export class AcpSession {
     this.backgroundCommandHoldMaxMs = init.options.backgroundCommandHoldMaxMs;
     this.replyEndsWithUsageUpdate = init.options.replyEndsWithUsageUpdate === true;
     this.watchPromptOutcome = init.options.watchPromptOutcome;
+    this.readNativeCompactions = init.options.readNativeCompactions;
+    if (init.resumeOutcome === 'new') this.compactionCursor = -1;
     this.checkBackgroundActivity = init.options.checkBackgroundActivity;
     this.pollSubagentRuns = init.options.pollSubagentRuns;
     this.onSessionBroken = init.options.onSessionBroken;
@@ -919,6 +956,13 @@ export class AcpSession {
       if (prompt === ABORTED) return;
       if (prompt.length === 0) throw new Error('Cannot send an empty message');
       if (this.ended || this.closing) throw new Error('ACP session is closed');
+      if (this.readNativeCompactions && !this.turn) {
+        // Catch compactions from autonomous work between turns before this prompt goes out.
+        await this.scanNativeCompactions();
+        if (stopped.aborted) return;
+        options.signal?.throwIfAborted();
+        if (this.ended || this.closing) throw new Error('ACP session is closed');
+      }
       const firstText = prompt.find((block): block is Extract<AcpContentBlock, { type: 'text' }> => block.type === 'text')?.text ?? '';
       if (this.pendingBriefing && !isLeadingSlashCommand(firstText)) {
         prompt.unshift({ type: 'text', text: defusePluginEngineSlashMentions(this.pendingBriefing, this.commandNames) });
@@ -1025,6 +1069,9 @@ export class AcpSession {
         const refusal = stopReason === 'refusal' ? this.classifyRefusal?.() : undefined;
         throw new Error(refusal?.error ?? 'Context compaction could not be completed.');
       }
+      // The manual compaction wrote its own CHECKPOINT; account for it so the next scan
+      // does not report it a second time as an automatic one.
+      await this.scanNativeCompactions('account');
       const estimatedTokensAfter = this.usage.contextTokens > 0 ? this.usage.contextTokens : undefined;
       if (this.usage.contextTokens > 0 || this.usage.contextWindow > 0) {
         this.queue.push({
@@ -1318,6 +1365,14 @@ export class AcpSession {
     if (this.turn) return;
     const prompt = this.pendingPrompts.shift();
     if (!prompt) return;
+    if (this.pendingCompactionNotice) {
+      const firstText = prompt.find((block): block is Extract<AcpContentBlock, { type: 'text' }> => block.type === 'text')?.text ?? '';
+      // Slash commands run as typed; the reminder waits for the next ordinary prompt.
+      if (!isLeadingSlashCommand(firstText)) {
+        prompt.push({ type: 'text', text: AGY_POST_COMPACTION_NOTICE });
+        this.pendingCompactionNotice = false;
+      }
+    }
     // Output produced between turns (autonomous agent work) is closed off as background.
     this.emit(this.translator.flushPending());
     const turn: ActiveTurn = {
@@ -1506,6 +1561,11 @@ export class AcpSession {
         }
         return;
       }
+    }
+    if (this.readNativeCompactions) {
+      // Show an auto-compaction inside the turn it happened in, ahead of `done`.
+      await this.scanNativeCompactions();
+      if (turn.settled || this.turn !== turn || lease !== turn.lease || turn.outstanding.size > 0) return;
     }
     this.finishTurn(turn.token, turn.usage ? { ...effectiveOutcome, usage: turn.usage } : effectiveOutcome);
   }
@@ -2371,6 +2431,46 @@ export class AcpSession {
     for (const event of this.translator.finish(outcome)) this.queue.push({ ...event, source: this.agentKind });
   }
 
+  /**
+   * Surfaces native auto-compactions recorded since the last scan as one `compact_boundary`
+   * and arms the re-verify reminder for the next prompt. `account` advances past compactions
+   * Cindy already reported itself (manual `/compact`) without surfacing them again.
+   * Best-effort: an unreadable trajectory changes nothing.
+   */
+  private scanNativeCompactions(mode: 'surface' | 'account' = 'surface'): Promise<void> {
+    const reader = this.readNativeCompactions;
+    if (!reader) return Promise.resolve();
+    const run = async (): Promise<void> => {
+      if (this.ended) return;
+      const cursor = this.compactionCursor;
+      const scan = await reader(this.nativeId, cursor ?? -1).catch(() => undefined);
+      if (!scan || this.ended) return;
+      this.compactionCursor = Math.max(cursor ?? -1, scan.lastIndex);
+      const preTokens = this.peakContextTokens;
+      const postTokens = this.usage.contextTokens;
+      this.peakContextTokens = postTokens;
+      if (cursor === undefined || mode === 'account' || scan.checkpointCount === 0) return;
+      this.pendingCompactionNotice = true;
+      this.logger?.info('acp: native auto-compaction detected', {
+        checkpoints: scan.checkpointCount,
+        preTokens,
+        postTokens,
+      });
+      this.emit([{
+        type: 'compact_boundary',
+        data: {
+          boundaryId: `${this.nativeId}:${scan.lastCheckpointIndex ?? scan.lastIndex}`,
+          trigger: 'auto',
+          ...(preTokens > postTokens ? { preTokens } : {}),
+          ...(postTokens > 0 ? { postTokens } : {}),
+        },
+      }]);
+    };
+    const next = this.compactionScan.then(run, run);
+    this.compactionScan = next.catch(() => {});
+    return next;
+  }
+
   private errorOutcome(error: unknown): AcpTurnOutcome {
     if (error instanceof AcpConnectionClosedError) {
       return {
@@ -2401,6 +2501,7 @@ export class AcpSession {
       contextWindow: size,
       ...(cost.currency === 'USD' && typeof cost.amount === 'number' ? { costUsd: cost.amount } : {}),
     };
+    if (used > this.peakContextTokens) this.peakContextTokens = used;
     const activeModel = this.model;
     if (size > 0 && activeModel && this.modelContextWindows.get(activeModel) !== size) {
       this.modelContextWindows.set(activeModel, size);

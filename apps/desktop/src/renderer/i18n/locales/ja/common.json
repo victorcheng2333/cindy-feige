@@ -4408,7 +4408,8 @@
           },
           "codexContextUnknown": "CLI 設定を取得できません",
           "codexContextValues": "総容量 {{total}} · 使用可能 {{usable}} · 自動圧縮 {{compact}} tokens",
-          "contextLimitGptHint": "GPT は既定で最大 272K を使用します。ここで 1M に変更できます。Codex はウィンドウと自動圧縮のしきい値を同時に適用し、5% の余裕を確保します。実際の容量はモデルサービスに依存します。"
+          "contextLimitGptHint": "GPT は既定で最大 272K を使用します。ここで 1M に変更できます。Codex はウィンドウと自動圧縮のしきい値を同時に適用し、5% の余裕を確保します。実際の容量はモデルサービスに依存します。",
+          "agyContextManaged": "Agy はコンテキストウィンドウを自ら管理し、約半分を使うと自動で圧縮します。Agy のモデルでは、Cindy からどちらも変更できません。"
         },
         "kindFilter": {
           "all": "すべて",
@@ -17140,7 +17141,10 @@
       "costHint": "大きなウィンドウはより多くの内容を保持できますが、費用が増える場合があります。",
       "technical": "技術情報",
       "auto": "自動圧縮",
-      "autoHelp": "Codex は圧縮のしきい値に近づくとコンテキストを自動で整理します。"
+      "autoHelp": "Codex は圧縮のしきい値に近づくとコンテキストを自動で整理します。",
+      "nearAutoCompact": "まもなく自動圧縮",
+      "agyAutoHelp": "Agy はコンテキストウィンドウの約半分を使うと自動で圧縮し、過去の内容を要約します。タイミングは Agy が決めるため、Cindy では変更できません。",
+      "agyAutoDetail": "実測では約 {{tokens}} トークンで発生します。圧縮されるたびに、会話に「自動圧縮」の区切り線が表示されます。"
     },
     "contextWindowBudget": {
       "menuTitle": "このタスクのコンテキストウィンドウ",

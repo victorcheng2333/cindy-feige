@@ -4408,7 +4408,8 @@
           },
           "codexContextUnknown": "未讀得 CLI 之設",
           "codexContextValues": "全窗 {{total}} · 可用 {{usable}} · 自縮於 {{compact}} tokens",
-          "contextLimitGptHint": "GPT 預設至多用 272K；可於此自訂為 1M。Codex 將同套視窗與自動壓縮門檻，留 5% 餘量；實際容量受模型服務所限。"
+          "contextLimitGptHint": "GPT 預設至多用 272K；可於此自訂為 1M。Codex 將同套視窗與自動壓縮門檻，留 5% 餘量；實際容量受模型服務所限。",
+          "agyContextManaged": "Agy 自理上下文之量，用及約半即自壓縮。於 Agy 之模型，Cindy 不能易此二者。"
         },
         "kindFilter": {
           "all": "全",
@@ -17140,7 +17141,10 @@
       "costHint": "視窗愈大，所容愈多，費用或亦增。",
       "technical": "技術細目",
       "auto": "自縮",
-      "autoHelp": "Codex 將於近壓縮門檻時自理上下文。"
+      "autoHelp": "Codex 將於近壓縮門檻時自理上下文。",
+      "nearAutoCompact": "將自壓縮",
+      "agyAutoHelp": "Agy 於上下文用及約半時自行壓縮，概括較早之內容。其時由 Agy 定之，Cindy 不能易。",
+      "agyAutoDetail": "實測約於 {{tokens}} tokens 時發。每壓縮一次，對話中即現「自壓縮」之界線。"
     },
     "contextWindowBudget": {
       "menuTitle": "差事上下文視窗",

@@ -4408,7 +4408,8 @@
           },
           "codexContextUnknown": "未读得 CLI 之设",
           "codexContextValues": "全窗 {{total}} · 可用 {{usable}} · 自缩于 {{compact}} tokens",
-          "contextLimitGptHint": "GPT 预设至多用 272K；可于此自订为 1M。Codex 将同套窗口与自动压缩门槛，留 5% 余量；实际容量受模型服务所限。"
+          "contextLimitGptHint": "GPT 预设至多用 272K；可于此自订为 1M。Codex 将同套窗口与自动压缩门槛，留 5% 余量；实际容量受模型服务所限。",
+          "agyContextManaged": "Agy 自理上下文之量，用及约半即自压缩。于 Agy 之模型，Cindy 不能易此二者。"
         },
         "kindFilter": {
           "all": "全",
@@ -17140,7 +17141,10 @@
       "costHint": "窗口愈大，所容愈多，费用或亦增。",
       "technical": "技术细目",
       "auto": "自缩",
-      "autoHelp": "Codex 将于近压缩门槛时自理上下文。"
+      "autoHelp": "Codex 将于近压缩门槛时自理上下文。",
+      "nearAutoCompact": "将自压缩",
+      "agyAutoHelp": "Agy 于上下文用及约半时自行压缩，概括较早之内容。其时由 Agy 定之，Cindy 不能易。",
+      "agyAutoDetail": "实测约于 {{tokens}} tokens 时发。每压缩一次，对话中即现「自压缩」之界线。"
     },
     "contextWindowBudget": {
       "menuTitle": "差事上下文窗口",

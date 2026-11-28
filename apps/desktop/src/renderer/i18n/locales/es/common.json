@@ -4504,7 +4504,8 @@
           },
           "codexContextUnknown": "Configuración CLI no disponible",
           "codexContextValues": "Total {{total}} · Utilizable {{usable}} · Compactación automática {{compact}} tokens",
-          "contextLimitGptHint": "GPT tiene como valor predeterminado como máximo 272K; puedes configurarlo en 1M aquí. Codex aplica la ventana y el umbral de compactación automática juntos, conservando un 5 % de espacio libre. La capacidad real depende del servicio del modelo."
+          "contextLimitGptHint": "GPT tiene como valor predeterminado como máximo 272K; puedes configurarlo en 1M aquí. Codex aplica la ventana y el umbral de compactación automática juntos, conservando un 5 % de espacio libre. La capacidad real depende del servicio del modelo.",
+          "agyContextManaged": "Agy gestiona su propia ventana de contexto y compacta automáticamente cuando se usa aproximadamente la mitad. Cindy no puede cambiar ninguno de los dos ajustes en los modelos de Agy."
         },
         "kindFilter": {
           "all": "Todo",
@@ -17377,7 +17378,10 @@
       "costHint": "Una ventana más grande admite más contenido y puede costar más.",
       "technical": "Detalles técnicos",
       "auto": "Compactación automática",
-      "autoHelp": "Codex compacta automáticamente el contexto cuando se acerca a su umbral de compactación."
+      "autoHelp": "Codex compacta automáticamente el contexto cuando se acerca a su umbral de compactación.",
+      "nearAutoCompact": "Compactación automática próxima",
+      "agyAutoHelp": "Agy compacta el contexto por su cuenta cuando se usa aproximadamente la mitad de la ventana y resume el contenido anterior. Agy decide cuándo ocurre y Cindy no puede cambiarlo.",
+      "agyAutoDetail": "Observado en torno a {{tokens}} tokens. Cada compactación aparece en la conversación como un separador de Compactación automática."
     },
     "contextWindowBudget": {
       "menuTitle": "Ventana de contexto de la tarea",

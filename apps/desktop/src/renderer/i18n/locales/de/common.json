@@ -4450,7 +4450,8 @@
           },
           "codexContextUnknown": "CLI-Konfiguration nicht verfügbar",
           "codexContextValues": "Gesamt {{total}} · Nutzbar {{usable}} · Automatische Komprimierung {{compact}} Tokens",
-          "contextLimitGptHint": "GPT verwendet standardmäßig höchstens 272K; hier kannst du 1M einstellen. Codex wendet das Kontextfenster und den Schwellenwert für die automatische Komprimierung gemeinsam an und hält dabei 5 % Reserve frei. Die tatsächliche Kapazität hängt vom Modelldienst ab."
+          "contextLimitGptHint": "GPT verwendet standardmäßig höchstens 272K; hier kannst du 1M einstellen. Codex wendet das Kontextfenster und den Schwellenwert für die automatische Komprimierung gemeinsam an und hält dabei 5 % Reserve frei. Die tatsächliche Kapazität hängt vom Modelldienst ab.",
+          "agyContextManaged": "Agy verwaltet sein Kontextfenster selbst und komprimiert automatisch, wenn etwa die Hälfte belegt ist. Für Agy-Modelle kann Cindy keine der beiden Einstellungen ändern."
         },
         "kindFilter": {
           "all": "Alle",
@@ -17215,7 +17216,10 @@
       "costHint": "Ein größeres Fenster fasst mehr Inhalt und kann mehr kosten.",
       "technical": "Technische Details",
       "auto": "Automatische Komprimierung",
-      "autoHelp": "Codex komprimiert den Kontext automatisch, wenn die Komprimierungsschwelle fast erreicht ist."
+      "autoHelp": "Codex komprimiert den Kontext automatisch, wenn die Komprimierungsschwelle fast erreicht ist.",
+      "nearAutoCompact": "Automatische Komprimierung bald",
+      "agyAutoHelp": "Agy komprimiert den Kontext selbst, wenn etwa die Hälfte des Kontextfensters belegt ist, und fasst frühere Inhalte zusammen. Den Zeitpunkt bestimmt Agy, Cindy kann ihn nicht ändern.",
+      "agyAutoDetail": "Beobachtet bei etwa {{tokens}} Tokens. Jede Komprimierung erscheint in der Unterhaltung als Trennlinie Automatische Komprimierung."
     },
     "contextWindowBudget": {
       "menuTitle": "Kontextfenster der Aufgabe",

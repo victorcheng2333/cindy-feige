@@ -4450,7 +4450,8 @@
           },
           "codexContextUnknown": "CLI configuration unavailable",
           "codexContextValues": "Total {{total}} · Usable {{usable}} · Auto-compact {{compact}} tokens",
-          "contextLimitGptHint": "GPT defaults to at most 272K; you can set it to 1M here. Codex applies the window and automatic compaction threshold together, retaining 5% headroom. Actual capacity depends on the model service."
+          "contextLimitGptHint": "GPT defaults to at most 272K; you can set it to 1M here. Codex applies the window and automatic compaction threshold together, retaining 5% headroom. Actual capacity depends on the model service.",
+          "agyContextManaged": "Agy manages its own context window and compacts automatically when about half of it is used. Cindy can’t change either setting for Agy models."
         },
         "kindFilter": {
           "all": "All",
@@ -17215,7 +17216,10 @@
       "costHint": "A larger window holds more content and may cost more.",
       "technical": "Technical details",
       "auto": "Automatic compaction",
-      "autoHelp": "Codex automatically compacts context near its compaction threshold."
+      "autoHelp": "Codex automatically compacts context near its compaction threshold.",
+      "nearAutoCompact": "Auto compact soon",
+      "agyAutoHelp": "Agy compacts the context on its own when about half of the window is used, summarizing earlier content. Agy decides when this happens, and Cindy can’t change it.",
+      "agyAutoDetail": "Observed at about {{tokens}} tokens. Each compaction appears in the conversation as an Auto compact divider."
     },
     "contextWindowBudget": {
       "menuTitle": "Task context window",
