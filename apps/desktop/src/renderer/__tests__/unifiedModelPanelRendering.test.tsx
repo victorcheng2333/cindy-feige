@@ -1008,6 +1008,43 @@ describe('统一模型选择器面板', () => {
     expect(onProviderChange.mock.lastCall?.slice(0, 3)).toEqual([provider.id, models[1].id, 'high']);
   });
 
+  // Production entry: ModelSelectorContent (both compact & unified layouts).
+  // Regression basis: legacy independent native subscriptions carry source='user' while
+  // subscription-pool providers inherit source='builtin', causing mismatched two-line vs
+  // one-line rows for identical Claude subscription models. Existing custom model ID test
+  // only covers API-key providers. Minimal input: one builtin pool + one user native Claude
+  // subscription both listing claude-opus-5-5 ('Opus 5.5'); tier: unit (jsdom).
+  it.each([true, false])('omits raw model IDs for user-sourced native subscription providers (unified=%s)', (unifiedPanel) => {
+    const model = {
+      id: 'claude-opus-5-5', name: 'Opus 5.5', contextWindow: 200000,
+      efforts: ['high'], defaultEffort: 'high',
+    };
+    const poolProvider = {
+      id: 'anthropic-sub-11111111', name: 'Claude-6', source: 'builtin',
+      subscriptionPool: 'anthropic', agents: ['claude-code'],
+      auth: { method: 'oauth' }, access: { kind: 'subscription', product: 'Claude.ai' },
+      routing: { 'claude-code': {} }, connected: true,
+      models: { 'claude-code': [model] },
+    } as ProviderView;
+    const legacyNativeProvider = {
+      id: 'anthropic-22222222', name: 'Claude-8', source: 'user',
+      agents: ['claude-code'],
+      auth: { method: 'oauth', native: 'claude' }, access: { kind: 'subscription', product: 'Claude.ai' },
+      routing: { 'claude-code': {} }, connected: true,
+      models: { 'claude-code': [model] },
+    } as ProviderView;
+    renderPanel({
+      providersOverride: [poolProvider, legacyNativeProvider],
+      vendorKey: 'cc',
+      unifiedPanel,
+      currentProviderId: poolProvider.id,
+      modelId: model.id,
+      effort: 'high',
+    });
+    expect(screen.getAllByText('Opus 5.5')).toHaveLength(2);
+    expect(screen.queryByText('claude-opus-5-5')).toBeNull();
+  });
+
   it('按分组陈列跨引擎联合列表,每行右侧常驻三元组', () => {
     renderPanel();
     const list = screen.getByRole('listbox');

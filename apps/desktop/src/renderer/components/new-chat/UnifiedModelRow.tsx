@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { COMPOSER_MENU_ROW, menuRowAttrs } from '@/components/ui/menu-row';
 import { providerDisplayName } from '@/lib/providerDisplayName';
-import { isCustomRoutedProvider, modelSupplierLabel } from '@cindy/model-providers';
+import { modelSupplierLabel } from '@cindy/model-providers';
 import type { Effort } from '@/lib/userPreferences.types';
 
 import { PriceFreeBadge, PriceTierMarks, type UnifiedRowPriceDisplay } from './priceTierMarks';
@@ -20,8 +20,8 @@ import { PriceFreeBadge, PriceTierMarks, type UnifiedRowPriceDisplay } from './p
 import { ModelSourceDetails } from './ModelSourceDetails';
 
 import { agentOptionOf } from './agentOptions';
-// 图标规则(模型条目 icon 优先、缺省回落来源供应商标)只有一份实现,复用它而不是抄一份。
-import { ModelIconMark } from './ModelSelector';
+// 图标与自定义 model ID 展示规则只有一份实现,复用它而不是抄一份。
+import { ModelIconMark, shouldShowCustomModelId } from './ModelSelector';
 import { anchorKey, type UnifiedAnchor, type UnifiedRowConfig } from './unifiedModelSelection';
 
 /**
@@ -129,7 +129,7 @@ export function UnifiedModelRow({
   const description = localizedModelDescription({ id: entry.modelId, group: entry.group }, t);
   const provider = providers.find((item) => item.id === entry.providerId);
   const wireModelId = config.wireModelId ?? entry.modelId;
-  const showModelId = isCustomRoutedProvider(provider) && wireModelId !== displayName;
+  const showModelId = shouldShowCustomModelId(provider, wireModelId, displayName);
   // Read the effective engine's exact wire entry, never the recommended sibling's source.
   const source = entry.capabilities[config.agent]?.discoveredSource;
   const supplier = modelSupplierLabel(source);

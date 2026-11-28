@@ -644,6 +644,21 @@ export function ModelIconMark({
   );
 }
 
+/**
+ * 自定义 API / 组织来源在名称下方补一行原始 model ID（区分相近的自定义显示名）；
+ * 订阅来源（含旧版以 `source: 'user'` 保存的原生 Claude / Codex / xAI 订阅）与内置订阅
+ * 保持一致的单行展示，不附带 model ID。
+ */
+export function shouldShowCustomModelId(
+  provider: Pick<ProviderView, 'source' | 'access' | 'auth'> | null | undefined,
+  modelId: string,
+  displayName: string,
+): boolean {
+  if (!isCustomRoutedProvider(provider)) return false;
+  if (provider?.access?.kind === 'subscription' || provider?.auth?.native) return false;
+  return modelId !== displayName;
+}
+
 // 上下文窗口 tokens → 紧凑展示("1M" / "272K" / "8192")。
 function formatContextWindow(tokens: number): string {
   if (tokens >= 1_000_000) {
@@ -3592,7 +3607,7 @@ function ModelSelectorContentView(props: ModelSelectorContentViewProps) {
     // 否则拍平后既看不到 Subscription，也无法判断该 (agent,provider,model) 是否已隐藏。
     const statusProvider = provider ?? (isSelected ? currentModelProvider : undefined);
     const displayName = localizedModelName(model.displayName, t);
-    const showModelId = isCustomRoutedProvider(statusProvider) && model.id !== displayName;
+    const showModelId = shouldShowCustomModelId(statusProvider, model.id, displayName);
     const isSubscriptionModel = statusProvider?.access?.kind === 'subscription';
     const selectedCatalogModel =
       statusProvider && currentAgentKind
