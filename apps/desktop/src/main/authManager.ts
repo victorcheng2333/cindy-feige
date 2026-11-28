@@ -3596,6 +3596,13 @@ function scheduleNonXdOrgBetaDefault(input: {
  * 并发轮换同一枚 refresh token 互相打成 INVALID_REFRESH_TOKEN。
  */
 let coldStartAuthInFlight: Promise<AuthState> | null = null;
+/**
+ * 冷启动读取已保存凭证(等凭证库跨进程锁,最长 5s)时,coldStartAuthInFlight 还没登记,
+ * 运行时 refresh() 在这段窗口里也必须让路。否则两边拿同一枚 refresh token 并发轮换:
+ * 服务端接受重放并再签发一枚,先签发的那枚随即失效;冷启动丢弃自己的结果后再拿失效的
+ * 那枚续期被拒,最终清空登录(2026-11-27/28 多次重启掉登录)。
+ */
+let coldStartCredentialReads = 0;
 // A newly mounted window must not restart recovery after the user took over.
 let coldStartRecoveryStopped = false;
 // The saved credential owns the deadline, not the login page/recovery invocation.
@@ -5433,6 +5440,10 @@ export async function initialize(options: AuthInitializeOptions = {}): Promise<A
     removeSafe(LEGACY_ACCOUNT_REFRESH_TOKEN_KEY);
   }
   let persistedSession: ReturnType<typeof readPersistedAuthSession>;
+  // Runtime refresh() yields while this read waits for the vault lock. When it
+  // returns a saved session, the code up to registering coldStartAuthInFlight
+  // stays synchronous, so no runtime rotation can start in between.
+  coldStartCredentialReads++;
   try {
     persistedSession = await reconcileDesktopActiveAuthSession();
     credentialStoreHealth.noteRecovered();
@@ -5448,6 +5459,8 @@ export async function initialize(options: AuthInitializeOptions = {}): Promise<A
         error.code === 'CREDENTIAL_STORE_UNAVAILABLE' &&
         hasPotentiallyPersistedAuthCredentials(),
     );
+  } finally {
+    coldStartCredentialReads--;
   }
   if (!persistedSession) {
     // 旧版只保存裸 refresh token，没有 realm 可供校验。只有独占 userData 的
@@ -5693,6 +5706,18 @@ async function runColdStartRefreshFlow(
     let run: Awaited<ReturnType<typeof runAuthRefreshWithReplacementRetry>>;
     for (;;) {
       if (epochChanged('before-recovery-attempt')) return snapshotAuthState();
+      if (refreshPromise !== null) {
+        // A runtime refresh() that started before this cold start owns the saved
+        // token until it settles. Replaying that token makes the server revoke the
+        // rotation it is about to save. The startup gate still bounds the splash.
+        await refreshPromise.catch(() => false);
+        if (epochChanged('after-runtime-refresh')) return snapshotAuthState();
+        if (accessToken && currentUser) {
+          log.info('cold-start refresh: runtime refresh already restored the saved login');
+          return snapshotAuthState();
+        }
+        continue;
+      }
       if (!expectedActiveVaultAccountKey) {
         const latest = readPersistedAuthSession();
         if (!latest || latest.realm !== storedRealm) {
@@ -6852,9 +6877,14 @@ export async function refresh(options?: { serverRejectedToken?: boolean }): Prom
     log.debug('runtime refresh skipped in local mode');
     return false;
   }
-  // Cold-start recovery owns rotation until it settles. Runtime callers must
-  // not consume the same saved refresh token concurrently, or wait indefinitely.
-  if (coldStartAuthInFlight !== null && (!accessToken || !currentUser)) return false;
+  // Cold-start recovery owns rotation from its credential read until it settles.
+  // Runtime callers must not consume the same saved refresh token concurrently, or wait indefinitely.
+  if (
+    (coldStartAuthInFlight !== null || coldStartCredentialReads > 0) &&
+    (!accessToken || !currentUser)
+  ) {
+    return false;
+  }
   // Explicit callers (including chat polling and resume) share the same wait
   // as the retry timer; skipped calls must not move the deadline forward.
   if (options?.serverRejectedToken && refreshBackoff.serverRejectedToken(authStateEpoch)) {

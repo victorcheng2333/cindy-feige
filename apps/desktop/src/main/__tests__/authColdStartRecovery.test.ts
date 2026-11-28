@@ -97,6 +97,7 @@ let activeAuthRealm = 'global', pendingAuthRealm = null, loginFlowState = null;
 let pendingAccountToken = null, pendingAccountRefreshToken = null, pendingAccountMemberships = [];
 let accountDeletionRestoredNoticePending = false, confirmedAccountDeletionCredential = null;
 let coldStartAuthInFlight = null, coldStartRetryWait = null, refreshTimer = null;
+let coldStartCredentialReads = 0;
 let enterpriseGuestSignIn = null;
 let coldStartRecoveryStopped = false, coldStartRetryState = null;
 let lastAcceptedRefreshToken = null, persistedRefreshTokenNeedsIdentityCheck = false;
@@ -134,7 +135,6 @@ const recoverAccountFreeOwnerAtStartup = async (mode, reason, unavailable, optio
     coldStartTimeoutRecovery: options.coldStartTimeoutRecovery,
     preserveResourceRefreshUncertainty: options.preserveResourceRefreshUncertainty });
 };
-const reconcileDesktopActiveAuthSession = async () => saved.session;
 ${source.statements
   .filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text ?? ''))
   .map((node) => node.getText(source).replace(/^export /, '')
@@ -287,6 +287,8 @@ function setup(random = 0) {
     createAuthClient: () => authClient,
     log: { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() },
     readActiveVaultRefreshCandidate: vi.fn((): { accountKey: string; realm: string; refreshToken: string } | null => null),
+    // The vault read waits on a cross-process lock (up to 5s) in production.
+    reconcileDesktopActiveAuthSession: vi.fn(async () => saved.session),
     clearConfirmedDeadRefreshTokens: clear,
     resetActiveAuthRealmToBuild: vi.fn(),
     isPassiveSharedUserDataInstance: vi.fn(() => false),
@@ -638,6 +640,71 @@ describe('saved login recovery after startup network failure', () => {
     await expect(second).resolves.toMatchObject({ success: true });
     expect(h.loadProviders).not.toHaveBeenCalled();
   });
+
+  // Regression (2026-11-27/28, five restarts signed out): a startup refresh() caller (device-link
+  // asking for a token) rotated the saved token while cold start either waited on the vault lock
+  // or had not started yet. Both sent the same token; the server re-issued on the replay, which
+  // revoked the first rotation, then cold start discarded its own result and cleared the login.
+  // Minimal input: one saved token, runtime refresh() and initialize() overlapping in either order.
+  it.each(['during the vault read', 'before cold start begins'])(
+    'never rotates the saved token twice when runtime refresh starts %s',
+    async (order) => {
+      const h = setup();
+      // Auth server as observed in the logs: a replay of an already rotated token is accepted
+      // again and issues a new generation, which revokes the generation issued before it.
+      let current = 'test-refresh';
+      const parentOf = new Map<string, string>();
+      let generation = 0;
+      h.request.mockImplementation((token: unknown) => new Promise((resolve) => {
+        setTimeout(() => {
+          if (token !== current && parentOf.get(current) !== token) {
+            resolve({ ok: false, status: 401, data: { error: { code: 'INVALID_REFRESH_TOKEN' } } });
+            return;
+          }
+          const next = `test-rotated-${++generation}`;
+          parentOf.set(next, token as string);
+          current = next;
+          resolve({ ...h.ok, data: { ...h.ok.data, refreshToken: next } });
+        }, 50);
+      }));
+      h.deps.readActiveVaultRefreshCandidate.mockImplementation(() => {
+        const key = h.vault.activeAccountKey;
+        const resource = key ? h.vault.resources[key] : undefined;
+        return resource ? { accountKey: key, realm: resource.realm, refreshToken: resource.refreshToken } : null;
+      });
+      let releaseVault!: () => void;
+      h.deps.reconcileDesktopActiveAuthSession.mockImplementationOnce(
+        () => new Promise((resolve) => { releaseVault = () => resolve(h.saved.session); }),
+      );
+
+      let runtime: Promise<boolean>;
+      let startup: Promise<unknown>;
+      if (order === 'during the vault read') {
+        startup = h.start();
+        await vi.advanceTimersByTimeAsync(0);
+        runtime = h.runtimeRefresh();
+        await vi.advanceTimersByTimeAsync(0);
+        releaseVault();
+      } else {
+        runtime = h.runtimeRefresh();
+        await vi.advanceTimersByTimeAsync(0);
+        startup = h.start();
+        await vi.advanceTimersByTimeAsync(0);
+        releaseVault();
+      }
+      await vi.advanceTimersByTimeAsync(2_000);
+      await startup;
+      // During the vault read cold start already owns rotation, so the caller skips this
+      // round; a refresh admitted earlier finishes and cold start adopts its login.
+      await expect(runtime).resolves.toBe(order !== 'during the vault read');
+
+      expect(h.request).toHaveBeenCalledTimes(1);
+      expect(h.request).toHaveBeenCalledWith('test-refresh', 'global');
+      expect(h.state()).toMatchObject({ isAuthenticated: true, user: { id: 'original' } });
+      expect(h.saved.session.refreshToken).toBe('test-rotated-1');
+      expect(h.clear).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     { status: 429, serverWait: undefined },
