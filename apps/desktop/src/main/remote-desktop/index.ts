@@ -1,4 +1,4 @@
-import { supportsManagedX11Clipboard } from './linuxX11Clipboard';
+import { supportsX11Clipboard } from './linuxX11Clipboard';
 import { readLinuxInputSupport } from './linuxInputHost';
 import { getInstanceConfig } from '../instance-runtime/config.js';
 import {
@@ -81,7 +81,8 @@ import { HyprlandCapture, supportsHyprlandCapture } from './hyprlandCapture';
 import { readLinuxDesktopInputSupport, isX11Desktop } from './linuxInput';
 import { LinuxDesktopAudio, supportsLinuxAudio } from './linuxAudio';
 import { isLinuxDesktopUnlocked } from './linuxSessionLock';
-import { supportsLinuxClipboard, stopLinuxClipboardWriter } from './linuxClipboardNative';
+import { supportsHyprlandClipboard, stopLinuxClipboardWriter } from './linuxClipboardNative';
+import { readGnomeClipboardSupport, stopGnomeClipboard } from './linuxGnomeClipboard';
 import {
   supportsLinuxDisplay,
   supportsLinuxLock,
@@ -1025,12 +1026,19 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
     const settings = readDeviceLinkSettings();
     const enabled = settings.remoteDesktopEnabled && settings.remoteControlEnabled;
     const viewerDisplay = enabled && (await viewerDisplaySupported());
-    const x11Clipboard = enabled && await supportsManagedX11Clipboard();
+    const x11Clipboard = enabled && (await supportsX11Clipboard());
     const linuxDisplays =
       enabled && nativeWayland() && supportsLinuxDisplay()
         ? (await linuxMonitors()).map(linuxDisplay)
         : null;
     if (enabled && isGnomeWaylandSession()) await readGnomeDesktopSupport();
+    const gnomeClipboard = enabled && gnomeWayland() && (await readGnomeClipboardSupport());
+    const desktopClipboard =
+      process.platform === 'darwin' ||
+      process.platform === 'win32' ||
+      (supportsLinuxLock() && supportsHyprlandClipboard()) ||
+      x11Clipboard ||
+      gnomeClipboard;
     // Hyprland-only extras (window actions, workspaces, modes) stay keyed to linuxDisplays.
     const gnomeDisplays =
       enabled && gnomeWayland()
@@ -1051,26 +1059,14 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
         process.platform === 'darwin' ||
         (process.platform === 'win32' && WINDOWS_PRIVACY_SCREEN_ENABLED) ||
         supportsLinuxLock(),
-      clipboardContent:
-        process.platform === 'darwin' ||
-        process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
-      clipboardSync:
-        process.platform === 'darwin' ||
-        process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
-      clipboardInline:
-        process.platform === 'darwin' ||
-        process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
+      clipboardContent: desktopClipboard,
+      clipboardSync: desktopClipboard,
+      clipboardInline: desktopClipboard,
       privacyScreen:
         supportsPrivacyScreen || (enabled && nativeWayland() && (await supportsLinuxPrivacy())),
       hostMute:
         process.platform === 'darwin' || process.platform === 'win32' || supportsLinuxMute(),
-      clipboardText:
-        process.platform === 'darwin' ||
-        process.platform === 'win32' ||
-        (supportsLinuxLock() && supportsLinuxClipboard()) || x11Clipboard,
+      clipboardText: desktopClipboard,
       videoSettings: true,
       trickleIce: true,
       backgroundViewing: true,
@@ -1364,6 +1360,7 @@ export const remoteDesktop: RemoteDesktopController = new RemoteDesktopControlle
       powerSaveBlocker.stop(displayAwake);
       displayAwake = null;
     }
+    if (!remoteDesktop.state) stopGnomeClipboard();
     syncControlledOverlay();
   },
 });
@@ -1489,6 +1486,7 @@ export function registerRemoteDesktopIpc(
     nativeCapture.stop(); // do not retain pixels from the previous OS session state
     hyprlandCapture.stop();
     linuxAudio.stop(); // Clear buffered PCM as well as pixels across lock transitions.
+    stopGnomeClipboard();
     if (remoteDesktop.state?.controlling) {
       try {
         // A live screen lease never starts the desktop input helper.

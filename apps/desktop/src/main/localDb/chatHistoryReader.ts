@@ -45,7 +45,7 @@ function sessionCreatedByHistoryIdentity(raw: unknown): { createdBySession?: Ses
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type HistoryOrder = 'asc' | 'desc';
-export type HistoryAgentKind = 'cc' | 'codex' | 'pi' | 'antigravity';
+export type HistoryAgentKind = 'cc' | 'codex' | 'pi' | 'antigravity' | 'acp';
 
 export interface HistoryCursor {
   createdAt: number; // unix ms

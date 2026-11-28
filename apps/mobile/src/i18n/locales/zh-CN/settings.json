@@ -573,5 +573,14 @@
     "reset": "恢复默认",
     "invalidRate": "请输入大于零的有限数值。",
     "saveFailed": "保存失败，请重试。"
+  },
+  "qrLogin": {
+    "scanTitle": "扫码登录",
+    "hintLogin": "扫描电脑上 Cindy 显示的二维码",
+    "hintLoginDetail": "电脑上：侧栏头像旁的手机图标 →「远程控制 Cindy」",
+    "cameraNeeded": "需要使用相机来扫码",
+    "grantCamera": "允许使用相机",
+    "openSettings": "打开系统设置",
+    "wrongCode": "这不是 Cindy 的登录二维码"
   }
 }

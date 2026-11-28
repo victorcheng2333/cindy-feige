@@ -573,5 +573,14 @@
     "reset": "Standardwerte wiederherstellen",
     "invalidRate": "Gib eine endliche Zahl größer als null ein.",
     "saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
+  },
+  "qrLogin": {
+    "scanTitle": "Zum Anmelden scannen",
+    "hintLogin": "Scanne den Code, den Cindy am Computer zeigt",
+    "hintLoginDetail": "Am Computer: Handy-Symbol neben deinem Avatar → Cindy fernsteuern",
+    "cameraNeeded": "Zum Scannen braucht Cindy die Kamera",
+    "grantCamera": "Kamera erlauben",
+    "openSettings": "Einstellungen öffnen",
+    "wrongCode": "Das ist kein Cindy-Anmeldecode"
   }
 }

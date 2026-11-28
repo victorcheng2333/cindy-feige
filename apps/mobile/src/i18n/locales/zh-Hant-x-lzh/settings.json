@@ -573,5 +573,14 @@
     "reset": "還原預設",
     "invalidRate": "請輸入大於零的有限數值。",
     "saveFailed": "儲存失敗，請重試。"
+  },
+  "qrLogin": {
+    "scanTitle": "掃碼登門",
+    "hintLogin": "掃電腦上 Cindy 所示之碼",
+    "hintLoginDetail": "電腦上：側欄頭像旁手機之標 →「遠端控制 Cindy」",
+    "cameraNeeded": "須用相機以掃碼",
+    "grantCamera": "許用相機",
+    "openSettings": "啟系統設定",
+    "wrongCode": "此非 Cindy 登門之碼"
   }
 }

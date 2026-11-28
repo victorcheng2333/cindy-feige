@@ -69,7 +69,7 @@ import { isSharedTaskPeer } from '@cindy/device-link';
 import { computeContextSheetSnapHeights, type ContextSheetSnap } from '@/session/contextSheetModel';
 import { writeClipboardText } from '@/session/messageActions';
 import { normalizeExtraDirs } from '@/session/newSession';
-import { usePluginEngineFor } from '@/session/pluginEngines';
+import { pluginEngineModelName, usePluginEngineFor } from '@/session/pluginEngines';
 import {
   nextCodexBucketStaleAtMs,
   resolveCodexBucketTable,
@@ -263,6 +263,13 @@ export function SessionMenuSheet({
     }
     archive?.();
   }, [onClosed, projectMove.parentClosed]);
+  const pluginEngine = usePluginEngineFor(
+    session.deviceLinkDeviceId,
+    session.agentKind === 'acp' ? session.providerId : null,
+    session.agentKind === 'acp' ? session.agentDeviceId : null,
+  );
+  const effectiveProviderName = providerName?.trim() || pluginEngine?.name;
+  const effectiveModelLabel = modelLabel ?? pluginEngineModelName(pluginEngine, session.model) ?? null;
   const menuUsage = useSessionMenuUsage(
     session,
     usageReader,
@@ -270,6 +277,7 @@ export function SessionMenuSheet({
     codexRateLimits,
     accountProvider,
     accountUsageReader,
+    effectiveModelLabel,
   );
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -445,11 +453,6 @@ export function SessionMenuSheet({
     return base;
   }, [copiedKey, t]);
 
-  const pluginEngine = usePluginEngineFor(
-    session.deviceLinkDeviceId,
-    session.agentKind === 'acp' ? session.providerId : null,
-    session.agentKind === 'acp' ? session.agentDeviceId : null,
-  );
   const header = buildSessionMenuHeader(session, pluginEngine?.name);
   const actions = buildSessionMenuActions({
     archived: session.status === 'archived',
@@ -753,7 +756,7 @@ export function SessionMenuSheet({
             />
           ) : null}
 
-          {!messageOnly ? <SessionUsageSummary modelLabel={modelLabel} providerName={providerName} session={session} usage={menuUsage} contextUsage={contextUsage} onPress={openInfo} translucent={Platform.OS === 'ios'} /> : null}
+          {!messageOnly ? <SessionUsageSummary modelLabel={effectiveModelLabel} providerName={effectiveProviderName} session={session} usage={menuUsage} contextUsage={contextUsage} onPress={openInfo} translucent={Platform.OS === 'ios'} /> : null}
 
           {openEntries?.length && !workerMode ? (
             <View testID="session.openSection">
@@ -917,7 +920,7 @@ export function SessionMenuSheet({
   const infoContent = (
     <View style={styles.infoBody} testID="session.infoSheetBody">
       {!sharedGuest && (tagDeviceId ?? session.deviceLinkDeviceId) && <SessionPrLinks key={`${session.id}:${tagDeviceId ?? session.deviceLinkDeviceId}`} sessionId={session.id} deviceId={(tagDeviceId ?? session.deviceLinkDeviceId)!} readOnly={session.source === 'review'} />}
-      <SessionUsageSummary modelLabel={modelLabel} providerName={providerName} session={session} usage={menuUsage} contextUsage={contextUsage} detail translucent={Platform.OS === 'ios'} />
+      <SessionUsageSummary modelLabel={effectiveModelLabel} providerName={effectiveProviderName} session={session} usage={menuUsage} contextUsage={contextUsage} detail translucent={Platform.OS === 'ios'} />
       <View style={styles.infoSection}>
         <View style={styles.infoSectionHeader}>
           <Text style={styles.infoSectionTitle}>{t('session.menu.usageSection')}</Text>

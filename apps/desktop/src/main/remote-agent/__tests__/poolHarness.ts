@@ -31,6 +31,7 @@ import { isProviderShareAgentDeviceId, providerShareIdOfAgentDeviceId } from '..
 import { RuntimePluginControlError } from '../../cindy-brain/runtimeControl';
 import { SessionCreationCleanupPendingError } from '@cindy/maker-core';
 
+import { createAcpLeadBriefingHandoff, prepareAcpRoleBriefingForStart } from '../../maker-ipc/orcaSessionStartOptions';
 import { resolveAgentSendToSessionHint } from '@cindy/maker-shared/agent-input-projection';
 import { dbToMakerEngineKind } from '../../../shared/agentKindConversion.js';
 import { applySessionRuntimeOverrideForStart } from '../../maker-ipc/sessionRuntimeControl.js';
@@ -196,6 +197,8 @@ export function sharedAccountRegisterWiring(ports: Record<string, unknown> & {
     readUserPrompt: () => '',
     readMemorySettings: () => ({ maker: false }),
     applyOrcaInstructions: () => false,
+    prepareAcpRoleBriefingForStart,
+    acpLeadBriefings: createAcpLeadBriefingHandoff({ currentOwner: () => null, readActiveTeamId: async () => undefined, readRole: async () => null }),
     applyProjectContextInjection: () => false,
     prepareDirectoryGrantsForBootstrap: noop,
     readSessionWritableDirsFromDb: none,

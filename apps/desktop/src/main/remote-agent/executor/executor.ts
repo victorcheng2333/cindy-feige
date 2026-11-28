@@ -81,6 +81,11 @@ export interface RemoteExecutorOptions {
    * 缺省不限制。
    */
   maxResultBytes?: number;
+  /**
+   * 访问本机工作树（文件读写 / 搜索 / shell 执行）前的就绪钩子：
+   * 如延迟检出的托管 worktree 仍在后台 full checkout，在此等待其完成（失败时抛错，绝不在半检出树上执行）。
+   */
+  beforeWorktreeAccess?(signal?: AbortSignal): Promise<void>;
 }
 
 export class ExecutorRequestError extends Error {
@@ -123,6 +128,7 @@ function optionalString(body: Record<string, unknown>, key: string): string | un
 /** Claude Code 风格工具名(与自带工具同名，模型和界面看到的都是这些名字)。WebFetch 只在启用时提供。 */
 export const EXECUTOR_CC_TOOL_NAMES = ['Bash', 'BashOutput', 'KillShell', 'Read', 'Write', 'Edit', 'NotebookEdit', 'WebFetch'] as const;
 export type ExecutorCcToolName = (typeof EXECUTOR_CC_TOOL_NAMES)[number];
+const WORKTREE_ACCESS_CC_TOOLS = new Set<ExecutorCcToolName>(['Bash', 'Read', 'Write', 'Edit', 'NotebookEdit']);
 
 export class RemoteExecutor {
   readonly workspace: ExecutorWorkspace;
@@ -334,6 +340,7 @@ export class RemoteExecutor {
     this.ensureOpen();
     const body = record(rawBody);
     try {
+      await this.opts.beforeWorktreeAccess?.(signal);
       switch (op) {
         case 'fs.read': {
           const target = this.resolvePath(str(body, 'path'));
@@ -459,6 +466,9 @@ export class RemoteExecutor {
       return textResult('Tool arguments must be an object.', true);
     }
     try {
+      if (WORKTREE_ACCESS_CC_TOOLS.has(name as ExecutorCcToolName)) {
+        await this.opts.beforeWorktreeAccess?.(signal);
+      }
       switch (name as ExecutorCcToolName) {
         case 'Bash':
           return await this.bash(args, signal, localArguments);

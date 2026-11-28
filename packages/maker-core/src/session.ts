@@ -218,7 +218,7 @@ export type SessionStartupPreferences = Readonly<Pick<StartSessionOptions,
   'userPrompt' | 'makerMemoryEnabled' | 'displayReasoning'>>;
 
 export interface SessionOptions {
-  beforeTurn?: (session: Session) => Promise<void>;
+  beforeTurn?: (session: Session, signal?: AbortSignal) => Promise<void>;
   hostStartupPreferences?: SessionStartupPreferences;
   id: string;
   /** 与 Agent MCP context 同源的本次内存实例代号；省略时由 Session 自铸。 */
@@ -512,6 +512,50 @@ function createSendReservation(generation: number): SendReservation {
   };
 }
 
+/**
+ * Align declared capabilities with the methods actually exposed by a remote
+ * device handle (`agentDeviceId`). A peer may run an older or newer Cindy build
+ * (including after a reconnect), so never advertise a capability whose backing
+ * handle method is absent on this computer.
+ */
+function capabilitiesForRemoteHandle(base: Capabilities, handle: AgentSessionHandle): Capabilities {
+  const overrides: Partial<Capabilities> = {};
+  let changed = false;
+  if (base?.rewind?.supported && typeof handle.commitRewindFiles !== 'function') {
+    overrides.rewind = {
+      supported: false,
+      reason: 'platform-limited',
+      message: 'Update Cindy on the computer running the agent to rewind this task',
+    };
+    changed = true;
+  }
+  if (base?.extraDirs?.supported && typeof handle.setExtraDirs !== 'function') {
+    overrides.extraDirs = {
+      supported: false,
+      reason: 'platform-limited',
+      message: 'Update Cindy on the computer running the agent to change extra directories',
+    };
+    changed = true;
+  }
+  if (base?.writableDirs?.supported && typeof handle.setWritableDirs !== 'function') {
+    overrides.writableDirs = {
+      supported: false,
+      reason: 'platform-limited',
+      message: 'Update Cindy on the computer running the agent to change writable directories',
+    };
+    changed = true;
+  }
+  if (base?.manualCompact?.supported && typeof handle.compactSession !== 'function') {
+    overrides.manualCompact = {
+      supported: false,
+      reason: 'platform-limited',
+      message: 'Update Cindy on the computer running the agent to compact this task',
+    };
+    changed = true;
+  }
+  return changed ? { ...base, ...overrides } : base;
+}
+
 export class Session {
   /** Caller preferences before generated context; memory-only recovery input. */
   readonly hostStartupPreferences?: SessionStartupPreferences;
@@ -529,14 +573,19 @@ export class Session {
   private negotiatedCapabilitiesCache?: { source: Capabilities; value: Capabilities };
   get capabilities(): Capabilities {
     const negotiated = this.handle.negotiatedCapabilities;
-    if (!negotiated) return this.agentCapabilities;
-    if (this.negotiatedCapabilitiesCache?.source !== negotiated) {
-      this.negotiatedCapabilitiesCache = {
-        source: negotiated,
-        value: this.projectNegotiatedCapabilities?.(negotiated) ?? negotiated,
-      };
+    let base: Capabilities;
+    if (!negotiated) {
+      base = this.agentCapabilities;
+    } else {
+      if (this.negotiatedCapabilitiesCache?.source !== negotiated) {
+        this.negotiatedCapabilitiesCache = {
+          source: negotiated,
+          value: this.projectNegotiatedCapabilities?.(negotiated) ?? negotiated,
+        };
+      }
+      base = this.negotiatedCapabilitiesCache.value;
     }
-    return this.negotiatedCapabilitiesCache.value;
+    return this.agentDeviceId ? capabilitiesForRemoteHandle(base, this.handle) : base;
   }
 
   /** ACP-only command names used when sanitizing host-added wire notes. */
@@ -713,7 +762,7 @@ export class Session {
   private turnControlState: TurnControlState | null = null;
   private readonly asyncUserQuestions: AsyncUserQuestions;
 
-  private readonly beforeTurn?: (session: Session) => Promise<void>;
+  private readonly beforeTurn?: (session: Session, signal?: AbortSignal) => Promise<void>;
 
   constructor(opts: SessionOptions) {
     this.beforeTurn = opts.beforeTurn;
@@ -1116,7 +1165,15 @@ export class Session {
       const cancelledBeforePreparation = finishCancelledBeforeDispatch();
       if (cancelledBeforePreparation !== null) return cancelledBeforePreparation;
       if (afterTurnReserved) await afterTurnReserved();
-      await this.beforeTurn?.(this);
+      if (this.beforeTurn) {
+        try {
+          await this.beforeTurn(this, reservation.abortController.signal);
+        } catch (error) {
+          const cancelled = finishCancelledBeforeDispatch();
+          if (cancelled !== null) return cancelled;
+          throw error;
+        }
+      }
       const cancelledAfterReservation = finishCancelledBeforeDispatch();
       if (cancelledAfterReservation !== null) return cancelledAfterReservation;
       this.handle.validateSendOptions?.(handleOpts);
@@ -2018,7 +2075,10 @@ export class Session {
 
   /** Subscribe to per-session negotiated capability changes (plugin ACP engines). */
   onCapabilitiesChange(listener: (capabilities: Capabilities) => void): () => void {
-    return this.handle.onCapabilitiesChange?.(listener) ?? (() => undefined);
+    return this.handle.onCapabilitiesChange?.((next) => {
+      const projected = this.projectNegotiatedCapabilities?.(next) ?? next;
+      listener(this.agentDeviceId ? capabilitiesForRemoteHandle(projected, this.handle) : projected);
+    }) ?? (() => undefined);
   }
 
   async getContextUsage(): Promise<ContextUsageData> {

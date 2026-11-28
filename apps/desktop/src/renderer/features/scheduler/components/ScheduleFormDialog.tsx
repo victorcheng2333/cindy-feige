@@ -1094,7 +1094,6 @@ export function ScheduleFormDialog({
               <SegmentedControl
                 aria-label={t('scheduler.template.useTemplate')}
                 value={isTemplateMode ? 'gallery' : 'form'}
-                height={34}
                 options={[
                   { value: 'form', label: t('scheduler.template.blank') },
                   { value: 'gallery', label: t('scheduler.template.useTemplate') },
@@ -1194,7 +1193,6 @@ export function ScheduleFormDialog({
                             aria-label={t('scheduler.editor.executionMode.label')}
                             value={form.executionMode ?? 'agent'}
                             onValueChange={(mode) => setField('executionMode', mode)}
-                            height={34}
                             options={(['agent', 'script'] as const).map((mode) => ({
                               value: mode,
                               label: t(`scheduler.editor.executionMode.${mode}`),
@@ -1421,7 +1419,6 @@ export function ScheduleFormDialog({
                               aria-label={t('scheduler.editor.runSession.label')}
                               value={runMode}
                               onValueChange={setRunMode}
-                              height={34}
                               options={(
                                 [
                                   'fresh',
@@ -1475,7 +1472,6 @@ export function ScheduleFormDialog({
                         <SegmentedControl
                           aria-label={t('scheduler.editor.trigger.label')}
                           value={triggerMode}
-                          height={34}
                           onValueChange={(mode) => {
                             if (mode === triggerMode) return;
                             preserveTriggerScrollPosition();
@@ -1849,7 +1845,6 @@ export function ScheduleFormDialog({
                               <SegmentedControl
                                 aria-label={t('scheduler.editor.preRunPlugin.sourceLabel')}
                                 value={form.preRunSource}
-                                height={34}
                                 options={(['script', 'plugin'] as const).map((source) => ({
                                   value: source,
                                   label: t(`scheduler.editor.preRunPlugin.source.${source}`),

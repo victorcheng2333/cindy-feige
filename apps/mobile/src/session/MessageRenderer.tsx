@@ -56,6 +56,7 @@ import { extractPayloadToolResultMedia, managedToolMediaKind } from '@cindy/make
 import { attachmentPreviewKind, previewSourceName } from '@cindy/maker-shared/attachment-preview';
 import { AuthorizationMessageCard } from './AuthorizationMessageCard';
 import { collectBotMessageTimeGroups, formatBotMessageGroupTime, type BotTimelineMessage } from '@cindy/maker-shared/botTimeline';
+import { VoiceCallHistoryCard } from './VoiceCallHistoryCard';
 import { CompanionMessageCard } from '@/session/CompanionMessageCard';
 import { CompanionEntering } from '@/session/CompanionEntering';
 import { LOCAL_SEND_FRESH_MS, localSendStartedAt } from '@/session/localSendMotion';
@@ -299,6 +300,9 @@ import {
 } from '@/session/remoteSessionStore';
 import {
   parseSourceSessionTarget,
+  readMessageDispatchRoute,
+  messageDispatchRouteMismatch,
+  messageDispatchRouteLabel,
   shouldShowSourceDevice,
   type MessageSourceDevice,
   type MessageSourcePlugin,
@@ -338,6 +342,7 @@ import {
   type MobileWorkGroupItem,
 } from '@/session/messageRenderModel';
 import {
+  OutboxHistoryConfirmationRow,
   PendingSendBubble,
   type PendingSendBubbleActions,
 } from '@/session/PendingSendBubble';
@@ -3334,6 +3339,10 @@ const RenderItemView = memo(function RenderItemView({
   let node: ReactNode;
   switch (item.type) {
     case 'message':
+      if (item.message.voiceCall) {
+        node = <VoiceCallHistoryCard record={item.message.voiceCall} />;
+        break;
+      }
       node = item.message.authorization
         ? (
         <AuthorizationMessageCard message={item.message} />
@@ -4370,6 +4379,7 @@ function MessageBubble({
     </UserBubbleChipContext.Provider>
   );
 
+  const dispatchRoute = item.message.kind === 'user' ? readMessageDispatchRoute(item.message.source.agentMeta) : undefined;
   const messageNode = (
     <View
       ref={shareableMessage ? handleShareableMessageViewChange : undefined}
@@ -4427,6 +4437,18 @@ function MessageBubble({
         />
       ) : null}
       {attachmentStripNode}
+      {dispatchRoute && messageDispatchRouteMismatch(dispatchRoute) && dispatchRoute.selected ? (
+        <ErrorNotice message={t('session.screen.modelSwitchPreparation.usingPrevious', {
+          actual: messageDispatchRouteLabel(dispatchRoute, t('models.pluginEngines.genericName')),
+          target: messageDispatchRouteLabel(dispatchRoute.selected, t('models.pluginEngines.genericName')),
+        })}>
+          {dispatchRoute.switchError ? <AgentErrorDetails message={dispatchRoute.switchError} /> : null}
+        </ErrorNotice>
+      ) : dispatchRoute ? (
+        <Text style={styles.failedSamplingAttemptText} testID="message.dispatchRoute">
+          {messageDispatchRouteLabel(dispatchRoute, t('models.pluginEngines.genericName'))}
+        </Text>
+      ) : null}
       {item.message.failedSamplingAttempt ? (
         <Text style={styles.failedSamplingAttemptText}>
           {t('message.renderer.failedSamplingAttempt')}
@@ -4475,7 +4497,10 @@ function MessageBubble({
           </Text>
         </View>
       ) : null}
-      {hasActions && actions.companion ? (
+      {item.historyConfirmation && actions.pendingSend ? (
+        <OutboxHistoryConfirmationRow clientId={clientId} requested={item.historyConfirmation === 'requested'}
+          onConfirm={actions.pendingSend.onRetryOutbox} />
+      ) : hasActions && actions.companion ? (
         <CompanionMessageActions user={isUser} copied={copyState === 'copied'} copying={copyState === 'copying'} disabled={disabled}
         onCopy={canCopy ? copyMessage : undefined}
         actions={[

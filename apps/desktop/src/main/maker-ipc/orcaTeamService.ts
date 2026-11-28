@@ -336,6 +336,15 @@ export interface WorkerTerminalTurnCapture {
   turnGeneration?: number;
 }
 
+/** The coordinator restored the exact failed input before vendor dispatch. Its
+ * replacement runtime (or absence) now fences the held assignment terminal. */
+export function rebaseRestoredWorkerTerminal(
+  capture: WorkerTerminalTurnCapture | undefined,
+  runtime: WorkerTerminalTurnCapture['runtime'],
+): WorkerTerminalTurnCapture | undefined {
+  return capture ? { ...capture, runtime: runtime ?? null, turnGeneration: runtime?.getTurnGeneration?.() } : undefined;
+}
+
 export interface OrcaDeliveryPermissionBaseline {
   mode: string;
   planEnabled: boolean;
@@ -477,6 +486,7 @@ export interface OrcaTeamServiceDeps {
     message: string;
     workerId: string;
     delivery?: 'queue' | 'steer';
+    initialTask?: boolean;
     imagePaths?: string[];
     dispatchMeta: {
       source: string;
@@ -1210,6 +1220,7 @@ export function createOrcaTeamService(deps: OrcaTeamServiceDeps): OrcaTeamServic
       ...(params.imagePaths ? { imagePaths: params.imagePaths } : {}),
       dispatchMeta: params.dispatchMeta,
       assertCurrent,
+      initialTask: true,
       // Creation can queue its first task too; acceptance then lands after this call.
       assertDeliveryCurrent: await deps.captureDeliveryAuthority?.(link.leadSessionId),
     });
@@ -1269,6 +1280,7 @@ export function createOrcaTeamService(deps: OrcaTeamServiceDeps): OrcaTeamServic
     resolved: ResolvedWorker;
     message: string;
     mode: 'normal' | 'interrupt';
+    initialTask?: boolean;
     delivery?: 'queue' | 'steer';
     imagePaths?: string[];
     dispatchMeta: DispatchWorkerTaskParams['dispatchMeta'];
@@ -1416,6 +1428,7 @@ export function createOrcaTeamService(deps: OrcaTeamServiceDeps): OrcaTeamServic
             targetSessionId: target.sessionId,
             message: params.message,
             workerId: link.workerId,
+            ...(params.initialTask ? { initialTask: true } : {}),
             ...(params.delivery ? { delivery: params.delivery } : {}),
             ...(params.imagePaths ? { imagePaths: params.imagePaths } : {}),
             dispatchMeta: params.dispatchMeta,
@@ -2423,10 +2436,11 @@ export function createOrcaTeamService(deps: OrcaTeamServiceDeps): OrcaTeamServic
       noteWorkerProductTerminal(capture);
       let manualInterruptOwnership = capture.manualInterrupt;
       const autoBridgeAtEntry = capture.autoBridgeIdentity;
-      const ownsRuntime = () => !capture.runtime || (
+      const ownsRuntime = () => capture.runtime === undefined || (capture.runtime === null
+        ? !deps.getLiveSession(params.sessionId) : (
         deps.getLiveSession(params.sessionId) === capture.runtime
         && capture.runtime.getTurnGeneration?.() === capture.turnGeneration
-      );
+      ));
       const link = await deps.getWorkerLinkBySessionId(params.sessionId);
       if (!link) return;
 

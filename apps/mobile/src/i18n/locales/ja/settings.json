@@ -573,5 +573,14 @@
     "reset": "既定値に戻す",
     "invalidRate": "ゼロより大きい有限の数値を入力してください。",
     "saveFailed": "保存できませんでした。再試行してください。"
+  },
+  "qrLogin": {
+    "scanTitle": "スキャンしてログイン",
+    "hintLogin": "PC の Cindy に表示されたコードをスキャン",
+    "hintLoginDetail": "PC：サイドバーのアバター横のスマホアイコン →「Cindy をリモート操作」",
+    "cameraNeeded": "スキャンにはカメラが必要です",
+    "grantCamera": "カメラを許可",
+    "openSettings": "設定を開く",
+    "wrongCode": "Cindy のログインコードではありません"
   }
 }

@@ -573,5 +573,14 @@
     "reset": "Restaurar predefinições",
     "invalidRate": "Introduza um número finito superior a zero.",
     "saveFailed": "Não foi possível guardar. Tente novamente."
+  },
+  "qrLogin": {
+    "scanTitle": "Ler para iniciar sessão",
+    "hintLogin": "Leia o código que o Cindy mostra no computador",
+    "hintLoginDetail": "No computador: ícone de telemóvel ao lado do avatar → Controlar Cindy remotamente",
+    "cameraNeeded": "O Cindy precisa da câmara para ler",
+    "grantCamera": "Permitir câmara",
+    "openSettings": "Abrir Definições",
+    "wrongCode": "Este não é um código de início de sessão Cindy"
   }
 }

@@ -37,6 +37,8 @@ describe('mobile session Agent switch contract', () => {
       providerId: null,
       effort: 'high',
       fastMode: true,
+      preparation: 'failed',
+      preparationError: 'target unavailable',
       resumeFallbackRecovery: { handoff: 'must stay on desktop main' },
     })).toEqual({
       targetAgentKind: 'codex',
@@ -44,6 +46,8 @@ describe('mobile session Agent switch contract', () => {
       providerId: null,
       effort: 'high',
       fastMode: true,
+      preparation: 'failed',
+      preparationError: 'target unavailable',
     });
     expect(normalizeSessionAgentSwitchIntent(null)).toBeNull();
     expect(normalizeSessionAgentSwitchIntent({ targetAgentKind: 'codex', model: '' })).toBeNull();
